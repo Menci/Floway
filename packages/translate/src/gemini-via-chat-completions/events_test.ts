@@ -74,6 +74,7 @@ test('translateToSourceEvents maps text chunks and stop finish without emitting 
 test('translateToSourceEvents maps reasoning text and attaches opaque signature to next action', async () => {
   const frames = await collect([
     eventFrame(chunk({ role: 'assistant', reasoning_text: 'trace' })),
+    eventFrame(chunk({ reasoning_opaque: 'sig_old' })),
     eventFrame(chunk({ reasoning_opaque: 'sig_1' })),
     eventFrame(chunk({ content: 'answer' })),
     eventFrame(chunk({}, 'stop')),

@@ -3,7 +3,6 @@ import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
-import type { TranslatorInputError } from '@floway-dev/translate';
 
 // OpenAI error envelope. `param` / `code` reproduce OpenAI's native fields; a
 // stored-item miss must byte-match OpenAI's own "not found" body — stateless
@@ -25,15 +24,11 @@ const openAiErrorResult = (
   ...(performance ? { performance } : {}),
 });
 
-// Translator surfaced a caller-input violation. Render as a 400
-// invalid_request_error so the caller sees a protocol-shaped failure
-// instead of the internal-error 502 envelope. `param` falls back to
-// `input` (the Responses canonical input field name) when the translator
-// did not carry a more specific path. `performance` carries the throwing
-// candidate's telemetry attribution when the throw fired mid-attempt (see
-// AttemptState.telemetry).
-export const translatorInputErrorResult = (
-  error: TranslatorInputError,
+// Caller-input violations discovered by translation or the source affinity
+// membrane share the Responses 400 envelope. `performance` retains candidate
+// attribution when validation fires after attempt dispatch.
+export const responsesInputErrorResult = (
+  error: { readonly message: string; readonly param?: string },
   performance?: PerformanceTelemetryContext,
 ): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> =>
   openAiErrorResult(400, error.message, { param: error.param ?? 'input', code: null }, performance);

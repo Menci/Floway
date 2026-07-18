@@ -18,7 +18,7 @@ const incompressibleString = (approxBytes: number): string => {
 test('the reserved private payload field round-trips through both inline and file storage', async () => {
   initFileProvider(new MemoryFileProvider());
 
-  const inline = await serializeStoredResponsesPayload('msg_inline', null, 0, {
+  const inline = await serializeStoredResponsesPayload('msg_inline', 'key-test', 0, {
     item: { type: 'web_search_call', id: 'ws_x' },
     private: { results: [{ url: 'https://example.test', title: 'kept' }] },
   });
@@ -29,40 +29,43 @@ test('the reserved private payload field round-trips through both inline and fil
 
   // A payload past the inline limit spills its body to the file provider; the
   // private slot must survive that path too.
-  const spilled = await serializeStoredResponsesPayload('msg_spilled', null, 0, {
+  const spilled = await serializeStoredResponsesPayload('msg_spilled', 'key-test', 0, {
     item: { type: 'message', id: 'msg_big', content: incompressibleString(96 * 1024) },
     private: { results: 'preserved' },
   });
   const parsed = await parseStoredResponsesPayload('msg_spilled', spilled);
-  assertEquals(parsed?.private, { results: 'preserved' });
+  assertEquals(parsed.private, { results: 'preserved' });
 });
 
-test('spilled payload file keys include the content hash to avoid overwrites', async () => {
+test('identical spilled payload writes get distinct owned keys that retain the content hash', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const createdAt = Date.UTC(2026, 4, 28, 12);
 
-  const firstContent = `a${incompressibleString(96 * 1024)}`;
-  const secondContent = `b${incompressibleString(96 * 1024)}`;
+  const content = incompressibleString(96 * 1024);
   const first = await serializeStoredResponsesPayload('msg_same_id', 'key_a', createdAt, {
-    item: { type: 'message', id: 'msg_big', content: firstContent },
+    item: { type: 'message', id: 'msg_big', content },
   });
   const second = await serializeStoredResponsesPayload('msg_same_id', 'key_a', createdAt, {
-    item: { type: 'message', id: 'msg_big', content: secondContent },
+    item: { type: 'message', id: 'msg_big', content },
   });
+  const firstDescriptor = JSON.parse(first) as { key: string; sha256: string };
+  const secondDescriptor = JSON.parse(second) as { key: string; sha256: string };
 
   assertEquals((await files.listKeys('responses-items/v1/expires/')).length, 2);
-  assertEquals((await parseStoredResponsesPayload('msg_same_id', first))?.item, { type: 'message', id: 'msg_big', content: firstContent });
-  assertEquals((await parseStoredResponsesPayload('msg_same_id', second))?.item, { type: 'message', id: 'msg_big', content: secondContent });
+  assert(firstDescriptor.key !== secondDescriptor.key);
+  assert(firstDescriptor.key.includes(firstDescriptor.sha256));
+  assert(secondDescriptor.key.includes(secondDescriptor.sha256));
+  assertEquals((await parseStoredResponsesPayload('msg_same_id', first)).item, { type: 'message', id: 'msg_big', content });
+  assertEquals((await parseStoredResponsesPayload('msg_same_id', second)).item, { type: 'message', id: 'msg_big', content });
 });
 
 test('inline payload round-trips through gzip+base64 and the descriptor advertises the encoding', async () => {
   initFileProvider(new MemoryFileProvider());
 
-  const serialized = await serializeStoredResponsesPayload('msg_round', null, 0, {
+  const serialized = await serializeStoredResponsesPayload('msg_round', 'key-test', 0, {
     item: { type: 'message', id: 'msg_round', content: 'hello world' },
   });
-  assert(serialized !== null);
   const descriptor = JSON.parse(serialized) as Record<string, unknown>;
   assertEquals(descriptor.version, 1);
   assertEquals(descriptor.storage, 'inline');
@@ -74,38 +77,6 @@ test('inline payload round-trips through gzip+base64 and the descriptor advertis
   });
 });
 
-test('legacy inline payload descriptors still parse without an encoding field', async () => {
-  initFileProvider(new MemoryFileProvider());
-
-  // Hand-rolled because rows written by builds older than this change carry no
-  // encoding field; the read path keeps deserializing them while their TTL
-  // elapses (we cannot reach back through the deploy lag and rewrite them).
-  const legacy = JSON.stringify({
-    version: 1,
-    storage: 'inline',
-    payload: { item: { type: 'message', id: 'msg_legacy', content: 'plain' } },
-  });
-  assertEquals(await parseStoredResponsesPayload('msg_legacy', legacy), {
-    item: { type: 'message', id: 'msg_legacy', content: 'plain' },
-  });
-});
-
-test('legacy file payload descriptors verify their hash and parse the unencoded body', async () => {
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
-
-  const body = new TextEncoder().encode(JSON.stringify({ item: { type: 'message', id: 'msg_file_legacy', content: 'persisted' } }));
-  const digest = await crypto.subtle.digest('SHA-256', body);
-  const sha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
-  const key = `responses-items/v1/expires/2026/06/27/12/scope/msg_file_legacy/${sha256}.json`;
-  await files.put(key, body);
-  const descriptor = JSON.stringify({ version: 1, storage: 'file', key, sha256, byteLength: body.byteLength });
-
-  assertEquals(await parseStoredResponsesPayload('msg_file_legacy', descriptor), {
-    item: { type: 'message', id: 'msg_file_legacy', content: 'persisted' },
-  });
-});
-
 test('spilled payload file body is gzip-compressed and the descriptor records the encoding', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
@@ -114,7 +85,6 @@ test('spilled payload file body is gzip-compressed and the descriptor records th
   const serialized = await serializeStoredResponsesPayload('msg_file_gz', 'key_a', 0, {
     item: { type: 'message', id: 'msg_file_gz', content: original },
   });
-  assert(serialized !== null);
   const descriptor = JSON.parse(serialized) as Record<string, unknown>;
   assertEquals(descriptor.storage, 'file');
   assertEquals(descriptor.encoding, 'gzip');
@@ -138,7 +108,6 @@ test('a tampered file body fails its hash check', async () => {
   const serialized = await serializeStoredResponsesPayload('msg_tampered', 'key_a', 0, {
     item: { type: 'message', id: 'msg_tampered', content: incompressibleString(96 * 1024) },
   });
-  assert(serialized !== null);
   const descriptor = JSON.parse(serialized) as { key: string; byteLength: number };
   // Replace the body with a different incompressible blob of the same length;
   // sha256 changes but byteLength matches, so the hash check is the only line

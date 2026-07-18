@@ -1,8 +1,10 @@
 import { test, vi } from 'vitest';
 
+import { prepareResponsesAffinity } from './affinity/ingress.ts';
 import { responsesAttempt } from './attempt.ts';
-import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
+import { createResponsesItemId, hashResponsesItemBinding } from './items/format.ts';
 import * as outputModule from './items/output.ts';
+import { hydrateResponsesPayload } from './items/rewrite.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -89,23 +91,17 @@ const installRepo = () => {
 const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredResponsesItem> & Pick<StoredResponsesItem, 'id' | 'itemType'>): Promise<StoredResponsesItem> => {
   const row: StoredResponsesItem = {
     apiKeyId: API_KEY_ID,
-    upstreamId: null,
-    upstreamItemId: null,
-    origin: 'synthetic',
-    contentHash: null,
-    encryptedContentHash: null,
-    payload: null,
+    contentHash: `hash-${overrides.id}`,
+    payload: { item: { type: overrides.itemType, id: overrides.id } },
     createdAt: 1_000,
-    refreshedAt: 1_000,
     ...overrides,
   };
   await repo.responsesItems.insertMany([row]);
   return row;
 };
 
-test('generate native success wraps the upstream event stream once', async () => {
+test('generate native success leaves source-edge state ownership to the caller', async () => {
   installRepo();
-  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
   const completedEvent: ResponsesStreamEvent = {
     type: 'response.completed',
@@ -122,7 +118,6 @@ test('generate native success wraps the upstream event stream once', async () =>
   const candidate = makeCandidate(callResponses);
   const store = createResponsesHttpStore(API_KEY_ID, true);
   const ctx = makeGatewayCtx(store);
-  const commitSpy = vi.spyOn(store, 'commitSnapshot').mockResolvedValue();
 
   const result = await responsesAttempt.generate({
     payload: makePayload(),
@@ -134,20 +129,63 @@ test('generate native success wraps the upstream event stream once', async () =>
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
 
-  // Drain so the wrapped pipeline runs and storage callbacks fire.
   const events = await collectEvents(result.events);
   assert(events.length >= 1, 'expected at least the response.completed event');
 
   assertEquals(callResponses.mock.calls.length, 1);
-  assertEquals(wrapSpy.mock.calls.length, 1);
-  const wrapArgs = wrapSpy.mock.calls[0][1];
-  assertEquals(wrapArgs.upstream, 'up_test');
-  assertEquals(wrapArgs.targetApi, 'responses');
-  // The upstream emitted no compaction-shape item, so wrap derived 'append'.
-  assertEquals(commitSpy.mock.calls.length, 1);
-  assertEquals(commitSpy.mock.calls[0][1], 'append');
+});
 
-  wrapSpy.mockRestore();
+test('generate treats a translated Responses payload as opaque to native affinity and state', async () => {
+  installRepo();
+  let observedBody: Omit<CanonicalResponsesPayload, 'model'> | undefined;
+  const callResponses = vi.fn(async (
+    _model: ProviderModel,
+    body: Omit<CanonicalResponsesPayload, 'model'>,
+  ): Promise<ProviderResponsesResult> => {
+    observedBody = body;
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents([{
+        type: 'response.completed',
+        sequence_number: 0,
+        response: makeResponsesResult(),
+      }]),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  const candidate = makeCandidate(callResponses);
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const ctx = makeGatewayCtx(store);
+  const carrier = await ctx.affinity.codec.wrap(
+    undefined,
+    {
+      upstreamId: candidate.provider.upstream,
+      modelId: candidate.model.id,
+      syntheticItem: true,
+    },
+    'responses.reasoning.encrypted_content',
+  );
+  const unwrap = vi.spyOn(ctx.affinity.codec, 'unwrap');
+  const getStoredItem = vi.spyOn(store, 'getItemById');
+  const itemId = createResponsesItemId('reasoning');
+
+  const result = await responsesAttempt.generate({
+    payload: makePayload({
+      input: [{ type: 'reasoning', id: itemId, summary: [], encrypted_content: carrier }],
+    }),
+    ctx,
+    candidate,
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(unwrap.mock.calls.length, 0);
+  assertEquals(getStoredItem.mock.calls.length, 0);
+  assertEquals(observedBody?.input, [{ type: 'reasoning', id: itemId, summary: [], encrypted_content: carrier }]);
 });
 
 test('generate applies role compatibility flags in target-chain order', async () => {
@@ -283,107 +321,9 @@ test('generate defers role promotion until after translation to Chat Completions
   ]);
 });
 
-test('generate derives snapshotMode=replace when the upstream emits a compaction output item', async () => {
-  // A direct `/v1/responses` generate carrying a `compaction_trigger` input
-  // (Codex's RemoteCompactionV2) — or a `context_management` `compact_threshold`
-  // turn that triggers server-side compaction — yields a compaction-shape
-  // output envelope on the wire. Wrap observes that output and derives a
-  // 'replace' snapshot regardless of how the request was framed.
-  installRepo();
-  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
-
-  const compactionItem = {
-    type: 'compaction',
-    id: 'cmp_trigger',
-    encrypted_content: 'ENC',
-  };
-  const compactionResponse: ResponsesResult = {
-    ...makeResponsesResult(),
-    object: 'response.compaction',
-    output: [compactionItem] as unknown as ResponsesResult['output'],
-  };
-  const completedEvent: ResponsesStreamEvent = {
-    type: 'response.completed',
-    sequence_number: 0,
-    response: compactionResponse,
-  };
-  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
-    action: 'generate', ok: true,
-    events: makeProviderEvents([completedEvent]),
-    modelKey: 'test-model-key',
-    headers: new Headers(),
-  }));
-
-  const candidate = makeCandidate(callResponses);
-  const store = createResponsesHttpStore(API_KEY_ID, true);
-  const commitSpy = vi.spyOn(store, 'commitSnapshot').mockResolvedValue();
-
-  const result = await responsesAttempt.generate({
-    payload: makePayload({
-      input: [
-        { type: 'message', role: 'user', content: 'kept message' },
-      ],
-    }),
-    ctx: makeGatewayCtx(store),
-    candidate,
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-
-  assertEquals(wrapSpy.mock.calls.length, 1);
-  assertEquals(commitSpy.mock.calls.length, 1);
-  assertEquals(commitSpy.mock.calls[0][1], 'replace');
-
-  wrapSpy.mockRestore();
-});
-
-test('generate returns failure when rewrite throws item-not-found', async () => {
-  installRepo();
-  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => {
-    throw new Error('callResponses should not be called when rewrite fails');
-  });
-  const candidate = makeCandidate(callResponses);
-
-  const missingId = createStoredResponsesItemId('message');
-  // Pre-seed the store cache with a row whose payload is unavailable so the
-  // rewrite cannot expand the reference.
-  const store = createResponsesHttpStore(API_KEY_ID, true);
-  // Insert into the underlying repo so `loadInputItems` populates the cache.
-  // The store uses `getRepo()` lazily, so the repo installed via `installRepo`
-  // already feeds this lookup.
-  const repo = installRepo();
-  await insertStoredItem(repo, { id: missingId, itemType: 'message', payload: null });
-  await store.loadInputItems({
-    sourceItems: [{ type: 'item_reference' as const, id: missingId }],
-    view: {
-      visitAsResponsesItems: async (items, visit) => {
-        for (const item of items as readonly { id: string }[]) await visit({ type: 'item_reference', id: item.id });
-      },
-    },
-  });
-
-  const result = await responsesAttempt.generate({
-    payload: makePayload({ input: [{ type: 'item_reference', id: missingId }] }),
-    ctx: makeGatewayCtx(store),
-    candidate,
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'api-error');
-  if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
-  assertEquals(body.error.code, null);
-  assertEquals(body.error.message, `Item with id '${missingId}' not found.`);
-  assertEquals(callResponses.mock.calls.length, 0);
-});
-
 test('generate passes non-events provider result through unchanged', async () => {
   installRepo();
-  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
+  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesClientOutput');
 
   const upstreamResponse = new Response(JSON.stringify({ error: { message: 'nope' } }), { status: 502, headers: new Headers({ 'content-type': 'application/json' }) });
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
@@ -408,9 +348,8 @@ test('generate passes non-events provider result through unchanged', async () =>
   wrapSpy.mockRestore();
 });
 
-test('compact reshapes the trigger turn into a result and derives snapshotMode=replace from the synthesized envelope', async () => {
+test('compact returns the clean upstream result for source-edge affinity and storage', async () => {
   installRepo();
-  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
   // Native /responses/compact returns a fully-shaped compaction envelope —
   // the `action: 'compact'` branch of `provider.callResponses` does the
@@ -438,7 +377,6 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
 
   const candidate = makeCandidate(callResponses);
   const store = createResponsesHttpStore(API_KEY_ID, true);
-  const commitSpy = vi.spyOn(store, 'commitSnapshot').mockResolvedValue();
   const result = await responsesAttempt.invoke({
     payload: makePayload({
       input: [
@@ -456,18 +394,7 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
   assertEquals(result.result.object, 'response.compaction');
   assertEquals(result.result.output.length, 1);
   assertEquals((result.result.output[0] as { id: string }).id, 'cmp_1');
-  // The compact result wears a Floway-minted response id, not the upstream's
-  // — same id wrap committed the snapshot under.
-  assert(isStoredResponseId(result.result.id));
-
-  // wrap-output-storage runs exactly once on the synthesized compaction
-  // events; the compaction item in the output drives commitSnapshot('replace').
-  assertEquals(wrapSpy.mock.calls.length, 1);
-  assertEquals(wrapSpy.mock.calls[0][1].targetApi, 'responses');
-  assertEquals(commitSpy.mock.calls.length, 1);
-  assertEquals(commitSpy.mock.calls[0][1], 'replace');
-
-  wrapSpy.mockRestore();
+  assertEquals(result.result.id, compactionResult.id);
 });
 
 // In-attempt test asserting the narrow header-inheritance contract: when an
@@ -546,10 +473,10 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   // placeholder.
   //
   // The wire shape we model here:
-  //   - row.id = stored gateway id (`ws_<crc>_<body>`) — wrapResponsesOutputForStorage
+  //   - row.id = stored gateway id (`ws_<crc>_<body>`) — wrapResponsesClientOutput
   //     emits this on the wire and clients echo it back as `wsc.id`.
-  //   - payload.item.id = the original `ws_gw_` wire id the shim synthesized
-  //     on turn 1; beginAttempt keys privatePayload by it after inline expansion.
+  //   - payload.item.id = the stored client-visible id; affinity restores the
+  //     original `ws_gw_` wire id before the shim sees the item.
   //   - payload.private = WebSearchCallPrivatePayload (v:1, functionCallItem, ir).
   //
   // This regression caught a prior ordering bug where rewrite + beginAttempt
@@ -557,19 +484,19 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   // so privatePayload was always empty when the shim looked it up, and
   // every echoed wsc collapsed to the placeholder.
   const repo = installRepo();
-  const storedId = createStoredResponsesItemId('web_search_call');
+  const storedId = createResponsesItemId('web_search_call');
   const wireId = 'ws_gw_72927da0b19d48aa874e9937';
+  const storedItem = {
+    type: 'web_search_call' as const,
+    id: storedId,
+    status: 'completed' as const,
+    action: { type: 'search' as const, query: 'deepseek v4', queries: ['deepseek v4'] },
+  };
   await insertStoredItem(repo, {
     id: storedId,
     itemType: 'web_search_call',
-    origin: 'synthetic',
     payload: {
-      item: {
-        type: 'web_search_call',
-        id: wireId,
-        status: 'completed',
-        action: { type: 'search', query: 'deepseek v4', queries: ['deepseek v4'] },
-      },
+      item: storedItem,
       private: {
         v: 1,
         functionCallItem: {
@@ -606,31 +533,46 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   const candidate = makeCandidate(callResponses, new Set(['responses-web-search-shim']));
 
   const store = createResponsesHttpStore(API_KEY_ID, true);
-  await store.loadInputItems({
-    sourceItems: [{ id: storedId } as unknown as { id: string }],
-    view: {
-      visitAsResponsesItems: async (items, visit) => {
-        for (const item of items as readonly { id: string }[]) {
-          await visit({ type: 'web_search_call', id: item.id } as unknown as never);
-        }
+  await store.loadInputItems([{ type: 'web_search_call', id: storedId }], []);
+  const ctx = makeGatewayCtx(store);
+  const carrier = await ctx.affinity.codec.wrap(
+    undefined,
+    {
+      upstreamId: candidate.provider.upstream,
+      modelId: candidate.model.id,
+      syntheticItem: true,
+      boundItem: {
+        type: storedItem.type,
+        upstreamItemId: wireId,
+        contentHash: await hashResponsesItemBinding(storedItem),
       },
     },
-  });
+    'responses.reasoning.encrypted_content',
+  );
 
+  const sourcePayload = makePayload({
+    input: [
+      { type: 'message', role: 'user', content: 'follow-up' },
+      { type: 'reasoning', id: 'rs_affinity', summary: [], encrypted_content: carrier },
+      {
+        type: 'web_search_call',
+        id: storedId,
+        status: 'completed',
+        action: { type: 'search', queries: ['deepseek v4'] },
+      } as unknown as never,
+    ],
+    tools: [{ type: 'web_search' }],
+  });
+  await store.loadInputItems(sourcePayload.input, sourcePayload.input);
+  const hydrated = hydrateResponsesPayload(sourcePayload, store);
+  const affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
   const result = await responsesAttempt.generate({
-    payload: makePayload({
-      input: [
-        { type: 'message', role: 'user', content: 'follow-up' },
-        {
-          type: 'web_search_call',
-          id: storedId,
-          status: 'completed',
-          action: { type: 'search', queries: ['deepseek v4'] },
-        } as unknown as never,
-      ],
-      tools: [{ type: 'web_search' }],
-    }),
-    ctx: makeGatewayCtx(store),
+    payload: affinity.payloadForCandidate(candidate),
+    sourceState: {
+      privatePayloads: hydrated.privatePayloads,
+      itemIdMap: affinity.itemIdMapForCandidate(candidate),
+    },
+    ctx,
     candidate,
     headers: new Headers(),
   });

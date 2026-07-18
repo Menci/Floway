@@ -188,6 +188,15 @@ use declared subpath exports. Tests are co-located as `*_test.ts`; each
 package has its own `vitest.config.ts`, and the root config aggregates them
 through `test.projects`.
 
+Client-carried affinity is a source-protocol membrane. Shared codec, routing,
+and request context live under `data-plane/chat/shared/affinity`; each source
+protocol owns its `affinity/ingress.ts` and `affinity/egress.ts`. Wire behavior
+lives in `AFFINITY.md`, and candidate ordering lives in `RESOLUTION.md`.
+
+Native Responses persistence is independent from affinity. It stores complete
+API-key-scoped items and snapshots for 30 days; HTTP `store: false` writes no
+state, while WebSocket `store: false` is session-local.
+
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, translation pair layout, control-plane route surface, flag
 resolution, pricing — lives in the code and its comments. Read the relevant

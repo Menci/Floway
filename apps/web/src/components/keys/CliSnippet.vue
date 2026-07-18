@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watchEffect } from 'vue';
+import { computed, reactive, ref, watchEffect } from 'vue';
 
 import type { ControlPlaneModel } from '../../api/types.ts';
 import { Code } from '@floway-dev/ui';
@@ -13,24 +13,19 @@ const baseUrl = computed(() => window.location.origin);
 
 // Picker buckets — Claude Code only accepts claude-* generation ids, Codex's
 // Floway integration is the gpt-5 family only. Backend already collapses
-// dated / variant suffixes; dedupe by id and sort by family tier so the
-// picker defaults land on the canonical Opus / Sonnet / Haiku per slot.
-const CLAUDE_TIER: Record<string, number> = { opus: 0, sonnet: 1, haiku: 2 };
+// dated / variant suffixes; dedupe by id and sort by family tier so each
+// slot's default lands on the canonical Fable / Opus / Sonnet / Haiku.
+const CLAUDE_TIER_KEYS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
+type ClaudeTierKey = typeof CLAUDE_TIER_KEYS[number];
+const CLAUDE_TIER: Record<string, number> = { fable: 0, opus: 1, sonnet: 2, haiku: 3 };
+const CLAUDE_TIER_LABELS: Record<ClaudeTierKey, string> = { fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
 const claudeTier = (id: string) => {
   for (const t of Object.keys(CLAUDE_TIER)) if (id.includes(t)) return CLAUDE_TIER[t]!;
   return 99;
 };
-const sortClaudeBig = (a: string, b: string) => {
-  const ta = claudeTier(a), tb = claudeTier(b);
-  return ta !== tb ? ta - tb : b.localeCompare(a);
-};
-const sortClaudeSmall = (a: string, b: string) => {
-  const ta = claudeTier(a), tb = claudeTier(b);
-  return ta !== tb ? tb - ta : b.localeCompare(a);
-};
-const sortClaudeSonnet = (a: string, b: string) => {
-  const da = Math.abs(claudeTier(a) - CLAUDE_TIER.sonnet!);
-  const db = Math.abs(claudeTier(b) - CLAUDE_TIER.sonnet!);
+const sortByTierDistance = (target: number) => (a: string, b: string) => {
+  const da = Math.abs(claudeTier(a) - target);
+  const db = Math.abs(claudeTier(b) - target);
   return da !== db ? da - db : b.localeCompare(a);
 };
 const sortCodex = (a: string, b: string) => {
@@ -51,27 +46,24 @@ const CODEX_RE = /(^|\/)gpt-5/;
 const claudeIds = computed(() => dedupe(props.models.filter(m => CLAUDE_RE.test(m.id) && isChat(m)).map(m => m.id)));
 const codexIds = computed(() => dedupe(props.models.filter(m => CODEX_RE.test(m.id) && isChat(m)).map(m => m.id)));
 
-const claudeModelsBig = computed(() => [...claudeIds.value].sort(sortClaudeBig));
-const claudeModelsSonnet = computed(() => [...claudeIds.value].sort(sortClaudeSonnet));
-const claudeModelsSmall = computed(() => [...claudeIds.value].sort(sortClaudeSmall));
-const codexModelsList = computed(() => [...codexIds.value].sort(sortCodex));
+const claudeModelsByTier = computed<Record<ClaudeTierKey, string[]>>(() => Object.fromEntries(CLAUDE_TIER_KEYS.map(k => [k, [...claudeIds.value].sort(sortByTierDistance(CLAUDE_TIER[k]!))])) as Record<ClaudeTierKey, string[]>);
+const codexModels = computed(() => [...codexIds.value].sort(sortCodex));
 
-const claudeModel = ref('');
-const claudeSonnetModel = ref('');
-const claudeSmallModel = ref('');
+const claudeSelection = reactive<Record<ClaudeTierKey, string>>({ fable: '', opus: '', sonnet: '', haiku: '' });
 const codexModel = ref('');
 
 // Keep the selection valid as the model lists rehydrate: if the current pick
 // disappears (e.g. an upstream toggled off), fall back to the bucket head.
 watchEffect(() => {
-  if (!claudeModelsBig.value.includes(claudeModel.value)) claudeModel.value = claudeModelsBig.value[0] ?? '';
-  if (!claudeModelsSonnet.value.includes(claudeSonnetModel.value)) claudeSonnetModel.value = claudeModelsSonnet.value[0] ?? '';
-  if (!claudeModelsSmall.value.includes(claudeSmallModel.value)) claudeSmallModel.value = claudeModelsSmall.value[0] ?? '';
-  if (!codexModelsList.value.includes(codexModel.value)) codexModel.value = codexModelsList.value[0] ?? '';
+  for (const k of CLAUDE_TIER_KEYS) {
+    if (!claudeModelsByTier.value[k].includes(claudeSelection[k])) claudeSelection[k] = claudeModelsByTier.value[k][0] ?? '';
+  }
+  if (!codexModels.value.includes(codexModel.value)) codexModel.value = codexModels.value[0] ?? '';
 });
 
-// Per-id context-window lookup so Claude Code's ANTHROPIC_MODEL line can
-// append the `[1m]` suffix when the upstream supports a 1M context.
+// Per-id context-window lookup so the fable/opus/sonnet slots can append the
+// `[1m]` suffix when the upstream advertises a 1M context window. Haiku stays
+// plain — background-task slot, 1M cost isn't warranted.
 const contextById = computed(() => {
   const map = new Map<string, number>();
   for (const m of props.models) {
@@ -85,72 +77,66 @@ const contextById = computed(() => {
 
 const addCtx = (id: string) => (contextById.value.get(id) ?? 0) >= 1_000_000 ? `${id}[1m]` : id;
 
-const claudeSnippet = computed(() => [
-  `export ANTHROPIC_BASE_URL=${baseUrl.value}`,
-  `export ANTHROPIC_AUTH_TOKEN=${props.apiKey}`,
-  `export ANTHROPIC_MODEL=${addCtx(claudeModel.value)}`,
-  `export ANTHROPIC_DEFAULT_SONNET_MODEL=${addCtx(claudeSonnetModel.value)}`,
-  `export ANTHROPIC_DEFAULT_HAIKU_MODEL=${claudeSmallModel.value}`,
-].join('\n'));
+// JSON fragment for `settings.json`'s `env` block, not shell exports: Claude
+// Code's background-agent supervisor doesn't reliably inherit shell env
+// (dispatching into a different cwd drops it, and the SDK / -p paths don't
+// see it either) — settings.json is the only channel that reaches every
+// execution context. Emit only the `env` sub-object so the user pastes it
+// into their existing settings without clobbering unrelated fields.
+const claudeSnippet = computed(() => JSON.stringify({
+  env: {
+    ANTHROPIC_BASE_URL: baseUrl.value,
+    ANTHROPIC_AUTH_TOKEN: props.apiKey,
+    ANTHROPIC_DEFAULT_FABLE_MODEL: addCtx(claudeSelection.fable),
+    ANTHROPIC_DEFAULT_OPUS_MODEL: addCtx(claudeSelection.opus),
+    ANTHROPIC_DEFAULT_SONNET_MODEL: addCtx(claudeSelection.sonnet),
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: claudeSelection.haiku,
+  },
+}, null, 2));
 
-const codexBaseUrl = computed(() => `${baseUrl.value}/azure-api.codex`);
-
-// Static alg=none id_token codex parses for TUI display; not signed and not
-// verified server-side. host-derived email keeps multi-deployment dashboards
-// distinguishable in `codex login status`.
-const codexIdToken = computed(() => {
-  const host = (() => {
-    try { return new URL(baseUrl.value).host; } catch { return 'local'; }
-  })();
-  const b64url = (s: string) => btoa(s).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
-  const header = b64url('{"alg":"none","typ":"JWT"}');
-  const payload = b64url(JSON.stringify({
-    email: `floway@${host}`,
-    'https://api.openai.com/auth': {
-      chatgpt_plan_type: 'pro_plus',
-      chatgpt_user_id: 'user-floway',
-      chatgpt_account_id: 'acct-floway',
-    },
-  }));
-  return `${header}.${payload}.c2ln`;
-});
-
+// Codex treats an actor-authorized custom provider as eligible for its
+// client-owned search and image extensions. This non-secret marker selects
+// those tools locally; Floway removes it before provider dispatch.
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/ext/web-search/src/extension.rs#L39-L49
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/core/src/tools/spec_plan.rs#L367-L394
 const codexSnippet = computed(() => [
   `model = "${codexModel.value}"`,
   'model_provider = "floway"',
-  `chatgpt_base_url = "${codexBaseUrl.value}"`,
   '',
   '[model_providers.floway]',
   'name = "Floway"',
-  `base_url = "${codexBaseUrl.value}"`,
+  `base_url = "${baseUrl.value}/azure-api.codex"`,
+  // Command auth is provider-scoped and also opts the provider into online
+  // model refresh; a static bearer or env key does not satisfy that gate.
+  // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
+  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] } # Linux & macOS',
+  `# auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }; [IO.File]::ReadAllText((Join-Path $h 'floway-token'))"] } # Windows: uncomment and remove the line above`,
   'wire_api = "responses"',
   'supports_websockets = true',
+  'http_headers = { "x-openai-actor-authorization" = "1" }',
   '',
   '[features]',
   'apps = false',
+  'standalone_web_search = true',
 ].join('\n'));
 
-// Unquoted heredoc so `$(date -u +...)` runs in the user's shell to stamp
-// last_refresh at paste time. base64url chars are shell-safe so the JSON
-// body needs no escaping beyond what JSON.stringify produces.
-const codexAuthCommand = computed(() => {
-  const auth = {
-    auth_mode: 'chatgpt',
-    openai_api_key: null,
-    tokens: {
-      id_token: codexIdToken.value,
-      access_token: props.apiKey,
-      refresh_token: 'noop',
-    },
-    last_refresh: '__LAST_REFRESH__',
-  };
-  const json = JSON.stringify(auth).replace('"__LAST_REFRESH__"', '"$(date -u +%Y-%m-%dT%H:%M:%SZ)"');
+const codexUnixCredentialCommand = computed(() => {
+  const quotedApiKey = `'${props.apiKey.replaceAll("'", `'"'"'`)}'`;
   return [
-    'mkdir -p ~/.codex && \\',
-    '  { [ -f ~/.codex/auth.json ] && cp ~/.codex/auth.json ~/.codex/auth.json.bak.$(date +%s); :; } && \\',
-    '  cat > ~/.codex/auth.json <<EOF',
-    json,
-    'EOF',
+    'codex_home="${CODEX_HOME:-$HOME/.codex}"',
+    'mkdir -p "$codex_home" && \\',
+    `  printf '%s' ${quotedApiKey} > "$codex_home/floway-token" && \\`,
+    '  chmod 600 "$codex_home/floway-token"',
+  ].join('\n');
+});
+
+const codexWindowsCredentialCommand = computed(() => {
+  const quotedApiKey = `'${props.apiKey.replaceAll("'", "''")}'`;
+  return [
+    '$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }',
+    'New-Item -ItemType Directory -Force -Path $codexHome | Out-Null',
+    `[IO.File]::WriteAllText((Join-Path $codexHome "floway-token"), ${quotedApiKey}, (New-Object Text.UTF8Encoding($false)))`,
   ].join('\n');
 });
 
@@ -165,28 +151,16 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
       </div>
 
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
-        <div class="flex min-w-0 items-center gap-2">
-          <label class="text-xs text-gray-500">Model:</label>
-          <select v-model="claudeModel" :class="selectClass">
-            <option v-for="m in claudeModelsBig" :key="m" :value="m">{{ m }}</option>
-          </select>
-        </div>
-        <div class="flex min-w-0 items-center gap-2">
-          <label class="text-xs text-gray-500">Sonnet:</label>
-          <select v-model="claudeSonnetModel" :class="selectClass">
-            <option v-for="m in claudeModelsSonnet" :key="m" :value="m">{{ m }}</option>
-          </select>
-        </div>
-        <div class="flex min-w-0 items-center gap-2">
-          <label class="text-xs text-gray-500">Haiku:</label>
-          <select v-model="claudeSmallModel" :class="selectClass">
-            <option v-for="m in claudeModelsSmall" :key="m" :value="m">{{ m }}</option>
+        <div v-for="k in CLAUDE_TIER_KEYS" :key="k" class="flex min-w-0 items-center gap-2">
+          <label class="text-xs text-gray-500">{{ CLAUDE_TIER_LABELS[k] }}:</label>
+          <select v-model="claudeSelection[k]" :class="selectClass">
+            <option v-for="m in claudeModelsByTier[k]" :key="m" :value="m">{{ m }}</option>
           </select>
         </div>
       </div>
 
-      <p class="text-[11px] text-gray-600 mb-2">Add to <code class="text-gray-500">~/.bashrc</code>, <code class="text-gray-500">~/.zshrc</code>, or equivalent</p>
-      <Code :code="claudeSnippet" language="bash" />
+      <p class="text-[11px] text-gray-600 mb-2">Merge the <code class="text-gray-500">env</code> block into <code class="text-gray-500">~/.claude/settings.json</code> (user-scope) or <code class="text-gray-500">.claude/settings.json</code> (project-scope)</p>
+      <Code :code="claudeSnippet" language="json" />
     </div>
 
     <div>
@@ -197,15 +171,18 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
       <div class="flex min-w-0 items-center gap-2 mb-3">
         <label class="text-xs text-gray-500">Model:</label>
         <select v-model="codexModel" :class="selectClass">
-          <option v-for="m in codexModelsList" :key="m" :value="m">{{ m }}</option>
+          <option v-for="m in codexModels" :key="m" :value="m">{{ m }}</option>
         </select>
       </div>
 
       <p class="text-[11px] text-gray-600 mb-2">Merge into <code class="text-gray-500">~/.codex/config.toml</code></p>
       <Code :code="codexSnippet" language="toml" />
 
-      <p class="text-[11px] text-gray-600 mt-4 mb-2">Paste in a shell — writes <code class="text-gray-500">~/.codex/auth.json</code>, backing up any existing file first</p>
-      <Code :code="codexAuthCommand" language="bash" />
+      <p class="text-[11px] text-gray-600 mt-4 mb-2">Linux &amp; macOS — stores only the Floway provider token under the active <code class="text-gray-500">CODEX_HOME</code></p>
+      <Code :code="codexUnixCredentialCommand" language="bash" />
+
+      <p class="text-[11px] text-gray-600 mt-4 mb-2">Windows PowerShell — stores the same provider token without changing the official account login</p>
+      <Code :code="codexWindowsCredentialCommand" language="text" />
     </div>
   </div>
 </template>

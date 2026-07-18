@@ -55,6 +55,7 @@ test('/api/search-config PUT persists config and POST /test returns preview', as
         tavily: { apiKey: 'tvly-test' },
         microsoftGrounding: { apiKey: 'ms-test' },
         jina: { apiKey: 'jina-test' },
+        passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
       };
 
       const putResponse = await requestApp('/api/search-config', {

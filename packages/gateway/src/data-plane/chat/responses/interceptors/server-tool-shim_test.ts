@@ -14,9 +14,11 @@ import {
 } from './server-tool-shim.ts';
 import { SHIM_TOOL_NAME, webSearchServerTool } from './server-tools/web-search.ts';
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
-import { initRepo } from '../../../../repo/index.ts';
+import { getRepo, initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
+import type { AlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
@@ -181,6 +183,7 @@ const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFram
 // test stub. Tests that need a specific configured state set
 // `mockResolveConfigured.mockReturnValue(...)` per call.
 vi.mock('../../../tools/web-search/provider.ts');
+vi.mock('../../../tools/web-search/alpha-search/upstream.ts');
 
 const mkResponseCompleted = (
   usage?: ResponsesResult['usage'],
@@ -272,12 +275,14 @@ interface DepsOverrides {
 }
 
 const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
+const mockResolveAlpha = vi.mocked(resolveAlphaSearchDispatcher);
 
 // Seed a per-test InMemoryRepo and a default tavily search config so
 // `loadSearchConfig()` returns a non-default value. The actual provider
 // construction is short-circuited by the module mock above; tests
 // override `mockResolveConfigured` to point at a stub backend.
 beforeEach(() => {
+  mockResolveAlpha.mockReset();
   const repo = new InMemoryRepo();
   initRepo(repo);
   void repo.searchConfig.save({
@@ -285,6 +290,7 @@ beforeEach(() => {
     tavily: { apiKey: 'test-key' },
     microsoftGrounding: { apiKey: '' },
     jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   } satisfies SearchConfig);
 });
 
@@ -630,7 +636,7 @@ test('shim drives one search then a final message in two upstream turns', async 
   assertEquals(events[events.length - 1].type, 'response.completed');
 });
 
-test('synthesized web_search_call ids are registered as gateway-synthetic on the request', async () => {
+test('synthesized web_search_call ids retain request-private replay state', async () => {
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -642,20 +648,16 @@ test('synthesized web_search_call ids are registered as gateway-synthetic on the
 
   const { frames } = await runShimAndDrain(shim, inv, ctx, script.run);
 
-  // Every web_search_call the shim synthesizes carries a gateway-minted id no
-  // upstream issued; persistence relies on these being registered so it stores
-  // them with no upstream identity (non_affinity).
   const doneEvents = outputItemDoneEvents(frames);
   const wsCallDoneIds = doneEvents.filter(e => e.item.type === 'web_search_call').map(e => e.item.id!);
-  const store = ctx.store;
+  const attemptState = ctx.responsesAttemptState;
   assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
   for (const id of wsCallDoneIds) {
     assert(id.startsWith('ws_gw_'));
-    assert(store.isSyntheticItem(id), `expected ${id} registered as synthetic`);
+    assert(attemptState.getPrivatePayload(id) !== undefined, `expected ${id} to retain private replay state`);
   }
-  // A genuine upstream item (the final message) is not registered.
   for (const e of doneEvents.filter(e => e.item.type === 'message')) {
-    assertFalse(store.isSyntheticItem(e.item.id!));
+    assertFalse(attemptState.getPrivatePayload(e.item.id!) !== undefined);
   }
 });
 
@@ -1638,6 +1640,8 @@ test('truncated page contents append the truncation sentinel', async () => {
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
   assert(text.includes('[Content truncated; full page is 99999 bytes.'));
+  assert(text.includes('Use the `find` sub-property with a pattern'));
+  assertFalse(text.includes("web_search's"));
 });
 
 // ── Multi-turn SSE merge invariants ──────────────────────────────────
@@ -3900,6 +3904,36 @@ test('responses target with flag on: function_call_output is plain-text formatte
 
   const text = lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
+});
+
+test('responses target with OpenAI passthrough uses the selected alpha search dispatcher', async () => {
+  makeStubDeps();
+  await getRepo().searchConfig.save({
+    provider: 'tavily',
+    tavily: { apiKey: 'test-key' },
+    microsoftGrounding: { apiKey: '' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-search' },
+  } satisfies SearchConfig);
+  const call = vi.fn<AlphaSearchDispatcher>(async () => new Response(JSON.stringify({
+    encrypted_output: null,
+    output: 'alpha output',
+    results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'alpha snippet' }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  mockResolveAlpha.mockResolvedValue(call);
+  const inv = makeInvocation({
+    targetApi: 'responses',
+    enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
+  });
+  const script = scriptedRun([
+    searchCallTurn(0, 'call_1', 'alpha query'),
+    messageTurn('done', 0),
+  ]);
+
+  await runShimAndDrain(withResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+
+  assertEquals(lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]), 'alpha output');
+  assertEquals(call.mock.calls[0]?.[0].commands, { search_query: [{ q: 'alpha query' }] });
 });
 
 test('chat-completions target: function_call_output is plain-text formatted search results', async () => {

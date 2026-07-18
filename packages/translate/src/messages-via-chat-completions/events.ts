@@ -143,7 +143,7 @@ const attachOpaqueToOpenThinkingBlock = (state: ChatCompletionsToMessagesStreamS
     return false;
   }
 
-  state.pendingThinkingSignature = (state.pendingThinkingSignature ?? '') + state.pendingReasoningOpaque;
+  state.pendingThinkingSignature = state.pendingReasoningOpaque;
   state.pendingReasoningOpaque = undefined;
   return true;
 };
@@ -232,12 +232,12 @@ const handleReasoningDelta = (delta: ChatCompletionsStreamDelta, state: ChatComp
   }
 
   if (state.openBlock === 'thinking') {
-    state.pendingThinkingSignature = (state.pendingThinkingSignature ?? '') + delta.reasoning_opaque;
+    state.pendingThinkingSignature = delta.reasoning_opaque;
     emitPendingReasoningAndDeferred(state, events);
     return;
   }
 
-  state.pendingReasoningOpaque = (state.pendingReasoningOpaque ?? '') + delta.reasoning_opaque;
+  state.pendingReasoningOpaque = delta.reasoning_opaque;
 };
 
 const emitToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {

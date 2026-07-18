@@ -47,7 +47,7 @@ const exportData = async () => {
 <template>
   <div :class="framed && 'glass-card p-5 sm:p-6 animate-in delay-2'">
     <h3 class="text-white font-semibold mb-1">Export Data</h3>
-    <p class="text-sm text-gray-400 mb-4">Download API keys, upstreams, proxies, web search config, and usage data as a JSON file.</p>
+    <p class="text-sm text-gray-400 mb-4">Download API keys, server secrets, upstreams, proxies, web search config, and usage data as a JSON file. Treat the file like a database backup.</p>
     <label class="mb-4 flex items-start gap-3 rounded-md border border-white/5 bg-surface-800/50 p-3">
       <Checkbox v-model="exportIncludePerformance" class="mt-0.5" />
       <span>

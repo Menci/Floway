@@ -69,6 +69,7 @@ export const mockPerfTelemetryContext = (overrides: Partial<PerformanceTelemetry
 
 export const stubProvider = (overrides: Partial<ProviderInstance> = {}): ProviderInstance => ({
   getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),
+  callAlphaSearch: overrides.callAlphaSearch ?? (() => Promise.reject(new Error('stubProvider.callAlphaSearch was called'))),
   callCompletions: overrides.callCompletions ?? (() => Promise.reject(new Error('stubProvider.callCompletions was called'))),
   callChatCompletions: overrides.callChatCompletions ?? (() => Promise.reject(new Error('stubProvider.callChatCompletions was called'))),
   callResponses: overrides.callResponses ?? (() => Promise.reject(new Error('stubProvider.callResponses was called'))),

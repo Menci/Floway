@@ -17,6 +17,7 @@ test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, o
       tavily: { apiKey: '' },
       microsoftGrounding: { apiKey: 'ms-test' },
       jina: { apiKey: '' },
+      passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
     }),
     {
       type: 'missing-credential',
@@ -29,6 +30,7 @@ test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, o
     tavily: { apiKey: 'tvly-test' },
     microsoftGrounding: { apiKey: 'ms-test' },
     jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
 
   assertEquals(resolved.type, 'enabled');
@@ -55,6 +57,7 @@ test('testSearchConfigConnection returns structured disabled and missing-credent
       tavily: { apiKey: '' },
       microsoftGrounding: { apiKey: 'ms-test' },
       jina: { apiKey: '' },
+      passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
     }),
     {
       ok: false,
@@ -102,6 +105,7 @@ test('testSearchConfigConnection previews at most three normalized results', asy
         tavily: { apiKey: 'tvly-test' },
         microsoftGrounding: { apiKey: 'ms-test' },
         jina: { apiKey: '' },
+        passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
       });
 
       assertEquals(result.ok, true);
@@ -131,6 +135,7 @@ test('testSearchConfigConnection returns no_results when the provider returns no
           tavily: { apiKey: 'tvly-test' },
           microsoftGrounding: { apiKey: 'ms-test' },
           jina: { apiKey: '' },
+          passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
         }),
         {
           ok: false,
@@ -165,6 +170,7 @@ test('testSearchConfigConnection returns preview results for Microsoft Grounding
         tavily: { apiKey: 'tvly-test' },
         microsoftGrounding: { apiKey: 'ms-test' },
         jina: { apiKey: '' },
+        passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
       });
 
       assertEquals(result.ok, true);
@@ -207,6 +213,7 @@ test('testSearchConfigConnection does not record search usage', async () => {
         tavily: { apiKey: 'tvly-test' },
         microsoftGrounding: { apiKey: '' },
         jina: { apiKey: '' },
+        passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
       });
 
       assertEquals(result.ok, true);

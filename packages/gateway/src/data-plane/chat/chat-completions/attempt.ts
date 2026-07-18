@@ -4,18 +4,14 @@ import { applyRulesToUpstreamChatCompletions } from '../../model-aliases/apply-r
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../../shared/telemetry/attempt-helpers.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
-import { rewriteStoredItemsInSourceForCandidate } from '../responses/items/rewrite.ts';
-import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ModelCandidate, type ExecuteResult, providerModelOf } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
-import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 // `/v1/chat/completions` generate prefers a native Chat Completions target,
 // then the translated Messages path, then the translated Responses path.
@@ -31,13 +27,11 @@ export interface ChatCompletionsAttemptArgs {
 export const chatCompletionsAttempt = {
   generate: async (args: ChatCompletionsAttemptArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
+    const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     const targetApi = chatCompletionsTarget.pick(candidate.model.endpoints);
-    const rewritten = await rewriteOrRenderChatCompletionsFailure(payload, ctx.store, candidate);
-    if (rewritten.failure) return rewritten.failure;
     const invocation: ChatCompletionsInvocation = {
-      payload: rewritten.payload,
+      payload,
       candidate,
       targetApi,
       headers,
@@ -79,38 +73,4 @@ export const chatCompletionsAttempt = {
       throw new Error(`chatCompletionsAttempt.generate: unexpected targetApi '${targetApi as string}'`);
     });
   },
-};
-
-// Chat Completions carries stored Responses reasoning ids on
-// `assistant.reasoning_items`; the translate-package view exposes them as
-// Responses items so the shared rewrite pass works here too.
-const rewriteOrRenderChatCompletionsFailure = async (
-  payload: ChatCompletionsPayload,
-  store: StatefulResponsesStore,
-  candidate: ModelCandidate,
-): Promise<{ payload: ChatCompletionsPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> & { type: 'api-error' } }> => {
-  try {
-    const rewrittenMessages = await rewriteStoredItemsInSourceForCandidate(
-      payload.messages as readonly ChatCompletionsMessage[],
-      chatCompletionsViaResponsesItemsView,
-      store,
-      candidate,
-    );
-    return { payload: { ...payload, messages: rewrittenMessages as ChatCompletionsMessage[] } };
-  } catch (error) {
-    const failure = tryCatchChatServeFailure(error);
-    if (failure === null) throw error;
-    if (failure.kind !== 'item-not-found') throw error;
-    return {
-      failure: {
-        type: 'api-error',
-        source: 'gateway',
-        status: 400,
-        headers: new Headers({ 'content-type': 'application/json' }),
-        body: new TextEncoder().encode(JSON.stringify({
-          error: { type: 'invalid_request_error', message: `Item with id '${failure.itemId}' not found.` },
-        })),
-      },
-    };
-  }
 };

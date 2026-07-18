@@ -22,6 +22,7 @@ describe('inboundHeadersForUpstream', () => {
         'x-api-key': 'gateway-api-key',
         'x-floway-session': 'sess-1',
         'x-goog-api-key': 'goog-key',
+        'x-openai-actor-authorization': '1',
         'proxy-authorization': 'Basic abcdef',
         'cookie': 'session=abc',
         'host': 'gateway.example.com',
@@ -40,6 +41,7 @@ describe('inboundHeadersForUpstream', () => {
     assertEquals(headers.has('x-api-key'), false);
     assertEquals(headers.has('x-floway-session'), false);
     assertEquals(headers.has('x-goog-api-key'), false);
+    assertEquals(headers.has('x-openai-actor-authorization'), false);
     assertEquals(headers.has('proxy-authorization'), false);
     assertEquals(headers.has('cookie'), false);
     assertEquals(headers.has('host'), false);

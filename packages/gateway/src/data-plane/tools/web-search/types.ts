@@ -1,14 +1,7 @@
-import type { WebSearchProviderName } from '../../../shared/web-search-providers.ts';
+import type { SearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
 import type { MessagesWebSearchErrorCode } from '@floway-dev/protocols/messages';
 
-export type { WebSearchProviderName } from '../../../shared/web-search-providers.ts';
-
-export interface SearchConfig {
-  provider: 'disabled' | WebSearchProviderName;
-  tavily: { apiKey: string };
-  microsoftGrounding: { apiKey: string };
-  jina: { apiKey: string };
-}
+export type { SearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
 
 export const DEFAULT_WEB_SEARCH_RESULT_COUNT = 10;
 

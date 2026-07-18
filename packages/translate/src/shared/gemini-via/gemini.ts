@@ -185,8 +185,8 @@ export interface GeminiThoughtSignatureState {
   pendingThoughtSignature?: string;
 }
 
-export const appendGeminiThoughtSignature = (state: GeminiThoughtSignatureState, signature: string): void => {
-  state.pendingThoughtSignature = `${state.pendingThoughtSignature ?? ''}${signature}`;
+export const setGeminiThoughtSignature = (state: GeminiThoughtSignatureState, signature: string): void => {
+  state.pendingThoughtSignature = signature;
 };
 
 export const signGeminiPart = (state: GeminiThoughtSignatureState, part: GeminiPart): GeminiPart => {

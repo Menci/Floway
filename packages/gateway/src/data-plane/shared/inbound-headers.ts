@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
 // Headers stripped from the inbound request before the data plane threads
-// the bag down to the provider boundary. Four groups, one deny-list:
+// the bag down to the provider boundary. The deny-list covers:
 //
 // - Gateway-owned auth + identity. Providers pin their own credentials and
 //   content-type on the wire (Azure's `api-key`, Anthropic's `x-api-key`,
@@ -9,6 +9,13 @@ import type { Context } from 'hono';
 //   the runtime's freshly-derived multipart boundary for FormData
 //   passthrough). Letting any of these survive would clobber a pinned
 //   value or leak a private one.
+//
+// - Codex client-tool eligibility. The generated Codex config carries a
+//   non-secret `x-openai-actor-authorization` marker because current Codex
+//   uses header presence to expose client-owned search and image tools to a
+//   custom provider. It is a local selection signal, not upstream auth, and
+//   must stop at the gateway boundary.
+//   https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
 //
 // - HTTP/1.1 framing + hop-by-hop (RFC 9110 §7.6.1). `content-length`,
 //   `content-encoding`, and `transfer-encoding` describe the inbound body
@@ -69,6 +76,7 @@ const SCRUBBED_INBOUND_HEADER_NAMES = [
   'x-forwarded-host',
   'x-forwarded-proto',
   'x-goog-api-key',
+  'x-openai-actor-authorization',
   'x-real-ip',
 ];
 

@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import { assertCustomUpstreamRecord } from './config.ts';
 import {
+  customFetchAlphaSearch,
   customFetchChatCompletions,
   customFetchEmbeddings,
   customFetchMessages,
@@ -51,6 +52,7 @@ test('typed transports use default /v1/* paths', async () => {
       await customFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAlphaSearch(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
@@ -62,6 +64,7 @@ test('typed transports use default /v1/* paths', async () => {
     'https://custom.example.com/v1/responses/compact',
     'https://custom.example.com/v1/messages',
     'https://custom.example.com/v1/messages/count_tokens',
+    'https://custom.example.com/v1/alpha/search',
     'https://custom.example.com/v1/embeddings',
     'https://custom.example.com/v1/models',
   ]);
@@ -75,6 +78,7 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
       pathOverrides: {
         '/messages': '/api/v1/messages',
         '/responses': '/api/v1/responses',
+        '/alpha/search': '/api/search',
       },
     },
   });
@@ -89,6 +93,7 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
       // count_tokens / compact follow their parent override.
       await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAlphaSearch(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       // Endpoints without an override fall back to the OpenAI default.
       await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
@@ -98,6 +103,7 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
     'https://custom.example.com/api/v1/messages',
     'https://custom.example.com/api/v1/messages/count_tokens',
     'https://custom.example.com/api/v1/responses/compact',
+    'https://custom.example.com/api/search',
     'https://custom.example.com/v1/chat/completions',
   ]);
 });

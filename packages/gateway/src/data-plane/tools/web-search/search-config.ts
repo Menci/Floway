@@ -8,6 +8,7 @@ export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
   tavily: { apiKey: '' },
   microsoftGrounding: { apiKey: '' },
   jina: { apiKey: '' },
+  passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
 
 export const FIXED_SEARCH_CONFIG_TEST_QUERY = 'React documentation';
@@ -44,30 +45,24 @@ export const parseSearchConfigStrict = (input: unknown): SearchConfig => {
   if (typeof input.jina.apiKey !== 'string') {
     throw new Error('search config jina.apiKey must be a string');
   }
+  if (!isJsonObject(input.passthroughOpenAiSearch)) {
+    throw new Error('search config passthroughOpenAiSearch must be an object');
+  }
+  const passthrough = input.passthroughOpenAiSearch;
+  if (typeof passthrough.enabled !== 'boolean' || typeof passthrough.upstreamId !== 'string' || typeof passthrough.model !== 'string') {
+    throw new Error('search config passthroughOpenAiSearch must contain enabled, upstreamId, and model');
+  }
+  const upstreamId = passthrough.upstreamId.trim();
+  const model = passthrough.model.trim();
+  if (passthrough.enabled && (upstreamId === '' || model === '')) {
+    throw new Error('enabled OpenAI search passthrough requires an upstream and model');
+  }
   return {
     provider: input.provider,
     tavily: { apiKey: input.tavily.apiKey.trim() },
     microsoftGrounding: { apiKey: input.microsoftGrounding.apiKey.trim() },
     jina: { apiKey: input.jina.apiKey.trim() },
-  };
-};
-
-// Lossy normalize: coerces any unknown into a SearchConfig, defaulting
-// missing or malformed fields to the disabled/empty shape. Used by
-// zod-validated input paths where the schema already enforced the
-// outer shape; the normalizer just guarantees the canonical form
-// (trimmed strings, fields always present).
-export const normalizeSearchConfig = (input: unknown): SearchConfig => {
-  const record = isJsonObject(input) ? input : {};
-  const tavily = isJsonObject(record.tavily) ? record.tavily : {};
-  const microsoftGrounding = isJsonObject(record.microsoftGrounding) ? record.microsoftGrounding : {};
-  const jina = isJsonObject(record.jina) ? record.jina : {};
-
-  return {
-    provider: isWebSearchProviderName(record.provider) ? record.provider : 'disabled',
-    tavily: { apiKey: typeof tavily.apiKey === 'string' ? tavily.apiKey.trim() : '' },
-    microsoftGrounding: { apiKey: typeof microsoftGrounding.apiKey === 'string' ? microsoftGrounding.apiKey.trim() : '' },
-    jina: { apiKey: typeof jina.apiKey === 'string' ? jina.apiKey.trim() : '' },
+    passthroughOpenAiSearch: { enabled: passthrough.enabled, upstreamId, model },
   };
 };
 

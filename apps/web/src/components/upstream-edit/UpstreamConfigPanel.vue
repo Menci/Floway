@@ -44,9 +44,9 @@ const props = defineProps<{
   availableModelItems: { value: string; label: string }[];
   // Live cache snapshot for the saved upstream. Null in create mode and for
   // Azure (which has no fetch step) — `ModelsCacheStatus` is rendered only
-  // when this is provided.
+  // when this is provided. The panel is informational only; the "Fetch"
+  // button in the per-provider config panel is the sole re-fetch entry.
   modelsCache: UpstreamRecord['modelsCache'] | null;
-  refreshing: boolean;
   saving: boolean;
   coloAware: boolean;
   currentColo: string | null;
@@ -54,7 +54,6 @@ const props = defineProps<{
 
 defineEmits<{
   'fetch-models': [];
-  'refresh-cache': [];
   patched: [patch: { config?: unknown; state?: unknown }];
   'save-and-open-edit': [];
   error: [message: string];
@@ -162,7 +161,11 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           :fetch-error="fetchError"
           :fetch-status="fetchStatus"
           @fetch-models="$emit('fetch-models')"
-        />
+        >
+          <template v-if="modelsCache" #cache-status>
+            <ModelsCacheStatus :models-cache="modelsCache" />
+          </template>
+        </CustomConfigPanel>
       </section>
 
       <section v-else-if="draft.kind === 'azure'" class="shrink-0">
@@ -182,7 +185,11 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           :fetch-error="fetchError"
           :fetch-status="fetchStatus"
           @fetch-models="$emit('fetch-models')"
-        />
+        >
+          <template v-if="modelsCache" #cache-status>
+            <ModelsCacheStatus :models-cache="modelsCache" />
+          </template>
+        </OllamaConfigPanel>
       </section>
 
       <section v-else-if="draft.kind === 'copilot'" class="shrink-0">
@@ -214,17 +221,19 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section class="shrink-0">
-        <ModelPrefixEditor v-model="modelPrefix" @update:invalid="v => $emit('update:model-prefix-invalid', v)" />
+      <!-- Cache snapshot for OAuth-driven providers (Copilot / Codex / Claude
+           Code) — they have no in-panel Fetch button, so the snapshot sits at
+           the top level right under the provider panel. Custom / Ollama inject
+           theirs into the provider panel's `#cache-status` slot instead, so the
+           snapshot sits directly under the Fetch button. Null in create mode
+           and for Azure (no fetch step). -->
+      <section v-if="modelsCache && draft.kind !== 'custom' && draft.kind !== 'ollama'" class="shrink-0">
+        <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Models Cache</p>
+        <ModelsCacheStatus :models-cache="modelsCache" />
       </section>
 
-      <section v-if="modelsCache" class="shrink-0">
-        <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Models Cache</p>
-        <ModelsCacheStatus
-          :models-cache="modelsCache"
-          :refreshing="refreshing"
-          @refresh="$emit('refresh-cache')"
-        />
+      <section class="shrink-0">
+        <ModelPrefixEditor v-model="modelPrefix" @update:invalid="v => $emit('update:model-prefix-invalid', v)" />
       </section>
 
       <section class="shrink-0">

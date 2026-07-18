@@ -1,10 +1,11 @@
 import { test } from 'vitest';
 
 import {
-  createStoredResponsesItemId,
+  createResponsesItemId,
   createTemporaryResponsesItemId,
+  hashResponsesItemBinding,
   hashResponsesItemContent,
-  isStoredResponsesItemId,
+  isResponsesItemId,
 } from './format.ts';
 import { assert, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
@@ -45,28 +46,28 @@ const explicitPrefixes = [
 ] as const;
 
 test('accepts the design-spec examples (CRC32 over only the body segment)', () => {
-  assert(isStoredResponsesItemId('msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA'));
-  assert(isStoredResponsesItemId('rs_mFBDiA_Lh1uXb7nD_bQb4I1CUYH2w'));
-  assert(isStoredResponsesItemId('ws_WGRXTA_sVlhxg6BAV0BUzj0KkWSqA'));
+  assert(isResponsesItemId('msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA'));
+  assert(isResponsesItemId('rs_mFBDiA_Lh1uXb7nD_bQb4I1CUYH2w'));
+  assert(isResponsesItemId('ws_WGRXTA_sVlhxg6BAV0BUzj0KkWSqA'));
 });
 
 test('rejects malformed public ids before SQL lookup', () => {
-  assertFalse(isStoredResponsesItemId('msg_AAAAAA_0xVvS8c_KjD1sBkZk5qbdA'));
-  assertFalse(isStoredResponsesItemId('itm_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA'));
-  assertFalse(isStoredResponsesItemId('msg_z1mVjw_short'));
-  assertFalse(isStoredResponsesItemId('msg_z1mVjw_0xVvS8c.KjD1sBkZk5qbdA'));
+  assertFalse(isResponsesItemId('msg_AAAAAA_0xVvS8c_KjD1sBkZk5qbdA'));
+  assertFalse(isResponsesItemId('itm_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA'));
+  assertFalse(isResponsesItemId('msg_z1mVjw_short'));
+  assertFalse(isResponsesItemId('msg_z1mVjw_0xVvS8c.KjD1sBkZk5qbdA'));
 });
 
-test('generates a valid stored id for every explicit supported item type', () => {
+test('generates a valid client id for every explicit supported item type', () => {
   for (const [itemType, prefix] of explicitPrefixes) {
-    const id = createStoredResponsesItemId(itemType);
-    assert(isStoredResponsesItemId(id), `expected ${id} to be a valid stored id`);
+    const id = createResponsesItemId(itemType);
+    assert(isResponsesItemId(id), `expected ${id} to be a valid Responses item id`);
     assert(id.startsWith(`${prefix}_`), `expected ${id} to use prefix ${prefix}`);
   }
 });
 
 test.each(['unknown_item', '__proto__', 'constructor', 'toString'])('throws for unknown item type %s instead of using a generic fallback prefix', itemType => {
-  assertThrows(() => createStoredResponsesItemId(itemType), TypeError, 'Unknown Responses item type');
+  assertThrows(() => createResponsesItemId(itemType), TypeError, 'Unknown Responses item type');
   assertThrows(() => createTemporaryResponsesItemId(itemType), TypeError, 'Unknown Responses item type');
 });
 
@@ -76,24 +77,24 @@ test.each(['unknown_item', '__proto__', 'constructor', 'toString'])('throws for 
 // minted for it. The throw here is the regression test: it pins the invariant
 // that nobody adds a prefix back without also re-introducing a use case.
 test('rejects compaction_trigger — a control signal that should never be stored', () => {
-  assertThrows(() => createStoredResponsesItemId('compaction_trigger'), TypeError, 'Unknown Responses item type');
+  assertThrows(() => createResponsesItemId('compaction_trigger'), TypeError, 'Unknown Responses item type');
   assertThrows(() => createTemporaryResponsesItemId('compaction_trigger'), TypeError, 'Unknown Responses item type');
 });
 
-test('successive stored ids for the same item type collide-free under random body', () => {
+test('successive client ids for the same item type collide-free under random body', () => {
   const seen = new Set<string>();
   for (let i = 0; i < 1024; i += 1) {
-    const id = createStoredResponsesItemId('message');
+    const id = createResponsesItemId('message');
     assertFalse(seen.has(id), `random body collided after ${i} draws`);
     seen.add(id);
-    assert(isStoredResponsesItemId(id));
+    assert(isResponsesItemId(id));
   }
 });
 
-test('temporary ids use the item prefix without becoming stored ids', () => {
+test('temporary ids use the item prefix without becoming client ids', () => {
   const temporary = createTemporaryResponsesItemId('reasoning');
   assert(/^rs_tmp_[A-Za-z0-9_-]{22}$/.test(temporary), temporary);
-  assertFalse(isStoredResponsesItemId(temporary));
+  assertFalse(isResponsesItemId(temporary));
 });
 
 test('input content hashing includes the item id', async () => {
@@ -101,4 +102,31 @@ test('input content hashing includes the item id', async () => {
   const second = await hashResponsesItemContent({ type: 'message', id: 'msg_b', role: 'user', content: 'same' });
 
   assertFalse(first === second);
+});
+
+test('affinity item binding ignores only the replaceable item id', async () => {
+  const first = await hashResponsesItemBinding({ type: 'program_output', id: 'first', call_id: 'call', result: 'same', status: 'completed' });
+  const same = await hashResponsesItemBinding({ status: 'completed', result: 'same', call_id: 'call', id: 'second', type: 'program_output' });
+  const different = await hashResponsesItemBinding({ type: 'program_output', id: 'first', call_id: 'other', result: 'same', status: 'completed' });
+
+  assert(first === same);
+  assertFalse(first === different);
+});
+
+test('affinity item binding normalizes Codex output-only message defaults', async () => {
+  const output = {
+    type: 'message' as const,
+    id: 'msg_upstream',
+    role: 'assistant' as const,
+    status: 'completed' as const,
+    content: [{ type: 'output_text' as const, text: 'answer', annotations: [], logprobs: [] }],
+  };
+  const history = {
+    type: 'message' as const,
+    id: 'msg_public',
+    role: 'assistant' as const,
+    content: [{ type: 'input_text' as const, text: 'answer' }],
+  };
+
+  assert(await hashResponsesItemBinding(output) === await hashResponsesItemBinding(history));
 });
