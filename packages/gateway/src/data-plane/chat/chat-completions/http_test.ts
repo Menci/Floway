@@ -42,6 +42,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   userId: 1,
   name: 'http_test',
   key: 'sk-http-test',
+  serverSecret: '00'.repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,
@@ -154,6 +155,70 @@ test('POST /v1/chat/completions returns a single JSON body when stream is omitte
   const body = await response.json() as { choices: Array<{ message: { role: string; content: string } }> };
   assertEquals(body.choices[0].message.role, 'assistant');
   assertEquals(body.choices[0].message.content, 'hi');
+});
+
+test('client-carried opaque state restores the exact preferred candidate on the next turn', async () => {
+  installRepo();
+  const observedBodies: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];
+  const callA = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    observedBodies.push(body as { messages?: Array<{ reasoning_opaque?: string }> });
+    const turn = observedBodies.length;
+    return {
+      ok: true,
+      events: makeProtocolFrames([
+        {
+          id: `chatcmpl_affinity_${turn}`,
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'test-model',
+          choices: [{ index: 0, delta: { content: `turn ${turn}`, ...(turn === 1 ? { reasoning_opaque: 'opaque-a' } : {}) }, finish_reason: null }],
+        },
+        {
+          id: `chatcmpl_affinity_${turn}`,
+          object: 'chat.completion.chunk',
+          created: 0,
+          model: 'test-model',
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        },
+      ]),
+      modelKey: 'a',
+      headers: new Headers(),
+    };
+  });
+  const callB = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    throw new Error('affinity should have reordered candidate A before B');
+  });
+  const candidateA = makeCandidate({ upstream: 'up-a', callChatCompletions: callA });
+  const candidateB = makeCandidate({ upstream: 'up-b', callChatCompletions: callB });
+  queueCandidates([candidateA, candidateB]);
+
+  const first = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'first' }] }),
+  });
+  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque: string } }> };
+  const assistant = firstBody.choices[0].message;
+  assert(assistant.reasoning_opaque !== 'opaque-a');
+
+  queueCandidates([candidateB, candidateA]);
+  const second = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [
+        { role: 'user', content: 'first' },
+        assistant,
+        { role: 'user', content: 'continue' },
+      ],
+    }),
+  });
+
+  assertEquals(second.status, 200);
+  assertEquals(callB.mock.calls.length, 0);
+  assertEquals(callA.mock.calls.length, 2);
+  assertEquals(observedBodies[1].messages?.[1].reasoning_opaque, 'opaque-a');
 });
 
 test('POST /v1/chat/completions omits the usage-only chunk unless stream_options.include_usage is set', async () => {

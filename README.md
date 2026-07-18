@@ -137,9 +137,8 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    official Codex account login remains available for account-backed services.
 
 Import/export of upstreams, keys, and search config is in Settings. The
-payload format is tied to the running deployment, so import only accepts a
-file produced by a deployment at the same version — re-export from the
-current deployment before importing.
+current payload format is version 11 and is tied to the running deployment, so
+import only accepts that exact version. Re-export before moving a deployment.
 
 ## Server Tools
 
@@ -164,15 +163,21 @@ then both surfaces use that provider's alpha-search endpoint, while Messages
 search continues using the general provider. Passthrough failures are returned
 without falling back to another search backend.
 
+## Client-carried Affinity
+
+Chat-shaped APIs carry encrypted per-key routing affinity inside their native
+opaque reasoning/signature fields. Requests using this feature must continue
+through the same Floway deployment and API key. See [AFFINITY.md](./AFFINITY.md)
+for protocol placement and compatibility details.
+
 ## Stateful Responses
 
 `/v1/responses` stores replayable Responses input and output items for API-key
 scoped HTTP requests. Clients can send `previous_response_id` to continue from
 a stored snapshot, or resend full input history; repeated full-history input is
-deduplicated by content hash instead of stored again. HTTP `store: false` does
-not create durable snapshots or input payload rows, but it keeps output item
-metadata for routing; if a later `store: true` request echoes that item with a
-full payload, the metadata row is filled in place.
+deduplicated by content hash instead of stored again. Complete items and
+snapshots expire 30 days after their latest snapshot reference. HTTP
+`store: false` writes no state; affinity is carried independently by the client.
 
 The same endpoint accepts `GET` WebSocket upgrades for streaming Responses
 events. WebSocket `store: false` keeps replay state only inside the open

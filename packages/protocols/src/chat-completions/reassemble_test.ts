@@ -141,7 +141,7 @@ test('reassembleChatCompletionsEvents reassembles tool calls', async () => {
   assertEquals(result.choices[0].message.tool_calls![0].function.arguments, '{"city":"Tokyo"}');
 });
 
-test('reassembleChatCompletionsEvents reassembles reasoning fields', async () => {
+test('reassembleChatCompletionsEvents concatenates reasoning text and keeps the latest opaque snapshot', async () => {
   const body = makeEvents([
     {
       data: {
@@ -155,7 +155,7 @@ test('reassembleChatCompletionsEvents reassembles reasoning fields', async () =>
             delta: {
               role: 'assistant',
               reasoning_text: 'think',
-              reasoning_opaque: 'enc',
+              reasoning_opaque: 'enc_old',
             },
             finish_reason: null,
           },
@@ -171,7 +171,7 @@ test('reassembleChatCompletionsEvents reassembles reasoning fields', async () =>
         choices: [
           {
             index: 0,
-            delta: { content: 'reply' },
+            delta: { content: 'reply', reasoning_text: ' more', reasoning_opaque: 'enc' },
             finish_reason: 'stop',
           },
         ],
@@ -182,9 +182,106 @@ test('reassembleChatCompletionsEvents reassembles reasoning fields', async () =>
 
   const result = await reassembleChatCompletionsEvents(body);
 
-  assertEquals(result.choices[0].message.reasoning_text, 'think');
+  assertEquals(result.choices[0].message.reasoning_text, 'think more');
   assertEquals(result.choices[0].message.reasoning_opaque, 'enc');
   assertEquals(result.choices[0].message.content, 'reply');
+});
+
+test('reassembleChatCompletionsEvents maintains independent state for every choice index', async () => {
+  const body = makeEvents([
+    {
+      data: {
+        id: 'cmpl_many',
+        object: 'chat.completion.chunk',
+        created: 4000,
+        model: 'gpt-many',
+        choices: [
+          {
+            index: 1,
+            delta: {
+              role: 'assistant',
+              content: 'second ',
+              reasoning_opaque: 'second-old',
+              vendor_trace: 'b1',
+              tool_calls: [{ index: 0, id: 'call_b', type: 'function', function: { name: 'beta', arguments: '{"b"' } }],
+            },
+            finish_reason: null,
+            content_filter_results: { hate: { filtered: false } },
+          },
+          {
+            index: 0,
+            delta: {
+              role: 'assistant',
+              content: 'first ',
+              reasoning_text: 'think ',
+              reasoning_opaque: 'first-old',
+              vendor_trace: 'a1',
+              reasoning_items: [{ type: 'reasoning', id: 'rs_a', summary: [] }],
+              tool_calls: [{ index: 1, id: 'call_a', type: 'function', function: { name: 'alpha', arguments: '{"a"' } }],
+            },
+            finish_reason: null,
+            content_filter_results: { sexual: { filtered: false } },
+          },
+        ],
+      },
+    },
+    {
+      data: {
+        id: 'cmpl_many',
+        object: 'chat.completion.chunk',
+        created: 4000,
+        model: 'gpt-many',
+        choices: [
+          {
+            index: 0,
+            delta: {
+              content: 'answer',
+              reasoning_text: 'again',
+              reasoning_opaque: 'first-final',
+              vendor_trace: 'a2',
+              tool_calls: [{ index: 1, function: { arguments: ':1}' } }],
+            },
+            finish_reason: 'tool_calls',
+          },
+          {
+            index: 1,
+            delta: {
+              content: 'answer',
+              reasoning_opaque: 'second-final',
+              vendor_trace: 'b2',
+              tool_calls: [{ index: 0, function: { arguments: ':2}' } }],
+            },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 },
+      },
+    },
+  ]);
+
+  const result = await reassembleChatCompletionsEvents(body) as ChatCompletionsResult & {
+    choices: Array<ChatCompletionsResult['choices'][number] & {
+      content_filter_results?: unknown;
+      message: ChatCompletionsResult['choices'][number]['message'] & { vendor_trace?: string };
+    }>;
+  };
+
+  assertEquals(result.choices.map(choice => choice.index), [0, 1]);
+  assertEquals(result.choices[0].message.content, 'first answer');
+  assertEquals(result.choices[0].message.reasoning_text, 'think again');
+  assertEquals(result.choices[0].message.reasoning_opaque, 'first-final');
+  assertEquals(result.choices[0].message.reasoning_items, [{ type: 'reasoning', id: 'rs_a', summary: [] }]);
+  assertEquals(result.choices[0].message.tool_calls, [{ id: 'call_a', type: 'function', function: { name: 'alpha', arguments: '{"a":1}' } }]);
+  assertEquals(result.choices[0].message.vendor_trace, 'a1a2');
+  assertEquals(result.choices[0].content_filter_results, { sexual: { filtered: false } });
+  assertEquals(result.choices[0].finish_reason, 'tool_calls');
+  assertEquals(result.choices[1].message.content, 'second answer');
+  assertEquals(result.choices[1].message.reasoning_opaque, 'second-final');
+  assertEquals(result.choices[1].message.tool_calls, [{ id: 'call_b', type: 'function', function: { name: 'beta', arguments: '{"b":2}' } }]);
+  assertEquals(result.choices[1].message.vendor_trace, 'b1b2');
+  assertEquals(result.choices[1].content_filter_results, { hate: { filtered: false } });
+  assertEquals(result.choices[1].finish_reason, 'stop');
+  assertEquals(result.usage, { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 });
 });
 
 test('reassembleChatCompletionsEvents appends reasoning_items deltas in order', async () => {

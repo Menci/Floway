@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
-import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
+import { createResponsesItemId, hashResponsesItemBinding, isResponsesResponseId } from './items/format.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
+import type { ApiKey, User } from '../../../repo/types.ts';
+import { AffinityCodec } from '../shared/affinity/index.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -61,6 +62,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   userId: 1,
   name: 'http_test',
   key: 'sk-http-test',
+  serverSecret: '00'.repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,
@@ -183,7 +185,7 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   // Wrap layer mints its own response id; upstream's "resp_test" is discarded.
   const completedMatch = body.match(/"id":"(resp_[A-Za-z0-9_-]+)"/);
   assert(completedMatch !== null, 'expected a Floway-minted resp_ id in the SSE body');
-  assert(isStoredResponseId(completedMatch[1]));
+  assert(isResponsesResponseId(completedMatch[1]));
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
@@ -220,7 +222,9 @@ test('POST /v1/responses canonicalizes and promotes an implicit system message',
   });
 
   assertEquals(response.status, 200);
-  await response.text();
+  const responseBody = await response.text();
+  const responseId = responseBody.match(/"id":"(resp_[A-Za-z0-9_-]+)"/)?.[1];
+  assert(responseId !== undefined && isResponsesResponseId(responseId), 'expected store:false to retain a Floway response id');
   assertEquals(observedBody?.input, [
     { type: 'message', role: 'developer', content: 'rules' },
     { type: 'message', role: 'user', content: 'hello' },
@@ -254,7 +258,7 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
   const body = await response.json() as ResponsesResult;
-  assert(isStoredResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
+  assert(isResponsesResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
   assertEquals(body.status, 'completed');
 });
 
@@ -323,7 +327,7 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
 });
 
 test('POST /v1/responses/compact returns a non-streaming compaction envelope', async () => {
-  installRepo();
+  const repo = installRepo();
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
   const compactionResult: ResponsesResult = {
     ...makeResponsesResult(),
@@ -342,14 +346,17 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
     body: JSON.stringify({
       model: 'test-model',
       input: [{ type: 'message', role: 'user', content: 'kept' }],
+      store: false,
     }),
   });
 
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { object: string; id: string };
+  const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
   assertEquals(body.object, 'response.compaction');
-  assert(isStoredResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
+  assert(isResponsesResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id), null);
+  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id)), []);
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
@@ -374,46 +381,73 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.code, 'previous_response_not_found');
 });
 
-test('POST /v1/responses renders a routing-unavailable 400 when a forcing item names an absent upstream', async () => {
+test('POST /v1/responses rejects a concrete item whose stored ID has another type', async () => {
   const repo = installRepo();
-  // A stored item pinned to `up_forcing` makes the input force-route to that
-  // upstream; queueing a candidate for a different upstream produces the
-  // routing-unavailable failure that the http entry must surface verbatim.
-  const id = createStoredResponsesItemId('compaction');
-  const row: StoredResponsesItem = {
+  const id = createResponsesItemId('reasoning');
+  await repo.responsesItems.insertMany([{
     id,
     apiKeyId: API_KEY_ID,
-    upstreamId: 'up_forcing',
-    upstreamItemId: 'raw_cmp',
-    itemType: 'compaction',
-    origin: 'upstream',
-    contentHash: null,
-    encryptedContentHash: null,
-    payload: { item: { type: 'compaction', id } },
-    createdAt: 1_000,
-    refreshedAt: 1_000,
-  };
-  await repo.responsesItems.insertMany([row]);
-  queueResolution([makeCandidate({ upstream: 'up_b' })]);
+    itemType: 'reasoning',
+    payload: { item: { type: 'reasoning', id, summary: [] } },
+    contentHash: 'hash',
+    createdAt: 1,
+  }]);
+  queueResolution([makeCandidate()]);
 
   const response = await makeApp().request('/v1/responses', {
     method: 'POST',
     headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       model: 'test-model',
-      input: [{ type: 'item_reference', id }],
+      input: [{ type: 'message', id, role: 'user', content: 'client content' }],
     }),
   });
 
   assertEquals(response.status, 400);
-  const body = await response.json() as { error: { code: string } };
+  const body = await response.json() as { error: { message: string; code: string } };
+  assertEquals(body.error.message, `Stored Responses item '${id}' has type 'reasoning', incompatible with the requested item type 'message'.`);
   assertEquals(body.error.code, 'responses_item_routing_unavailable');
 });
 
-// Alias flow: the resolver returns a candidate whose upstream catalog id is
-// the target model id, plus the alias's rule overlay. The attempt stamps its
-// private clone with `candidate.model.id`, and the leaf wire call reads
-// `candidate.rules` to overlay the rules onto the target IR.
+test('POST /v1/responses renders an invalid bound affinity carrier as a 400 input error', async () => {
+  installRepo();
+  const candidate = makeCandidate();
+  queueResolution([candidate]);
+  const codec = new AffinityCodec(buildApiKey().serverSecret);
+  const original = { type: 'program_output' as const, id: 'first', call_id: 'call_1', result: 'first', status: 'completed' as const };
+  const carrier = await codec.wrap(undefined, {
+    upstreamId: candidate.provider.upstream,
+    modelId: candidate.model.id,
+    syntheticItem: true,
+    boundItem: {
+      type: original.type,
+      upstreamItemId: 'first_upstream',
+      contentHash: await hashResponsesItemBinding(original),
+    },
+  }, 'responses.reasoning.encrypted_content');
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [
+        { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
+        { type: 'program_output', id: 'second', call_id: 'call_2', result: 'second', status: 'completed' },
+      ],
+    }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { message: string; type: string; param: string; code: null } };
+  assertEquals(body.error, {
+    message: 'Affinity carrier does not match the Responses input item at index 1.',
+    type: 'invalid_request_error',
+    param: 'input[1]',
+    code: null,
+  });
+});
+
 const queueCodexAutoReviewCandidate = (
   callResponses: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
 ): void => {

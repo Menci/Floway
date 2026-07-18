@@ -1,8 +1,10 @@
 import type { Context } from 'hono';
 
+import { wrapMessagesAffinityEgress } from './affinity/egress.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
+import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, mergeForwardedUpstreamHeaders, plainResultToResponse, respondSseStream } from '../shared/respond.ts';
 import { billableServiceTier, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
@@ -45,7 +47,8 @@ export const respondMessages = async (
 
   const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();
-  const frames = observeMessagesFrames(result.events, state, usageState, wantsStream, ctx);
+  const observed = observeMessagesFrames(result.events, state, usageState, wantsStream, ctx);
+  const frames = wrapMessagesAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {

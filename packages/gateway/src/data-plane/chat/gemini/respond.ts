@@ -1,9 +1,11 @@
 import type { Context } from 'hono';
 
+import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
 import { geminiStatusForHttpStatus } from './errors.ts';
 import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
+import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, mergeForwardedUpstreamHeaders, plainResultToResponse, respondSseStream } from '../shared/respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
@@ -43,7 +45,8 @@ export const respondGemini = async (
   }
 
   const state = new SourceStreamState();
-  const frames = observeGeminiFrames(result.events, state, wantsStream, ctx);
+  const observed = observeGeminiFrames(result.events, state, wantsStream, ctx);
+  const frames = wrapGeminiAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {

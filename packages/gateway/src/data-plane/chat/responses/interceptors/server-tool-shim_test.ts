@@ -636,7 +636,7 @@ test('shim drives one search then a final message in two upstream turns', async 
   assertEquals(events[events.length - 1].type, 'response.completed');
 });
 
-test('synthesized web_search_call ids are registered as gateway-synthetic on the request', async () => {
+test('synthesized web_search_call ids retain request-private replay state', async () => {
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -648,20 +648,16 @@ test('synthesized web_search_call ids are registered as gateway-synthetic on the
 
   const { frames } = await runShimAndDrain(shim, inv, ctx, script.run);
 
-  // Every web_search_call the shim synthesizes carries a gateway-minted id no
-  // upstream issued; persistence relies on these being registered so it stores
-  // them with no upstream identity (non_affinity).
   const doneEvents = outputItemDoneEvents(frames);
   const wsCallDoneIds = doneEvents.filter(e => e.item.type === 'web_search_call').map(e => e.item.id!);
-  const store = ctx.store;
+  const attemptState = ctx.responsesAttemptState;
   assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
   for (const id of wsCallDoneIds) {
     assert(id.startsWith('ws_gw_'));
-    assert(store.isSyntheticItem(id), `expected ${id} registered as synthetic`);
+    assert(attemptState.getPrivatePayload(id) !== undefined, `expected ${id} to retain private replay state`);
   }
-  // A genuine upstream item (the final message) is not registered.
   for (const e of doneEvents.filter(e => e.item.type === 'message')) {
-    assertFalse(store.isSyntheticItem(e.item.id!));
+    assertFalse(attemptState.getPrivatePayload(e.item.id!) !== undefined);
   }
 });
 

@@ -5,10 +5,8 @@ import {
   cloneStoredResponsesItem,
   cloneStoredResponsesSnapshot,
   compareResponsesItemsByFreshness,
-  responsesItemStoreKey,
-  storedResponsesItemMetadata,
+  scopedResponsesKey,
 } from './responses-clone.ts';
-import { RESPONSES_REFRESH_DEBOUNCE_MS } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -36,8 +34,6 @@ import type {
   Session,
   SessionsRepo,
   StoredResponsesItem,
-  StoredResponsesItemMetadata,
-  StoredResponsesItemPayloadRecord,
   StoredResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
@@ -578,111 +574,53 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
 class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   private store = new Map<string, StoredResponsesItem>();
 
-  lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
-    return Promise.resolve(this.lookupManySync(apiKeyId, ids));
-  }
-
-  lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
-    const wanted = new Set(hashes);
-    if (wanted.size === 0) return Promise.resolve([]);
-    const rows: StoredResponsesItemMetadata[] = [];
-    for (const row of this.store.values()) {
-      if (row.apiKeyId === apiKeyId && row.encryptedContentHash !== null && wanted.has(row.encryptedContentHash)) {
-        rows.push(storedResponsesItemMetadata(row));
-      }
-    }
-    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
-  }
-
-  lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
-    const wanted = new Set(hashes);
-    if (wanted.size === 0) return Promise.resolve([]);
-    const rows: StoredResponsesItemMetadata[] = [];
-    for (const row of this.store.values()) {
-      if (row.apiKeyId === apiKeyId && row.contentHash !== null && wanted.has(row.contentHash)) {
-        rows.push(storedResponsesItemMetadata(row));
-      }
-    }
-    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
-  }
-
-  lookupPayloads(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemPayloadRecord[]> {
-    const records: StoredResponsesItemPayloadRecord[] = [];
-    for (const metadata of this.lookupManySync(apiKeyId, ids)) {
-      const row = this.store.get(responsesItemStoreKey(apiKeyId, metadata.id));
-      if (row !== undefined && row.payload !== null) records.push({ id: row.id, payload: structuredClone(row.payload) });
-    }
-    return Promise.resolve(records);
-  }
-
-  private lookupManySync(apiKeyId: string | null, ids: readonly string[]): StoredResponsesItemMetadata[] {
-    const rows: StoredResponsesItemMetadata[] = [];
+  lookupMany(apiKeyId: string, ids: readonly string[]): Promise<StoredResponsesItem[]> {
+    const rows: StoredResponsesItem[] = [];
     const seen = new Set<string>();
     for (const id of ids) {
       if (seen.has(id)) continue;
       seen.add(id);
-      const row = this.store.get(responsesItemStoreKey(apiKeyId, id));
-      if (row?.apiKeyId === apiKeyId) rows.push(storedResponsesItemMetadata(row));
+      const row = this.store.get(scopedResponsesKey(apiKeyId, id));
+      if (row !== undefined) rows.push(cloneStoredResponsesItem(row));
     }
-    return rows;
+    return Promise.resolve(rows);
+  }
+
+  lookupManyByContentHash(apiKeyId: string, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+    const wanted = new Set(hashes);
+    if (wanted.size === 0) return Promise.resolve([]);
+    const rows: StoredResponsesItem[] = [];
+    for (const row of this.store.values()) {
+      if (row.apiKeyId === apiKeyId && row.contentHash !== null && wanted.has(row.contentHash)) {
+        rows.push(cloneStoredResponsesItem(row));
+      }
+    }
+    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
   }
 
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     for (const item of items) {
-      const key = responsesItemStoreKey(item.apiKeyId, item.id);
+      const key = scopedResponsesKey(item.apiKeyId, item.id);
       if (this.store.has(key)) continue;
       this.store.set(key, cloneStoredResponsesItem(item));
     }
     return Promise.resolve();
   }
 
-  fillPayloads(items: readonly StoredResponsesItem[]): Promise<number> {
-    let changes = 0;
-    for (const item of items) {
-      if (item.payload === null) continue;
-      const existing = this.store.get(responsesItemStoreKey(item.apiKeyId, item.id));
-      // Row may be absent if a concurrent TTL prune removed it between load and persist;
-      // SQL's `UPDATE ... WHERE id = ?` is a no-op in the same case, so we mirror that.
-      if (existing === undefined) continue;
-      if (existing.payload !== null) continue;
-      existing.payload = structuredClone(item.payload);
-      existing.contentHash = item.contentHash;
-      existing.encryptedContentHash = item.encryptedContentHash;
-      existing.createdAt = item.createdAt;
-      existing.refreshedAt = Math.max(existing.refreshedAt, item.refreshedAt);
-      changes += 1;
+  refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+    const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
+    const missingIndex = existing.findIndex(item => item === undefined);
+    if (missingIndex !== -1) {
+      return Promise.reject(new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`));
     }
-    return Promise.resolve(changes);
+    for (const item of existing) item!.createdAt = Math.max(item!.createdAt, createdAt);
+    return Promise.resolve();
   }
 
-  refreshMany(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<number> {
-    let changes = 0;
-    const cutoff = refreshedAt - RESPONSES_REFRESH_DEBOUNCE_MS;
-    for (const id of new Set(ids)) {
-      const row = this.store.get(responsesItemStoreKey(apiKeyId, id));
-      if (row && row.refreshedAt < cutoff) {
-        row.refreshedAt = refreshedAt;
-        changes += 1;
-      }
-    }
-    return Promise.resolve(changes);
-  }
-
-  clearPayloadOlderThan(createdBefore: number): Promise<number> {
-    let changes = 0;
-    for (const row of this.store.values()) {
-      if (row.createdAt < createdBefore && row.payload !== null) {
-        row.payload = null;
-        changes += 1;
-      }
-    }
-    return Promise.resolve(changes);
-  }
-
-  deleteOlderThan(refreshedBefore: number): Promise<number> {
+  deleteOlderThan(createdBefore: number): Promise<number> {
     let changes = 0;
     for (const [key, row] of this.store) {
-      if (row.refreshedAt < refreshedBefore) {
+      if (row.createdAt < createdBefore) {
         this.store.delete(key);
         changes += 1;
       }
@@ -699,27 +637,24 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
 class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   private store = new Map<string, StoredResponsesSnapshot>();
 
-  lookup(apiKeyId: string | null, id: string): Promise<StoredResponsesSnapshot | null> {
-    const snapshot = this.store.get(responsesItemStoreKey(apiKeyId, id));
+  lookup(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
+    const snapshot = this.store.get(scopedResponsesKey(apiKeyId, id));
     return Promise.resolve(snapshot ? cloneStoredResponsesSnapshot(snapshot) : null);
   }
 
   insert(snapshot: StoredResponsesSnapshot): Promise<void> {
-    this.store.set(responsesItemStoreKey(snapshot.apiKeyId, snapshot.id), cloneStoredResponsesSnapshot(snapshot));
+    const key = scopedResponsesKey(snapshot.apiKeyId, snapshot.id);
+    const existing = this.store.get(key);
+    if (existing === undefined || snapshot.createdAt >= existing.createdAt) {
+      this.store.set(key, cloneStoredResponsesSnapshot(snapshot));
+    }
     return Promise.resolve();
   }
 
-  refresh(apiKeyId: string | null, id: string, refreshedAt: number): Promise<boolean> {
-    const snapshot = this.store.get(responsesItemStoreKey(apiKeyId, id));
-    if (!snapshot || snapshot.refreshedAt >= refreshedAt - RESPONSES_REFRESH_DEBOUNCE_MS) return Promise.resolve(false);
-    snapshot.refreshedAt = refreshedAt;
-    return Promise.resolve(true);
-  }
-
-  deleteOlderThan(refreshedBefore: number): Promise<number> {
+  deleteOlderThan(createdBefore: number): Promise<number> {
     let changes = 0;
     for (const [key, snapshot] of this.store) {
-      if (snapshot.refreshedAt < refreshedBefore) {
+      if (snapshot.createdAt < createdBefore) {
         this.store.delete(key);
         changes += 1;
       }

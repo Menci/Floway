@@ -57,7 +57,7 @@ test('buildTargetRequest maps function calls, tool responses, and reasoning hist
     contents: [
       {
         role: 'model',
-        parts: [{ text: 'private trace', thought: true, thoughtSignature: 'sig_1' }, { text: 'I will call a tool.' }, { functionCall: { name: 'lookup', args: { query: 'docs' } } }],
+        parts: [{ text: 'private trace', thought: true, thoughtSignature: 'sig_old' }, { text: 'I will call a tool.', thoughtSignature: 'sig_1' }, { functionCall: { name: 'lookup', args: { query: 'docs' } } }],
       },
       {
         role: 'user',

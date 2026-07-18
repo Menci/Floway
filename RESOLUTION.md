@@ -394,15 +394,14 @@ Candidates are ordered before they reach dispatch:
 - Within a single upstream, the unprefixed branch precedes the prefixed
   one when both apply.
 
-For Responses-shape inbound, the affinity walk
-(`classifyResponsesItemAffinity`) adjusts the ordering by stored-item
-affinity before dispatch sees it. It resolves stored ids from metadata,
-rejects an `item_reference` whose durable payload is unavailable, and uses
-the referenced row's actual item type to determine upstream affinity. The
-candidate rewrite then bulk-loads the payloads it needs and replaces every
-`item_reference` with the stored item before the upstream request is built.
-The affinity walk never invents new candidates; it only narrows or re-orders
-the list the resolver produced.
+Chat-shaped ingress authenticates client-carried affinity before dispatch.
+Ordinary carriers prefer the latest available candidate with the same upstream,
+model, and optional alias rules. Non-portable state forces the recorded
+upstream and model but never forces alias rules; an exact-rule preferred variant
+still wins when available. Affinity only reorders or narrows candidates already
+produced by resolution. Empty alias rules and absent direct-candidate rules both
+mean no overlay. Protocol placement and restoration are documented in
+[AFFINITY.md](./AFFINITY.md).
 
 Serve dispatches the first candidate of the ordered list exactly once.
 The attempt's non-throwing result — an SSE-stream event handoff (chat) or
@@ -428,3 +427,5 @@ internal-debug failure — is the request's final answer; an upstream
   retain both candidate paths instead of deduping. The unprefixed
   candidate precedes the prefix-stripped one in the ordered list, so it
   is the one dispatched.
+- A missing preferred affinity target falls back normally. A missing forced
+  upstream/model target is an explicit error.

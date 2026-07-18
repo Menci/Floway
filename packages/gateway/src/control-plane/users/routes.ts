@@ -6,6 +6,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
+import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
 
 const validateUpstreamIdsExist = async (ids: readonly string[] | null): Promise<string | null> => {
@@ -53,6 +54,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     userId: user.id,
     name: 'Default',
     key: generateApiKeyToken(),
+    serverSecret: generateServerSecret(),
     createdAt: new Date().toISOString(),
     upstreamIds: null,
     deletedAt: null,

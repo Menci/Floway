@@ -1,16 +1,12 @@
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
-import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
-import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
-import { rewriteResponsesPayloadForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
-import type { StatefulResponsesStore } from './items/store.ts';
+import { syntheticEventsFromResult } from './items/output.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker, upstreamPerformanceContext } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
-import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
@@ -27,13 +23,23 @@ import { translateResponsesViaChatCompletions, translateResponsesViaMessages } f
 // targets.
 export const responsesTarget = chatTargetPicker(['responses', 'messages', 'chat-completions']);
 
-export interface ResponsesAttemptInvokeArgs {
-  readonly payload: CanonicalResponsesPayload;
+interface ResponsesAttemptBaseArgs {
   readonly action: ResponsesAction;
+  readonly payload: CanonicalResponsesPayload;
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
+
+interface ResponsesSourceState {
+  readonly privatePayloads: ReadonlyMap<string, unknown>;
+  readonly itemIdMap: ReadonlyMap<string, string>;
+}
+
+export type ResponsesAttemptInvokeArgs = ResponsesAttemptBaseArgs & {
+  readonly sourceState?: ResponsesSourceState;
+};
+type ResponsesAttemptGenerateArgs = Omit<ResponsesAttemptInvokeArgs, 'action'>;
 
 // Single entry point for both `action: 'generate'` and `action: 'compact'`.
 // Envelope-drain branches on the caller's intent (`action` passed by value),
@@ -62,41 +68,30 @@ export interface ResponsesAttemptInvokeArgs {
 // the interceptor finally blocks), and stay independent of the shim's
 // presence.
 //
-// Snapshot persistence is owned end-to-end by `wrapResponsesOutputForStorage`,
-// which derives the snapshot mode by observing the output stream — `'replace'`
-// when any output item is a compaction (the three convergence cases:
-// native `/v1/responses/compact`, a `compaction_trigger` input on
-// `/v1/responses` reshaped by the upstream, and the server-side
-// `context_management` `compact_threshold` mode), `'append'` otherwise.
-// "Don't write" is expressed by the store itself: cross-protocol translation
-// stores (`createNonResponsesSourceStore`) and `store=false` HTTP turns ship
-// with an empty `snapshotWrites` configuration, so `commitSnapshot` is a
-// no-op at the store-write layer.
+// Responses state and client affinity both belong to the native source edge,
+// outside this candidate attempt. Native serve passes the already-restored
+// candidate payload plus any private source state; translated inner Responses
+// calls pass only their translated payload. Keeping this function free of
+// affinity decoding, state hydration, public-id minting, and persistence
+// prevents an inner Responses target from owning another source protocol's
+// client-visible state.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
-    const { payload: sourcePayload, action, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
+    const { action, ctx, candidate, headers: sourceHeaders } = args;
     const headers = new Headers(sourceHeaders);
-    const { store } = ctx;
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
-    // Rewrite + privatePayload seed + assistant-content normalization all run
-    // BEFORE the interceptor chain so source interceptors — most importantly
-    // the web-search server-tool shim — see fully inline-expanded input items
-    // with their original wire ids, and `store.getPrivatePayload(id)` is
-    // ready to hand back the persisted IR. The shim's `transformItems` runs
-    // inside the chain body, before `run()`, so deferring rewrite/seed to
-    // the inner closure would leave the shim looking at the pre-rewrite
-    // wire shape against an empty privatePayload map.
-    const rewritten = await rewriteOrRenderFailure(payload, store, candidate);
-    if (!('payload' in rewritten)) return rewritten.failure;
-    store.beginAttempt(rewritten.privatePayloads);
+    const payload = { ...structuredClone(args.payload), model: candidate.model.id };
+    if (args.sourceState === undefined) {
+      ctx.responsesAttemptState.begin(new Map(), new Map());
+    } else {
+      ctx.responsesAttemptState.begin(args.sourceState.privatePayloads, args.sourceState.itemIdMap);
+    }
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
     // the same items echoed back as input on the next turn. Normalising
-    // here, after the rewrite has expanded any `item_reference` items
-    // from the snapshot store, catches both the direct-echo and
-    // store-replay paths in one place.
-    const normalized: CanonicalResponsesPayload = { ...rewritten.payload, input: normalizeAssistantInputText(rewritten.payload.input) };
+    // here, after native serve has expanded stored `item_reference` items,
+    // catches both the direct-echo and store-replay paths in one place.
+    const normalized: CanonicalResponsesPayload = { ...payload, input: normalizeAssistantInputText(payload.input) };
 
     const invocation: ResponsesInvocation = {
       payload: normalized,
@@ -110,54 +105,17 @@ export const responsesAttempt = {
 
     if (chainResult.type !== 'events') return chainResult;
 
-    const responseId = createStoredResponseId();
     if (action === 'compact') {
-      // The caller entered through /v1/responses/compact (or serve.compact).
-      // Drain the chain's events — whether they came from a native /compact
-      // wire or from the responses-compact-shim's synthesized envelope —
-      // into a single result envelope so the http layer can JSON-encode it
-      // directly. Storage still runs over the synthesized event stream so
-      // the snapshot is committed under the same id the client will see —
-      // wrap detects the `compaction` output item and writes a `'replace'`
-      // snapshot.
       const upstreamCompacted = await collectResponsesProtocolEventsToResult(chainResult.events);
-      await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(upstreamCompacted), {
-        store,
-        upstream: candidate.provider.upstream,
-        targetApi: 'responses',
-        responseId,
-      }));
       return {
         type: 'result',
-        result: { ...upstreamCompacted, id: responseId },
+        result: upstreamCompacted,
         modelIdentity: chainResult.modelIdentity,
         usage: tokenUsageFromResponsesResult(upstreamCompacted),
         performance: chainResult.performance,
       };
     }
-
-    // Persistence and id rewriting wrap the *outermost* stream — after every
-    // interceptor (including the server-tool shim) has emitted its final
-    // events. This is the only seam at which the gateway-owned response id
-    // is minted; whatever id any inner layer produced (the upstream's blob,
-    // the shim's internal `resp_shim_*` placeholder) is overwritten to a
-    // `resp_<crc>_<body>` before the client sees a frame, and the snapshot
-    // is committed under the same id so the next turn's
-    // `previous_response_id` lookup is guaranteed to hit.
-    return eventResult(
-      wrapResponsesOutputForStorage(chainResult.events, {
-        store,
-        upstream: candidate.provider.upstream,
-        targetApi,
-        responseId,
-      }),
-      chainResult.modelIdentity,
-      {
-        performance: chainResult.performance,
-        finalMetadata: chainResult.finalMetadata,
-        headers: chainResult.headers,
-      },
-    );
+    return chainResult;
   },
 
   // Narrowing wrapper for cross-protocol translation callers
@@ -166,53 +124,13 @@ export const responsesAttempt = {
   // want the ExecuteResult branch. The compact branch is a contract
   // violation here; an interceptor that pivoted generate→compact would
   // surface as a throw, not a silent shape mismatch.
-  generate: async (args: Omit<ResponsesAttemptInvokeArgs, 'action'>): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  generate: async (args: ResponsesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
     const result = await responsesAttempt.invoke({ ...args, action: 'generate' });
     if (result.type === 'result') {
       throw new Error('responsesAttempt.generate received a compact result; an interceptor pivoted generate→compact unexpectedly');
     }
     return result;
   },
-};
-
-type RewriteOutcome =
-  | RewrittenResponsesPayload
-  | { readonly failure: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> };
-
-const rewriteOrRenderFailure = async (
-  payload: CanonicalResponsesPayload,
-  store: StatefulResponsesStore,
-  candidate: ModelCandidate,
-): Promise<RewriteOutcome> => {
-  try {
-    return await rewriteResponsesPayloadForCandidate(payload, store, candidate);
-  } catch (error) {
-    const failure = tryCatchChatServeFailure(error);
-    if (failure === null) throw error;
-    // The full Responses failure renderer that also handles `model-missing`
-    // / `model-unsupported` / `routing-unavailable` lives in the serve
-    // layer and treats the `endpoint` distinction (`generate` vs
-    // `compact`); from inside an attempt, only `item-not-found` is
-    // reachable from rewrite — anything else is a bug. Re-throw the
-    // original error so the upstream stack/cause survives.
-    if (failure.kind !== 'item-not-found') throw error;
-    return {
-      failure: {
-        type: 'api-error',
-        source: 'gateway',
-        status: 404,
-        headers: new Headers({ 'content-type': 'application/json' }),
-        body: new TextEncoder().encode(JSON.stringify({
-          error: {
-            message: `Item with id '${failure.itemId}' not found.`,
-            type: 'invalid_request_error',
-            param: 'input',
-            code: null,
-          },
-        })),
-      },
-    };
-  }
 };
 
 const dispatchResponses = async (
