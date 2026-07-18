@@ -1,66 +1,34 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, watchEffect } from 'vue';
+import { computed } from 'vue';
 
-import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';
-import {
-  claudeModelOverride,
-  isClaudeCodeModel,
-  isCodexConfigModel,
-  rankAgentSetupModels,
-} from '../../lib/agent-setup-models.ts';
+import type { ApiKey } from '../../api/types.ts';
+import type { AgentSetupConfiguration } from '../../composables/useAgentSetup.ts';
 import { Code } from '@floway-dev/ui';
 
 const props = defineProps<{
   agent: 'claude' | 'codex';
   apiKey: ApiKey;
-  models: readonly ControlPlaneModel[];
+  configuration: AgentSetupConfiguration;
 }>();
 
-const CLAUDE_TIER_KEYS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
-type ClaudeTierKey = typeof CLAUDE_TIER_KEYS[number];
-const CLAUDE_TIER_LABELS: Record<ClaudeTierKey, string> = { fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
-
-const claudeModelsByTier = computed<Record<ClaudeTierKey, string[]>>(() => Object.fromEntries(
-  CLAUDE_TIER_KEYS.map(tier => [
-    tier,
-    rankAgentSetupModels(props.models, { family: 'claude', picker: tier })
-      .filter(model => isClaudeCodeModel(model.id))
-      .map(model => model.id),
-  ]),
-) as Record<ClaudeTierKey, string[]>);
-const codexModels = computed(() => rankAgentSetupModels(props.models, { family: 'codex' })
-  .filter(model => isCodexConfigModel(model.id))
-  .map(model => model.id));
-
-const claudeSelection = reactive<Record<ClaudeTierKey, string>>({ fable: '', opus: '', sonnet: '', haiku: '' });
-const codexModel = shallowRef('');
-watchEffect(() => {
-  for (const tier of CLAUDE_TIER_KEYS) {
-    if (!claudeModelsByTier.value[tier].includes(claudeSelection[tier])) {
-      claudeSelection[tier] = claudeModelsByTier.value[tier][0] ?? '';
-    }
-  }
-  if (!codexModels.value.includes(codexModel.value)) codexModel.value = codexModels.value[0] ?? '';
+const baseUrl = window.location.origin;
+const claudeSnippet = computed(() => {
+  const settings = props.configuration.claudeCode;
+  return JSON.stringify({
+    env: {
+      ANTHROPIC_BASE_URL: baseUrl,
+      ANTHROPIC_AUTH_TOKEN: props.apiKey.key,
+      ...(settings.model === null ? {} : { ANTHROPIC_MODEL: settings.model }),
+      ...(settings.defaultOpusModel === null ? {} : { ANTHROPIC_DEFAULT_OPUS_MODEL: settings.defaultOpusModel }),
+      ...(settings.defaultSonnetModel === null ? {} : { ANTHROPIC_DEFAULT_SONNET_MODEL: settings.defaultSonnetModel }),
+      ...(settings.defaultHaikuModel === null ? {} : { ANTHROPIC_DEFAULT_HAIKU_MODEL: settings.defaultHaikuModel }),
+      ...(settings.modelDiscovery ? { CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1' } : {}),
+    },
+    ...(settings.effortLevel === null ? {} : { effortLevel: settings.effortLevel }),
+  }, null, 2);
 });
 
-const claudeModelsById = computed(() => new Map(props.models.map(model => [model.id, model])));
-const selectedClaudeModel = (tier: ClaudeTierKey): string => {
-  const id = claudeSelection[tier];
-  const model = claudeModelsById.value.get(id);
-  return model === undefined ? id : claudeModelOverride(model.id, model.limits, tier);
-};
-
-const baseUrl = window.location.origin;
-const claudeSnippet = computed(() => JSON.stringify({
-  env: {
-    ANTHROPIC_BASE_URL: baseUrl,
-    ANTHROPIC_AUTH_TOKEN: props.apiKey.key,
-    ANTHROPIC_DEFAULT_FABLE_MODEL: selectedClaudeModel('fable'),
-    ANTHROPIC_DEFAULT_OPUS_MODEL: selectedClaudeModel('opus'),
-    ANTHROPIC_DEFAULT_SONNET_MODEL: selectedClaudeModel('sonnet'),
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedClaudeModel('haiku'),
-  },
-}, null, 2));
+const tomlString = (value: string): string => JSON.stringify(value);
 
 // The marker selects Codex's client-owned tools for this custom provider, and
 // command auth also opts the provider into online model refresh.
@@ -70,24 +38,28 @@ const claudeSnippet = computed(() => JSON.stringify({
 // with the top-level warning suppression instead of warning every run.
 // https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L901-L905
 // https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L1393-L1439
-const codexSnippet = computed(() => [
-  `model = "${codexModel.value}"`,
-  'model_provider = "floway"',
-  'suppress_unstable_features_warning = true',
-  '',
-  '[model_providers.floway]',
-  'name = "Floway"',
-  `base_url = "${baseUrl}/azure-api.codex"`,
-  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] } # Linux & macOS',
-  `# auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }; [IO.File]::ReadAllText((Join-Path $h 'floway-token'))"] } # Windows: uncomment and remove the line above`,
-  'wire_api = "responses"',
-  'supports_websockets = true',
-  'http_headers = { "x-openai-actor-authorization" = "1" }',
-  '',
-  '[features]',
-  'apps = false',
-  'standalone_web_search = true',
-].join('\n'));
+const codexSnippet = computed(() => {
+  const settings = props.configuration.codex;
+  return [
+    ...(settings.model === null ? [] : [`model = ${tomlString(settings.model)}`]),
+    ...(settings.reasoningEffort === null ? [] : [`model_reasoning_effort = ${tomlString(settings.reasoningEffort)}`]),
+    'model_provider = "floway"',
+    'suppress_unstable_features_warning = true',
+    '',
+    '[model_providers.floway]',
+    'name = "Floway"',
+    `base_url = ${tomlString(`${baseUrl}/azure-api.codex`)}`,
+    'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] } # Linux & macOS',
+    `# auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }; [IO.File]::ReadAllText((Join-Path $h 'floway-token'))"] } # Windows: uncomment and remove the line above`,
+    'wire_api = "responses"',
+    'supports_websockets = true',
+    'http_headers = { "x-openai-actor-authorization" = "1" }',
+    '',
+    '[features]',
+    'apps = false',
+    'standalone_web_search = true',
+  ].join('\n');
+});
 
 const codexUnixCredentialCommand = computed(() => {
   const apiKey = `'${props.apiKey.key.replaceAll("'", `'"'"'`)}'`;
@@ -106,22 +78,11 @@ const codexWindowsCredentialCommand = computed(() => {
     `[IO.File]::WriteAllText((Join-Path $codexHome "floway-token"), ${apiKey}, (New-Object Text.UTF8Encoding($false)))`,
   ].join('\n');
 });
-
-const selectClass = 'max-w-full rounded-lg border border-white/10 bg-surface-800 px-2 py-1.5 font-mono text-xs text-gray-300 outline-none focus:border-accent-cyan/50';
 </script>
 
 <template>
-  <div class="space-y-8">
+  <div class="mt-5 border-t border-white/5 pt-5">
     <section v-if="agent === 'claude'">
-      <h3 class="mb-3 text-sm font-semibold text-white">Claude Code</h3>
-      <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <label v-for="tier in CLAUDE_TIER_KEYS" :key="tier" class="flex min-w-0 items-center gap-2 text-xs text-gray-500">
-          <span>{{ CLAUDE_TIER_LABELS[tier] }}</span>
-          <select v-model="claudeSelection[tier]" :class="selectClass">
-            <option v-for="model in claudeModelsByTier[tier]" :key="model" :value="model">{{ model }}</option>
-          </select>
-        </label>
-      </div>
       <p class="mb-2 text-[11px] text-gray-600">
         Edit <code class="text-gray-500">~/.claude/settings.json</code> and merge this JSON object. Do not export these values as shell environment variables.
       </p>
@@ -129,13 +90,6 @@ const selectClass = 'max-w-full rounded-lg border border-white/10 bg-surface-800
     </section>
 
     <section v-else>
-      <h3 class="mb-3 text-sm font-semibold text-white">Codex</h3>
-      <label class="mb-3 flex max-w-sm items-center gap-2 text-xs text-gray-500">
-        <span>Model</span>
-        <select v-model="codexModel" :class="selectClass">
-          <option v-for="model in codexModels" :key="model" :value="model">{{ model }}</option>
-        </select>
-      </label>
       <p class="mb-2 text-[11px] text-gray-600">Merge into <code class="text-gray-500">~/.codex/config.toml</code></p>
       <Code :code="codexSnippet" language="toml" />
 
