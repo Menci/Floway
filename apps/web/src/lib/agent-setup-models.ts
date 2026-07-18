@@ -132,12 +132,12 @@ export const buildModelOptions = (
   ranking: AgentModelRanking,
 ): ModelOption[] => {
   const options: ModelOption[] = [{ value: MODEL_OVERRIDE_NONE, modelId: null, unavailable: false }];
+  const values = new Set<string>([MODEL_OVERRIDE_NONE]);
   for (const model of rankAgentSetupModels(models, ranking)) {
-    options.push({
-      value: ranking.family === 'claude' ? claudeModelOverride(model.id, model.limits, ranking.picker) : model.id,
-      modelId: model.id,
-      unavailable: false,
-    });
+    const value = ranking.family === 'claude' ? claudeModelOverride(model.id, model.limits, ranking.picker) : model.id;
+    if (values.has(value)) continue;
+    values.add(value);
+    options.push({ value, modelId: model.id, unavailable: false });
   }
   if (
     currentValue !== null
