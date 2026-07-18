@@ -898,6 +898,9 @@ class MemoryModelAliasesRepo implements ModelAliasesRepo {
   }
 }
 
+const compareLatestAgentSetupRecord = (a: AgentSetupRecord, b: AgentSetupRecord): number =>
+  b.updatedAt - a.updatedAt || b.createdAt - a.createdAt || (a.token < b.token ? 1 : -1);
+
 class MemoryAgentSetupRepo implements AgentSetupRepository {
   // Keyed by token: a user may own many concurrent leases at once.
   private byToken = new Map<string, AgentSetupRecord>();
@@ -910,8 +913,7 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
   latestByUserId(userId: number): Promise<AgentSetupRecord | null> {
     const owned = [...this.byToken.values()]
       .filter(record => record.userId === userId)
-      .sort((a, b) =>
-        b.updatedAt - a.updatedAt || b.createdAt - a.createdAt || (a.token < b.token ? 1 : -1));
+      .sort(compareLatestAgentSetupRecord);
     const latest = owned[0];
     return Promise.resolve(latest ? { ...latest } : null);
   }
@@ -970,9 +972,16 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
     return Promise.resolve({ status: 'ok', record: { ...record } });
   }
 
-  deleteExpired(expiresAt: number): Promise<void> {
+  deleteExpiredExceptLatest(expiresAt: number): Promise<void> {
+    const latestByUser = new Map<number, AgentSetupRecord>();
+    for (const record of this.byToken.values()) {
+      const latest = latestByUser.get(record.userId);
+      if (latest === undefined || compareLatestAgentSetupRecord(record, latest) < 0) {
+        latestByUser.set(record.userId, record);
+      }
+    }
     for (const [token, record] of this.byToken) {
-      if (record.expiresAt <= expiresAt) this.byToken.delete(token);
+      if (record.expiresAt <= expiresAt && latestByUser.get(record.userId)?.token !== token) this.byToken.delete(token);
     }
     return Promise.resolve();
   }

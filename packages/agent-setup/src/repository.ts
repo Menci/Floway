@@ -81,9 +81,9 @@ export interface AgentSetupRepository {
     expiresAt: number;
   }): Promise<AgentSetupMutation>;
 
-  // Scheduled maintenance: remove every lease at or before the expiry cutoff,
-  // regardless of owner. Live records remain independently renewable.
-  deleteExpired(expiresAt: number): Promise<void>;
+  // Scheduled maintenance: remove leases at or before the expiry cutoff while
+  // retaining each user's latest row as their restorable preference snapshot.
+  deleteExpiredExceptLatest(expiresAt: number): Promise<void>;
 
   // Heartbeat: extend only the expiry of the (userId, token) record. It must
   // not touch updated_at or the revision, so a heartbeat never reorders the

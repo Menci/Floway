@@ -157,8 +157,9 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
 
    The command's setup URL stays stable while the panel is open. The visible
    panel renews its five-minute lease once a minute, the URL expires about five
-   minutes after you leave, and scheduled maintenance removes expired lease
-   records across accounts. A missing CLI uses the first available install
+   minutes after you leave, and scheduled maintenance prunes obsolete expired
+   siblings while retaining each account's latest preferences. A missing CLI
+   uses the first available install
    mechanism: Homebrew, npm, then the official script on macOS; npm, then the
    official script on Linux and Windows. A selected package manager failure is
    surfaced directly instead of silently falling through. The setup never uses
