@@ -353,6 +353,25 @@ describe('AgentSetupCard', () => {
     expect(setupStub.draft.value!.claudeCode.model).toBe('claude-opus-4-8');
   });
 
+  it('transfers only fields edited before key selection into a restored server draft', async () => {
+    const restored = defaultConfig();
+    restored.claudeCode.defaultOpusModel = 'claude-opus-restored';
+    restored.codex.model = 'gpt-5-restored';
+    restored.codex.reasoningEffort = 'high';
+    setupStub = makeSetup({ config: restored });
+
+    const w = mountCard({ selectedKey: null });
+    selectIn(w, 'claude-model').vm.$emit('update:modelValue', 'claude-sonnet-4-5[1m]');
+    await nextTick();
+    await w.setProps({ selectedKey: defaultKeys[0] });
+    await nextTick();
+
+    expect(setupStub.draft.value).toEqual({
+      ...restored,
+      claudeCode: { ...restored.claudeCode, model: 'claude-sonnet-4-5[1m]' },
+    });
+  });
+
   it('renders a terminated terminal state and keeps the disabled command visible', () => {
     setupStub = makeSetup({ terminated: true, canCopy: false });
     const w = mountCard();
@@ -373,11 +392,12 @@ describe('AgentSetupCard', () => {
     expect(mountCard().text()).toContain('bad configuration');
   });
 
-  it('renders a create failure with a Retry action instead of an endless spinner', async () => {
+  it('renders a create failure once with a Retry action instead of an endless spinner', async () => {
     setupStub = makeSetup({ initialized: false, error: 'server exploded', scripts: null });
     const w = mountCard();
     const banner = w.get('[data-testid="agent-setup-create-error"]');
     expect(banner.text()).toContain('server exploded');
+    expect(w.text().match(/server exploded/g)).toHaveLength(1);
     // No "Preparing" spinner state while an error is shown.
     expect(w.text()).not.toContain('Preparing setup');
 

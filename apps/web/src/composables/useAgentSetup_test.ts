@@ -221,6 +221,25 @@ describe('useAgentSetup — lease acquisition', () => {
     expect(setup.state.token.value).toBe('tok-fresh');
     expect(setup.state.initialized.value).toBe(true);
   });
+
+  it('aborts and ignores a create when agent setup becomes inactive', async () => {
+    const { api, records } = makeApi();
+    const active = shallowRef(true);
+    const setup = run(() => useAgentSetup(api, null, active));
+    const createSignal = signalArg(records.post[0]!);
+
+    active.value = false;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(createSignal.aborted).toBe(true);
+
+    records.post[0]!.deferred.resolve(okBody(lease({ token: 'tok-orphaned' })));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setup.state.initialized.value).toBe(false);
+    expect(setup.state.token.value).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(records.heartbeat).toHaveLength(0);
+  });
 });
 
 // Drive an initialized instance to the point where a lease is live and clean.
@@ -449,6 +468,23 @@ describe('useAgentSetup — heartbeat', () => {
     records.heartbeat[0]!.deferred.resolve(okBody(lease({ expiresAt: Date.now() + 5 * 60 * 1000 })));
     await vi.advanceTimersByTimeAsync(60_000);
     expect(records.heartbeat.length).toBe(2);
+  });
+
+  it('pauses heartbeat while inactive and reconciles when reactivated', async () => {
+    const { api, records } = makeApi();
+    const active = shallowRef(true);
+    const setup = run(() => useAgentSetup(api, ['key-1'], active));
+    records.post[0]!.deferred.resolve(okBody(lease()));
+    await vi.advanceTimersByTimeAsync(0);
+
+    active.value = false;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(records.heartbeat).toHaveLength(0);
+    expect(setup.canCopy.value).toBe(false);
+
+    active.value = true;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(records.heartbeat).toHaveLength(1);
   });
 
   it('renews an expired lease in place: the token is unchanged and copy is re-enabled', async () => {

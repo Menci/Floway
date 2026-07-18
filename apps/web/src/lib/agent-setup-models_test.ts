@@ -94,6 +94,19 @@ describe('rankAgentSetupModels', () => {
     ]);
   });
 
+  it('keeps Codex version groups stable while ordering variants within each group', () => {
+    const models = [
+      buildRealModel({ id: 'gpt-5-mini' }),
+      buildRealModel({ id: 'gpt-6' }),
+      buildRealModel({ id: 'gpt-5-sol' }),
+    ];
+    expect(rankAgentSetupModels(models, { family: 'codex' }).map(model => model.id)).toEqual([
+      'gpt-5-sol',
+      'gpt-5-mini',
+      'gpt-6',
+    ]);
+  });
+
   it('treats a prefixed addressable id as native by its trailing family token', () => {
     const models = [
       buildRealModel({ id: 'openrouter/claude-3-opus' }),
@@ -164,6 +177,13 @@ describe('buildModelOptions', () => {
       { value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5', unavailable: false },
       { value: 'claude-haiku-4-5', modelId: 'claude-haiku-4-5', unavailable: false },
     ]);
+  });
+
+  it('keeps Haiku ids plain even when the catalog advertises a one-million-token window', () => {
+    const options = buildModelOptions([
+      buildRealModel({ id: 'claude-haiku-4-5', limits: { max_context_window_tokens: 1_000_000 } }),
+    ], null, { family: 'claude', picker: 'haiku' });
+    expect(options[1]).toEqual({ value: 'claude-haiku-4-5', modelId: 'claude-haiku-4-5', unavailable: false });
   });
 
   it('keeps raw ids for the Codex family and never applies [1m]', () => {
