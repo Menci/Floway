@@ -69,7 +69,6 @@ test('runScheduledMaintenance prunes expired Agent Setup siblings but retains re
   await repo.agentSetup.insertForUser({
     userId: 7,
     token: 'expired-old',
-    apiKeyId: 'key-a',
     configurationJson: '{"version":"old"}',
     now: now - 10_000,
     expiresAt: now - 1_000,
@@ -77,7 +76,6 @@ test('runScheduledMaintenance prunes expired Agent Setup siblings but retains re
   await repo.agentSetup.insertForUser({
     userId: 7,
     token: 'expired-latest',
-    apiKeyId: 'key-a',
     configurationJson: '{"version":"latest"}',
     now: now - 5_000,
     expiresAt: now - 1,
@@ -85,7 +83,6 @@ test('runScheduledMaintenance prunes expired Agent Setup siblings but retains re
   await repo.agentSetup.insertForUser({
     userId: 8,
     token: 'live-lease',
-    apiKeyId: 'key-b',
     configurationJson: '{}',
     now,
     expiresAt: now + 60_000,
