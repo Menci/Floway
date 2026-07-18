@@ -11,14 +11,13 @@ export type AgentModelRanking =
   | { family: 'claude'; picker: ClaudePicker }
   | { family: 'codex' };
 
-// A model select binds v-model to this `value`. The empty sentinel maps to the
-// configuration's `null` ("no override"); a real option carries the id in the
-// form that gets persisted; a restored id no longer in the catalog rides along
-// as an `unavailable` option so reopening the page never silently drops it.
-export const MODEL_OVERRIDE_NONE = '';
-
+// A single model select row. `value` is the form that gets persisted — `null`
+// for the "no override" row, otherwise the id in its persisted shape; `modelId`
+// is the raw catalog id for display, `null` marking the "no override" row. A
+// restored id no longer in the catalog rides along as an `unavailable` option so
+// reopening the page never silently drops it.
 export interface ModelOption {
-  value: string;
+  value: string | null;
   modelId: string | null;
   unavailable: boolean;
 }
@@ -102,7 +101,7 @@ const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
 // id. The browser is the single place this suffix is applied — at selection time
 // — while the gateway treats the persisted id as opaque and renders it verbatim.
 // Ref: https://code.claude.com/docs/en/model-config
-export const claudeModelOverride = (
+const claudeModelOverride = (
   modelId: string,
   limits: PublicModelLimits,
   picker: ClaudePicker,
@@ -120,33 +119,16 @@ export const buildModelOptions = (
   currentValue: string | null,
   ranking: AgentModelRanking,
 ): ModelOption[] => {
-  const options: ModelOption[] = [{ value: MODEL_OVERRIDE_NONE, modelId: null, unavailable: false }];
-  const values = new Set<string>([MODEL_OVERRIDE_NONE]);
+  const options: ModelOption[] = [{ value: null, modelId: null, unavailable: false }];
+  const values = new Set<string>();
   for (const model of rankAgentSetupModels(models, ranking)) {
     const value = ranking.family === 'claude' ? claudeModelOverride(model.id, model.limits, ranking.picker) : model.id;
     if (values.has(value)) continue;
     values.add(value);
     options.push({ value, modelId: model.id, unavailable: false });
   }
-  if (
-    currentValue !== null
-    && currentValue !== MODEL_OVERRIDE_NONE
-    && !options.some(option => option.value === currentValue)
-  ) {
+  if (currentValue !== null && !options.some(option => option.value === currentValue)) {
     options.push({ value: currentValue, modelId: currentValue, unavailable: true });
   }
   return options;
 };
-
-// Codex reasoning-effort presets a combobox suggests, in the upstream-advertised
-// order. The value itself stays opaque: the input retains any non-empty string,
-// so suggestions never gate what the operator may submit.
-export const codexEffortSuggestions = (model: PublicModel | null | undefined): string[] => {
-  const supported = model?.chat?.reasoning?.effort?.supported;
-  return supported ? [...supported] : [];
-};
-
-// Only the exact empty UI sentinel clears the override; every nonempty
-// upstream-owned value — including surrounding whitespace — is preserved verbatim.
-export const normalizeEffortInput = (value: string): string | null =>
-  value === '' ? null : value;

@@ -19,7 +19,6 @@ const emit = defineEmits<{ saved: [apiKey: ApiKey] }>();
 
 const api = useApi();
 const auth = useAuthStore();
-const isCreate = computed(() => props.mode === 'create');
 
 const visibleUpstreams = computed<UpstreamOption[]>(() => {
   if (!auth.currentUser) throw new Error('EditKeyDialog rendered without an authenticated user');
@@ -167,7 +166,7 @@ const save = async () => {
 </script>
 
 <template>
-  <Dialog v-model:open="open" :title="isCreate ? 'Create API Key' : 'Edit API Key'" size="lg" :auto-focus-on-open="false">
+  <Dialog v-model:open="open" :title="mode === 'create' ? 'Create API Key' : 'Edit API Key'" size="lg" :auto-focus-on-open="false">
     <div class="space-y-5">
       <div class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">Name</label>
@@ -181,7 +180,7 @@ const save = async () => {
         inherit-description="When off, this key inherits the global upstream order."
       />
 
-      <div v-if="isCreate" class="space-y-2">
+      <div v-if="mode === 'create'" class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">New key</label>
         <Select v-model="keySource" :options="KEY_SOURCE_OPTIONS">
           <template #description="{ option }">
@@ -222,7 +221,7 @@ const save = async () => {
       <footer class="flex items-center justify-end gap-2">
         <Button variant="secondary" :disabled="saving" @click="open = false">Cancel</Button>
         <Button :loading="saving" @click="save">
-          {{ isCreate ? 'Create key' : 'Save changes' }}
+          {{ mode === 'create' ? 'Create key' : 'Save changes' }}
         </Button>
       </footer>
     </div>

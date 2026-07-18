@@ -32,29 +32,26 @@ const upstreamById = computed(() => {
 });
 
 const truncateKey = (k: string) => k.length <= 12 ? k : `${k.slice(0, 6)}…${k.slice(-4)}`;
-const shortDate = (s: string | null | undefined) => s ? dayjs(s).format('MMM D, YYYY') : '';
-const timeAgo = (s: string | null | undefined) => s ? dayjs(s).fromNow() : '';
-const fullDateTime = (s: string | null | undefined) => s ? dayjs(s).format('YYYY-MM-DD HH:mm:ss') : '';
+const shortDate = (s: string) => dayjs(s).format('MMM D, YYYY');
+const timeAgo = (s: string) => dayjs(s).fromNow();
+const fullDateTime = (s: string) => dayjs(s).format('YYYY-MM-DD HH:mm:ss');
 
-const upstreamsText = (k: ApiKey) => {
-  if (!k.upstream_ids) return 'All';
-  if (k.upstream_ids.length === 0) return 'None';
+interface UpstreamsCell {
+  text: string;
+  title: string;
+  class: string;
+}
+
+const classifyUpstreams = (k: ApiKey): UpstreamsCell => {
+  if (!k.upstream_ids) return { text: 'All', title: 'Inherits the global upstream order', class: 'text-gray-500' };
+  if (k.upstream_ids.length === 0) return { text: 'None', title: 'No upstreams', class: 'text-accent-rose' };
   const names = k.upstream_ids.map(id => upstreamById.value.get(id)?.name).filter((n): n is string => !!n);
-  if (names.length <= 2) return names.join(', ');
-  return `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
+  const text = names.length <= 2 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
+  const title = k.upstream_ids.map(id => upstreamById.value.get(id)?.name ?? id).join('\n');
+  return { text, title, class: 'text-accent-cyan' };
 };
 
-const upstreamsTitle = (k: ApiKey) => {
-  if (!k.upstream_ids) return 'Inherits the global upstream order';
-  if (k.upstream_ids.length === 0) return 'No upstreams';
-  return k.upstream_ids.map(id => upstreamById.value.get(id)?.name ?? id).join('\n');
-};
-
-const upstreamsTextClass = (k: ApiKey) => {
-  if (!k.upstream_ids) return 'text-gray-500';
-  if (k.upstream_ids.length === 0) return 'text-accent-rose';
-  return 'text-accent-cyan';
-};
+const rows = computed(() => props.keys.map(key => ({ key, upstreams: classifyUpstreams(key) })));
 </script>
 
 <template>
@@ -76,7 +73,7 @@ const upstreamsTextClass = (k: ApiKey) => {
       </thead>
       <tbody>
         <tr
-          v-for="k in keys"
+          v-for="{ key: k, upstreams } in rows"
           :key="k.id"
           class="cursor-pointer border-b border-white/[0.03] transition-colors"
           :class="selectedId === k.id ? 'bg-accent-cyan/5 hover:bg-accent-cyan/8' : 'hover:bg-white/[0.02]'"
@@ -92,8 +89,8 @@ const upstreamsTextClass = (k: ApiKey) => {
             <code class="text-xs font-mono text-gray-500 bg-surface-800 rounded px-2 py-1">{{ truncateKey(k.key) }}</code>
           </td>
           <td class="py-3 pr-4">
-            <span class="text-xs cursor-default" :class="upstreamsTextClass(k)" :title="upstreamsTitle(k)">
-              {{ upstreamsText(k) }}
+            <span class="text-xs cursor-default" :class="upstreams.class" :title="upstreams.title">
+              {{ upstreams.text }}
             </span>
           </td>
           <td class="py-3 pr-4">

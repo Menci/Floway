@@ -28,12 +28,21 @@ const claudeSnippet = computed(() => {
   }, null, 2);
 });
 
+// A JSON string literal is a valid TOML basic string: TOML basic strings accept
+// the exact escape set JSON.stringify emits (\b \t \n \f \r \" \\ \uXXXX), so the
+// serialized value transfers verbatim without re-escaping.
+// Ref: https://toml.io/en/v1.0.0#string
 const tomlString = (value: string): string => JSON.stringify(value);
 
 // The marker selects Codex's client-owned tools for this custom provider, and
 // command auth also opts the provider into online model refresh.
 // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
 // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
+// The Apps surface defaults on but only takes effect under ChatGPT auth, so on
+// this api-key provider it is redundant; disabling it explicitly keeps the
+// provider free of the ChatGPT-only tool surface.
+// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L1067-L1072
+// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L382-L384
 // standalone_web_search is under development, so its explicit opt-in is paired
 // with the top-level warning suppression instead of warning every run.
 // https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L901-L905

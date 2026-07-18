@@ -47,7 +47,10 @@ const rotateError = ref<string | null>(null);
 const copied = ref<string | null>(null);
 const copyFailed = ref<string | null>(null);
 const selectedKeyId = useLocalStorage('floway-agent-setup-selected-key', '');
-if (selectedKeyId.value && !keys.value.some(key => key.id === selectedKeyId.value)) selectedKeyId.value = '';
+const dropSelectionIfMissing = () => {
+  if (selectedKeyId.value && !keys.value.some(key => key.id === selectedKeyId.value)) selectedKeyId.value = '';
+};
+dropSelectionIfMissing();
 
 const loadAll = async (): Promise<boolean> => {
   error.value = null;
@@ -61,7 +64,7 @@ const loadAll = async (): Promise<boolean> => {
     return false;
   }
   keys.value = keysRes.data;
-  if (selectedKeyId.value && !keys.value.some(key => key.id === selectedKeyId.value)) selectedKeyId.value = '';
+  dropSelectionIfMissing();
   return true;
 };
 

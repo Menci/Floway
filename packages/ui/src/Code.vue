@@ -45,7 +45,7 @@ const highlighted = computed(() => {
 <template>
   <div class="code-block relative group">
     <OverlayScrollbars :class="flush ? '' : 'rounded-xl border border-white/[0.04] bg-surface-900'" no-tabindex>
-      <pre :class="flush ? 'min-w-max px-4 py-3 pr-11 text-[11px] font-mono leading-[1.6] text-gray-200' : 'min-w-max p-4 pr-11 text-[11px] font-mono leading-[1.6] text-gray-200'"><code :class="`language-${language}`" v-html="highlighted" /></pre>
+      <pre class="min-w-max pr-11 text-[11px] font-mono leading-[1.6] text-gray-200" :class="flush ? 'px-4 py-3' : 'p-4'"><code :class="`language-${language}`" v-html="highlighted" /></pre>
     </OverlayScrollbars>
     <button
       v-if="copyable"

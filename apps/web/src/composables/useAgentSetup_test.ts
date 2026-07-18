@@ -136,8 +136,6 @@ describe('useAgentSetup — lease acquisition', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(setup.state.initialized.value).toBe(true);
-    expect(setup.state.token.value).toBe('tok-1');
-    expect(setup.state.configurationRevision.value).toBe(1);
     expect(setup.state.scripts.value).toEqual({
       claude: { sh: '/api/setup/tok-1/claude.sh', ps1: '/api/setup/tok-1/claude.ps1' },
       codex: { sh: '/api/setup/tok-1/codex.sh', ps1: '/api/setup/tok-1/codex.ps1' },
@@ -155,7 +153,10 @@ describe('useAgentSetup — lease acquisition', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(setup.draft.value).toEqual(restored);
-    expect(setup.state.configurationRevision.value).toBe(4);
+    // The adopted revision surfaces on the next save's optimistic-concurrency guard.
+    setup.draft.value!.codex.reasoningEffort = 'low';
+    await vi.advanceTimersByTimeAsync(400);
+    expect(jsonArg(records.put[0]!)).toMatchObject({ expectedRevision: 4 });
   });
 
   it('surfaces the no-selectable-key sentinel from a 409 create body', async () => {
@@ -222,13 +223,11 @@ describe('useAgentSetup — lease acquisition', () => {
     // A late resolve of the aborted create must not initialize or set state.
     records.post[0]!.deferred.resolve(okBody(lease({ token: 'tok-stale' })));
     await vi.advanceTimersByTimeAsync(0);
-    expect(setup.state.token.value).toBeNull();
     expect(setup.state.initialized.value).toBe(false);
 
     // The fresh create wins.
     records.post[1]!.deferred.resolve(okBody(lease({ token: 'tok-fresh' })));
     await vi.advanceTimersByTimeAsync(0);
-    expect(setup.state.token.value).toBe('tok-fresh');
     expect(setup.state.initialized.value).toBe(true);
   });
 
@@ -245,7 +244,6 @@ describe('useAgentSetup — lease acquisition', () => {
     records.post[0]!.deferred.resolve(okBody(lease({ token: 'tok-orphaned' })));
     await vi.advanceTimersByTimeAsync(0);
     expect(setup.state.initialized.value).toBe(false);
-    expect(setup.state.token.value).toBeNull();
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(records.heartbeat).toHaveLength(0);
@@ -335,7 +333,6 @@ describe('useAgentSetup — debounced serialized saves', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(setup.syncing.value).toBe(false);
     expect(setup.canCopy.value).toBe(true);
-    expect(setup.state.configurationRevision.value).toBe(2);
   });
 
   it('a stale save response updates lease metadata without clearing a newer draft', async () => {
@@ -350,10 +347,13 @@ describe('useAgentSetup — debounced serialized saves', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     // Metadata advanced, but the draft still carries the newer edit and stays dirty.
-    expect(setup.state.token.value).toBe('tok-2');
-    expect(setup.state.configurationRevision.value).toBe(2);
     expect(setup.draft.value!.codex.reasoningEffort).toBe('high');
     expect(setup.syncing.value).toBe(true);
+
+    // The queued resubmit carries the adopted token and revision.
+    await vi.advanceTimersByTimeAsync(400);
+    expect(records.put.length).toBe(2);
+    expect(jsonArg(records.put[1]!)).toMatchObject({ token: 'tok-2', expectedRevision: 2 });
   });
 });
 
@@ -373,11 +373,15 @@ describe('useAgentSetup — revision conflict', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(setup.draft.value).toEqual(attempted);
-    expect(setup.state.configurationRevision.value).toBe(7);
-    expect(setup.state.token.value).toBe('tok-9');
     expect(setup.syncing.value).toBe(false);
     // No resubmit — the server already holds our draft.
     expect(records.put.length).toBe(1);
+
+    // A later edit resubmits against the token and revision adopted from the conflict.
+    setup.draft.value!.claudeCode.effortLevel = 'high';
+    await vi.advanceTimersByTimeAsync(400);
+    expect(records.put.length).toBe(2);
+    expect(jsonArg(records.put[1]!)).toMatchObject({ token: 'tok-9', expectedRevision: 7 });
   });
 
   it('retains the local draft and resubmits when the conflict carries a config we did not just attempt', async () => {
@@ -399,8 +403,6 @@ describe('useAgentSetup — revision conflict', () => {
 
     // Draft is unchanged (still our attempted config); metadata is adopted; dirty.
     expect(setup.draft.value).toEqual(attempted);
-    expect(setup.state.configurationRevision.value).toBe(5);
-    expect(setup.state.token.value).toBe('tok-5');
     expect(setup.syncing.value).toBe(true);
 
     // The immediate resubmit carries the retained draft against the adopted revision.
@@ -485,7 +487,6 @@ describe('useAgentSetup — heartbeat', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     // The token never rotates; renewal only extends expiry, re-enabling copy.
-    expect(setup.state.token.value).toBe('tok-1');
     expect(setup.state.scripts.value!.claude.sh).toBe('/api/setup/tok-1/claude.sh');
     expect(setup.canCopy.value).toBe(true);
   });
@@ -605,7 +606,7 @@ describe('useAgentSetup — terminal + lifecycle', () => {
     expect(records.put.length).toBe(1);
   });
 
-  it('dispose() aborts an active save, clears every timer, and ignores late responses', async () => {
+  it('scope disposal aborts an active save, clears every timer, and ignores late responses', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
     await vi.advanceTimersByTimeAsync(400);
@@ -613,19 +614,19 @@ describe('useAgentSetup — terminal + lifecycle', () => {
     expect(signal.aborted).toBe(false);
     expect(vi.getTimerCount()).toBeGreaterThan(0);
 
-    setup.dispose();
+    scope!.stop();
     expect(signal.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
     records.put[0]!.deferred.resolve(okBody(lease({ token: 'tok-late', configurationRevision: 9 })));
     await vi.advanceTimersByTimeAsync(0);
 
     expect(records.heartbeat.length).toBe(0);
-    expect(setup.state.token.value).toBe('tok-1');
+    expect(setup.state.initialized.value).toBe(true);
   });
 
-  it.each(['create', 'heartbeat'] as const)('dispose() aborts an active %s request', async kind => {
+  it.each(['create', 'heartbeat'] as const)('scope disposal aborts an active %s request', async kind => {
     const { api, records } = makeApi();
-    const setup = run(() => useAgentSetup(api, ['key-1']));
+    run(() => useAgentSetup(api, ['key-1']));
     let call = records.post[0]!;
 
     if (kind === 'heartbeat') {
@@ -637,7 +638,7 @@ describe('useAgentSetup — terminal + lifecycle', () => {
 
     const signal = signalArg(call);
     expect(signal.aborted).toBe(false);
-    setup.dispose();
+    scope!.stop();
     expect(signal.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });

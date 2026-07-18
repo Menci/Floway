@@ -13,9 +13,6 @@ import { Combobox, Select } from '@floway-dev/ui';
 interface SetupStub {
   state: {
     initialized: Ref<boolean>;
-    token: Ref<string | null>;
-    configurationRevision: Ref<number | null>;
-    expiresAt: Ref<number | null>;
     scripts: Ref<{ claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } } | null>;
     noSelectableKey: Ref<boolean>;
     error: Ref<string | null>;
@@ -25,7 +22,6 @@ interface SetupStub {
   terminated: Ref<boolean>;
   canCopy: Ref<boolean>;
   retryCreate: () => void;
-  dispose: () => void;
 }
 
 let setupStub: SetupStub;
@@ -40,12 +36,9 @@ const defaultConfig = (): AgentSetupConfiguration => ({
   codex: { model: null, reasoningEffort: null },
 });
 
-const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized: boolean; scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } } | null; noSelectableKey: boolean; syncing: boolean; terminated: boolean; canCopy: boolean; error: string | null; expiresAt: number | null }> = {}): SetupStub => ({
+const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized: boolean; scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } } | null; noSelectableKey: boolean; syncing: boolean; terminated: boolean; canCopy: boolean; error: string | null }> = {}): SetupStub => ({
   state: {
     initialized: ref(over.initialized ?? true),
-    token: ref('tok-1'),
-    configurationRevision: ref(1),
-    expiresAt: ref(over.expiresAt ?? Date.now() + 5 * 60 * 1000),
     scripts: ref(over.scripts ?? {
       claude: { sh: '/api/setup/tok-1/claude.sh', ps1: '/api/setup/tok-1/claude.ps1' },
       codex: { sh: '/api/setup/tok-1/codex.sh', ps1: '/api/setup/tok-1/codex.ps1' },
@@ -58,7 +51,6 @@ const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized:
   terminated: ref(over.terminated ?? false),
   canCopy: ref(over.canCopy ?? true),
   retryCreate: vi.fn(),
-  dispose: vi.fn(),
 });
 
 vi.mock('../../api/client.ts', () => ({ useApi: () => ({}) }));

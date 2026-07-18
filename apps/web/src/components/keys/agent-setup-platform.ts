@@ -1,4 +1,5 @@
-export type AgentSetupPlatform = 'unix' | 'windows';
+export const AGENT_SETUP_PLATFORMS = ['unix', 'windows'] as const;
+export type AgentSetupPlatform = typeof AGENT_SETUP_PLATFORMS[number];
 
 export const detectAgentSetupPlatform = (
   platform: string,

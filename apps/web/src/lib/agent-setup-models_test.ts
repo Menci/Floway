@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  buildModelOptions,
-  codexEffortSuggestions,
-  MODEL_OVERRIDE_NONE,
-  normalizeEffortInput,
-  rankAgentSetupModels,
-} from './agent-setup-models.ts';
+import { buildModelOptions, rankAgentSetupModels } from './agent-setup-models.ts';
 import { buildAliasModel, buildRealModel, buildUnlistedModel } from '../api/test-fixtures.ts';
 
 describe('rankAgentSetupModels', () => {
@@ -165,7 +159,7 @@ describe('rankAgentSetupModels', () => {
 describe('buildModelOptions', () => {
   it('always exposes a nullable "no override" option first', () => {
     const options = buildModelOptions([buildRealModel({ id: 'claude-sonnet-4-5' })], null, { family: 'claude', picker: 'default' });
-    expect(options[0]).toEqual({ value: MODEL_OVERRIDE_NONE, modelId: null, unavailable: false });
+    expect(options[0]).toEqual({ value: null, modelId: null, unavailable: false });
   });
 
   it('derives Claude option values through the [1m] rule while keeping the raw id as the display', () => {
@@ -241,36 +235,8 @@ describe('buildModelOptions', () => {
     expect(options.some(o => o.unavailable)).toBe(false);
   });
 
-  it('treats the empty sentinel as "no override" without adding an unavailable option', () => {
-    const options = buildModelOptions([buildRealModel({ id: 'claude-sonnet-4-5' })], MODEL_OVERRIDE_NONE, { family: 'claude', picker: 'default' });
+  it('adds no unavailable option for a null "no override" current value', () => {
+    const options = buildModelOptions([buildRealModel({ id: 'claude-sonnet-4-5' })], null, { family: 'claude', picker: 'default' });
     expect(options.some(o => o.unavailable)).toBe(false);
-  });
-});
-
-describe('codexEffortSuggestions', () => {
-  it('returns the supported efforts in metadata order', () => {
-    const model = buildRealModel({
-      id: 'gpt-5-codex',
-      chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } },
-    });
-    expect(codexEffortSuggestions(model)).toEqual(['low', 'medium', 'high']);
-  });
-
-  it('returns an empty list when the model advertises no effort metadata', () => {
-    expect(codexEffortSuggestions(buildRealModel({ id: 'gpt-5-codex' }))).toEqual([]);
-    expect(codexEffortSuggestions(undefined)).toEqual([]);
-  });
-});
-
-describe('normalizeEffortInput', () => {
-  it('maps only the exact empty sentinel to null', () => {
-    expect(normalizeEffortInput('')).toBeNull();
-  });
-
-  it('retains every nonempty value byte-for-byte', () => {
-    expect(normalizeEffortInput('ultra')).toBe('ultra');
-    expect(normalizeEffortInput('  high  ')).toBe('  high  ');
-    expect(normalizeEffortInput('   ')).toBe('   ');
-    expect(normalizeEffortInput('\thigh\n')).toBe('\thigh\n');
   });
 });

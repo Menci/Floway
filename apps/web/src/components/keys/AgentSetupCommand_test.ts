@@ -29,18 +29,17 @@ describe('AgentSetupCommand', () => {
     expect(copyButton(w, 'macOS / Linux').exists()).toBe(true);
   });
 
-  it('can leave the selected tab as the only visible label', () => {
+  it('renders the code block in the requested language', () => {
     const w = mount(AgentSetupCommand, {
-      props: { label: 'Windows', command: 'irm https://x/api/setup/t/codex.ps1 | iex', language: 'powershell', showLabel: false },
+      props: { label: 'Windows', command: 'irm https://x/api/setup/t/codex.ps1 | iex', language: 'powershell' },
     });
-    expect(w.text()).not.toContain('Windows');
     expect(copyButton(w, 'Windows').exists()).toBe(true);
     expect(w.find('code.language-powershell').exists()).toBe(true);
   });
 
   it('copies exactly the visible command to the clipboard and announces success', async () => {
     const command = 'curl -fsSL https://x/api/setup/t/claude.sh | bash';
-    const w = mount(AgentSetupCommand, { props: { label: 'Shell', command } });
+    const w = mount(AgentSetupCommand, { props: { label: 'Shell', command, language: 'bash' } });
 
     await copyButton(w).trigger('click');
     await nextTick();
@@ -53,7 +52,7 @@ describe('AgentSetupCommand', () => {
   });
 
   it('keeps the copy button rendered but disabled and never writes while disabled', async () => {
-    const w = mount(AgentSetupCommand, { props: { label: 'Shell', command: 'irm https://x/api/setup/t/codex.ps1 | iex', disabled: true } });
+    const w = mount(AgentSetupCommand, { props: { label: 'Shell', command: 'irm https://x/api/setup/t/codex.ps1 | iex', language: 'powershell', disabled: true } });
 
     const button = copyButton(w);
     expect(button.exists()).toBe(true);
@@ -68,7 +67,7 @@ describe('AgentSetupCommand', () => {
 
   it('catches a clipboard rejection and announces the failure', async () => {
     writeText.mockRejectedValue(new Error('denied'));
-    const w = mount(AgentSetupCommand, { props: { label: 'Shell', command: 'x' } });
+    const w = mount(AgentSetupCommand, { props: { label: 'Shell', command: 'x', language: 'bash' } });
 
     await copyButton(w).trigger('click');
     await nextTick();

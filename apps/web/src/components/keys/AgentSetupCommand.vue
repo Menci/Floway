@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The first-class copy button remains visible while its parent disables it,
+// A first-class copy button that stays visible while its parent disables it,
 // unlike the Code block's hover-only copy affordance.
 import { onScopeDispose, shallowRef } from 'vue';
 
@@ -8,10 +8,9 @@ import { Button, Code } from '@floway-dev/ui';
 const props = withDefaults(defineProps<{
   label: string;
   command: string;
-  language?: 'bash' | 'powershell' | 'text';
+  language: 'bash' | 'powershell' | 'text';
   disabled?: boolean;
-  showLabel?: boolean;
-}>(), { language: 'bash', disabled: false, showLabel: true });
+}>(), { disabled: false });
 
 defineSlots<{
   header?: () => unknown;
@@ -46,9 +45,9 @@ onScopeDispose(() => { if (resetTimer !== null) clearTimeout(resetTimer); });
 
 <template>
   <div>
-    <div class="mb-2 flex items-center gap-2" :class="showLabel || $slots.header ? 'justify-between' : 'justify-end'">
+    <div class="mb-2 flex items-center justify-between gap-2">
       <slot name="header">
-        <span v-if="showLabel" class="text-xs font-medium text-gray-400">{{ label }}</span>
+        <span class="text-xs font-medium text-gray-400">{{ label }}</span>
       </slot>
       <div class="flex items-center gap-2">
         <span

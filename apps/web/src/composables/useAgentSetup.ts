@@ -28,6 +28,7 @@ interface LeaseMetadata {
   token: string;
   configurationRevision: number;
   expiresAt: number;
+  configuration: AgentSetupConfiguration;
   scripts: LeaseScripts;
 }
 
@@ -38,9 +39,6 @@ interface ActiveRequest {
 
 export interface AgentSetupState {
   initialized: Ref<boolean>;
-  token: Ref<string | null>;
-  configurationRevision: Ref<number | null>;
-  expiresAt: Ref<number | null>;
   scripts: Ref<LeaseScripts | null>;
   noSelectableKey: Ref<boolean>;
   error: Ref<string | null>;
@@ -53,7 +51,6 @@ export interface UseAgentSetup {
   terminated: Ref<boolean>;
   canCopy: Ref<boolean>;
   retryCreate: () => void;
-  dispose: () => void;
 }
 
 const snapshot = (configuration: AgentSetupConfiguration): AgentSetupConfiguration =>
@@ -81,8 +78,15 @@ const asLease = (raw: unknown): LeaseMetadata | null => {
   if (raw === null || typeof raw !== 'object') return null;
   const body = raw as Partial<LeaseOkResponse>;
   if (typeof body.token !== 'string' || typeof body.configurationRevision !== 'number'
-    || typeof body.expiresAt !== 'number' || body.scripts === undefined) return null;
-  return { token: body.token, configurationRevision: body.configurationRevision, expiresAt: body.expiresAt, scripts: body.scripts };
+    || typeof body.expiresAt !== 'number' || body.configuration === undefined
+    || body.scripts === undefined) return null;
+  return {
+    token: body.token,
+    configurationRevision: body.configurationRevision,
+    expiresAt: body.expiresAt,
+    configuration: body.configuration,
+    scripts: body.scripts,
+  };
 };
 
 const isRetryableHttpStatus = (status: number): boolean =>
@@ -245,9 +249,8 @@ export const useAgentSetup = (
     saveError.value = null;
     adoptLeaseMetadata(lease);
 
-    const serverConfiguration = (raw as LeaseOkResponse).configuration;
-    if (formGeneration.value === savedGeneration && configurationsEqual(serverConfiguration, attemptedConfiguration)) {
-      installDraft(serverConfiguration);
+    if (formGeneration.value === savedGeneration && configurationsEqual(lease.configuration, attemptedConfiguration)) {
+      installDraft(lease.configuration);
       confirmedGeneration.value = formGeneration.value;
       return;
     }
@@ -436,12 +439,11 @@ export const useAgentSetup = (
   }, { immediate: true });
 
   return {
-    state: { initialized, token, configurationRevision, expiresAt, scripts, noSelectableKey, error },
+    state: { initialized, scripts, noSelectableKey, error },
     draft,
     syncing,
     terminated,
     canCopy,
     retryCreate,
-    dispose,
   };
 };

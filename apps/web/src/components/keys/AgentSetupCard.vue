@@ -4,8 +4,8 @@
 // only those edited fields to the server-restored configuration.
 import { computed, ref, shallowRef, watch } from 'vue';
 
-import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform.ts';
-import AgentConfigurationFields from './AgentConfigurationFields.vue';
+import { AGENT_SETUP_PLATFORMS, detectAgentSetupPlatform } from './agent-setup-platform.ts';
+import AgentConfigurationFields, { type ConfigurationPatch } from './AgentConfigurationFields.vue';
 import AgentConfigSnippets from './AgentConfigSnippets.vue';
 import AgentSetupCommand from './AgentSetupCommand.vue';
 import { useApi } from '../../api/client.ts';
@@ -29,18 +29,6 @@ const setup = useAgentSetup(
 const { draft: serverDraft, syncing, terminated, canCopy, retryCreate } = setup;
 const { initialized, noSelectableKey, error: setupError, scripts } = setup.state;
 
-const createLocalDraft = (): AgentSetupConfiguration => ({
-  apiKeyId: '',
-  claudeCode: {
-    model: null,
-    defaultOpusModel: null,
-    defaultSonnetModel: null,
-    defaultHaikuModel: null,
-    effortLevel: null,
-    modelDiscovery: true,
-  },
-  codex: { model: null, reasoningEffort: null },
-});
 const cloneConfiguration = (configuration: AgentSetupConfiguration): AgentSetupConfiguration => ({
   apiKeyId: configuration.apiKeyId,
   claudeCode: { ...configuration.claudeCode },
@@ -52,7 +40,18 @@ const copyChangedFields = <T extends object>(target: T, current: T, baseline: T)
   }
 };
 
-const localDraft = ref<AgentSetupConfiguration>(createLocalDraft());
+const localDraft = ref<AgentSetupConfiguration>({
+  apiKeyId: '',
+  claudeCode: {
+    model: null,
+    defaultOpusModel: null,
+    defaultSonnetModel: null,
+    defaultHaikuModel: null,
+    effortLevel: null,
+    modelDiscovery: true,
+  },
+  codex: { model: null, reasoningEffort: null },
+});
 let localDraftBaseline = cloneConfiguration(localDraft.value);
 const draft = computed<AgentSetupConfiguration>({
   get: () => props.selectedKey !== null && serverDraft.value !== null
@@ -63,10 +62,6 @@ const draft = computed<AgentSetupConfiguration>({
     else localDraft.value = configuration;
   },
 });
-type ConfigurationPatch = {
-  claudeCode?: Partial<AgentSetupConfiguration['claudeCode']>;
-  codex?: Partial<AgentSetupConfiguration['codex']>;
-};
 const updateConfiguration = (patch: ConfigurationPatch) => {
   draft.value = {
     ...draft.value,
@@ -91,7 +86,7 @@ type AgentSetupView = 'agent-setup' | 'config-snippets';
 type SetupAgent = 'claude' | 'codex';
 const activeView = shallowRef<AgentSetupView>('agent-setup');
 const activeAgent = shallowRef<SetupAgent>('claude');
-const commandPlatform = shallowRef<AgentSetupPlatform>(detectAgentSetupPlatform(navigator.platform, navigator.userAgent));
+const commandPlatform = shallowRef(detectAgentSetupPlatform(navigator.platform, navigator.userAgent));
 const visibleError = computed(() => activeView.value === 'config-snippets'
   ? props.error
   : initialized.value ? setupError.value ?? props.error : props.error);
@@ -100,15 +95,17 @@ const visibleError = computed(() => activeView.value === 'config-snippets'
 // dashboard's origin into the shell that runs the fetched installer.
 const origin = window.location.origin;
 const activeScripts = computed(() => scripts.value?.[activeAgent.value] ?? null);
-const activeAgentLabel = computed(() => activeAgent.value === 'claude' ? 'Claude Code' : 'Codex');
-const shellCommand = computed(() => (activeScripts.value
-  && props.selectedKey !== null
+const agentLabel = (agent: SetupAgent) => agent === 'claude' ? 'Claude Code' : 'Codex';
+const activeAgentLabel = computed(() => agentLabel(activeAgent.value));
+const commandPlaceholder = computed(() => props.selectedKey === null
+  ? '# Select an API key above to generate the setup command.'
+  : '# Preparing setup command…');
+const shellCommand = computed(() => activeScripts.value && props.selectedKey !== null
   ? `export SETUP_ENDPOINT='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${activeScripts.value.sh}" | bash`
-  : props.selectedKey === null ? '# Select an API key above to generate the setup command.' : '# Preparing setup command…'));
-const powerShellCommand = computed(() => (activeScripts.value
-  && props.selectedKey !== null
+  : commandPlaceholder.value);
+const powerShellCommand = computed(() => activeScripts.value && props.selectedKey !== null
   ? `$SetupEndpoint = '${origin.replace(/'/g, "''")}'; irm "$SetupEndpoint${activeScripts.value.ps1}" | iex`
-  : props.selectedKey === null ? '# Select an API key above to generate the setup command.' : '# Preparing setup command…'));
+  : commandPlaceholder.value);
 </script>
 
 <template>
@@ -137,7 +134,7 @@ const powerShellCommand = computed(() => (activeScripts.value
             @click="activeAgent = agent"
           >
             <i :class="agent === 'claude' ? 'i-simple-icons-anthropic' : 'i-simple-icons-openai'" class="size-4 shrink-0" />
-            {{ agent === 'claude' ? 'Claude Code' : 'Codex' }}
+            {{ agentLabel(agent) }}
           </button>
         </nav>
       </aside>
@@ -200,12 +197,11 @@ const powerShellCommand = computed(() => (activeScripts.value
             :command="commandPlatform === 'unix' ? shellCommand : powerShellCommand"
             :language="commandPlatform === 'unix' ? 'bash' : 'powershell'"
             :disabled="selectedKey === null || !canCopy"
-            :show-label="false"
           >
             <template #header>
               <div role="tablist" aria-label="Setup command platform" class="inline-flex items-center gap-1 rounded-lg bg-surface-800 p-0.5">
                 <button
-                  v-for="platform in (['unix', 'windows'] as const)"
+                  v-for="platform in AGENT_SETUP_PLATFORMS"
                   :key="platform"
                   role="tab"
                   class="rounded-md px-3 py-1.5 text-xs font-medium transition-all"

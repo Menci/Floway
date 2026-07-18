@@ -5,10 +5,7 @@ import type { ControlPlaneModel } from '../../api/types.ts';
 import type { AgentSetupConfiguration } from '../../composables/useAgentSetup.ts';
 import {
   buildModelOptions,
-  codexEffortSuggestions,
-  MODEL_OVERRIDE_NONE,
   type ModelOption,
-  normalizeEffortInput,
   rankAgentSetupModels,
 } from '../../lib/agent-setup-models.ts';
 import { Combobox, Select, Switch } from '@floway-dev/ui';
@@ -22,7 +19,7 @@ const props = defineProps<{
 type ClaudeConfiguration = AgentSetupConfiguration['claudeCode'];
 type ClaudeEffortLevel = NonNullable<ClaudeConfiguration['effortLevel']>;
 type CodexConfiguration = AgentSetupConfiguration['codex'];
-type ConfigurationPatch = {
+export type ConfigurationPatch = {
   claudeCode?: Partial<ClaudeConfiguration>;
   codex?: Partial<CodexConfiguration>;
 };
@@ -50,7 +47,7 @@ const fieldGridClass = 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:
 // persisted override, so this UI-only value cannot collide with a real model.
 const SELECT_NONE = '\u0000none';
 const toSelectOptions = (options: ModelOption[]) => options.map(option => ({
-  value: option.value === MODEL_OVERRIDE_NONE ? SELECT_NONE : option.value,
+  value: option.value === null ? SELECT_NONE : option.value,
   label: option.modelId === null
     ? 'Default'
     : option.unavailable ? `${option.modelId} (unavailable)` : option.modelId,
@@ -104,7 +101,13 @@ const codexEffortModel = computed(() => {
   if (id !== null) return props.models.find(model => model.id === id) ?? null;
   return rankAgentSetupModels(props.models, { family: 'codex' })[0] ?? null;
 });
-const codexEffortItems = computed(() => codexEffortSuggestions(codexEffortModel.value));
+// Codex reasoning-effort presets the combobox suggests, in the upstream-
+// advertised order. The value stays opaque: the input retains any non-empty
+// string, so suggestions never gate what the operator may submit.
+const codexEffortItems = computed(() => {
+  const supported = codexEffortModel.value?.chat?.reasoning?.effort?.supported;
+  return supported ? [...supported] : [];
+});
 
 const claudeModel = computed<string>({
   get: () => props.configuration.claudeCode.model ?? SELECT_NONE,
@@ -140,7 +143,9 @@ const codexModel = computed<string>({
 });
 const codexEffort = computed<string>({
   get: () => props.configuration.codex.reasoningEffort ?? '',
-  set: value => updateCodex('reasoningEffort', normalizeEffortInput(value)),
+  // Only the exact empty input clears the override; every nonempty upstream-owned
+  // value — including surrounding whitespace — is preserved verbatim.
+  set: value => updateCodex('reasoningEffort', value === '' ? null : value),
 });
 </script>
 
