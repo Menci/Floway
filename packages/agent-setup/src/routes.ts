@@ -25,7 +25,7 @@ import {
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { SETUP_SCRIPT_BODIES } from './script-assets.ts';
-import { generateAgentSetupToken } from './token.ts';
+import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
 import { agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 
 const SETUP_LEASE_TTL_MS = 5 * 60 * 1000;
@@ -34,15 +34,19 @@ const SETUP_LEASE_TTL_MS = 5 * 60 * 1000;
 // forever; a real collision is astronomically unlikely.
 const SETUP_TOKEN_MAX_ATTEMPTS = 5;
 
-const SCRIPT_RESPONSE_HEADERS = {
-  'content-type': 'text/plain; charset=utf-8',
-  // The rendered script carries a live API key and must never be cached by any
-  // hop: no-store covers HTTP/1.1, Pragma/Expires cover HTTP/1.0.
+// Every response beneath a credential-bearing setup URL is non-cacheable,
+// including opaque errors that contain no secret themselves.
+const NON_CACHEABLE_HEADERS = {
   'cache-control': 'no-store',
   'pragma': 'no-cache',
   'expires': '0',
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
+} as const;
+
+const SCRIPT_RESPONSE_HEADERS = {
+  ...NON_CACHEABLE_HEADERS,
+  'content-type': 'text/plain; charset=utf-8',
 } as const;
 
 // Retry an insert only when the token collides; every other error propagates.
@@ -116,7 +120,9 @@ type ScriptAgent = 'claude' | 'codex';
 
 const publicErrorDiagnostics = (error: unknown, token: string): string => {
   if (!(error instanceof Error)) return `Thrown value type: ${typeof error}`;
-  const frames = error.stack?.split('\n').slice(1).join('\n') ?? '(stack unavailable)';
+  const lines = error.stack?.split('\n') ?? [];
+  const firstFrame = lines.findIndex(line => /^\s*at\s/.test(line));
+  const frames = firstFrame === -1 ? '(stack unavailable)' : lines.slice(firstFrame).join('\n');
   return `${error.name}\n${frames.replaceAll(token, '[setup-token]')}`;
 };
 
@@ -137,11 +143,12 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       // Keep the unauthenticated response opaque. Operator diagnostics retain the
       // stack frames but omit the error message, which may contain a token or key.
       console.error('Agent Setup: failed to serve a public setup script', publicErrorDiagnostics(error, token));
-      return c.json({ error: { type: 'internal_error' } }, 500);
+      return c.json({ error: { type: 'internal_error' } }, 500, NON_CACHEABLE_HEADERS);
     }
   };
 
   const notFound = (c: Context) => c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
+  const tokenBearingPath = `/:token{${AGENT_SETUP_TOKEN_PREFIX_PATTERN}}`;
 
   return new Hono()
     .on(['GET', 'HEAD'], '/:token/claude.sh', serveSetupScript('claude', 'sh'))
@@ -151,8 +158,8 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.
-    .all('/:token{[A-Za-z0-9_-]{43}}', notFound)
-    .all('/:token{[A-Za-z0-9_-]{43}}/*', notFound);
+    .all(tokenBearingPath, notFound)
+    .all(`${tokenBearingPath}/*`, notFound);
 };
 
 // --- authenticated control routes ---
