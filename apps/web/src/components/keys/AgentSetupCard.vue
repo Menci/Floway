@@ -64,6 +64,21 @@ const draft = computed<AgentSetupConfiguration>({
     else localDraft.value = configuration;
   },
 });
+type ConfigurationPatch = {
+  claudeCode?: Partial<AgentSetupConfiguration['claudeCode']>;
+  codex?: Partial<AgentSetupConfiguration['codex']>;
+};
+const updateConfiguration = (patch: ConfigurationPatch) => {
+  draft.value = {
+    ...draft.value,
+    claudeCode: patch.claudeCode === undefined
+      ? draft.value.claudeCode
+      : { ...draft.value.claudeCode, ...patch.claudeCode },
+    codex: patch.codex === undefined
+      ? draft.value.codex
+      : { ...draft.value.codex, ...patch.codex },
+  };
+};
 
 watch([serverDraft, () => props.selectedKey?.id ?? null], ([configuration, selectedKeyId]) => {
   if (configuration === null || selectedKeyId === null) return;
@@ -168,7 +183,7 @@ const powerShellCommand = computed(() => (activeScripts.value
         </div>
         <p v-if="loading && models.length === 0" class="mb-4 text-[11px] text-gray-500">Loading models…</p>
 
-        <AgentConfigurationFields v-model:configuration="draft" :agent="activeAgent" :models="models" />
+        <AgentConfigurationFields :agent="activeAgent" :models="models" :configuration="draft" @update="updateConfiguration" />
 
         <AgentConfigSnippets
           v-if="activeView === 'config-snippets' && selectedKey !== null"
