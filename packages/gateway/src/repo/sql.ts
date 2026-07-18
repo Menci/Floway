@@ -1885,6 +1885,7 @@ interface AgentSetupRow {
 }
 
 const AGENT_SETUP_COLUMNS = 'token, user_id, api_key_id, configuration_json, configuration_revision, expires_at, created_at, updated_at';
+const AGENT_SETUP_LATEST_ORDER = 'updated_at DESC, created_at DESC, token DESC';
 
 const toAgentSetupRecord = (row: AgentSetupRow): AgentSetupRecord => ({
   userId: row.user_id,
@@ -1914,7 +1915,7 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
 
   async latestByUserId(userId: number): Promise<AgentSetupRecord | null> {
     const row = await this.db
-      .prepare(`SELECT ${AGENT_SETUP_COLUMNS} FROM agent_setup WHERE user_id = ? ORDER BY updated_at DESC, created_at DESC, token DESC LIMIT 1`)
+      .prepare(`SELECT ${AGENT_SETUP_COLUMNS} FROM agent_setup WHERE user_id = ? ORDER BY ${AGENT_SETUP_LATEST_ORDER} LIMIT 1`)
       .bind(userId)
       .first<AgentSetupRow>();
     return row ? toAgentSetupRecord(row) : null;
@@ -1984,14 +1985,11 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
     await this.db.prepare(
       `DELETE FROM agent_setup
        WHERE expires_at <= ?
-         AND EXISTS (
-           SELECT 1 FROM agent_setup AS newer
-           WHERE newer.user_id = agent_setup.user_id
-             AND (
-               newer.updated_at > agent_setup.updated_at
-               OR (newer.updated_at = agent_setup.updated_at AND newer.created_at > agent_setup.created_at)
-               OR (newer.updated_at = agent_setup.updated_at AND newer.created_at = agent_setup.created_at AND newer.token > agent_setup.token)
-             )
+         AND token <> (
+           SELECT token FROM agent_setup AS latest
+           WHERE latest.user_id = agent_setup.user_id
+           ORDER BY ${AGENT_SETUP_LATEST_ORDER}
+           LIMIT 1
          )`,
     ).bind(expiresAt).run();
   }
