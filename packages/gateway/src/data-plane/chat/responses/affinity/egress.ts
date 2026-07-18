@@ -1,8 +1,13 @@
-import { carrierDomain } from './carrier-domain.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { createTemporaryResponsesItemId } from '../items/format.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+
+const canonicalItemType = (itemType: string): string =>
+  itemType === 'compaction_summary' ? 'compaction' : itemType;
+
+const carrierDomain = (itemType: string, slot: string): string =>
+  `responses.${canonicalItemType(itemType)}.${slot}`;
 
 const opaqueSlots = (item: ResponsesOutputItem): Array<{ key: string; value: string }> => {
   const slots: Array<{ key: string; value: string }> = [];

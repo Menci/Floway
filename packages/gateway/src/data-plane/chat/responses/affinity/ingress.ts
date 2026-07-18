@@ -1,4 +1,3 @@
-import { carrierDomain } from './carrier-domain.ts';
 import { type AffinityCodec, blobForExactCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 
@@ -8,6 +7,12 @@ interface ResponsesBlobLocation {
   readonly contentIndex?: number;
   readonly decoded: DecodedAffinityBlob;
 }
+
+const canonicalItemType = (itemType: string): string =>
+  itemType === 'compaction_summary' ? 'compaction' : itemType;
+
+const carrierDomain = (itemType: string, slot: string): string =>
+  `responses.${canonicalItemType(itemType)}.${slot}`;
 
 const isOwnedLocation = (
   location: ResponsesBlobLocation,
