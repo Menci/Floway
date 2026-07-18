@@ -27,32 +27,22 @@ codex_ensure_installed() {
     CODEX_NON_INTERACTIVE=true _download_and_run_installer "$AGENT_SETUP_TEST_CODEX_URL" || return 1
   else
     case "$(uname -s)" in
-      Darwin)
-        if command -v brew >/dev/null 2>&1; then
-          out_info 'Codex CLI not found; installing with Homebrew'
-          _install_brew_cask codex || return 1
-        elif command -v npm >/dev/null 2>&1; then
-          out_info 'Codex CLI not found; installing with npm'
-          _install_npm_package '@openai/codex' || return 1
-        else
-          out_info 'Codex CLI not found; installing from GitHub'
-          CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
-        fi
-        ;;
-      Linux)
-        if command -v npm >/dev/null 2>&1; then
-          out_info 'Codex CLI not found; installing with npm'
-          _install_npm_package '@openai/codex' || return 1
-        else
-          out_info 'Codex CLI not found; installing from GitHub'
-          CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
-        fi
-        ;;
+      Darwin | Linux) ;;
       *)
         out_error 'automatic Codex installation supports macOS and Linux only in the Bash installer.'
         return 1
         ;;
     esac
+    if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
+      out_info 'Codex CLI not found; installing with Homebrew'
+      _install_brew_cask codex || return 1
+    elif command -v npm >/dev/null 2>&1; then
+      out_info 'Codex CLI not found; installing with npm'
+      _install_npm_package '@openai/codex' || return 1
+    else
+      out_info 'Codex CLI not found; installing from GitHub'
+      CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
+    fi
   fi
   hash -r 2>/dev/null || true
   _discover_cli codex \
@@ -109,9 +99,9 @@ codex_rollback() {
 }
 
 codex_commit_files() {
-  _prune_managed_backups "$CODEX_CONFIG_PATH" "${CODEX_CONFIG_BACKUP:-}" || return 1
-  _prune_managed_backups "$CODEX_TOKEN_PATH" "${CODEX_TOKEN_BACKUP:-}" || return 1
-  if [ -n "${CODEX_TOKEN_BACKUP:-}" ] && ! rm -f "$CODEX_TOKEN_BACKUP"; then
+  _prune_managed_backups "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP" || return 1
+  _prune_managed_backups "$CODEX_TOKEN_PATH" "$CODEX_TOKEN_BACKUP" || return 1
+  if [ -n "$CODEX_TOKEN_BACKUP" ] && ! rm -f "$CODEX_TOKEN_BACKUP"; then
     out_error "could not remove provider-token backup $CODEX_TOKEN_BACKUP"
     return 1
   fi

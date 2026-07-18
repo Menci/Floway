@@ -16,7 +16,7 @@ function Install-SetupCodex {
     $env:CODEX_NON_INTERACTIVE = 'true'
     if ($env:AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT) {
       Write-SetupInfo 'Codex CLI not found; running the test installer'
-      $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 120 }
+      $timeoutSeconds = Get-SetupTimeoutSeconds 120
       $installer = Invoke-SetupProcess -Exe $env:AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
       if ($installer.ExitCode -ne 0) { Stop-Setup "the test codex installer hook failed." }
       return
@@ -28,38 +28,19 @@ function Install-SetupCodex {
     }
     $platform = Get-SetupPlatform
     $npm = Get-Command npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    switch ($platform) {
-      'macos' {
-        $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($brew) {
-          Write-SetupInfo 'Codex CLI not found; installing with Homebrew'
-          Install-SetupHomebrewCask -Cask 'codex'
-        } elseif ($npm) {
-          Write-SetupInfo 'Codex CLI not found; installing with npm'
-          Install-SetupNpmPackage -Package '@openai/codex'
-        } else {
-          Write-SetupInfo 'Codex CLI not found; installing from GitHub'
-          Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' -Shell
-        }
-      }
-      'windows' {
-        if ($npm) {
-          Write-SetupInfo 'Codex CLI not found; installing with npm'
-          Install-SetupNpmPackage -Package '@openai/codex'
-        } else {
-          Write-SetupInfo 'Codex CLI not found; installing from GitHub'
-          Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1'
-        }
-      }
-      'linux' {
-        if ($npm) {
-          Write-SetupInfo 'Codex CLI not found; installing with npm'
-          Install-SetupNpmPackage -Package '@openai/codex'
-        } else {
-          Write-SetupInfo 'Codex CLI not found; installing from GitHub'
-          Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' -Shell
-        }
-      }
+    $brew = if ($platform -eq 'macos') { Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 } else { $null }
+    if ($brew) {
+      Write-SetupInfo 'Codex CLI not found; installing with Homebrew'
+      Install-SetupHomebrewCask -Cask 'codex'
+    } elseif ($npm) {
+      Write-SetupInfo 'Codex CLI not found; installing with npm'
+      Install-SetupNpmPackage -Package '@openai/codex'
+    } elseif ($platform -eq 'windows') {
+      Write-SetupInfo 'Codex CLI not found; installing from GitHub'
+      Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1'
+    } else {
+      Write-SetupInfo 'Codex CLI not found; installing from GitHub'
+      Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' -Shell
     }
   } finally {
     if ($hadNonInteractive) { $env:CODEX_NON_INTERACTIVE = $previousNonInteractive }
@@ -176,7 +157,7 @@ function Invoke-SetupCodexAppServerBatchWrite {
 function Write-SetupCodexConfig {
   param([string]$Exe)
   $codexBase = ($SetupEndpoint.TrimEnd('/')) + '/azure-api.codex'
-  $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+  $runningOnWindows = Test-SetupIsWindows
   $auth = if ($runningOnWindows) {
     [ordered]@{
       command = 'powershell'
@@ -210,7 +191,7 @@ function Write-SetupCodexConfig {
     @{ keyPath = 'model'; mergeStrategy = 'replace'; value = $SetupCodexModel },
     @{ keyPath = 'model_reasoning_effort'; mergeStrategy = 'replace'; value = $SetupCodexReasoningEffort }
   )
-  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 60 }
+  $timeoutSeconds = Get-SetupTimeoutSeconds 60
   $result = Invoke-SetupCodexAppServerBatchWrite -Exe $Exe -Edits $edits -TimeoutSeconds $timeoutSeconds
   $status = [string]$result.status
   if ($status -eq 'okOverridden') {
@@ -242,7 +223,7 @@ function Write-SetupCodexToken {
     if ([System.IO.File]::ReadAllText($stage) -cne $SetupApiKey) {
       Stop-Setup "staged Codex provider token failed validation."
     }
-    $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+    $runningOnWindows = Test-SetupIsWindows
     if ($script:CodexTokenExisted -and $runningOnWindows) {
       # File.Replace preserves the destination ACL, so tighten it first.
       Protect-SetupFile $script:CodexTokenPath
@@ -261,7 +242,7 @@ function Write-SetupCodexToken {
 
 function Write-SetupCodexVersion {
   param([string]$Exe)
-  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 30 }
+  $timeoutSeconds = Get-SetupTimeoutSeconds 30
   $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '``codex --version`` timed out.'
   if ($version.ExitCode -ne 0) { Stop-Setup "``codex --version`` failed." }
   Write-SetupInfo "Codex version: $($version.Output.Trim())"

@@ -3,13 +3,11 @@
 function Main {
   param([string]$AgentName)
   $ErrorActionPreference = 'Stop'
-  if (-not (Test-Path Variable:SetupEndpoint)) { $SetupEndpoint = $null }
   # Keep native command failures from auto-throwing on PowerShell 7.3+ so the
   # explicit exit-code checks remain authoritative across versions.
   $PSNativeCommandUseErrorActionPreference = $false
 
   Remove-Item Env:SETUP_API_KEY -ErrorAction SilentlyContinue
-  Remove-Item Env:SetupApiKey -ErrorAction SilentlyContinue
 
   try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }
   $script:SetupNoColor = [bool]$env:NO_COLOR
@@ -21,11 +19,11 @@ function Main {
 
   Write-SetupAgentNotice 'Agent Setup' $AgentName
   if ([string]::IsNullOrWhiteSpace($SetupEndpoint)) {
-    Write-SetupFatal "`$SetupEndpoint must be set to this gateway origin (e.g. https://gateway.example)."
+    Write-SetupError "`$SetupEndpoint must be set to this gateway origin (e.g. https://gateway.example)."
     return 1
   }
   if ($SetupEndpoint -notmatch '^https?://.+') {
-    Write-SetupFatal "`$SetupEndpoint must be an http(s) origin, got $SetupEndpoint"
+    Write-SetupError "`$SetupEndpoint must be an http(s) origin, got $SetupEndpoint"
     return 1
   }
   Write-SetupMetadata 'Endpoint' $SetupEndpoint

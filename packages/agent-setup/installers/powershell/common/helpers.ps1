@@ -1,3 +1,17 @@
+# Windows PowerShell 5.1 only runs on Windows and has no $IsWindows automatic
+# variable; PowerShell 6+ exposes it on every platform.
+function Test-SetupIsWindows {
+  ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+}
+
+# The AGENT_SETUP_TEST_TIMEOUT_SECONDS hook, read from the ambient environment
+# and never emitted by the gateway, lets the harness shorten every wall-clock
+# limit; otherwise the caller-supplied default applies.
+function Get-SetupTimeoutSeconds {
+  param([int]$Default)
+  if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { $Default }
+}
+
 function Set-SetupProp {
   param($Target, [string]$Name, $Value)
   if ($Target.PSObject.Properties.Name -contains $Name) { $Target.$Name = $Value }
@@ -25,7 +39,7 @@ function Protect-SetupSecret {
 # owner-only ACL on Windows.
 function Protect-SetupFile {
   param([string]$Path)
-  if (($PSVersionTable.PSVersion.Major -ge 6) -and (-not $IsWindows)) {
+  if (-not (Test-SetupIsWindows)) {
     & chmod 600 $Path
     if ($LASTEXITCODE -ne 0) { Stop-Setup "could not restrict $Path to owner-only access." }
     return
@@ -51,7 +65,7 @@ function Protect-SetupFile {
 # tree-aware Kill(bool) overload; Windows PowerShell 5.1 uses taskkill /T.
 function Stop-SetupProcessTree {
   param([System.Diagnostics.Process]$Process)
-  $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+  $runningOnWindows = Test-SetupIsWindows
   if ($runningOnWindows) {
     & taskkill.exe /PID $Process.Id /T /F *> $null
     if ($LASTEXITCODE -ne 0 -and (-not $Process.HasExited)) {
@@ -67,7 +81,7 @@ function Stop-SetupProcessTree {
 }
 
 function Get-SetupPlatform {
-  if (($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows) { return 'windows' }
+  if (Test-SetupIsWindows) { return 'windows' }
   if ($IsMacOS) { return 'macos' }
   return 'linux'
 }
@@ -97,7 +111,7 @@ function Install-SetupHomebrewCask {
   param([string]$Cask)
   $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $brew) { Stop-Setup 'Homebrew is required to install agent CLIs on macOS.' }
-  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 600 }
+  $timeoutSeconds = Get-SetupTimeoutSeconds 600
   Invoke-SetupLiveProcess -Exe $brew.Source -Arguments @('install', '--cask', $Cask) -TimeoutSeconds $timeoutSeconds
 }
 
@@ -114,7 +128,7 @@ function Install-SetupNpmPackage {
   $npmLiteral = "'" + $npm.Source.Replace("'", "''") + "'"
   $packageLiteral = "'" + $Package.Replace("'", "''") + "'"
   $command = "& $npmLiteral install --global $packageLiteral; exit `$LASTEXITCODE"
-  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 600 }
+  $timeoutSeconds = Get-SetupTimeoutSeconds 600
   Invoke-SetupLiveProcess -Exe $hostExe -Arguments @('-NoProfile', '-NonInteractive', '-Command', $command) -TimeoutSeconds $timeoutSeconds
 }
 
@@ -170,7 +184,7 @@ function Invoke-SetupRemoteInstaller {
   if ([string]::IsNullOrWhiteSpace($body) -or $looksLikeHtml) {
     Stop-Setup "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
   }
-  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 120 }
+  $timeoutSeconds = Get-SetupTimeoutSeconds 120
   if ($Shell) { Invoke-SetupShellBody -Body $body -TimeoutSeconds $timeoutSeconds }
   else { Invoke-SetupPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds -BypassExecutionPolicy:$BypassExecutionPolicy }
 }

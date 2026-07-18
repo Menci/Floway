@@ -52,6 +52,9 @@ _run_with_timeout() {
   return $_rwt_status
 }
 
+# jq handle, resolved by ensure_jq before any configuration file is touched.
+JQ=""
+
 # Download the pinned official jq build for this platform into the private
 # working directory and verify its hard-coded SHA-256 before use. Fails on an
 # unsupported platform, a download error, a missing hashing tool, or a checksum
@@ -119,9 +122,6 @@ _bootstrap_jq() {
 # AGENT_SETUP_TEST_NO_JQ_DOWNLOAD hook lets the test harness assert the
 # fail-before-mutation path without reaching the network.
 ensure_jq() {
-  if [ -n "$JQ" ]; then
-    return 0
-  fi
   if command -v jq >/dev/null 2>&1; then
     JQ=jq
     return 0

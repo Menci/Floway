@@ -14,27 +14,25 @@ main() {
   out_agent_notice 'Agent Setup' "$1"
 
   if [ -z "${SETUP_ENDPOINT:-}" ]; then
-    out_fatal 'SETUP_ENDPOINT must be set to this gateway origin (e.g. https://gateway.example).'
+    out_error 'SETUP_ENDPOINT must be set to this gateway origin (e.g. https://gateway.example).'
     return 1
   fi
   case "$SETUP_ENDPOINT" in
     http://?* | https://?*) ;;
-    *) out_fatal "SETUP_ENDPOINT must be an http(s) origin, got $SETUP_ENDPOINT"; return 1 ;;
+    *) out_error "SETUP_ENDPOINT must be an http(s) origin, got $SETUP_ENDPOINT"; return 1 ;;
   esac
   out_metadata 'Endpoint' "$SETUP_ENDPOINT"
   out_metadata 'API Key' "$SETUP_API_KEY_NAME"
   export -n SETUP_ENDPOINT 2>/dev/null || true
 
   SETUP_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/agent-setup.XXXXXX") || {
-    out_fatal 'could not create a private working directory.'
+    out_error 'could not create a private working directory.'
     return 1
   }
   chmod 700 "$SETUP_TMPDIR" 2>/dev/null || true
   trap _cleanup EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  JQ=""
 
-  configure_agent || return 1
-  return 0
+  configure_agent
 }

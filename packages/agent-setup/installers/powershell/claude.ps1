@@ -7,7 +7,7 @@
 function Install-SetupClaude {
   if ($env:AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT) {
     Write-SetupInfo 'Claude Code CLI not found; running the test installer'
-    $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 120 }
+    $timeoutSeconds = Get-SetupTimeoutSeconds 120
     $installer = Invoke-SetupProcess -Exe $env:AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
     if ($installer.ExitCode -ne 0) { Stop-Setup "the test installer hook failed." }
     return
@@ -57,10 +57,6 @@ function Install-SetupClaude {
   }
 }
 
-function Restore-SetupClaudeSettings {
-  Restore-SetupManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -OriginalLabel 'file' -CreatedLabel 'Claude settings'
-}
-
 # Surgically merge the managed keys into the Claude settings file: validate the
 # existing document, back it up, construct and validate the replacement in the
 # same directory, then atomically rename it into place with owner-only access.
@@ -73,7 +69,6 @@ function Write-SetupClaudeSettings {
     New-Item -ItemType Directory -Path $configDir -Force | Out-Null
   }
 
-  $document = $null
   if (Test-Path -LiteralPath $script:ClaudeSettingsPath) {
     $script:ClaudeSettingsExisted = $true
     $raw = Get-Content -Raw -LiteralPath $script:ClaudeSettingsPath
@@ -129,9 +124,7 @@ function Write-SetupClaudeSettings {
     if (($check.env.ANTHROPIC_BASE_URL -cne $SetupEndpoint) -or ($check.env.ANTHROPIC_AUTH_TOKEN -cne $SetupApiKey)) {
       Stop-Setup "staged Claude settings failed validation."
     }
-    # Windows PowerShell 5.1 only runs on Windows and has no $IsWindows
-    # automatic variable; PowerShell 6+ exposes it on every platform.
-    $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+    $runningOnWindows = Test-SetupIsWindows
     if ($script:ClaudeSettingsExisted -and $runningOnWindows) {
       # File.Replace preserves the destination ACL, so tighten it first rather
       # than letting a permissive historical DACL survive the atomic replace.
@@ -148,14 +141,14 @@ function Write-SetupClaudeSettings {
     Remove-SetupOlderBackups -Path $script:ClaudeSettingsPath -Keep $script:ClaudeSettingsBackup
   } catch {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force }
-    Restore-SetupClaudeSettings
+    Restore-SetupManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -OriginalLabel 'file' -CreatedLabel 'Claude settings'
     throw
   }
 }
 
 function Write-SetupClaudeVersion {
   param([string]$Exe)
-  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 30 }
+  $timeoutSeconds = Get-SetupTimeoutSeconds 30
   $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '``claude --version`` timed out.'
   if ($version.ExitCode -ne 0) { Stop-Setup "``claude --version`` failed." }
   Write-SetupInfo "Claude Code version: $($version.Output.Trim())"

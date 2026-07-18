@@ -65,7 +65,6 @@ out_metadata() { _emit_line 1 '' "$1: $2"; }
 out_info() { _emit_line 1 '' "$1"; }
 out_warn() { _emit_diagnostic "$_C_YELLOW" 'Warning' "$1"; }
 out_error() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
-out_fatal() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
 
 SETUP_TMPDIR=""
 _cleanup() {
