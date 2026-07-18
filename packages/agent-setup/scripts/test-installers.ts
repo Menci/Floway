@@ -239,7 +239,10 @@ if (cmd === '--version') {
       if (mode === 'no-initialize-response') return;
       send({ id: msg.id, result: { userAgent: 'fake-codex/9.9.9', codexHome: home, platformFamily: 'unix', platformOs: 'linux' } });
       send({ jsonrpc: '2.0', method: 'remoteControl/status/changed', params: { status: 'disabled' } });
-      if (mode === 'exit-after-initialize') { process.exit(0); }
+      if (mode === 'close-request-after-initialize') {
+        fs.closeSync(0);
+        setTimeout(() => process.exit(0), 5000);
+      }
       return;
     }
     if (msg.method === 'initialized') { rec({ marker: 'initialized' }); return; }
@@ -1678,7 +1681,7 @@ test('codex', 'a malformed app-server response fails codex', async t => {
 test('codex', 'an app-server exit between handshake writes rolls back the provider token', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
-  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'exit-after-initialize' });
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'close-request-after-initialize' });
   t.ok(run.code !== 0, 'a broken app-server request pipe must fail codex');
   t.ok(!existsSync(codexTokenPath(ws)), 'SIGPIPE cannot bypass provider-token rollback');
 });
