@@ -31,8 +31,12 @@ interface LeaseResponse {
   scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } };
 }
 
-const createLease = async (rawKey: string): Promise<LeaseResponse> => {
-  const response = await requestApp('/api/setup', { method: 'POST', headers: { 'x-api-key': rawKey } });
+const createLease = async (apiKey: ApiKey): Promise<LeaseResponse> => {
+  const response = await requestApp('/api/setup', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: JSON.stringify({ apiKeyId: apiKey.id }),
+  });
   assertEquals(response.status, 200);
   return (await response.json()) as LeaseResponse;
 };
@@ -60,7 +64,7 @@ test('an unsupported method on a token-shaped path is contained before auth and 
 
 test('the public GET serves the rendered script with hardened headers and no CORS, requiring no auth', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = await createLease(apiKey.key);
+  const lease = await createLease(apiKey);
 
   const response = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
   assertEquals(response.status, 200);
@@ -77,7 +81,7 @@ test('the public GET serves the rendered script with hardened headers and no COR
 
 test('HEAD validates without assembling the API-key body', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = await createLease(apiKey.key);
+  const lease = await createLease(apiKey);
   const response = await requestApp(lease.scripts.claude.sh, { method: 'HEAD' });
   assertEquals(response.status, 200);
   assertEquals(await response.text(), '');
@@ -92,7 +96,7 @@ test('a bogus token is a generic 404 with an empty body and no auth challenge', 
 
 test('the public script route is mounted ahead of the logger, so the lease token never reaches a log line', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = await createLease(apiKey.key);
+  const lease = await createLease(apiKey);
 
   const logged: string[] = [];
   const logSpy = vi.spyOn(console, 'log').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
@@ -110,7 +114,7 @@ test('the public script route is mounted ahead of the logger, so the lease token
 
 test('OPTIONS on a script path is contained without resolving the lease or exposing CORS', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = await createLease(apiKey.key);
+  const lease = await createLease(apiKey);
   const repo = getRepo();
 
   const findByTokenSpy = vi.spyOn(repo.agentSetup, 'findByToken');
@@ -130,7 +134,7 @@ test('OPTIONS on a script path is contained without resolving the lease or expos
 
 test('a public-serve failure is sealed to an opaque 500 that leaks neither token nor secret', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = await createLease(apiKey.key);
+  const lease = await createLease(apiKey);
   const repo = getRepo();
 
   const injectedSecret = 'INJECTED-SECRET-sk-abcdef0123456789';
@@ -161,7 +165,11 @@ test('an ordinary control-route internal error still surfaces the full stack tra
 
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   try {
-    const response = await requestApp('/api/setup', { method: 'POST', headers: { 'x-api-key': apiKey.key } });
+    const response = await requestApp('/api/setup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+      body: JSON.stringify({ apiKeyId: apiKey.id }),
+    });
     assertEquals(response.status, 500);
     const body = (await response.json()) as { error: { type: string; message: string; stack: string; path: string } };
     assertEquals(body.error.type, 'internal_error');
