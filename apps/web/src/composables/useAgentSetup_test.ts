@@ -103,7 +103,7 @@ describe('useAgentSetup — lease acquisition', () => {
   it('does not create a lease until agent setup becomes active', async () => {
     const { api, records } = makeApi();
     const active = shallowRef(false);
-    run(() => useAgentSetup(api, null, active));
+    run(() => useAgentSetup(api, ['key-1'], active));
     expect(records.post).toHaveLength(0);
 
     active.value = true;
@@ -111,15 +111,14 @@ describe('useAgentSetup — lease acquisition', () => {
     expect(records.post).toHaveLength(1);
   });
 
-  it('posts exactly one create with no request body and adopts the returned lease', async () => {
+  it('posts exactly one create for the selected key and adopts the returned lease', async () => {
     const { api, records } = makeApi();
-    const setup = run(() => useAgentSetup(api));
+    const setup = run(() => useAgentSetup(api, ['key-1']));
 
     expect(records.post.length).toBe(1);
-    // The create POST sends no request data: the lease carries no origin. The
-    // helper keeps the script URLs relative, and the command builder is what
-    // pairs them with this dashboard's origin.
-    expect(records.post[0]!.args[0]).toBeUndefined();
+    // Acquisition names the selected key but carries no origin. Script URLs stay
+    // relative; the command builder pairs them with this dashboard's origin.
+    expect(records.post[0]!.args[0]).toEqual({ json: { apiKeyId: 'key-1' } });
     expect(setup.state.initialized.value).toBe(false);
 
     records.post[0]!.deferred.resolve(okBody(lease()));
@@ -140,7 +139,7 @@ describe('useAgentSetup — lease acquisition', () => {
   it('restores a persisted draft the server hands back on reopen', async () => {
     const { api, records } = makeApi();
     const restored = { ...defaultConfig(), codex: { model: 'gpt-5-codex', reasoningEffort: 'high' } };
-    const setup = run(() => useAgentSetup(api));
+    const setup = run(() => useAgentSetup(api, ['key-1']));
     records.post[0]!.deferred.resolve(okBody(lease({ configuration: restored, configurationRevision: 4 })));
     await vi.advanceTimersByTimeAsync(0);
 
@@ -150,7 +149,7 @@ describe('useAgentSetup — lease acquisition', () => {
 
   it('surfaces the no-selectable-key sentinel from a 409 create body', async () => {
     const { api, records } = makeApi();
-    const setup = run(() => useAgentSetup(api));
+    const setup = run(() => useAgentSetup(api, ['key-1']));
     records.post[0]!.deferred.resolve(conflictBody({ status: 'no-selectable-key' }));
     await vi.advanceTimersByTimeAsync(0);
 
@@ -161,7 +160,7 @@ describe('useAgentSetup — lease acquisition', () => {
 
   it('surfaces a failed create, ends the spinner, and recovers on retryCreate', async () => {
     const { api, records } = makeApi();
-    const setup = run(() => useAgentSetup(api));
+    const setup = run(() => useAgentSetup(api, ['key-1']));
 
     // The first create fails with a 500: no endless "Preparing" state — the
     // error is surfaced and initialization stays false so the card can offer Retry.
@@ -184,7 +183,7 @@ describe('useAgentSetup — lease acquisition', () => {
 
   it('recovers from a timed-out create via retryCreate', async () => {
     const { api, records } = makeApi();
-    const setup = run(() => useAgentSetup(api));
+    const setup = run(() => useAgentSetup(api, ['key-1']));
 
     // Never resolve the first create; the 20s request timeout aborts it.
     await vi.advanceTimersByTimeAsync(20_000);
@@ -201,7 +200,7 @@ describe('useAgentSetup — lease acquisition', () => {
 
   it('retryCreate aborts the prior in-flight create and ignores its late response', async () => {
     const { api, records } = makeApi();
-    const setup = run(() => useAgentSetup(api));
+    const setup = run(() => useAgentSetup(api, ['key-1']));
     const firstSignal = signalArg(records.post[0]!);
 
     // Retry while the first create is still in flight: it aborts and reposts once.
@@ -225,7 +224,7 @@ describe('useAgentSetup — lease acquisition', () => {
   it('aborts and ignores a create when agent setup becomes inactive', async () => {
     const { api, records } = makeApi();
     const active = shallowRef(true);
-    const setup = run(() => useAgentSetup(api, null, active));
+    const setup = run(() => useAgentSetup(api, ['key-1'], active));
     const createSignal = signalArg(records.post[0]!);
 
     active.value = false;
@@ -646,7 +645,7 @@ describe('useAgentSetup — terminal + lifecycle', () => {
 
   it.each(['create', 'heartbeat'] as const)('dispose() aborts an active %s request', async kind => {
     const { api, records } = makeApi();
-    const setup = run(() => useAgentSetup(api));
+    const setup = run(() => useAgentSetup(api, ['key-1']));
     let call = records.post[0]!;
 
     if (kind === 'heartbeat') {

@@ -198,8 +198,12 @@ const heartbeatJson = (body: object): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-const create = async (h: Harness): Promise<LeaseResponse> => {
-  const response = await h.request('/api/setup', { method: 'POST' });
+const create = async (h: Harness, apiKeyId = 'key_primary'): Promise<LeaseResponse> => {
+  const response = await h.request('/api/setup', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ apiKeyId }),
+  });
   assertEquals(response.status, 200);
   return (await response.json()) as LeaseResponse;
 };
@@ -222,9 +226,18 @@ test('POST first use selects the first key and enables both agents at revision 1
   assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
 });
 
+test('POST creates the lease for the requested selectable key', async () => {
+  const h = harness({ keys: ['key_primary', 'key_other'], secrets: { key_primary: RAW_KEY, key_other: 'raw-other' } });
+  const body = await create(h, 'key_other');
+  assertEquals(body.configuration.apiKeyId, 'key_other');
+  assertEquals((await h.repo.findByToken(body.token))?.apiKeyId, 'key_other');
+});
+
 test('POST projects scripts from the host-supplied public route path', async () => {
   const h = harness({ routePath: '/custom/agent-setup' });
-  const response = await h.request('/custom/agent-setup', { method: 'POST' });
+  const response = await h.request('/custom/agent-setup', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }),
+  });
   assertEquals(response.status, 200);
   const body = (await response.json()) as LeaseResponse;
   assertEquals(body.scripts.claude.sh, `/custom/agent-setup/${body.token}/claude.sh`);
@@ -233,7 +246,9 @@ test('POST projects scripts from the host-supplied public route path', async () 
 
 test('POST returns no-selectable-key when the account has no key', async () => {
   const h = harness({ keys: [] });
-  const response = await h.request('/api/setup', { method: 'POST' });
+  const response = await h.request('/api/setup', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }),
+  });
   assertEquals(response.status, 409);
   assertEquals(((await response.json()) as { status: string }).status, 'no-selectable-key');
 });
@@ -387,7 +402,9 @@ test('POST retries a token collision without masking unrelated failures', async 
   h.repo.insertForUser = () => { attempts += 1; throw new Error('disk I/O error'); };
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   try {
-    const failed = await h.request('/api/setup', { method: 'POST' });
+    const failed = await h.request('/api/setup', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }),
+    });
     assertEquals(failed.status, 500);
     expect(attempts).toBe(1);
   } finally {
