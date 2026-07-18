@@ -277,7 +277,7 @@ test('POST falls back to a first-use default when the latest config points at an
   const h2 = harness({ keys: ['key_other'], secrets: { key_other: 'raw-other' } });
   // Seed h2's repo with the same saved (unselectable) latest row.
   await h2.repo.insertForUser({ userId: USER_ID, token: 'x'.repeat(43), apiKeyId: 'key_primary', configurationJson: JSON.stringify(edited), now: Date.now(), expiresAt: Date.now() + 300_000 });
-  const reopened = await create(h2);
+  const reopened = await create(h2, 'key_other');
   assertEquals(reopened.configuration.apiKeyId, 'key_other');
   assertEquals(reopened.configuration.codex.reasoningEffort, null);
 });
