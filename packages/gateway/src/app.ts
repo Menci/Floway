@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
 
 import { AGENT_SETUP_ROUTE_PATH, agentSetupPublicRoutes } from './control-plane/agent-setup.ts';
 import { controlPlaneRoutes } from './control-plane/routes.ts';
@@ -20,13 +21,7 @@ export const app = new Hono<{ Variables: AuthVars }>()
   // per-path bypass is needed in any of those layers and a lease token never
   // reaches a log line. The package seals every failure on these routes itself.
   .route(AGENT_SETUP_ROUTE_PATH, agentSetupPublicRoutes)
-  // One completion line per request for everything that reaches the middleware
-  // chain (the public script routes above already returned and are not logged).
-  .use('*', async (c, next) => {
-    const start = Date.now();
-    await next();
-    console.log(`${c.req.method} ${c.req.path} ${c.res.status} ${Date.now() - start}ms`);
-  })
+  .use('*', logger())
   .use('*', cors())
   .use('*', authMiddleware)
   .route('/', controlPlaneRoutes);
