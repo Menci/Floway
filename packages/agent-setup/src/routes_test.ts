@@ -466,6 +466,7 @@ test('near-miss public URLs are consumed before host middleware can log their to
     [`/api/setup/${token}/claude.sh/extra`, 'GET'],
     [`/api/setup/${token}/codex.sh`, 'POST'],
     [`/api/setup/${token}`, 'GET'],
+    [`/api/setup/${token}x`, 'GET'],
   ] as const) {
     const response = await app.request(path, { method });
     assertEquals(response.status, 404);
@@ -512,7 +513,7 @@ test('a public serve failure is sealed to an opaque 500 that leaks neither token
   const lease = { token: 'a'.repeat(43) };
   const h = harness({
     publicOverrides: {
-      repository: { findByToken: () => { throw new Error(`forced failure leaking ${lease.token} and ${injectedSecret}`); } },
+      repository: { findByToken: () => { throw new Error(`forced failure\nsecond line leaking ${lease.token} and ${injectedSecret}`); } },
     },
   });
   const logged: string[] = [];
@@ -520,6 +521,8 @@ test('a public serve failure is sealed to an opaque 500 that leaks neither token
   try {
     const response = await h.request(`/api/setup/${lease.token}/claude.sh`, { method: 'GET' });
     assertEquals(response.status, 500);
+    assertEquals(response.headers.get('cache-control'), 'no-store');
+    assertEquals(response.headers.get('pragma'), 'no-cache');
     const raw = await response.text();
     expect(JSON.parse(raw)).toEqual({ error: { type: 'internal_error' } });
     expect(raw).not.toContain(injectedSecret);
