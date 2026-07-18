@@ -237,12 +237,17 @@ if (cmd === '--version') {
     rec({ received: { method: msg.method, id: msg.id, params: msg.params } });
     if (msg.method === 'initialize') {
       if (mode === 'no-initialize-response') return;
-      send({ id: msg.id, result: { userAgent: 'fake-codex/9.9.9', codexHome: home, platformFamily: 'unix', platformOs: 'linux' } });
-      send({ jsonrpc: '2.0', method: 'remoteControl/status/changed', params: { status: 'disabled' } });
+      const response = { id: msg.id, result: { userAgent: 'fake-codex/9.9.9', codexHome: home, platformFamily: 'unix', platformOs: 'linux' } };
       if (mode === 'close-request-after-initialize') {
-        fs.closeSync(0);
-        setTimeout(() => process.exit(0), 5000);
+        process.stdin.destroy();
+        process.stdin.once('close', () => {
+          send(response);
+          setTimeout(() => process.exit(0), 5000);
+        });
+        return;
       }
+      send(response);
+      send({ jsonrpc: '2.0', method: 'remoteControl/status/changed', params: { status: 'disabled' } });
       return;
     }
     if (msg.method === 'initialized') { rec({ marker: 'initialized' }); return; }
