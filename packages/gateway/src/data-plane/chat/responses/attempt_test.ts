@@ -2,9 +2,9 @@ import { test, vi } from 'vitest';
 
 import { prepareResponsesAffinity } from './affinity/ingress.ts';
 import { responsesAttempt } from './attempt.ts';
-import { createResponsesItemId, hashResponsesItemBinding } from './items/format.ts';
+import { createResponsesItemId } from './items/format.ts';
 import * as outputModule from './items/output.ts';
-import { hydrateResponsesPayload } from './items/rewrite.ts';
+import { hydrateResponsesPayload, rewriteResponsesItemsForCandidate } from './items/rewrite.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -91,6 +91,8 @@ const installRepo = () => {
 const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredResponsesItem> & Pick<StoredResponsesItem, 'id' | 'itemType'>): Promise<StoredResponsesItem> => {
   const row: StoredResponsesItem = {
     apiKeyId: API_KEY_ID,
+    upstreamId: null,
+    upstreamItemId: null,
     contentHash: `hash-${overrides.id}`,
     payload: { item: { type: overrides.itemType, id: overrides.id } },
     createdAt: 1_000,
@@ -163,7 +165,6 @@ test('generate treats a translated Responses payload as opaque to native affinit
     {
       upstreamId: candidate.provider.upstream,
       modelId: candidate.model.id,
-      syntheticItem: true,
     },
     'responses.reasoning.encrypted_content',
   );
@@ -475,8 +476,8 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   // The wire shape we model here:
   //   - row.id = stored gateway id (`ws_<crc>_<body>`) — wrapResponsesClientOutput
   //     emits this on the wire and clients echo it back as `wsc.id`.
-  //   - payload.item.id = the stored client-visible id; affinity restores the
-  //     original `ws_gw_` wire id before the shim sees the item.
+  //   - payload.item.id = the stored client-visible id; this gateway-generated
+  //     item has no native upstream id to restore.
   //   - payload.private = WebSearchCallPrivatePayload (v:1, functionCallItem, ir).
   //
   // This regression caught a prior ordering bug where rewrite + beginAttempt
@@ -485,7 +486,6 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   // every echoed wsc collapsed to the placeholder.
   const repo = installRepo();
   const storedId = createResponsesItemId('web_search_call');
-  const wireId = 'ws_gw_72927da0b19d48aa874e9937';
   const storedItem = {
     type: 'web_search_call' as const,
     id: storedId,
@@ -540,12 +540,6 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     {
       upstreamId: candidate.provider.upstream,
       modelId: candidate.model.id,
-      syntheticItem: true,
-      boundItem: {
-        type: storedItem.type,
-        upstreamItemId: wireId,
-        contentHash: await hashResponsesItemBinding(storedItem),
-      },
     },
     'responses.reasoning.encrypted_content',
   );
@@ -566,11 +560,16 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   await store.loadInputItems(sourcePayload.input, sourcePayload.input);
   const hydrated = hydrateResponsesPayload(sourcePayload, store);
   const affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
+  const rewritten = rewriteResponsesItemsForCandidate(
+    affinity.payloadForCandidate(candidate),
+    hydrated.privatePayloads,
+    store,
+    candidate,
+  );
   const result = await responsesAttempt.generate({
-    payload: affinity.payloadForCandidate(candidate),
+    payload: rewritten.payload,
     sourceState: {
-      privatePayloads: hydrated.privatePayloads,
-      itemIdMap: affinity.itemIdMapForCandidate(candidate),
+      privatePayloads: rewritten.privatePayloads,
     },
     ctx,
     candidate,

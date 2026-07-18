@@ -89,29 +89,9 @@ export const canonicalResponsesItemType = (itemType: string): string =>
 export const hashResponsesItemContent = async (item: ResponsesInputItem): Promise<string> =>
   await sha256Hex(JSON.stringify(sortJson(item)));
 
-export const hashResponsesItemBinding = async (item: ResponsesInputItem | ResponsesOutputItem): Promise<string> => {
-  const content = { ...item } as Record<string, unknown>;
-  content.type = canonicalResponsesItemType(item.type);
-  delete content.id;
-  if (item.type === 'message' || item.type === 'function_call') delete content.status;
-  if (item.type === 'message' && Array.isArray(content.content)) {
-    content.content = content.content.map(block => {
-      if (
-        !block
-        || typeof block !== 'object'
-        || !['input_text', 'output_text'].includes(String((block as { type?: unknown }).type))
-      ) return block;
-      const normalized = { ...(block as Record<string, unknown>) };
-      if (normalized.type === 'input_text') normalized.type = 'output_text';
-      if (Array.isArray(normalized.annotations) && normalized.annotations.length === 0) delete normalized.annotations;
-      if (Array.isArray(normalized.logprobs) && normalized.logprobs.length === 0) delete normalized.logprobs;
-      return normalized;
-    });
-  }
-  return await sha256Hex(JSON.stringify(sortJson(content)));
-};
-
 export const createTemporaryResponsesItemId = (itemType: string): string => `${prefixForItemType(itemType)}_tmp_${randomBody()}`;
+
+export const isTemporaryResponsesItemId = (value: string): boolean => /_tmp_[A-Za-z0-9_-]{22}$/.test(value);
 
 // Gateway-owned response envelope id. A response from this gateway is not
 // a 1:1 wrapper for an upstream response — the server-tool runtime can

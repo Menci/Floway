@@ -31,23 +31,23 @@ export const prepareMessagesAffinity = async (
       const byMessage = Map.groupBy(locations, location => location.messageIndex);
       const emptiedByAffinity = new Set<number>();
       for (const [messageIndex, messageLocations] of byMessage) {
-        const message = candidatePayload.messages[messageIndex];
-        if (message.role !== 'assistant' || !Array.isArray(message.content)) {
-          throw new Error('Messages affinity location no longer points to assistant block content');
-        }
+        const message = candidatePayload.messages[messageIndex] as { role: 'assistant'; content: MessagesAssistantContentBlock[] };
         const replacements = new Map<number, MessagesAssistantContentBlock | null>();
         for (const location of messageLocations) {
           const block = message.content[location.blockIndex];
           const selected = blobForExactCandidate(location.decoded, candidate);
           if (location.kind === 'thinking') {
-            if (block.type !== 'thinking') throw new Error('Messages affinity thinking location changed type');
-            const replacement = { ...block };
+            const replacement = { ...block } as Extract<MessagesAssistantContentBlock, { type: 'thinking' }>;
             if (selected.present) replacement.signature = selected.value;
             else delete replacement.signature;
             replacements.set(location.blockIndex, replacement);
           } else {
-            if (block.type !== 'redacted_thinking') throw new Error('Messages affinity redacted location changed type');
-            replacements.set(location.blockIndex, selected.present ? { ...block, data: selected.value } : null);
+            replacements.set(
+              location.blockIndex,
+              selected.present
+                ? { ...block, type: 'redacted_thinking', data: selected.value }
+                : null,
+            );
           }
         }
         message.content = message.content.flatMap((block, blockIndex) => {

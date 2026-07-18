@@ -16,6 +16,8 @@ const factories: Array<[string, () => Promise<Repo>]> = [
 const storedItem = (id: string, apiKeyId: string, contentHash: string | null, createdAt: number): StoredResponsesItem => ({
   id,
   apiKeyId,
+  upstreamId: null,
+  upstreamItemId: null,
   itemType: 'message',
   payload: { item: { type: 'message', id, role: 'assistant', content: [] } },
   contentHash,
@@ -286,7 +288,7 @@ test('SQL Responses item writes stay within D1 bind limits and use bounded state
   await repo.responsesItems.insertMany(items);
   await repo.responsesItems.refreshMany(items, 2_000);
 
-  expect(batchSizes).toEqual([15, 10]);
+  expect(batchSizes).toEqual([20, 10]);
   expect(maxBindCount).toBeLessThanOrEqual(100);
   expect(await repo.responsesItems.lookupMany('key-a', items.map(item => item.id))).toHaveLength(items.length);
 });
@@ -379,6 +381,12 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const base = await createSqliteTestDb();
+  const inlinePayload = await serializeStoredResponsesPayload(
+    'msg_insert_race',
+    'key-a',
+    1_000,
+    { item: { type: 'message', id: 'msg_insert_race', role: 'assistant', content: [] } },
+  );
   let injectConflict = true;
   const db: SqlDatabase = {
     prepare: query => base.prepare(query),
@@ -386,11 +394,6 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
     batch: async statements => {
       if (!injectConflict) throw new Error('unexpected second insert batch');
       injectConflict = false;
-      const inlinePayload = JSON.stringify({
-        version: 1,
-        storage: 'inline',
-        payload: { item: { type: 'message', id: 'msg_insert_race', role: 'assistant', content: [] } },
-      });
       const insertWinner = base.prepare(
         'INSERT INTO responses_items (id, api_key_id, item_type, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       );
@@ -481,6 +484,52 @@ test('migration 0058 replaces legacy Responses state with the full-state schema'
     const columns = db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1]);
     expect(columns).not.toContain('upstream_id');
     expect(columns).not.toContain('upstream_item_id');
+  } finally {
+    db.close();
+  }
+});
+
+test('migration 0059 drops every prior Responses table and creates item-origin storage', async () => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0059_responses_item_origins.sql') break;
+      db.run(sql);
+    }
+    db.run(
+      `INSERT INTO responses_items
+        (id, api_key_id, item_type, payload_json, content_hash, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      ['msg_current', 'key-a', 'message', '{}', 'hash', 1_000],
+    );
+    db.run(
+      `INSERT INTO responses_snapshots
+        (id, api_key_id, item_ids_json, created_at)
+       VALUES (?, ?, ?, ?)`,
+      ['resp_current', 'key-a', '["msg_current"]', 1_000],
+    );
+
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0059_responses_item_origins.sql');
+    if (migration === undefined) throw new Error('missing migration 0059_responses_item_origins.sql');
+    db.run(migration[1]);
+
+    expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
+    expect(db.exec('SELECT * FROM responses_snapshots')[0]?.values ?? []).toEqual([]);
+    expect(db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1])).toEqual([
+      'id',
+      'api_key_id',
+      'upstream_id',
+      'upstream_item_id',
+      'item_type',
+      'payload_json',
+      'content_hash',
+      'created_at',
+    ]);
+    expect(db.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'responses_%' ORDER BY name")[0]?.values).toEqual([
+      ['responses_items'],
+      ['responses_snapshots'],
+    ]);
   } finally {
     db.close();
   }

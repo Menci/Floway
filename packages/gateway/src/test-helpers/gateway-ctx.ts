@@ -1,4 +1,3 @@
-import { ResponsesAttemptState } from '../data-plane/chat/responses/attempt-state.ts';
 import { createResponsesHttpStore, type StatefulResponsesStore } from '../data-plane/chat/responses/items/store.ts';
 import { AffinityRequestContext } from '../data-plane/chat/shared/affinity/index.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
@@ -22,9 +21,9 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   ...overrides,
 });
 
-// Chat-protocol counterpart: adds the affinity membrane and request-local
-// Responses invocation state. Tests that exercise durable Responses behavior
-// override `.store` explicitly.
+// Chat-protocol counterpart: adds the affinity membrane and the Responses item
+// store. Tests that exercise durable Responses behavior override `.store`
+// explicitly.
 export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx & { readonly store: StatefulResponsesStore } => {
   const base = mockGatewayCtx(overrides);
   const affinity = overrides.affinity ?? new AffinityRequestContext('00'.repeat(32));
@@ -32,7 +31,6 @@ export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): Cha
   return {
     ...base,
     affinity,
-    responsesAttemptState: overrides.responsesAttemptState ?? new ResponsesAttemptState(),
     store: overrides.store ?? createResponsesHttpStore(base.apiKeyId, false),
   };
 };

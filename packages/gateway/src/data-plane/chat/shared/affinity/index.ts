@@ -12,9 +12,6 @@ export interface AffinityTarget {
   upstreamId: string;
   modelId: string;
   rules?: AliasRules;
-  upstreamItemId?: string;
-  syntheticItem?: true;
-  boundItem?: { type: string; upstreamItemId?: string; contentHash: string };
 }
 
 export interface AffinityEvidence {
@@ -125,8 +122,20 @@ const encodeOriginal = (bytes: Uint8Array, origin: AffinityOrigin): string => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const hasOnlyKeys = (value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean =>
+  Object.keys(value).every(key => allowed.has(key));
+
+const AFFINITY_DATA_KEYS = new Set(['version', 'origin', 'affinity']);
+const AFFINITY_TARGET_KEYS = new Set(['upstreamId', 'modelId', 'rules']);
+
 const parseAffinityData = (value: unknown): AffinityData | null => {
-  if (!isRecord(value) || value.version !== 1 || !isRecord(value.affinity)) return null;
+  if (
+    !isRecord(value)
+    || !hasOnlyKeys(value, AFFINITY_DATA_KEYS)
+    || value.version !== 1
+    || !isRecord(value.affinity)
+    || !hasOnlyKeys(value.affinity, AFFINITY_TARGET_KEYS)
+  ) return null;
   const origin = value.origin;
   if (origin !== undefined && origin !== 'raw' && origin !== 'base64' && origin !== 'base64url') return null;
 
@@ -134,15 +143,6 @@ const parseAffinityData = (value: unknown): AffinityData | null => {
   if (
     typeof affinity.upstreamId !== 'string'
     || typeof affinity.modelId !== 'string'
-    || (affinity.upstreamItemId !== undefined && typeof affinity.upstreamItemId !== 'string')
-    || (affinity.syntheticItem !== undefined && affinity.syntheticItem !== true)
-    || (affinity.boundItem !== undefined && (
-      !isRecord(affinity.boundItem)
-      || typeof affinity.boundItem.type !== 'string'
-      || (affinity.boundItem.upstreamItemId !== undefined && typeof affinity.boundItem.upstreamItemId !== 'string')
-      || typeof affinity.boundItem.contentHash !== 'string'
-      || !/^[0-9a-f]{64}$/.test(affinity.boundItem.contentHash)
-    ))
     || (affinity.rules !== undefined && !isRecord(affinity.rules))
   ) return null;
 
@@ -150,19 +150,6 @@ const parseAffinityData = (value: unknown): AffinityData | null => {
     upstreamId: affinity.upstreamId,
     modelId: affinity.modelId,
     ...(affinity.rules !== undefined ? { rules: affinity.rules as AliasRules } : {}),
-    ...(affinity.upstreamItemId !== undefined ? { upstreamItemId: affinity.upstreamItemId } : {}),
-    ...(affinity.syntheticItem === true ? { syntheticItem: true } : {}),
-    ...(affinity.boundItem !== undefined
-      ? {
-          boundItem: {
-            type: affinity.boundItem.type as string,
-            ...(affinity.boundItem.upstreamItemId !== undefined
-              ? { upstreamItemId: affinity.boundItem.upstreamItemId as string }
-              : {}),
-            contentHash: affinity.boundItem.contentHash as string,
-          },
-        }
-      : {}),
   };
   return {
     version: 1,
@@ -356,14 +343,13 @@ export const routeCandidatesByAffinity = <T extends ModelCandidate>(
 };
 
 type CandidateBlob =
-  | { readonly present: false; readonly compatible: boolean }
-  | { readonly present: true; readonly compatible: false; readonly value: string }
-  | { readonly present: true; readonly compatible: true; readonly value: string };
+  | { readonly present: false }
+  | { readonly present: true; readonly value: string };
 
 const blobForCompatibility = (decoded: DecodedAffinityBlob, compatible: boolean): CandidateBlob => {
-  if (decoded.kind === 'foreign') return { present: true, compatible: false, value: decoded.value };
-  if (!compatible || decoded.value === undefined) return { present: false, compatible };
-  return { present: true, compatible: true, value: decoded.value };
+  if (decoded.kind === 'foreign') return { present: true, value: decoded.value };
+  if (!compatible || decoded.value === undefined) return { present: false };
+  return { present: true, value: decoded.value };
 };
 
 export const blobForExactCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob =>

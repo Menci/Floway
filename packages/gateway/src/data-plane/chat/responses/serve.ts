@@ -2,6 +2,7 @@ import { responsesAttempt } from './attempt.ts';
 import { wrapNativeResponsesClientOutput } from './client-output.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
+import { rewriteResponsesItemsForCandidate } from './items/rewrite.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
@@ -33,12 +34,16 @@ export const responsesServe = {
       ctx,
       'chat',
       async candidate => {
-        const payloadForCandidate = plan.affinity.payloadForCandidate(candidate);
+        const rewritten = rewriteResponsesItemsForCandidate(
+          plan.affinity.payloadForCandidate(candidate),
+          plan.privatePayloads,
+          ctx.store,
+          candidate,
+        );
         const result = await responsesAttempt.generate({
-          payload: payloadForCandidate,
+          payload: rewritten.payload,
           sourceState: {
-            privatePayloads: plan.privatePayloads,
-            itemIdMap: plan.affinity.itemIdMapForCandidate(candidate),
+            privatePayloads: rewritten.privatePayloads,
           },
           ctx,
           candidate,
@@ -69,12 +74,16 @@ export const responsesServe = {
       ctx,
       'chat',
       async candidate => {
-        const payloadForCandidate = plan.affinity.payloadForCandidate(candidate);
+        const rewritten = rewriteResponsesItemsForCandidate(
+          plan.affinity.payloadForCandidate(candidate),
+          plan.privatePayloads,
+          ctx.store,
+          candidate,
+        );
         const result = await responsesAttempt.invoke({
-          payload: payloadForCandidate,
+          payload: rewritten.payload,
           sourceState: {
-            privatePayloads: plan.privatePayloads,
-            itemIdMap: plan.affinity.itemIdMapForCandidate(candidate),
+            privatePayloads: rewritten.privatePayloads,
           },
           action: 'compact',
           ctx,

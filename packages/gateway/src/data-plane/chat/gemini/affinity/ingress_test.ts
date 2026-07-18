@@ -24,7 +24,7 @@ const targetFor = (value: ModelCandidate): AffinityTarget => ({
 const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
 
-test('removes a synthetic signature-only part and preserves foreign signatures', async () => {
+test('removes originless affinity by protocol shape and preserves visible content and foreign signatures', async () => {
   const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'gemini.part.thoughtSignature');
   const prepared = await prepareGeminiAffinity({
     contents: [{
@@ -32,6 +32,7 @@ test('removes a synthetic signature-only part and preserves foreign signatures',
       parts: [
         { text: 'answer' },
         { thoughtSignature: synthetic },
+        { text: 'synthetic on content', thoughtSignature: synthetic },
         { text: 'foreign', thoughtSignature: 'not-floway' },
       ],
     }],
@@ -39,6 +40,7 @@ test('removes a synthetic signature-only part and preserves foreign signatures',
 
   expect(prepared.payloadForCandidate(candidateA).contents?.[0].parts).toEqual([
     { text: 'answer' },
+    { text: 'synthetic on content' },
     { text: 'foreign', thoughtSignature: 'not-floway' },
   ]);
 });

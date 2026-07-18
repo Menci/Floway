@@ -5,23 +5,21 @@ import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// Affinity must observe upstream item ids before the client-output membrane
-// replaces them. The state layer then persists exactly the wrapped,
-// client-visible items under the same response id it emits downstream.
+// Affinity wraps only routing metadata. The client-output membrane separately
+// replaces wire item ids and records their native Responses origin so the item
+// store can restore those ids after a later request has selected its candidate.
 export const wrapNativeResponsesClientOutput = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   ctx: GatewayCtx,
 ): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
   if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('Responses output reached the native client membrane without chat context');
   const chatCtx = ctx as ChatGatewayCtx;
-  if (chatCtx.store === undefined) throw new Error('Native Responses client output requires a state store');
   const withAffinity = wrapResponsesAffinityEgress(frames, {
     codec: chatCtx.affinity.codec,
     affinity: chatCtx.affinity.selectedTarget(),
   });
   return wrapResponsesClientOutput(withAffinity, {
     store: chatCtx.store,
-    attemptState: chatCtx.responsesAttemptState,
     responseId: createResponsesResponseId(),
   });
 };

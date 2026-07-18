@@ -1,6 +1,5 @@
 import type { Context } from 'hono';
 
-import { ResponsesAffinityInputError } from './affinity/ingress.ts';
 import { wrapNativeResponsesClientOutput } from './client-output.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
@@ -268,7 +267,7 @@ const handleClientMessage = async (
     await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
-    if (error instanceof TranslatorInputError || error instanceof ResponsesAffinityInputError) {
+    if (error instanceof TranslatorInputError) {
       sendError(socket, 400, {
         type: 'invalid_request_error',
         code: 'invalid_request_error',

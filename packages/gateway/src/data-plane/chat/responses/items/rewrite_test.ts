@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
 import { createResponsesItemId } from './format.ts';
-import { hydrateResponsesPayload } from './rewrite.ts';
+import { hydrateResponsesPayload, rewriteResponsesItemsForCandidate } from './rewrite.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
+import { stubModelCandidate } from '@floway-dev/test-utils';
 
 describe('Responses stored-item hydration', () => {
   test('replaces a public item reference with its complete client-wire payload and private state', async () => {
@@ -15,6 +16,8 @@ describe('Responses stored-item hydration', () => {
     const row: StoredResponsesItem = {
       id,
       apiKeyId: 'key-a',
+      upstreamId: 'upstream-a',
+      upstreamItemId: 'rs_upstream',
       itemType: 'reasoning',
       payload: {
         item: { type: 'reasoning', id, summary: [], encrypted_content: 'wrapped' },
@@ -32,6 +35,32 @@ describe('Responses stored-item hydration', () => {
 
     expect(rewritten.payload.input).toEqual([row.payload.item]);
     expect(rewritten.privatePayloads.get(row.id)).toEqual({ replay: true });
+
+    const base = stubModelCandidate();
+    const sameUpstream = stubModelCandidate({ provider: { ...base.provider, upstream: 'upstream-a' } });
+    const otherUpstream = stubModelCandidate({ provider: { ...base.provider, upstream: 'upstream-b' } });
+    const restored = rewriteResponsesItemsForCandidate(
+      rewritten.payload,
+      rewritten.privatePayloads,
+      store,
+      sameUpstream,
+    );
+    expect(restored.payload.input).toEqual([{
+      type: 'reasoning',
+      id: 'rs_upstream',
+      summary: [],
+      encrypted_content: 'wrapped',
+    }]);
+    expect(restored.privatePayloads.get('rs_upstream')).toEqual({ replay: true });
+
+    const preserved = rewriteResponsesItemsForCandidate(
+      rewritten.payload,
+      rewritten.privatePayloads,
+      store,
+      otherUpstream,
+    );
+    expect(preserved.payload.input).toEqual([row.payload.item]);
+    expect(preserved.privatePayloads.get(id)).toEqual({ replay: true });
   });
 
   test('rejects a missing gateway item reference', () => {
@@ -50,6 +79,8 @@ describe('Responses stored-item hydration', () => {
     const row: StoredResponsesItem = {
       id,
       apiKeyId: 'key-a',
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: 'compaction_summary',
       payload: { item: { type: 'compaction_summary', id, encrypted_content: 'wrapped' } },
       contentHash: 'hash',

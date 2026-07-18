@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { hashResponsesItemContent } from './format.ts';
-import { createResponsesHttpStore, createResponsesWsSession } from './store.ts';
+import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 
@@ -17,6 +17,31 @@ describe('StatefulResponsesStore', () => {
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_none')).toBeNull();
   });
 
+  test('HTTP store=false still reads durably-stored items and snapshots', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const writer = createResponsesHttpStore('key-a', true);
+    const output = {
+      id: 'msg_public',
+      apiKeyId: 'key-a',
+      upstreamId: 'upstream-a',
+      upstreamItemId: 'msg_upstream',
+      itemType: 'message',
+      payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
+      contentHash: 'output-hash',
+      createdAt: 1_000,
+    };
+    writer.stageOutputItem(output, 0);
+    await writer.commitSnapshot('resp_saved', 'append');
+
+    // A store=false turn writes nothing but must still resolve a
+    // previous_response_id and echoed item ids against durable state.
+    const reader = createResponsesHttpStore('key-a', false);
+    expect(reader.writesState).toBe(false);
+    expect((await reader.loadSnapshot('resp_saved'))?.itemIds).toEqual([output.id]);
+    expect(reader.getItemById(output.id)).toMatchObject({ id: 'msg_public', upstreamItemId: 'msg_upstream' });
+  });
+
   test('HTTP default stores complete input and output snapshots', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
@@ -25,6 +50,8 @@ describe('StatefulResponsesStore', () => {
     const output = {
       id: 'msg_public',
       apiKeyId: 'key-a',
+      upstreamId: 'upstream-a',
+      upstreamItemId: 'msg_upstream',
       itemType: 'message',
       payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
       contentHash: 'output-hash',
@@ -48,6 +75,8 @@ describe('StatefulResponsesStore', () => {
     const output = {
       id: 'cmp_public',
       apiKeyId: 'key-a',
+      upstreamId: 'upstream-a',
+      upstreamItemId: 'cmp_upstream',
       itemType: 'compaction',
       payload: { item: { type: 'compaction', id: 'cmp_public', encrypted_content: 'opaque' } },
       contentHash: 'output-hash',
@@ -81,6 +110,8 @@ describe('StatefulResponsesStore', () => {
     const item = {
       id: 'msg_old',
       apiKeyId: 'key-a',
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: 'message',
       payload: { item: { type: 'message', id: 'msg_old', role: 'assistant', content: [] } },
       contentHash: 'old-hash',
@@ -112,6 +143,8 @@ describe('StatefulResponsesStore', () => {
     const directRow = {
       id: directInput.id,
       apiKeyId: 'key-a',
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: 'message',
       payload: { item: directInput },
       contentHash: await hashResponsesItemContent(directInput),
@@ -120,6 +153,8 @@ describe('StatefulResponsesStore', () => {
     const hashedRow = {
       id: 'msg_hashed',
       apiKeyId: 'key-a',
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: 'message',
       payload: { item: hashedInput },
       contentHash: await hashResponsesItemContent(hashedInput),
@@ -144,6 +179,8 @@ describe('StatefulResponsesStore', () => {
     const row = {
       id: 'msg_future',
       apiKeyId: 'key-a',
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: 'message',
       payload: { item: input },
       contentHash: await hashResponsesItemContent(input),
@@ -188,5 +225,37 @@ describe('StatefulResponsesStore', () => {
     expect(snapshot).not.toBeNull();
     if (snapshot === null) throw new Error('Expected durable snapshot');
     expect(await repo.responsesItems.lookupMany('key-a', snapshot.itemIds)).toHaveLength(snapshot.itemIds.length);
+  });
+
+  test('per-attempt private payloads and output identity reset on each beginAttempt', () => {
+    const store = createResponsesHttpStore('key-a', true);
+    store.beginAttempt(new Map([['item', { first: true }]]), { upstreamId: 'upstream-a', restoresItemIds: true });
+
+    expect(store.getPrivatePayload('item')).toEqual({ first: true });
+    expect(store.outputItemSource('rs_upstream')).toEqual({ upstreamId: 'upstream-a', upstreamItemId: 'rs_upstream' });
+
+    store.addSyntheticItem('ws_gw_synthetic', { value: 2 });
+    expect(store.getPrivatePayload('ws_gw_synthetic')).toEqual({ value: 2 });
+    // A gateway-minted synthetic item is never attributed to the upstream, and
+    // neither is a temporary cross-upstream id.
+    expect(store.outputItemSource('ws_gw_synthetic')).toBeNull();
+    expect(store.outputItemSource('rs_tmp_0000000000000000000000')).toBeNull();
+
+    store.beginAttempt(new Map(), { upstreamId: 'upstream-b', restoresItemIds: false });
+    expect(store.getPrivatePayload('item')).toBeUndefined();
+    expect(store.outputItemSource('rs_upstream')).toBeNull();
+  });
+
+  test('non-Responses-source store holds request-private tool state but persists and reads nothing', async () => {
+    // Translated sources (Messages/Gemini/Chat) still run the server-tool shim,
+    // whose per-attempt private-payload scratchpad lives on the store; the
+    // no-backing store keeps that working without any durable state.
+    const store = createNonResponsesSourceStore('key-a');
+    expect(store.writesState).toBe(false);
+    store.beginAttempt(new Map());
+    store.addSyntheticItem('ws_gw_1', { ir: 'search result' });
+    expect(store.getPrivatePayload('ws_gw_1')).toEqual({ ir: 'search result' });
+    expect(store.getItemById('anything')).toBeUndefined();
+    expect(await store.loadSnapshot('resp_x')).toBeNull();
   });
 });

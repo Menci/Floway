@@ -3,7 +3,6 @@ import type { RequestBody } from './request-body.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../../runtime/runtime-info.ts';
-import { ResponsesAttemptState } from '../responses/attempt-state.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -50,16 +49,17 @@ export interface GatewayCtx {
   readonly responseHeaders: Headers;
 }
 
-// Chat-protocol ctx adds the affinity membrane and the Responses invocation
-// state used by native Responses requests or an inner translated Responses
-// call. Every chat HTTP/WS entry constructs this via
-// `createChatGatewayCtxFromHono` and threads it through serve → narrow →
-// attempt. Passthrough endpoints (embeddings / images / completions) have
-// no stored-items concept and stay on plain `GatewayCtx`.
+// Chat-protocol ctx adds the affinity membrane and the Responses item store.
+// The store is present on every chat ctx: native Responses entries supply a
+// persisting factory, non-Responses sources a no-backing scratchpad store, so
+// the server-tool shim's request-private state always has a home. Every chat
+// HTTP/WS entry constructs this via `createChatGatewayCtxFromHono` and threads
+// it through serve → narrow → attempt. Passthrough endpoints (embeddings /
+// images / completions) have no stored-items concept and stay on plain
+// `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
   readonly affinity: AffinityRequestContext;
-  readonly responsesAttemptState: ResponsesAttemptState;
-  readonly store?: StatefulResponsesStore;
+  readonly store: StatefulResponsesStore;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -123,20 +123,19 @@ export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Re
   return ctx.dump?.finalize(response) ?? response;
 };
 
-// Chat-protocol counterpart of `createGatewayCtxFromHono`. The factory
-// receives the authoritative API-key id. Non-Responses sources leave the store
-// absent even when translation enters a Responses attempt. Native Responses
-// HTTP and WebSocket entries supply their transport-specific store factories.
+// Chat-protocol counterpart of `createGatewayCtxFromHono`. The factory receives
+// the authoritative API-key id. Native Responses HTTP and WebSocket entries
+// supply a persisting store factory; non-Responses sources supply
+// `createNonResponsesSourceStore`, so every chat ctx carries a store.
 export const createChatGatewayCtxFromHono = (
   c: AuthedContext,
   opts: CreateGatewayCtxOptions,
-  storeFactory?: (apiKeyId: string) => StatefulResponsesStore,
+  storeFactory: (apiKeyId: string) => StatefulResponsesStore,
 ): ChatGatewayCtx => {
   const base = createGatewayCtxFromHono(c, opts);
   return {
     ...base,
     affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
-    responsesAttemptState: new ResponsesAttemptState(),
-    ...(storeFactory !== undefined ? { store: storeFactory(base.apiKeyId) } : {}),
+    store: storeFactory(base.apiKeyId),
   };
 };

@@ -1,4 +1,4 @@
-import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemContent, isResponsesItemId, responsesItemId } from './format.ts';
+import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemContent, isResponsesItemId, isTemporaryResponsesItemId, responsesItemId } from './format.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
@@ -22,7 +22,6 @@ interface LayeredStatefulResponsesStoreOptions {
   readonly apiKeyId: string;
   readonly reads: readonly StatefulResponsesBacking[];
   readonly writes: readonly StatefulResponsesBacking[];
-  readonly stageInputs: boolean;
 }
 
 type ResponsesSnapshotMode = 'append' | 'replace';
@@ -37,6 +36,19 @@ export interface StatefulResponsesStore {
   stageOutputItem(row: StoredResponsesItem, outputIndex: number): void;
   commitStagedOutputItems(): Promise<void>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
+  // Per-attempt transient state. `beginAttempt` reseeds the private-payload
+  // scratchpad from the candidate's rewritten items and records which upstream
+  // this attempt targets; interceptors register synthetic items during the
+  // turn, and output capture reads both back to decide item-id origin.
+  beginAttempt(privatePayloads: ReadonlyMap<string, unknown>, outputSource?: OutputItemOrigin): void;
+  addSyntheticItem(id: string, privatePayload: unknown): void;
+  getPrivatePayload(id: string): unknown;
+  outputItemSource(id: string): { readonly upstreamId: string; readonly upstreamItemId: string } | null;
+}
+
+interface OutputItemOrigin {
+  readonly upstreamId: string;
+  readonly restoresItemIds: boolean;
 }
 
 export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
@@ -48,6 +60,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly freshItemIds = new Set<string>();
+  private readonly privatePayloads = new Map<string, unknown>();
+  private readonly syntheticItemIds = new Set<string>();
+  private outputSource: OutputItemOrigin | undefined;
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
 
@@ -106,7 +121,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async stageInputItems(items: readonly ResponsesInputItem[]): Promise<void> {
-    if (!this.options.stageInputs) return;
+    if (!this.writesState) return;
     for (const item of items) await this.stageInputItem(item);
   }
 
@@ -156,6 +171,31 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     await Promise.all(this.options.writes.map(write => write.insertSnapshot(snapshot)));
   }
 
+  beginAttempt(privatePayloads: ReadonlyMap<string, unknown>, outputSource?: OutputItemOrigin): void {
+    this.privatePayloads.clear();
+    this.syntheticItemIds.clear();
+    this.outputSource = outputSource;
+    for (const [id, payload] of privatePayloads) this.privatePayloads.set(id, structuredClone(payload));
+  }
+
+  addSyntheticItem(id: string, privatePayload: unknown): void {
+    this.syntheticItemIds.add(id);
+    if (privatePayload !== undefined) this.privatePayloads.set(id, structuredClone(privatePayload));
+  }
+
+  getPrivatePayload(id: string): unknown {
+    return structuredClone(this.privatePayloads.get(id));
+  }
+
+  outputItemSource(id: string): { readonly upstreamId: string; readonly upstreamItemId: string } | null {
+    if (
+      this.outputSource?.restoresItemIds !== true
+      || this.syntheticItemIds.has(id)
+      || isTemporaryResponsesItemId(id)
+    ) return null;
+    return { upstreamId: this.outputSource.upstreamId, upstreamItemId: id };
+  }
+
   private async loadItems(query: { ids: readonly string[]; contentHashes: readonly string[] }): Promise<void> {
     let ids = query.ids.filter(id => !this.loadedItems.has(id));
     for (const backing of this.options.reads) {
@@ -194,6 +234,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const row: StoredResponsesItem = {
       id: createResponsesItemId(item.type),
       apiKeyId: this.apiKeyId,
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: canonicalResponsesItemType(item.type),
       payload: { item: structuredClone(item) },
       contentHash,
@@ -309,9 +351,17 @@ export const createResponsesHttpStore = (apiKeyId: string, store: boolean | unde
     apiKeyId,
     reads: [backing],
     writes,
-    stageInputs: store !== false,
   });
 };
+
+// Non-Responses sources (Messages / Gemini / Chat Completions) never persist
+// Responses items, even when translation enters a Responses attempt — but the
+// server-tool shim still runs there, and its request-private scratchpad
+// (private payloads, synthetic ids) lives on the store. So they get a store
+// with no backing: it holds per-attempt state in memory and reads/writes
+// nothing durable, keeping the store present on every chat ctx.
+export const createNonResponsesSourceStore = (apiKeyId: string): StatefulResponsesStore =>
+  new LayeredStatefulResponsesStore({ apiKeyId, reads: [], writes: [] });
 
 export const createResponsesWsSession = (): {
   createStore(apiKeyId: string, store: boolean | undefined): StatefulResponsesStore;
@@ -325,7 +375,6 @@ export const createResponsesWsSession = (): {
         apiKeyId,
         reads: [local, durable],
         writes,
-        stageInputs: true,
       });
     },
   };

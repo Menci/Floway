@@ -193,7 +193,7 @@ const wrapGeminiEventAffinity = async (
       candidate.content.parts.push({
         thoughtSignature: await options.codec.wrap(
           undefined,
-          { ...options.affinity, syntheticItem: true },
+          options.affinity,
           'gemini.part.thoughtSignature',
         ),
       });

@@ -33,7 +33,6 @@ interface ResponsesAttemptBaseArgs {
 
 interface ResponsesSourceState {
   readonly privatePayloads: ReadonlyMap<string, unknown>;
-  readonly itemIdMap: ReadonlyMap<string, string>;
 }
 
 export type ResponsesAttemptInvokeArgs = ResponsesAttemptBaseArgs & {
@@ -82,9 +81,12 @@ export const responsesAttempt = {
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
     const payload = { ...structuredClone(args.payload), model: candidate.model.id };
     if (args.sourceState === undefined) {
-      ctx.responsesAttemptState.begin(new Map(), new Map());
+      ctx.store.beginAttempt(new Map());
     } else {
-      ctx.responsesAttemptState.begin(args.sourceState.privatePayloads, args.sourceState.itemIdMap);
+      ctx.store.beginAttempt(args.sourceState.privatePayloads, {
+        upstreamId: candidate.provider.upstream,
+        restoresItemIds: targetApi === 'responses',
+      });
     }
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse

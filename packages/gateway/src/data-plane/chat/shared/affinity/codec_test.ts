@@ -42,6 +42,17 @@ describe('AffinityCodec', () => {
     });
   });
 
+  test('rejects affinity metadata outside the declared target shape', async () => {
+    const codec = new AffinityCodec(SECRET);
+    const wrapped = await codec.wrap(
+      undefined,
+      { ...affinity, extra: 'not-part-of-the-contract' } as AffinityTarget,
+      DOMAIN,
+    );
+
+    expect(await codec.unwrap(wrapped, DOMAIN)).toEqual({ kind: 'foreign', value: wrapped });
+  });
+
   test('does not base64-encode canonical base64 bytes a second time', async () => {
     const codec = new AffinityCodec(SECRET);
     const originalBytes = crypto.getRandomValues(new Uint8Array(48));

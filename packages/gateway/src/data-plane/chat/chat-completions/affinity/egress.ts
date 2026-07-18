@@ -43,11 +43,8 @@ export const wrapChatCompletionsAffinityEgress = async function* (
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       if (frame.type === 'done' && !failed) {
-        if (choices.size === 0 || lastEvent === undefined) {
-          throw new Error('Chat Completions stream ended without an assistant choice');
-        }
         const unfinished = [...choices.entries()].filter(([, state]) => !state.finished);
-        if (unfinished.length > 0) {
+        if (unfinished.length > 0 && lastEvent !== undefined) {
           const wrappedChoices = await Promise.all(unfinished.map(async ([index, state]) => {
             state.finished = true;
             return {
@@ -79,8 +76,8 @@ export const wrapChatCompletionsAffinityEgress = async function* (
 
     for (const choice of frame.event.choices) {
       const { index, delta: sourceDelta, finish_reason: finishReason, ...choiceExtras } = choice;
-      const state = choices.get(index) ?? { finished: false };
-      if (state.finished) throw new Error(`Chat Completions choice ${index} emitted data after its finish_reason`);
+      const previous = choices.get(index);
+      const state = previous === undefined || previous.finished ? { finished: false } : previous;
       choices.set(index, state);
 
       const { reasoning_opaque: opaque, ...delta } = sourceDelta;

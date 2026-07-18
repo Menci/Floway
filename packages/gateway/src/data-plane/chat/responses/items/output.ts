@@ -1,13 +1,14 @@
-import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemBinding, hashResponsesItemContent, responsesItemId } from './format.ts';
+import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ResponsesAttemptState } from '../attempt-state.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// Mints gateway-owned ids and presents finalized client items to the configured
-// state store when it has a write target. Translated inner Responses attempts
-// never enter this membrane.
+// Mints gateway-owned item ids and presents finalized client items to the
+// configured state store when it has a write target; without one (HTTP
+// store=false) item ids pass through so the origin upstream still recognizes
+// them next turn. Translated inner Responses attempts never enter this
+// membrane.
 //
 // Complete items are staged at their `done` frame. The whole output batch and
 // its snapshot commit together before a successful terminal frame is yielded.
@@ -38,16 +39,21 @@ export const wrapResponsesClientOutput = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {
     readonly store: StatefulResponsesStore;
-    readonly attemptState: ResponsesAttemptState;
     readonly responseId: string;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { store, attemptState, responseId } = args;
+  const { store, responseId } = args;
   const upstreamToClient = new Map<string, string>();
   const outputIndexToClient = new Map<number, string>();
-  const finalizedItems = new Map<number, { readonly itemType: string; readonly contentHash: string }>();
 
+  // A gateway-minted item id is only worth issuing when the mapping back to its
+  // upstream origin is persisted (store.writesState) — otherwise a later turn
+  // that echoes the id has no row to restore it from. When no state is written
+  // (HTTP store=false), the upstream item id passes through unchanged, so the
+  // client carries an id the origin upstream still recognizes next turn. The
+  // response envelope id below stays gateway-owned regardless.
   const clientIdForUpstreamId = (upstreamId: string, itemType: string): string => {
+    if (!store.writesState) return upstreamId;
     let clientId = upstreamToClient.get(upstreamId);
     if (clientId === undefined) {
       clientId = createResponsesItemId(itemType);
@@ -57,6 +63,7 @@ export const wrapResponsesClientOutput = async function* (
   };
 
   const clientIdForOutput = (upstreamId: string | null, itemType: string, outputIndex: number): string => {
+    if (!store.writesState && upstreamId !== null) return upstreamId;
     let clientId = outputIndexToClient.get(outputIndex);
     if (clientId === undefined) {
       clientId = upstreamId === null ? createResponsesItemId(itemType) : clientIdForUpstreamId(upstreamId, itemType);
@@ -67,29 +74,22 @@ export const wrapResponsesClientOutput = async function* (
     return clientId;
   };
 
-  const matchesFinalizedItem = async (outputIndex: number, item: ResponsesInputItem): Promise<boolean> => {
-    const finalized = finalizedItems.get(outputIndex);
-    if (finalized === undefined) return false;
-    const contentHash = await hashResponsesItemBinding(item);
-    if (finalized.itemType !== canonicalResponsesItemType(item.type) || finalized.contentHash !== contentHash) {
-      throw new Error(`Responses output item ${outputIndex} changed after output_item.done`);
-    }
-    return true;
-  };
-
   const stageFinalizedItem = async (originalItem: ResponsesInputItem, newId: string, outputIndex: number): Promise<void> => {
     if (!store.writesState) return;
-    const upstreamId = responsesItemId(originalItem);
+    const wireId = responsesItemId(originalItem);
+    const source = wireId === null ? null : store.outputItemSource(wireId);
     // Interceptors register per-item server-only payloads under the wire id.
     // Attaching it lets a later turn restore the real success/failure state
     // even when the client stripped fields from the echoed wire item.
-    const privatePayload = upstreamId === null ? undefined : attemptState.getPrivatePayload(upstreamId);
+    const privatePayload = wireId === null ? undefined : store.getPrivatePayload(wireId);
     const clientItem = { ...originalItem, id: newId } as ResponsesInputItem;
     const persistedPayload = privatePayload !== undefined ? { item: clientItem, private: privatePayload } : { item: clientItem };
     const now = Date.now();
     const row: StoredResponsesItem = {
       id: newId,
       apiKeyId: store.apiKeyId,
+      upstreamId: source?.upstreamId ?? null,
+      upstreamItemId: source?.upstreamItemId ?? null,
       itemType: canonicalResponsesItemType(originalItem.type),
       payload: persistedPayload,
       contentHash: await hashResponsesItemContent(clientItem),
@@ -150,13 +150,7 @@ export const wrapResponsesClientOutput = async function* (
         if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
         const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
         if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
-        if (!await matchesFinalizedItem(event.output_index, event.item as unknown as ResponsesInputItem)) {
-          finalizedItems.set(event.output_index, {
-            itemType: canonicalResponsesItemType(event.item.type),
-            contentHash: await hashResponsesItemBinding(event.item),
-          });
-          await stageFinalizedItem(event.item as unknown as ResponsesInputItem, newId, event.output_index);
-        }
+        await stageFinalizedItem(event.item as unknown as ResponsesInputItem, newId, event.output_index);
         yield eventFrame({ ...event, item: { ...event.item, id: newId } });
         continue;
       }
@@ -168,9 +162,7 @@ export const wrapResponsesClientOutput = async function* (
           const upstreamId = responsesItemId(item);
           if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
           const newId = clientIdForOutput(upstreamId, item.type, outputIndex);
-          if (!await matchesFinalizedItem(outputIndex, item as unknown as ResponsesInputItem)) {
-            await stageFinalizedItem(item as unknown as ResponsesInputItem, newId, outputIndex);
-          }
+          await stageFinalizedItem(item as unknown as ResponsesInputItem, newId, outputIndex);
           output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
         }
         const rewritten = eventFrame({
