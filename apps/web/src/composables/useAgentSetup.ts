@@ -210,7 +210,7 @@ export const useAgentSetup = (
 
   const scheduleHeartbeat = (delay: number) => {
     heartbeatTimer = clearTimer(heartbeatTimer);
-    if (disposed || terminated.value || document.visibilityState === 'hidden') return;
+    if (disposed || terminated.value || !toValue(active) || document.visibilityState === 'hidden') return;
     heartbeatTimer = setTimeout(() => {
       heartbeatTimer = null;
       heartbeatDue = true;
@@ -297,7 +297,7 @@ export const useAgentSetup = (
   };
 
   const runHeartbeat = async () => {
-    if (!initialized.value || token.value === null) return;
+    if (!initialized.value || token.value === null || !toValue(active)) return;
     const currentToken = token.value;
     nowMs.value = Date.now();
 
@@ -356,7 +356,7 @@ export const useAgentSetup = (
   };
 
   const heartbeat = () => {
-    if (disposed || terminated.value || !initialized.value) return;
+    if (disposed || terminated.value || !initialized.value || !toValue(active)) return;
     // An explicit reconciliation replaces the scheduled cadence tick. Keeping
     // both would make a permanent 4xx appear to retry when the old timer fires.
     heartbeatTimer = clearTimer(heartbeatTimer);
@@ -370,7 +370,7 @@ export const useAgentSetup = (
       api.api.setup.$post(undefined, { init: { signal } })));
     // A retry (or dispose) that replaced this attempt owns the state now; drop
     // this stale attempt's outcome so an aborted create cannot resurrect an error.
-    if (disposed || attempt !== createAttempt) return;
+    if (disposed || attempt !== createAttempt || !toValue(active)) return;
 
     if (result.error) {
       if (rawStatus(result.error.raw) === 'no-selectable-key') { noSelectableKey.value = true; return; }
@@ -405,7 +405,7 @@ export const useAgentSetup = (
   }, { deep: true, flush: 'sync' });
 
   const onVisibilityChange = () => {
-    if (disposed || terminated.value) return;
+    if (disposed || terminated.value || !toValue(active)) return;
     if (document.visibilityState === 'hidden') {
       heartbeatTimer = clearTimer(heartbeatTimer);
       return;
@@ -436,7 +436,7 @@ export const useAgentSetup = (
   const syncing = computed(() => initialized.value && formGeneration.value !== confirmedGeneration.value);
 
   const canCopy = computed(() => {
-    if (!initialized.value || terminated.value) return false;
+    if (!toValue(active) || !initialized.value || terminated.value) return false;
     if (formGeneration.value !== confirmedGeneration.value) return false;
     if (expiresAt.value === null || expiresAt.value <= nowMs.value) return false;
     const ids = toValue(selectableKeyIds);
@@ -447,8 +447,23 @@ export const useAgentSetup = (
   document.addEventListener('visibilitychange', onVisibilityChange);
   onScopeDispose(dispose);
   watch(() => toValue(active), enabled => {
-    if (!enabled || disposed || initialized.value || activeRequest !== null) return;
-    void create();
+    if (disposed) return;
+    if (!enabled) {
+      heartbeatTimer = clearTimer(heartbeatTimer);
+      heartbeatDue = false;
+      if (!initialized.value) {
+        createAttempt += 1;
+        abortActiveRequest();
+      }
+      return;
+    }
+    if (initialized.value) {
+      nowMs.value = Date.now();
+      heartbeatDue = true;
+      kickPump();
+      return;
+    }
+    if (activeRequest === null) void create();
   }, { immediate: true });
 
   return {

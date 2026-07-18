@@ -5,7 +5,7 @@
 
 import type { PublicModel, PublicModelLimits } from '../api/types.ts';
 
-type ClaudePicker = 'default' | 'opus' | 'sonnet' | 'haiku';
+export type ClaudePicker = 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku';
 type ClaudeTier = 'fable' | 'opus' | 'sonnet' | 'haiku' | 'other';
 export type AgentModelRanking =
   | { family: 'claude'; picker: ClaudePicker }
@@ -24,12 +24,17 @@ export interface ModelOption {
 }
 
 const CLAUDE_DEFAULT_ORDER: readonly ClaudeTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other'];
+export const isClaudeCodeModel = (id: string): boolean =>
+  id.toLowerCase().split('/').some(part => part.startsWith('claude-'));
 const claudeTier = (id: string): ClaudeTier => {
   const segment = id.toLowerCase().split('/').find(part => part.startsWith('claude-'));
   if (!segment) return 'other';
   const tier = (['fable', 'opus', 'sonnet', 'haiku'] as const).find(candidate => segment.includes(`-${candidate}`));
   return tier ?? 'other';
 };
+
+export const isCodexConfigModel = (id: string): boolean =>
+  id.toLowerCase().split('/').at(-1)!.startsWith('gpt-5');
 
 const claudeOrder = (picker: ClaudePicker): readonly ClaudeTier[] => picker === 'default'
   ? CLAUDE_DEFAULT_ORDER
@@ -40,6 +45,11 @@ interface CodexModelParts {
   variantRank: number;
 }
 
+// We normalize two OpenAI naming generations onto one picker order: the GPT-5.6
+// capability tiers precede the plain model, while the smaller GPT-5 variants
+// follow it. A single model version only uses one of these naming schemes.
+// Refs: https://openai.com/index/gpt-5-6/
+//       https://platform.openai.com/docs/models
 const CODEX_VARIANT_RANK: Record<string, number> = { sol: 0, terra: 1, luna: 2, mini: 4, nano: 5 };
 const codexModelParts = (id: string): CodexModelParts | null => {
   const segment = id.toLowerCase().split('/').at(-1)!;
@@ -67,24 +77,28 @@ export const rankAgentSetupModels = (
 
   if (ranking.family === 'claude') {
     const priorities = new Map(claudeOrder(ranking.picker).map((tier, index) => [tier, index]));
-    return chat.map((model, index) => ({ model, index }))
-      .sort((a, b) => priorities.get(claudeTier(a.model.id))! - priorities.get(claudeTier(b.model.id))! || a.index - b.index)
+    return chat.map((model, index) => ({ model, index, priority: priorities.get(claudeTier(model.id))! }))
+      .sort((a, b) => a.priority - b.priority || a.index - b.index)
       .map(entry => entry.model);
   }
 
-  return chat.map((model, index) => ({ model, index, parts: codexModelParts(model.id) }))
-    .sort((a, b) => {
-      if (a.parts === null || b.parts === null) {
-        if (a.parts === null && b.parts !== null) return 1;
-        if (a.parts !== null && b.parts === null) return -1;
-        return a.index - b.index;
-      }
-      if (a.parts.version === b.parts.version && a.parts.variantRank !== b.parts.variantRank) {
-        return a.parts.variantRank - b.parts.variantRank;
-      }
+  const entries = chat.map((model, index) => ({ model, index, parts: codexModelParts(model.id) }));
+  const versionOrder = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.parts !== null && !versionOrder.has(entry.parts.version)) {
+      versionOrder.set(entry.parts.version, versionOrder.size);
+    }
+  }
+  return entries.sort((a, b) => {
+    if (a.parts === null || b.parts === null) {
+      if (a.parts === null && b.parts !== null) return 1;
+      if (a.parts !== null && b.parts === null) return -1;
       return a.index - b.index;
-    })
-    .map(entry => entry.model);
+    }
+    const versionDifference = versionOrder.get(a.parts.version)! - versionOrder.get(b.parts.version)!;
+    if (versionDifference !== 0) return versionDifference;
+    return a.parts.variantRank - b.parts.variantRank || a.index - b.index;
+  }).map(entry => entry.model);
 };
 
 const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
@@ -95,7 +109,12 @@ const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
 // id. The browser is the single place this suffix is applied — at selection time
 // — while the gateway treats the persisted id as opaque and renders it verbatim.
 // Ref: https://code.claude.com/docs/en/model-config
-const applyClaudeContextSuffix = (modelId: string, limits: PublicModelLimits): string => {
+export const claudeModelOverride = (
+  modelId: string,
+  limits: PublicModelLimits,
+  picker: ClaudePicker,
+): string => {
+  if (picker === 'haiku') return modelId;
   const contextWindow = limits.max_context_window_tokens
     ?? (limits.max_prompt_tokens ?? 0) + (limits.max_output_tokens ?? 0);
   return contextWindow >= ONE_MILLION_CONTEXT_TOKENS && !modelId.endsWith('[1m]')
@@ -115,7 +134,7 @@ export const buildModelOptions = (
   const options: ModelOption[] = [{ value: MODEL_OVERRIDE_NONE, modelId: null, unavailable: false }];
   for (const model of rankAgentSetupModels(models, ranking)) {
     options.push({
-      value: ranking.family === 'claude' ? applyClaudeContextSuffix(model.id, model.limits) : model.id,
+      value: ranking.family === 'claude' ? claudeModelOverride(model.id, model.limits, ranking.picker) : model.id,
       modelId: model.id,
       unavailable: false,
     });

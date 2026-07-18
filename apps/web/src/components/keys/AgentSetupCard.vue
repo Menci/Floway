@@ -38,7 +38,7 @@ const setup = useAgentSetup(
 const { draft: serverDraft, syncing, terminated, canCopy, retryCreate } = setup;
 const { initialized, noSelectableKey, error: setupError, scripts } = setup.state;
 
-const localDraft = ref<AgentSetupConfiguration>({
+const createLocalDraft = (): AgentSetupConfiguration => ({
   apiKeyId: '',
   claudeCode: {
     enabled: true,
@@ -51,12 +51,24 @@ const localDraft = ref<AgentSetupConfiguration>({
   },
   codex: { enabled: true, model: null, reasoningEffort: null },
 });
-let localDraftEdited = false;
-watch(localDraft, () => { localDraftEdited = true; }, { deep: true });
+const cloneConfiguration = (configuration: AgentSetupConfiguration): AgentSetupConfiguration => ({
+  apiKeyId: configuration.apiKeyId,
+  claudeCode: { ...configuration.claudeCode },
+  codex: { ...configuration.codex },
+});
+const copyChangedFields = <T extends object>(target: T, current: T, baseline: T) => {
+  for (const key of Object.keys(current) as (keyof T)[]) {
+    if (!Object.is(current[key], baseline[key])) target[key] = current[key];
+  }
+};
+
+const localDraft = ref<AgentSetupConfiguration>(createLocalDraft());
+let localDraftBaseline = cloneConfiguration(localDraft.value);
 
 const draft = computed(() => props.selectedKey !== null && serverDraft.value !== null
   ? serverDraft.value
   : localDraft.value);
+const inlineError = computed(() => initialized.value ? setupError.value ?? props.error : props.error);
 
 type AgentSetupView = 'agent-setup' | 'config-snippets';
 type SetupAgent = 'claude' | 'codex';
@@ -78,14 +90,11 @@ const fieldIds = {
 const agentFieldGridClass = 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5';
 
 watch([serverDraft, () => props.selectedKey?.id ?? null], ([configuration, selectedKeyId]) => {
-  if (configuration !== null && selectedKeyId !== null) {
-    if (localDraftEdited) {
-      configuration.claudeCode = { ...localDraft.value.claudeCode };
-      configuration.codex = { ...localDraft.value.codex };
-      localDraftEdited = false;
-    }
-    if (configuration.apiKeyId !== selectedKeyId) configuration.apiKeyId = selectedKeyId;
-  }
+  if (configuration === null || selectedKeyId === null) return;
+  copyChangedFields(configuration.claudeCode, localDraft.value.claudeCode, localDraftBaseline.claudeCode);
+  copyChangedFields(configuration.codex, localDraft.value.codex, localDraftBaseline.codex);
+  localDraftBaseline = cloneConfiguration(localDraft.value);
+  if (configuration.apiKeyId !== selectedKeyId) configuration.apiKeyId = selectedKeyId;
 }, { immediate: true });
 
 // Reka's Select reserves the empty string for "cleared" and rejects it as an
@@ -98,6 +107,7 @@ const SELECT_NONE = '\u0000none';
 // Claude Code's reasoning-effort control is a closed Floway-side enum (see the
 // agent-setup configuration schema), not an upstream-owned protocol slot, so its
 // options are enumerated here rather than read from a model's capabilities.
+// Ref: https://docs.claude.com/en/docs/claude-code/settings
 const claudeEffortLevels = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly ClaudeEffortLevel[];
 const claudeEffortLabels = {
   low: 'Low',
@@ -266,8 +276,8 @@ const powerShellCommand = computed(() => (activeScripts.value
       Preparing setup…
     </div>
 
-      <div v-if="setupError ?? error" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
-        {{ setupError ?? error }}
+      <div v-if="inlineError" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
+        {{ inlineError }}
       </div>
 
       <p v-if="loading && models.length === 0" class="mb-4 text-[11px] text-gray-500">Loading models…</p>

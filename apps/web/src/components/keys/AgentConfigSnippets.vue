@@ -2,6 +2,12 @@
 import { computed, reactive, shallowRef, watchEffect } from 'vue';
 
 import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';
+import {
+  claudeModelOverride,
+  isClaudeCodeModel,
+  isCodexConfigModel,
+  rankAgentSetupModels,
+} from '../../lib/agent-setup-models.ts';
 import { Code } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -12,31 +18,19 @@ const props = defineProps<{
 
 const CLAUDE_TIER_KEYS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
 type ClaudeTierKey = typeof CLAUDE_TIER_KEYS[number];
-const CLAUDE_TIER: Record<ClaudeTierKey, number> = { fable: 0, opus: 1, sonnet: 2, haiku: 3 };
 const CLAUDE_TIER_LABELS: Record<ClaudeTierKey, string> = { fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
-const claudeTier = (id: string): number => {
-  for (const tier of CLAUDE_TIER_KEYS) if (id.includes(tier)) return CLAUDE_TIER[tier];
-  return 99;
-};
-const sortByTierDistance = (target: number) => (a: string, b: string): number => {
-  const distance = Math.abs(claudeTier(a) - target) - Math.abs(claudeTier(b) - target);
-  return distance === 0 ? b.localeCompare(a) : distance;
-};
-const sortCodex = (a: string, b: string): number => {
-  const mini = Number(a.includes('mini')) - Number(b.includes('mini'));
-  return mini === 0 ? b.localeCompare(a) : mini;
-};
-const isChat = (model: ControlPlaneModel): boolean => model.kind === 'chat';
-const dedupe = (ids: string[]): string[] => [...new Set(ids)];
-const CLAUDE_RE = /(^|\/)claude-/;
-const CODEX_RE = /(^|\/)gpt-5/;
 
-const claudeIds = computed(() => dedupe(props.models.filter(model => CLAUDE_RE.test(model.id) && isChat(model)).map(model => model.id)));
-const codexIds = computed(() => dedupe(props.models.filter(model => CODEX_RE.test(model.id) && isChat(model)).map(model => model.id)));
 const claudeModelsByTier = computed<Record<ClaudeTierKey, string[]>>(() => Object.fromEntries(
-  CLAUDE_TIER_KEYS.map(tier => [tier, [...claudeIds.value].sort(sortByTierDistance(CLAUDE_TIER[tier]))]),
+  CLAUDE_TIER_KEYS.map(tier => [
+    tier,
+    rankAgentSetupModels(props.models, { family: 'claude', picker: tier })
+      .filter(model => isClaudeCodeModel(model.id))
+      .map(model => model.id),
+  ]),
 ) as Record<ClaudeTierKey, string[]>);
-const codexModels = computed(() => [...codexIds.value].sort(sortCodex));
+const codexModels = computed(() => rankAgentSetupModels(props.models, { family: 'codex' })
+  .filter(model => isCodexConfigModel(model.id))
+  .map(model => model.id));
 
 const claudeSelection = reactive<Record<ClaudeTierKey, string>>({ fable: '', opus: '', sonnet: '', haiku: '' });
 const codexModel = shallowRef('');
@@ -49,21 +43,22 @@ watchEffect(() => {
   if (!codexModels.value.includes(codexModel.value)) codexModel.value = codexModels.value[0] ?? '';
 });
 
-const contextById = computed(() => new Map(props.models
-  .filter(model => CLAUDE_RE.test(model.id) && isChat(model))
-  .map(model => [model.id, model.limits?.max_context_window_tokens
-    ?? ((model.limits?.max_prompt_tokens ?? 0) + (model.limits?.max_output_tokens ?? 0))])));
-const withLargeContext = (id: string): string => (contextById.value.get(id) ?? 0) >= 1_000_000 ? `${id}[1m]` : id;
+const claudeModelsById = computed(() => new Map(props.models.map(model => [model.id, model])));
+const selectedClaudeModel = (tier: ClaudeTierKey): string => {
+  const id = claudeSelection[tier];
+  const model = claudeModelsById.value.get(id);
+  return model === undefined ? id : claudeModelOverride(model.id, model.limits, tier);
+};
 
 const baseUrl = window.location.origin;
 const claudeSnippet = computed(() => JSON.stringify({
   env: {
     ANTHROPIC_BASE_URL: baseUrl,
     ANTHROPIC_AUTH_TOKEN: props.apiKey.key,
-    ANTHROPIC_DEFAULT_FABLE_MODEL: withLargeContext(claudeSelection.fable),
-    ANTHROPIC_DEFAULT_OPUS_MODEL: withLargeContext(claudeSelection.opus),
-    ANTHROPIC_DEFAULT_SONNET_MODEL: withLargeContext(claudeSelection.sonnet),
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: claudeSelection.haiku,
+    ANTHROPIC_DEFAULT_FABLE_MODEL: selectedClaudeModel('fable'),
+    ANTHROPIC_DEFAULT_OPUS_MODEL: selectedClaudeModel('opus'),
+    ANTHROPIC_DEFAULT_SONNET_MODEL: selectedClaudeModel('sonnet'),
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedClaudeModel('haiku'),
   },
 }, null, 2));
 
