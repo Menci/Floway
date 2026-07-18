@@ -52,3 +52,4 @@ volumes:
 
 networks:
   floway:
+    name: floway
