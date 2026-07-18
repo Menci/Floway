@@ -12,6 +12,7 @@ import type {
   ApiKeyRepo,
   AgentSetupMutation,
   AgentSetupRecord,
+  AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
   CachedModelsRow,
@@ -911,26 +912,25 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
   }
 
   latestByUserId(userId: number): Promise<AgentSetupRecord | null> {
-    const owned = [...this.byToken.values()]
-      .filter(record => record.userId === userId)
-      .sort(compareLatestAgentSetupRecord);
-    const latest = owned[0];
+    let latest: AgentSetupRecord | undefined;
+    for (const record of this.byToken.values()) {
+      if (record.userId !== userId) continue;
+      if (latest === undefined || compareLatestAgentSetupRecord(record, latest) < 0) latest = record;
+    }
     return Promise.resolve(latest ? { ...latest } : null);
   }
 
   insertForUser(input: {
     userId: number;
     token: string;
-    apiKeyId: string;
     configurationJson: string;
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord> {
-    if (this.byToken.has(input.token)) return Promise.reject(new AgentSetupTokenCollisionError());
+    if (this.byToken.has(input.token)) throw new AgentSetupTokenCollisionError();
     const record: AgentSetupRecord = {
       userId: input.userId,
       token: input.token,
-      apiKeyId: input.apiKeyId,
       configurationJson: input.configurationJson,
       configurationRevision: 1,
       expiresAt: input.expiresAt,
@@ -950,7 +950,6 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
     userId: number;
     token: string;
     expectedRevision: number;
-    apiKeyId: string;
     configurationJson: string;
     now: number;
     expiresAt: number;
@@ -962,7 +961,6 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
     }
     const record: AgentSetupRecord = {
       ...existing,
-      apiKeyId: input.apiKeyId,
       configurationJson: input.configurationJson,
       configurationRevision: existing.configurationRevision + 1,
       expiresAt: input.expiresAt,
@@ -990,7 +988,7 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
     userId: number;
     token: string;
     expiresAt: number;
-  }): Promise<AgentSetupMutation> {
+  }): Promise<AgentSetupRenewal> {
     const existing = this.byToken.get(input.token);
     if (!existing || existing.userId !== input.userId) return Promise.resolve({ status: 'missing' });
     // Expiry-only: updated_at and the revision stay put.

@@ -12,6 +12,7 @@ export {
 export {
   type AgentSetupMutation,
   type AgentSetupRecord,
+  type AgentSetupRenewal,
   type AgentSetupRepository,
   AgentSetupTokenCollisionError,
 } from './repository.ts';

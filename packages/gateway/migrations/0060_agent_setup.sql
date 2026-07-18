@@ -8,7 +8,6 @@
 CREATE TABLE agent_setup (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
-  api_key_id TEXT NOT NULL,
   configuration_json TEXT NOT NULL,
   configuration_revision INTEGER NOT NULL,
   -- Unix milliseconds.

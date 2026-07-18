@@ -17,12 +17,6 @@ const opaqueOptionalString = z.string()
   .refine(value => !value.includes('\0'), { message: 'must not contain a NUL character' })
   .nullable();
 
-// Claude Code's reasoning effort is a closed Floway-side enum the installer maps
-// to the top-level `effortLevel` setting, unlike Codex's open, upstream-owned
-// effort string.
-// Ref: https://docs.claude.com/en/docs/claude-code/settings
-const claudeEffortLevelSchema = z.enum(['low', 'medium', 'high', 'xhigh']).nullable();
-
 export const agentSetupConfigurationSchema = z.object({
   apiKeyId: z.string().min(1),
   claudeCode: z.object({
@@ -30,7 +24,11 @@ export const agentSetupConfigurationSchema = z.object({
     defaultOpusModel: opaqueOptionalString,
     defaultSonnetModel: opaqueOptionalString,
     defaultHaikuModel: opaqueOptionalString,
-    effortLevel: claudeEffortLevelSchema,
+    // Claude Code's reasoning effort is a closed Floway-side enum the installer
+    // maps to the top-level `effortLevel` setting, unlike Codex's open,
+    // upstream-owned effort string.
+    // Ref: https://docs.claude.com/en/docs/claude-code/settings
+    effortLevel: z.enum(['low', 'medium', 'high', 'xhigh']).nullable(),
     modelDiscovery: z.boolean(),
   }).strict(),
   codex: z.object({
@@ -41,36 +39,20 @@ export const agentSetupConfigurationSchema = z.object({
 
 export type AgentSetupConfiguration = z.infer<typeof agentSetupConfigurationSchema>;
 
-// Thrown when a first-use default is requested but the user has no selectable
-// API key, so the route can return a typed "create a key first" response
-// instead of leasing against a key that cannot serve.
-export class AgentSetupNoSelectableKeyError extends Error {
-  constructor() {
-    super('No selectable API key is available for agent setup');
-    this.name = 'AgentSetupNoSelectableKeyError';
-  }
-}
-
 // First-use configuration enables Claude model discovery and leaves every
 // model and effort override unset, so creating a lease needs no model catalog.
-export const defaultAgentSetupConfiguration = (
-  selectableKeyIds: readonly string[],
-): AgentSetupConfiguration => {
-  const first = selectableKeyIds[0];
-  if (first === undefined) throw new AgentSetupNoSelectableKeyError();
-  return {
-    apiKeyId: first,
-    claudeCode: {
-      model: null,
-      defaultOpusModel: null,
-      defaultSonnetModel: null,
-      defaultHaikuModel: null,
-      effortLevel: null,
-      modelDiscovery: true,
-    },
-    codex: {
-      model: null,
-      reasoningEffort: null,
-    },
-  };
-};
+export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConfiguration => ({
+  apiKeyId,
+  claudeCode: {
+    model: null,
+    defaultOpusModel: null,
+    defaultSonnetModel: null,
+    defaultHaikuModel: null,
+    effortLevel: null,
+    modelDiscovery: true,
+  },
+  codex: {
+    model: null,
+    reasoningEffort: null,
+  },
+});

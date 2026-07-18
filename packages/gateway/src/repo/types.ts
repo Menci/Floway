@@ -396,7 +396,7 @@ export interface ResponsesSnapshotsRepo {
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
 // are owned by @floway-dev/agent-setup; the SQL and in-memory implementations
 // here satisfy that contract. Re-exported so the repo layer imports one source.
-export type { AgentSetupMutation, AgentSetupRecord, AgentSetupRepository } from '@floway-dev/agent-setup';
+export type { AgentSetupMutation, AgentSetupRecord, AgentSetupRenewal, AgentSetupRepository } from '@floway-dev/agent-setup';
 
 export interface Repo {
   apiKeys: ApiKeyRepo;

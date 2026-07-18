@@ -23,7 +23,7 @@ import {
 } from './configuration.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
-import { SETUP_SCRIPT_BODIES } from './script-assets.ts';
+import { type ScriptAgent, type ScriptLanguage, SETUP_SCRIPT_BODIES } from './script-assets.ts';
 import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
 import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 
@@ -59,9 +59,12 @@ const withFreshToken = async (insert: (token: string) => Promise<AgentSetupRecor
   }
 };
 
+const parseConfiguration = (record: AgentSetupRecord): AgentSetupConfiguration =>
+  agentSetupConfigurationSchema.parse(JSON.parse(record.configurationJson));
+
 const leaseProjection = (record: AgentSetupRecord, publicScriptBasePath: string) => ({
   token: record.token,
-  configuration: agentSetupConfigurationSchema.parse(JSON.parse(record.configurationJson)),
+  configuration: parseConfiguration(record),
   configurationRevision: record.configurationRevision,
   expiresAt: record.expiresAt,
   scripts: {
@@ -82,7 +85,7 @@ const restorableConfiguration = (
   record: AgentSetupRecord,
   selectableKeyIds: readonly string[],
 ): AgentSetupConfiguration | null => {
-  const configuration = agentSetupConfigurationSchema.parse(JSON.parse(record.configurationJson));
+  const configuration = parseConfiguration(record);
   return selectableKeyIds.includes(configuration.apiKeyId) ? configuration : null;
 };
 
@@ -107,14 +110,11 @@ const resolveServeableLease = async (
   const record = await deps.repository.findByToken(token);
   if (!record || record.expiresAt <= Date.now()) return null;
   if (!(await deps.userExists(record.userId))) return null;
-  const configuration = agentSetupConfigurationSchema.parse(JSON.parse(record.configurationJson));
+  const configuration = parseConfiguration(record);
   const apiKey = await deps.resolveApiKey(record.userId, configuration.apiKeyId);
   if (apiKey === null) return null;
   return { apiKey: apiKey.secret, apiKeyName: apiKey.name, configuration };
 };
-
-type ScriptLanguage = 'sh' | 'ps1';
-type ScriptAgent = 'claude' | 'codex';
 
 const publicErrorDiagnostics = (error: unknown, token: string): string => {
   if (!(error instanceof Error)) return `Thrown value type: ${typeof error}`;
@@ -190,14 +190,13 @@ export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupCon
       const latest = await deps.repository.latestByUserId(userId);
       const restored = latest !== null ? restorableConfiguration(latest, selectableKeyIds) : null;
       const configuration: AgentSetupConfiguration = restored === null
-        ? defaultAgentSetupConfiguration([apiKeyId])
+        ? defaultAgentSetupConfiguration(apiKeyId)
         : { ...restored, apiKeyId };
 
       const now = Date.now();
       const record = await withFreshToken(token => deps.repository.insertForUser({
         userId,
         token,
-        apiKeyId: configuration.apiKeyId,
         configurationJson: JSON.stringify(configuration),
         now,
         expiresAt: now + SETUP_LEASE_TTL_MS,
@@ -218,7 +217,6 @@ export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupCon
         userId,
         token,
         expectedRevision,
-        apiKeyId: configuration.apiKeyId,
         configurationJson: JSON.stringify(configuration),
         now,
         expiresAt: now + SETUP_LEASE_TTL_MS,

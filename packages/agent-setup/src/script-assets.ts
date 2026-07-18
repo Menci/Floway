@@ -11,8 +11,8 @@ import {
   SETUP_POWERSHELL_COMMON_OUTPUT,
 } from './script-assets.generated.ts';
 
-type ScriptAgent = 'claude' | 'codex';
-type ScriptLanguage = 'sh' | 'ps1';
+export type ScriptAgent = 'claude' | 'codex';
+export type ScriptLanguage = 'sh' | 'ps1';
 
 const bashCommon = SETUP_BASH_COMMON_OUTPUT + SETUP_BASH_COMMON_HELPERS + SETUP_BASH_COMMON_MAIN;
 const powerShellCommon = SETUP_POWERSHELL_COMMON_OUTPUT + SETUP_POWERSHELL_COMMON_HELPERS + SETUP_POWERSHELL_COMMON_MAIN;

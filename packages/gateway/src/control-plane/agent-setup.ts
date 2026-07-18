@@ -26,9 +26,8 @@ const repository: AgentSetupRepository = {
   renewLease: input => getRepo().agentSetup.renewLease(input),
 };
 
-// Public GET/HEAD script routes — mounted structurally ahead of the logger,
-// CORS, and auth middleware in app.ts, so the API-key-bearing body reaches an
-// unauthenticated machine without any per-path bypass in those layers.
+// Public GET/HEAD script routes. app.ts owns where they mount; here we only
+// wire the lease store, owner lookup, and servable API-key resolution.
 export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
   repository,
   userExists: async userId => (await getRepo().users.getById(userId)) !== null,

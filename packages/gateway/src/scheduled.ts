@@ -13,17 +13,6 @@ const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boole
   }
 };
 
-export const runScheduledMaintenance = async (): Promise<void> => {
-  const nowMs = Date.now();
-  const now = startOfUtcHour(nowMs);
-  await runSweep('agentSetup.deleteExpiredExceptLatest', () => getRepo().agentSetup.deleteExpiredExceptLatest(nowMs));
-  await runSweep('responsesSnapshots.deleteOlderThan', () => getRepo().responsesSnapshots.deleteOlderThan(now - RESPONSES_STATE_TTL_MS));
-  const itemsDeletionSucceeded = await runSweep('responsesItems.deleteOlderThan', () => getRepo().responsesItems.deleteOlderThan(now - RESPONSES_STATE_TTL_MS));
-  if (itemsDeletionSucceeded) await runSweep('responsesItems.sweepPayloadFiles', () => sweepExpiredResponsesItemPayloadFiles(now));
-  await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(Date.now()));
-  await runSweep('dumps.sweepExpired', () => sweepExpiredDumps());
-};
-
 const sweepExpiredDumps = async (): Promise<void> => {
   const store = getDumpStore();
   // Iterate every api key, including those with retention disabled. The
@@ -44,4 +33,15 @@ const sweepExpiredDumps = async (): Promise<void> => {
       console.error('[scheduled] dump sweep failed', key.id, err);
     }
   }
+};
+
+export const runScheduledMaintenance = async (): Promise<void> => {
+  const nowMs = Date.now();
+  const hourStart = startOfUtcHour(nowMs);
+  await runSweep('agentSetup.deleteExpiredExceptLatest', () => getRepo().agentSetup.deleteExpiredExceptLatest(nowMs));
+  await runSweep('responsesSnapshots.deleteOlderThan', () => getRepo().responsesSnapshots.deleteOlderThan(hourStart - RESPONSES_STATE_TTL_MS));
+  const itemsDeletionSucceeded = await runSweep('responsesItems.deleteOlderThan', () => getRepo().responsesItems.deleteOlderThan(hourStart - RESPONSES_STATE_TTL_MS));
+  if (itemsDeletionSucceeded) await runSweep('responsesItems.sweepPayloadFiles', () => sweepExpiredResponsesItemPayloadFiles(hourStart));
+  await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
+  await runSweep('dumps.sweepExpired', () => sweepExpiredDumps());
 };

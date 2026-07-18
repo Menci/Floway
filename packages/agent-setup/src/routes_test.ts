@@ -7,7 +7,7 @@
 import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
-import { type AgentSetupMutation, type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
+import { type AgentSetupMutation, type AgentSetupRecord, type AgentSetupRenewal, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import {
   type AgentSetupControlDeps,
   type AgentSetupPublicDeps,
@@ -53,13 +53,12 @@ class FakeAgentSetupRepository implements AgentSetupRepository {
   }
 
   insertForUser(input: {
-    userId: number; token: string; apiKeyId: string; configurationJson: string; now: number; expiresAt: number;
+    userId: number; token: string; configurationJson: string; now: number; expiresAt: number;
   }): Promise<AgentSetupRecord> {
     if (this.rows.has(input.token)) throw new AgentSetupTokenCollisionError();
     const record: AgentSetupRecord = {
       token: input.token,
       userId: input.userId,
-      apiKeyId: input.apiKeyId,
       configurationJson: input.configurationJson,
       configurationRevision: 1,
       expiresAt: input.expiresAt,
@@ -74,14 +73,13 @@ class FakeAgentSetupRepository implements AgentSetupRepository {
   }
 
   updateConfiguration(input: {
-    userId: number; token: string; expectedRevision: number; apiKeyId: string; configurationJson: string; now: number; expiresAt: number;
+    userId: number; token: string; expectedRevision: number; configurationJson: string; now: number; expiresAt: number;
   }): Promise<AgentSetupMutation> {
     const row = this.rows.get(input.token);
     if (!row || row.userId !== input.userId) return Promise.resolve({ status: 'missing' });
     if (row.configurationRevision !== input.expectedRevision) return Promise.resolve({ status: 'revision-conflict', record: { ...row } });
     const updated: AgentSetupRecord = {
       ...row,
-      apiKeyId: input.apiKeyId,
       configurationJson: input.configurationJson,
       configurationRevision: row.configurationRevision + 1,
       expiresAt: input.expiresAt,
@@ -109,7 +107,7 @@ class FakeAgentSetupRepository implements AgentSetupRepository {
     return Promise.resolve();
   }
 
-  renewLease(input: { userId: number; token: string; expiresAt: number }): Promise<AgentSetupMutation> {
+  renewLease(input: { userId: number; token: string; expiresAt: number }): Promise<AgentSetupRenewal> {
     const row = this.rows.get(input.token);
     if (!row || row.userId !== input.userId) return Promise.resolve({ status: 'missing' });
     const updated: AgentSetupRecord = { ...row, expiresAt: input.expiresAt };
@@ -230,7 +228,7 @@ test('POST creates the lease for the requested selectable key', async () => {
   const h = harness({ keys: ['key_primary', 'key_other'], secrets: { key_primary: RAW_KEY, key_other: 'raw-other' } });
   const body = await create(h, 'key_other');
   assertEquals(body.configuration.apiKeyId, 'key_other');
-  assertEquals((await h.repo.findByToken(body.token))?.apiKeyId, 'key_other');
+  assertEquals(JSON.parse((await h.repo.findByToken(body.token))!.configurationJson).apiKeyId, 'key_other');
 });
 
 test('POST projects scripts from the host-supplied public route path', async () => {
@@ -276,7 +274,7 @@ test('POST falls back to a first-use default when the latest config points at an
   // Now only a different key is selectable; the saved config cannot be restored.
   const h2 = harness({ keys: ['key_other'], secrets: { key_other: 'raw-other' } });
   // Seed h2's repo with the same saved (unselectable) latest row.
-  await h2.repo.insertForUser({ userId: USER_ID, token: 'x'.repeat(43), apiKeyId: 'key_primary', configurationJson: JSON.stringify(edited), now: Date.now(), expiresAt: Date.now() + 300_000 });
+  await h2.repo.insertForUser({ userId: USER_ID, token: 'x'.repeat(43), configurationJson: JSON.stringify(edited), now: Date.now(), expiresAt: Date.now() + 300_000 });
   const reopened = await create(h2, 'key_other');
   assertEquals(reopened.configuration.apiKeyId, 'key_other');
   assertEquals(reopened.configuration.codex.reasoningEffort, null);
@@ -296,7 +294,7 @@ test('inserting a new lease sweeps only the same user\'s already-expired rows', 
   const h = harness();
   const now = Date.now();
   // An expired sibling and a still-live sibling.
-  await h.repo.insertForUser({ userId: USER_ID, token: 'e'.repeat(43), apiKeyId: 'key_primary', configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'e'.repeat(43), configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
   const live = await create(h);
   // The expired row is gone; the live rows survive.
   assertEquals(await h.repo.findByToken('e'.repeat(43)), null);
@@ -376,7 +374,7 @@ test('heartbeat on a missing token is a terminal 409 missing', async () => {
 test('heartbeat renews an expired-but-still-present lease', async () => {
   const h = harness();
   const now = Date.now();
-  await h.repo.insertForUser({ userId: USER_ID, token: 'p'.repeat(43), apiKeyId: 'key_primary', configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'p'.repeat(43), configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
   const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: 'p'.repeat(43) }));
   assertEquals(response.status, 200);
   const body = (await response.json()) as LeaseResponse;
@@ -510,9 +508,9 @@ test('unknown, expired, deleted-user, and deleted-key tokens all return an ident
   const now = Date.now();
   const config = '{"apiKeyId":"key_primary","claudeCode":{"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}';
 
-  await h.repo.insertForUser({ userId: USER_ID, token: 'b'.repeat(43), apiKeyId: 'key_primary', configurationJson: config, now, expiresAt: now - 1 });
-  await h.repo.insertForUser({ userId: 99, token: 'c'.repeat(43), apiKeyId: 'key_primary', configurationJson: config, now, expiresAt: now + 300_000 });
-  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), apiKeyId: 'key_gone', configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'b'.repeat(43), configurationJson: config, now, expiresAt: now - 1 });
+  await h.repo.insertForUser({ userId: 99, token: 'c'.repeat(43), configurationJson: config, now, expiresAt: now + 300_000 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
 
   const bodies = new Set<string>();
   for (const token of ['a'.repeat(43), 'b'.repeat(43), 'c'.repeat(43), 'd'.repeat(43)]) {

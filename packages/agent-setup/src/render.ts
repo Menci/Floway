@@ -19,23 +19,19 @@ const assertNoNul = (value: string): void => {
   if (value.includes('\0')) throw new Error('cannot render a value containing a NUL character');
 };
 
+// Flatten every C0/DEL control byte to a space so a key label cannot smuggle a
+// terminal escape into the metadata assignment. The value still flows through a
+// literal encoder afterward, which is where a NUL is rejected.
+const metadataValue = (value: string): string => value.replace(/[\u0001-\u001f\u007f]/g, ' ');
+
+// --- POSIX shell ---
+
 // POSIX single-quoted literal: the single quote is closed, escaped as `\'`, and
 // reopened; every other character (newlines, tabs, Unicode) is literal. NUL
 // cannot exist in a shell word and is rejected.
 const shellLiteral = (value: string): string => {
   assertNoNul(value);
   return `'${value.replace(/'/g, "'\\''")}'`;
-};
-
-// PowerShell single-quoted literal: single quotes are the only escape, doubled.
-const powerShellLiteral = (value: string): string => {
-  assertNoNul(value);
-  return `'${value.replace(/'/g, "''")}'`;
-};
-
-const metadataValue = (value: string): string => {
-  assertNoNul(value);
-  return value.replace(/[\u0001-\u001f\u007f]/g, ' ');
 };
 
 // An unset override renders empty, which the installer reads as "remove this
@@ -70,6 +66,14 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
   }
   const lines = assignments.map(([name, value]) => `${name}=${shellLiteral(value)}`);
   return `set +x\n${lines.join('\n')}\n`;
+};
+
+// --- PowerShell ---
+
+// PowerShell single-quoted literal: single quotes are the only escape, doubled.
+const powerShellLiteral = (value: string): string => {
+  assertNoNul(value);
+  return `'${value.replace(/'/g, "''")}'`;
 };
 
 // PowerShell: booleans and $null render bare; only strings are quoted, so the

@@ -8,6 +8,7 @@ import type {
   ApiKeyRepo,
   AgentSetupMutation,
   AgentSetupRecord,
+  AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
   CachedModelsRow,
@@ -1874,9 +1875,8 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
 }
 
 interface AgentSetupRow {
-  user_id: number;
   token: string;
-  api_key_id: string;
+  user_id: number;
   configuration_json: string;
   configuration_revision: number;
   expires_at: number;
@@ -1884,13 +1884,12 @@ interface AgentSetupRow {
   updated_at: number;
 }
 
-const AGENT_SETUP_COLUMNS = 'token, user_id, api_key_id, configuration_json, configuration_revision, expires_at, created_at, updated_at';
+const AGENT_SETUP_COLUMNS = 'token, user_id, configuration_json, configuration_revision, expires_at, created_at, updated_at';
 const AGENT_SETUP_LATEST_ORDER = 'updated_at DESC, created_at DESC, token DESC';
 
 const toAgentSetupRecord = (row: AgentSetupRow): AgentSetupRecord => ({
-  userId: row.user_id,
   token: row.token,
-  apiKeyId: row.api_key_id,
+  userId: row.user_id,
   configurationJson: row.configuration_json,
   configurationRevision: row.configuration_revision,
   expiresAt: row.expires_at,
@@ -1924,7 +1923,6 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
   async insertForUser(input: {
     userId: number;
     token: string;
-    apiKeyId: string;
     configurationJson: string;
     now: number;
     expiresAt: number;
@@ -1934,10 +1932,10 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
       const row = await this.db
         .prepare(
           `INSERT INTO agent_setup (${AGENT_SETUP_COLUMNS})
-           VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+           VALUES (?, ?, ?, 1, ?, ?, ?)
            RETURNING ${AGENT_SETUP_COLUMNS}`,
         )
-        .bind(input.token, input.userId, input.apiKeyId, input.configurationJson, input.expiresAt, input.now, input.now)
+        .bind(input.token, input.userId, input.configurationJson, input.expiresAt, input.now, input.now)
         .first<AgentSetupRow>();
       if (!row) throw new Error('insertForUser: insert returned no rows');
       return toAgentSetupRecord(row);
@@ -1951,7 +1949,6 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
     userId: number;
     token: string;
     expectedRevision: number;
-    apiKeyId: string;
     configurationJson: string;
     now: number;
     expiresAt: number;
@@ -1962,14 +1959,13 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
       .prepare(
         `UPDATE agent_setup SET
            configuration_json = ?,
-           api_key_id = ?,
            configuration_revision = configuration_revision + 1,
            expires_at = ?,
            updated_at = ?
          WHERE user_id = ? AND token = ? AND configuration_revision = ?
          RETURNING ${AGENT_SETUP_COLUMNS}`,
       )
-      .bind(input.configurationJson, input.apiKeyId, input.expiresAt, input.now, input.userId, input.token, input.expectedRevision)
+      .bind(input.configurationJson, input.expiresAt, input.now, input.userId, input.token, input.expectedRevision)
       .first<AgentSetupRow>();
     if (row) return { status: 'ok', record: toAgentSetupRecord(row) };
     // The CAS matched nothing; read the live row to classify the rejection: a
@@ -1996,7 +1992,7 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
     userId: number;
     token: string;
     expiresAt: number;
-  }): Promise<AgentSetupMutation> {
+  }): Promise<AgentSetupRenewal> {
     // Expiry-only: updated_at and the revision are left untouched so a heartbeat
     // neither reorders the restore selection nor collides with an edit.
     const row = await this.db

@@ -12,7 +12,6 @@ export interface AgentSetupRecord {
   // concurrent records, one per dashboard page that acquired a lease.
   token: string;
   userId: number;
-  apiKeyId: string;
   configurationJson: string;
   // Optimistic-concurrency counter for configuration edits. A freshly inserted
   // record starts at 1; a successful configuration write bumps it. Lease
@@ -33,6 +32,12 @@ export type AgentSetupMutation =
   | { status: 'ok'; record: AgentSetupRecord }
   | { status: 'missing' }
   | { status: 'revision-conflict'; record: AgentSetupRecord };
+
+// Renewal only extends expiry; it can never conflict on a revision, so its
+// outcome is the ok/missing subset of AgentSetupMutation.
+export type AgentSetupRenewal =
+  | { status: 'ok'; record: AgentSetupRecord }
+  | { status: 'missing' };
 
 // Thrown by `insertForUser` when the generated token already exists. A 256-bit
 // token makes this a practical impossibility; the typed error only lets the
@@ -61,7 +66,6 @@ export interface AgentSetupRepository {
   insertForUser(input: {
     userId: number;
     token: string;
-    apiKeyId: string;
     configurationJson: string;
     now: number;
     expiresAt: number;
@@ -69,13 +73,12 @@ export interface AgentSetupRepository {
 
   // PUT: write configuration to exactly the (userId, token) record under
   // optimistic concurrency. On a revision match it bumps the revision and
-  // updates the api key, configuration, expiry, and updated_at; the token never
+  // updates the configuration, expiry, and updated_at; the token never
   // changes. An already-expired record is still writable while it exists.
   updateConfiguration(input: {
     userId: number;
     token: string;
     expectedRevision: number;
-    apiKeyId: string;
     configurationJson: string;
     now: number;
     expiresAt: number;
@@ -93,5 +96,5 @@ export interface AgentSetupRepository {
     userId: number;
     token: string;
     expiresAt: number;
-  }): Promise<AgentSetupMutation>;
+  }): Promise<AgentSetupRenewal>;
 }

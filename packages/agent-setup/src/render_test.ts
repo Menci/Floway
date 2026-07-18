@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
 import {
-  AgentSetupNoSelectableKeyError,
   agentSetupConfigurationSchema,
   defaultAgentSetupConfiguration,
   type AgentSetupConfiguration,
@@ -80,8 +79,8 @@ describe('agentSetupConfigurationSchema', () => {
 });
 
 describe('defaultAgentSetupConfiguration', () => {
-  test('selects the first key, enables both agents, nulls overrides, enables discovery', () => {
-    expect(defaultAgentSetupConfiguration(['key-a', 'key-b'])).toEqual({
+  test('sets the given key, enables both agents, nulls overrides, enables discovery', () => {
+    expect(defaultAgentSetupConfiguration('key-a')).toEqual({
       apiKeyId: 'key-a',
       claudeCode: {
         model: null, defaultOpusModel: null, defaultSonnetModel: null,
@@ -92,12 +91,8 @@ describe('defaultAgentSetupConfiguration', () => {
   });
 
   test('produces a value the schema accepts', () => {
-    const config = defaultAgentSetupConfiguration(['key-a']);
+    const config = defaultAgentSetupConfiguration('key-a');
     expect(agentSetupConfigurationSchema.safeParse(config).success).toBe(true);
-  });
-
-  test('rejects an empty key list with a typed error', () => {
-    expect(() => defaultAgentSetupConfiguration([])).toThrow(AgentSetupNoSelectableKeyError);
   });
 });
 

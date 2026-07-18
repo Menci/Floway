@@ -3,7 +3,7 @@
 // impossibility. It is the lease's primary identity and is embedded verbatim in
 // the public setup-script URL.
 
-export const AGENT_SETUP_TOKEN_LENGTH = 43;
+const AGENT_SETUP_TOKEN_LENGTH = 43;
 export const AGENT_SETUP_TOKEN_PREFIX_PATTERN = `[A-Za-z0-9_-]{${AGENT_SETUP_TOKEN_LENGTH}}.*`;
 
 export const generateAgentSetupToken = (): string => {

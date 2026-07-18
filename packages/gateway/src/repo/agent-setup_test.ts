@@ -20,7 +20,6 @@ const insert = (repo: Repo, over: Partial<Parameters<Repo['agentSetup']['insertF
   repo.agentSetup.insertForUser({
     userId: 7,
     token: 'token-a',
-    apiKeyId: 'key-a',
     configurationJson: '{"apiKeyId":"key-a"}',
     now: 1_000,
     expiresAt: 1_300,
@@ -34,7 +33,6 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     expect(created).toEqual({
       userId: 7,
       token: 'token-a',
-      apiKeyId: 'key-a',
       configurationJson: '{"apiKeyId":"key-a"}',
       configurationRevision: 1,
       expiresAt: 1_300,
@@ -53,7 +51,9 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
   test('a token collision throws AgentSetupTokenCollisionError', async () => {
     const repo = await makeRepo();
     await insert(repo);
-    await expect(insert(repo, { userId: 8, apiKeyId: 'key-b' })).rejects.toBeInstanceOf(AgentSetupTokenCollisionError);
+    // The SQL backend rejects; the in-memory backend throws synchronously. An
+    // async wrapper normalizes both into a rejected promise for the assertion.
+    await expect((async () => insert(repo, { userId: 8 }))()).rejects.toBeInstanceOf(AgentSetupTokenCollisionError);
   });
 
   test('multiple unexpired leases per user coexist; insert never sweeps a live sibling', async () => {
@@ -85,7 +85,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
 
     // A configuration write bumps updated_at, so that row becomes latest.
     await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'token-a', expectedRevision: 1, apiKeyId: 'key-a',
+      userId: 7, token: 'token-a', expectedRevision: 1,
       configurationJson: '{"apiKeyId":"key-a","edited":true}', now: 2_000, expiresAt: 9_000,
     });
     expect((await repo.agentSetup.latestByUserId(7))?.token).toBe('token-a');
@@ -96,7 +96,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     const repo = await makeRepo();
     await insert(repo);
     const result = await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'token-a', expectedRevision: 1, apiKeyId: 'key-a',
+      userId: 7, token: 'token-a', expectedRevision: 1,
       configurationJson: '{"apiKeyId":"key-a","claudeCode":{"enabled":true}}', now: 1_010, expiresAt: 1_310,
     });
     expect(result.status).toBe('ok');
@@ -112,7 +112,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     const repo = await makeRepo();
     const created = await insert(repo);
     const stale = await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'token-a', expectedRevision: 0, apiKeyId: 'key-a',
+      userId: 7, token: 'token-a', expectedRevision: 0,
       configurationJson: '{"apiKeyId":"key-a"}', now: 1_010, expiresAt: 1_310,
     });
     expect(stale.status).toBe('revision-conflict');
@@ -124,12 +124,12 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     const repo = await makeRepo();
     await insert(repo);
     const absent = await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'other-token', expectedRevision: 1, apiKeyId: 'key-a',
+      userId: 7, token: 'other-token', expectedRevision: 1,
       configurationJson: '{"apiKeyId":"key-a"}', now: 1_010, expiresAt: 1_310,
     });
     expect(absent.status).toBe('missing');
     const foreign = await repo.agentSetup.updateConfiguration({
-      userId: 8, token: 'token-a', expectedRevision: 1, apiKeyId: 'key-a',
+      userId: 8, token: 'token-a', expectedRevision: 1,
       configurationJson: '{"apiKeyId":"key-a"}', now: 1_010, expiresAt: 1_310,
     });
     expect(foreign.status).toBe('missing');
@@ -141,7 +141,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     const repo = await makeRepo();
     await insert(repo, { expiresAt: 1_300 });
     const result = await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'token-a', expectedRevision: 1, apiKeyId: 'key-a',
+      userId: 7, token: 'token-a', expectedRevision: 1,
       configurationJson: '{"apiKeyId":"key-a"}', now: 1_500, expiresAt: 1_800,
     });
     expect(result.status).toBe('ok');
