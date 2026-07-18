@@ -937,6 +937,24 @@ test('claude', 'a pre-existing settings file is backed up', async t => {
   t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), original, 'backup captures the original bytes');
 });
 
+test('claude', 'successful re-runs retain only the latest settings backup', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'original' }));
+
+  const first = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
+  t.equal(first.code, 0, `first run should succeed:\n${first.combined}`);
+  const firstSettings = readFileSync(settingsPathFor(ws), 'utf8');
+  const second = await runShellInstaller({ workspace: ws, configuration: claudeConfig({ effortLevel: 'high' }), baseUrl: modelServer.url });
+  t.equal(second.code, 0, `second run should succeed:\n${second.combined}`);
+
+  const backups = backupFiles(configDir);
+  t.equal(backups.length, 1, `only the latest backup is retained, found ${backups.join(', ')}`);
+  t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), firstSettings, 'the retained backup is the state before the latest run');
+});
+
 test('claude', 'invalid existing JSON fails without mutating the file', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1177,6 +1195,25 @@ test('claude', 'PowerShell: a pre-existing settings file is backed up', async t 
   const backups = backupFiles(configDir);
   t.equal(backups.length, 1, `exactly one backup expected, found ${backups.join(', ')}`);
   t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), original, 'backup captures the original bytes');
+});
+
+test('claude', 'PowerShell: successful re-runs retain only the latest settings backup', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'original' }));
+
+  const first = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
+  t.equal(first.code, 0, `first run should succeed:\n${first.combined}`);
+  const firstSettings = readFileSync(settingsPathFor(ws), 'utf8');
+  const second = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig({ effortLevel: 'high' }), baseUrl: modelServer.url });
+  t.equal(second.code, 0, `second run should succeed:\n${second.combined}`);
+
+  const backups = backupFiles(configDir);
+  t.equal(backups.length, 1, `only the latest backup is retained, found ${backups.join(', ')}`);
+  t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), firstSettings, 'the retained backup is the state before the latest run');
 });
 
 test('claude', 'PowerShell: existing settings use File.Replace with a real null backup path', async t => {
@@ -1786,23 +1823,24 @@ test('codex', 'the staged provider token is mode 0600', async t => {
   t.equal(mode, 0o600, `floway-token should be 0600, got ${mode.toString(8)}`);
 });
 
-test('codex', 'pre-existing config and provider token are backed up while auth.json is untouched', async t => {
+test('codex', 'successful re-runs retain one config backup and no provider-token backup', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const home = codexHomeFor(ws);
   mkdirSync(home, { recursive: true });
   const priorConfig = 'model_provider = "old"\nkeep_me = "yes"\n';
-  const priorToken = 'old-provider-token';
   const priorAuth = '{"tokens":{"access_token":"official-account-token"}}';
   writeFileSync(codexConfigPath(ws), priorConfig);
-  writeFileSync(codexTokenPath(ws), priorToken);
+  writeFileSync(codexTokenPath(ws), 'old-provider-token');
   writeFileSync(codexAuthPath(ws), priorAuth);
-  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
-  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  t.equal(codexBackupFiles(home, 'config.toml').length, 1, 'config.toml was backed up');
-  const tokenBackups = codexBackupFiles(home, 'floway-token');
-  t.equal(tokenBackups.length, 1, 'floway-token was backed up');
-  t.equal(readFileSync(join(home, tokenBackups[0]!), 'utf8'), priorToken, 'the token backup captured the original bytes');
+
+  const first = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(first.code, 0, `first run should succeed:\n${first.combined}`);
+  const second = await runShellInstaller({ workspace: ws, configuration: codexConfig({ reasoningEffort: 'high' }), baseUrl: modelServer.url });
+  t.equal(second.code, 0, `second run should succeed:\n${second.combined}`);
+
+  t.equal(codexBackupFiles(home, 'config.toml').length, 1, 'only the latest config.toml backup is retained');
+  t.equal(codexBackupFiles(home, 'floway-token').length, 0, 'provider-token backups are removed after each successful commit');
   t.equal(readFileSync(codexAuthPath(ws), 'utf8'), priorAuth, 'official account auth remains byte-for-byte unchanged');
   t.equal(readdirSync(home).filter(name => name.startsWith('auth.json.floway-backup.')).length, 0, 'account auth is not backed up because it is not managed');
 });
@@ -1990,6 +2028,21 @@ test('codex', 'PowerShell: existing CLI configures via the app-server and stages
   t.equal(edits.get('model'), 'gpt-5-codex', 'model written verbatim');
   t.equal(edits.get('model_reasoning_effort'), 'high', 'effort written verbatim');
   assertStagedToken(t, ws);
+});
+
+test('codex', 'PowerShell: successful setup removes the provider-token backup', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const home = codexHomeFor(ws);
+  mkdirSync(home, { recursive: true });
+  writeFileSync(codexConfigPath(ws), 'model_provider = "old"\n');
+  writeFileSync(codexTokenPath(ws), 'old-provider-token');
+
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `codex setup should succeed:\n${run.combined}`);
+  t.equal(codexBackupFiles(home, 'config.toml').length, 1, 'the latest config backup remains available');
+  t.equal(codexBackupFiles(home, 'floway-token').length, 0, 'the provider-token rollback copy is removed after commit');
 });
 
 test('codex', 'PowerShell: provider token is UTF-8 without a BOM under a non-default culture', async t => {
