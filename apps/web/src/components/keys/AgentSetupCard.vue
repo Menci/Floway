@@ -5,8 +5,8 @@
 import { computed, ref, shallowRef, watch } from 'vue';
 
 import { AGENT_SETUP_PLATFORMS, detectAgentSetupPlatform } from './agent-setup-platform.ts';
-import AgentConfigurationFields, { type ConfigurationPatch } from './AgentConfigurationFields.vue';
 import AgentConfigSnippets from './AgentConfigSnippets.vue';
+import AgentConfigurationFields, { type ConfigurationPatch } from './AgentConfigurationFields.vue';
 import AgentSetupCommand from './AgentSetupCommand.vue';
 import { useApi } from '../../api/client.ts';
 import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';

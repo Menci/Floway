@@ -47,7 +47,7 @@ const fieldGridClass = 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:
 // persisted override, so this UI-only value cannot collide with a real model.
 const SELECT_NONE = '\u0000none';
 const toSelectOptions = (options: ModelOption[]) => options.map(option => ({
-  value: option.value === null ? SELECT_NONE : option.value,
+  value: option.value ?? SELECT_NONE,
   label: option.modelId === null
     ? 'Default'
     : option.unavailable ? `${option.modelId} (unavailable)` : option.modelId,

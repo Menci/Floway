@@ -53,7 +53,7 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     await insert(repo);
     // The SQL backend rejects; the in-memory backend throws synchronously. An
     // async wrapper normalizes both into a rejected promise for the assertion.
-    await expect((async () => insert(repo, { userId: 8 }))()).rejects.toBeInstanceOf(AgentSetupTokenCollisionError);
+    await expect((async () => await insert(repo, { userId: 8 }))()).rejects.toBeInstanceOf(AgentSetupTokenCollisionError);
   });
 
   test('multiple unexpired leases per user coexist; insert never sweeps a live sibling', async () => {
