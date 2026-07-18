@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { hashResponsesItemContent } from './format.ts';
-import { createResponsesHttpStore, createResponsesWsSession } from './store.ts';
+import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 
@@ -244,5 +244,18 @@ describe('StatefulResponsesStore', () => {
     store.beginAttempt(new Map(), { upstreamId: 'upstream-b', restoresItemIds: false });
     expect(store.getPrivatePayload('item')).toBeUndefined();
     expect(store.outputItemSource('rs_upstream')).toBeNull();
+  });
+
+  test('non-Responses-source store holds request-private tool state but persists and reads nothing', async () => {
+    // Translated sources (Messages/Gemini/Chat) still run the server-tool shim,
+    // whose per-attempt private-payload scratchpad lives on the store; the
+    // no-backing store keeps that working without any durable state.
+    const store = createNonResponsesSourceStore('key-a');
+    expect(store.writesState).toBe(false);
+    store.beginAttempt(new Map());
+    store.addSyntheticItem('ws_gw_1', { ir: 'search result' });
+    expect(store.getPrivatePayload('ws_gw_1')).toEqual({ ir: 'search result' });
+    expect(store.getItemById('anything')).toBeUndefined();
+    expect(await store.loadSnapshot('resp_x')).toBeNull();
   });
 });

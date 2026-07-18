@@ -4,6 +4,7 @@ import { messagesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
@@ -73,7 +74,7 @@ export const messagesHttp = {
       if (rejected) return rejected;
 
       const wantsStream = payload.stream === true;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) });
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createNonResponsesSourceStore(apiKeyId));
       const result = await messagesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
@@ -90,7 +91,7 @@ export const messagesHttp = {
       const rejected = rejectBodyBetaResponse(payload);
       if (rejected) return rejected;
 
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) });
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createNonResponsesSourceStore(apiKeyId));
       const result = await messagesServe.countTokens({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, false, ctx);
       return finalizeGatewayResponse(ctx, response);

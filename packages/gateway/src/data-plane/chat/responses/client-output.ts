@@ -14,7 +14,6 @@ export const wrapNativeResponsesClientOutput = (
 ): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
   if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('Responses output reached the native client membrane without chat context');
   const chatCtx = ctx as ChatGatewayCtx;
-  if (chatCtx.store === undefined) throw new Error('Native Responses client output requires a state store');
   const withAffinity = wrapResponsesAffinityEgress(frames, {
     codec: chatCtx.affinity.codec,
     affinity: chatCtx.affinity.selectedTarget(),

@@ -30,6 +30,7 @@ import type {
   WebSearchProviderResult,
 } from '../../../tools/web-search/types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -634,6 +635,33 @@ test('shim drives one search then a final message in two upstream turns', async 
   const wsCallTypes = events.filter(e => e.type.startsWith('response.web_search_call'));
   assertEquals(wsCallTypes.length, 3);
   assertEquals(events[events.length - 1].type, 'response.completed');
+});
+
+test('translated source with a no-backing store still replays private search state across turns', async () => {
+  makeStubDeps();
+  const shim = withResponsesWebSearchShim;
+  const inv = makeInvocation();
+  // A non-Responses source (Messages/Gemini/Chat) translated into a Responses
+  // upstream carries a no-backing store, not a persisting one; the shim's
+  // request-private replay must still round-trip within the single request.
+  const ctx = mockChatGatewayCtx({ apiKeyId: 'k1', wantsStream: true, store: createNonResponsesSourceStore('k1') });
+  const script = scriptedRun([
+    searchCallTurn(0, 'call_1', 'q1'),
+    messageTurn('summary', 0),
+  ]);
+
+  const result = await shim(inv, ctx, script.run);
+  assert(result.type === 'events');
+  await collectFrames(result.events);
+
+  const input = inv.payload.input as ResponsesInputItem[];
+  const tail = input.slice(-2);
+  assert(tail[0].type === 'function_call');
+  // The preserved `call_id` proves the private payload was found (replay
+  // path 1); a lost payload would synthesize a fresh id and emit the
+  // "results were not preserved" placeholder instead.
+  assertEquals(tail[0].call_id, 'call_1');
+  assertEquals(tail[1].type, 'function_call_output');
 });
 
 test('synthesized web_search_call ids retain request-private replay state', async () => {

@@ -9,10 +9,10 @@ interface HydratedItem {
   readonly privatePayload?: unknown;
 }
 
-const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore | undefined): HydratedItem => {
+const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore): HydratedItem => {
   const id = responsesItemId(item);
   if (id === null || !isResponsesItemId(id)) return { item };
-  const stored = store?.getItemById(id);
+  const stored = store.getItemById(id);
   if (stored === undefined) {
     if (item.type === 'item_reference') throwChatServeFailure({ kind: 'item-not-found', itemId: id });
     return { item };
@@ -30,7 +30,7 @@ export interface HydratedResponsesPayload {
 
 export const hydrateResponsesPayload = (
   payload: CanonicalResponsesPayload,
-  store: StatefulResponsesStore | undefined,
+  store: StatefulResponsesStore,
 ): HydratedResponsesPayload => {
   const hydrated = payload.input.map(item => hydrateItem(item, store));
   const privatePayloads = new Map<string, unknown>();

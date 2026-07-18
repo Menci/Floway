@@ -37,7 +37,7 @@ export const responsesServe = {
         const rewritten = rewriteResponsesItemsForCandidate(
           plan.affinity.payloadForCandidate(candidate),
           plan.privatePayloads,
-          ctx.store!,
+          ctx.store,
           candidate,
         );
         const result = await responsesAttempt.generate({
@@ -77,7 +77,7 @@ export const responsesServe = {
         const rewritten = rewriteResponsesItemsForCandidate(
           plan.affinity.payloadForCandidate(candidate),
           plan.privatePayloads,
-          ctx.store!,
+          ctx.store,
           candidate,
         );
         const result = await responsesAttempt.invoke({

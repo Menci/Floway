@@ -827,7 +827,7 @@ const synthesizeTerminalEnvelope = (
 async function* materializeServerToolItems(
   dispatched: ReadonlyArray<{ slots: DispatchedServerToolSlot[] }>,
   merge: MergeState,
-  store: StatefulResponsesStore | undefined,
+  store: StatefulResponsesStore,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, void> {
   for (const d of dispatched) {
     for (const { slot, outputIndex } of d.slots) {
@@ -840,7 +840,7 @@ async function* materializeServerToolItems(
       // Register private dispatcher state under the emitted item id so output
       // persistence captures it and replay-side `transformItems` can restore
       // it on the next loop turn.
-      store?.addSyntheticItem(slot.id, step.value.privatePayload);
+      store.addSyntheticItem(slot.id, step.value.privatePayload);
       yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
     }
   }
@@ -854,7 +854,7 @@ async function* runMultiTurnLoop(args: {
   demoteForcedServerToolChoiceAfterFirstTurn: boolean;
   turn1Iter: AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, TurnSummary>;
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>;
-  store: StatefulResponsesStore | undefined;
+  store: StatefulResponsesStore;
   canonicalInput: ResponsesInputItem[];
   active: readonly ActiveServerTool[];
   metadata: LatestUpstreamMetadata;
