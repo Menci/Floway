@@ -1278,7 +1278,8 @@ test('claude', 'PowerShell stages secret data only after protection and hardens 
   t.ok(createIndex >= 0 && createIndex < protectStageIndex, 'stage must be created before protection');
   t.ok(protectStageIndex < writeIndex, 'stage must be protected before secret JSON is written');
   t.ok(protectTargetIndex < replaceIndex, 'existing Windows target must be hardened before File.Replace');
-  t.includes(body, '$runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows', 'Windows PowerShell 5.1 must select the Windows branch without $IsWindows');
+  t.includes(body, '($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows', 'the shared predicate recognizes Windows PowerShell 5.1 without reading an absent $IsWindows');
+  t.includes(body, '$runningOnWindows = Test-SetupIsWindows', 'the replacement path uses the shared Windows predicate');
   t.includes(body, "[long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds", 'backup timestamp must support the .NET Framework used by PowerShell 5.1');
   t.excludes(body, 'ToUnixTimeMilliseconds()', 'PowerShell 5.1-incompatible timestamp API must not be used');
   t.includes(body, 'Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath', 'new target must use a same-directory move');
