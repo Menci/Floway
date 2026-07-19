@@ -411,7 +411,7 @@ test('SQL replacement swaps a spilled payload without retaining the previous fil
   initFileProvider(files);
   const repo = new SqlRepo(await createSqliteTestDb());
   const original = spilledItem('msg_replace_spill', 'key-a', 1_000);
-  const replacement = spilledItem('msg_replace_spill', 'key-a', 1_000 + 2 * 60 * 60 * 1000);
+  const replacement = spilledItem('msg_replace_spill', 'key-a', original.createdAt);
   await repo.responsesItems.insertMany([original]);
   const originalFiles = await files.listKeys('responses-items/');
 
@@ -431,7 +431,7 @@ test('SQL replacement keeps its original spill when the write fails', async () =
   const original = spilledItem('msg_replace_failure', 'key-a', 1_000);
   await originalRepo.responsesItems.insertMany([original]);
   const originalFiles = await files.listKeys('responses-items/');
-  const replacement = spilledItem('msg_replace_failure', 'key-a', 1_000 + 2 * 60 * 60 * 1000);
+  const replacement = spilledItem('msg_replace_failure', 'key-a', original.createdAt);
   const batchFailure = new Error('simulated replacement batch failure');
   const repo = new SqlRepo(sqlDatabaseWithBatch(base, () => Promise.reject(batchFailure)));
 
