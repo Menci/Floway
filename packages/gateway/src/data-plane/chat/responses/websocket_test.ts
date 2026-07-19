@@ -978,7 +978,6 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
         assertEquals(replay.input[0], originalReasoning);
         assertEquals(replay.store, false);
       } finally {
-        if (firstController?.desiredSize !== null) firstController?.close();
         firstClient?.close();
         secondClient?.close();
         await waitForMicrotasks();
