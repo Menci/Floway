@@ -30,6 +30,7 @@ const memoryOutputHarness = () => {
 
 test('client output rewrites ids and persists the exact complete item before terminal', async () => {
   const { repo, store } = memoryOutputHarness();
+  const replace = vi.spyOn(repo.responsesItems, 'replaceMany');
   const result: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -57,6 +58,7 @@ test('client output rewrites ids and persists the exact complete item before ter
   expect(rows[0].payload.item).toEqual(publicItem);
   expect(rows[0].payload.item).toMatchObject({ encrypted_content: 'wrapped-affinity' });
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).not.toBeNull();
+  expect(replace).not.toHaveBeenCalled();
 });
 
 test('client output waits for persistence before publishing output_item.done', async () => {

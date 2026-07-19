@@ -406,6 +406,41 @@ test('SQL duplicate insert does not write an unreferenced replacement spill', as
   expect(await repo.responsesItems.lookupMany('key-a', [original.id])).toEqual([original]);
 });
 
+test('SQL replacement swaps a spilled payload without retaining the previous file', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const repo = new SqlRepo(await createSqliteTestDb());
+  const original = spilledItem('msg_replace_spill', 'key-a', 1_000);
+  const replacement = spilledItem('msg_replace_spill', 'key-a', 1_000 + 2 * 60 * 60 * 1000);
+  await repo.responsesItems.insertMany([original]);
+  const originalFiles = await files.listKeys('responses-items/');
+
+  await repo.responsesItems.replaceMany([replacement]);
+
+  const replacementFiles = await files.listKeys('responses-items/');
+  expect(replacementFiles).toHaveLength(1);
+  expect(replacementFiles).not.toEqual(originalFiles);
+  expect((await repo.responsesItems.lookupMany('key-a', [original.id]))[0]).toEqual(replacement);
+});
+
+test('SQL replacement keeps its original spill when the write fails', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const originalRepo = new SqlRepo(base);
+  const original = spilledItem('msg_replace_failure', 'key-a', 1_000);
+  await originalRepo.responsesItems.insertMany([original]);
+  const originalFiles = await files.listKeys('responses-items/');
+  const replacement = spilledItem('msg_replace_failure', 'key-a', 1_000 + 2 * 60 * 60 * 1000);
+  const batchFailure = new Error('simulated replacement batch failure');
+  const repo = new SqlRepo(sqlDatabaseWithBatch(base, () => Promise.reject(batchFailure)));
+
+  await expect(repo.responsesItems.replaceMany([replacement])).rejects.toBe(batchFailure);
+
+  expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
+  expect((await originalRepo.responsesItems.lookupMany('key-a', [original.id]))[0]).toEqual(original);
+});
+
 test('SQL insert conflict cleans its spill when the winning row disappears', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
