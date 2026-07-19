@@ -131,6 +131,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   stageOutputItem(row: StoredResponsesItem, outputIndex: number): void {
     const cloned = cloneStoredResponsesItem(row);
+    const previous = this.stagedOutputItems.get(cloned.id);
+    if (previous !== undefined) cloned.createdAt = previous.createdAt;
     this.stagedOutputItems.set(cloned.id, cloned);
     this.stagedOutputItemIds.set(outputIndex, cloned.id);
     this.freshItemIds.add(cloned.id);
