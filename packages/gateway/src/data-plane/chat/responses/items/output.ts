@@ -178,6 +178,7 @@ export const wrapResponsesClientOutput = async function* (
         // The downstream HTTP entry has nothing to observe pre-snapshot —
         // ordering matches a synchronous emit.
         if (store.writesState) {
+          startedOutputCommitGeneration = stagedOutputGeneration;
           await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
         }
         yield rewritten;
