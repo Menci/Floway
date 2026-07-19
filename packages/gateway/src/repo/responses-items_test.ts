@@ -72,6 +72,35 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     expect(await repo.responsesItems.lookupManyByContentHash('key-a', ['hash-a'])).toEqual([first]);
   });
 
+  test('replaces an existing complete item without changing its scope', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await createRepo();
+    const original = storedItem('msg_replace', 'key-a', 'old-hash', 1_000);
+    const replacement: StoredResponsesItem = {
+      ...original,
+      upstreamId: 'upstream-a',
+      upstreamItemId: 'msg_upstream',
+      payload: { item: { type: 'message', id: original.id, role: 'assistant', content: [{ type: 'output_text', text: 'new' }] } },
+      contentHash: 'new-hash',
+      createdAt: 2_000,
+    };
+    await repo.responsesItems.insertMany([original]);
+
+    await repo.responsesItems.replaceMany([replacement]);
+
+    expect(await repo.responsesItems.lookupMany('key-a', [original.id])).toEqual([replacement]);
+    expect(await repo.responsesItems.lookupMany('key-b', [original.id])).toEqual([]);
+  });
+
+  test('rejects replacement after an item disappears', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await createRepo();
+    const item = storedItem('msg_replace_missing', 'key-a', 'hash', 1_000);
+
+    await expect(repo.responsesItems.replaceMany([item]))
+      .rejects.toThrow('Responses item disappeared before replacement: msg_replace_missing');
+  });
+
   test('deletes complete items and snapshots by their refreshable retention timestamp', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await createRepo();
