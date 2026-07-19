@@ -63,40 +63,6 @@ test('runScheduledMaintenance keeps subsequent sweeps running when one top-level
   assertEquals(stubs.purgedExpired.some(c => c.keyId === keyA.id), true);
 });
 
-test('runScheduledMaintenance prunes expired Agent Setup siblings but retains restorable preferences', async () => {
-  const { repo } = await setupAppTest();
-  const now = Date.now();
-  await repo.agentSetup.insertForUser({
-    userId: 7,
-    token: 'expired-old',
-    configurationJson: '{"version":"old"}',
-    now: now - 10_000,
-    expiresAt: now - 1_000,
-  });
-  await repo.agentSetup.insertForUser({
-    userId: 7,
-    token: 'expired-latest',
-    configurationJson: '{"version":"latest"}',
-    now: now - 5_000,
-    expiresAt: now - 1,
-  });
-  await repo.agentSetup.insertForUser({
-    userId: 8,
-    token: 'live-lease',
-    configurationJson: '{}',
-    now,
-    expiresAt: now + 60_000,
-  });
-  initImageCacheStore(noopImageCache);
-  installDumpStubs(initDumpStore, initDumpBroker);
-
-  await runScheduledMaintenance();
-
-  assertEquals(await repo.agentSetup.findByToken('expired-old'), null);
-  assertEquals((await repo.agentSetup.latestByUserId(7))?.token, 'expired-latest');
-  assertEquals((await repo.agentSetup.findByToken('live-lease'))?.token, 'live-lease');
-});
-
 test('runScheduledMaintenance keeps spilled payloads when item-row deletion fails', async () => {
   const { repo } = await setupAppTest();
   const files = new MemoryFileProvider();

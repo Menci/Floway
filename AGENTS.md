@@ -172,11 +172,12 @@ depends on `platform` + `protocols` + `interceptor`; the per-vendor
 `proxy` + `agent-setup` + all `provider-*`, and is the runtime-agnostic
 gateway core; it threads `getSocketDial()` from `@floway-dev/platform` into
 the proxy library at the dial-layer composition root, and supplies the SQL /
-in-memory `AgentSetupRepository` implementations, scheduled pruning of expired
-siblings while retaining each user's latest preference row, the auth-derived
-user id, and the single host-owned route path used to
-mount both setup surfaces and project public script URLs. The public routes sit
-ahead of logger / CORS / auth middleware. `apps/platform-*` depend on
+in-memory `AgentSetupRepository` implementations. A successful Agent Setup
+insert stores the replacement lease before pruning only that user's
+already-expired siblings. The gateway also supplies the auth-derived user id
+and the single host-owned route path used to mount both setup surfaces and
+project public script URLs. The public routes sit ahead of logger / CORS / auth
+middleware. `apps/platform-*` depend on
 `platform` + `gateway` plus their target's runtime libraries
 (`@cloudflare/workers-types`; `sharp` + `@hono/node-server`); they are the
 only places runtime-specific symbols (D1, R2, Images, KV, ExecutionContext,

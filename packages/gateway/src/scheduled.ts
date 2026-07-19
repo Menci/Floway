@@ -38,7 +38,6 @@ const sweepExpiredDumps = async (): Promise<void> => {
 export const runScheduledMaintenance = async (): Promise<void> => {
   const nowMs = Date.now();
   const hourStart = startOfUtcHour(nowMs);
-  await runSweep('agentSetup.deleteExpiredExceptLatest', () => getRepo().agentSetup.deleteExpiredExceptLatest(nowMs));
   await runSweep('responsesSnapshots.deleteOlderThan', () => getRepo().responsesSnapshots.deleteOlderThan(hourStart - RESPONSES_STATE_TTL_MS));
   const itemsDeletionSucceeded = await runSweep('responsesItems.deleteOlderThan', () => getRepo().responsesItems.deleteOlderThan(hourStart - RESPONSES_STATE_TTL_MS));
   if (itemsDeletionSucceeded) await runSweep('responsesItems.sweepPayloadFiles', () => sweepExpiredResponsesItemPayloadFiles(hourStart));

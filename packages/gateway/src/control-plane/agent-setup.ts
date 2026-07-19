@@ -21,7 +21,6 @@ const repository: AgentSetupRepository = {
   findByToken: token => getRepo().agentSetup.findByToken(token),
   latestByUserId: userId => getRepo().agentSetup.latestByUserId(userId),
   insertForUser: input => getRepo().agentSetup.insertForUser(input),
-  deleteExpiredExceptLatest: expiresAt => getRepo().agentSetup.deleteExpiredExceptLatest(expiresAt),
   updateConfiguration: input => getRepo().agentSetup.updateConfiguration(input),
   renewLease: input => getRepo().agentSetup.renewLease(input),
 };

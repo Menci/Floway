@@ -970,20 +970,6 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
     return Promise.resolve({ status: 'ok', record: { ...record } });
   }
 
-  deleteExpiredExceptLatest(expiresAt: number): Promise<void> {
-    const latestByUser = new Map<number, AgentSetupRecord>();
-    for (const record of this.byToken.values()) {
-      const latest = latestByUser.get(record.userId);
-      if (latest === undefined || compareLatestAgentSetupRecord(record, latest) < 0) {
-        latestByUser.set(record.userId, record);
-      }
-    }
-    for (const [token, record] of this.byToken) {
-      if (record.expiresAt <= expiresAt && latestByUser.get(record.userId)?.token !== token) this.byToken.delete(token);
-    }
-    return Promise.resolve();
-  }
-
   renewLease(input: {
     userId: number;
     token: string;

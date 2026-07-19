@@ -1975,19 +1975,6 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
     return { status: 'revision-conflict', record: current };
   }
 
-  async deleteExpiredExceptLatest(expiresAt: number): Promise<void> {
-    await this.db.prepare(
-      `DELETE FROM agent_setup
-       WHERE expires_at <= ?
-         AND token <> (
-           SELECT token FROM agent_setup AS latest
-           WHERE latest.user_id = agent_setup.user_id
-           ORDER BY ${AGENT_SETUP_LATEST_ORDER}
-           LIMIT 1
-         )`,
-    ).bind(expiresAt).run();
-  }
-
   async renewLease(input: {
     userId: number;
     token: string;

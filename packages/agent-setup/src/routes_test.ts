@@ -89,24 +89,6 @@ class FakeAgentSetupRepository implements AgentSetupRepository {
     return Promise.resolve({ status: 'ok', record: { ...updated } });
   }
 
-  deleteExpiredExceptLatest(expiresAt: number): Promise<void> {
-    const latestByUser = new Map<number, string>();
-    for (const row of this.rows.values()) {
-      const currentToken = latestByUser.get(row.userId);
-      const current = currentToken === undefined ? undefined : this.rows.get(currentToken)!;
-      if (current === undefined
-        || row.updatedAt > current.updatedAt
-        || (row.updatedAt === current.updatedAt && row.createdAt > current.createdAt)
-        || (row.updatedAt === current.updatedAt && row.createdAt === current.createdAt && row.token > current.token)) {
-        latestByUser.set(row.userId, row.token);
-      }
-    }
-    for (const [token, row] of this.rows) {
-      if (row.expiresAt <= expiresAt && latestByUser.get(row.userId) !== token) this.rows.delete(token);
-    }
-    return Promise.resolve();
-  }
-
   renewLease(input: { userId: number; token: string; expiresAt: number }): Promise<AgentSetupRenewal> {
     const row = this.rows.get(input.token);
     if (!row || row.userId !== input.userId) return Promise.resolve({ status: 'missing' });
