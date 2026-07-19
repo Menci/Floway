@@ -45,6 +45,8 @@ export const wrapResponsesClientOutput = async function* (
   const { store, responseId } = args;
   const upstreamToClient = new Map<string, string>();
   const outputIndexToClient = new Map<number, string>();
+  let stagedOutputGeneration = 0;
+  let startedOutputCommitGeneration = 0;
 
   // A gateway-minted item id is only worth issuing when the mapping back to its
   // upstream origin is persisted (store.writesState) — otherwise a later turn
@@ -96,6 +98,7 @@ export const wrapResponsesClientOutput = async function* (
       createdAt: now,
     };
     store.stageOutputItem(row, outputIndex);
+    stagedOutputGeneration += 1;
   };
 
   // Fallback for an out-of-order delta that references an upstream id before
@@ -103,7 +106,8 @@ export const wrapResponsesClientOutput = async function* (
   const seenItemTypes = new Map<string, string>();
   let sawCompactionItem = false;
   const commitStagedOutput = async (): Promise<void> => {
-    if (!store.writesState) return;
+    if (!store.writesState || startedOutputCommitGeneration === stagedOutputGeneration) return;
+    startedOutputCommitGeneration = stagedOutputGeneration;
     await store.commitStagedOutputItems();
   };
 
