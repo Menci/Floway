@@ -10,10 +10,10 @@ import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult,
 // them next turn. Translated inner Responses attempts never enter this
 // membrane.
 //
-// Complete items are staged at their `done` frame. The whole output batch and
-// its snapshot commit together before a successful terminal frame is yielded.
-// Failed/error terminals still commit the completed item batch, but never a
-// snapshot. These writes are protocol state, not best-effort telemetry.
+// Complete items become reusable at their `done` frame, so each row commits
+// before that frame is yielded. The response snapshot commits separately before
+// a successful terminal frame. Failed/error terminals keep completed item rows
+// but never a snapshot. These writes are protocol state, not telemetry.
 //
 // Wrap is also the single source of truth for the response envelope id the
 // client sees. The caller mints a `resp_<crc>_<body>` once and passes it
@@ -102,10 +102,8 @@ export const wrapResponsesClientOutput = async function* (
   // its output-index lifecycle is available.
   const seenItemTypes = new Map<string, string>();
   let sawCompactionItem = false;
-  let stagedOutputCommitStarted = false;
   const commitStagedOutput = async (): Promise<void> => {
-    if (!store.writesState || stagedOutputCommitStarted) return;
-    stagedOutputCommitStarted = true;
+    if (!store.writesState) return;
     await store.commitStagedOutputItems();
   };
 
@@ -151,6 +149,7 @@ export const wrapResponsesClientOutput = async function* (
         const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
         if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
         await stageFinalizedItem(event.item as unknown as ResponsesInputItem, newId, event.output_index);
+        await commitStagedOutput();
         yield eventFrame({ ...event, item: { ...event.item, id: newId } });
         continue;
       }
@@ -175,7 +174,6 @@ export const wrapResponsesClientOutput = async function* (
         // The downstream HTTP entry has nothing to observe pre-snapshot —
         // ordering matches a synchronous emit.
         if (store.writesState) {
-          stagedOutputCommitStarted = true;
           await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
         }
         yield rewritten;

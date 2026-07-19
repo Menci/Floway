@@ -612,6 +612,15 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve();
   }
 
+  replaceMany(items: readonly StoredResponsesItem[]): Promise<void> {
+    const missing = items.find(item => !this.store.has(scopedResponsesKey(item.apiKeyId, item.id)));
+    if (missing !== undefined) {
+      return Promise.reject(new Error(`Responses item disappeared before replacement: ${missing.id}`));
+    }
+    for (const item of items) this.store.set(scopedResponsesKey(item.apiKeyId, item.id), cloneStoredResponsesItem(item));
+    return Promise.resolve();
+  }
+
   refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
     const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const missingIndex = existing.findIndex(item => item === undefined);

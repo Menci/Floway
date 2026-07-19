@@ -856,7 +856,13 @@ interface PreparedResponsesRefreshWrite extends PreparedResponsesPayloadWriteBas
   previousFileKey: string | null;
 }
 
-type PreparedResponsesPayloadWrite = PreparedResponsesInsertWrite | PreparedResponsesRefreshWrite;
+interface PreparedResponsesReplaceWrite extends PreparedResponsesPayloadWriteBase {
+  kind: 'replace';
+  previousPayloadJson: string;
+  previousFileKey: string | null;
+}
+
+type PreparedResponsesPayloadWrite = PreparedResponsesInsertWrite | PreparedResponsesRefreshWrite | PreparedResponsesReplaceWrite;
 
 const uniqueResponsesItems = (items: readonly StoredResponsesItem[]): StoredResponsesItem[] => {
   const unique = new Map<string, StoredResponsesItem>();
@@ -954,6 +960,58 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       await this.finishPayloadWrites(writes, error);
     }
     await this.finishPayloadWrites(writes, null);
+  }
+
+  async replaceMany(items: readonly StoredResponsesItem[]): Promise<void> {
+    const unique = uniqueResponsesItems(items);
+    const previous = await this.lookupDescriptors(unique);
+    const missing = unique.find(item => !previous.has(scopedResponsesKey(item.apiKeyId, item.id)));
+    if (missing !== undefined) throw new Error(`Responses item disappeared before replacement: ${missing.id}`);
+
+    const writes: PreparedResponsesReplaceWrite[] = [];
+    try {
+      for (const item of unique) {
+        const descriptor = previous.get(scopedResponsesKey(item.apiKeyId, item.id))!;
+        const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
+        writes.push({
+          kind: 'replace',
+          item,
+          payload,
+          generatedFileKey: storedResponsesPayloadFileKey(item.id, payload),
+          previousPayloadJson: descriptor.payloadJson,
+          previousFileKey: storedResponsesPayloadFileKey(item.id, descriptor.payloadJson),
+        });
+      }
+    } catch (error) {
+      await this.finishPayloadWrites(writes, error);
+    }
+
+    const statements = writes.map(({ item, payload, previousPayloadJson }) => this.db
+      .prepare(
+        `UPDATE responses_items
+         SET upstream_id = ?, upstream_item_id = ?, item_type = ?, payload_json = ?, content_hash = ?, created_at = ?
+         WHERE id = ? AND api_key_id = ? AND payload_json = ?`,
+      )
+      .bind(
+        item.upstreamId,
+        item.upstreamItemId,
+        item.itemType,
+        payload,
+        item.contentHash,
+        item.createdAt,
+        item.id,
+        item.apiKeyId,
+        previousPayloadJson,
+      ));
+    try {
+      await runStatements(this.db, statements);
+    } catch (error) {
+      await this.finishPayloadWrites(writes, error);
+    }
+    const persisted = await this.finishPayloadWrites(writes, null);
+    const stale = writes.find(write =>
+      persisted.get(scopedResponsesKey(write.item.apiKeyId, write.item.id))?.payloadJson !== write.payload);
+    if (stale !== undefined) throw new Error(`Responses item changed before replacement: ${stale.item.id}`);
   }
 
   async refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
@@ -1091,7 +1149,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           obsoleteFileKeys.add(write.generatedFileKey);
         }
         if (
-          write.kind === 'refresh'
+          write.kind !== 'insert'
           && descriptor !== undefined
           && write.previousFileKey !== null
           && !retainedFileKeys.has(write.previousFileKey)
@@ -1112,7 +1170,9 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       ? null
       : new Error(missing.kind === 'insert'
           ? `Responses item conflict disappeared before spill cleanup: ${missing.item.id}`
-          : `Responses item disappeared before lifetime refresh: ${missing.item.id}`);
+          : missing.kind === 'refresh'
+            ? `Responses item disappeared before lifetime refresh: ${missing.item.id}`
+            : `Responses item disappeared before replacement: ${missing.item.id}`);
     const operationError = failure ?? missingError;
     if (cleanupErrors.length > 0) {
       if (operationError === null) throw new AggregateError(cleanupErrors, 'Responses payload cleanup failed');
