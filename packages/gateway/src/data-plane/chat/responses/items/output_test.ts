@@ -442,6 +442,36 @@ test('client output persists the terminal item snapshot after an earlier done ev
   });
 });
 
+test('client output propagates a terminal item replacement failure without retrying it', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const first = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
+  const changed = { ...first, summary: [{ type: 'summary_text' as const, text: 'new' }] };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [changed],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
+    yield eventFrame({ type: 'response.completed', response });
+  };
+  const replacementError = new Error('simulated replacement failure');
+  const replace = vi.spyOn(repo.responsesItems, 'replaceMany').mockRejectedValue(replacementError);
+  const iterator = wrapResponsesClientOutput(input(), {
+    store,
+    responseId: 'resp_public',
+  })[Symbol.asyncIterator]();
+
+  const done = await iterator.next();
+  expect(done.value?.type === 'event' && done.value.event.type).toBe('response.output_item.done');
+  await expect(iterator.next()).rejects.toBe(replacementError);
+  expect(replace).toHaveBeenCalledTimes(1);
+});
+
 test('client output persists the latest repeated output_item.done snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const first = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
