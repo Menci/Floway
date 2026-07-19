@@ -890,16 +890,14 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
     summary: [],
     encrypted_content: 'opaque',
   };
-  let firstController: ReadableStreamDefaultController<Uint8Array> | undefined;
   let responseCalls = 0;
   let resolveSecondBody!: (body: { store?: unknown; input?: unknown }) => void;
   const secondBody = new Promise<{ store?: unknown; input?: unknown }>(resolve => { resolveSecondBody = resolve; });
   let firstClient: TestWorkerWebSocket | undefined;
   let secondClient: TestWorkerWebSocket | undefined;
 
-  const enqueueFirst = (event: string, data: unknown): void => {
-    firstController!.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-  };
+  const enqueue = (controller: ReadableStreamDefaultController<Uint8Array>, event: string, data: unknown): void =>
+    controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
 
   await withMockedFetch(
     async request => {
@@ -927,10 +925,9 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
           };
           return new Response(new ReadableStream<Uint8Array>({
             start(controller) {
-              firstController = controller;
-              enqueueFirst('response.created', { type: 'response.created', response, sequence_number: 0 });
-              enqueueFirst('response.output_item.added', { type: 'response.output_item.added', output_index: 0, item: originalReasoning, sequence_number: 1 });
-              enqueueFirst('response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: originalReasoning, sequence_number: 2 });
+              enqueue(controller, 'response.created', { type: 'response.created', response, sequence_number: 0 });
+              enqueue(controller, 'response.output_item.added', { type: 'response.output_item.added', output_index: 0, item: originalReasoning, sequence_number: 1 });
+              enqueue(controller, 'response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: originalReasoning, sequence_number: 2 });
             },
           }), { headers: { 'content-type': 'text/event-stream' } });
         }
