@@ -1,7 +1,7 @@
 import type { SearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 export type { SearchConfig } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
-import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, PriceVector, PricingSelector } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, BillingUnit, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
@@ -55,14 +55,14 @@ export interface UsageRecord {
   // object. `{}` is the base coordinate.
   pricingSelector: PricingSelector;
   requests: number;
-  // Disjoint per-dimension token counts for this selector bucket.
-  tokens: Partial<Record<BillingDimension, number>>;
-  // Resolved per-dimension price snapshot for this exact selector coordinate.
-  // null means the model had no pricing metadata. Selector misses inside a
-  // configured rate card resolve to Base before reaching the repo. Repos
-  // persist one unit price per token-bearing dimension; null contributes zero
-  // realized cost.
-  rates: PriceVector | null;
+  dimensions: UsageDimensionRecord[];
+}
+
+export interface UsageDimensionRecord {
+  dimension: BillingDimension;
+  unit: BillingUnit;
+  quantity: number;
+  unitPrice: number | null;
 }
 
 // Disjoint per-dimension token counts. Absent keys mean zero for that

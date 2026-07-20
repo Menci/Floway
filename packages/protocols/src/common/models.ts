@@ -24,6 +24,15 @@ export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write
 // Iteration form of BillingDimension; the type union is the source of truth.
 export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'];
 
+export const BILLING_UNITS = ['tokens_1m', 'minutes', 'searches_1k'] as const;
+export type BillingUnit = typeof BILLING_UNITS[number];
+
+export const BILLING_UNIT_SCALES: Readonly<Record<BillingUnit, number>> = {
+  tokens_1m: 1_000_000,
+  minutes: 60,
+  searches_1k: 1_000,
+};
+
 // The input-side dimensions. Their disjoint sum is a request's total prompt
 // size, which projects the request onto the declared inputTokens thresholds.
 export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'];
@@ -31,6 +40,7 @@ export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', '
 // USD-per-million-token rates for one entry; input/output are text rates and
 // the _image keys are image rates.
 export type PriceVector = Partial<Record<BillingDimension, number>>;
+export type PriceUnits = Partial<Record<BillingDimension, BillingUnit>>;
 
 export type PricingThresholdOperator = 'gt' | 'gte';
 
@@ -73,16 +83,21 @@ export interface PricingEntry {
 // selector miss resolves to the whole Base vector; rates are never merged or
 // inherited field-by-field across entries.
 export interface ModelPricing {
+  units: PriceUnits;
   entries: readonly PricingEntry[];
 }
 
 export interface PricedRequest {
   selector: PricingSelector;
+  units: PriceUnits | null;
   rates: PriceVector | null;
 }
 
 export type ModelPricingIssue =
   | { code: 'empty-catalog'; error: Error }
+  | { code: 'empty-units'; error: Error }
+  | { code: 'invalid-unit'; dimension: BillingDimension; error: Error }
+  | { code: 'unit-dimensions'; missingDimensions: readonly BillingDimension[]; addedDimensions: readonly BillingDimension[]; error: Error }
   | { code: 'empty-rates'; entryIndex: number; error: Error }
   | { code: 'invalid-rate'; entryIndex: number; dimension: BillingDimension; error: RangeError }
   | { code: 'invalid-selector'; entryIndex: number; error: Error }
@@ -168,6 +183,17 @@ export const collectModelPricingIssues = (pricing: ModelPricing): readonly Model
     return issues;
   }
 
+  const unitDimensions = BILLING_DIMENSIONS.filter(dimension => pricing.units[dimension] !== undefined);
+  if (unitDimensions.length === 0) {
+    issues.push({ code: 'empty-units', error: new Error('model pricing must declare at least one unit') });
+  }
+  for (const dimension of unitDimensions) {
+    const unit = pricing.units[dimension];
+    if (unit !== undefined && !(BILLING_UNITS as readonly string[]).includes(unit)) {
+      issues.push({ code: 'invalid-unit', dimension, error: new RangeError(`model pricing units.${dimension} is invalid: ${JSON.stringify(unit)}`) });
+    }
+  }
+
   const selectors: (PricingSelector | undefined)[] = [];
   for (let entryIndex = 0; entryIndex < pricing.entries.length; entryIndex++) {
     const entry = pricing.entries[entryIndex]!;
@@ -219,6 +245,17 @@ export const collectModelPricingIssues = (pricing: ModelPricing): readonly Model
     const baseIndex = baseIndexes[0]!;
     const expectedDimensions = pricingDimensions(pricing.entries[baseIndex]!.rates);
     const expectedSet = new Set(expectedDimensions);
+    const unitSet = new Set(unitDimensions);
+    const missingUnitDimensions = expectedDimensions.filter(dimension => !unitSet.has(dimension));
+    const addedUnitDimensions = unitDimensions.filter(dimension => !expectedSet.has(dimension));
+    if (missingUnitDimensions.length > 0 || addedUnitDimensions.length > 0) {
+      issues.push({
+        code: 'unit-dimensions',
+        missingDimensions: missingUnitDimensions,
+        addedDimensions: addedUnitDimensions,
+        error: new Error(`model pricing units must define exactly the Base rate dimensions (${expectedDimensions.join(', ')})`),
+      });
+    }
     for (let entryIndex = 0; entryIndex < pricing.entries.length; entryIndex++) {
       if (entryIndex === baseIndex) continue;
       const dimensions = pricingDimensions(pricing.entries[entryIndex]!.rates);
@@ -349,12 +386,23 @@ export const pricingEntry = (rates: PriceVector, selector?: PricingSelector): Pr
   const canonicalSelector = canonicalizePricingSelector(selector);
   return { ...(Object.keys(canonicalSelector).length > 0 ? { selector: canonicalSelector } : {}), rates };
 };
-export const modelPricing = (...entries: PricingEntry[]): ModelPricing => {
-  const pricing: ModelPricing = { entries };
+export const modelPricing = (units: PriceUnits, ...entries: PricingEntry[]): ModelPricing => {
+  const pricing: ModelPricing = { units, entries };
   compileModelPricing(pricing);
   return pricing;
 };
-export const basePricing = (rates: PriceVector): ModelPricing => modelPricing(pricingEntry(rates));
+export const basePricing = (units: PriceUnits, rates: PriceVector): ModelPricing => modelPricing(units, pricingEntry(rates));
+
+const tokenUnitsFor = (rates: PriceVector): PriceUnits =>
+  Object.fromEntries(BILLING_DIMENSIONS.filter(dimension => rates[dimension] !== undefined).map(dimension => [dimension, 'tokens_1m'])) as PriceUnits;
+
+export const tokenModelPricing = (...entries: PricingEntry[]): ModelPricing => {
+  const base = entries.find(entry => Object.keys(canonicalizePricingSelector(entry.selector)).length === 0);
+  if (!base) return modelPricing({}, ...entries);
+  return modelPricing(tokenUnitsFor(base.rates), ...entries);
+};
+
+export const tokenBasePricing = (rates: PriceVector): ModelPricing => basePricing(tokenUnitsFor(rates), rates);
 
 const thresholdMatches = (coordinate: PricingThresholdCoordinate, fact: number): boolean =>
   coordinate.operator === 'gt' ? fact > coordinate.value : fact >= coordinate.value;
@@ -382,9 +430,11 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
   }
   const canonicalSelector = canonicalizePricingSelector(selector);
   const exactRates = compiled?.ratesBySelectorKey.get(JSON.stringify(canonicalSelector));
-  if (exactRates !== undefined) return { selector: canonicalSelector, rates: exactRates };
+  if (exactRates !== undefined) return { selector: canonicalSelector, units: pricing!.units, rates: exactRates };
   const baseRates = compiled?.ratesBySelectorKey.get('{}');
-  return baseRates !== undefined ? { selector: {}, rates: baseRates } : { selector: canonicalSelector, rates: null };
+  return baseRates !== undefined
+    ? { selector: {}, units: pricing!.units, rates: baseRates }
+    : { selector: canonicalSelector, units: pricing?.units ?? null, rates: null };
 };
 
 // High-level endpoint-family discriminator. A model belongs to exactly one

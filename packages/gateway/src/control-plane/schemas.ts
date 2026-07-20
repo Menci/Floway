@@ -65,6 +65,11 @@ const pricingDimensionShape = {
   output_image: z.number().nonnegative().optional(),
 };
 
+const pricingUnitShape = Object.fromEntries(Object.keys(pricingDimensionShape).map(dimension => [
+  dimension,
+  z.enum(['tokens_1m', 'minutes', 'searches_1k']).optional(),
+])) as { [K in keyof typeof pricingDimensionShape]: z.ZodOptional<z.ZodEnum<['tokens_1m', 'minutes', 'searches_1k']>> };
+
 // Modality arrays: both input and output require at least one entry and
 // deduplicate via transform. Input additionally requires 'text' to be present
 // (a multimodal model must accept text); output has no such constraint (an
@@ -132,6 +137,7 @@ const upstreamModelSchema = z.object({
   endpoints: modelEndpointsSchema,
   display_name: z.string().optional(),
   pricing: z.object({
+    units: z.object(pricingUnitShape).strict(),
     entries: z.array(z.object({
       selector: z.record(z.string(), z.unknown()).optional(),
       rates: z.object(pricingDimensionShape).strict(),

@@ -11,7 +11,7 @@
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
-import { BILLING_DIMENSIONS, canonicalizePricingSelector, type ModelKind, type ModelPricing, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, type BillingUnit, type ModelKind, type ModelPricing, type PriceUnits, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export interface CustomRawModel {
@@ -64,8 +64,15 @@ const parseLimits = (value: unknown): CustomRawModel['limits'] => {
 const parsePricing = (value: unknown): ModelPricing | undefined => {
   // Pricing is best-effort catalog metadata: malformed pricing omits only the pricing
   // block, never the enclosing model or the rest of the catalog.
-  if (!isRecord(value) || !Array.isArray(value.entries)) return undefined;
+  if (!isRecord(value) || !isRecord(value.units) || !Array.isArray(value.entries)) return undefined;
   try {
+    const units: PriceUnits = {};
+    for (const dimension of BILLING_DIMENSIONS) {
+      const unit = value.units[dimension];
+      if (unit === undefined) continue;
+      if (typeof unit !== 'string' || !BILLING_UNITS.includes(unit as BillingUnit)) throw new TypeError(`Malformed pricing unit: ${dimension}`);
+      units[dimension] = unit as BillingUnit;
+    }
     const entries: ModelPricing['entries'][number][] = [];
     for (const rawEntry of value.entries) {
       if (!isRecord(rawEntry) || !isRecord(rawEntry.rates)) throw new TypeError('Malformed pricing entry');
@@ -83,7 +90,7 @@ const parsePricing = (value: unknown): ModelPricing | undefined => {
       entries.push({ ...(Object.keys(selector).length > 0 ? { selector } : {}), rates });
     }
     if (entries.length === 0) return undefined;
-    const pricing = { entries };
+    const pricing = { units, entries };
     validateModelPricing(pricing);
     return pricing;
   } catch {

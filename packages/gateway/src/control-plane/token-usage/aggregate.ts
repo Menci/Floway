@@ -1,14 +1,19 @@
 import type { UsageRecord } from '../../repo/types.ts';
-import { BILLING_DIMENSIONS, type BillingDimension } from '@floway-dev/protocols/common';
+import { BILLING_UNIT_SCALES, type BillingDimension, type BillingUnit } from '@floway-dev/protocols/common';
+
+export interface DisplayUsageDimension {
+  dimension: BillingDimension;
+  unit: BillingUnit;
+  quantity: number;
+}
 
 export interface DisplayUsageRecord {
   keyId: string;
   model: string;
   hour: string;
   requests: number;
-  // Disjoint per-dimension token counts. Absent dimensions are zero.
-  tokens: Partial<Record<BillingDimension, number>>;
-  cost: number;
+  dimensions: DisplayUsageDimension[];
+  cost: number | null;
 }
 
 export interface DisplayUsageByUserRecord {
@@ -16,32 +21,32 @@ export interface DisplayUsageByUserRecord {
   model: string;
   hour: string;
   requests: number;
-  tokens: Partial<Record<BillingDimension, number>>;
-  cost: number;
+  dimensions: DisplayUsageDimension[];
+  cost: number | null;
 }
 
-// Cost is a pure sum over disjoint per-dimension token counts:
-// Σ tokens × unit_price / 1e6. No subtraction needed.
-const recordCostUsd = (record: UsageRecord): number => {
+const recordCostUsd = (record: UsageRecord): number | null => {
   let total = 0;
-  for (const dimension of BILLING_DIMENSIONS) {
-    const tokens = record.tokens[dimension] ?? 0;
-    if (tokens === 0) continue;
-    const unitPrice = record.rates?.[dimension] ?? null;
-    if (unitPrice !== null) total += tokens * unitPrice;
+  let priced = false;
+  for (const row of record.dimensions) {
+    if (row.unitPrice === null) continue;
+    total += row.quantity * row.unitPrice / BILLING_UNIT_SCALES[row.unit];
+    priced = true;
   }
-  return total / 1e6;
+  return priced ? total : null;
 };
 
 const accumulate = (
-  bucket: { requests: number; cost: number; tokens: Partial<Record<BillingDimension, number>> },
+  bucket: { requests: number; cost: number | null; dimensions: DisplayUsageDimension[] },
   record: UsageRecord,
 ) => {
   bucket.requests += record.requests;
-  bucket.cost += recordCostUsd(record);
-  for (const dimension of BILLING_DIMENSIONS) {
-    const tokens = record.tokens[dimension] ?? 0;
-    if (tokens > 0) bucket.tokens[dimension] = (bucket.tokens[dimension] ?? 0) + tokens;
+  const cost = recordCostUsd(record);
+  if (cost !== null) bucket.cost = (bucket.cost ?? 0) + cost;
+  for (const row of record.dimensions) {
+    const existing = bucket.dimensions.find(candidate => candidate.dimension === row.dimension && candidate.unit === row.unit);
+    if (existing) existing.quantity += row.quantity;
+    else bucket.dimensions.push({ dimension: row.dimension, unit: row.unit, quantity: row.quantity });
   }
 };
 
@@ -52,7 +57,7 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
     const key = `${record.keyId}\0${record.model}\0${record.hour}`;
     let existing = byKey.get(key);
     if (!existing) {
-      existing = { keyId: record.keyId, model: record.model, hour: record.hour, requests: 0, tokens: {}, cost: 0 };
+      existing = { keyId: record.keyId, model: record.model, hour: record.hour, requests: 0, dimensions: [], cost: null };
       byKey.set(key, existing);
     }
     accumulate(existing, record);
@@ -77,7 +82,7 @@ export function aggregateUsageByUserForDisplay(
     const key = `${userId}\0${record.model}\0${record.hour}`;
     let existing = byUser.get(key);
     if (!existing) {
-      existing = { userId, model: record.model, hour: record.hour, requests: 0, tokens: {}, cost: 0 };
+      existing = { userId, model: record.model, hour: record.hour, requests: 0, dimensions: [], cost: null };
       byUser.set(key, existing);
     }
     accumulate(existing, record);

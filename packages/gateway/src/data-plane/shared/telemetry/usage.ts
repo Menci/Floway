@@ -137,10 +137,19 @@ const splitModalityCounts = (
   return { [textDimension]: text ?? 0, [imageDimension]: image ?? 0 };
 };
 
-export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
-  const { tier, ...tokens } = usage;
+export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
+  const { tier, ...tokens } = usage ?? {};
   const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
   const priced = priceRequest(modelIdentity.pricing, { serviceTier: tier, inputTokens });
+  const dimensions = BILLING_DIMENSIONS.flatMap(dimension => {
+    const quantity = tokens[dimension] ?? 0;
+    if (quantity <= 0) return [];
+    const pricingUnit = priced.units?.[dimension];
+    if (pricingUnit !== undefined && pricingUnit !== 'tokens_1m') {
+      throw new Error(`Token usage dimension ${dimension} has non-token pricing unit ${pricingUnit}`);
+    }
+    return [{ dimension, unit: 'tokens_1m' as const, quantity, unitPrice: priced.rates?.[dimension] ?? null }];
+  });
   await Promise.all([
     getRepo().usage.record({
       keyId,
@@ -150,8 +159,7 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       hour: currentHour(),
       pricingSelector: priced.selector,
       requests: 1,
-      tokens,
-      rates: priced.rates,
+      dimensions,
     }),
     (async () => {
       const key = await getRepo().apiKeys.getById(keyId);

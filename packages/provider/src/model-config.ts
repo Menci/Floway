@@ -1,5 +1,5 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
-import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, type BillingDimension, type BillingUnit, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceUnits, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
@@ -112,8 +112,20 @@ export const flagOverridesField = (value: unknown, label: string): FlagOverrides
 export const pricingField = (value: unknown, label: string): ModelPricing | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
-  const unknownPricingKeys = Object.keys(record).filter(key => key !== 'entries');
+  const unknownPricingKeys = Object.keys(record).filter(key => key !== 'units' && key !== 'entries');
   if (unknownPricingKeys.length > 0) throw new Error(`Malformed ${label}: unknown fields: ${unknownPricingKeys.join(', ')}`);
+  if (!isRecord(record.units)) throw new Error(`Malformed ${label}.units: must be an object`);
+  const unknownUnitKeys = Object.keys(record.units).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
+  if (unknownUnitKeys.length > 0) throw new Error(`Malformed ${label}.units: unknown dimensions: ${unknownUnitKeys.join(', ')}`);
+  const units: PriceUnits = {};
+  for (const dimension of BILLING_DIMENSIONS) {
+    const unit = record.units[dimension];
+    if (unit === undefined) continue;
+    if (typeof unit !== 'string' || !BILLING_UNITS.includes(unit as BillingUnit)) {
+      throw new Error(`Malformed ${label}.units.${dimension}: unknown billing unit ${JSON.stringify(unit)}`);
+    }
+    units[dimension] = unit as BillingUnit;
+  }
   if (!Array.isArray(record.entries) || record.entries.length === 0) throw new Error(`Malformed ${label}.entries: must be a non-empty array`);
 
   const entries = record.entries.map((rawEntry, index) => {
@@ -136,7 +148,7 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
     }
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates };
   });
-  const pricing = { entries };
+  const pricing = { units, entries };
   try {
     validateModelPricing(pricing);
   } catch (cause) {

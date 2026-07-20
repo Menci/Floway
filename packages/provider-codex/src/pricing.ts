@@ -7,9 +7,9 @@
 // https://developers.openai.com/api/docs/pricing
 // .agents/skills/fetching-models-pricing/
 
-import { modelPricing, pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
+import { tokenModelPricing, pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
 
-const GPT_5_4_PRICING = modelPricing(
+const GPT_5_4_PRICING = tokenModelPricing(
   pricingEntry({ input: 2.5, input_cache_read: 0.25, output: 15 }),
   pricingEntry({ input: 1.25, input_cache_read: 0.13, output: 7.5 }, { serviceTier: 'flex' }),
   pricingEntry({ input: 5, input_cache_read: 0.5, output: 30 }, { serviceTier: 'priority' }),
@@ -29,28 +29,28 @@ const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: Mo
   // https://github.com/openai/codex/blob/d2d00b6632dc991aa4471db0529773029cae5d68/codex-rs/models-manager/models.json
   // Cross-check only:
   // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
-  ['gpt-5.6-sol', modelPricing(
+  ['gpt-5.6-sol', tokenModelPricing(
     pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
     pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 60 }, { serviceTier: 'priority' }),
     pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.6-terra', modelPricing(
+  ['gpt-5.6-terra', tokenModelPricing(
     pricingEntry({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
     pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }, { serviceTier: 'priority' }),
     pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.6-luna', modelPricing(
+  ['gpt-5.6-luna', tokenModelPricing(
     pricingEntry({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
     pricingEntry({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 12 }, { serviceTier: 'priority' }),
     pricingEntry({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.5', modelPricing(
+  ['gpt-5.5', tokenModelPricing(
     pricingEntry({ input: 5, input_cache_read: 0.5, output: 30 }),
     pricingEntry({ input: 2.5, input_cache_read: 0.25, output: 15 }, { serviceTier: 'flex' }),
     pricingEntry({ input: 12.5, input_cache_read: 1.25, output: 75 }, { serviceTier: 'priority' }),
   )],
   ['gpt-5.4', GPT_5_4_PRICING],
-  ['gpt-5.4-mini', modelPricing(
+  ['gpt-5.4-mini', tokenModelPricing(
     pricingEntry({ input: 0.75, input_cache_read: 0.075, output: 4.5 }),
     pricingEntry({ input: 0.375, input_cache_read: 0.0375, output: 2.25 }, { serviceTier: 'flex' }),
     pricingEntry({ input: 1.5, input_cache_read: 0.15, output: 9 }, { serviceTier: 'priority' }),
