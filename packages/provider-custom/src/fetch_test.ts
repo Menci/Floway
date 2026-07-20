@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { assertCustomUpstreamRecord } from './config.ts';
 import {
   customFetchAlphaSearch,
+  customFetchAudioTranscriptions,
   customFetchChatCompletions,
   customFetchEmbeddings,
   customFetchMessages,
@@ -54,6 +55,7 @@ test('typed transports use default /v1/* paths', async () => {
       await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchAlphaSearch(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAudioTranscriptions(config, { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
@@ -66,6 +68,7 @@ test('typed transports use default /v1/* paths', async () => {
     'https://custom.example.com/v1/messages/count_tokens',
     'https://custom.example.com/v1/alpha/search',
     'https://custom.example.com/v1/embeddings',
+    'https://custom.example.com/v1/audio/transcriptions',
     'https://custom.example.com/v1/models',
   ]);
 });
