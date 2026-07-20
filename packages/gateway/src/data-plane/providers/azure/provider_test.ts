@@ -447,3 +447,37 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
   assertEquals(observedForm?.get('model'), 'gpt-image-2');
   assertEquals(observedForm?.get('prompt'), 'replace sky');
 });
+
+test('createAzureProvider callAudioTranscriptions posts multipart to the OpenAI v1 preview path', async () => {
+  const record = azureRecord({
+    config: {
+      endpoint: 'https://example.openai.azure.com',
+      apiKey: 'azkey',
+      models: [{ upstreamModelId: 'transcribe-deployment', kind: 'audio', endpoints: { audioTranscriptions: {} } }],
+    },
+  });
+  let observedUrl: string | undefined;
+  let observedForm: FormData | undefined;
+  await withMockedFetch(
+    async request => {
+      observedUrl = request.url;
+      observedForm = await request.formData();
+      return new Response('WEBVTT', { headers: { 'content-type': 'text/vtt' } });
+    },
+    async () => {
+      const provider = createAzureProvider(record);
+      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const result = await provider.instance.callAudioTranscriptions(model, {
+        entries: [
+          { name: 'file', value: new File(['audio'], 'clip.mp3', { type: 'audio/mpeg' }) },
+          { name: 'model', value: 'public-model' },
+          { name: 'response_format', value: 'vtt' },
+        ],
+      }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.modelKey, 'transcribe-deployment');
+    },
+  );
+  assertEquals(observedUrl, 'https://example.openai.azure.com/openai/v1/audio/transcriptions?api-version=preview');
+  assertEquals(observedForm?.get('model'), 'transcribe-deployment');
+  assertEquals(observedForm?.get('response_format'), 'vtt');
+});

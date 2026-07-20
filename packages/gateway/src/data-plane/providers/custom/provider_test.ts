@@ -243,6 +243,48 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
   assertEquals(forwarded.form.get('image') instanceof File, true);
 });
 
+test('Custom provider callAudioTranscriptions preserves multipart entries and honors the path override', async () => {
+  await setupAppTest();
+  const record = buildCustomUpstreamRecord({
+    config: {
+      baseUrl: 'https://custom.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-custom',
+      endpoints: {},
+      pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
+      modelsFetch: { enabled: false },
+      models: [{ upstreamModelId: 'whisper-upstream', kind: 'audio', endpoints: { audioTranscriptions: {} } }],
+    },
+  });
+  let forwarded: { url: string; form: FormData } | undefined;
+  await withMockedFetch(
+    async request => {
+      forwarded = { url: request.url, form: await request.formData() };
+      return jsonResponse({ text: 'hello' });
+    },
+    async () => {
+      const provider = createCustomProvider(record);
+      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const result = await provider.instance.callAudioTranscriptions(model, {
+        entries: [
+          { name: 'file', value: new File([new Uint8Array([7, 8])], 'voice.ogg', { type: 'audio/ogg' }) },
+          { name: 'model', value: 'public-model' },
+          { name: 'language', value: 'en' },
+        ],
+      }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.modelKey, 'whisper-upstream');
+    },
+  );
+  assertExists(forwarded);
+  assertEquals(forwarded.url, 'https://custom.example.com/speech/to-text');
+  assertEquals(forwarded.form.get('model'), 'whisper-upstream');
+  assertEquals(forwarded.form.get('language'), 'en');
+  const file = forwarded.form.get('file');
+  assertEquals(file instanceof File, true);
+  assertEquals((file as File).name, 'voice.ogg');
+  assertEquals((file as File).type, 'audio/ogg');
+});
+
 test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the upstream model', async () => {
   await setupAppTest();
   const record = buildCustomUpstreamRecord({

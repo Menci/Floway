@@ -50,6 +50,17 @@ test('assertCustomUpstreamRecord defaults modelsFetch to enabled when absent', (
   assertEquals(config.models, []);
 });
 
+test('assertCustomUpstreamRecord accepts the standard audio transcription path override', () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
+    },
+  });
+  assertEquals(config.pathOverrides, { '/audio/transcriptions': '/speech/to-text' });
+});
+
 test('assertCustomUpstreamRecord treats a null modelsFetch.endpoint as no override', () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,

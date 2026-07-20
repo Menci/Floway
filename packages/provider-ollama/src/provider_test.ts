@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { createOllamaProvider } from './provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_ollama',
@@ -123,6 +123,42 @@ test('manual known models inherit built-in pricing when no override is configure
     const models = await instance.instance.getProvidedModels(directFetcher);
     assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input, 0.14);
   });
+});
+
+test('manual audio models call Ollama OpenAI-compatible transcriptions without auto-advertising audio', async () => {
+  const instance = createOllamaProvider(buildRecord({
+    config: {
+      baseUrl: 'https://ollama.com',
+      apiKey: 'ollama_test',
+      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'audio', endpoints: { audioTranscriptions: {} } }],
+    },
+  }));
+  let transcription: Request | undefined;
+  await withMockedFetch(
+    async request => {
+      const path = new URL(request.url).pathname;
+      if (path === '/api/tags') return jsonResponse({ models: [] });
+      if (path === '/v1/audio/transcriptions') {
+        transcription = request;
+        return jsonResponse({ text: 'hello' });
+      }
+      throw new Error(`unexpected request ${request.url}`);
+    },
+    async () => {
+      const models = await instance.instance.getProvidedModels(directFetcher);
+      assertEquals(models.map(model => model.kind), ['audio']);
+      await instance.instance.callAudioTranscriptions(models[0], {
+        entries: [
+          { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
+          { name: 'model', value: 'public-model' },
+        ],
+      }, undefined, noopUpstreamCallOptions());
+    },
+  );
+  assertExists(transcription);
+  const form = await transcription.formData();
+  assertEquals(form.get('model'), 'qwen-audio:latest');
+  assertEquals(transcription.headers.get('authorization'), 'Bearer ollama_test');
 });
 
 test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer header', async () => {
