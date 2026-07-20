@@ -84,6 +84,11 @@ export const azureFetchImagesGenerations = (config: AzureUpstreamConfig, init: R
   azureFetchInternal(config, 'openai', '/images/generations', init, options, 'api-version=preview');
 export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/images/edits', init, options, 'api-version=preview');
+// Azure's OpenAI v1 transcription endpoint is currently documented on the
+// preview lifecycle, including SSE streaming and multipart fields.
+// https://github.com/MicrosoftDocs/azure-ai-docs/blob/ba628bac0272c655bbc42e85cc137adde016aa14/articles/foundry/openai/includes/api-versions/new-inference-preview.md#create-transcription
+export const azureFetchAudioTranscriptions = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
+  azureFetchInternal(config, 'openai', '/audio/transcriptions', init, options, 'api-version=preview');
 export const azureFetchMessages = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages', init, options);
 export const azureFetchMessagesCountTokens = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

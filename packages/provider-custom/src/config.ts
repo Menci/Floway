@@ -42,7 +42,8 @@ type CustomPathOverrideKey =
   | '/embeddings'
   | '/alpha/search'
   | '/images/generations'
-  | '/images/edits';
+  | '/images/edits'
+  | '/audio/transcriptions';
 
 export interface CustomModelsFetch {
   enabled: boolean;
@@ -107,6 +108,7 @@ const PATH_OVERRIDE_KEYS = new Set<CustomPathOverrideKey>([
   '/alpha/search',
   '/images/generations',
   '/images/edits',
+  '/audio/transcriptions',
 ]);
 
 const pathOverridesField = (value: unknown): CustomUpstreamConfigBase['pathOverrides'] => {

@@ -151,6 +151,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     callEmbeddings: () => unsupportedCallResult(),
     callImagesGenerations: () => unsupportedCallResult(),
     callImagesEdits: () => unsupportedCallResult(),
+    callAudioTranscriptions: () => unsupportedCallResult(),
   };
 
   return {

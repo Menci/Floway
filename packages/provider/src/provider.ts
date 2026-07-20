@@ -1,5 +1,6 @@
 import type { FlagDefaults } from './flags.ts';
 import type { ImagesEditsRequest } from './images.ts';
+import type { AudioTranscriptionRequest } from './audio.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
@@ -132,6 +133,7 @@ export interface ProviderInstance {
   callEmbeddings(model: ProviderModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callImagesGenerations(model: ProviderModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callImagesEdits(model: ProviderModel, request: ImagesEditsRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  callAudioTranscriptions(model: ProviderModel, request: AudioTranscriptionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
 }
 
 // Static, module-shaped surface each provider package exports. The gateway

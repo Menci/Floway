@@ -58,6 +58,8 @@ export type {
 } from './provider.ts';
 export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsRequest } from './images.ts';
+export type { AudioTranscriptionFormEntry, AudioTranscriptionRequest } from './audio.ts';
+export { serializeOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 

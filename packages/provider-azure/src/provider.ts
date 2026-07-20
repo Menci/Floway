@@ -1,11 +1,11 @@
 import { assertAzureUpstreamRecord } from './config.ts';
 import { AZURE_DEFAULT_FLAGS } from './defaults.ts';
-import { azureFetchChatCompletions, azureFetchCompletions, azureFetchEmbeddings, azureFetchImagesEdits, azureFetchImagesGenerations, azureFetchMessages, azureFetchMessagesCountTokens, azureFetchResponses, azureFetchResponsesCompact } from './fetch.ts';
+import { azureFetchAudioTranscriptions, azureFetchChatCompletions, azureFetchCompletions, azureFetchEmbeddings, azureFetchImagesEdits, azureFetchImagesGenerations, azureFetchMessages, azureFetchMessagesCountTokens, azureFetchResponses, azureFetchResponsesCompact } from './fetch.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { serializeOpenAIImagesEditsRequest, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { serializeOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
@@ -95,6 +95,12 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       const upstreamModelId = upstreamModelIdOf(model);
       const body = await serializeOpenAIImagesEditsRequest(request, upstreamModelId);
       const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      return { response, modelKey: upstreamModelId };
+    },
+    callAudioTranscriptions: async (model, request, signal, opts) => {
+      const upstreamModelId = upstreamModelIdOf(model);
+      const body = serializeOpenAIAudioTranscriptionRequest(request, upstreamModelId);
+      const response = await azureFetchAudioTranscriptions(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: upstreamModelId };
     },
   };

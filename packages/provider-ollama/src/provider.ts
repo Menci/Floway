@@ -22,13 +22,13 @@ import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
-import { ollamaFetchChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
+import { ollamaFetchAudioTranscriptions, ollamaFetchChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { publicModelId, resolveEffectiveFlags, serializeOpenAIAudioTranscriptionRequest, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
 // returns and the same value the gateway must send back on every inference call.
@@ -174,6 +174,12 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     // routes one here. /v1/images/* is not exposed by the upstream binary.
     callImagesGenerations: rejectUnsupported('callImagesGenerations'),
     callImagesEdits: rejectUnsupported('callImagesEdits'),
+    callAudioTranscriptions: async (model, request, signal, opts) => {
+      const rawModelId = rawModelIdOf(model);
+      const body = serializeOpenAIAudioTranscriptionRequest(request, rawModelId);
+      const response = await ollamaFetchAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      return { response, modelKey: rawModelId };
+    },
   };
 
   return {

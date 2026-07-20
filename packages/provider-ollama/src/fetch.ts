@@ -39,6 +39,14 @@ export const ollamaFetchEmbeddings = (config: OllamaUpstreamConfig, init: Reques
   ollamaFetchInternal(config, '/v1/embeddings', init, options);
 export const ollamaFetchCompletions = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/v1/completions', init, options);
+// Stock Ollama mounts this OpenAI-compatible route, buffering up to 25 MiB and
+// adapting the audio into an internal chat request. Capability discovery does
+// not advertise a dedicated transcription bit, so the provider exposes it only
+// through manual `audioTranscriptions` model entries.
+// https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/server/routes.go#L1916-L1922
+// https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/middleware/openai.go#L682-L789
+export const ollamaFetchAudioTranscriptions = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
+  ollamaFetchInternal(config, '/v1/audio/transcriptions', init, options);
 export const ollamaFetchTags = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, '/api/tags', init, options);
 export const ollamaFetchShow = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
