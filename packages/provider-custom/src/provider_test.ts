@@ -102,7 +102,7 @@ test('getProvidedModels carries pricing on auto models', async () => {
   const record = buildCustomUpstream();
   const instance = createCustomProvider(record);
 
-  const upstreamPricing: ModelPricing = { entries: [{ rates: { input: 3, output: 12 } }] };
+  const upstreamPricing: ModelPricing = { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: 3, output: 12 } }] };
   const models = await withMockedFetch(
     () => jsonResponse({
       object: 'list',
@@ -117,7 +117,7 @@ test('getProvidedModels carries pricing on auto models', async () => {
 });
 
 test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
-  const manualPricing: ModelPricing = { entries: [{ rates: { input: 1, output: 2 } }] };
+  const manualPricing: ModelPricing = { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: 1, output: 2 } }] };
   const record = buildCustomUpstream({
     models: [
       {
@@ -149,7 +149,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
 });
 
 test('a manual model without explicit pricing inherits pricing from its shadowed auto row', async () => {
-  const inheritedPricing: ModelPricing = { entries: [{ rates: { input: 3, output: 12 } }] };
+  const inheritedPricing: ModelPricing = { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: 3, output: 12 } }] };
   const instance = createCustomProvider(buildCustomUpstream({
     models: [{ upstreamModelId: 'shared-id', kind: 'chat', endpoints: { chatCompletions: {} } }],
   }));
