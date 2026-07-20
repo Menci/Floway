@@ -5,6 +5,7 @@ import { nextTick } from 'vue';
 import ModelEditor from './ModelEditor.vue';
 import type { Row } from './modelRows.ts';
 import type { FlagDefaults } from '@floway-dev/provider/flags';
+import { Select } from '@floway-dev/ui';
 
 const row = (uiId: string, model: string, input: number, flagOverrides: Record<string, boolean> | undefined): Row => ({
   uiId,
@@ -70,5 +71,18 @@ describe('ModelEditor', () => {
     await wrapper.find('button[role="switch"]').trigger('click');
 
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ flagOverrides: {} });
+  });
+
+  it('persists an explicit Cohere v2 target when switching into rerank', async () => {
+    const wrapper = mountEditor(row('reranker', 'reranker', 1, undefined));
+    wrapper.findAllComponents(Select)[0]!.vm.$emit('update:modelValue', 'rerank');
+    await nextTick();
+
+    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({
+      kind: 'rerank',
+      endpoints: { rerank: {} },
+      chat: undefined,
+      rerankTarget: { protocol: 'cohere-v2' },
+    });
   });
 });

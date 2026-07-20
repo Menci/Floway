@@ -67,6 +67,16 @@ describe('PricingEditor', () => {
     expect(wrapper.text()).toContain('Input ($/Minute)');
   });
 
+  it('defaults rerank input pricing to searches_1k', async () => {
+    const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'rerank' });
+    await pricingInput(wrapper, 'unpriced').setValue('4');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: { input: 'searches_1k' },
+      entries: [{ rates: { input: 4 } }],
+    });
+    expect(wrapper.text()).toContain('Input ($/1K searches)');
+  });
+
   it('clears a threshold value while preserving operator-only updates', async () => {
     const wrapper = mountEditor({
       entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }],
