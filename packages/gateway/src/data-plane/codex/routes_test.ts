@@ -113,7 +113,7 @@ describe('Codex model-provider routes', () => {
 
   it('does not inject fake Ultra for a client version that predates the mode', async () => {
     const { apiKey, repo } = await setupAppTest();
-    await repo.codexUltraConfig.save({ enabled: true, redirectEffort: 'high' });
+    await repo.codexUltraConfig.save({ enabled: true });
     const body = await withMockedFetch(
       copilotFetch([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]),
       async () => await (await buildCodexApp().request('/azure-api.codex/models', {
@@ -170,7 +170,7 @@ describe('Codex model-provider routes', () => {
 
   it('advertises fake Ultra with multi-agent v2 when support is enabled', async () => {
     const { apiKey, repo } = await setupAppTest();
-    await repo.codexUltraConfig.save({ enabled: true, redirectEffort: 'high' });
+    await repo.codexUltraConfig.save({ enabled: true });
     const body = await withMockedFetch(
       copilotFetch([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]),
       async () => await (await buildCodexApp().request('/azure-api.codex/models', {

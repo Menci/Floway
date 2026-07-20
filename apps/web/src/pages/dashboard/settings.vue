@@ -31,7 +31,6 @@ const defaultSearchConfig: SearchConfig = {
 
 const defaultCodexUltraConfig: CodexUltraConfig = {
   enabled: false,
-  redirectEffort: 'max',
 };
 
 export const useSettingsPageData = defineBasicLoader(async () => {

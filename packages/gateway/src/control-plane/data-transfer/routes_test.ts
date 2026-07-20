@@ -455,7 +455,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
       jina: { apiKey: '' },
       passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
     },
-    codexUltraConfig: { enabled: true, redirectEffort: 'future-tier' },
+    codexUltraConfig: { enabled: true },
   });
 
   assertEquals(result.status, 200);
@@ -472,7 +472,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
-  assertEquals(await repo.codexUltraConfig.get(), { enabled: true, redirectEffort: 'future-tier' });
+  assertEquals(await repo.codexUltraConfig.get(), { enabled: true });
 });
 
 test('import merge upserts by repository key without clearing unrelated rows', async () => {
@@ -1315,7 +1315,7 @@ test('a full v12 export re-imports verbatim — the export→import round trip i
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   };
   await repo.searchConfig.save(config);
-  const ultraConfig = { enabled: true, redirectEffort: 'vendor-tier' };
+  const ultraConfig = { enabled: true };
   await repo.codexUltraConfig.save(ultraConfig);
 
   const exported = await doExport(app, true);

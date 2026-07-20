@@ -121,7 +121,6 @@ export interface CodexUpstreamConfig {
 
 export interface CodexUltraConfig {
   enabled: boolean;
-  redirectEffort: string;
 }
 
 export interface OllamaUpstreamConfig {

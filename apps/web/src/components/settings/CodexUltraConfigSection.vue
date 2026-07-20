@@ -3,7 +3,7 @@ import { ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import type { CodexUltraConfig } from '../../api/types.ts';
-import { Button, Input, Switch } from '@floway-dev/ui';
+import { Button, Switch } from '@floway-dev/ui';
 
 const props = defineProps<{
   initialConfig: CodexUltraConfig;
@@ -64,42 +64,21 @@ const save = async () => {
       <div class="flex items-start justify-between gap-4">
         <div>
           <p class="text-sm font-medium text-white">Enable Ultra support</p>
-          <p class="mt-1 text-xs leading-relaxed text-gray-500">Codex owns proactive delegation and sends <code class="text-gray-300">max</code> on the wire. Floway redirects that value only while Codex's active multi-agent mode is Proactive.</p>
+          <p class="mt-1 text-xs leading-relaxed text-gray-500">Floway advertises Ultra in the Codex model picker. Codex enables proactive delegation locally and sends <code class="text-gray-300">max</code> on the wire.</p>
+          <div class="mt-3 inline-flex items-center gap-2 rounded-lg border border-white/[0.06] bg-surface-900 px-3 py-2 font-mono text-xs">
+            <span class="font-semibold text-violet-300">Ultra</span>
+            <i class="i-lucide-arrow-right size-3.5 text-gray-600" />
+            <span class="text-accent-cyan">max</span>
+            <span class="font-sans text-gray-600">client-owned</span>
+          </div>
         </div>
         <Switch v-model="draft.enabled" :disabled="!loaded" aria-label="Enable Codex Ultra support" />
-      </div>
-
-      <div class="mt-4 flex flex-col gap-3 border-t border-white/[0.06] pt-4 sm:flex-row sm:items-end">
-        <div class="min-w-0 flex-1">
-          <label for="codex-ultra-redirect-effort" class="mb-1.5 block text-xs font-medium text-gray-500">Redirect Ultra to effort</label>
-          <Input
-            id="codex-ultra-redirect-effort"
-            v-model="draft.redirectEffort"
-            list="codex-ultra-effort-suggestions"
-            :disabled="!loaded || !draft.enabled"
-            placeholder="max"
-            class="w-full font-mono"
-          />
-          <datalist id="codex-ultra-effort-suggestions">
-            <option value="low" />
-            <option value="medium" />
-            <option value="high" />
-            <option value="xhigh" />
-            <option value="max" />
-          </datalist>
-        </div>
-
-        <div class="flex min-w-0 items-center gap-2 rounded-lg border border-white/[0.06] bg-surface-900 px-3 py-2.5 font-mono text-xs">
-          <span class="font-semibold text-violet-300">Ultra</span>
-          <i class="i-lucide-arrow-right size-3.5 shrink-0 text-gray-600" />
-          <span class="truncate text-accent-cyan" :title="draft.redirectEffort">{{ draft.redirectEffort || 'unset' }}</span>
-        </div>
       </div>
     </div>
 
     <div class="mt-5 flex items-center gap-3">
-      <Button :loading="saving" :disabled="!loaded || draft.redirectEffort.length === 0" @click="save">Save Ultra Config</Button>
-      <p class="text-xs text-gray-600">The target remains an open string so future effort levels pass through unchanged.</p>
+      <Button :loading="saving" :disabled="!loaded" @click="save">Save Ultra Config</Button>
+      <p class="text-xs text-gray-600">Existing model effort values are not changed.</p>
     </div>
   </div>
 </template>

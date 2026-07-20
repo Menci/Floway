@@ -543,7 +543,6 @@ export const searchConfigSchema = z.object({
 
 export const codexUltraConfigSchema = z.object({
   enabled: z.boolean(),
-  redirectEffort: z.string().min(1),
 }).strict();
 
 // --- model aliases ---

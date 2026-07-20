@@ -27,12 +27,12 @@ describe('Codex Ultra catalog support', () => {
 
   test('returns the original model when disabled', () => {
     const model = base();
-    expect(applyCodexUltraCatalogSupport(model, { enabled: false, redirectEffort: 'high' })).toBe(model);
+    expect(applyCodexUltraCatalogSupport(model, { enabled: false })).toBe(model);
   });
 
   test('adds Ultra and enables multi-agent v2 without mutating the source', () => {
     const model = base();
-    const result = applyCodexUltraCatalogSupport(model, { enabled: true, redirectEffort: 'high' });
+    const result = applyCodexUltraCatalogSupport(model, { enabled: true });
 
     expect(result).not.toBe(model);
     expect(result.multi_agent_version).toBe('v2');
@@ -52,7 +52,7 @@ describe('Codex Ultra catalog support', () => {
         { effort: 'ultra', description: 'Upstream Ultra' },
       ],
     };
-    const result = applyCodexUltraCatalogSupport(model, { enabled: true, redirectEffort: 'future-tier' });
+    const result = applyCodexUltraCatalogSupport(model, { enabled: true });
     expect(result.supported_reasoning_levels).toEqual(model.supported_reasoning_levels);
     expect(result.multi_agent_version).toBe('v2');
   });

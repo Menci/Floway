@@ -35,7 +35,7 @@ import type { Fetcher } from '@floway-dev/provider';
 export const assembleCatalog = (
   bundled: CodexCatalog,
   addressable: readonly AddressableIdEntry[],
-  ultraConfig: CodexUltraConfig = { enabled: false, redirectEffort: 'max' },
+  ultraConfig: CodexUltraConfig = { enabled: false },
   clientSupportsUltra = false,
 ): CodexCatalog => {
   const bundledBySlug = new Map<string, CatalogModel>();

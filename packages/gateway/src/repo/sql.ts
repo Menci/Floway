@@ -1263,23 +1263,22 @@ class SqlCodexUltraConfigRepo implements CodexUltraConfigRepo {
 
   async get(): Promise<unknown | null> {
     const row = await this.db
-      .prepare('SELECT enabled, redirect_effort FROM codex_ultra_config WHERE id = 1')
-      .first<{ enabled: number; redirect_effort: string }>();
+      .prepare('SELECT enabled FROM codex_ultra_config WHERE id = 1')
+      .first<{ enabled: number }>();
     if (!row) throw new Error('codex_ultra_config singleton row missing');
-    return { enabled: row.enabled === 1, redirectEffort: row.redirect_effort };
+    return { enabled: row.enabled === 1 };
   }
 
   async save(config: CodexUltraConfig): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO codex_ultra_config (id, enabled, redirect_effort, updated_at)
-         VALUES (1, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        `INSERT INTO codex_ultra_config (id, enabled, updated_at)
+         VALUES (1, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
            enabled = excluded.enabled,
-           redirect_effort = excluded.redirect_effort,
            updated_at = excluded.updated_at`,
       )
-      .bind(config.enabled ? 1 : 0, config.redirectEffort)
+      .bind(config.enabled ? 1 : 0)
       .run();
   }
 }

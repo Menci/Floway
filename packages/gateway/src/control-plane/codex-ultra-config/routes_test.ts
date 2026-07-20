@@ -13,9 +13,9 @@ test('/api/codex-ultra-config GET returns the disabled default', async () => {
   assertEquals(await response.json(), DEFAULT_CODEX_ULTRA_CONFIG);
 });
 
-test('/api/codex-ultra-config PUT persists an open-string redirect effort', async () => {
+test('/api/codex-ultra-config PUT persists the switch', async () => {
   const { adminSession } = await setupAppTest();
-  const config = { enabled: true, redirectEffort: 'future-tier' };
+  const config = { enabled: true };
   const put = await requestApp('/api/codex-ultra-config', {
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
@@ -30,12 +30,12 @@ test('/api/codex-ultra-config PUT persists an open-string redirect effort', asyn
   assertEquals(await get.json(), config);
 });
 
-test('/api/codex-ultra-config rejects an empty redirect effort', async () => {
+test('/api/codex-ultra-config rejects unknown fields', async () => {
   const { adminSession } = await setupAppTest();
   const response = await requestApp('/api/codex-ultra-config', {
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ enabled: true, redirectEffort: '' }),
+    body: JSON.stringify({ enabled: true, extra: true }),
   });
   assertEquals(response.status, 400);
 });

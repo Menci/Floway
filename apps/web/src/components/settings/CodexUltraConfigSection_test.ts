@@ -3,7 +3,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { nextTick } from 'vue';
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(async () => Response.json({ enabled: true, redirectEffort: 'high' })),
+  get: vi.fn(async () => Response.json({ enabled: true })),
   put: vi.fn(async ({ json }: { json: unknown }) => Response.json(json)),
   callApi: vi.fn(async (fn: () => Promise<Response>): Promise<{ data?: unknown; error?: { status: number; message: string } }> => {
     const response = await fn();
@@ -17,7 +17,7 @@ vi.mock('../../api/client.ts', () => ({
 }));
 
 beforeEach(() => {
-  mocks.get.mockReset().mockImplementation(async () => Response.json({ enabled: true, redirectEffort: 'high' }));
+  mocks.get.mockReset().mockImplementation(async () => Response.json({ enabled: true }));
   mocks.put.mockReset().mockImplementation(async ({ json }: { json: unknown }) => Response.json(json));
   mocks.callApi.mockReset().mockImplementation(async (fn: () => Promise<Response>): Promise<{ data?: unknown; error?: { status: number; message: string } }> => {
     const response = await fn();
@@ -27,38 +27,33 @@ beforeEach(() => {
 
 const { default: CodexUltraConfigSection } = await import('./CodexUltraConfigSection.vue');
 
-test('Codex Ultra settings enable an open-string redirect target and save it', async () => {
+test('Codex Ultra settings toggle and save the catalog switch', async () => {
   const wrapper = mount(CodexUltraConfigSection, {
     props: {
-      initialConfig: { enabled: false, redirectEffort: 'max' },
+      initialConfig: { enabled: false },
       initialError: null,
     },
   });
 
-  const input = wrapper.find('input[list="codex-ultra-effort-suggestions"]');
-  expect(input.attributes('disabled')).toBeDefined();
   expect(wrapper.text()).toContain('Ultra');
   expect(wrapper.text()).toContain('max');
 
   await wrapper.find('button[role="switch"]').trigger('click');
   await nextTick();
-  expect(input.attributes('disabled')).toBeUndefined();
 
-  await input.setValue('future-tier');
   const save = wrapper.findAll('button').find(button => button.text().includes('Save Ultra Config'));
   expect(save).toBeDefined();
   await save!.trigger('click');
 
   expect(mocks.put).toHaveBeenCalledWith({
-    json: { enabled: true, redirectEffort: 'future-tier' },
+    json: { enabled: true },
   });
-  expect(wrapper.text()).toContain('future-tier');
 });
 
 test('Codex Ultra settings block stale-default saves and retry the failed load', async () => {
   const wrapper = mount(CodexUltraConfigSection, {
     props: {
-      initialConfig: { enabled: false, redirectEffort: 'max' },
+      initialConfig: { enabled: false },
       initialError: 'config unavailable',
     },
   });
@@ -76,19 +71,18 @@ test('Codex Ultra settings block stale-default saves and retry the failed load',
   expect(mocks.get).toHaveBeenCalledOnce();
   expect(wrapper.text()).not.toContain('config unavailable');
   expect(wrapper.find('button[role="switch"]').attributes('disabled')).toBeUndefined();
-  expect(wrapper.find('label[for="codex-ultra-redirect-effort"]').exists()).toBe(true);
-  expect(wrapper.find('#codex-ultra-redirect-effort').exists()).toBe(true);
+  expect(wrapper.find('button[role="switch"]').attributes('aria-checked')).toBe('true');
 });
 
 test('Codex Ultra settings retain the draft and announce save failures', async () => {
   const wrapper = mount(CodexUltraConfigSection, {
     props: {
-      initialConfig: { enabled: true, redirectEffort: 'max' },
+      initialConfig: { enabled: true },
       initialError: null,
     },
   });
-  const input = wrapper.find('#codex-ultra-redirect-effort');
-  await input.setValue('vendor-tier');
+  const toggle = wrapper.find('button[role="switch"]');
+  await toggle.trigger('click');
   mocks.callApi.mockResolvedValueOnce({ error: { status: 500, message: 'save unavailable' } });
 
   const save = wrapper.findAll('button').find(button => button.text().includes('Save Ultra Config'));
@@ -96,5 +90,5 @@ test('Codex Ultra settings retain the draft and announce save failures', async (
   await flushPromises();
 
   expect(wrapper.get('[role="alert"]').text()).toContain('save unavailable');
-  expect((input.element as HTMLInputElement).value).toBe('vendor-tier');
+  expect(toggle.attributes('aria-checked')).toBe('false');
 });
