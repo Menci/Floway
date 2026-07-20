@@ -1,9 +1,10 @@
 import { streamSSE } from 'hono/streaming';
 
-import { forwardUpstreamResponse, passthroughApiError, stageForwardedResponseHeaders } from '../shared/passthrough-serve.ts';
+import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import type { PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
 import { settleUsageMeasurement } from '../shared/telemetry/settle.ts';
 import { audioTranscriptionUsageMeasurement, requestOnlyUsageMeasurement } from '../shared/telemetry/usage.ts';
+import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstream-response.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
 import { isAudioTranscriptionDoneEvent } from '@floway-dev/protocols/audio';
 import { eventFrame, parseSSEStream, sseCommentFrame } from '@floway-dev/protocols/common';
@@ -35,7 +36,7 @@ const respondNonStreaming = async ({ c, ctx, sourceApi, response, performance, i
   }
   ctx.dump?.success(identity, measurement.dumpTokenUsage);
   settleUsageMeasurement(ctx, performance, identity, measurement, false);
-  return forwardUpstreamResponse(response, null);
+  return forwardUpstreamResponse(response, { defaultContentType: null });
 };
 
 const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Response => {
@@ -43,10 +44,10 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
   if (!upstreamBody) {
     ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
     settleUsageMeasurement(ctx, performance, identity, requestOnlyUsageMeasurement(), true);
-    stageForwardedResponseHeaders(c, response);
+    forwardUpstreamHeaders(c, response.headers);
     return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
   }
-  stageForwardedResponseHeaders(c, response);
+  forwardUpstreamHeaders(c, response.headers);
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     let streamError: unknown;
@@ -91,7 +92,7 @@ export const respondAudioTranscription = async (context: PassthroughResponseStra
   if (!response.ok) {
     settleUsageMeasurement(ctx, performance, identity, requestOnlyUsageMeasurement(), true);
     ctx.dump?.error('upstream', identity.upstream);
-    return forwardUpstreamResponse(response, null);
+    return forwardUpstreamResponse(response, { defaultContentType: null });
   }
   const contentType = response.headers.get('content-type')?.replace(/;.*$/u, '').trim().toLowerCase();
   return contentType === 'text/event-stream'

@@ -20,37 +20,15 @@ import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import { recordFailedRequest } from './telemetry/performance.ts';
 import { settle } from './telemetry/settle.ts';
+import { forwardUpstreamHeaders, forwardUpstreamResponse } from './upstream-response.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
-import { forwardUpstreamHeaders, isForwardableUpstreamHeader } from '../chat/shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
 import { enumerateModelCandidates } from '../providers/registry.ts';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
-
-// Forward every safe end-to-end upstream header. The shared predicate strips
-// hop-by-hop/framing/cookie fields; content-type is retained separately because
-// non-streaming bodies are not rewritten. A missing type falls back to JSON for
-// the existing JSON passthrough endpoints.
-export const forwardUpstreamResponse = (resp: Response, defaultContentType: string | null = 'application/json'): Response => {
-  const headers = new Headers();
-  const contentType = resp.headers.get('content-type') ?? defaultContentType;
-  if (contentType !== null) headers.set('content-type', contentType);
-  for (const [name, value] of resp.headers.entries()) {
-    if (name.toLowerCase() === 'content-type') continue;
-    if (isForwardableUpstreamHeader(name)) headers.set(name, value);
-  }
-  return new Response(resp.body, { status: resp.status, headers });
-};
-
-// Stage forwardable upstream headers onto the Hono context so the streaming
-// SSE response Hono builds emits them. `streamSSE`'s internal `c.newResponse`
-// honors anything set via `c.header()` before it runs.
-export const stageForwardedResponseHeaders = (c: Context, resp: Response): void => {
-  forwardUpstreamHeaders(c, resp.headers);
-};
 
 // `json` (embeddings, images): single-shot body, `extractBilling` reads
 // usage / metadata off the parsed root. `sse` (/v1/completions): frame
@@ -215,10 +193,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       recordFailedRequest(ctx, performanceContext);
       // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
       // on the synthesized 502 so this rare edge case is still traceable.
-      stageForwardedResponseHeaders(c, response);
+      forwardUpstreamHeaders(c, response.headers);
       return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
     }
-    stageForwardedResponseHeaders(c, response);
+    forwardUpstreamHeaders(c, response.headers);
     return streamSSE(c, async stream => {
       let completion: StreamCompletion = 'error';
       let streamError: unknown;
