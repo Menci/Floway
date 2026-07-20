@@ -81,6 +81,23 @@ const eventAt = <TType extends ResponsesStreamEvent['type']>(
   return frame.event as Extract<ResponsesStreamEvent, { type: TType }>;
 };
 
+test('normalizes queued output and reuses its public id when the item is added', async () => {
+  const item: ResponsesOutputItem = { type: 'reasoning', id: 'rs_queued', summary: [] };
+  const { result } = await runStream([
+    eventFrame({ type: 'response.queued', response: { ...response([item]), status: 'queued' } }),
+    eventFrame(outputItemEvent('added', 0, item)),
+    eventFrame(outputItemEvent('done', 0, item)),
+  ]);
+  const frames = await collect(result);
+  const queued = eventAt(frames, 'response.queued');
+  const added = eventAt(frames, 'response.output_item.added');
+  const done = eventAt(frames, 'response.output_item.done');
+
+  expect(queued.response.output[0].id).toMatch(/^rs_[0-9a-f]{32}$/);
+  expect(added.item.id).toBe(queued.response.output[0].id);
+  expect(done.item.id).toBe(queued.response.output[0].id);
+});
+
 test('streams a public id immediately, then carries the canonical done id inside reasoning state', async () => {
   const added: ResponsesOutputItem = { type: 'reasoning', id: 'rs_added', summary: [] };
   const done: ResponsesOutputItem = { type: 'reasoning', id: 'rs_done', summary: [], encrypted_content: 'opaque done' };

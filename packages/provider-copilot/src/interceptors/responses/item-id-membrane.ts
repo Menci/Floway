@@ -206,7 +206,8 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
   }
 
   if (
-    event.type === 'response.created'
+    event.type === 'response.queued'
+    || event.type === 'response.created'
     || event.type === 'response.in_progress'
     || event.type === 'response.completed'
     || event.type === 'response.incomplete'
