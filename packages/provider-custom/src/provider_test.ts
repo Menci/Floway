@@ -135,7 +135,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
     () => jsonResponse({
       object: 'list',
       data: [
-        { id: 'shared-id', display_name: 'Auto Version', pricing: { entries: [{ rates: { input: 99, output: 99 } }] } },
+        { id: 'shared-id', display_name: 'Auto Version', pricing: { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: 99, output: 99 } }] } },
         { id: 'auto-only' },
       ],
     }),

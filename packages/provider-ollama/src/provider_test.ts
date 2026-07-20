@@ -90,7 +90,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
         kind: 'chat',
         endpoints: { chatCompletions: {} },
         display_name: 'Pinned 120B',
-        pricing: { entries: [{ rates: { input: 99, output: 99 } }] },
+        pricing: { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: 99, output: 99 } }] },
       }],
     },
   }));

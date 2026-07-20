@@ -333,7 +333,7 @@ test('createAzureProvider attaches pricing field from model config', async () =>
             upstreamModelId: 'gpt-prod',
             publicModelId: 'gpt-public',
             endpoints: { chatCompletions: {} },
-            pricing: { entries: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25 } }] },
+            pricing: { units: { input: 'tokens_1m', output: 'tokens_1m', input_cache_read: 'tokens_1m' }, entries: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25 } }] },
           },
           {
             upstreamModelId: 'gpt-small',

@@ -123,7 +123,7 @@ test('Custom provider projects display_name / created / limits / pricing from a 
         display_name: 'Rich Model',
         created_at: '2026-04-01T00:00:00Z',
         limits: { max_output_tokens: 8192, max_context_window_tokens: 200000 },
-        pricing: { entries: [{ rates: { input: 3, output: 15, input_cache_read: 0.3 } }] },
+        pricing: { units: { input: 'tokens_1m', output: 'tokens_1m', input_cache_read: 'tokens_1m' }, entries: [{ rates: { input: 3, output: 15, input_cache_read: 0.3 } }] },
       }],
     }),
     async () => {
@@ -303,7 +303,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
               endpoints: { chatCompletions: {} },
               display_name: 'Pinned Chat',
               limits: { max_output_tokens: 4096 },
-              pricing: { entries: [{ rates: { input: 1, output: 2 } }] },
+              pricing: { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: 1, output: 2 } }] },
             },
           ],
         },
@@ -332,7 +332,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
         return jsonResponse({
           object: 'list',
           data: [
-            { id: 'shared', pricing: { entries: [{ rates: { input: 9, output: 9 } }] } },
+            { id: 'shared', pricing: { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: 9, output: 9 } }] } },
             { id: 'auto-only' },
           ],
         });
@@ -353,7 +353,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
               upstreamModelId: 'shared',
               endpoints: { chatCompletions: {} },
               display_name: 'Manual Shared',
-              pricing: { entries: [{ rates: { input: 1, output: 2 } }] },
+              pricing: { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: 1, output: 2 } }] },
             },
           ],
         },

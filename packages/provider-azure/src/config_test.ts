@@ -243,7 +243,7 @@ test('assertAzureUpstreamRecord round-trips model.pricing with full pricing fiel
         {
           upstreamModelId: 'gpt-prod',
           endpoints: { chatCompletions: {} },
-          pricing: { entries: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }] },
+          pricing: { units: { input: 'tokens_1m', input_cache_read: 'tokens_1m', input_cache_write: 'tokens_1m', input_image: 'tokens_1m', output: 'tokens_1m', output_image: 'tokens_1m' }, entries: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }] },
         },
       ],
     },
@@ -277,7 +277,7 @@ test('assertAzureUpstreamRecord accepts model.pricing with only input set', () =
         {
           upstreamModelId: 'gpt-prod',
           endpoints: { chatCompletions: {} },
-          pricing: { entries: [{ rates: { input: 2.5 } }] },
+          pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 2.5 } }] },
         },
       ],
     },
@@ -295,7 +295,7 @@ test('assertAzureUpstreamRecord rejects model.pricing with negative input', () =
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              pricing: { entries: [{ rates: { input: -1, output: 1 } }] },
+              pricing: { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: -1, output: 1 } }] },
             },
           ],
         },
@@ -316,7 +316,7 @@ test('assertAzureUpstreamRecord rejects model.pricing with non-number input_cach
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              pricing: { entries: [{ rates: { input: 2, output: 8, input_cache_read: 'cheap' } }] },
+              pricing: { units: { input: 'tokens_1m', output: 'tokens_1m', input_cache_read: 'tokens_1m' }, entries: [{ rates: { input: 2, output: 8, input_cache_read: 'cheap' } }] },
             },
           ],
         },
