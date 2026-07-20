@@ -117,13 +117,20 @@ export interface TelemetryModelIdentity {
 // only when a new route lands — no wildcard string.
 // OTel canonical set:
 // https://github.com/open-telemetry/semantic-conventions/blob/v1.37.0/docs/gen-ai/gen-ai-spans.md#gen_aioperationname
-export type PerformanceOperation =
-  | 'chat'
-  | 'text_completion'
-  | 'embeddings'
-  | 'image_generation'
-  | 'image_edit'
-  | 'rerank';
+export const PERFORMANCE_OPERATIONS = [
+  'chat',
+  'text_completion',
+  'embeddings',
+  'image_generation',
+  'image_edit',
+  'rerank',
+] as const;
+export type PerformanceOperation = typeof PERFORMANCE_OPERATIONS[number];
+
+export const parsePerformanceOperation = (value: unknown): PerformanceOperation => {
+  if (typeof value === 'string' && (PERFORMANCE_OPERATIONS as readonly string[]).includes(value)) return value as PerformanceOperation;
+  throw new TypeError(`Invalid performance operation: ${JSON.stringify(value)}`);
+};
 
 export interface PerformanceTelemetryContext {
   keyId: string;
