@@ -1,5 +1,4 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
-import { withResponsesOutputItemsCanonicalized } from './canonicalize-output-items.ts';
 import { withResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
@@ -41,13 +40,6 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //   - withVendor*ResponsesNormalize: gated by `vendor-<X>`. Registered after
 //     the role-compatibility entry so each gets the final say on the outbound wire
 //     body.
-//   - withResponsesOutputItemsCanonicalized: runs innermost (last entry)
-//     so it observes the raw upstream event stream first, before any outer
-//     interceptor inspects ids or hashes content. Pins each output item's
-//     `id` and `encrypted_content` across the streamed `output_item.done`
-//     view and the terminal `response.completed` envelope; downstream
-//     consumers (server-tool shim, storage layer's id mapper, replay
-//     affinity) then see a single canonical pair per item.
 export const responsesInterceptors: readonly ResponsesInterceptor[] = [
   withResponsesCompactShim,
   withResponsesServerToolShim([
@@ -60,5 +52,4 @@ export const responsesInterceptors: readonly ResponsesInterceptor[] = [
   withPromptCacheKeyStripped,
   withVendorDeepseekResponsesNormalize,
   withVendorQwenResponsesNormalize,
-  withResponsesOutputItemsCanonicalized,
 ];
