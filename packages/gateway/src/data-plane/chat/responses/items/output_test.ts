@@ -589,3 +589,28 @@ test('terminal-only compaction replaces prior snapshot history', async () => {
 
   expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compacted'))?.itemIds).toEqual(['cmp_terminal']);
 });
+
+test('terminal-only incomplete output is durable before its snapshot is published', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const item = { type: 'message' as const, id: 'msg_incomplete', role: 'assistant' as const, status: 'incomplete', content: [] };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'incomplete',
+    output: [item],
+    error: null,
+    incomplete_details: { reason: 'max_output_tokens' },
+  };
+  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.incomplete', response });
+  })();
+
+  for await (const _frame of wrapResponsesClientOutput(input, {
+    store,
+    responseId: 'resp_incomplete',
+  })) { /* drain */ }
+
+  expect((await repo.responsesItems.lookupMany('key-a', [item.id]))[0].payload.item).toEqual(item);
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_incomplete'))?.itemIds).toEqual([item.id]);
+});
