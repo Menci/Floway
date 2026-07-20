@@ -11,7 +11,7 @@
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
-import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, type BillingUnit, type ModelKind, type ModelPricing, type PriceUnits, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, type BillingDimension, type BillingUnit, type ModelKind, type ModelPricing, type PriceUnits, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export interface CustomRawModel {
