@@ -24,6 +24,14 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   ...overrides,
 });
 
+test('SQL Codex Ultra config round-trips the singleton and open-string effort', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb());
+  assertEquals(await repo.codexUltraConfig.get(), { enabled: false, redirectEffort: 'max' });
+
+  await repo.codexUltraConfig.save({ enabled: true, redirectEffort: 'future-tier' });
+  assertEquals(await repo.codexUltraConfig.get(), { enabled: true, redirectEffort: 'future-tier' });
+});
+
 test('SQL models cache round-trips the catalog revision', async () => {
   const repo = new SqlRepo(await createSqliteTestDb());
   await repo.upstreams.save(baseRecord());
