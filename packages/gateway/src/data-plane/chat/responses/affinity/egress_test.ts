@@ -27,6 +27,23 @@ const response = (output: ResponsesResult['output'], status: ResponsesResult['st
 });
 
 describe('Responses affinity egress', () => {
+  test('wraps natural blobs inside queued response output', async () => {
+    const reasoning: ResponsesOutputReasoning = {
+      type: 'reasoning',
+      id: 'rs_queued',
+      summary: [],
+      encrypted_content: 'opaque',
+    };
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.queued', response: response([reasoning], 'queued') }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output[0]).toMatchObject({
+      event: { type: 'response.queued', response: { output: [{ encrypted_content: 'wrapped:opaque' }] } },
+    });
+  });
+
   test('streams visible reasoning before wrapping and reuses one natural carrier', async () => {
     const calls: Array<{ value: string | undefined; resolve: (value: string) => void }> = [];
     const codec: AffinityEgressCodec = {

@@ -28,6 +28,34 @@ const memoryOutputHarness = () => {
   return { repo, store: createResponsesHttpStore('key-a', true) };
 };
 
+test('client output rewrites response and item ids inside queued envelopes', async () => {
+  const { store } = memoryOutputHarness();
+  const queued: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'queued',
+    output: [completedReasoningItem],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.queued', response: queued });
+  })();
+  const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+  for await (const frame of wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })) output.push(frame);
+
+  expect(output[0]).toMatchObject({
+    event: {
+      type: 'response.queued',
+      response: { id: 'resp_public', output: [{ type: 'reasoning' }] },
+    },
+  });
+  const frame = output[0];
+  if (frame.type !== 'event' || frame.event.type !== 'response.queued') throw new Error('expected queued event');
+  expect(frame.event.response.output[0].id).not.toBe('rs_upstream');
+});
+
 test('client output rewrites ids and persists the exact complete item before terminal', async () => {
   const { repo, store } = memoryOutputHarness();
   const result: ResponsesResult = {
