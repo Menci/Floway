@@ -34,6 +34,8 @@ interface CodexModelsResponse {
     context_window?: number;
     max_context_window?: number;
     auto_compact_token_limit?: number | null;
+    supported_reasoning_levels?: Array<{ effort: string; description: string }>;
+    multi_agent_version?: string;
   }>;
 }
 
@@ -150,5 +152,23 @@ describe('Codex model-provider routes', () => {
 
     expect(body.models).toHaveLength(1);
     expect(body.models[0].slug).toBe('claude-sonnet-4');
+  });
+
+  it('advertises fake Ultra with multi-agent v2 when support is enabled', async () => {
+    const { apiKey, repo } = await setupAppTest();
+    await repo.codexUltraConfig.save({ enabled: true, redirectEffort: 'high' });
+    const body = await withMockedFetch(
+      copilotFetch([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]),
+      async () => await (await buildCodexApp().request('/azure-api.codex/models', {
+        headers: { authorization: `Bearer ${apiKey.key}` },
+      })).json() as CodexModelsResponse,
+    );
+
+    expect(body.models).toHaveLength(1);
+    expect(body.models[0].multi_agent_version).toBe('v2');
+    expect(body.models[0].supported_reasoning_levels).toContainEqual({
+      effort: 'ultra',
+      description: 'Maximum reasoning with automatic task delegation',
+    });
   });
 });
