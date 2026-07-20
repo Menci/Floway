@@ -19,8 +19,8 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 // binds the promise to the request's lifetime — Cloudflare Workers'
 // waitUntil binds it to the fetch handler (or, for the WS transport, to
 // a session-scoped waitUntil opened on 101), and Node keeps the process
-// event loop alive. Only usage rows with a billable dimension record;
-// empty figures early-out.
+// event loop alive. Every settled request increments its request bucket;
+// detailed dimension rows are present only when the upstream meters them.
 export const settle = (
   ctx: GatewayCtx,
   telemetry: PerformanceTelemetryContext | undefined,

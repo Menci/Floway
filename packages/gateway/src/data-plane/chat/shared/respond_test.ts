@@ -199,11 +199,14 @@ test('settle records the request without dimensions when usage is null', async (
   assertEquals(rows[0].dimensions, []);
 });
 
-test('settle skips the usage row when usage carries no billable dimension', async () => {
+test('settle records the request when usage carries no billable dimension', async () => {
   settle(harness.ctx(), testPerformanceContext, testTelemetryModelIdentity, {}, false);
   await Promise.all(harness.background);
 
-  assertEquals(await harness.repo.usage.listAll(), []);
+  const rows = await harness.repo.usage.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].requests, 1);
+  assertEquals(rows[0].dimensions, []);
 });
 
 // TPOT reflects the token stream, not the D1 write that follows it.
