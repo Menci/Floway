@@ -41,13 +41,13 @@ const isForwardedResponseHeader = (name: string): boolean => {
   return FORWARDED_RESPONSE_HEADERS.has(lower) || FORWARDED_RESPONSE_HEADER_PREFIXES.some(prefix => lower.startsWith(prefix));
 };
 
-const forwardUpstreamResponse = (resp: Response): Response => {
+export const forwardUpstreamResponse = (resp: Response, body: BodyInit | null = resp.body): Response => {
   const headers = new Headers({ 'content-type': resp.headers.get('content-type') ?? 'application/json' });
   for (const [name, value] of resp.headers.entries()) {
     if (name.toLowerCase() === 'content-type') continue;
     if (isForwardedResponseHeader(name)) headers.set(name, value);
   }
-  return new Response(resp.body, { status: resp.status, headers });
+  return new Response(body, { status: resp.status, headers });
 };
 
 // Stage forwardable upstream headers onto the Hono context so the streaming
