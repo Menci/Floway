@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 
 import { app as gatewayApp } from '../../app.ts';
 import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-helpers.ts';
-import { isResponsesResponseId } from '../chat/responses/items/format.ts';
+import { isResponsesResponseId } from '../chat/responses/response-id.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };

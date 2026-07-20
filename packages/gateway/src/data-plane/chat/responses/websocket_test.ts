@@ -1,7 +1,8 @@
 import type { ExecutionContext } from 'hono';
 import { test, vi } from 'vitest';
 
-import { hashResponsesItemContent, isResponsesItemId, isResponsesResponseId } from './items/format.ts';
+import { hashResponsesItemContent } from './items/identity.ts';
+import { isResponsesResponseId } from './response-id.ts';
 import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
 import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
@@ -763,7 +764,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId), null);
       const firstOutput = firstMessages.find(message => message.type === 'response.output_item.done') as { item?: { id?: string } } | undefined;
       assertExists(firstOutput?.item?.id);
-      assert(isResponsesItemId(firstOutput.item.id), 'expected a Floway output item id');
+      assert(/^msg_[0-9a-f]{32}$/.test(firstOutput.item.id), 'expected a Copilot-normalized message id');
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id]), []);
       assertEquals(
         await repo.responsesItems.lookupManyByContentHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })]),
@@ -957,7 +958,7 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
         const messages = await firstDone;
         const done = messages.find(message => message.type === 'response.output_item.done') as { item?: typeof originalReasoning } | undefined;
         assertExists(done?.item);
-        assert(isResponsesItemId(done.item.id));
+        assert(/^rs_[0-9a-f]{32}$/.test(done.item.id));
         assert(done.item.encrypted_content !== originalReasoning.encrypted_content);
         firstClient.close();
 

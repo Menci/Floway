@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
-import { isResponsesItemId, isResponsesResponseId } from './items/format.ts';
+import { isResponsesResponseId } from './response-id.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -257,7 +257,7 @@ test('POST /v1/responses makes a done reasoning item reusable before terminal', 
       publicReasoning = event.item;
     }
   }
-  assert(isResponsesItemId(publicReasoning.id));
+  assertEquals(publicReasoning.id, originalReasoning.id);
   assert(publicReasoning.encrypted_content !== originalReasoning.encrypted_content);
   await reader.cancel();
 
