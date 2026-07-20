@@ -112,7 +112,7 @@ export const synthesizeCatalogEntry = (
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
 ): CatalogModel => {
-  const source = base ?? BASELINE;
+  const source: CatalogModel = base ?? BASELINE;
 
   // Overlay chain for every registry-derived field: `registry ?? source ?? BASELINE`.
   // BASELINE is always the ultimate fallback so a partially-populated `source`
