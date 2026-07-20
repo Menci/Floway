@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { applyCodexUltraCatalogSupport } from './ultra-catalog.ts';
 import type { CatalogModel } from './catalog.ts';
+import { applyCodexUltraCatalogSupport } from './ultra-catalog.ts';
 
 const base = (): CatalogModel => ({
   slug: 'model-a',

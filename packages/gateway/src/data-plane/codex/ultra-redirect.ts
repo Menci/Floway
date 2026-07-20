@@ -20,8 +20,7 @@ const messageText = (item: ResponsesInputItem): string | null => {
   if (item.type !== 'message' || item.role !== 'developer') return null;
   if (typeof item.content === 'string') return item.content;
   return item.content.flatMap(block =>
-    block.type === 'input_text' || block.type === 'output_text' ? [block.text] : [],
-  ).join('\n');
+    block.type === 'input_text' || block.type === 'output_text' ? [block.text] : []).join('\n');
 };
 
 const lastModeBody = (text: string): string | null => {

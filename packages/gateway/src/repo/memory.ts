@@ -46,9 +46,9 @@ import type {
   User,
   UsersRepo,
 } from './types.ts';
-import type { CodexUltraConfig } from '../data-plane/codex/ultra-config.ts';
 import { serializeStoredState } from './upstream-json.ts';
 import { usageDimensionRows } from './usage-dimensions.ts';
+import type { CodexUltraConfig } from '../data-plane/codex/ultra-config.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';

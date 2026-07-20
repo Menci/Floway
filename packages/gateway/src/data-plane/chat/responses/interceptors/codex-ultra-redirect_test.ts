@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import type { ResponsesInvocation } from './types.ts';
 import { withCodexUltraEffortRedirected } from './codex-ultra-redirect.ts';
+import type { ResponsesInvocation } from './types.ts';
 import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import { eventResult } from '@floway-dev/provider';

@@ -42,10 +42,10 @@ import type {
   User,
   UsersRepo,
 } from './types.ts';
-import type { CodexUltraConfig } from '../data-plane/codex/ultra-config.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import { usageDimensionRows } from './usage-dimensions.ts';
+import type { CodexUltraConfig } from '../data-plane/codex/ultra-config.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';

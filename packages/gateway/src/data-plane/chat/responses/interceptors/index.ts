@@ -1,6 +1,6 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
-import { withCodexUltraEffortRedirected } from './codex-ultra-redirect.ts';
 import { withResponsesOutputItemsCanonicalized } from './canonicalize-output-items.ts';
+import { withCodexUltraEffortRedirected } from './codex-ultra-redirect.ts';
 import { withResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
