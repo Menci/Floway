@@ -131,6 +131,7 @@ describe('codexRawToProviderModel', () => {
   test('attaches OpenAI-API-rate pricing for known slugs and treats codex-auto-review as gpt-5.4', () => {
     const flagship = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
     expect(flagship.pricing).toEqual({
+      units: { input: 'tokens_1m', input_cache_read: 'tokens_1m', output: 'tokens_1m' },
       entries: [
         { rates: { input: 2.5, input_cache_read: 0.25, output: 15 } },
         { selector: { serviceTier: 'flex' }, rates: { input: 1.25, input_cache_read: 0.13, output: 7.5 } },

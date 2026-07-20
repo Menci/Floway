@@ -64,7 +64,7 @@ test('model validation rejects duplicate selectors and conflicting threshold ope
     ],
   }), Error, 'conflicting pricing threshold operators');
   validateModelPricing({
-    units: { input: 'tokens_1m', output: 'tokens_1m' },
+    units: { input: 'tokens_1m' },
     entries: [
       { rates: { input: 1 } },
       { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 16 } }, rates: { input: 2 } },
@@ -91,7 +91,7 @@ test('model validation requires exactly one base entry and uses it as the rate-f
     entries: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }],
   }), Error, 'exactly one base entry');
   validateModelPricing({
-    units: { input: 'tokens_1m' },
+    units: { input: 'tokens_1m', output: 'tokens_1m' },
     entries: [
       { selector: { serviceTier: 'priority' }, rates: { input: 2, output: 8 } },
       { rates: { input: 1, output: 4 } },
