@@ -3,8 +3,8 @@
 Floway is an LLM API gateway that fronts multiple model upstreams behind one
 set of standard APIs. Point a coding agent at Floway and it can use a
 GitHub Copilot account, a ChatGPT subscription via Codex CLI, a Claude.ai
-Pro / Max subscription via Claude Code CLI, a custom OpenAI- or
-Anthropic-compatible provider, an Azure deployment, or an Ollama server
+Pro / Max subscription via Claude Code CLI, a custom protocol-compatible
+HTTP provider, an Azure deployment, or an Ollama server
 (ollama.com or self-hosted) through whichever API shape the agent already
 speaks.
 Cloudflare Workers is the production deployment target; a Node.js deployment

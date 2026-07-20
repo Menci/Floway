@@ -1,17 +1,16 @@
-// Generic custom upstream — any third-party LLM provider that speaks an
-// OpenAI-shaped or Anthropic-shaped HTTP API under a single base URL with a
-// static credential. `authStyle` decides the credential header:
+// Configurable custom upstream — any third-party provider that serves one or
+// more supported generation, embedding, image, or rerank protocols under a
+// single base URL with a static credential. `authStyle` decides the credential header:
 //   - 'bearer'    -> Authorization: Bearer <key>     (OpenAI, OpenRouter, ...)
 //   - 'anthropic' -> x-api-key: <key> + anthropic-version: 2023-06-01
 //                                                    (api.anthropic.com)
 //   - 'none'      -> no auth header (local or internal upstreams that
 //                                                    accept anonymous requests)
 //
-// The base URL is stored without an API prefix (admin enters e.g.
-// https://api.openai.com); we join it to a per-endpoint path. Default paths
-// follow `/v1/*`, but admins can override individual endpoints to handle
-// providers that mount the API under a subpath while still serving e.g.
-// `/models` at the root.
+// The base URL is stored without an API prefix and joined to the selected
+// protocol's path. Generation-family path overrides remain upstream-wide;
+// rerank chooses its dialect and optional path on each model because no
+// vendor-neutral rerank path exists.
 //
 // Custom upstreams surface models from two sources, merged at the data
 // plane: a statically configured list of per-model overrides

@@ -1,9 +1,10 @@
-import { mount } from '@vue/test-utils';
+import { mount, type VueWrapper } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 
 import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { ControlPlaneModel, ModelAlias } from '../../api/types.ts';
+import { Select } from '@floway-dev/ui';
 
 // Mock the API client + composables so the dialog mounts without hitting the
 // network. The composables expose `ref`-based state — return the same shape
@@ -167,8 +168,8 @@ describe('AliasEditDialog', () => {
   // ── Announced metadata section ────────────────────────────────────────
 
   // The section header always renders for chat/embedding; the body only
-  // renders the editor when the "Manual" switch is on. Image
-  // aliases never see the section at all.
+  // renders the editor when the "Manual" switch is on. Image and rerank
+  // aliases never see the section.
 
   const expandAnnouncedSection = async () => {
     const header = portalQueryAll<HTMLButtonElement>('button').find(b => (b.textContent ?? '').includes('Announced metadata'))!;
@@ -264,5 +265,29 @@ describe('AliasEditDialog', () => {
     await nextTick();
     expect(portalText()).not.toContain('Announced metadata');
     w.unmount();
+  });
+
+  it('switching a chat alias with announced chat metadata to rerank clears the override', async () => {
+    const wrapper = mount(AliasEditDialog, {
+      props: {
+        open: true,
+        record: baseAlias({
+          name: 'reranker',
+          announced_metadata: { chat: { reasoning: { mandatory: true } } },
+        }),
+      },
+      attachTo: document.body,
+    });
+    await nextTick();
+
+    (wrapper.findAllComponents(Select)[0] as unknown as VueWrapper).vm.$emit('update:modelValue', 'rerank');
+    await nextTick();
+    expect(portalText()).not.toContain('Announced metadata');
+
+    const save = portalQueryAll<HTMLButtonElement>('button').find(button => button.textContent?.trim() === 'Save')!;
+    save.click();
+    await nextTick();
+    expect(putSpy.mock.calls.at(-1)?.[0]).toMatchObject({ json: { kind: 'rerank', announced_metadata: null } });
+    wrapper.unmount();
   });
 });
