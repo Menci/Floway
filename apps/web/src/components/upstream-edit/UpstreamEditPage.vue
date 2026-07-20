@@ -153,6 +153,7 @@ const fetchedCount = ref(0);
 const endpointsForKind = (kind: CustomRawModel['kind']): ModelEndpoints => {
   if (kind === 'embedding') return { embeddings: {} };
   if (kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
+  if (kind === 'rerank') return {};
   return Object.keys(customDraft.value.endpoints).length > 0
     ? { ...customDraft.value.endpoints }
     : { chatCompletions: {} };
@@ -567,6 +568,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :upstream-id-label="upstreamIdLabelForActive"
         :read-only="draft.kind === 'copilot' || draft.kind === 'codex' || draft.kind === 'claude-code'"
         :all-manual="draft.kind === 'azure'"
+        :allow-rerank="draft.kind === 'custom'"
         @update:invalid="v => modelsPanelInvalid = v"
       />
     </div>

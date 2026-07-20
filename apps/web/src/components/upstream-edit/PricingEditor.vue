@@ -46,7 +46,10 @@ const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
   chat: ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'output'],
   embedding: ['input'],
   image: ['input', 'input_image', 'output', 'output_image'],
+  rerank: ['input'],
 };
+
+const defaultBillingUnit = computed<BillingUnit>(() => props.kind === 'rerank' ? 'searches_1k' : 'tokens_1m');
 
 interface PricingThresholdDraft {
   operator: PricingThresholdOperator;
@@ -146,7 +149,7 @@ const formatList = (values: readonly string[]): string => {
 const rateFieldName = (dimension: BillingDimension): string => PRICING_LABELS[dimension];
 
 const billingUnitLabel = (dimension: BillingDimension): string =>
-  BILLING_UNIT_OPTIONS.find(option => option.value === (pricingUnits.value[dimension] ?? 'tokens_1m'))!.label;
+  BILLING_UNIT_OPTIONS.find(option => option.value === (pricingUnits.value[dimension] ?? defaultBillingUnit.value))!.label;
 
 const pricingValidationErrors = computed<readonly string[]>(() => {
   const errors = new Set<string>();
@@ -225,7 +228,7 @@ const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
   const pricedDimensions = new Set(drafts.flatMap(draft => Object.keys(draft.rates)));
   const units: ModelPricing['units'] = {};
   for (const dimension of BILLING_DIMENSIONS) {
-    if (pricedDimensions.has(dimension)) units[dimension] = pricingUnits.value[dimension] ?? 'tokens_1m';
+    if (pricedDimensions.has(dimension)) units[dimension] = pricingUnits.value[dimension] ?? defaultBillingUnit.value;
   }
   pricingUnits.value = units;
   pricing.value = { units, entries };
@@ -313,7 +316,7 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
       <label v-for="dimension in visiblePricingDimensions.filter(dimension => basePricingEntry?.rates[dimension] !== undefined)" :key="dimension" class="block space-y-1.5">
         <span class="block text-xs font-medium text-gray-500">{{ rateFieldName(dimension) }} unit</span>
         <Select
-          :model-value="pricingUnits[dimension] ?? 'tokens_1m'"
+          :model-value="pricingUnits[dimension] ?? defaultBillingUnit"
           :options="BILLING_UNIT_OPTIONS"
           :disabled="!editable"
           @update:model-value="value => updatePricingUnit(dimension, value as BillingUnit)"

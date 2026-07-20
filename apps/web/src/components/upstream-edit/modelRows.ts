@@ -21,6 +21,7 @@ const IMAGE_ENDPOINT_KEYS: ModelEndpointKey[] = ['imagesGenerations', 'imagesEdi
 // chat model keeps its protocol choices across an accidental round-trip.
 export const defaultEndpointsForKind = (kind: ModelKind, current: ModelEndpoints | undefined): ModelEndpoints => {
   if (kind === 'embedding') return { embeddings: {} };
+  if (kind === 'rerank') return { rerank: {} };
   const keys = kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS;
   const kept: ModelEndpoints = {};
   for (const key of keys) if (current?.[key]) kept[key] = current[key]!;
@@ -46,6 +47,7 @@ export const seedFromAuto = (auto: UpstreamModelConfig): UpstreamModelConfig => 
     ...(auto.pricing ? { pricing: { ...auto.pricing } } : {}),
     ...(auto.chat ? { chat: auto.chat } : {}),
     ...(auto.flagOverrides ? { flagOverrides: { ...auto.flagOverrides } } : {}),
+    ...(kind === 'rerank' ? { rerankTarget: auto.rerankTarget ?? { protocol: 'cohere-v2' } } : {}),
   };
 };
 
