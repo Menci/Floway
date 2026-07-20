@@ -581,9 +581,9 @@ export const consumeTurnStreaming = async function* (
 
       const downstreamIndex = merge.outputIndex++;
       openItems.set(upstreamIndex, downstreamIndex);
-      const upstreamItemId = (item as { id?: unknown }).id;
-      const itemId = typeof upstreamItemId === 'string' && upstreamItemId.length > 0
-        ? upstreamItemId
+      const wireItemId = (item as { id?: unknown }).id;
+      const itemId = typeof wireItemId === 'string' && wireItemId.length > 0
+        ? wireItemId
         : item.type === 'message'
           ? createRandomResponsesItemId('message')
           : undefined;
@@ -591,7 +591,7 @@ export const consumeTurnStreaming = async function* (
       yield stamp({
         type: 'response.output_item.added',
         output_index: downstreamIndex,
-        item: itemId !== undefined && upstreamItemId !== itemId ? { ...item, id: itemId } as ResponsesOutputItem : item,
+        item: itemId !== undefined && wireItemId !== itemId ? { ...item, id: itemId } as ResponsesOutputItem : item,
       });
       continue;
     }
