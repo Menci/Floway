@@ -222,7 +222,7 @@ const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
     const selector = compactSelector(draft);
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates: { ...draft.rates } };
   });
-  const pricedDimensions = new Set(Object.keys(basePricingEntry.value?.rates ?? {}));
+  const pricedDimensions = new Set(drafts.flatMap(draft => Object.keys(draft.rates)));
   const units: ModelPricing['units'] = {};
   for (const dimension of BILLING_DIMENSIONS) {
     if (pricedDimensions.has(dimension)) units[dimension] = pricingUnits.value[dimension] ?? 'tokens_1m';
