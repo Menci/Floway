@@ -119,6 +119,11 @@ export interface CodexUpstreamConfig {
   accounts: CodexAccountIdentity[];
 }
 
+export interface CodexUltraConfig {
+  enabled: boolean;
+  redirectEffort: string;
+}
+
 export interface OllamaUpstreamConfig {
   baseUrl: string;
   apiKey?: string | null;

@@ -4,10 +4,11 @@ import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { ModelAlias, ProxyRecord, SearchConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { CodexUltraConfig, ModelAlias, ProxyRecord, SearchConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import AliasEditDialog from '../../components/alias-edit/AliasEditDialog.vue';
 import ProxyEditDialog from '../../components/proxy-edit/ProxyEditDialog.vue';
 import AliasesSettingsCard from '../../components/settings/AliasesSettingsCard.vue';
+import CodexUltraConfigSection from '../../components/settings/CodexUltraConfigSection.vue';
 import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
 import ExportSection from '../../components/settings/ExportSection.vue';
 import ImportSection from '../../components/settings/ImportSection.vue';
@@ -28,10 +29,16 @@ const defaultSearchConfig: SearchConfig = {
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
 
+const defaultCodexUltraConfig: CodexUltraConfig = {
+  enabled: false,
+  redirectEffort: 'max',
+};
+
 export const useSettingsPageData = defineBasicLoader(async () => {
   const api = useApi();
-  const [searchRes] = await Promise.all([
+  const [searchRes, codexUltraRes] = await Promise.all([
     callApi<SearchConfig>(() => api.api['search-config'].$get()),
+    callApi<CodexUltraConfig>(() => api.api['codex-ultra-config'].$get()),
     useUpstreamsStore().load(),
     useProxiesStore().load(),
     useModelAliases().load(),
@@ -41,6 +48,8 @@ export const useSettingsPageData = defineBasicLoader(async () => {
   return {
     searchConfig: searchRes.data ?? defaultSearchConfig,
     searchConfigError: searchRes.error?.message ?? null,
+    codexUltraConfig: codexUltraRes.data ?? defaultCodexUltraConfig,
+    codexUltraConfigError: codexUltraRes.error?.message ?? null,
   };
 });
 </script>
@@ -119,6 +128,10 @@ const openAliasDialog = (record: ModelAlias | null): void => {
           :initial-error="settingsData.data.value.searchConfigError"
           :upstreams="ordered"
           :models="modelsStore.models.value ?? []"
+        />
+        <CodexUltraConfigSection
+          :initial-config="settingsData.data.value.codexUltraConfig"
+          :initial-error="settingsData.data.value.codexUltraConfigError"
         />
       </div>
 
