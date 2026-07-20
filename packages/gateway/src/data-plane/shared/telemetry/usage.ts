@@ -1,6 +1,7 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
+import { tokenUsageDimensions } from '../../../repo/usage-dimensions.ts';
 import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, priceRequest } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -141,15 +142,13 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
   const { tier, ...tokens } = usage ?? {};
   const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
   const priced = priceRequest(modelIdentity.pricing, { serviceTier: tier, inputTokens });
-  const dimensions = BILLING_DIMENSIONS.flatMap(dimension => {
-    const quantity = tokens[dimension] ?? 0;
-    if (quantity <= 0) return [];
+  for (const dimension of BILLING_DIMENSIONS) {
     const pricingUnit = priced.units?.[dimension];
     if (pricingUnit !== undefined && pricingUnit !== 'tokens_1m') {
       throw new Error(`Token usage dimension ${dimension} has non-token pricing unit ${pricingUnit}`);
     }
-    return [{ dimension, unit: 'tokens_1m' as const, quantity, unitPrice: priced.rates?.[dimension] ?? null }];
-  });
+  }
+  const dimensions = tokenUsageDimensions(tokens, priced.rates);
   await Promise.all([
     getRepo().usage.record({
       keyId,
