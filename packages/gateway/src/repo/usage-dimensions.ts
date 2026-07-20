@@ -1,12 +1,20 @@
 import type { TokenUsage, UsageDimensionRecord, UsageQuantities, UsageRecord } from './types.ts';
 import { BILLING_DIMENSIONS, type PriceUnits, type PriceVector } from '@floway-dev/protocols/common';
 
-export const usageDimensionRows = (record: UsageRecord): UsageDimensionRecord[] => record.dimensions.filter(row => row.quantity > 0);
+export const usageDimensionRows = (record: UsageRecord): UsageDimensionRecord[] => {
+  const seen = new Set<string>();
+  for (const row of record.dimensions) {
+    const key = `${row.dimension}\0${row.unit}`;
+    if (seen.has(key)) throw new Error(`Duplicate usage dimension and unit: ${row.dimension}, ${row.unit}`);
+    seen.add(key);
+  }
+  return record.dimensions;
+};
 
 export const usageDimensions = (quantities: UsageQuantities, units: PriceUnits, rates: PriceVector | null): UsageDimensionRecord[] =>
   BILLING_DIMENSIONS.flatMap(dimension => {
-    const quantity = quantities[dimension] ?? 0;
-    if (quantity <= 0) return [];
+    const quantity = quantities[dimension];
+    if (quantity === undefined) return [];
     const unit = units[dimension];
     if (unit === undefined) throw new Error(`Usage dimension ${dimension} has no unit`);
     return [{ dimension, unit, quantity, unitPrice: rates?.[dimension] ?? null }];

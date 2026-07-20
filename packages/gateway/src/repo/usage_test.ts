@@ -7,7 +7,7 @@ import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, UsageRecord } from './types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageDimensions } from './usage-dimensions.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // The usage repo threads the (service tier × input length) grid coordinate
 // through persistence. These cases run against both backends — the SQL repo
@@ -121,4 +121,33 @@ for (const backend of backends) {
     const [row] = await query(repo);
     assertEquals(row.dimensions, [{ dimension: 'input', unit: 'minutes', quantity: 90.5, unitPrice: 0.6 }]);
   });
+
+  test(`${backend.name} usage repo preserves an explicitly measured zero`, async () => {
+    const repo = await backend.make();
+    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 0 }, { input: 2 }) }));
+    const [row] = await query(repo);
+    assertEquals(row.dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 0, unitPrice: 2 }]);
+  });
+
+  test(`${backend.name} usage repo rejects duplicate dimension-unit rows`, async () => {
+    const repo = await backend.make();
+    await assertRejects(() => repo.usage.set(record({
+      dimensions: [
+        { dimension: 'input', unit: 'tokens_1m', quantity: 1, unitPrice: null },
+        { dimension: 'input', unit: 'tokens_1m', quantity: 2, unitPrice: null },
+      ],
+    })), Error, 'Duplicate usage dimension and unit: input, tokens_1m');
+  });
 }
+
+test('SQL usage hydration rejects vocabulary unknown to the current application', async () => {
+  const db = await createSqliteTestDb();
+  await db.prepare(`INSERT INTO usage (
+    key_id, model, upstream, model_key, hour, pricing_selector,
+    dimension, unit, quantity, unit_price
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    'key-1', 'model', null, 'model', '2026-07-12T00', '{}',
+    'reasoning', 'tokens_1m', 1, null,
+  ).run();
+  await assertRejects(() => new SqlRepo(db).usage.listAll(), TypeError, 'usage.dimension is invalid: "reasoning"');
+});

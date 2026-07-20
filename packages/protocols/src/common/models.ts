@@ -26,8 +26,18 @@ export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write
 // Iteration form of BillingDimension; the type union is the source of truth.
 export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'];
 
+export const parseBillingDimension = (value: unknown, label = 'billing dimension'): BillingDimension => {
+  if (typeof value === 'string' && (BILLING_DIMENSIONS as readonly string[]).includes(value)) return value as BillingDimension;
+  throw new TypeError(`${label} is invalid: ${JSON.stringify(value)}`);
+};
+
 export const BILLING_UNITS = ['tokens_1m', 'minutes', 'searches_1k'] as const;
 export type BillingUnit = typeof BILLING_UNITS[number];
+
+export const parseBillingUnit = (value: unknown, label = 'billing unit'): BillingUnit => {
+  if (typeof value === 'string' && (BILLING_UNITS as readonly string[]).includes(value)) return value as BillingUnit;
+  throw new TypeError(`${label} is invalid: ${JSON.stringify(value)}`);
+};
 
 export const BILLING_UNIT_SCALES: Readonly<Record<BillingUnit, number>> = {
   tokens_1m: 1_000_000,

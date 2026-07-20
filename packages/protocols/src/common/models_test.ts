@@ -6,6 +6,8 @@ import {
   canonicalizePricingSelector,
   collectModelPricingIssues,
   tokenModelPricing,
+  parseBillingDimension,
+  parseBillingUnit,
   parsePricingSelectorKey,
   priceRequest,
   pricingEntry,
@@ -14,6 +16,13 @@ import {
   type PricingSelector,
 } from './models.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
+
+test('billing storage parsers accept current vocabulary and reject unknown values', () => {
+  assertEquals(parseBillingDimension('input'), 'input');
+  assertEquals(parseBillingUnit('minutes'), 'minutes');
+  assertThrows(() => parseBillingDimension('reasoning'), TypeError, 'billing dimension is invalid: "reasoning"');
+  assertThrows(() => parseBillingUnit('requests'), TypeError, 'billing unit is invalid: "requests"');
+});
 
 test('canonical selector JSON sorts axis keys and threshold object keys deterministically', () => {
   const first: PricingSelector = { serviceTier: 'priority', inputTokens: { value: 272000, operator: 'gt' } };
