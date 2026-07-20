@@ -320,14 +320,14 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     }
   }
 
-  refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+  async refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
     const existing = items.map(item => this.items.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const missingIndex = existing.findIndex(item => item === undefined);
     if (missingIndex !== -1) {
-      return Promise.reject(new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`));
+      throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
     }
+    for (const [index, item] of existing.entries()) assertSameStoredResponsesItem(items[index], item!);
     for (const item of existing) item!.createdAt = Math.max(item!.createdAt, createdAt);
-    return Promise.resolve();
   }
 
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
