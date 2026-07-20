@@ -249,6 +249,6 @@ describe('modelsField rerank targets', () => {
       kind: 'rerank',
       endpoints: { chatCompletions: {} },
       rerankTarget: { protocol: 'cohere-v2' },
-    }], 'p')).toThrow(/does not match the declared chat endpoints/);
+    }], 'p')).toThrow(/kind === 'rerank' and endpoints\.rerank must be declared together/);
   });
 });
