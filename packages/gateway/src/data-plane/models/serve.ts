@@ -4,7 +4,7 @@
 
 import type { Context } from 'hono';
 
-import { CLAUDE_CODE_PICKER_ID_ACCEPT, CLAUDE_CODE_SYNTHETIC_PREFIX } from './claude-code-prefix.ts';
+import { encodeClaudeCodeModelId } from './claude-code-prefix.ts';
 import { loadModels } from './load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -40,10 +40,10 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // prefixes. We prepend `CLAUDE_CODE_SYNTHETIC_PREFIX` on those ids so
 // the picker admits them; because the picker renders `display_name`
 // (with id as a fallback), the original label the operator configured
-// is what the user sees. The prefix is stripped back off in
-// `enumerateModelCandidates` when the same id comes in on `/v1/messages`
-// (or any other data-plane endpoint) so routing lands on the real
-// model.
+// is what the user sees. The Messages entry boundary decodes exactly one
+// prefix layer when the same id comes back from a `claude-cli/*` inference
+// request, so generic model resolution remains unaware of this client
+// compatibility projection.
 //
 // (3) Mirroring the official shape (instead of the OpenAI-Anthropic
 // superset the handler serves everyone else) also lets any future
@@ -68,12 +68,10 @@ const toClaudeCodeShape = (response: PublicModelsResponse) => {
   // and by `loadGeminiModels` at ./gemini.ts.
   const data = response.data.filter(model => model.kind === 'chat').map(model => {
     const max = model.limits.max_context_window_tokens;
-    // Prefix decision runs on the raw id (so a real `claude-*` never gets
-    // double-prefixed), then [1m] is appended to the possibly-prefixed
-    // form so the CLI's suffix strip lands cleanly on either shape.
-    const accepted = CLAUDE_CODE_PICKER_ID_ACCEPT.test(model.id);
-    const withPrefix = accepted ? model.id : `${CLAUDE_CODE_SYNTHETIC_PREFIX}${model.id}`;
-    const withSuffix = max !== undefined && max >= 1_000_000 ? `${withPrefix}[1m]` : withPrefix;
+    // Encode the raw id before [1m] is appended, so the CLI's suffix strip
+    // lands on exactly the reversible discovery id.
+    const encoded = encodeClaudeCodeModelId(model.id);
+    const withSuffix = max !== undefined && max >= 1_000_000 ? `${encoded}[1m]` : encoded;
     return {
       id: withSuffix,
       type: 'model' as const,

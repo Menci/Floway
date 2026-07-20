@@ -1,5 +1,6 @@
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
+import { decodeClaudeCodeModelId } from '../../models/claude-code-prefix.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
@@ -27,7 +28,7 @@ export const messagesServe = {
     const { payload, ctx, headers } = args;
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
-      model: payload.model,
+      model: decodeClaudeCodeModelId(payload.model, headers.get('user-agent') ?? undefined),
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
@@ -61,7 +62,7 @@ export const messagesServe = {
     const { payload, ctx, headers } = args;
     const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
-      model: payload.model,
+      model: decodeClaudeCodeModelId(payload.model, headers.get('user-agent') ?? undefined),
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,

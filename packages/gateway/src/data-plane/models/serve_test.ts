@@ -977,11 +977,11 @@ test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model
   );
 });
 
-// Non-Anthropic ids get a `claude-code:` synthetic prefix so the CLI's
+// Non-Anthropic ids get a `claude-code!` synthetic prefix so the CLI's
 // `/^(claude|anthropic)/i` picker filter admits them. `display_name`
 // stays untouched because the picker renders `display_name ?? id`, so the
 // operator-configured label reaches the user unchanged. The `[1m]` suffix
-// composes on the possibly-prefixed form (`claude-code:<id>[1m]`).
+// composes on the possibly-prefixed form (`claude-code!<id>[1m]`).
 // Embedding and image models are dropped upstream of the prefix rewrite —
 // the picker is a chat surface, matching the same chat-only narrow the
 // Codex and Gemini discovery handlers already apply.
@@ -1034,6 +1034,16 @@ test('/v1/models prefixes non-Anthropic ids for the Claude Code CLI picker while
               maxOutputTokens: 16_384,
             },
             {
+              id: 'claude-code!gpt-4o',
+              display_name: 'Literal Prefixed GPT-4o',
+              supported_endpoints: ['/chat/completions'],
+            },
+            {
+              id: 'claude-code!claude-code!gpt-4o',
+              display_name: 'Literal Doubly Prefixed GPT-4o',
+              supported_endpoints: ['/chat/completions'],
+            },
+            {
               id: 'gpt-5-1m',
               display_name: 'GPT-5 (1M)',
               supported_endpoints: ['/chat/completions'],
@@ -1065,17 +1075,22 @@ test('/v1/models prefixes non-Anthropic ids for the Claude Code CLI picker while
 
       // Real Anthropic id passes the picker filter as-is; [1m] still lands.
       assertEquals(byDisplayName.get('Claude Opus 4.7'), 'claude-opus-4-7[1m]');
-      // Non-Anthropic id gets the synthetic prefix so it reaches the menu.
-      assertEquals(byDisplayName.get('GPT-4o'), 'claude-code:gpt-4o');
+      // Non-Anthropic ids gain one prefix; literal prefixed ids gain another.
+      // This keeps every advertised id unique without reserving `!` from raw
+      // upstream ids.
+      assertEquals(byDisplayName.get('GPT-4o'), 'claude-code!gpt-4o');
+      assertEquals(byDisplayName.get('Literal Prefixed GPT-4o'), 'claude-code!claude-code!gpt-4o');
+      assertEquals(byDisplayName.get('Literal Doubly Prefixed GPT-4o'), 'claude-code!claude-code!claude-code!gpt-4o');
+      assertEquals(new Set(claudeCodeBody.data.map(m => m.id)).size, claudeCodeBody.data.length);
       // Prefix composes with the [1m] suffix on 1M-capable non-Anthropic models.
-      assertEquals(byDisplayName.get('GPT-5 (1M)'), 'claude-code:gpt-5-1m[1m]');
+      assertEquals(byDisplayName.get('GPT-5 (1M)'), 'claude-code!gpt-5-1m[1m]');
 
       // Non-chat kinds never reach the picker — they would only clutter
       // a chat-only surface, and the CLI can't dispatch to them anyway.
       const ids = claudeCodeBody.data.map(m => m.id);
-      assertEquals(ids.includes('claude-code:text-embedding-3-large'), false);
-      assertEquals(ids.includes('claude-code:gpt-image-2'), false);
-      assertEquals(claudeCodeBody.data.length, 3);
+      assertEquals(ids.includes('claude-code!text-embedding-3-large'), false);
+      assertEquals(ids.includes('claude-code!gpt-image-2'), false);
+      assertEquals(claudeCodeBody.data.length, 5);
 
       // Non-CC caller still gets the OpenAI-Anthropic superset — full catalog
       // with all kinds, raw ids, no prefix applied.
@@ -1084,7 +1099,15 @@ test('/v1/models prefixes non-Anthropic ids for the Claude Code CLI picker while
       });
       const openAiBody = (await openAiResp.json()) as { data: Array<{ id: string }> };
       const openAiIds = openAiBody.data.map(m => m.id).sort();
-      assertEquals(openAiIds, ['claude-opus-4-7', 'gpt-4o', 'gpt-5-1m', 'gpt-image-2', 'text-embedding-3-large']);
+      assertEquals(openAiIds, [
+        'claude-code!claude-code!gpt-4o',
+        'claude-code!gpt-4o',
+        'claude-opus-4-7',
+        'gpt-4o',
+        'gpt-5-1m',
+        'gpt-image-2',
+        'text-embedding-3-large',
+      ]);
     },
   );
 });

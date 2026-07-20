@@ -30,24 +30,37 @@
 //  - `label: display_name ?? id` — the picker renders `display_name` to
 //    the user; the id itself is only shown on the wire. Rewriting the
 //    id is invisible in the UI.
-//  - The synthetic prefix used here (`claude-code:`) starts with
-//    `claude`, so any non-Anthropic id we advertise passes the first
-//    filter. It never exact-matches a built-in family string, so the
-//    second filter also passes (`knownFamily('claude-code:gpt-5')`
-//    returns null). This mirrors the same de-collision trick that
-//    lets `<id>[1m]` variants surface — the bracket suffix guarantees
-//    the synthesized id can never coincide with a built-in family
-//    string.
-//
-// The prefix is a Floway-owned convention: `claude-code:` was chosen
-// over `claude-` because a bare `claude-` prefix would masquerade a
-// non-Anthropic model as a Claude family member in any log / trace /
-// error the user sees; the `code:` segment plus the colon separator
-// make it visually obvious to anyone reading the wire that the id is
-// a gateway alias, not an upstream-native Anthropic name.
-export const CLAUDE_CODE_SYNTHETIC_PREFIX = 'claude-code:';
+//  - `claude-code!` passes the first filter and never exact-matches a
+//    built-in family string, so prefixed non-Anthropic ids survive both
+//    filters without masquerading as an upstream-native Claude family.
+//  - The prefix is an encoding marker, not a reserved model-id namespace.
+//    Floway model ids are opaque, so discovery also prefixes a raw id that
+//    already begins with the marker. This prefix-doubling makes the mapping
+//    injective: M, P+M, and P+P+M become P+M, P+P+M, and P+P+P+M.
+export const CLAUDE_CODE_SYNTHETIC_PREFIX = 'claude-code!';
 
 // Ids the CLI's `/^(claude|anthropic)/i` picker filter accepts without
-// prefixing. Kept as a single shared regex so `toClaudeCodeShape` (which
-// decides whether to prepend) and any future consumer stay in lockstep.
+// prefixing. Kept next to the encoder so the accept and escape decisions
+// cannot drift apart.
 export const CLAUDE_CODE_PICKER_ID_ACCEPT = /^(claude|anthropic)/i;
+
+export const encodeClaudeCodeModelId = (modelId: string): string =>
+  CLAUDE_CODE_PICKER_ID_ACCEPT.test(modelId)
+  && !modelId.startsWith(CLAUDE_CODE_SYNTHETIC_PREFIX)
+    ? modelId
+    : `${CLAUDE_CODE_SYNTHETIC_PREFIX}${modelId}`;
+
+// Claude Code inference requests use the Anthropic SDK's `claude-cli/*`
+// User-Agent rather than the `claude-code/*` discovery identity. The same
+// leading product token is part of the real-client detector documented at
+// https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/claude_code_validator.go
+// Decode exactly one layer before Messages model resolution; other clients'
+// opaque ids must pass through untouched.
+export const decodeClaudeCodeModelId = (
+  modelId: string,
+  userAgent: string | undefined,
+): string =>
+  userAgent?.startsWith('claude-cli/') === true
+  && modelId.startsWith(CLAUDE_CODE_SYNTHETIC_PREFIX)
+    ? modelId.slice(CLAUDE_CODE_SYNTHETIC_PREFIX.length)
+    : modelId;
