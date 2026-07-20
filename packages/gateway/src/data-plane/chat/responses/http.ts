@@ -5,7 +5,6 @@ import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
-import { loadCodexUltraConfig } from '../../codex/ultra-config.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -71,13 +70,13 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
 const parsePayload = (requestBody: RequestBody): CanonicalResponsesPayload =>
   canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesRequestPayload);
 
-const generate = async (c: AuthedContext, codexUltraRedirectEffort: string | null): Promise<Response> => {
+const generate = async (c: AuthedContext): Promise<Response> => {
   const requestBody = await readRequestBody(c);
   let ctx: ChatGatewayCtx | undefined;
   try {
     const payload = parsePayload(requestBody);
     const wantsStream = payload.stream === true;
-    ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c), codexUltraRedirectEffort }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+    ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
     const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
     const response = await respondResponses(c, result, wantsStream, ctx);
     return finalizeGatewayResponse(ctx, response);
@@ -86,12 +85,12 @@ const generate = async (c: AuthedContext, codexUltraRedirectEffort: string | nul
   }
 };
 
-const compact = async (c: AuthedContext, codexUltraRedirectEffort: string | null): Promise<Response> => {
+const compact = async (c: AuthedContext): Promise<Response> => {
   const requestBody = await readRequestBody(c);
   let ctx: ChatGatewayCtx | undefined;
   try {
     const payload = parsePayload(requestBody);
-    ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c), codexUltraRedirectEffort }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+    ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
     const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
     if (result.type === 'result') {
       // Compact drains the upstream stream into a single envelope with
@@ -124,17 +123,6 @@ const compact = async (c: AuthedContext, codexUltraRedirectEffort: string | null
 };
 
 export const responsesHttp = {
-  generate: async (c: AuthedContext): Promise<Response> => await generate(c, null),
-
-  generateCodex: async (c: AuthedContext): Promise<Response> => {
-    const config = await loadCodexUltraConfig();
-    return await generate(c, config.enabled ? config.redirectEffort : null);
-  },
-
-  compact: async (c: AuthedContext): Promise<Response> => await compact(c, null),
-
-  compactCodex: async (c: AuthedContext): Promise<Response> => {
-    const config = await loadCodexUltraConfig();
-    return await compact(c, config.enabled ? config.redirectEffort : null);
-  },
+  generate,
+  compact,
 };

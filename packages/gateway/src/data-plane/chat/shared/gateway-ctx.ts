@@ -60,10 +60,6 @@ export interface GatewayCtx {
 export interface ChatGatewayCtx extends GatewayCtx {
   readonly affinity: AffinityRequestContext;
   readonly store: StatefulResponsesStore;
-  // Non-null only for the Codex compatibility namespace while its Ultra
-  // support setting is enabled. Kept request-local and out of upstream
-  // headers/body metadata; the source-protocol interceptor consumes it.
-  readonly codexUltraRedirectEffort: string | null;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -97,7 +93,6 @@ export interface CreateGatewayCtxOptions {
   // fetch handler is still active, so per-message tasks fired after the
   // 101 upgrade has returned still complete.
   backgroundScheduler: BackgroundScheduler;
-  codexUltraRedirectEffort?: string | null;
 }
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
@@ -142,6 +137,5 @@ export const createChatGatewayCtxFromHono = (
     ...base,
     affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
     store: storeFactory(base.apiKeyId),
-    codexUltraRedirectEffort: opts.codexUltraRedirectEffort ?? null,
   };
 };

@@ -1,6 +1,5 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withResponsesOutputItemsCanonicalized } from './canonicalize-output-items.ts';
-import { withCodexUltraEffortRedirected } from './codex-ultra-redirect.ts';
 import { withResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
@@ -21,13 +20,9 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 // after pairwise translation has finished.
 //
 // Order matters: earlier entries wrap later ones.
-//   - withCodexUltraEffortRedirected: runs before the compact shim so both
-//     ordinary turns and compact requests that pivot into a generated summary
-//     receive the configured Ultra target.
-//   - withResponsesCompactShim: runs immediately inside the source-compat
-//     redirect so the action pivot ('compact' → 'generate' for the inner
-//     summarization turn) is visible to every downstream interceptor + the
-//     provider terminal. Also
+//   - withResponsesCompactShim: runs outermost so the action pivot
+//     ('compact' → 'generate' for the inner summarization turn) is visible
+//     to every downstream interceptor + the provider terminal. Also
 //     responsible for inbound expansion of prior shim-encoded compaction
 //     items so the upstream sees the summarized history.
 //   - withResponsesServerToolShim: wraps the multi-turn ReAct loop around
@@ -54,7 +49,6 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //     consumers (server-tool shim, storage layer's id mapper, replay
 //     affinity) then see a single canonical pair per item.
 export const responsesInterceptors: readonly ResponsesInterceptor[] = [
-  withCodexUltraEffortRedirected,
   withResponsesCompactShim,
   withResponsesServerToolShim([
     webSearchServerTool,

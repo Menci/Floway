@@ -32,6 +32,5 @@ export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): Cha
     ...base,
     affinity,
     store: overrides.store ?? createResponsesHttpStore(base.apiKeyId, false),
-    codexUltraRedirectEffort: overrides.codexUltraRedirectEffort ?? null,
   };
 };
