@@ -15,6 +15,7 @@ const base = (): CatalogModel => ({
 describe('Codex Ultra catalog support', () => {
   test.each([
     ['codex_exec/0.143.9 (test)', false],
+    ['codex_exec/0.144.0-rc.1 (test)', false],
     ['codex_exec/0.144.0 (test)', true],
     ['codex_cli_rs/0.144.1 (test)', true],
     ['codex_cli_rs/1.0.0-test (test)', true],

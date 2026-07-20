@@ -29,12 +29,13 @@ const isReasoningLevel = (value: unknown): value is ReasoningLevel =>
 export const codexClientSupportsUltra = (userAgent: string | undefined): boolean => {
   const version = parseCodexVersion(userAgent);
   if (version === null) return false;
-  const core = version.split('-', 1)[0]!.split('.').map(Number);
+  const [coreVersion, prerelease] = version.split('-', 2);
+  const core = coreVersion!.split('.').map(Number);
   for (let index = 0; index < CODEX_ULTRA_MIN_CLIENT_VERSION.length; index++) {
     const difference = (core[index] ?? 0) - CODEX_ULTRA_MIN_CLIENT_VERSION[index];
     if (difference !== 0) return difference > 0;
   }
-  return true;
+  return prerelease === undefined;
 };
 
 export const applyCodexUltraCatalogSupport = (
