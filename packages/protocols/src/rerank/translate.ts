@@ -190,6 +190,11 @@ export const rerankRequestIncompatibility = (
   protocol: RerankProtocol,
   request: CanonicalRerankRequest,
 ): string | null => {
+  const hasJinaImageInput = request.sourceProtocol === 'jina-v1'
+    && [request.query, ...request.documents].some(input => typeof input !== 'string' && typeof input.image === 'string');
+  if (hasJinaImageInput && protocol !== 'jina-v1' && protocol !== 'dashscope-native') {
+    return 'image query/documents require a Jina or DashScope native target';
+  }
   if (protocol !== 'cohere-v1' && (request.rankFields !== undefined || request.maxChunksPerDocument !== undefined)) {
     return 'rank_fields and max_chunks_per_doc require a Cohere v1 target';
   }
@@ -324,6 +329,12 @@ const requiredInputTokensFrom = (value: unknown): number => {
   return inputTokens;
 };
 
+const optionalUsage = (
+  value: Record<string, unknown>,
+  parser: (usage: unknown) => number,
+): Pick<CanonicalRerankResponse, 'totalTokens'> =>
+  value.usage === undefined ? {} : { totalTokens: parser(value.usage) };
+
 const listEnvelopeModel = (value: Record<string, unknown>): string => {
   if (value.object !== 'list') throw new Error('object must be "list"');
   return requiredString(value.model, 'model');
@@ -343,8 +354,27 @@ const cohereUsage = (meta: unknown): Pick<CanonicalRerankResponse, 'totalTokens'
   };
 };
 
+export const parseRerankUsage = (
+  protocol: RerankProtocol,
+  value: unknown,
+): Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'> => {
+  if (!isRecord(value)) return {};
+  switch (protocol) {
+  case 'cohere-v1':
+  case 'cohere-v2':
+    return cohereUsage(value.meta);
+  case 'jina-v1':
+  case 'voyage-v1':
+  case 'dashscope-compatible':
+    return optionalUsage(value, requiredTotalTokensFrom);
+  case 'dashscope-native':
+    return optionalUsage(value, requiredInputTokensFrom);
+  }
+};
+
 export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): CanonicalRerankResponse => {
   if (!isRecord(value)) throw new Error('Rerank response body must be an object');
+  const usage = parseRerankUsage(protocol, value);
   switch (protocol) {
   case 'cohere-v1':
   case 'cohere-v2':
@@ -352,7 +382,7 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
       raw: value,
       ...(typeof value.id === 'string' ? { id: value.id } : {}),
       results: resultsArray(value.results, 'results'),
-      ...cohereUsage(value.meta),
+      ...usage,
     };
   case 'jina-v1': {
     const model = listEnvelopeModel(value);
@@ -360,7 +390,7 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
       raw: value,
       model,
       results: resultsArray(value.results, 'results'),
-      totalTokens: requiredTotalTokensFrom(value.usage),
+      ...usage,
     };
   }
   case 'voyage-v1': {
@@ -369,7 +399,7 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
       raw: value,
       model,
       results: resultsArray(value.data, 'data'),
-      totalTokens: requiredTotalTokensFrom(value.usage),
+      ...usage,
     };
   }
   case 'dashscope-compatible': {
@@ -379,7 +409,7 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
       id: requiredString(value.id, 'id'),
       model,
       results: resultsArray(value.results, 'results'),
-      totalTokens: requiredTotalTokensFrom(value.usage),
+      ...usage,
     };
   }
   case 'dashscope-native': {
@@ -388,7 +418,7 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
       raw: value,
       id: requiredString(value.request_id, 'request_id'),
       results: resultsArray(value.output.results, 'output.results'),
-      totalTokens: requiredInputTokensFrom(value.usage),
+      ...usage,
     };
   }
   }

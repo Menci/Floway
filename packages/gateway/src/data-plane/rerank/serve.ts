@@ -13,7 +13,7 @@ import { buildUpstreamCallOptions, telemetryModelIdentity, upstreamPerformanceCo
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import type { RerankSourceProtocol, RerankTarget } from '@floway-dev/protocols/common';
-import { parseRerankRequest, parseRerankResponse, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankRequest, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
+import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankRequest, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { ModelCandidate, ProviderRerankCallResult, TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -170,8 +170,8 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
     }
 
     const upstreamBody = await terminal.response.clone().json() as unknown;
+    measuredUsage = parseRerankUsage(terminal.target.protocol, upstreamBody);
     const canonical = parseRerankResponse(terminal.target.protocol, upstreamBody);
-    measuredUsage = canonical;
     const rendered = renderRerankResponse(sourceProtocol, terminal.target.protocol, canonical, request);
     ctx.dump?.success(terminal.identity, null);
     settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);

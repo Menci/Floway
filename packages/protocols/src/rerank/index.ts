@@ -9,6 +9,7 @@ export {
   DEFAULT_RERANK_PATHS,
   parseRerankRequest,
   parseRerankResponse,
+  parseRerankUsage,
   rerankRequestIncompatibility,
   renderRerankResponse,
   serializeRerankRequest,
