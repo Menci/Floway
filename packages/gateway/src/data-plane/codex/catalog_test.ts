@@ -31,7 +31,7 @@ describe('resolveCodexCatalog', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { resolveCodexCatalog: resolve } = await import('./catalog.ts');
-    const ua = 'codex_exec/0.999.0 (Mac OS 15.0; arm64)';
+    const ua = 'codex_cli_rs/0.999.0 (Mac OS 15.0; arm64)';
     const first = await resolve(ua);
     const second = await resolve(ua);
     expect(first).toEqual(fake);
