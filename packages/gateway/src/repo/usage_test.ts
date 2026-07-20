@@ -112,4 +112,13 @@ for (const backend of backends) {
     assertEquals(tokenCountsFromUsage(row), { input: 300 });
     assertEquals(tokenRatesFromUsage(row), null);
   });
+
+  test(`${backend.name} usage repo preserves non-token units and fractional quantities`, async () => {
+    const repo = await backend.make();
+    await repo.usage.record(record({
+      dimensions: [{ dimension: 'input', unit: 'minutes', quantity: 90.5, unitPrice: 0.6 }],
+    }));
+    const [row] = await query(repo);
+    assertEquals(row.dimensions, [{ dimension: 'input', unit: 'minutes', quantity: 90.5, unitPrice: 0.6 }]);
+  });
 }
