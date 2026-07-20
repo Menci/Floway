@@ -45,8 +45,6 @@ export const wrapResponsesClientOutput = async function* (
   const { store, responseId } = args;
   const upstreamToClient = new Map<string, string>();
   const outputIndexToClient = new Map<number, string>();
-  let stagedOutputGeneration = 0;
-  let startedOutputCommitGeneration = 0;
 
   // A gateway-minted item id is only worth issuing when the mapping back to its
   // upstream origin is persisted (store.writesState) — otherwise a later turn
@@ -76,7 +74,7 @@ export const wrapResponsesClientOutput = async function* (
     return clientId;
   };
 
-  const stageFinalizedItem = async (originalItem: ResponsesInputItem, newId: string, outputIndex: number): Promise<void> => {
+  const persistFinalizedItem = async (originalItem: ResponsesInputItem, newId: string, outputIndex: number): Promise<void> => {
     if (!store.writesState) return;
     const wireId = responsesItemId(originalItem);
     const source = wireId === null ? null : store.outputItemSource(wireId);
@@ -97,19 +95,14 @@ export const wrapResponsesClientOutput = async function* (
       contentHash: await hashResponsesItemContent(clientItem),
       createdAt: now,
     };
-    store.stageOutputItem(row, outputIndex);
-    stagedOutputGeneration += 1;
+    await store.persistOutputItem(row, outputIndex);
   };
 
   // Fallback for an out-of-order delta that references an upstream id before
   // its output-index lifecycle is available.
   const seenItemTypes = new Map<string, string>();
+  const finalizedOutputIndexes = new Set<number>();
   let sawCompactionItem = false;
-  const commitStagedOutput = async (): Promise<void> => {
-    if (!store.writesState || startedOutputCommitGeneration === stagedOutputGeneration) return;
-    startedOutputCommitGeneration = stagedOutputGeneration;
-    await store.commitStagedOutputItems();
-  };
 
   const rewriteEnvelopeIds = (response: ResponsesResult): ResponsesResult => ({
     ...response,
@@ -121,106 +114,90 @@ export const wrapResponsesClientOutput = async function* (
     }),
   });
 
-  try {
-    for await (const frame of frames) {
-      if (frame.type !== 'event') {
-        yield frame;
-        continue;
-      }
-      const event = frame.event;
-
-      // Envelope events that carry `response.id` — overwrite to the
-      // gateway-minted id before any downstream consumer (SSE writer, WS
-      // forwarder, snapshot collector) sees them. Item-level events
-      // (`response.output_item.*`, delta events) do not carry `response.id`
-      // and are handled below.
-      if (event.type === 'response.created' || event.type === 'response.in_progress') {
-        yield eventFrame({ ...event, response: rewriteEnvelopeIds(event.response) });
-        continue;
-      }
-
-      if (event.type === 'response.output_item.added') {
-        const upstreamId = responsesItemId(event.item);
-        if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
-        const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
-        yield eventFrame({ ...event, item: { ...event.item, id: newId } });
-        continue;
-      }
-
-      if (event.type === 'response.output_item.done') {
-        const upstreamId = responsesItemId(event.item);
-        if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
-        const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
-        if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
-        await stageFinalizedItem(event.item as unknown as ResponsesInputItem, newId, event.output_index);
-        await commitStagedOutput();
-        yield eventFrame({ ...event, item: { ...event.item, id: newId } });
-        continue;
-      }
-
-      if (event.type === 'response.completed' || event.type === 'response.incomplete') {
-        const output: ResponsesInputItem[] = [];
-        for (const [outputIndex, item] of event.response.output.entries()) {
-          if (isCompactionItemType(item.type)) sawCompactionItem = true;
-          const upstreamId = responsesItemId(item);
-          if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
-          const newId = clientIdForOutput(upstreamId, item.type, outputIndex);
-          await stageFinalizedItem(item as unknown as ResponsesInputItem, newId, outputIndex);
-          output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
-        }
-        const rewritten = eventFrame({
-          ...event,
-          response: { ...event.response, id: responseId, output: output as typeof event.response.output },
-        });
-        // Commit BEFORE yielding the terminal frame: a consumer that
-        // breaks the for-await on the terminal yield never gives this
-        // generator another tick, so any post-yield work would be lost.
-        // The downstream HTTP entry has nothing to observe pre-snapshot —
-        // ordering matches a synchronous emit.
-        if (store.writesState) {
-          startedOutputCommitGeneration = stagedOutputGeneration;
-          await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
-        }
-        yield rewritten;
-        return;
-      }
-
-      if (event.type === 'response.failed') {
-        await commitStagedOutput();
-        yield eventFrame({ ...event, response: rewriteEnvelopeIds(event.response) });
-        return;
-      }
-      if (event.type === 'error') {
-        await commitStagedOutput();
-        yield frame;
-        return;
-      }
-
-      if ('item_id' in event) {
-        const refId = event.item_id;
-        const lifecycleItemId = outputIndexToClient.get(event.output_index);
-        if (lifecycleItemId !== undefined) {
-          upstreamToClient.set(refId, lifecycleItemId);
-          yield eventFrame({ ...event, item_id: lifecycleItemId } as ResponsesStreamEvent);
-          continue;
-        }
-        const knownType = seenItemTypes.get(refId);
-        if (knownType === undefined) { yield frame; continue; }
-        const newId = clientIdForUpstreamId(refId, knownType);
-        yield eventFrame({ ...event, item_id: newId } as ResponsesStreamEvent);
-        continue;
-      }
+  for await (const frame of frames) {
+    if (frame.type !== 'event') {
       yield frame;
+      continue;
     }
-  } catch (error) {
-    try {
-      await commitStagedOutput();
-    } catch (persistenceError) {
-      throw new AggregateError([error, persistenceError], 'Responses output failed and completed items could not be persisted');
+    const event = frame.event;
+
+    // Envelope events that carry `response.id` — overwrite to the
+    // gateway-minted id before any downstream consumer (SSE writer, WS
+    // forwarder, snapshot collector) sees them. Item-level events
+    // (`response.output_item.*`, delta events) do not carry `response.id`
+    // and are handled below.
+    if (event.type === 'response.created' || event.type === 'response.in_progress') {
+      yield eventFrame({ ...event, response: rewriteEnvelopeIds(event.response) });
+      continue;
     }
-    throw error;
-  } finally {
-    await commitStagedOutput();
+
+    if (event.type === 'response.output_item.added') {
+      const upstreamId = responsesItemId(event.item);
+      if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
+      const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
+      yield eventFrame({ ...event, item: { ...event.item, id: newId } });
+      continue;
+    }
+
+    if (event.type === 'response.output_item.done') {
+      const upstreamId = responsesItemId(event.item);
+      if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
+      const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
+      if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
+      if (!finalizedOutputIndexes.has(event.output_index)) {
+        await persistFinalizedItem(event.item as unknown as ResponsesInputItem, newId, event.output_index);
+        finalizedOutputIndexes.add(event.output_index);
+      }
+      yield eventFrame({ ...event, item: { ...event.item, id: newId } });
+      continue;
+    }
+
+    if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+      const output: ResponsesInputItem[] = [];
+      for (const [outputIndex, item] of event.response.output.entries()) {
+        if (isCompactionItemType(item.type)) sawCompactionItem = true;
+        const upstreamId = responsesItemId(item);
+        if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
+        const newId = clientIdForOutput(upstreamId, item.type, outputIndex);
+        if (!finalizedOutputIndexes.has(outputIndex)) {
+          await persistFinalizedItem(item as unknown as ResponsesInputItem, newId, outputIndex);
+          finalizedOutputIndexes.add(outputIndex);
+        }
+        output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
+      }
+      const rewritten = eventFrame({
+        ...event,
+        response: { ...event.response, id: responseId, output: output as typeof event.response.output },
+      });
+      if (store.writesState) await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
+      yield rewritten;
+      return;
+    }
+
+    if (event.type === 'response.failed') {
+      yield eventFrame({ ...event, response: rewriteEnvelopeIds(event.response) });
+      return;
+    }
+    if (event.type === 'error') {
+      yield frame;
+      return;
+    }
+
+    if ('item_id' in event) {
+      const refId = event.item_id;
+      const lifecycleItemId = outputIndexToClient.get(event.output_index);
+      if (lifecycleItemId !== undefined) {
+        upstreamToClient.set(refId, lifecycleItemId);
+        yield eventFrame({ ...event, item_id: lifecycleItemId } as ResponsesStreamEvent);
+        continue;
+      }
+      const knownType = seenItemTypes.get(refId);
+      if (knownType === undefined) { yield frame; continue; }
+      const newId = clientIdForUpstreamId(refId, knownType);
+      yield eventFrame({ ...event, item_id: newId } as ResponsesStreamEvent);
+      continue;
+    }
+    yield frame;
   }
 };
 

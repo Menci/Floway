@@ -1,5 +1,3 @@
-import { isEqual } from 'es-toolkit';
-
 import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemContent, isResponsesItemId, isTemporaryResponsesItemId, responsesItemId } from './format.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
@@ -15,7 +13,6 @@ interface StatefulResponsesItemLookup {
 interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]>;
   insertItems(items: readonly StoredResponsesItem[]): Promise<void>;
-  replaceItems(items: readonly StoredResponsesItem[]): Promise<void>;
   refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void>;
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
@@ -36,8 +33,7 @@ export interface StatefulResponsesStore {
   loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
-  stageOutputItem(row: StoredResponsesItem, outputIndex: number): void;
-  commitStagedOutputItems(): Promise<void>;
+  persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
   // scratchpad from the candidate's rewritten items and records which upstream
@@ -62,7 +58,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly stagedOutputItemIds = new Map<number, string>();
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
-  private readonly committedOutputItems = new Map<string, StoredResponsesItem>();
   private readonly freshItemIds = new Set<string>();
   private readonly privatePayloads = new Map<string, unknown>();
   private readonly syntheticItemIds = new Set<string>();
@@ -129,34 +124,18 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of items) await this.stageInputItem(item);
   }
 
-  stageOutputItem(row: StoredResponsesItem, outputIndex: number): void {
+  async persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void> {
+    if (this.stagedOutputItemIds.has(outputIndex)) return;
     const cloned = cloneStoredResponsesItem(row);
-    const previous = this.stagedOutputItems.get(cloned.id);
-    if (previous !== undefined) cloned.createdAt = previous.createdAt;
+    await this.commitItems([cloned]);
     this.stagedOutputItems.set(cloned.id, cloned);
     this.stagedOutputItemIds.set(outputIndex, cloned.id);
     this.freshItemIds.add(cloned.id);
     this.rememberItem(cloned);
   }
 
-  async commitStagedOutputItems(): Promise<void> {
-    const staged = [...this.stagedOutputItems.values()];
-    const inserts = staged.filter(row => !this.committedOutputItems.has(row.id));
-    await this.commitItems(inserts);
-
-    const replacements = staged.filter(row => {
-      const committed = this.committedOutputItems.get(row.id);
-      return committed !== undefined && !isEqual(committed, row);
-    });
-    if (replacements.length > 0) {
-      await Promise.all(this.options.writes.map(async write => await write.replaceItems(replacements)));
-    }
-    for (const row of staged) this.committedOutputItems.set(row.id, cloneStoredResponsesItem(row));
-  }
-
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
     if (this.options.writes.length === 0) return;
-    await this.commitStagedOutputItems();
     const outputItemIds = [...this.stagedOutputItemIds.entries()]
       .toSorted(([left], [right]) => left - right)
       .map(([, id]) => id);
@@ -302,10 +281,6 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
     await this.getRepo().responsesItems.insertMany(items);
   }
 
-  async replaceItems(items: readonly StoredResponsesItem[]): Promise<void> {
-    await this.getRepo().responsesItems.replaceMany(items);
-  }
-
   async refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
     await this.getRepo().responsesItems.refreshMany(items, createdAt);
   }
@@ -338,15 +313,6 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
       if (this.items.has(key)) continue;
       this.items.set(key, cloneStoredResponsesItem(item));
     }
-    return Promise.resolve();
-  }
-
-  replaceItems(items: readonly StoredResponsesItem[]): Promise<void> {
-    const missing = items.find(item => !this.items.has(scopedResponsesKey(item.apiKeyId, item.id)));
-    if (missing !== undefined) {
-      return Promise.reject(new Error(`Responses item disappeared before replacement: ${missing.id}`));
-    }
-    for (const item of items) this.items.set(scopedResponsesKey(item.apiKeyId, item.id), cloneStoredResponsesItem(item));
     return Promise.resolve();
   }
 
