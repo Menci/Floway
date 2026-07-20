@@ -50,7 +50,11 @@ const patch = (next: Partial<UpstreamModelConfig>) => {
 
 const setKind = (k: ModelKind) => {
   if (!editable.value || !config.value) return;
-  patch({ kind: k, endpoints: defaultEndpointsForKind(k, config.value.endpoints) });
+  patch({
+    kind: k,
+    endpoints: defaultEndpointsForKind(k, config.value.endpoints),
+    chat: k === 'chat' ? config.value.chat : undefined,
+  });
 };
 
 watch(() => [props.row?.uiId, props.row?.kind] as const, () => {
