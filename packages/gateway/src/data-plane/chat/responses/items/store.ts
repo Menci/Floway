@@ -119,6 +119,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const cloned = cloneStoredResponsesItem(row);
     const sameTurn = this.outputItemsById.get(cloned.id);
     if (sameTurn !== undefined) assertSameStoredResponsesItem(cloned, sameTurn);
+    const stagedOrLoaded = this.loadedItems.get(cloned.id);
+    if (stagedOrLoaded !== undefined) assertSameStoredResponsesItem(cloned, stagedOrLoaded);
     for (const read of this.options.reads) {
       const existing = await read.lookupItems({
         apiKeyId: this.apiKeyId,

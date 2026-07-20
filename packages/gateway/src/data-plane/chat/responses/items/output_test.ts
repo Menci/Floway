@@ -239,6 +239,20 @@ test('store=false rejects conflicting reuse within one output stream', async () 
   await expect(iterator.next()).rejects.toThrow(`Responses item id collision: ${first.id}`);
 });
 
+test('output identity cannot conflict with a staged input from the same turn', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const id = 'msg_input_output_collision';
+  await store.stageInputItems([{ type: 'message', id, role: 'user', content: 'input' }]);
+  const output = { type: 'message' as const, id, role: 'assistant' as const, content: [{ type: 'output_text' as const, text: 'output' }] };
+  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
+  })();
+  const iterator = wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })[Symbol.asyncIterator]();
+
+  await expect(iterator.next()).rejects.toThrow(`Responses item id collision: ${id}`);
+  expect(await repo.responsesItems.lookupMany('key-a', [id])).toEqual([]);
+});
+
 test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' };
