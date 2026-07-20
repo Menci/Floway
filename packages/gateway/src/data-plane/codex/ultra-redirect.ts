@@ -19,10 +19,9 @@ export type CodexMultiAgentMode = 'proactive' | 'explicit-request-only' | 'unkno
 const messageText = (item: ResponsesInputItem): string | null => {
   if (item.type !== 'message' || item.role !== 'developer') return null;
   if (typeof item.content === 'string') return item.content;
-  return item.content
-    .filter(block => block.type === 'input_text' || block.type === 'output_text')
-    .map(block => block.text)
-    .join('\n');
+  return item.content.flatMap(block =>
+    block.type === 'input_text' || block.type === 'output_text' ? [block.text] : [],
+  ).join('\n');
 };
 
 const lastModeBody = (text: string): string | null => {
