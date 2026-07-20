@@ -1,26 +1,26 @@
 // Build a Codex `models.json`-shaped catalog entry for a Floway chat model.
 //
-// Both branches of the pipeline — a bundled catalog match and a registry
-// model with no bundled equivalent — funnel through this one function.
-// `base` is the bundled entry when there is a match, `undefined` otherwise;
+// Both branches of the pipeline — a resolved client-catalog match and a
+// registry model with no catalog equivalent — funnel through this function.
+// `base` is the resolved entry when there is a match, `undefined` otherwise;
 // on `undefined` the hardcoded `BASELINE` fills in the same slot.
 //
 // Field precedence, per field family:
 //
-//   1. `slug` — always the registry public id (bundled base carries the
+//   1. `slug` — always the registry public id (the catalog base carries the
 //      upstream slug; we always overwrite with the operator-visible id).
 //   2. `display_name` — `model.display_name ?? source.display_name`. Registry
-//      wins when the operator set a label; else the bundled/base label
-//      rides through. Bundled-inherit is fine here because display_name is
+//      wins when the operator set a label; else the catalog/base label
+//      rides through. Catalog inheritance is fine here because display_name is
 //      pure UI — inheriting the vendored "GPT-5.5" string when the operator
 //      has not customized it is meaningful, unlike service_tiers below
 //      where a stale bundled value could mis-bill a real request.
 //   3. `service_tiers` — unconditional override with `deriveServiceTiers(model)`.
-//      No fallback to bundled: bundled entries may advertise OpenAI 1p tiers
+//      No fallback to the catalog: official entries may advertise OpenAI 1p tiers
 //      Floway cannot bill, so publishing them without registry-side unit
 //      prices would surface a toggle we could not honor.
 //   4. `context_window` / `max_context_window` — `registry ?? source ?? 128k`.
-//      Registry-supplied limits win; else preserve the base's value (bundled
+//      Registry-supplied limits win; else preserve the base's value (official
 //      entries carry a real OpenAI-vendored window); else the conservative
 //      default so codex's `(cw * 9) / 10` auto-compact math never sees zero.
 //   5. `input_modalities` (and its derived siblings `supports_image_detail_original`
@@ -35,7 +35,7 @@
 //      v2 Ultra semantics and the resulting model supports Max.
 //
 // Fields not listed above ride through from `source` unchanged: the base
-// pass supplies bundled defaults for bundled-hit and hardcoded baselines
+// pass supplies resolved catalog defaults for a hit and hardcoded baselines
 // for the miss path.
 
 import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel } from './catalog.ts';
@@ -49,9 +49,9 @@ import type { InternalModel, Modality } from '@floway-dev/provider';
 // sets `max_context_window_tokens` on the registry entry.
 const CONSERVATIVE_DEFAULT_CONTEXT_WINDOW = 128_000;
 
-// Hardcoded baseline for a codex catalog entry when no bundled match exists.
+// Hardcoded baseline for a codex catalog entry when no resolved match exists.
 // The synthesizer starts from this object (via a shallow spread) and layers
-// registry-derived overlays on top. Bundled matches use the bundled entry
+// registry-derived overlays on top. Catalog matches use the resolved entry
 // as the base and overlay the same fields, so both paths converge on one
 // field-precedence rule set (documented above).
 const BASELINE = {
@@ -116,7 +116,7 @@ export const synthesizeCatalogEntry = (
 
   // Overlay chain for every registry-derived field: `registry ?? source ?? BASELINE`.
   // BASELINE is always the ultimate fallback so a partially-populated `source`
-  // (e.g. a bundled entry from an older codex release that omits a field)
+  // (e.g. an entry from an older Codex release that omits a field)
   // still lands on a valid value.
   const inputModalities = (model.chat?.modalities?.input
     ?? source.input_modalities
@@ -175,7 +175,7 @@ export const synthesizeCatalogEntry = (
 
   // `default_reasoning_level` pairs with `supported_reasoning_levels` — both
   // come from the same source. When registry supplied `effort`, its schema
-  // requires both fields together; otherwise the bundled pair rides through
+  // requires both fields together; otherwise the catalog pair rides through
   // from the spread untouched.
   if (registryEffort !== undefined) {
     entry.default_reasoning_level = registryEffort.default;
@@ -184,8 +184,8 @@ export const synthesizeCatalogEntry = (
   // Miss-path `base_instructions` names the underlying model id so
   // introspection questions ("what model are you?") resolve against the
   // actual routed model instead of confabulating a GPT-5 lineage from the
-  // "Codex" persona. Bundled entries keep their upstream-vendored prompt
-  // (accurate for the GPT-5 family they were shipped for).
+  // "Codex" persona. Catalog matches keep the release-vendored prompt
+  // (accurate for that entry's GPT-5 family).
   if (base === undefined) {
     entry.base_instructions = synthesizedBaseInstructions(model.id, model.display_name ?? model.id);
   }

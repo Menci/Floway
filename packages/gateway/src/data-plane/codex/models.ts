@@ -9,7 +9,7 @@
 // Pipeline: codex publishes a versioned catalog per release (see catalog.ts);
 // for each chat-kind model the registry lists as addressable, we call
 // `synthesizeCatalogEntry(model, base?)` with the segment-matched client
-// entry as `base` (or `undefined` when no bundled entry matches). The
+// catalog entry as `base` (or `undefined` when no catalog entry matches). The
 // synthesizer builds the codex-shaped entry from that base, the registry-owned
 // overlays it announces, and capabilities proven by the exact client catalog
 // (see synthesize.ts for the exact field precedence rules).
@@ -41,7 +41,7 @@ export const assembleCatalog = (
   // Match against the client catalog by walking segments from the trailing leaf back
   // toward the prefix, so a publicId like `openrouter/gpt-5.5/gpt-5.4`
   // binds against `gpt-5.4` rather than the earlier `gpt-5.5` segment that
-  // happens to collide with a bundled slug. Split on both `/` (model-prefix
+  // happens to collide with a catalog slug. Split on both `/` (model-prefix
   // segments) and `:` (OpenRouter-style `:variant` suffixes) — a variant
   // tag on the leaf falls through the walk without accidentally binding.
   const matchCatalog = (publicId: string): CatalogModel | undefined => {
