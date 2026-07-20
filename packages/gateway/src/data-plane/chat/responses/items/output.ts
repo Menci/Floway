@@ -70,9 +70,8 @@ export const wrapResponsesClientOutput = async function* (
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       if (store.writesState) {
-        const missingDone = event.response.output.find((_item, outputIndex) => !finalizedOutputIndexes.has(outputIndex));
-        if (missingDone !== undefined) {
-          throw new TypeError(`Responses terminal output contains ${missingDone.type} before output_item.done`);
+        for (const [outputIndex, item] of event.response.output.entries()) {
+          await persistFinalizedItem(item, outputIndex);
         }
         await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
       }

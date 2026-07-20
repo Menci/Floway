@@ -762,7 +762,9 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
 
       assert(isResponsesResponseId(firstResponseId), 'expected a Floway response id');
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId), null);
-      const firstOutput = firstMessages.find(message => message.type === 'response.output_item.done') as { item?: { id?: string } } | undefined;
+      const firstOutput = firstMessages.find(message =>
+        message.type === 'response.output_item.done'
+        && (message as { item?: { type?: unknown } }).item?.type === 'message') as { item?: { id?: string } } | undefined;
       assertExists(firstOutput?.item?.id);
       assert(/^msg_[0-9a-f]{32}$/.test(firstOutput.item.id), 'expected a Copilot-normalized message id');
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id]), []);
