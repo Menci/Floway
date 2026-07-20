@@ -23,29 +23,17 @@ import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
+import { isForwardableUpstreamHeader } from '../chat/shared/respond.ts';
 import { enumerateModelCandidates } from '../providers/registry.ts';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { PerformanceOperation, InternalModel, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
 
-// Headers we forward verbatim from a successful upstream response, plus
-// content-type with an application/json fallback when the upstream omitted
-// it. The set is intentionally narrow and matches the passthrough contract
-// OpenAI clients (and the OpenAI Node SDK retry policy) expect to see —
-// correlation, organisation/model metadata, quota signals, retry-after.
-const FORWARDED_RESPONSE_HEADER_PREFIXES = ['openai-', 'x-ratelimit-'] as const;
-const FORWARDED_RESPONSE_HEADERS = new Set(['x-request-id', 'retry-after', 'cf-ray']);
-
-const isForwardedResponseHeader = (name: string): boolean => {
-  const lower = name.toLowerCase();
-  return FORWARDED_RESPONSE_HEADERS.has(lower) || FORWARDED_RESPONSE_HEADER_PREFIXES.some(prefix => lower.startsWith(prefix));
-};
-
 export const forwardUpstreamResponse = (resp: Response, body: BodyInit | null = resp.body): Response => {
   const headers = new Headers({ 'content-type': resp.headers.get('content-type') ?? 'application/json' });
   for (const [name, value] of resp.headers.entries()) {
     if (name.toLowerCase() === 'content-type') continue;
-    if (isForwardedResponseHeader(name)) headers.set(name, value);
+    if (isForwardableUpstreamHeader(name)) headers.set(name, value);
   }
   return new Response(body, { status: resp.status, headers });
 };
@@ -55,7 +43,7 @@ export const forwardUpstreamResponse = (resp: Response, body: BodyInit | null = 
 // honors anything set via `c.header()` before it runs.
 const stageForwardedResponseHeaders = (c: Context, resp: Response): void => {
   for (const [name, value] of resp.headers.entries()) {
-    if (isForwardedResponseHeader(name)) c.header(name, value);
+    if (isForwardableUpstreamHeader(name)) c.header(name, value);
   }
 };
 

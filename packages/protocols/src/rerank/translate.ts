@@ -15,6 +15,9 @@ const optionalBoolean = (value: unknown, field: string): boolean | undefined => 
   return value;
 };
 
+const optionalNullableBoolean = (value: unknown, field: string): boolean | undefined =>
+  value === null ? undefined : optionalBoolean(value, field);
+
 const optionalFiniteNumber = (value: unknown, field: string): number | undefined => {
   if (value === undefined) return undefined;
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${field} must be a finite number`);
@@ -121,11 +124,11 @@ export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknow
     // Jina returns documents unless explicitly disabled. Its live OpenAPI is
     // the authority for the model-discriminated text and multimodal inputs:
     // https://api.jina.ai/openapi.json
-    const returnDocuments = optionalBoolean(value.return_documents, 'return_documents') ?? true;
+    const returnDocuments = optionalNullableBoolean(value.return_documents, 'return_documents') ?? true;
     const topN = optionalNullablePositiveInteger(value.top_n, 'top_n');
-    const truncation = optionalBoolean(value.truncation, 'truncation');
+    const truncation = optionalNullableBoolean(value.truncation, 'truncation');
     const maxDocumentLength = optionalPositiveInteger(value.max_doc_length, 'max_doc_length');
-    const returnEmbeddings = optionalBoolean(value.return_embeddings, 'return_embeddings');
+    const returnEmbeddings = optionalNullableBoolean(value.return_embeddings, 'return_embeddings');
     return {
       model,
       request: {
@@ -181,11 +184,35 @@ export const DEFAULT_RERANK_PATHS: Readonly<Record<RerankProtocol, string>> = {
   'dashscope-native': '/api/v1/services/rerank/text-rerank/text-rerank',
 };
 
+export const rerankRequestIncompatibility = (
+  protocol: RerankProtocol,
+  request: CanonicalRerankRequest,
+): string | null => {
+  if (protocol !== 'cohere-v1' && (request.rankFields !== undefined || request.maxChunksPerDocument !== undefined)) {
+    return 'rank_fields and max_chunks_per_doc require a Cohere v1 target';
+  }
+  if (protocol !== 'cohere-v2' && (request.maxTokensPerDocument !== undefined || request.priority !== undefined)) {
+    return 'max_tokens_per_doc and priority require a Cohere v2 target';
+  }
+  if (protocol !== 'jina-v1' && request.maxDocumentLength !== undefined) {
+    return 'max_doc_length requires a Jina target';
+  }
+  if (protocol !== 'jina-v1' && request.returnEmbeddings === true) {
+    return 'return_embeddings=true requires a Jina target';
+  }
+  if (protocol !== 'jina-v1' && protocol !== 'voyage-v1' && request.truncation === false) {
+    return 'truncation=false requires a Jina or Voyage target';
+  }
+  return null;
+};
+
 export const serializeRerankRequest = (
   protocol: RerankProtocol,
   model: string,
   request: CanonicalRerankRequest,
 ): Record<string, unknown> => {
+  const incompatibility = rerankRequestIncompatibility(protocol, request);
+  if (incompatibility !== null) throw new Error(incompatibility);
   if (protocol === request.sourceProtocol) return { ...request.raw, model };
   const strings = request.documents.map(stringInput);
   switch (protocol) {
@@ -286,6 +313,15 @@ const requiredTotalTokensFrom = (value: unknown): number => {
   return totalTokens;
 };
 
+const requiredInputTokensFrom = (value: unknown): number => {
+  if (!isRecord(value) || typeof value.input_tokens !== 'number' || !Number.isFinite(value.input_tokens)) {
+    throw new Error('usage.input_tokens must be a finite number');
+  }
+  const inputTokens = value.input_tokens;
+  if (inputTokens < 0) throw new Error('usage.input_tokens must not be negative');
+  return inputTokens;
+};
+
 const listEnvelopeModel = (value: Record<string, unknown>): string => {
   if (value.object !== 'list') throw new Error('object must be "list"');
   return requiredString(value.model, 'model');
@@ -350,7 +386,7 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
       raw: value,
       id: requiredString(value.request_id, 'request_id'),
       results: resultsArray(value.output.results, 'output.results'),
-      totalTokens: requiredTotalTokensFrom(value.usage),
+      totalTokens: requiredInputTokensFrom(value.usage),
     };
   }
   }

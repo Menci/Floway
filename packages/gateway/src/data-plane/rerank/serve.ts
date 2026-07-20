@@ -13,7 +13,7 @@ import { buildUpstreamCallOptions, telemetryModelIdentity, upstreamPerformanceCo
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import type { RerankSourceProtocol, RerankTarget } from '@floway-dev/protocols/common';
-import { parseRerankRequest, parseRerankResponse, renderRerankResponse, type CanonicalRerankRequest, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
+import { parseRerankRequest, parseRerankResponse, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankRequest, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { ModelCandidate, ProviderRerankCallResult, TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -64,12 +64,19 @@ const settleRerank = (
   ctx: GatewayCtx,
   performanceContext: PerformanceTelemetryContext,
   identity: TelemetryModelIdentity,
-  searchUnits: number | undefined,
+  usage: Pick<CanonicalRerankResponse, 'searchUnits' | 'totalTokens'> | undefined,
   failed: boolean,
 ): void => {
-  const quantities = searchUnits === undefined ? {} : { input: searchUnits };
-  const units = searchUnits === undefined ? {} : { input: 'searches_1k' as const };
-  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, units, {}).catch(error => {
+  let measurement: { quantity: number; unit: 'searches_1k' | 'tokens_1m' } | undefined;
+  if (usage?.searchUnits !== undefined) {
+    measurement = { quantity: usage.searchUnits, unit: 'searches_1k' };
+  } else if (usage?.totalTokens !== undefined) {
+    measurement = { quantity: usage.totalTokens, unit: 'tokens_1m' };
+  }
+  const quantities = measurement === undefined ? {} : { input: measurement.quantity };
+  const units = measurement === undefined ? {} : { input: measurement.unit };
+  const pricingFacts = usage?.totalTokens === undefined ? {} : { inputTokens: usage.totalTokens };
+  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, units, pricingFacts).catch(error => {
     console.error('Failed to record rerank usage:', error);
   }));
   recordPerformance(ctx, performanceContext, failed, 0, performance.now());
@@ -101,6 +108,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
   });
 
   let terminal: RerankAttemptResult | undefined;
+  let measuredUsage: Pick<CanonicalRerankResponse, 'searchUnits' | 'totalTokens'> | undefined;
   let usageSettled = false;
   try {
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
@@ -118,17 +126,28 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       return finalizeGatewayResponse(ctx, apiError(c, appendFailedUpstreams(message, failedUpstreams), sawModel ? 400 : 404));
     }
 
-    const viable = candidates.filter(candidate => {
+    const routable = candidates.flatMap(candidate => {
       const providerModel = providerModelOf(candidate);
-      return candidate.model.endpoints.rerank !== undefined && providerModel.rerankTarget !== undefined;
+      return candidate.model.endpoints.rerank === undefined || providerModel.rerankTarget === undefined
+        ? []
+        : [{ candidate, target: providerModel.rerankTarget }];
     });
-    if (viable.length === 0) {
+    if (routable.length === 0) {
       ctx.dump?.error('gateway');
       return finalizeGatewayResponse(ctx, apiError(c, appendFailedUpstreams(unsupportedMessage(model), failedUpstreams), 400));
     }
+    const viable = routable.filter(({ target }) => rerankRequestIncompatibility(target.protocol, request) === null);
+    if (viable.length === 0) {
+      const reasons = [...new Set(routable.flatMap(({ target }) => {
+        const reason = rerankRequestIncompatibility(target.protocol, request);
+        return reason === null ? [] : [reason];
+      }))];
+      ctx.dump?.error('gateway');
+      return finalizeGatewayResponse(ctx, apiError(c, `Model ${model} does not support this rerank request: ${reasons.join('; ')}.`, 400));
+    }
 
     terminal = await iterateCandidates(
-      viable,
+      viable.map(({ candidate }) => candidate),
       'rerank',
       ctx,
       'rerank',
@@ -144,9 +163,10 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
 
     const upstreamBody = await terminal.response.clone().json() as unknown;
     const canonical = parseRerankResponse(terminal.target.protocol, upstreamBody);
+    measuredUsage = canonical;
     const rendered = renderRerankResponse(sourceProtocol, terminal.target.protocol, canonical, request);
     ctx.dump?.success(terminal.identity, null);
-    settleRerank(ctx, terminal.performance, terminal.identity, canonical.searchUnits, false);
+    settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
     usageSettled = true;
     const response = sourceProtocol === terminal.target.protocol
       ? forwardUpstreamResponse(terminal.response)
@@ -154,7 +174,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
     return finalizeGatewayResponse(ctx, response);
   } catch (error) {
     if (terminal !== undefined && !usageSettled) {
-      settleRerank(ctx, terminal.performance, terminal.identity, undefined, true);
+      settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, true);
     } else if (terminal === undefined) {
       recordFailedRequest(ctx, ctx.attempt.telemetry);
     }

@@ -449,7 +449,13 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
 //
 // Add a value here only when we actually route that endpoint family — do
 // not pre-declare for future capabilities.
-export type ModelKind = 'chat' | 'embedding' | 'image' | 'rerank';
+export const MODEL_KINDS = ['chat', 'embedding', 'image', 'rerank'] as const;
+export type ModelKind = typeof MODEL_KINDS[number];
+
+export const parseModelKind = (value: unknown, label = 'model kind'): ModelKind => {
+  if (typeof value === 'string' && (MODEL_KINDS as readonly string[]).includes(value)) return value as ModelKind;
+  throw new Error(`${label} is invalid: ${JSON.stringify(value)}`);
+};
 
 export const RERANK_PROTOCOLS = [
   'cohere-v1',

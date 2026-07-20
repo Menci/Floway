@@ -1,6 +1,6 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { validateUpstreamPath } from './join.ts';
-import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, kindForEndpoints, RERANK_PROTOCOLS, type BillingDimension, type BillingUnit, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceUnits, type PricingSelector, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, RERANK_PROTOCOLS, type BillingDimension, type BillingUnit, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceUnits, type PricingSelector, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
 
@@ -158,7 +158,6 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
   return pricing;
 };
 
-const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image', 'rerank']);
 const RERANK_PROTOCOL_SET: ReadonlySet<RerankProtocol> = new Set(RERANK_PROTOCOLS);
 
 const MODALITY_VALUES: ReadonlySet<Modality> = new Set<Modality>(['text', 'image']);
@@ -263,7 +262,7 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
 // always writes an explicit kind, keeping it consistent with the endpoints.
 const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): ModelKind => {
   if (value === undefined) return kindForEndpoints(endpoints);
-  if (typeof value !== 'string' || !MODEL_KINDS.has(value as ModelKind)) {
+  if (typeof value !== 'string' || !(MODEL_KINDS as readonly string[]).includes(value)) {
     throw new Error(`Malformed ${label}: must be one of chat, embedding, image, rerank`);
   }
   return value as ModelKind;

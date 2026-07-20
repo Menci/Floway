@@ -9,6 +9,7 @@ export {
   DEFAULT_RERANK_PATHS,
   parseRerankRequest,
   parseRerankResponse,
+  rerankRequestIncompatibility,
   renderRerankResponse,
   serializeRerankRequest,
 } from './translate.ts';
