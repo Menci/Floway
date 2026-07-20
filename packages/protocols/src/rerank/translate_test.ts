@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { DEFAULT_RERANK_PATHS, parseRerankRequest, parseRerankResponse, renderRerankResponse, serializeRerankRequest } from './translate.ts';
+import { DEFAULT_RERANK_PATHS, parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, serializeRerankRequest } from './translate.ts';
 
 describe('rerank request ingress', () => {
   test('Cohere v1 retains structured documents and v1-only options', () => {
@@ -169,6 +169,25 @@ describe('rerank request egress', () => {
     }).request;
     expect(() => serializeRerankRequest('dashscope-compatible', 'raw', voyage)).toThrow('truncation=false requires a Jina or Voyage target');
   });
+
+  test('permits Jina image inputs only on multimodal target protocols', () => {
+    const request = parseRerankRequest('jina-v1', {
+      model: 'jina-reranker-m0',
+      query: { image: 'https://example.com/query.png' },
+      documents: [{ image: 'https://example.com/document.png' }],
+    }).request;
+
+    for (const protocol of ['cohere-v1', 'cohere-v2', 'voyage-v1', 'dashscope-compatible'] as const) {
+      expect(() => serializeRerankRequest(protocol, 'raw', request)).toThrow('image query/documents require a Jina or DashScope native target');
+    }
+    expect(serializeRerankRequest('jina-v1', 'raw', request)).toMatchObject({ query: { image: 'https://example.com/query.png' } });
+    expect(serializeRerankRequest('dashscope-native', 'raw', request)).toMatchObject({
+      input: {
+        query: { image: 'https://example.com/query.png' },
+        documents: [{ image: 'https://example.com/document.png' }],
+      },
+    });
+  });
 });
 
 describe('rerank response translation', () => {
@@ -201,6 +220,20 @@ describe('rerank response translation', () => {
     expect(parseRerankResponse('dashscope-native', {
       request_id: 'request', output: { results: [{ index: 0, relevance_score: 0.5 }] }, usage: { input_tokens: 12 },
     }).results[0]).toEqual({ index: 0, relevanceScore: 0.5 });
+  });
+
+  test('treats omitted usage as absent and malformed present usage as an error', () => {
+    const responses = [
+      ['jina-v1', { object: 'list', model: 'jina', results: [] }],
+      ['voyage-v1', { object: 'list', model: 'voyage', data: [] }],
+      ['dashscope-compatible', { object: 'list', model: 'qwen', id: 'request', results: [] }],
+      ['dashscope-native', { request_id: 'request', output: { results: [] } }],
+    ] as const;
+    for (const [protocol, response] of responses) {
+      expect(parseRerankUsage(protocol, response)).toEqual({});
+      expect(parseRerankResponse(protocol, response).totalTokens).toBeUndefined();
+      expect(() => parseRerankUsage(protocol, { ...response, usage: {} })).toThrow(/usage\.(total_tokens|input_tokens) must be a finite number/);
+    }
   });
 
   test('renders source-specific result containers and reconstructs requested documents', () => {
