@@ -181,13 +181,13 @@ export interface SessionsRepo {
 
 export interface UsageRepo {
   // Additive upsert: on (keyId, model, upstream, modelKey, hour,
-  // pricingSelector) conflict, token counts are summed. The first write for
-  // each dimension establishes its pricing snapshot, including an unpriced
-  // snapshot; later writes that share the bucket keep it unchanged.
+  // pricingSelector, dimension, unit) conflict, quantities are summed. The
+  // first write establishes the unit-price snapshot, including an unpriced
+  // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
   listAll(): Promise<UsageRecord[]>;
-  // Replacement upsert: counts and rates are both overwritten from the record.
+  // Replacement upsert: quantities and unit prices are overwritten from the record.
   set(record: UsageRecord): Promise<void>;
   deleteAll(): Promise<void>;
 }

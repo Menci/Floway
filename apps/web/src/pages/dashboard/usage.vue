@@ -180,10 +180,10 @@ useIntervalFn(() => { void load(); }, 60_000);
 
 const tokenSummary = computed(() => {
   const records = (data.value?.records ?? []).filter(r => !hiddenKeys.value.has(r.keyId) && !hiddenModels.value.has(r.model));
-  let requests = 0, cost = 0, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, inputImage = 0, outputImage = 0;
+  let requests = 0, cost: number | null = null, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, inputImage = 0, outputImage = 0;
   for (const r of records) {
     requests += r.requests;
-    cost += r.cost ?? 0;
+    if (r.cost !== null) cost = (cost ?? 0) + r.cost;
     input += dim(r, 'input');
     output += dim(r, 'output');
     cacheRead += dim(r, 'input_cache_read');
@@ -233,10 +233,10 @@ const TOKEN_CHART_METRICS: Record<Metric, { label: string; kind: 'count' | 'cost
 
 const isPercentMetric = (metric: Metric) => TOKEN_CHART_METRICS[metric].kind === 'percent';
 
-const metricValue = (r: DisplayUsageRecord, metric: Metric): number => {
+const metricValue = (r: DisplayUsageRecord, metric: Metric): number | null => {
   switch (metric) {
   case 'requests': return r.requests;
-  case 'cost': return r.cost ?? 0;
+  case 'cost': return r.cost;
   case 'total': return dim(r, 'input') + dim(r, 'output') + dim(r, 'input_cache_read') + dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h') + dim(r, 'input_image') + dim(r, 'output_image');
   case 'input': return dim(r, 'input') + dim(r, 'input_cache_read') + dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h') + dim(r, 'input_image');
   case 'output': return dim(r, 'output') + dim(r, 'output_image');
@@ -349,7 +349,9 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
     bucketDetails.set(group, detail);
     if (!isPercentMetric(metric)) {
       const bucketValues = values.get(bucket)!;
-      bucketValues.set(group, (bucketValues.get(group) ?? 0) + metricValue(r, metric));
+      const value = metricValue(r, metric);
+      if (value !== null) bucketValues.set(group, (bucketValues.get(group) ?? 0) + value);
+      else if (!bucketValues.has(group)) bucketValues.set(group, null);
     }
   }
   if (isPercentMetric(metric)) {
@@ -412,27 +414,27 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
   const entries = groupKey === 'keyId'
     ? keyChartEntries([...presentGroups], keyMetadataForTokenRecords(allRecords, data.value?.keys ?? []), data.value?.keys.map(k => k.id) ?? [...presentGroups])
     : modelChartEntries([...presentGroups]);
-  // A group can hold all-zero (or, for percent metrics, all-null) values under
-  // the current metric for two distinct reasons, and requests tells them apart:
+  // A group can hold all-zero or all-null values under the current metric for
+  // two distinct reasons, and requests tells them apart:
   // cross-filtering that emptied the group leaves requests at zero too (details
   // aggregate the same cross-filtered records), whereas a group with real but
-  // zero-token traffic — e.g. an upstream that reports no usage — still has
-  // requests > 0. Keep the latter as a flat line at zero so it stays visible in
-  // the token/cost views; drop the former outright, legend entry and line both
-  // gone, instead of rendering an inert line for a group with no activity. Own-
+  // zero-token traffic still has requests > 0, while unavailable pricing is
+  // represented by null. Keep both groups in the legend; drop groups emptied
+  // by cross-filtering instead. Own-
   // dimension hidden groups are a separate, restorable toggle kept struck-through.
   // Percent metrics stay null-only: a ratio over zero tokens is undefined.
   //
-  // Non-percent buckets fall back to `0` (not `null`) so every dataset carries
-  // a numeric value at every index — stacked line rendering then accumulates
-  // correctly and every series draws a continuous line all the way across the
-  // axis, edges included. `spanGaps` only stitches internal gaps, so leaving
-  // nulls in would leave the leading and trailing "no record" buckets unlit.
-  // The tooltip filter reaches back into `details.requests` to distinguish a
-  // synthesized 0 from a real zero-token record.
+  // Missing buckets fall back to zero for continuous stacks; an explicit null
+  // remains null so unavailable cost never becomes a measured zero.
   const hasRequests = (id: string) => bucketKeys.some(k => (details.get(k)?.get(id)?.requests ?? 0) > 0);
   const datasetEntries = entries
-    .map(entry => ({ entry, data: bucketKeys.map(k => values.get(k)!.get(entry.id) ?? (isPercent ? null : 0)) }))
+    .map(entry => ({
+      entry,
+      data: bucketKeys.map(k => {
+        const bucketValues = values.get(k)!;
+        return bucketValues.has(entry.id) ? bucketValues.get(entry.id)! : (isPercent ? null : 0);
+      }),
+    }))
     .filter(({ entry, data }) => isPercent ? data.some(v => v !== null) : (data.some(v => v !== 0) || hasRequests(entry.id)));
   const labelWidth = datasetEntries.reduce((max, { entry }) => Math.max(max, entry.label.length), 0);
   return {
@@ -624,7 +626,8 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
 
 const searchByKeySeriesIds = computed(() => chartSeriesIds(searchByKeyConfig.value));
 
-const formatCost = (v: number) => {
+const formatCost = (v: number | null) => {
+  if (v === null) return '—';
   if (v >= 1) return `$${v.toFixed(2)}`;
   if (v >= 0.01) return `$${v.toFixed(3)}`;
   if (v > 0) return `$${v.toFixed(4)}`;
