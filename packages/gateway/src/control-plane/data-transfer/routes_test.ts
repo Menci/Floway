@@ -732,11 +732,21 @@ test('v12 import validates usage dimension rows', async () => {
   const invalidQuantity = await doImport(app, 'replace', latestImportData({
     usage: [{ ...USAGE_2, dimensions: [{ dimension: 'input', unit: 'tokens_1m', quantity: -1, unitPrice: null }] }],
   }));
+  const duplicateDimensionUnit = await doImport(app, 'replace', latestImportData({
+    usage: [{
+      ...USAGE_2,
+      dimensions: [
+        { dimension: 'input', unit: 'tokens_1m', quantity: 1, unitPrice: null },
+        { dimension: 'input', unit: 'tokens_1m', quantity: 2, unitPrice: null },
+      ],
+    }],
+  }));
 
   assertEquals(missingDimensions.body.error, 'invalid usage at index 0: dimensions must be an array');
   assertEquals(unknownDimension.body.error, 'invalid usage at index 0: unknown usage dimension: "imput"');
   assertEquals(unknownUnit.body.error, 'invalid usage at index 0: unknown billing unit: "requests_1k"');
   assertEquals(invalidQuantity.body.error, 'invalid usage at index 0: dimension quantity must be a finite non-negative number');
+  assertEquals(duplicateDimensionUnit.body.error, 'invalid usage at index 0: duplicate usage dimension and unit: input, tokens_1m');
 });
 
 test('import rejects invalid records before clearing existing data', async () => {

@@ -50,7 +50,7 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { getFileProvider, type SqlDatabase, type SqlPreparedStatement, type SqlResult } from '@floway-dev/platform';
-import { canonicalPricingSelectorKey, parseModelKind, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type BillingUnit } from '@floway-dev/protocols/common';
+import { canonicalPricingSelectorKey, parseBillingDimension, parseBillingUnit, parseModelKind, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, PerformanceOperation, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix } from '@floway-dev/provider';
 
@@ -472,8 +472,8 @@ const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests
   for (const row of dimensions) {
     const record = ensureRecord(row);
     record.dimensions.push({
-      dimension: row.dimension as BillingDimension,
-      unit: row.unit as BillingUnit,
+      dimension: parseBillingDimension(row.dimension, 'usage.dimension'),
+      unit: parseBillingUnit(row.unit, 'usage.unit'),
       quantity: row.quantity,
       unitPrice: row.unit_price,
     });

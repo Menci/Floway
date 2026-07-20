@@ -6,6 +6,8 @@ import {
   canonicalizePricingSelector,
   collectModelPricingIssues,
   tokenModelPricing,
+  parseBillingDimension,
+  parseBillingUnit,
   parsePricingSelectorKey,
   parseModelKind,
   priceRequest,
@@ -20,6 +22,13 @@ test('parseModelKind accepts the current model families and rejects unknown stor
   for (const kind of ['chat', 'embedding', 'image', 'audio'] as const) assertEquals(parseModelKind(kind), kind);
   assertThrows(() => parseModelKind('video'), TypeError, 'Invalid model kind: "video"');
   assertThrows(() => parseModelKind(null), TypeError, 'Invalid model kind: null');
+});
+
+test('billing storage parsers accept current vocabulary and reject unknown values', () => {
+  assertEquals(parseBillingDimension('input'), 'input');
+  assertEquals(parseBillingUnit('minutes'), 'minutes');
+  assertThrows(() => parseBillingDimension('reasoning'), TypeError, 'billing dimension is invalid: "reasoning"');
+  assertThrows(() => parseBillingUnit('requests'), TypeError, 'billing unit is invalid: "requests"');
 });
 
 test('canonical selector JSON sorts axis keys and threshold object keys deterministically', () => {

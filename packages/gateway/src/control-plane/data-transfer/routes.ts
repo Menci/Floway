@@ -390,6 +390,7 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
 const parseImportedDimensions = (value: unknown): { type: 'ok'; dimensions: UsageDimensionRecord[] } | { type: 'invalid'; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', error: 'dimensions must be an array' };
   const dimensions: UsageDimensionRecord[] = [];
+  const seen = new Set<string>();
   for (const row of value) {
     if (!isRecord(row)) return { type: 'invalid', error: 'dimensions must contain objects' };
     if (typeof row.dimension !== 'string' || !BILLING_DIMENSIONS.includes(row.dimension as BillingDimension)) {
@@ -404,6 +405,9 @@ const parseImportedDimensions = (value: unknown): { type: 'ok'; dimensions: Usag
     if (row.unitPrice !== null && (typeof row.unitPrice !== 'number' || !Number.isFinite(row.unitPrice) || row.unitPrice < 0)) {
       return { type: 'invalid', error: 'dimension unitPrice must be a finite non-negative number or null' };
     }
+    const key = `${row.dimension}\0${row.unit}`;
+    if (seen.has(key)) return { type: 'invalid', error: `duplicate usage dimension and unit: ${row.dimension}, ${row.unit}` };
+    seen.add(key);
     dimensions.push({ dimension: row.dimension as BillingDimension, unit: row.unit as BillingUnit, quantity: row.quantity, unitPrice: row.unitPrice });
   }
   return { type: 'ok', dimensions };
