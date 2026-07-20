@@ -1,7 +1,6 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
-import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, RERANK_PROTOCOLS, type BillingDimension, type BillingUnit, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceUnits, type PricingSelector, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
-import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { validateUpstreamPath } from './join.ts';
+import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, kindForEndpoints, RERANK_PROTOCOLS, type BillingDimension, type BillingUnit, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceUnits, type PricingSelector, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
 

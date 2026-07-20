@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { createCustomProvider } from './provider.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
+import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import { assertEquals, assertExists, assertRejects, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {

@@ -353,6 +353,16 @@ const sourceDocument = (request: CanonicalRerankRequest, result: CanonicalRerank
 const cohereDocument = (document: RerankInput): Record<string, unknown> =>
   typeof document === 'string' ? { text: document } : document;
 
+const renderedCohereMeta = (response: CanonicalRerankResponse): Record<string, unknown> =>
+  response.searchUnits === undefined && response.totalTokens === undefined
+    ? {}
+    : {
+        meta: {
+          ...(response.searchUnits === undefined ? {} : { billed_units: { search_units: response.searchUnits } }),
+          ...(response.totalTokens === undefined ? {} : { tokens: { input_tokens: response.totalTokens } }),
+        },
+      };
+
 export const renderRerankResponse = (
   sourceProtocol: InboundRerankProtocol,
   targetProtocol: RerankProtocol,
@@ -369,27 +379,13 @@ export const renderRerankResponse = (
         relevance_score: result.relevanceScore,
         ...(request.returnDocuments === true ? { document: cohereDocument(sourceDocument(request, result)) } : {}),
       })),
-      ...(
-        response.searchUnits === undefined && response.totalTokens === undefined
-          ? {}
-          : { meta: {
-              ...(response.searchUnits === undefined ? {} : { billed_units: { search_units: response.searchUnits } }),
-              ...(response.totalTokens === undefined ? {} : { tokens: { input_tokens: response.totalTokens } }),
-            } }
-      ),
+      ...renderedCohereMeta(response),
     };
   case 'cohere-v2':
     return {
       ...(response.id === undefined ? {} : { id: response.id }),
       results: response.results.map(result => ({ index: result.index, relevance_score: result.relevanceScore })),
-      ...(
-        response.searchUnits === undefined && response.totalTokens === undefined
-          ? {}
-          : { meta: {
-              ...(response.searchUnits === undefined ? {} : { billed_units: { search_units: response.searchUnits } }),
-              ...(response.totalTokens === undefined ? {} : { tokens: { input_tokens: response.totalTokens } }),
-            } }
-      ),
+      ...renderedCohereMeta(response),
     };
   case 'jina-v1':
     return {
