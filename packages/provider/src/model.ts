@@ -144,6 +144,7 @@ export interface PerformanceTelemetryContext {
 // at the producer boundary:
 //   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
 //   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
+//   `kind === 'rerank'`    ⇔ `endpoints === { rerank: {} }`
 //   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
 interface ModelMetadata {
   id: string;

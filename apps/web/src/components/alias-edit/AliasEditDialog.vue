@@ -215,6 +215,7 @@ const KIND_OPTIONS: { value: ModelKind; label: string }[] = [
   { value: 'chat', label: 'Chat' },
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
+  { value: 'rerank', label: 'Rerank' },
 ];
 </script>
 

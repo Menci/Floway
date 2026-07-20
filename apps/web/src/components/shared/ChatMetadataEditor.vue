@@ -13,7 +13,7 @@
 // Kind-gated sub-blocks:
 //   - `chat`      → Limits + Modalities + Reasoning.
 //   - `embedding` → Limits only.
-//   - `image`     → renders nothing (callers should not mount this).
+//   - `image` / `rerank` → renders nothing (callers should not mount this).
 
 import { computed, ref, watch } from 'vue';
 
@@ -34,7 +34,7 @@ const emit = defineEmits<{
 const value = computed<AnnouncedMetadata>(() => props.modelValue ?? {});
 const editable = computed(() => props.mode === 'manual');
 const showChatBlocks = computed(() => props.kind === 'chat');
-const renderAnything = computed(() => props.kind !== 'image');
+const renderAnything = computed(() => props.kind === 'chat' || props.kind === 'embedding');
 
 // Known Codex CLI effort presets as of v0.137. Codex's wire type is open
 // (ReasoningEffort::Custom(String)) so any string is accepted upstream;
