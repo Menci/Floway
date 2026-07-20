@@ -28,6 +28,7 @@ import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
 import { forwardUpstreamHeaders, isForwardableUpstreamHeader } from '../chat/shared/respond.ts';
 import { enumerateModelCandidates } from '../providers/registry.ts';
+import { isAudioTranscriptionDoneEvent } from '@floway-dev/protocols/audio';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { PerformanceOperation, InternalModel, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
@@ -219,7 +220,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
               }
               const protocolFrame = eventFrame(event);
               ctx.dump?.frame(protocolFrame);
-              if (event && typeof event === 'object' && (event as { type?: unknown }).type === 'transcript.text.done') {
+              if (isAudioTranscriptionDoneEvent(event)) {
                 terminalEventSeen = true;
                 measurement = responseHandling.extractUsage(event);
               }
