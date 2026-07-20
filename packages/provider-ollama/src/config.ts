@@ -64,13 +64,17 @@ export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstre
   if (!isRecord(record.config)) throw new Error('Malformed ollama upstream config: config must be an object');
 
   const apiKey = apiKeyField(record.config.apiKey);
+  const models = modelsField(record.config.models ?? [], 'ollama');
+  if (models.some(model => model.kind === 'rerank')) {
+    throw new Error('Malformed ollama upstream config: rerank models require a custom upstream');
+  }
   return {
     ...record,
     kind: 'ollama',
     config: {
       baseUrl: baseUrlField(record.config.baseUrl),
       ...(apiKey !== undefined ? { apiKey } : {}),
-      models: modelsField(record.config.models ?? [], 'ollama'),
+      models,
     },
   };
 };
