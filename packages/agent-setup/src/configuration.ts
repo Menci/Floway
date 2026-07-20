@@ -33,6 +33,10 @@ export const agentSetupConfigurationSchema = z.object({
     // long-lived presets while null means the managed setting is omitted.
     // Ref: https://code.claude.com/docs/en/settings#available-settings
     cleanupPeriodDays: z.union([z.literal(180), z.literal(365), z.literal(99999)]).nullable(),
+    // When enabled, the installer writes Claude's documented attribution
+    // opt-out values; false omits every managed attribution key.
+    // Ref: https://code.claude.com/docs/en/settings#attribution-settings
+    optOutAiAttribution: z.boolean(),
     modelDiscovery: z.boolean(),
   }).strict(),
   codex: z.object({
@@ -54,6 +58,7 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
     defaultHaikuModel: null,
     effortLevel: null,
     cleanupPeriodDays: null,
+    optOutAiAttribution: false,
     modelDiscovery: true,
   },
   codex: {

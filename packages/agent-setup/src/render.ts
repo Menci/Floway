@@ -58,6 +58,7 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_CLAUDE_DEFAULT_HAIKU_MODEL', shellOptional(claudeCode.defaultHaikuModel)],
       ['SETUP_CLAUDE_EFFORT_LEVEL', shellOptional(claudeCode.effortLevel)],
       ['SETUP_CLAUDE_CLEANUP_PERIOD_DAYS', shellOptionalNumber(claudeCode.cleanupPeriodDays)],
+      ['SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION', shellFlag(claudeCode.optOutAiAttribution)],
       ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
     );
   } else {
@@ -100,6 +101,7 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
       ['$SetupClaudeDefaultHaikuModel', powerShellOptional(claudeCode.defaultHaikuModel)],
       ['$SetupClaudeEffortLevel', powerShellOptional(claudeCode.effortLevel)],
       ['$SetupClaudeCleanupPeriodDays', powerShellOptionalNumber(claudeCode.cleanupPeriodDays)],
+      ['$SetupClaudeOptOutAiAttribution', powerShellBool(claudeCode.optOutAiAttribution)],
       ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
     );
   } else {

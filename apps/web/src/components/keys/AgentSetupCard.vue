@@ -49,6 +49,7 @@ const localDraft = ref<AgentSetupConfiguration>({
     defaultHaikuModel: null,
     effortLevel: null,
     cleanupPeriodDays: null,
+    optOutAiAttribution: false,
     modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },

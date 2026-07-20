@@ -7,9 +7,11 @@
 # Refs: https://docs.claude.com/en/docs/claude-code/env-vars
 #       https://docs.claude.com/en/docs/claude-code/model-config#environment-variables
 #       https://docs.claude.com/en/docs/claude-code/settings
+#       https://code.claude.com/docs/en/settings#attribution-settings
 CLAUDE_MERGE_PROGRAM='
   if type != "object" then error("root is not a JSON object")
   elif (has("env") and ((.env | type) != "object")) then error("env is not a JSON object")
+  elif (has("attribution") and ((.attribution | type) != "object")) then error("attribution is not a JSON object")
   else . end
   | (if (has("env") | not) then .env = {} else . end)
   | .env.ANTHROPIC_BASE_URL = $baseUrl
@@ -21,6 +23,12 @@ CLAUDE_MERGE_PROGRAM='
   | (if $discovery == "1" then .env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1" else del(.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY) end)
   | (if $effort == "" then del(.effortLevel) else .effortLevel = $effort end)
   | (if $cleanup == "" then del(.cleanupPeriodDays) else .cleanupPeriodDays = ($cleanup | tonumber) end)
+  | (if $optOutAttribution == "1" then
+      .attribution = ((.attribution // {}) + { "commit": "", "pr": "", "sessionUrl": false })
+    else
+      del(.attribution.commit, .attribution.pr, .attribution.sessionUrl)
+      | (if .attribution == {} then del(.attribution) else . end)
+    end)
 '
 
 # Refs:
@@ -112,6 +120,7 @@ claude_write_settings() {
     if ! "$JQ" '
         if type != "object" then error("root is not a JSON object")
         elif (has("env") and ((.env | type) != "object")) then error("env is not a JSON object")
+        elif (has("attribution") and ((.attribution | type) != "object")) then error("attribution is not a JSON object")
         else . end
       ' "$CLAUDE_SETTINGS_PATH" >/dev/null 2>&1; then
       out_error "$CLAUDE_SETTINGS_PATH is not valid Claude settings; leaving it untouched."
@@ -137,6 +146,7 @@ claude_write_settings() {
       --arg discovery "$SETUP_CLAUDE_MODEL_DISCOVERY" \
       --arg effort "$SETUP_CLAUDE_EFFORT_LEVEL" \
       --arg cleanup "$SETUP_CLAUDE_CLEANUP_PERIOD_DAYS" \
+      --arg optOutAttribution "$SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION" \
       "$CLAUDE_MERGE_PROGRAM" > "$_cw_stage"; then
     out_error 'failed to construct updated Claude settings.'
     rm -f "$_cw_stage"

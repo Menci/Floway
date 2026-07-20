@@ -36,6 +36,7 @@ const configuration = (): AgentSetupConfiguration => ({
     defaultHaikuModel: 'claude-haiku-4-5',
     effortLevel: 'high',
     cleanupPeriodDays: 365,
+    optOutAiAttribution: true,
     modelDiscovery: true,
   },
   codex: { model: 'gpt-5.6-sol', reasoningEffort: 'xhigh' },
@@ -63,6 +64,7 @@ describe('AgentConfigSnippets', () => {
       },
       effortLevel: 'high',
       cleanupPeriodDays: 365,
+      attribution: { commit: '', pr: '', sessionUrl: false },
     });
     expect(json).not.toContain('export ');
   });
@@ -76,6 +78,7 @@ describe('AgentConfigSnippets', () => {
       defaultHaikuModel: null,
       effortLevel: null,
       cleanupPeriodDays: null,
+      optOutAiAttribution: false,
       modelDiscovery: false,
     };
     const wrapper = mount(AgentConfigSnippets, {

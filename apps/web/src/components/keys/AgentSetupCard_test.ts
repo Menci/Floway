@@ -31,7 +31,7 @@ let activeArg: boolean | null;
 const defaultConfig = (): AgentSetupConfiguration => ({
   apiKeyId: 'key-1',
   claudeCode: {
-    model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, modelDiscovery: true,
+    model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
 });
@@ -163,9 +163,19 @@ describe('AgentSetupCard', () => {
     expect(codexEffortField.get('label').attributes('for')).toBe(codexEffortField.get('input').attributes('id'));
   });
 
-  it('uses the same responsive field width for both agents and renders discovery as a standard field', async () => {
+  it('starts Claude preferences on a new row without changing responsive field widths', async () => {
     const w = mountCard();
-    const claudeClasses = w.get('[data-testid="claude-fields"]').classes();
+    const modelFields = w.get('[data-testid="claude-model-fields"]');
+    const preferenceFields = w.get('[data-testid="claude-preference-fields"]');
+    expect(modelFields.classes()).toContain('xl:grid-cols-5');
+    expect(preferenceFields.classes()).toContain('xl:grid-cols-5');
+    expect(preferenceFields.classes()).not.toContain('xl:grid-cols-2');
+    expect(modelFields.element.children).toHaveLength(5);
+    expect([...preferenceFields.element.children].map(element => element.getAttribute('data-testid'))).toEqual([
+      'claude-cleanup-period',
+      'claude-attribution-opt-out',
+      'claude-model-discovery',
+    ]);
 
     const discovery = w.get('[data-testid="claude-model-discovery"]');
     expect(discovery.text()).toContain('Gateway model discovery');
@@ -173,7 +183,7 @@ describe('AgentSetupCard', () => {
     expect(discovery.get('div').classes()).toContain('h-9');
     expect(discovery.get('div').classes()).not.toContain('border');
     await selectAgent(w, 'Codex');
-    expect(w.get('[data-testid="codex-fields"]').classes()).toEqual(claudeClasses);
+    expect(w.get('[data-testid="codex-fields"]').classes()).toEqual(modelFields.classes());
   });
 
   it('moves a restored lease onto the API key selected by the table', async () => {
@@ -238,6 +248,17 @@ describe('AgentSetupCard', () => {
     cleanup.vm.$emit('update:modelValue', cleanup.props().options[0]!.value);
     await nextTick();
     expect(setupStub.draft.value!.claudeCode.cleanupPeriodDays).toBeNull();
+  });
+
+  it('toggles the Claude AI attribution opt-out from the shared configuration', async () => {
+    const w = mountCard();
+    const attribution = w.get('[data-testid="claude-attribution-opt-out"]');
+    expect(attribution.text()).toContain('Disabled');
+
+    attribution.findComponent(Switch).vm.$emit('update:modelValue', true);
+    await nextTick();
+    expect(setupStub.draft.value!.claudeCode.optOutAiAttribution).toBe(true);
+    expect(attribution.text()).toContain('Enabled');
   });
 
   it('offers a free-form Codex effort combobox seeded with upstream-advertised suggestions', async () => {

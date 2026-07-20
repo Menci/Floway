@@ -162,6 +162,10 @@ const modelDiscovery = computed<boolean>({
   get: () => props.configuration.claudeCode.modelDiscovery,
   set: value => updateClaude('modelDiscovery', value),
 });
+const optOutAiAttribution = computed<boolean>({
+  get: () => props.configuration.claudeCode.optOutAiAttribution,
+  set: value => updateClaude('optOutAiAttribution', value),
+});
 const codexModel = computed<string>({
   get: () => props.configuration.codex.model ?? SELECT_NONE,
   set: value => updateCodex('model', value === SELECT_NONE ? null : value),
@@ -175,8 +179,8 @@ const codexEffort = computed<string>({
 </script>
 
 <template>
-  <section v-if="agent === 'claude'">
-    <div data-testid="claude-fields" :class="fieldGridClass">
+  <section v-if="agent === 'claude'" data-testid="claude-fields">
+    <div data-testid="claude-model-fields" :class="fieldGridClass">
       <div data-testid="claude-model">
         <label :for="fieldIds.claudeModel" class="mb-1.5 block text-xs text-gray-500">Default model</label>
         <Select :id="fieldIds.claudeModel" v-model="claudeModel" :options="claudeModelOptions" />
@@ -197,9 +201,18 @@ const codexEffort = computed<string>({
         <label :for="fieldIds.claudeEffort" class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
         <Select :id="fieldIds.claudeEffort" v-model="claudeEffort" :options="claudeEffortOptions" />
       </div>
+    </div>
+    <div data-testid="claude-preference-fields" :class="[fieldGridClass, 'mt-4']">
       <div data-testid="claude-cleanup-period">
-        <label :for="fieldIds.claudeCleanupPeriod" class="mb-1.5 block text-xs text-gray-500">Cleanup period</label>
+        <label :for="fieldIds.claudeCleanupPeriod" class="mb-1.5 block text-xs text-gray-500">Cleanup retention</label>
         <Select :id="fieldIds.claudeCleanupPeriod" v-model="claudeCleanupPeriod" :options="claudeCleanupPeriodOptions" />
+      </div>
+      <div data-testid="claude-attribution-opt-out">
+        <span class="mb-1.5 block text-xs text-gray-500">Opt-out AI attribution</span>
+        <div class="flex h-9 items-center gap-2">
+          <Switch v-model="optOutAiAttribution" size="sm" aria-label="Opt out of Claude Code AI attribution" />
+          <span class="text-sm text-white">{{ optOutAiAttribution ? 'Enabled' : 'Disabled' }}</span>
+        </div>
       </div>
       <div data-testid="claude-model-discovery">
         <span class="mb-1.5 block text-xs text-gray-500">Gateway model discovery</span>

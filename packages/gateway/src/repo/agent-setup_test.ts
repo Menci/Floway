@@ -17,12 +17,12 @@ const backends: ReadonlyArray<readonly [string, RepoFactory]> = [
   ['sql', makeSqlRepo],
 ];
 
-test('migration 0061 adds the optional Claude cleanup period without replacing an existing choice', async () => {
+test('migration 0061 adds optional Claude settings without replacing existing choices', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0061_agent_setup_cleanup_period.sql') break;
+      if (filename === '0061_agent_setup_claude_settings.sql') break;
       db.run(sql);
     }
     const baseConfiguration = {
@@ -40,18 +40,22 @@ test('migration 0061 adds the optional Claude cleanup period without replacing a
     db.run(
       `INSERT INTO agent_setup
         (token, user_id, configuration_json, configuration_revision, expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000)`,
+       VALUES (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000)`,
       [
         'legacy', 1, JSON.stringify(baseConfiguration),
         'selected', 1, JSON.stringify({
           ...baseConfiguration,
           claudeCode: { ...baseConfiguration.claudeCode, cleanupPeriodDays: 365 },
         }),
+        'opted-out', 1, JSON.stringify({
+          ...baseConfiguration,
+          claudeCode: { ...baseConfiguration.claudeCode, optOutAiAttribution: true },
+        }),
       ],
     );
 
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0061_agent_setup_cleanup_period.sql');
-    if (migration === undefined) throw new Error('missing migration 0061_agent_setup_cleanup_period.sql');
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0061_agent_setup_claude_settings.sql');
+    if (migration === undefined) throw new Error('missing migration 0061_agent_setup_claude_settings.sql');
     db.run(migration[1]);
 
     const rows = db.exec('SELECT token, configuration_json FROM agent_setup ORDER BY token')[0];
@@ -61,7 +65,9 @@ test('migration 0061 adds the optional Claude cleanup period without replacing a
       JSON.parse(json as string) as AgentSetupConfiguration,
     ]));
     expect(configurations.legacy?.claudeCode.cleanupPeriodDays).toBeNull();
+    expect(configurations.legacy?.claudeCode.optOutAiAttribution).toBe(false);
     expect(configurations.selected?.claudeCode.cleanupPeriodDays).toBe(365);
+    expect(configurations['opted-out']?.claudeCode.optOutAiAttribution).toBe(true);
   } finally {
     db.close();
   }
