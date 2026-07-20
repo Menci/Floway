@@ -1,0 +1,311 @@
+import { expect, test } from 'vitest';
+
+import { unwrapCopilotItemId, wrapCopilotItemId } from './item-id-carrier.ts';
+import { withCopilotResponsesItemIdMembrane } from './item-id-membrane.ts';
+import type { ResponsesBoundaryCtx } from './types.ts';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesInputItem, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ProviderResponsesResult } from '@floway-dev/provider';
+import { stubProviderModel } from '@floway-dev/test-utils';
+
+const invocation = (input: ResponsesInputItem[] = []): ResponsesBoundaryCtx => ({
+  payload: {
+    model: 'test-model',
+    input,
+    instructions: null,
+    temperature: 1,
+    top_p: null,
+    max_output_tokens: 32,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: true,
+    store: false,
+    parallel_tool_calls: true,
+  },
+  headers: new Headers(),
+  model: stubProviderModel({ endpoints: { responses: {} } }),
+  action: 'generate',
+});
+
+const response = (output: ResponsesOutputItem[]): ResponsesResult => ({
+  id: 'resp_test',
+  object: 'response',
+  model: 'test-model',
+  output,
+  status: 'completed',
+  incomplete_details: null,
+  error: null,
+  usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+});
+
+const collect = async (result: ProviderResponsesResult): Promise<ProtocolFrame<ResponsesStreamEvent>[]> => {
+  if (result.action !== 'generate' || !result.ok) throw new Error('expected generate/ok result');
+  const frames: ProtocolFrame<ResponsesStreamEvent>[] = [];
+  for await (const frame of result.events) frames.push(frame);
+  return frames;
+};
+
+const runStream = async (
+  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> | ProtocolFrame<ResponsesStreamEvent>[],
+  ctx = invocation(),
+): Promise<{ result: ProviderResponsesResult; ctx: ResponsesBoundaryCtx }> => {
+  const iterable = Symbol.asyncIterator in frames
+    ? frames as AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>
+    : (async function* () { yield* frames as ProtocolFrame<ResponsesStreamEvent>[]; })();
+  const result = await withCopilotResponsesItemIdMembrane(ctx, {}, () => Promise.resolve({
+    action: 'generate',
+    ok: true,
+    events: iterable,
+    modelKey: 'test-model',
+  }));
+  return { result, ctx };
+};
+
+const outputItemEvent = (
+  kind: 'added' | 'done',
+  outputIndex: number,
+  item: ResponsesOutputItem,
+): ResponsesStreamEvent => ({
+  type: kind === 'added' ? 'response.output_item.added' : 'response.output_item.done',
+  output_index: outputIndex,
+  item,
+});
+
+const eventAt = <TType extends ResponsesStreamEvent['type']>(
+  frames: ProtocolFrame<ResponsesStreamEvent>[],
+  type: TType,
+): Extract<ResponsesStreamEvent, { type: TType }> => {
+  const frame = frames.find(candidate => candidate.type === 'event' && candidate.event.type === type);
+  if (frame?.type !== 'event') throw new Error(`expected ${type}`);
+  return frame.event as Extract<ResponsesStreamEvent, { type: TType }>;
+};
+
+test('streams a public id immediately, then carries the canonical done id inside reasoning state', async () => {
+  const added: ResponsesOutputItem = { type: 'reasoning', id: 'rs_added', summary: [] };
+  const done: ResponsesOutputItem = { type: 'reasoning', id: 'rs_done', summary: [], encrypted_content: 'opaque done' };
+  const terminal: ResponsesOutputItem = { type: 'reasoning', id: 'rs_terminal', summary: [], encrypted_content: 'opaque terminal' };
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const upstream = (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame(outputItemEvent('added', 0, added));
+    await gate;
+    yield eventFrame({
+      type: 'response.reasoning_summary_text.delta',
+      item_id: 'rs_mid',
+      output_index: 0,
+      summary_index: 0,
+      delta: 'trace',
+    });
+    yield eventFrame(outputItemEvent('done', 0, done));
+    yield eventFrame({ type: 'response.completed', response: response([terminal]) });
+    yield doneFrame();
+  })();
+
+  const { result } = await runStream(upstream);
+  if (result.action !== 'generate' || !result.ok) throw new Error('expected generate/ok result');
+  const iterator = result.events[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  expect(first.done).toBe(false);
+  if (first.value?.type !== 'event' || first.value.event.type !== 'response.output_item.added') {
+    throw new Error('expected output_item.added');
+  }
+  const publicId = first.value.event.item.id;
+  expect(publicId).toMatch(/^rs_[0-9a-f]{32}$/);
+
+  release();
+  const rest: ProtocolFrame<ResponsesStreamEvent>[] = [];
+  for (let next = await iterator.next(); !next.done; next = await iterator.next()) rest.push(next.value);
+  const delta = eventAt(rest, 'response.reasoning_summary_text.delta');
+  const doneEvent = eventAt(rest, 'response.output_item.done');
+  const completed = eventAt(rest, 'response.completed');
+  expect(delta.item_id).toBe(publicId);
+  expect(doneEvent.item.id).toBe(publicId);
+  if (doneEvent.item.type !== 'reasoning') throw new Error('expected reasoning item');
+  expect(unwrapCopilotItemId(doneEvent.item.encrypted_content!)).toEqual({
+    kind: 'owned',
+    value: 'opaque done',
+    version: 1,
+    origin: 'raw',
+    id: 'rs_done',
+  });
+  expect(completed.response.output).toEqual([doneEvent.item]);
+});
+
+const uncarriedOutputItems = [
+  ['msg', { type: 'message', id: 'raw', role: 'assistant', content: [] }],
+  ['fc', { type: 'function_call', id: 'raw', call_id: 'call', name: 'f', arguments: '{}', status: 'completed' }],
+  ['ctc', { type: 'custom_tool_call', id: 'raw', call_id: 'call', name: 'tool', input: 'x' }],
+  ['ws', { type: 'web_search_call', id: 'raw', status: 'completed', action: { type: 'search', queries: ['x'] } }],
+  ['tsc', { type: 'tool_search_call', id: 'raw', arguments: {}, call_id: 'call', execution: 'server', status: 'completed' }],
+  ['cmo', { type: 'program_output', id: 'raw', call_id: 'call', result: 'ok', status: 'completed' }],
+  ['sh', { type: 'shell_call', id: 'raw', call_id: 'call', action: { commands: ['pwd'] }, status: 'completed' }],
+  ['sho', { type: 'shell_call_output', id: 'raw', call_id: 'call', output: [{ stdout: '', stderr: '', outcome: { type: 'exit', exit_code: 0 } }], status: 'completed' }],
+  ['apc', { type: 'apply_patch_call', id: 'raw', call_id: 'call', operation: { type: 'delete_file', path: 'x' }, status: 'completed' }],
+] as const;
+
+test.each(uncarriedOutputItems)('randomizes a Copilot %s item without exposing its raw id', async (prefix, fixture) => {
+  const item = fixture as ResponsesOutputItem;
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, item)),
+    eventFrame(outputItemEvent('done', 0, item)),
+    doneFrame(),
+  ]);
+  const frames = await collect(result);
+  const added = eventAt(frames, 'response.output_item.added');
+  const done = eventAt(frames, 'response.output_item.done');
+
+  expect(added.item.id).toMatch(new RegExp(`^${prefix}_[0-9a-f]{32}$`));
+  expect(done.item.id).toBe(added.item.id);
+  expect(JSON.stringify(frames)).not.toContain('"raw"');
+});
+
+test('carries program and nested agent-message ids in every available blob', async () => {
+  const items: ResponsesOutputItem[] = [
+    { type: 'program', id: 'cm_raw', call_id: 'call_program', code: 'return 1', fingerprint: 'program state' },
+    {
+      type: 'agent_message',
+      id: 'amsg_raw',
+      author: 'a',
+      recipient: 'b',
+      content: [
+        { type: 'encrypted_content', encrypted_content: 'agent state one' },
+        { type: 'input_text', text: 'visible' },
+        { type: 'encrypted_content', encrypted_content: 'agent state two' },
+      ],
+    },
+  ];
+  const { result } = await runStream(items.flatMap((item, index) => [
+    eventFrame(outputItemEvent('added', index, item)),
+    eventFrame(outputItemEvent('done', index, item)),
+  ]));
+  const frames = await collect(result);
+  const doneItems = frames.flatMap(frame =>
+    frame.type === 'event' && frame.event.type === 'response.output_item.done' ? [frame.event.item] : []);
+
+  const [program, agent] = doneItems;
+  expect(program.id).toMatch(/^cm_[0-9a-f]{32}$/);
+  if (program.type !== 'program') throw new Error('expected program');
+  expect(unwrapCopilotItemId(program.fingerprint)).toMatchObject({ kind: 'owned', value: 'program state', id: 'cm_raw' });
+  expect(agent.id).toMatch(/^amsg_[0-9a-f]{32}$/);
+  if (agent.type !== 'agent_message') throw new Error('expected agent_message');
+  const encrypted = agent.content.filter(part => part.type === 'encrypted_content');
+  expect(encrypted.map(part => unwrapCopilotItemId(part.encrypted_content))).toEqual([
+    expect.objectContaining({ kind: 'owned', value: 'agent state one', id: 'amsg_raw' }),
+    expect.objectContaining({ kind: 'owned', value: 'agent state two', id: 'amsg_raw' }),
+  ]);
+});
+
+test('restores owned blob ids for Copilot input and leaves foreign items unchanged', async () => {
+  const input: ResponsesInputItem[] = [
+    { type: 'reasoning', id: 'rs_public', summary: [], encrypted_content: wrapCopilotItemId('reasoning state', 'rs_raw') },
+    { type: 'program', id: 'cm_public', call_id: 'call_program', code: 'return 1', fingerprint: wrapCopilotItemId('program state', 'cm_raw') },
+    {
+      type: 'agent_message',
+      id: 'amsg_public',
+      author: 'a',
+      recipient: 'b',
+      content: [
+        { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('one', 'amsg_raw') },
+        { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('two', 'amsg_raw') },
+      ],
+    },
+    { type: 'compaction', id: 'cmp_public', encrypted_content: wrapCopilotItemId('compact state', 'cmp_raw') },
+    { type: 'reasoning', id: 'rs_foreign', summary: [], encrypted_content: 'foreign state' },
+    { type: 'message', id: 'msg_foreign', role: 'user', content: 'hello' },
+  ];
+  const ctx = invocation(input);
+  let wireInput: ResponsesInputItem[] | undefined;
+  await withCopilotResponsesItemIdMembrane(ctx, {}, () => {
+    wireInput = structuredClone(ctx.payload.input);
+    return Promise.resolve({
+      action: 'generate',
+      ok: true,
+      events: (async function* () { yield doneFrame(); })(),
+      modelKey: 'test-model',
+    });
+  });
+
+  expect(wireInput).toEqual([
+    { type: 'reasoning', id: 'rs_raw', summary: [], encrypted_content: 'reasoning state' },
+    { type: 'program', id: 'cm_raw', call_id: 'call_program', code: 'return 1', fingerprint: 'program state' },
+    {
+      type: 'agent_message',
+      id: 'amsg_raw',
+      author: 'a',
+      recipient: 'b',
+      content: [
+        { type: 'encrypted_content', encrypted_content: 'one' },
+        { type: 'encrypted_content', encrypted_content: 'two' },
+      ],
+    },
+    { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compact state' },
+    { type: 'reasoning', id: 'rs_foreign', summary: [], encrypted_content: 'foreign state' },
+    { type: 'message', id: 'msg_foreign', role: 'user', content: 'hello' },
+  ]);
+});
+
+test('rejects conflicting ids carried by one input item', async () => {
+  const ctx = invocation([{
+    type: 'agent_message',
+    id: 'amsg_public',
+    author: 'a',
+    recipient: 'b',
+    content: [
+      { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('one', 'amsg_one') },
+      { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('two', 'amsg_two') },
+    ],
+  }]);
+
+  await expect(withCopilotResponsesItemIdMembrane(ctx, {}, () => {
+    throw new Error('must not reach upstream');
+  })).rejects.toThrow(/conflicting upstream ids/);
+});
+
+test('normalizes the generated compaction item without touching retained compact messages', async () => {
+  const compactResult = response([
+    { type: 'message', id: 'msg_retained', role: 'assistant', content: [] },
+    { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compact state' },
+  ]);
+  const result = await withCopilotResponsesItemIdMembrane(invocation(), {}, () => Promise.resolve({
+    action: 'compact',
+    ok: true,
+    result: compactResult,
+    modelKey: 'test-model',
+  }));
+  if (result.action !== 'compact' || !result.ok) throw new Error('expected compact/ok result');
+
+  expect(result.result.output[0].id).toBe('msg_retained');
+  const compaction = result.result.output[1];
+  expect(compaction.id).toMatch(/^cmp_[0-9a-f]{32}$/);
+  if (compaction.type !== 'compaction') throw new Error('expected compaction');
+  expect(unwrapCopilotItemId(compaction.encrypted_content)).toMatchObject({
+    kind: 'owned',
+    value: 'compact state',
+    id: 'cmp_raw',
+  });
+});
+
+test('fails closed on unknown output types before yielding a raw id', async () => {
+  const unknown = { type: 'future_call', id: 'raw_future' } as unknown as ResponsesOutputItem;
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, unknown)),
+    doneFrame(),
+  ]);
+
+  await expect(collect(result)).rejects.toThrow("Unsupported Copilot Responses output item type 'future_call'");
+});
+
+test('rejects an id-bearing child event before its output item opens', async () => {
+  const { result } = await runStream([
+    eventFrame({
+      type: 'response.output_text.delta',
+      item_id: 'raw_message',
+      output_index: 0,
+      content_index: 0,
+      delta: 'hello',
+    }),
+  ]);
+
+  await expect(collect(result)).rejects.toThrow(/before output_item.added/);
+});

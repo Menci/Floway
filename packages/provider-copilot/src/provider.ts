@@ -352,9 +352,8 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       // payload/header workaround in the chain — force-store-false,
       // strip-service-tier, strip-image-generation, inline-image
       // compression, vision/initiator headers — applies to both branches
-      // identically; the two event-stream mutators
-      // (`withOutputItemIdsSynchronized`, `withToolArgumentWhitespaceAborted`)
-      // inspect the result variant and no-op on the compact value envelope.
+      // identically. The item-id membrane also normalizes the compact value
+      // envelope, while the whitespace guard only inspects generate streams.
       return await runInterceptors<ResponsesBoundaryCtx, object, ProviderResponsesResult>(
         ctx, {}, COPILOT_RESPONSES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;

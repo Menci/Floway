@@ -5,11 +5,11 @@
 import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { withInlineImagesCompressed } from './compress-images.ts';
 import { withStoreForcedFalse } from './force-store-false.ts';
+import { withCopilotResponsesItemIdMembrane } from './item-id-membrane.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
 import { withImageGenerationStripped } from './strip-image-generation.ts';
 import { withServiceTierStripped } from './strip-service-tier.ts';
-import { withOutputItemIdsSynchronized } from './synchronize-output-item-ids.ts';
 import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 
 // Single chain wraps both the streaming `/responses` call and the
@@ -18,7 +18,7 @@ import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 // payload-mutating interceptors run first so the header interceptors see
 // the final outgoing payload, then the header interceptors populate
 // `ctx.headers` for the upstream call. Event-stream mutators
-// (whitespace-abort, output-item id sync) sit between — they only act on
+// (whitespace-abort, item-id membrane) sit between — they only act on
 // the streaming generate branch and pass the compact value envelope
 // through unchanged, so listing them in the unified chain is harmless.
 export const COPILOT_RESPONSES_BOUNDARY = [
@@ -26,7 +26,7 @@ export const COPILOT_RESPONSES_BOUNDARY = [
   withServiceTierStripped,
   withImageGenerationStripped,
   withStoreForcedFalse,
-  withOutputItemIdsSynchronized,
+  withCopilotResponsesItemIdMembrane,
   withToolArgumentWhitespaceAborted,
   withVisionHeaderSet,
   withInitiatorHeaderSet,
