@@ -8,8 +8,8 @@ import type { CodexUltraConfig, ModelAlias, ProxyRecord, SearchConfig, UpstreamP
 import AliasEditDialog from '../../components/alias-edit/AliasEditDialog.vue';
 import ProxyEditDialog from '../../components/proxy-edit/ProxyEditDialog.vue';
 import AliasesSettingsCard from '../../components/settings/AliasesSettingsCard.vue';
-import CodexUltraConfigSection from '../../components/settings/CodexUltraConfigSection.vue';
 import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
+import CodexUltraConfigSection from '../../components/settings/CodexUltraConfigSection.vue';
 import ExportSection from '../../components/settings/ExportSection.vue';
 import ImportSection from '../../components/settings/ImportSection.vue';
 import ProxiesSettingsCard from '../../components/settings/ProxiesSettingsCard.vue';
