@@ -1,0 +1,256 @@
+import { test } from 'vitest';
+
+import { flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
+import type { InMemoryRepo } from '../../repo/memory.ts';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
+
+const registerAudioModel = async (
+  repo: InMemoryRepo,
+  pricing?: {
+    units: { input: 'minutes' } | { input: 'tokens_1m'; output: 'tokens_1m' };
+    entries: readonly [{ rates: { input: number; output?: number } }];
+  },
+): Promise<void> => {
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  await repo.upstreams.save({
+    id: 'up_audio',
+    kind: 'custom',
+    name: 'Audio Provider',
+    enabled: true,
+    sortOrder: 1,
+    createdAt: '2026-07-21T00:00:00.000Z',
+    updatedAt: '2026-07-21T00:00:00.000Z',
+    state: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    color: null,
+    config: {
+      baseUrl: 'https://audio.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-audio',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{
+        upstreamModelId: 'gpt-4o-transcribe-upstream',
+        publicModelId: 'gpt-4o-transcribe',
+        kind: 'audio',
+        endpoints: { audioTranscriptions: {} },
+        ...(pricing ? { pricing } : {}),
+      }],
+    },
+  });
+};
+
+const transcriptionForm = (fields: readonly [string, string][] = []): FormData => {
+  const form = new FormData();
+  // File intentionally precedes model: multipart field order is unconstrained.
+  form.append('file', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'audio/wav' }), 'meeting.wav');
+  for (const [name, value] of fields) form.append(name, value);
+  form.append('model', 'gpt-4o-transcribe');
+  return form;
+};
+
+test('/v1/audio/transcriptions requires multipart model and file fields', async () => {
+  const { apiKey } = await setupAppTest();
+  const json = await requestApp('/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: '{}',
+  });
+  assertEquals(json.status, 400);
+
+  const missingFile = new FormData();
+  missingFile.append('model', 'gpt-4o-transcribe');
+  const noFile = await requestApp('/v1/audio/transcriptions', {
+    method: 'POST', headers: { 'x-api-key': apiKey.key }, body: missingFile,
+  });
+  assertEquals(noFile.status, 400);
+});
+
+test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, and token usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo, {
+    units: { input: 'tokens_1m', output: 'tokens_1m' },
+    entries: [{ rates: { input: 2, output: 4 } }],
+  });
+  let upstreamForm: FormData | undefined;
+
+  await withMockedFetch(
+    async request => {
+      assertEquals(new URL(request.url).pathname, '/v1/audio/transcriptions');
+      upstreamForm = await request.formData();
+      return new Response(JSON.stringify({
+        text: 'hello world',
+        usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 59 },
+      }), {
+        headers: { 'content-type': 'application/json', 'x-provider-trace': 'trace-a' },
+      });
+    },
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'x-api-key': apiKey.key },
+        body: transcriptionForm([
+          ['language', 'en'],
+          ['timestamp_granularities[]', 'word'],
+          ['timestamp_granularities[]', 'segment'],
+        ]),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(response.headers.get('x-provider-trace'), 'trace-a');
+      assertEquals(await response.json(), {
+        text: 'hello world',
+        usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 59 },
+      });
+    },
+  );
+
+  assertExists(upstreamForm);
+  assertEquals(upstreamForm.get('model'), 'gpt-4o-transcribe-upstream');
+  assertEquals(upstreamForm.get('language'), 'en');
+  assertEquals(upstreamForm.getAll('timestamp_granularities[]'), ['word', 'segment']);
+  const file = upstreamForm.get('file');
+  assertEquals(file instanceof File, true);
+  assertEquals((file as File).name, 'meeting.wav');
+  assertEquals((file as File).type, 'audio/wav');
+  assertEquals(new Uint8Array(await (file as File).arrayBuffer()), new Uint8Array([1, 2, 3, 4]));
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.dimensions, [
+    { dimension: 'input', unit: 'tokens_1m', quantity: 14, unitPrice: 2 },
+    { dimension: 'output', unit: 'tokens_1m', quantity: 45, unitPrice: 4 },
+  ]);
+});
+
+test('/v1/audio/transcriptions forwards VTT verbatim and records request-only usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  await withMockedFetch(
+    () => new Response('WEBVTT\n\n00:00.000 --> 00:01.000\nhello', {
+      headers: { 'content-type': 'text/vtt', 'x-subtitle-source': 'upstream' },
+    }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'vtt']]),
+      });
+      assertEquals(response.headers.get('content-type'), 'text/vtt');
+      assertEquals(response.headers.get('x-subtitle-source'), 'upstream');
+      assertEquals(await response.text(), 'WEBVTT\n\n00:00.000 --> 00:01.000\nhello');
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.dimensions, []);
+});
+
+test('/v1/audio/transcriptions records duration seconds under the minutes unit', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo, {
+    units: { input: 'minutes' },
+    entries: [{ rates: { input: 0.6 } }],
+  });
+  await withMockedFetch(
+    () => Response.json({ text: 'hello', duration: 91.8, usage: { type: 'duration', seconds: 91 } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'verbose_json']]),
+      });
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.dimensions, [{ dimension: 'input', unit: 'minutes', quantity: 91, unitPrice: 0.6 }]);
+});
+
+test('/v1/audio/transcriptions streams through transcript.text.done without adding Chat termination', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo, {
+    units: { input: 'tokens_1m', output: 'tokens_1m' },
+    entries: [{ rates: { input: 1, output: 1 } }],
+  });
+  await withMockedFetch(
+    () => new Response([
+      'data: {"type":"transcript.text.delta","delta":"hel"}',
+      '',
+      'data: {"type":"transcript.text.done","text":"hello","usage":{"type":"tokens","input_tokens":3,"output_tokens":1,"total_tokens":4}}',
+      '',
+    ].join('\n'), { headers: { 'content-type': 'text/event-stream', 'x-stream-trace': 'trace-sse' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(response.headers.get('x-stream-trace'), 'trace-sse');
+      const stream = await response.text();
+      assertEquals(stream.includes('transcript.text.delta'), true);
+      assertEquals(stream.includes('transcript.text.done'), true);
+      assertEquals(stream.includes('[DONE]'), false);
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.dimensions.map(row => ({ dimension: row.dimension, quantity: row.quantity })), [
+    { dimension: 'input', quantity: 3 },
+    { dimension: 'output', quantity: 1 },
+  ]);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.neutral, 1);
+  assertEquals(performance.errorsNoOutput, 0);
+});
+
+test('/v1/audio/transcriptions treats EOF without transcript.text.done as a failed request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  await withMockedFetch(
+    () => new Response('data: {"type":"transcript.text.delta","delta":"partial"}\n\n', {
+      headers: { 'content-type': 'text/event-stream' },
+    }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
+      });
+      assertEquals(response.status, 200);
+      await response.text();
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
+});
+
+test('/v1/audio/transcriptions forwards exhausted upstream errors and records the request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  await withMockedFetch(
+    () => new Response(JSON.stringify({ error: { message: 'bad audio' } }), {
+      status: 422,
+      headers: { 'content-type': 'application/json', 'retry-after': '4', 'x-error-trace': 'trace-error' },
+    }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+      });
+      assertEquals(response.status, 422);
+      assertEquals(response.headers.get('retry-after'), '4');
+      assertEquals(response.headers.get('x-error-trace'), 'trace-error');
+      assertEquals(await response.json(), { error: { message: 'bad audio' } });
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.dimensions, []);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
+});

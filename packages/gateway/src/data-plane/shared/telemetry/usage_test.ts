@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { openAICacheTokensFromUsage, recordUsage } from './usage.ts';
+import { audioTranscriptionUsageMeasurement, openAICacheTokensFromUsage, recordUsage } from './usage.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { basePricing } from '@floway-dev/protocols/common';
@@ -123,4 +123,43 @@ test('recordUsage rejects a measured unit that disagrees with model pricing', as
     Error,
     'measured in tokens_1m but priced in searches_1k',
   );
+});
+
+test('audio transcription usage preserves duration seconds with a minutes denominator', () => {
+  assertEquals(audioTranscriptionUsageMeasurement({
+    usage: { type: 'duration', seconds: 91 },
+    duration: 91.8,
+  }), {
+    quantities: { input: 91 },
+    units: { input: 'minutes' },
+    pricingFacts: {},
+    dumpTokenUsage: null,
+  });
+});
+
+test('audio transcription usage maps explicit token counts without inferring from totals', () => {
+  assertEquals(audioTranscriptionUsageMeasurement({
+    usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 59 },
+  }), {
+    quantities: { input: 14, output: 45 },
+    units: { input: 'tokens_1m', output: 'tokens_1m' },
+    pricingFacts: { serviceTier: undefined, inputTokens: 14 },
+    dumpTokenUsage: { input: 14, output: 45 },
+  });
+  assertEquals(audioTranscriptionUsageMeasurement({
+    usage: { type: 'tokens', total_tokens: 59 },
+  }).quantities, {});
+});
+
+test('audio transcription usage without a recognized metric is request-only', () => {
+  for (const body of [
+    { duration: 10 },
+    { usage: { seconds: 10 } },
+    { usage: { type: 'duration', seconds: '10' } },
+    { usage: { type: 'tokens', input_tokens: -1 } },
+  ]) {
+    assertEquals(audioTranscriptionUsageMeasurement(body), {
+      quantities: {}, units: {}, pricingFacts: {}, dumpTokenUsage: null,
+    });
+  }
 });
