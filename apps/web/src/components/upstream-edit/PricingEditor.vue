@@ -46,6 +46,7 @@ const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
   chat: ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'output'],
   embedding: ['input'],
   image: ['input', 'input_image', 'output', 'output_image'],
+  audio: ['input', 'output'],
 };
 
 interface PricingThresholdDraft {

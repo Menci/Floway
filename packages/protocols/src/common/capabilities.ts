@@ -23,6 +23,7 @@ export interface ModelEndpoints {
   embeddings?: {};
   imagesGenerations?: {};
   imagesEdits?: {};
+  audioTranscriptions?: {};
 }
 
 // Names a single endpoint within ModelEndpoints — used where one endpoint is
@@ -36,6 +37,7 @@ export type ModelEndpointKey = keyof ModelEndpoints;
 // `chatCompletions`) are configuration errors; the first matching branch wins.
 // `kind` is a pure projection of `endpoints`; the dispatch layer never reads it.
 export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
+  if (endpoints.audioTranscriptions) return 'audio';
   if (endpoints.embeddings) return 'embedding';
   if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
   return 'chat';

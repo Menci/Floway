@@ -449,7 +449,7 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
 //
 // Add a value here only when we actually route that endpoint family — do
 // not pre-declare for future capabilities.
-export type ModelKind = 'chat' | 'embedding' | 'image';
+export type ModelKind = 'chat' | 'embedding' | 'image' | 'audio';
 
 export type Modality = 'text' | 'image';
 

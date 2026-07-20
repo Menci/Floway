@@ -35,6 +35,7 @@ const kindOptions: { value: ModelKind; label: string }[] = [
   { value: 'chat', label: 'Chat' },
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
+  { value: 'audio', label: 'Audio' },
 ];
 
 const config = computed<UpstreamModelConfig | null>(() => props.row?.config ?? null);
@@ -175,7 +176,7 @@ const onChatMetadataChange = (next: AnnouncedMetadata | undefined) => {
           </div>
         </section>
 
-        <section v-if="rowKind !== 'embedding'">
+        <section v-if="rowKind === 'chat' || rowKind === 'image'">
           <div class="mb-3 flex items-baseline gap-3">
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Supported Endpoints</h3>
             <span class="text-[11px] text-gray-500">protocols this model responds to</span>

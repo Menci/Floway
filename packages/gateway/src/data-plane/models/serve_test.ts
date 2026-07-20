@@ -77,7 +77,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           object?: string;
           type?: string;
           display_name?: string;
-          kind?: 'chat' | 'embedding' | 'image';
+          kind?: 'chat' | 'embedding' | 'image' | 'audio';
           limits?: Record<string, number>;
           capabilities?: unknown;
           provider?: unknown;

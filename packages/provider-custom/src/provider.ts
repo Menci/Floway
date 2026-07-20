@@ -34,7 +34,7 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   return partial;
 };
 
-// A published kind of 'embedding'/'image' (Tier 1) maps directly to its
+// A published kind of 'embedding'/'image'/'audio' (Tier 1) maps directly to its
 // endpoints; a published 'chat' takes the upstream's configured endpoints
 // verbatim. With no/unrecognized published kind, the id heuristic (Tier 2) runs
 // and falls back to the configured endpoints when it does not match. The
@@ -43,6 +43,7 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
   if (model.kind === 'embedding') return { embeddings: {} };
   if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
+  if (model.kind === 'audio') return { audioTranscriptions: {} };
   if (model.kind === 'chat') return configured;
   return inferEndpointsFromModelId(model.id) ?? configured;
 };

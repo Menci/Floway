@@ -53,6 +53,7 @@ const modelEndpointsSchema = z.object({
   embeddings: z.object({}).optional(),
   imagesGenerations: z.object({}).optional(),
   imagesEdits: z.object({}).optional(),
+  audioTranscriptions: z.object({}).optional(),
 });
 
 const pricingDimensionShape = {
@@ -139,7 +140,7 @@ const limitsSchema = z.object({
 const upstreamModelSchema = z.object({
   upstreamModelId: z.string().min(1),
   publicModelId: z.string().optional(),
-  kind: z.enum(['chat', 'embedding', 'image']).optional(),
+  kind: z.enum(['chat', 'embedding', 'image', 'audio']).optional(),
   endpoints: modelEndpointsSchema,
   display_name: z.string().optional(),
   pricing: z.object({
@@ -609,7 +610,7 @@ const announcedMetadataSchema = z.object({
 
 const aliasBaseShape = {
   name: z.string().min(1),
-  kind: z.enum(['chat', 'embedding', 'image']),
+  kind: z.enum(['chat', 'embedding', 'image', 'audio']),
   selection: z.enum(['random', 'first-available']),
   display_name: z.string().min(1).nullable(),
   visible_in_models_list: z.boolean(),
@@ -622,7 +623,7 @@ const aliasBodyCore = z.object(aliasBaseShape);
 
 // superRefine cross-validates each target's `rules` against the alias-level
 // kind. Chat: parse through `chatAliasRulesSchema` and surface the inner
-// issue verbatim. Embedding / image: the slot must be `{}` until a future
+// issue verbatim. Embedding / image / audio: the slot must be `{}` until a future
 // schema lands. `announced_metadata.chat` is bound to the same invariant:
 // a chat block on a non-chat alias would land on the InternalModel row and
 // leak an incoherent `chat: {...}` sidecar onto `/v1/models` for a row

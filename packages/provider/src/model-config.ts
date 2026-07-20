@@ -58,7 +58,7 @@ export const optionalStringField = (value: unknown, label: string): string | und
 };
 
 const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpointKey>([
-  'completions', 'chatCompletions', 'responses', 'messages', 'embeddings', 'imagesGenerations', 'imagesEdits',
+  'completions', 'chatCompletions', 'responses', 'messages', 'embeddings', 'imagesGenerations', 'imagesEdits', 'audioTranscriptions',
 ]);
 
 // The structured per-model capability map. A present key declares the model is
@@ -157,7 +157,7 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
   return pricing;
 };
 
-const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image']);
+const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image', 'audio']);
 
 const MODALITY_VALUES: ReadonlySet<Modality> = new Set<Modality>(['text', 'image']);
 
@@ -262,7 +262,7 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
 const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): ModelKind => {
   if (value === undefined) return kindForEndpoints(endpoints);
   if (typeof value !== 'string' || !MODEL_KINDS.has(value as ModelKind)) {
-    throw new Error(`Malformed ${label}: must be one of chat, embedding, image`);
+    throw new Error(`Malformed ${label}: must be one of chat, embedding, image, audio`);
   }
   return value as ModelKind;
 };

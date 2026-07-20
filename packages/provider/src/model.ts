@@ -112,8 +112,9 @@ export interface TelemetryModelIdentity {
 }
 
 // `chat`, `text_completion`, and `embeddings` are the OTel `gen_ai.operation.name`
-// well-known values we route; `image_generation` and `image_edit` are Floway
-// extensions covering the concrete non-chat endpoints OTel does not name. Extend
+// well-known values we route; `image_generation`, `image_edit`, and
+// `audio_transcription` are Floway extensions covering concrete non-chat
+// endpoints OTel does not name. Extend
 // only when a new route lands — no wildcard string.
 // OTel canonical set:
 // https://github.com/open-telemetry/semantic-conventions/blob/v1.37.0/docs/gen-ai/gen-ai-spans.md#gen_aioperationname
@@ -122,7 +123,8 @@ export type PerformanceOperation =
   | 'text_completion'
   | 'embeddings'
   | 'image_generation'
-  | 'image_edit';
+  | 'image_edit'
+  | 'audio_transcription';
 
 export interface PerformanceTelemetryContext {
   keyId: string;
@@ -143,6 +145,7 @@ export interface PerformanceTelemetryContext {
 // at the producer boundary:
 //   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
 //   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
+//   `kind === 'audio'`     ⇔ `endpoints === { audioTranscriptions: {} }`
 //   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
 interface ModelMetadata {
   id: string;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Shared editor for a chat/embedding model's `limits` + `chat` metadata.
+// Shared editor for a chat/embedding/audio model's `limits` + `chat` metadata.
 // Hosts the Limits + Modalities + Reasoning sub-blocks consumed by both
 // `ModelEditor.vue` (a real catalog row's editor) and
 // `AliasEditDialog.vue` (the alias's announced-metadata override).
@@ -12,8 +12,8 @@
 //
 // Kind-gated sub-blocks:
 //   - `chat`      → Limits + Modalities + Reasoning.
-//   - `embedding` → Limits only.
-//   - `image`     → renders nothing (callers should not mount this).
+//   - `embedding` / `audio` → Limits only.
+//   - `image`               → renders nothing (callers should not mount this).
 
 import { computed, ref, watch } from 'vue';
 

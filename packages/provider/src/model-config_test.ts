@@ -198,6 +198,14 @@ describe('chatField', () => {
 });
 
 describe('modelsField chat integration', () => {
+  test('derives audio kind from the transcription endpoint', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'transcriber',
+      endpoints: { audioTranscriptions: {} },
+    }], 'p');
+    expect(model.kind).toBe('audio');
+  });
+
   test('rejects chat on non-chat kind', () => {
     expect(() => modelsField([{
       upstreamModelId: 'm',
