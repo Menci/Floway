@@ -28,6 +28,7 @@ const mountEditor = (selected: Row) => mount(ModelEditor, {
     isUpstreamIdLocked: false,
     hasAutoCounterpart: false,
     modeSwitchable: false,
+    allowRerank: true,
   },
   global: {
     stubs: {
