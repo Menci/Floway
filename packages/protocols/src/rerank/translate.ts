@@ -83,49 +83,60 @@ export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknow
   case 'cohere-v1': {
     rejectFields(value, protocol, ['max_tokens_per_doc', 'priority', 'top_k']);
     const rankFields = value.rank_fields === undefined ? undefined : stringArray(value.rank_fields, 'rank_fields');
+    const topN = optionalPositiveInteger(value.top_n, 'top_n');
+    const returnDocuments = optionalBoolean(value.return_documents, 'return_documents');
+    const maxChunksPerDocument = optionalPositiveInteger(value.max_chunks_per_doc, 'max_chunks_per_doc');
     return {
       model,
       request: {
         ...baseRequest(value, protocol),
         query: requiredString(value.query, 'query'),
         documents: cohereV1Documents(value.documents),
-        ...(optionalNullablePositiveInteger(value.top_n, 'top_n') === undefined ? {} : { topN: value.top_n as number }),
+        ...(topN === undefined ? {} : { topN }),
         ...(rankFields === undefined ? {} : { rankFields }),
-        ...(optionalBoolean(value.return_documents, 'return_documents') === undefined ? {} : { returnDocuments: value.return_documents as boolean }),
-        ...(optionalPositiveInteger(value.max_chunks_per_doc, 'max_chunks_per_doc') === undefined ? {} : { maxChunksPerDocument: value.max_chunks_per_doc as number }),
+        ...(returnDocuments === undefined ? {} : { returnDocuments }),
+        ...(maxChunksPerDocument === undefined ? {} : { maxChunksPerDocument }),
       },
     };
   }
-  case 'cohere-v2':
+  case 'cohere-v2': {
     rejectFields(value, protocol, ['rank_fields', 'return_documents', 'max_chunks_per_doc', 'top_k']);
+    const topN = optionalPositiveInteger(value.top_n, 'top_n');
+    const maxTokensPerDocument = optionalPositiveInteger(value.max_tokens_per_doc, 'max_tokens_per_doc');
+    const priority = optionalInteger(value.priority, 'priority');
     return {
       model,
       request: {
         ...baseRequest(value, protocol),
         query: requiredString(value.query, 'query'),
         documents: stringArray(value.documents, 'documents'),
-        ...(optionalPositiveInteger(value.top_n, 'top_n') === undefined ? {} : { topN: value.top_n as number }),
-        ...(optionalPositiveInteger(value.max_tokens_per_doc, 'max_tokens_per_doc') === undefined ? {} : { maxTokensPerDocument: value.max_tokens_per_doc as number }),
-        ...(optionalInteger(value.priority, 'priority') === undefined ? {} : { priority: value.priority as number }),
+        ...(topN === undefined ? {} : { topN }),
+        ...(maxTokensPerDocument === undefined ? {} : { maxTokensPerDocument }),
+        ...(priority === undefined ? {} : { priority }),
       },
     };
+  }
   case 'jina-v1': {
     rejectFields(value, protocol, ['top_k', 'rank_fields', 'max_chunks_per_doc', 'max_tokens_per_doc', 'priority']);
     // Jina returns documents unless explicitly disabled. Its live OpenAPI is
     // the authority for the model-discriminated text and multimodal inputs:
     // https://api.jina.ai/openapi.json
     const returnDocuments = optionalBoolean(value.return_documents, 'return_documents') ?? true;
+    const topN = optionalNullablePositiveInteger(value.top_n, 'top_n');
+    const truncation = optionalBoolean(value.truncation, 'truncation');
+    const maxDocumentLength = optionalPositiveInteger(value.max_doc_length, 'max_doc_length');
+    const returnEmbeddings = optionalBoolean(value.return_embeddings, 'return_embeddings');
     return {
       model,
       request: {
         ...baseRequest(value, protocol),
         query: jinaInput(value.query, 'query'),
         documents: jinaDocuments(value.documents),
-        ...(optionalPositiveInteger(value.top_n, 'top_n') === undefined ? {} : { topN: value.top_n as number }),
+        ...(topN === undefined ? {} : { topN }),
         returnDocuments,
-        ...(optionalBoolean(value.truncation, 'truncation') === undefined ? {} : { truncation: value.truncation as boolean }),
-        ...(optionalPositiveInteger(value.max_doc_length, 'max_doc_length') === undefined ? {} : { maxDocumentLength: value.max_doc_length as number }),
-        ...(optionalBoolean(value.return_embeddings, 'return_embeddings') === undefined ? {} : { returnEmbeddings: value.return_embeddings as boolean }),
+        ...(truncation === undefined ? {} : { truncation }),
+        ...(maxDocumentLength === undefined ? {} : { maxDocumentLength }),
+        ...(returnEmbeddings === undefined ? {} : { returnEmbeddings }),
       },
     };
   }
@@ -135,13 +146,14 @@ export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknow
     // https://docs.voyageai.com/reference/reranker-api.md
     const returnDocuments = optionalBoolean(value.return_documents, 'return_documents') ?? false;
     const truncation = optionalBoolean(value.truncation, 'truncation') ?? true;
+    const topN = optionalNullablePositiveInteger(value.top_k, 'top_k');
     return {
       model,
       request: {
         ...baseRequest(value, protocol),
         query: requiredString(value.query, 'query'),
         documents: stringArray(value.documents, 'documents'),
-        ...(optionalNullablePositiveInteger(value.top_k, 'top_k') === undefined ? {} : { topN: value.top_k as number }),
+        ...(topN === undefined ? {} : { topN }),
         returnDocuments,
         truncation,
       },
@@ -224,19 +236,18 @@ export const serializeRerankRequest = (
       query: stringInput(request.query),
       documents: strings,
       ...(request.topN === undefined ? {} : { top_n: request.topN }),
-      ...(request.instruct === undefined ? {} : { instruct: request.instruct }),
     };
-  case 'dashscope-native':
+  case 'dashscope-native': {
+    const parameters = {
+      ...(request.topN === undefined ? {} : { top_n: request.topN }),
+      ...(request.returnDocuments === undefined ? {} : { return_documents: request.returnDocuments }),
+    };
     return {
       model,
       input: { query: request.query, documents: request.documents },
-      parameters: {
-        ...(request.topN === undefined ? {} : { top_n: request.topN }),
-        ...(request.returnDocuments === undefined ? {} : { return_documents: request.returnDocuments }),
-        ...(request.instruct === undefined ? {} : { instruct: request.instruct }),
-        ...(request.fps === undefined ? {} : { fps: request.fps }),
-      },
+      ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
     };
+  }
   }
 };
 

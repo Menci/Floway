@@ -147,9 +147,9 @@ const fetchedAtMs = ref<number | null>(null);
 const fetchedCount = ref(0);
 
 // A custom raw model carries no per-endpoint hint beyond its kind. Embedding
-// and image map to their fixed endpoints; chat models follow the
-// upstream-level Default LLM Endpoints selection, mirroring how the data
-// plane derives an auto chat model's endpoints from the per-upstream config.
+// and image map to their fixed endpoints; chat follows the upstream default.
+// Rerank stays endpoint-empty until switching the row to manual persists a
+// target protocol and the semantic rerank endpoint together.
 const endpointsForKind = (kind: CustomRawModel['kind']): ModelEndpoints => {
   if (kind === 'embedding') return { embeddings: {} };
   if (kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };

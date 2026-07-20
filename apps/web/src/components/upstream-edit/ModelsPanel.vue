@@ -43,11 +43,18 @@ const selectedUiId = ref<string | null>(null);
 // and must keep shadowing it). Pure-manual rows have no such constraint.
 const lockedUpstreamId = reactive(new Set<string>());
 
+const parseManualModels = (value: unknown): UpstreamModelConfig[] => {
+  const models = modelsField(value, 'dashboard');
+  if (!props.allowRerank && models.some(model => model.kind === 'rerank')) {
+    throw new Error('Rerank models require a custom upstream');
+  }
+  return models;
+};
+
 const anyInvalid = computed(() => {
   const models = rows.value.filter(row => row.kind === 'manual').map(row => row.config);
   try {
-    modelsField(models, 'dashboard');
-    if (!props.allowRerank && models.some(model => model.kind === 'rerank')) return true;
+    parseManualModels(models);
     return false;
   } catch {
     return true;
@@ -214,11 +221,7 @@ const switchEditorMode = (next: 'ui' | 'json') => {
   // parse error so unsaved text is preserved.
   try {
     const parsed = JSON.parse(jsonText.value);
-    const models = modelsField(parsed, 'dashboard');
-    if (!props.allowRerank && models.some(model => model.kind === 'rerank')) {
-      throw new Error('Rerank models require a custom upstream');
-    }
-    manualModels.value = models;
+    manualModels.value = parseManualModels(parsed);
     jsonError.value = null;
     editorMode.value = 'ui';
   } catch (e) {

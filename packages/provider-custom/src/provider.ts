@@ -35,12 +35,10 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   return partial;
 };
 
-// A published kind of 'embedding'/'image' (Tier 1) maps directly to its
-// endpoints; a published 'chat' takes the upstream's configured endpoints
-// verbatim. With no/unrecognized published kind, the id heuristic (Tier 2) runs
-// and falls back to the configured endpoints when it does not match. The
-// configured set may be empty, leaving the model listed but unroutable until
-// the operator declares an endpoint. `kind` is derived back from the endpoints.
+// A published embedding/image kind maps directly to its endpoint; chat takes
+// the upstream default. Rerank rows are removed before this helper because a
+// kind alone cannot select their target wire. Unknown kinds use the id
+// heuristic, then fall back to the configured endpoints.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
   if (model.kind === 'embedding') return { embeddings: {} };
   if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };

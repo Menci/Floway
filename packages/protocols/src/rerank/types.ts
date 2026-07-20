@@ -16,8 +16,6 @@ export interface CanonicalRerankRequest {
   truncation?: boolean;
   maxDocumentLength?: number;
   returnEmbeddings?: boolean;
-  instruct?: string;
-  fps?: number;
 }
 
 export interface CanonicalRerankResult {
