@@ -348,6 +348,7 @@ export interface ResponsesComputerSafetyCheck {
 // `pending_safety_checks`; the legacy `computer_use_preview` shape uses the
 // singular `action` plus safety checks. Keep both wire generations explicit.
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1990-L2035
+// https://github.com/Menci/Floway/pull/246#issuecomment-5028154071
 interface ResponsesComputerCallItemBase {
   type: 'computer_call';
   id: string;
@@ -475,6 +476,7 @@ export interface ResponsesInputMultiAgentCallOutputItem {
 // Legacy RemoteCompactionV2 history shape. Current OpenAI Responses uses
 // `compaction_trigger` input and `compaction` output; Codex still deserializes
 // this form when replaying older rollouts.
+// https://github.com/openai/codex/blob/9e552e9d15ba52bed7077d5357f3e18e330f8f38/codex-rs/protocol/src/models.rs#L1135-L1148
 export interface ResponsesContextCompactionItem extends ResponsesPermissiveItem<'context_compaction'> {
   encrypted_content?: string;
   internal_chat_message_metadata_passthrough?: Record<string, unknown>;
@@ -488,10 +490,8 @@ export interface ResponsesCompactionItem {
   created_by?: string;
 }
 
-// Trailing input item recognised by codex's RemoteCompactionV2: the upstream
-// turns a normal `/responses` call into a compaction round-trip and replies
-// with a single `compaction` output item. Payload-free on the wire (any extra
-// keys are tolerated by the permissive base).
+// Payload-free trailing input item for a RemoteCompactionV2 round trip.
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L4894-L4902
 export interface ResponsesCompactionTriggerItem {
   type: 'compaction_trigger';
 }
@@ -509,6 +509,9 @@ export interface ResponsesCodeInterpreterCallItem {
   status: string;
 }
 
+// Legacy local-shell output is opaque text correlated by `call_id`; modern
+// shell output uses structured stdout/stderr/outcome chunks below.
+// https://github.com/openai/openai-agents-python/blob/2fa463571e76dae8ff267622f1018eaf06ffeb9f/tests/test_local_shell_tool.py#L46-L92
 export interface ResponsesLocalShellCallItem {
   type: 'local_shell_call';
   id: string;
@@ -796,15 +799,28 @@ export type ResponsesTool =
   | ResponsesShellTool
   | ResponsesApplyPatchTool;
 
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L1302-L1307
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L8250-L8400
 export type ResponsesToolChoice =
   | 'auto'
   | 'none'
   | 'required'
   | { type: 'function'; name: string }
   | { type: 'custom'; name: string }
+  | { type: 'mcp'; server_label: string; name?: string | null }
+  | { type: 'allowed_tools'; mode: 'auto' | 'required'; tools: Array<Record<string, unknown>> }
+  | { type: 'shell' }
+  | { type: 'apply_patch' }
   | { type: 'programmatic_tool_calling' }
-  | { type: ResponsesHostedToolType };
+  | {
+    type:
+      | ResponsesHostedToolType
+      | 'file_search'
+      | 'computer'
+      | 'computer_use_preview'
+      | 'computer_use'
+      | 'code_interpreter'
+      | 'mcp';
+  };
 
 // ── Response types ──
 

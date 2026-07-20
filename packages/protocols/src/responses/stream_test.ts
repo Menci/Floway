@@ -153,7 +153,6 @@ test('parseResponsesStream passes queued/created/in-progress wrappers through be
       'done',
     ],
   );
-  // The wrappers reach downstream verbatim with their original sequence numbers.
   assertEquals((frames[0] as { event: { sequence_number: number } }).event.sequence_number, 0);
   assertEquals((frames[2] as { event: { sequence_number: number } }).event.sequence_number, 2);
 });

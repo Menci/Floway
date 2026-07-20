@@ -493,30 +493,17 @@ export const consumeTurnStreaming = async function* (
     }
     const event = frame.event;
 
-    if (event.type === 'response.queued') {
+    if (event.type === 'response.queued' || event.type === 'response.created') {
       const reportedModel = event.response.model;
       if (typeof reportedModel === 'string' && reportedModel.length > 0) merge.lastSeenModel = reportedModel;
       merge.upstreamResponseSnapshot = event.response;
       ensureModel();
       if (isFirstTurn) {
+        const status = event.type === 'response.queued' ? 'queued' : 'in_progress';
         yield stamp({
-          type: 'response.queued',
-          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, 'queued'),
-        });
-      }
-      continue;
-    }
-
-    if (event.type === 'response.created') {
-      const reportedModel = event.response.model;
-      if (typeof reportedModel === 'string' && reportedModel.length > 0) merge.lastSeenModel = reportedModel;
-      merge.upstreamResponseSnapshot = event.response;
-      ensureModel();
-      if (isFirstTurn) {
-        yield stamp({
-          type: 'response.created',
-          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, 'in_progress'),
-        });
+          type: event.type,
+          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, status),
+        } as ResponsesStreamEvent);
       }
       continue;
     }
