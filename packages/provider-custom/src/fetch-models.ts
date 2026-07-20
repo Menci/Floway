@@ -66,6 +66,8 @@ const parsePricing = (value: unknown): ModelPricing | undefined => {
   // block, never the enclosing model or the rest of the catalog.
   if (!isRecord(value) || !isRecord(value.units) || !Array.isArray(value.entries)) return undefined;
   try {
+    if (Object.keys(value).some(key => key !== 'units' && key !== 'entries')) throw new TypeError('Malformed pricing block');
+    if (Object.keys(value.units).some(key => !BILLING_DIMENSIONS.includes(key as BillingDimension))) throw new TypeError('Malformed pricing units');
     const units: PriceUnits = {};
     for (const dimension of BILLING_DIMENSIONS) {
       const unit = value.units[dimension];
@@ -76,6 +78,8 @@ const parsePricing = (value: unknown): ModelPricing | undefined => {
     const entries: ModelPricing['entries'][number][] = [];
     for (const rawEntry of value.entries) {
       if (!isRecord(rawEntry) || !isRecord(rawEntry.rates)) throw new TypeError('Malformed pricing entry');
+      if (Object.keys(rawEntry).some(key => key !== 'selector' && key !== 'rates')) throw new TypeError('Malformed pricing entry');
+      if (Object.keys(rawEntry.rates).some(key => !BILLING_DIMENSIONS.includes(key as BillingDimension))) throw new TypeError('Malformed pricing rates');
       const rates: PriceVector = {};
       for (const dimension of BILLING_DIMENSIONS) {
         const rawRate = rawEntry.rates[dimension];

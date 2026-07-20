@@ -163,6 +163,23 @@ test('fetchCustomModels drops a `pricing` block with no recognized dimensions', 
   );
 });
 
+test('fetchCustomModels drops pricing blocks with unknown rate or unit dimensions', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [
+        { id: 'unknown-rate', pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 1, reasoning: 2 } }] } },
+        { id: 'unknown-unit', pricing: { units: { input: 'tokens_1m', reasoning: 'tokens_1m' }, entries: [{ rates: { input: 1 } }] } },
+      ],
+    }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      assertEquals(result.data.map(model => model.pricing), [undefined, undefined]);
+    },
+  );
+});
+
 test('fetchCustomModels skips entries whose id is not a non-empty string', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(

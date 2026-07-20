@@ -1,4 +1,4 @@
-// GET /api/token-usage — query per-key or per-user token usage records.
+// GET /api/token-usage — query per-key or per-user usage records.
 //
 // The `view` query parameter selects between two shapes: `self-by-key` returns
 // the actor's own keys, while `all-by-user` aggregates across users for admins
