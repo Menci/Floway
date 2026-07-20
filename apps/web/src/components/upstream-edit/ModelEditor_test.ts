@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils';
+import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
@@ -75,7 +75,7 @@ describe('ModelEditor', () => {
 
   it('persists an explicit Cohere v2 target when switching into rerank', async () => {
     const wrapper = mountEditor(row('reranker', 'reranker', 1, undefined));
-    wrapper.findAllComponents(Select)[0]!.vm.$emit('update:modelValue', 'rerank');
+    (wrapper.findAllComponents(Select)[0] as unknown as VueWrapper).vm.$emit('update:modelValue', 'rerank');
     await nextTick();
 
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({

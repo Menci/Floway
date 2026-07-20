@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils';
+import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
@@ -11,7 +11,7 @@ describe('RerankTargetEditor', () => {
       props: { modelValue: { protocol: 'cohere-v2' } },
     });
 
-    wrapper.getComponent(Select).vm.$emit('update:modelValue', 'dashscope-native');
+    (wrapper.getComponent(Select) as unknown as VueWrapper).vm.$emit('update:modelValue', 'dashscope-native');
     await nextTick();
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({ protocol: 'dashscope-native' });
 
