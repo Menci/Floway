@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { assembleCatalog } from './models.ts';
 import type { CodexCatalogCapabilities } from './catalog.ts';
+import { assembleCatalog } from './models.ts';
 import type { AddressableIdEntry } from '../shared/listing/addressable.ts';
 import type { InternalModel } from '@floway-dev/provider';
 
