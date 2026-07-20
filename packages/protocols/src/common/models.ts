@@ -449,7 +449,13 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
 //
 // Add a value here only when we actually route that endpoint family — do
 // not pre-declare for future capabilities.
-export type ModelKind = 'chat' | 'embedding' | 'image' | 'audio';
+export const MODEL_KINDS = ['chat', 'embedding', 'image', 'audio'] as const;
+export type ModelKind = typeof MODEL_KINDS[number];
+
+export const parseModelKind = (value: unknown): ModelKind => {
+  if (typeof value === 'string' && (MODEL_KINDS as readonly string[]).includes(value)) return value as ModelKind;
+  throw new TypeError(`Invalid model kind: ${JSON.stringify(value)}`);
+};
 
 export type Modality = 'text' | 'image';
 

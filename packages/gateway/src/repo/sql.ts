@@ -50,7 +50,7 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { getFileProvider, type SqlDatabase, type SqlPreparedStatement, type SqlResult } from '@floway-dev/platform';
-import { canonicalPricingSelectorKey, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type BillingUnit, type ModelKind } from '@floway-dev/protocols/common';
+import { canonicalPricingSelectorKey, parseModelKind, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type BillingUnit } from '@floway-dev/protocols/common';
 import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, PerformanceOperation, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix } from '@floway-dev/provider';
 
@@ -1747,7 +1747,7 @@ const parseAnnouncedMetadata = (raw: string | null, name: string): AnnouncedMeta
 
 const toModelAliasRecord = (row: ModelAliasRow): ModelAliasRecord => ({
   name: row.name,
-  kind: row.kind as ModelKind,
+  kind: parseModelKind(row.kind),
   selection: row.selection as AliasSelection,
   displayName: row.display_name,
   visibleInModelsList: row.visible_in_models_list !== 0,

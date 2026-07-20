@@ -7,6 +7,7 @@ import {
   collectModelPricingIssues,
   tokenModelPricing,
   parsePricingSelectorKey,
+  parseModelKind,
   priceRequest,
   pricingEntry,
   validateModelPricing,
@@ -14,6 +15,12 @@ import {
   type PricingSelector,
 } from './models.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
+
+test('parseModelKind accepts the current model families and rejects unknown storage values', () => {
+  for (const kind of ['chat', 'embedding', 'image', 'audio'] as const) assertEquals(parseModelKind(kind), kind);
+  assertThrows(() => parseModelKind('video'), TypeError, 'Invalid model kind: "video"');
+  assertThrows(() => parseModelKind(null), TypeError, 'Invalid model kind: null');
+});
 
 test('canonical selector JSON sorts axis keys and threshold object keys deterministically', () => {
   const first: PricingSelector = { serviceTier: 'priority', inputTokens: { value: 272000, operator: 'gt' } };

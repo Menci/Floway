@@ -1,5 +1,5 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
-import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, type BillingDimension, type BillingUnit, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceUnits, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, type BillingDimension, type BillingUnit, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, parseModelKind, type PriceUnits, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
@@ -157,8 +157,6 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
   return pricing;
 };
 
-const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image', 'audio']);
-
 const MODALITY_VALUES: ReadonlySet<Modality> = new Set<Modality>(['text', 'image']);
 
 const modalityArrayField = (value: unknown, label: string): readonly Modality[] => {
@@ -261,10 +259,11 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
 // always writes an explicit kind, keeping it consistent with the endpoints.
 const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): ModelKind => {
   if (value === undefined) return kindForEndpoints(endpoints);
-  if (typeof value !== 'string' || !MODEL_KINDS.has(value as ModelKind)) {
+  try {
+    return parseModelKind(value);
+  } catch {
     throw new Error(`Malformed ${label}: must be one of chat, embedding, image, audio`);
   }
-  return value as ModelKind;
 };
 
 const modelField = (value: unknown, label: string): UpstreamModelConfig => {

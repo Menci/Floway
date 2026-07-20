@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
+import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
 // --- shared atoms ---
 
@@ -140,7 +141,7 @@ const limitsSchema = z.object({
 const upstreamModelSchema = z.object({
   upstreamModelId: z.string().min(1),
   publicModelId: z.string().optional(),
-  kind: z.enum(['chat', 'embedding', 'image', 'audio']).optional(),
+  kind: z.enum(MODEL_KINDS).optional(),
   endpoints: modelEndpointsSchema,
   display_name: z.string().optional(),
   pricing: z.object({
@@ -610,7 +611,7 @@ const announcedMetadataSchema = z.object({
 
 const aliasBaseShape = {
   name: z.string().min(1),
-  kind: z.enum(['chat', 'embedding', 'image', 'audio']),
+  kind: z.enum(MODEL_KINDS),
   selection: z.enum(['random', 'first-available']),
   display_name: z.string().min(1).nullable(),
   visible_in_models_list: z.boolean(),
