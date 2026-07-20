@@ -309,32 +309,81 @@ export interface ResponsesPermissiveItem<TType extends string> {
   [key: string]: unknown;
 }
 
-export interface ResponsesFileSearchCallItem extends ResponsesPermissiveItem<'file_search_call'> {
-  queries?: string[];
-  results?: unknown[];
+export interface ResponsesFileSearchResult {
+  attributes?: Record<string, string | number | boolean> | null;
+  file_id?: string;
+  filename?: string;
+  score?: number;
+  text?: string;
 }
 
-export interface ResponsesComputerCallItem extends ResponsesPermissiveItem<'computer_call'> {
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L2909-L2980
+export interface ResponsesFileSearchCallItem {
+  type: 'file_search_call';
+  id: string;
+  queries: string[];
+  status: string;
+  results?: ResponsesFileSearchResult[] | null;
+}
+
+export type ResponsesComputerAction = Record<string, unknown> & { type: string };
+
+export interface ResponsesComputerSafetyCheck {
+  id: string;
+  code?: string | null;
+  message?: string | null;
+}
+
+// Modern `computer` emits `actions` and rejects even an empty
+// `pending_safety_checks`; the legacy `computer_use_preview` shape uses the
+// singular `action` plus safety checks. Keep both wire generations explicit.
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1990-L2035
+export interface ResponsesComputerCallItem {
+  type: 'computer_call';
+  id: string;
   call_id: string;
-  action?: unknown;
-  pending_safety_checks?: unknown[];
+  status: string;
+  action?: ResponsesComputerAction;
+  actions?: ResponsesComputerAction[];
+  pending_safety_checks?: ResponsesComputerSafetyCheck[];
 }
 
-export interface ResponsesComputerCallOutputItem extends ResponsesPermissiveItem<'computer_call_output'> {
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L2280-L2359
+export interface ResponsesComputerCallOutputItem {
+  type: 'computer_call_output';
+  id?: string | null;
   call_id: string;
-  output?: unknown;
-  acknowledged_safety_checks?: unknown[];
+  output: {
+    type: 'computer_screenshot';
+    file_id?: string;
+    image_url?: string;
+  };
+  acknowledged_safety_checks?: ResponsesComputerSafetyCheck[] | null;
+  status?: string | null;
+  created_by?: string;
 }
 
-export interface ResponsesToolSearchCallItem extends ResponsesPermissiveItem<'tool_search_call'> {
-  call_id?: string;
-  query?: string;
-  results?: unknown[];
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L7119-L7223
+export interface ResponsesToolSearchCallItem {
+  type: 'tool_search_call';
+  arguments: unknown;
+  id?: string | null;
+  call_id?: string | null;
+  execution?: 'server' | 'client';
+  status?: string | null;
+  created_by?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
 
-export interface ResponsesToolSearchOutputItem extends ResponsesPermissiveItem<'tool_search_output'> {
-  call_id?: string;
-  output?: unknown;
+export interface ResponsesToolSearchOutputItem {
+  type: 'tool_search_output';
+  tools: ResponsesTool[];
+  id?: string | null;
+  call_id?: string | null;
+  execution?: 'server' | 'client';
+  status?: string | null;
+  created_by?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
 
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4265-L4285
@@ -403,77 +452,168 @@ export interface ResponsesInputMultiAgentCallOutputItem {
   agent?: { agent_name: string } | null;
 }
 
+// Legacy RemoteCompactionV2 history shape. Current OpenAI Responses uses
+// `compaction_trigger` input and `compaction` output; Codex still deserializes
+// this form when replaying older rollouts.
 export interface ResponsesContextCompactionItem extends ResponsesPermissiveItem<'context_compaction'> {
   encrypted_content?: string;
   internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
 
-export type ResponsesCompactionItem = ResponsesPermissiveItem<'compaction'>;
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1918-L1963
+export interface ResponsesCompactionItem {
+  type: 'compaction';
+  id?: string | null;
+  encrypted_content: string;
+  created_by?: string;
+}
 
 // Trailing input item recognised by codex's RemoteCompactionV2: the upstream
 // turns a normal `/responses` call into a compaction round-trip and replies
 // with a single `compaction` output item. Payload-free on the wire (any extra
 // keys are tolerated by the permissive base).
-export type ResponsesCompactionTriggerItem = ResponsesPermissiveItem<'compaction_trigger'>;
-
-export interface ResponsesCodeInterpreterCallItem extends ResponsesPermissiveItem<'code_interpreter_call'> {
-  call_id?: string;
-  code?: string;
-  results?: unknown[];
+export interface ResponsesCompactionTriggerItem {
+  type: 'compaction_trigger';
 }
 
-export interface ResponsesLocalShellCallItem extends ResponsesPermissiveItem<'local_shell_call'> {
-  call_id: string;
-  command?: string;
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1852-L1915
+export interface ResponsesCodeInterpreterCallItem {
+  type: 'code_interpreter_call';
+  id: string;
+  code: string | null;
+  container_id: string;
+  outputs: Array<
+    | { type: 'logs'; logs: string }
+    | { type: 'image'; url: string }
+  > | null;
+  status: string;
 }
 
-export interface ResponsesLocalShellCallOutputItem extends ResponsesPermissiveItem<'local_shell_call_output'> {
+export interface ResponsesLocalShellCallItem {
+  type: 'local_shell_call';
+  id: string;
   call_id: string;
-  output?: unknown;
+  action: {
+    type: 'exec';
+    command: string[];
+    env: Record<string, string>;
+    timeout_ms?: number | null;
+    user?: string | null;
+    working_directory?: string | null;
+  };
+  status: string;
 }
 
-export interface ResponsesShellCallItem extends ResponsesPermissiveItem<'shell_call'> {
+export interface ResponsesLocalShellCallOutputItem {
+  type: 'local_shell_call_output';
+  id?: string | null;
   call_id: string;
-  command?: string;
+  output: string;
+  status?: string | null;
+}
+
+export type ResponsesShellEnvironment =
+  | { type: 'local' }
+  | { type: 'container_reference'; container_id: string };
+
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L3154-L3344
+export interface ResponsesShellCallItem {
+  type: 'shell_call';
+  id?: string | null;
+  call_id: string;
+  action: {
+    commands: string[];
+    max_output_length?: number | null;
+    timeout_ms?: number | null;
+  };
+  environment?: ResponsesShellEnvironment | null;
+  status?: string | null;
   caller?: ResponsesToolCaller | null;
+  created_by?: string;
 }
 
-export interface ResponsesShellCallOutputItem extends ResponsesPermissiveItem<'shell_call_output'> {
+export interface ResponsesShellCallOutputItem {
+  type: 'shell_call_output';
+  id?: string | null;
   call_id: string;
-  output?: unknown;
+  max_output_length?: number | null;
+  output: Array<{
+    stdout: string;
+    stderr: string;
+    outcome: { type: 'timeout' } | { type: 'exit'; exit_code: number };
+    created_by?: string;
+  }>;
+  status?: string | null;
   caller?: ResponsesToolCaller | null;
+  created_by?: string;
 }
 
-export interface ResponsesApplyPatchCallItem extends ResponsesPermissiveItem<'apply_patch_call'> {
+export type ResponsesApplyPatchOperation =
+  | { type: 'create_file'; path: string; diff: string }
+  | { type: 'delete_file'; path: string }
+  | { type: 'update_file'; path: string; diff: string };
+
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1472-L1643
+export interface ResponsesApplyPatchCallItem {
+  type: 'apply_patch_call';
+  id?: string | null;
   call_id: string;
-  patch?: string;
+  operation: ResponsesApplyPatchOperation;
+  status: 'in_progress' | 'completed';
   caller?: ResponsesToolCaller | null;
+  created_by?: string;
 }
 
-export interface ResponsesApplyPatchCallOutputItem extends ResponsesPermissiveItem<'apply_patch_call_output'> {
+export interface ResponsesApplyPatchCallOutputItem {
+  type: 'apply_patch_call_output';
+  id?: string | null;
   call_id: string;
-  output?: unknown;
+  status: 'completed' | 'failed';
+  output?: string | null;
   caller?: ResponsesToolCaller | null;
+  created_by?: string;
 }
 
-export interface ResponsesMcpCallItem extends ResponsesPermissiveItem<'mcp_call'> {
-  call_id: string;
-  name?: string;
-  arguments?: unknown;
-  output?: unknown;
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L4727-L4892
+export interface ResponsesMcpCallItem {
+  type: 'mcp_call';
+  id: string;
+  arguments: string;
+  name: string;
+  server_label: string;
+  approval_request_id?: string | null;
+  error?: string | null;
+  output?: string | null;
+  status?: string;
 }
 
-export interface ResponsesMcpListToolsItem extends ResponsesPermissiveItem<'mcp_list_tools'> {
-  tools?: unknown[];
+export interface ResponsesMcpListToolsItem {
+  type: 'mcp_list_tools';
+  id: string;
+  server_label: string;
+  tools: Array<{
+    input_schema: unknown;
+    name: string;
+    annotations?: unknown | null;
+    description?: string | null;
+  }>;
+  error?: string | null;
 }
 
-export interface ResponsesMcpApprovalRequestItem extends ResponsesPermissiveItem<'mcp_approval_request'> {
-  call_id?: string;
+export interface ResponsesMcpApprovalRequestItem {
+  type: 'mcp_approval_request';
+  id: string;
+  arguments: string;
+  name: string;
+  server_label: string;
 }
 
-export interface ResponsesMcpApprovalResponseItem extends ResponsesPermissiveItem<'mcp_approval_response'> {
-  call_id?: string;
-  output?: unknown;
+export interface ResponsesMcpApprovalResponseItem {
+  type: 'mcp_approval_response';
+  id?: string | null;
+  approval_request_id: string;
+  approve: boolean;
+  reason?: string | null;
 }
 
 export interface ResponsesInputImageGenerationCall {
