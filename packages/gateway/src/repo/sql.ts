@@ -818,13 +818,13 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
   }
 }
 
-const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, content_hash, created_at';
+const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, item_type, payload_json, content_hash, created_at';
 // D1 permits 100 bound parameters per query. Descriptor reads reserve one
-// bind for api_key_id; inserts use eight binds per item; refresh CASE updates
+// bind for api_key_id; inserts use six binds per item; refresh CASE updates
 // use four per item plus created_at and api_key_id.
 // https://developers.cloudflare.com/d1/platform/limits/#limits
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 90;
-const RESPONSES_INSERT_CHUNK_SIZE = 12;
+const RESPONSES_INSERT_CHUNK_SIZE = 16;
 const RESPONSES_REFRESH_CHUNK_SIZE = 24;
 
 interface ResponsesItemDescriptor {
@@ -931,7 +931,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const statements: SqlPreparedStatement[] = [];
     for (let index = 0; index < writes.length; index += RESPONSES_INSERT_CHUNK_SIZE) {
       const chunk = writes.slice(index, index + RESPONSES_INSERT_CHUNK_SIZE);
-      const values = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const values = chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
       statements.push(this.db
         .prepare(
           `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES ${values}
@@ -940,8 +940,6 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         .bind(...chunk.flatMap(({ item, payload }) => [
           item.id,
           item.apiKeyId,
-          item.upstreamId,
-          item.upstreamItemId,
           item.itemType,
           payload,
           item.contentHash,
@@ -1139,8 +1137,6 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
 interface ResponsesItemRow {
   id: string;
   api_key_id: string;
-  upstream_id: string | null;
-  upstream_item_id: string | null;
   item_type: string;
   payload_json: string;
   content_hash: string | null;
@@ -1150,8 +1146,6 @@ interface ResponsesItemRow {
 const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredResponsesItem> => ({
   id: row.id,
   apiKeyId: row.api_key_id,
-  upstreamId: row.upstream_id,
-  upstreamItemId: row.upstream_item_id,
   itemType: row.item_type,
   payload: await parseStoredResponsesPayload(row.id, row.payload_json),
   contentHash: row.content_hash,
