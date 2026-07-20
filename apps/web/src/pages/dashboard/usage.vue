@@ -183,7 +183,7 @@ const tokenSummary = computed(() => {
   let requests = 0, cost = 0, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, inputImage = 0, outputImage = 0;
   for (const r of records) {
     requests += r.requests;
-    cost += r.cost;
+    cost += r.cost ?? 0;
     input += dim(r, 'input');
     output += dim(r, 'output');
     cacheRead += dim(r, 'input_cache_read');
