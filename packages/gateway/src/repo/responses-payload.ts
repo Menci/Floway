@@ -60,11 +60,12 @@ export const serializeStoredResponsesPayload = async (
   const sha256 = await sha256Hex(gzippedBytes);
   const expiresAt = createdAt + RESPONSES_STATE_TTL_MS;
   const apiKeyHashPrefix = (await sha256Hex(encoder.encode(apiKeyId))).slice(0, 16);
+  const itemScopeHash = await sha256Hex(encoder.encode(`${apiKeyId}\0${id}`));
   // The digest keeps integrity/content identity visible, while the nonce gives
   // each pre-SQL write exclusive cleanup ownership. A losing concurrent write
   // can then delete its object without racing a later winner that stored the
   // same item bytes under the same expiry bucket.
-  const key = `${responsesItemPayloadExpiryBucketPrefix(expiresAt)}${apiKeyHashPrefix}/${id}/${sha256}-${randomFileNonce()}.gz`;
+  const key = `${responsesItemPayloadExpiryBucketPrefix(expiresAt)}${apiKeyHashPrefix}/${itemScopeHash}/${sha256}-${randomFileNonce()}.gz`;
   await getFileProvider().put(key, gzippedBytes);
   return JSON.stringify({
     version: 1,
