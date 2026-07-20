@@ -12,14 +12,18 @@ const generatedItemPrefixes = {
   function_call: 'fc',
   custom_tool_call: 'ctc',
   compaction: 'cmp',
-  // https://github.com/openai/openai-python/blob/d4dceb221b9a92c55c232d5b330ae89beb539415/src/openai/types/responses/response_output_item.py#L513-L537
+  // https://github.com/openai/codex/blob/8c41ed33ce3e39460e7b13b14c35e0c39bb5980d/codex-rs/protocol/src/models.rs#L1076-L1094
   image_generation_call: 'ig',
 } as const;
 
 export type GeneratedResponsesItemType = keyof typeof generatedItemPrefixes;
 
 export const createRandomResponsesItemId = (type: GeneratedResponsesItemType): string => {
+  if (!Object.hasOwn(generatedItemPrefixes, type)) {
+    throw new TypeError(`Unknown generated Responses item type: ${type as string}`);
+  }
+  const prefix = generatedItemPrefixes[type];
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return `${generatedItemPrefixes[type]}_${[...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
+  return `${prefix}_${[...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
 };

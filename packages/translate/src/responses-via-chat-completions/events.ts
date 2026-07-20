@@ -345,7 +345,7 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
 
       for (const item of readableReasoningItems) {
         const outputIndex = state.outputIndex++;
-        events.push(...emitCompletedReasoningItem(toResponsesReasoningItem<ResponsesOutputReasoning>(item, createRandomResponsesItemId('reasoning')), outputIndex, state));
+        events.push(...emitCompletedReasoningItem(toResponsesReasoningItem<ResponsesOutputReasoning>(item), outputIndex, state));
       }
 
       if (hadPendingScalarReasoning) {

@@ -20,3 +20,8 @@ test.each(Object.entries(expectedPrefixes))('creates unique %s ids with the cano
   expect(second).toMatch(new RegExp(`^${prefix}_[0-9a-f]{32}$`));
   expect(first).not.toBe(second);
 });
+
+test.each(['unknown', '__proto__', 'constructor', 'toString'])('rejects unsupported runtime item type %s', type => {
+  expect(() => createRandomResponsesItemId(type as GeneratedResponsesItemType))
+    .toThrow(`Unknown generated Responses item type: ${type}`);
+});

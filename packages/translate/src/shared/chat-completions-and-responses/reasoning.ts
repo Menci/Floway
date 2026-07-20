@@ -30,19 +30,19 @@ export const chatCompletionsReasoningProjectionFields = (projection: ChatComplet
   ...(projection.items.length > 0 ? { reasoning_items: projection.items } : {}),
 });
 
-export const toResponsesReasoningItem = <T extends ResponsesReasoningItem>(item: ChatCompletionsReasoningItem, fallbackId: string): T =>
+export const toResponsesReasoningItem = <T extends ResponsesReasoningItem>(item: ChatCompletionsReasoningItem): T =>
   ({
     type: 'reasoning',
-    id: item.id ?? fallbackId,
+    id: item.id ?? createRandomResponsesItemId('reasoning'),
     summary: item.summary ?? [],
   } as T);
 
-export const scalarToResponsesReasoningItem = <T extends ResponsesReasoningItem>(reasoningText: string | null | undefined, id: string): T | null => {
+export const scalarToResponsesReasoningItem = <T extends ResponsesReasoningItem>(reasoningText: string | null | undefined): T | null => {
   if (!reasoningText) return null;
 
   return {
     type: 'reasoning',
-    id,
+    id: createRandomResponsesItemId('reasoning'),
     summary: reasoningText ? [{ type: 'summary_text', text: reasoningText }] : [],
   } as T;
 };
@@ -58,6 +58,6 @@ export const translateChatCompletionsReasoningItems = <T extends ResponsesReason
   // References:
   // - https://github.com/BerriAI/litellm/blob/70492cee4282541256fb9ac963be94412b1a109c/litellm/completion_extras/litellm_responses_transformation/transformation.py#L59-L104
   // - https://github.com/BerriAI/litellm/blob/70492cee4282541256fb9ac963be94412b1a109c/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1322-L1355
-  const translated = reasoningItems.flatMap(item => (hasReadableSummary(item) ? [toResponsesReasoningItem<T>(item, createRandomResponsesItemId('reasoning'))] : []));
+  const translated = reasoningItems.flatMap(item => (hasReadableSummary(item) ? [toResponsesReasoningItem<T>(item)] : []));
   return translated.length > 0 ? translated : null;
 };

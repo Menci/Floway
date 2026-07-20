@@ -45,10 +45,10 @@ const isRetainedMessage = (item: ResponsesInputItem): item is ResponsesInputMess
 // roles, so the final cast records that the compaction envelope's `output` is
 // deliberately input-shaped.
 //
-// Retained messages are newly synthesized output items, so they receive their
-// final public ids here instead of inheriting an input id. They are resent as
-// full content rather than item references; the compaction blob carries the
-// state needed for the next turn.
+// Retained messages are newly synthesized output items, so their producer IDs
+// are assigned here instead of inherited from input. The current state-writing
+// client membrane may still alias them. They are resent as full content rather
+// than item references; the compaction blob carries next-turn state.
 export const compactionResponse = (input: ResponsesInputItem[], generated: ResponsesResult): ResponsesResult => {
   const kept: ResponsesInputMessage[] = [];
   let used = 0;
