@@ -1,8 +1,8 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { tokenUsageDimensions } from '../../../repo/usage-dimensions.ts';
-import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, priceRequest } from '@floway-dev/protocols/common';
+import { usageDimensions } from '../../../repo/usage-dimensions.ts';
+import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, type PriceUnits, type PriceVector, priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
@@ -138,17 +138,22 @@ const splitModalityCounts = (
   return { [textDimension]: text ?? 0, [imageDimension]: image ?? 0 };
 };
 
-export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  const { tier, ...tokens } = usage ?? {};
-  const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
-  const priced = priceRequest(modelIdentity.pricing, { serviceTier: tier, inputTokens });
+export const recordUsage = async (
+  keyId: string,
+  modelIdentity: TelemetryModelIdentity,
+  quantities: PriceVector,
+  units: PriceUnits,
+  pricingFacts: PricingRuntimeFacts,
+): Promise<void> => {
+  const priced = priceRequest(modelIdentity.pricing, pricingFacts);
   for (const dimension of BILLING_DIMENSIONS) {
     const pricingUnit = priced.units?.[dimension];
-    if (pricingUnit !== undefined && pricingUnit !== 'tokens_1m') {
-      throw new Error(`Token usage dimension ${dimension} has non-token pricing unit ${pricingUnit}`);
+    const usageUnit = units[dimension];
+    if (pricingUnit !== undefined && usageUnit !== undefined && pricingUnit !== usageUnit) {
+      throw new Error(`Usage dimension ${dimension} is measured in ${usageUnit} but priced in ${pricingUnit}`);
     }
   }
-  const dimensions = tokenUsageDimensions(tokens, priced.rates);
+  const dimensions = usageDimensions(quantities, units, priced.rates);
   await Promise.all([
     getRepo().usage.record({
       keyId,
@@ -169,4 +174,11 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       });
     })(),
   ]);
+};
+
+export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
+  const { tier, ...tokens } = usage ?? {};
+  const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
+  const units = Object.fromEntries(BILLING_DIMENSIONS.map(dimension => [dimension, 'tokens_1m'])) as PriceUnits;
+  await recordUsage(keyId, modelIdentity, tokens, units, { serviceTier: tier, inputTokens });
 };
