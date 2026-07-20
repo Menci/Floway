@@ -58,15 +58,17 @@ const cohereV1Documents = (value: unknown): RerankInput[] => {
   return value.map((document, index) => typeof document === 'string' ? document : stringRecord(document, `documents[${index}]`));
 };
 
-const jinaInput = (value: unknown, field: string): RerankInput => {
+const jinaStructuredInput = (value: unknown, field: string, keys: readonly ('text' | 'image')[]): RerankInput => {
   if (typeof value === 'string') return value;
-  if (!isRecord(value) || Object.keys(value).length === 0) throw new Error(`${field} must be a string or a non-empty input object`);
+  if (!isRecord(value) || !keys.some(key => typeof value[key] === 'string')) {
+    throw new Error(`${field} must be a string or an object with a string ${keys.join(' or ')} field`);
+  }
   return value;
 };
 
 const jinaDocuments = (value: unknown): RerankInput[] => {
   if (!Array.isArray(value) || value.length === 0) throw new Error('documents must be a non-empty array');
-  return value.map((document, index) => jinaInput(document, `documents[${index}]`));
+  return value.map((document, index) => jinaStructuredInput(document, `documents[${index}]`, ['text', 'image']));
 };
 
 const baseRequest = (body: Record<string, unknown>, sourceProtocol: RerankSourceProtocol): Omit<CanonicalRerankRequest, 'query' | 'documents'> => ({
@@ -133,7 +135,7 @@ export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknow
       model,
       request: {
         ...baseRequest(value, protocol),
-        query: jinaInput(value.query, 'query'),
+        query: jinaStructuredInput(value.query, 'query', ['image']),
         documents: jinaDocuments(value.documents),
         ...(topN === undefined ? {} : { topN }),
         returnDocuments,
@@ -294,7 +296,7 @@ const resultItem = (value: unknown, field: string): CanonicalRerankResult => {
   return {
     index: value.index,
     relevanceScore: value.relevance_score,
-    ...(value.document === undefined || value.document === null ? {} : { document: jinaInput(value.document, `${field}.document`) }),
+    ...(value.document === undefined || value.document === null ? {} : { document: jinaStructuredInput(value.document, `${field}.document`, ['text', 'image']) }),
     ...(embedding === undefined ? {} : { embedding }),
   };
 };

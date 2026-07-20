@@ -58,7 +58,7 @@ describe('rerank request ingress', () => {
   test('Jina and Voyage apply their documented response-document defaults', () => {
     const jina = parseRerankRequest('jina-v1', {
       model: 'jina-reranker-m0',
-      query: { text: 'query' },
+      query: { image: 'https://example.com/query.png' },
       documents: [{ text: 'one' }, { image: 'https://example.com/two.png' }],
     });
     expect(jina.request.returnDocuments).toBe(true);
