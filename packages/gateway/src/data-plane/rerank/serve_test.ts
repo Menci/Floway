@@ -100,6 +100,52 @@ test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', as
   assertEquals(performance[0]?.errorsNoOutput, 0);
 });
 
+test('/v2/rerank accepts null Cohere meta and records request-only usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'cohere-v2' });
+
+  await withMockedFetch(
+    () => jsonResponse({ id: 'request-no-usage', results: [], meta: null }),
+    async () => {
+      const response = await requestApp('/v2/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), { id: 'request-no-usage', results: [], meta: null });
+    },
+  );
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].dimensions, []);
+});
+
+test('/v2/rerank rejects malformed Cohere usage objects and still records the request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'cohere-v2' });
+
+  await withMockedFetch(
+    () => jsonResponse({ id: 'request-bad-usage', results: [], meta: { tokens: 3 } }),
+    async () => {
+      const response = await requestApp('/v2/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      assertEquals(response.status, 502);
+      await response.json();
+    },
+  );
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].dimensions, []);
+});
+
 test('/jina/v1/rerank preserves same-dialect extensions and records token usage', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(

@@ -210,6 +210,28 @@ describe('rerank response translation', () => {
     expect(jina.searchUnits).toBeUndefined();
   });
 
+  test('Cohere usage accepts omitted and null optional objects but rejects malformed present objects', () => {
+    for (const response of [
+      { results: [] },
+      { results: [], meta: null },
+      { results: [], meta: { billed_units: null, tokens: null } },
+    ]) {
+      expect(parseRerankUsage('cohere-v2', response)).toEqual({});
+      expect(parseRerankResponse('cohere-v2', response)).toMatchObject({ results: [] });
+    }
+
+    expect(parseRerankUsage('cohere-v2', {
+      meta: { billed_units: null, tokens: { input_tokens: 3 } },
+    })).toEqual({ totalTokens: 3 });
+    expect(parseRerankUsage('cohere-v2', {
+      meta: { billed_units: { search_units: 2 }, tokens: null },
+    })).toEqual({ searchUnits: 2 });
+
+    expect(() => parseRerankUsage('cohere-v2', { meta: 'bad' })).toThrow('meta must be an object or null');
+    expect(() => parseRerankUsage('cohere-v2', { meta: { billed_units: 1 } })).toThrow('meta.billed_units must be an object or null');
+    expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: [] } })).toThrow('meta.tokens must be an object or null');
+  });
+
   test('normalizes Voyage and both DashScope response envelopes', () => {
     expect(parseRerankResponse('voyage-v1', {
       object: 'list', model: 'voyage', data: [{ index: 0, relevance_score: 0.7 }], usage: { total_tokens: 10 },

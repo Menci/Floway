@@ -340,10 +340,17 @@ const listEnvelopeModel = (value: Record<string, unknown>): string => {
   return requiredString(value.model, 'model');
 };
 
+const optionalRecord = (value: unknown, field: string): Record<string, unknown> | undefined => {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) throw new Error(`${field} must be an object or null`);
+  return value;
+};
+
 const cohereUsage = (meta: unknown): Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'> => {
-  if (!isRecord(meta)) return {};
-  const billedUnits = isRecord(meta.billed_units) ? meta.billed_units : undefined;
-  const tokens = isRecord(meta.tokens) ? meta.tokens : undefined;
+  const metadata = optionalRecord(meta, 'meta');
+  if (metadata === undefined) return {};
+  const billedUnits = optionalRecord(metadata.billed_units, 'meta.billed_units');
+  const tokens = optionalRecord(metadata.tokens, 'meta.tokens');
   const searchUnits = billedUnits?.search_units === undefined ? undefined : optionalFiniteNumber(billedUnits.search_units, 'meta.billed_units.search_units');
   const inputTokens = tokens?.input_tokens === undefined ? undefined : optionalFiniteNumber(tokens.input_tokens, 'meta.tokens.input_tokens');
   if (searchUnits !== undefined && searchUnits < 0) throw new Error('meta.billed_units.search_units must not be negative');
