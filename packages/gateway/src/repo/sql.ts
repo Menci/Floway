@@ -12,6 +12,7 @@ import type {
   AgentSetupRepository,
   BackoffRow,
   CachedModelsRow,
+  CodexUltraConfigRepo,
   ModelAliasesRepo,
   ModelAliasRecord,
   ModelsCacheRepo,
@@ -41,6 +42,7 @@ import type {
   User,
   UsersRepo,
 } from './types.ts';
+import type { CodexUltraConfig } from '../data-plane/codex/ultra-config.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import { usageDimensionRows } from './usage-dimensions.ts';
@@ -1256,6 +1258,32 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
   }
 }
 
+class SqlCodexUltraConfigRepo implements CodexUltraConfigRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async get(): Promise<unknown | null> {
+    const row = await this.db
+      .prepare('SELECT enabled, redirect_effort FROM codex_ultra_config WHERE id = 1')
+      .first<{ enabled: number; redirect_effort: string }>();
+    if (!row) throw new Error('codex_ultra_config singleton row missing');
+    return { enabled: row.enabled === 1, redirectEffort: row.redirect_effort };
+  }
+
+  async save(config: CodexUltraConfig): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO codex_ultra_config (id, enabled, redirect_effort, updated_at)
+         VALUES (1, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+         ON CONFLICT (id) DO UPDATE SET
+           enabled = excluded.enabled,
+           redirect_effort = excluded.redirect_effort,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(config.enabled ? 1 : 0, config.redirectEffort)
+      .run();
+  }
+}
+
 class SqlUpstreamRepo implements UpstreamRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -2003,6 +2031,7 @@ export class SqlRepo implements Repo {
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
   searchConfig: SearchConfigRepo;
+  codexUltraConfig: CodexUltraConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
@@ -2020,6 +2049,7 @@ export class SqlRepo implements Repo {
     this.performance = new SqlPerformanceRepo(db);
     this.modelsCache = new SqlModelsCacheRepo(db);
     this.searchConfig = new SqlSearchConfigRepo(db);
+    this.codexUltraConfig = new SqlCodexUltraConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);
     this.proxyBackoffs = new SqlProxyBackoffRepo(db);

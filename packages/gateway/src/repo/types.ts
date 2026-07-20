@@ -1,3 +1,4 @@
+import type { CodexUltraConfig } from '../data-plane/codex/ultra-config.ts';
 import type { SearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 export type { SearchConfig } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
@@ -241,6 +242,11 @@ export interface SearchConfigRepo {
   save(config: SearchConfig): Promise<void>;
 }
 
+export interface CodexUltraConfigRepo {
+  get(): Promise<unknown>;
+  save(config: CodexUltraConfig): Promise<void>;
+}
+
 export interface UpstreamRepo {
   list(): Promise<UpstreamRecord[]>;
   getById(id: string): Promise<UpstreamRecord | null>;
@@ -407,6 +413,7 @@ export interface Repo {
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
   searchConfig: SearchConfigRepo;
+  codexUltraConfig: CodexUltraConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;

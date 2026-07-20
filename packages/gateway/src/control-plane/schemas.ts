@@ -541,6 +541,11 @@ export const searchConfigSchema = z.object({
   }
 });
 
+export const codexUltraConfigSchema = z.object({
+  enabled: z.boolean(),
+  redirectEffort: z.string().min(1),
+}).strict();
+
 // --- model aliases ---
 
 // Per-target chat rules. Field names mirror the IR slot each value overlays.

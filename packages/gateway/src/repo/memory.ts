@@ -16,6 +16,7 @@ import type {
   AgentSetupRepository,
   BackoffRow,
   CachedModelsRow,
+  CodexUltraConfigRepo,
   ModelAliasesRepo,
   ModelAliasRecord,
   ModelsCacheRepo,
@@ -45,6 +46,7 @@ import type {
   User,
   UsersRepo,
 } from './types.ts';
+import type { CodexUltraConfig } from '../data-plane/codex/ultra-config.ts';
 import { serializeStoredState } from './upstream-json.ts';
 import { usageDimensionRows } from './usage-dimensions.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
@@ -526,6 +528,19 @@ class MemorySearchConfigRepo implements SearchConfigRepo {
   }
 }
 
+class MemoryCodexUltraConfigRepo implements CodexUltraConfigRepo {
+  private config: unknown | null = null;
+
+  get(): Promise<unknown | null> {
+    return Promise.resolve(this.config === null ? null : structuredClone(this.config));
+  }
+
+  save(config: CodexUltraConfig): Promise<void> {
+    this.config = structuredClone(config);
+    return Promise.resolve();
+  }
+}
+
 class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, UpstreamRecord>();
 
@@ -993,6 +1008,7 @@ export class InMemoryRepo implements Repo {
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
   searchConfig: SearchConfigRepo;
+  codexUltraConfig: CodexUltraConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
@@ -1010,6 +1026,7 @@ export class InMemoryRepo implements Repo {
     this.performance = new MemoryPerformanceRepo();
     this.modelsCache = new MemoryModelsCacheRepo();
     this.searchConfig = new MemorySearchConfigRepo();
+    this.codexUltraConfig = new MemoryCodexUltraConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);
     this.proxyBackoffs = new MemoryProxyBackoffRepo();
