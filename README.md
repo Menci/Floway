@@ -30,8 +30,11 @@ references.
 
 `POST /v1/audio/transcriptions` accepts buffered multipart audio uploads and
 forwards JSON, verbose JSON, text, SRT, VTT, or transcription SSE responses.
-Custom, Azure, and Ollama upstreams can serve models of kind `audio`; every
-model must explicitly declare the `audioTranscriptions` endpoint.
+Custom upstream catalogs can declare kind `audio`; when that metadata is
+silent, standard `whisper-*` and `*-transcribe-*` model ids infer the same
+capability. Custom models may also be configured manually. Azure and Ollama do
+not discover a transcription capability, so their audio models are
+operator-authored with kind `audio` and the `audioTranscriptions` endpoint.
 
 For each public model, Floway picks the first (provider, model) pair that can
 serve the request, translating between source and target protocols when the
