@@ -330,7 +330,7 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
 const sourceDocument = (request: CanonicalRerankRequest, result: CanonicalRerankResult): RerankInput => {
   const source = request.documents[result.index];
   if (source === undefined) throw new Error(`Rerank response result index ${result.index} is outside the request documents array`);
-  return result.document ?? source;
+  return source;
 };
 
 const cohereDocument = (document: RerankInput): Record<string, unknown> =>
