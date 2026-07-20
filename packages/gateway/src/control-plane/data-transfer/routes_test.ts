@@ -517,6 +517,26 @@ test('import replace handles performance inclusion explicitly', async () => {
   assertEquals(await repo.performance.listAll(), [PERFORMANCE_2]);
 });
 
+test('import accepts audio transcription performance rows', async () => {
+  const { app, repo } = setup();
+  const audioPerformance: PerformanceTelemetryRecord = {
+    ...PERFORMANCE_2,
+    operation: 'audio_transcription',
+    ttftSamplesOk: 0,
+    neutral: PERFORMANCE_2.requests,
+    tpotSamples: 0,
+    ttftMsSum: 0,
+    tpotUsSum: 0,
+    buckets: [],
+  };
+  const result = await doImport(app, 'replace', latestImportData({
+    performanceIncluded: true,
+    performance: [audioPerformance],
+  }));
+  assertEquals(result.status, 200);
+  assertEquals(await repo.performance.listAll(), [audioPerformance]);
+});
+
 test('import rejects performance records that break the recorder invariants', async () => {
   const { app } = setup();
 
