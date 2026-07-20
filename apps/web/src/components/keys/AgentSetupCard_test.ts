@@ -5,7 +5,7 @@ import { nextTick, ref, type Ref } from 'vue';
 import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';
 import type { AgentSetupConfiguration } from '../../composables/useAgentSetup.ts';
-import { Combobox, Select } from '@floway-dev/ui';
+import { Combobox, Select, Switch } from '@floway-dev/ui';
 
 // The card owns one useAgentSetup instance; the tests drive the card through a
 // hand-built stand-in whose refs they mutate per case. useApi is mocked so the
