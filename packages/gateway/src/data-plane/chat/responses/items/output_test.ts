@@ -1,13 +1,10 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { isResponsesItemId } from './format.ts';
 import { wrapResponsesClientOutput } from './output.ts';
-import { createResponsesHttpStore, LayeredStatefulResponsesStore, RepoStatefulResponsesBacking } from './store.ts';
+import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { SqlRepo } from '../../../../repo/sql.ts';
-import { createSqliteTestDb } from '../../../../repo/test-sqlite.ts';
-import { initFileProvider, MemoryFileProvider, type SqlDatabase, type SqlPreparedStatement } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -29,33 +26,6 @@ const memoryOutputHarness = () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   return { repo, store: createResponsesHttpStore('key-a', true) };
-};
-
-const countingSqlDatabase = (base: SqlDatabase): { db: SqlDatabase; queryCount: () => number } => {
-  let count = 0;
-  const wrap = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
-    bind: (...values) => wrap(statement.bind(...values)),
-    first: async <T>() => {
-      count += 1;
-      return await statement.first<T>();
-    },
-    all: async <T>() => {
-      count += 1;
-      return await statement.all<T>();
-    },
-    run: async () => {
-      count += 1;
-      return await statement.run();
-    },
-  });
-  return {
-    db: {
-      prepare: query => wrap(base.prepare(query)),
-      batch: async statements => await Promise.all(statements.map(async statement => await statement.run())),
-      exec: sql => base.exec(sql),
-    },
-    queryCount: () => count,
-  };
 };
 
 test('client output rewrites ids and persists the exact complete item before terminal', async () => {
@@ -87,6 +57,56 @@ test('client output rewrites ids and persists the exact complete item before ter
   expect(rows[0].payload.item).toEqual(publicItem);
   expect(rows[0].payload.item).toMatchObject({ encrypted_content: 'wrapped-affinity' });
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).not.toBeNull();
+});
+
+test('client output waits for persistence before publishing output_item.done', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const insert = repo.responsesItems.insertMany.bind(repo.responsesItems);
+  let resolveInsertStarted!: () => void;
+  const insertStarted = new Promise<void>(resolve => { resolveInsertStarted = resolve; });
+  let releaseInsert!: () => void;
+  const insertReleased = new Promise<void>(resolve => { releaseInsert = resolve; });
+  vi.spyOn(repo.responsesItems, 'insertMany').mockImplementation(async items => {
+    resolveInsertStarted();
+    await insertReleased;
+    await insert(items);
+  });
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });
+    await new Promise(() => {});
+  };
+  const iterator = wrapResponsesClientOutput(input(), {
+    store,
+    responseId: 'resp_public',
+  })[Symbol.asyncIterator]();
+
+  const pendingDone = iterator.next();
+  await insertStarted;
+  expect(await Promise.race([pendingDone.then(() => true), Promise.resolve(false)])).toBe(false);
+
+  releaseInsert();
+  const done = await pendingDone;
+  if (done.value?.type !== 'event' || done.value.event.type !== 'response.output_item.done') {
+    throw new Error('Expected completed output item');
+  }
+  const clientId = done.value.event.item.id!;
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId])).toHaveLength(1);
+  await iterator.return?.(doneFrame());
+});
+
+test('client output does not publish output_item.done when persistence fails', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const persistenceError = new Error('simulated item persistence failure');
+  vi.spyOn(repo.responsesItems, 'insertMany').mockRejectedValue(persistenceError);
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });
+  };
+  const iterator = wrapResponsesClientOutput(input(), {
+    store,
+    responseId: 'resp_public',
+  })[Symbol.asyncIterator]();
+
+  await expect(iterator.next()).rejects.toBe(persistenceError);
 });
 
 test('store=false passes the upstream item id through and mints no gateway id', async () => {
@@ -266,17 +286,9 @@ test('client output persists a completed item when its consumer cancels', async 
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
 });
 
-test('client output batches hundreds of finalized items at the successful terminal boundary', async () => {
-  initFileProvider(new MemoryFileProvider());
-  const counting = countingSqlDatabase(await createSqliteTestDb());
-  const repo = new SqlRepo(counting.db);
-  const backing = new RepoStatefulResponsesBacking(() => repo);
-  const store = new LayeredStatefulResponsesStore({
-    apiKeyId: 'key-a',
-    reads: [backing],
-    writes: [backing],
-  });
-  const items = Array.from({ length: 240 }, (_, index) => ({
+test('client output makes every finalized item durable before publishing its done frame', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const items = Array.from({ length: 3 }, (_, index) => ({
     type: 'reasoning' as const,
     id: `rs_upstream_${index}`,
     summary: [{ type: 'summary_text' as const, text: `summary ${index}` }],
@@ -308,12 +320,12 @@ test('client output batches hundreds of finalized items at the successful termin
       throw new Error('Expected finalized output item');
     }
     expect(next.value.event.item.id).not.toBe(item.id);
+    expect(await repo.responsesItems.lookupMany('key-a', [next.value.event.item.id!])).toHaveLength(1);
   }
-  expect(counting.queryCount()).toBe(0);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
 
   const terminal = await iterator.next();
   expect(terminal.value?.type === 'event' && terminal.value.event.type).toBe('response.completed');
-  expect(counting.queryCount()).toBeLessThan(50);
   expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toHaveLength(items.length);
 });
 
@@ -394,7 +406,7 @@ test('client output binds a later delta item_id to an id-less lifecycle', async 
   expect(delta.item_id).toBe(added.item.id);
 });
 
-test('client output persists the terminal item snapshot after an earlier done event', async () => {
+test('client output forwards terminal item drift while retaining the first done snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const doneItem = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
   const terminalItem = { ...doneItem, summary: [{ type: 'summary_text' as const, text: 'new' }] };
@@ -412,23 +424,29 @@ test('client output persists the terminal item snapshot after an earlier done ev
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: doneItem });
     yield eventFrame({ type: 'response.completed', response });
   };
+  let terminal: ResponsesResult | undefined;
   const collect = async () => {
-    for await (const _frame of wrapResponsesClientOutput(input(), {
+    for await (const frame of wrapResponsesClientOutput(input(), {
       store,
       responseId: 'resp_public',
-    })) void _frame;
+    })) {
+      if (frame.type === 'event' && frame.event.type === 'response.completed') terminal = frame.event.response;
+    }
   };
 
   await collect();
+  expect(terminal?.output[0]).toMatchObject({
+    summary: [{ type: 'summary_text', text: 'new' }],
+  });
   const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_public');
   expect(snapshot).not.toBeNull();
   if (snapshot === null) throw new Error('Expected persisted snapshot');
   expect((await repo.responsesItems.lookupMany('key-a', snapshot.itemIds))[0].payload.item).toMatchObject({
-    summary: [{ type: 'summary_text', text: 'new' }],
+    summary: [{ type: 'summary_text', text: 'old' }],
   });
 });
 
-test('client output persists the latest repeated output_item.done snapshot', async () => {
+test('client output forwards repeated done drift while retaining the first done snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const first = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
   const changed = { ...first, summary: [{ type: 'summary_text' as const, text: 'new' }] };
@@ -437,22 +455,24 @@ test('client output persists the latest repeated output_item.done snapshot', asy
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: changed });
   };
-  let clientId: string | undefined;
+  const publicItems: Array<typeof first> = [];
   const collect = async () => {
     for await (const frame of wrapResponsesClientOutput(input(), {
       store,
       responseId: 'resp_public',
     })) {
       if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
-        clientId = frame.event.item.id;
+        publicItems.push(frame.event.item as typeof first);
       }
     }
   };
 
   await collect();
-  if (clientId === undefined) throw new Error('Expected client item id');
-  expect((await repo.responsesItems.lookupMany('key-a', [clientId]))[0].payload.item).toMatchObject({
-    summary: [{ type: 'summary_text', text: 'new' }],
+  expect(publicItems).toHaveLength(2);
+  expect(publicItems[0].id).toBe(publicItems[1].id);
+  expect(publicItems[1]).toMatchObject({ summary: [{ type: 'summary_text', text: 'new' }] });
+  expect((await repo.responsesItems.lookupMany('key-a', [publicItems[0].id]))[0].payload.item).toMatchObject({
+    summary: [{ type: 'summary_text', text: 'old' }],
   });
 });
 

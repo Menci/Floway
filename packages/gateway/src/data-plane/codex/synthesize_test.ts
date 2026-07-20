@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import type { CatalogModel } from './catalog.ts';
+import type { CatalogModel, CodexCatalogCapabilities } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
 import type { InternalModel } from '@floway-dev/provider';
 
@@ -11,6 +11,10 @@ const base: InternalModel = {
   limits: { max_context_window_tokens: 128000 },
   endpoints: { chatCompletions: {} },
   providerModels: {},
+};
+
+const ultraCapabilities: CodexCatalogCapabilities = {
+  ultraReasoningLevel: { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
 };
 
 describe('synthesizeCatalogEntry', () => {
@@ -91,6 +95,31 @@ describe('synthesizeCatalogEntry', () => {
       { effort: 'high', description: '' },
     ]);
     expect(entry.default_reasoning_level).toBe('low');
+  });
+
+  test('does not infer Ultra support from Max alone', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { effort: { supported: ['low', 'max'], default: 'low' } } },
+    });
+    expect(entry.supported_reasoning_levels).toEqual([
+      { effort: 'low', description: '' },
+      { effort: 'max', description: '' },
+    ]);
+    expect(entry.multi_agent_version).toBeUndefined();
+  });
+
+  test('adds Ultra and multi-agent v2 when the client supports Ultra and the model supports Max', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { effort: { supported: ['low', 'max'], default: 'low' } } },
+    }, undefined, ultraCapabilities);
+    expect(entry.supported_reasoning_levels).toEqual([
+      { effort: 'low', description: '' },
+      { effort: 'max', description: '' },
+      { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
+    ]);
+    expect(entry.multi_agent_version).toBe('v2');
   });
 
   test('drops budget_tokens silently — no effort fields on output', () => {
@@ -221,6 +250,22 @@ describe('synthesizeCatalogEntry', () => {
       }, bundledBase);
       expect(entry.supported_reasoning_levels).toEqual([{ effort: 'high', description: '' }]);
       expect(entry.default_reasoning_level).toBe('high');
+    });
+
+    test('preserves an existing Ultra preset without duplication', () => {
+      const entry = synthesizeCatalogEntry(base, {
+        ...bundledBase,
+        supported_reasoning_levels: [
+          { effort: 'max', description: 'Maximum' },
+          { effort: 'ultra', description: 'Existing Ultra' },
+        ],
+        multi_agent_version: 'v1',
+      });
+      expect(entry.supported_reasoning_levels).toEqual([
+        { effort: 'max', description: 'Maximum' },
+        { effort: 'ultra', description: 'Existing Ultra' },
+      ]);
+      expect(entry.multi_agent_version).toBe('v1');
     });
 
     test('bundled context_window preserved when registry omits max_context_window_tokens', () => {
