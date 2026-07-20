@@ -1,14 +1,20 @@
 import type { UsageDimensionRecord, UsageRecord } from './types.ts';
 import type { TokenUsage } from './types.ts';
-import { BILLING_DIMENSIONS, type PriceVector } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type PriceUnits, type PriceVector } from '@floway-dev/protocols/common';
 
 export const usageDimensionRows = (record: UsageRecord): UsageDimensionRecord[] => record.dimensions.filter(row => row.quantity > 0);
 
-export const tokenUsageDimensions = (tokens: TokenUsage, rates: PriceVector | null): UsageDimensionRecord[] =>
+export const usageDimensions = (quantities: PriceVector, units: PriceUnits, rates: PriceVector | null): UsageDimensionRecord[] =>
   BILLING_DIMENSIONS.flatMap(dimension => {
-    const quantity = tokens[dimension] ?? 0;
-    return quantity > 0 ? [{ dimension, unit: 'tokens_1m' as const, quantity, unitPrice: rates?.[dimension] ?? null }] : [];
+    const quantity = quantities[dimension] ?? 0;
+    if (quantity <= 0) return [];
+    const unit = units[dimension];
+    if (unit === undefined) throw new Error(`Usage dimension ${dimension} has no unit`);
+    return [{ dimension, unit, quantity, unitPrice: rates?.[dimension] ?? null }];
   });
+
+export const tokenUsageDimensions = (tokens: TokenUsage, rates: PriceVector | null): UsageDimensionRecord[] =>
+  usageDimensions(tokens, Object.fromEntries(BILLING_DIMENSIONS.map(dimension => [dimension, 'tokens_1m'])) as PriceUnits, rates);
 
 export const tokenCountsFromUsage = (record: UsageRecord): TokenUsage => Object.fromEntries(
   record.dimensions.filter(row => row.unit === 'tokens_1m').map(row => [row.dimension, row.quantity]),
