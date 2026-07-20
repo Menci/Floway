@@ -632,19 +632,25 @@ test('countTokens failover preserves billing blocks for a strip-off candidate', 
   assertEquals(payload.messages, expectedMessages);
 });
 
-test('Claude Code generation decodes exactly one synthetic model-id prefix before resolution', async () => {
+test('Claude Code generation decodes at most one synthetic model-id prefix before resolution', async () => {
   installRepo();
-  queueResolution([], { sawModel: false });
-  const payload = makePayload({ model: 'claude-code!claude-code!gpt-5' });
+  for (const [requested, resolved] of [
+    ['claude-code!gpt-5', 'gpt-5'],
+    ['claude-code!claude-code!gpt-5', 'claude-code!gpt-5'],
+    ['claude-haiku-4-5', 'claude-haiku-4-5'],
+  ] as const) {
+    queueResolution([], { sawModel: false });
+    const payload = makePayload({ model: requested });
 
-  await messagesServe.generate({
-    payload,
-    ctx: makeGatewayCtx(),
-    headers: new Headers({ 'user-agent': 'claude-cli/2.1.211 (external, cli)' }),
-  });
+    await messagesServe.generate({
+      payload,
+      ctx: makeGatewayCtx(),
+      headers: new Headers({ 'user-agent': 'claude-cli/2.1.211 (external, cli)' }),
+    });
 
-  assertEquals(lastResolveCall.model, 'claude-code!gpt-5');
-  assertEquals(payload.model, 'claude-code!claude-code!gpt-5');
+    assertEquals(lastResolveCall.model, resolved);
+    assertEquals(payload.model, requested);
+  }
 });
 
 test('Claude Code count_tokens decodes its synthetic model id before resolution', async () => {
