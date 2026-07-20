@@ -264,7 +264,8 @@ interface TokenDetail {
   cacheCreation: number;
   inputImage: number;
   outputImage: number;
-  cost: number;
+  cost: number | null;
+  hasTokenUsage: boolean;
 }
 
 interface ChartEntry {
@@ -320,7 +321,7 @@ const tokenDetailMetricValue = (detail: TokenDetail, metric: Metric): number | n
   return null;
 };
 
-const emptyDetail = (): TokenDetail => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, inputImage: 0, outputImage: 0, cost: 0 });
+const emptyDetail = (): TokenDetail => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, inputImage: 0, outputImage: 0, cost: null, hasTokenUsage: false });
 
 const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey: 'keyId' | 'model', metric: Metric) => {
   const { keys: bucketKeys, labels } = buckets.value;
@@ -343,7 +344,8 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
     detail.cacheCreation += dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h');
     detail.inputImage += dim(r, 'input_image');
     detail.outputImage += dim(r, 'output_image');
-    detail.cost += r.cost ?? 0;
+    if (r.cost !== null) detail.cost = (detail.cost ?? 0) + r.cost;
+    if (r.dimensions.some(row => row.unit === 'tokens_1m')) detail.hasTokenUsage = true;
     bucketDetails.set(group, detail);
     if (!isPercentMetric(metric)) {
       const bucketValues = values.get(bucket)!;
@@ -378,7 +380,9 @@ const tooltipRow = (label: string, labelWidth: number, detail: TokenDetail) => {
   const output = detail.output + detail.outputImage;
   const total = prompt + output;
   const prefill = detail.input + detail.cacheCreation + detail.inputImage;
-  return `${label.padEnd(labelWidth + 1)}${String(detail.requests).padStart(5)}  ${formatCost(detail.cost).padStart(9)}  ${formatTokenCount(total).padStart(7)}  ${formatTokenCount(cached).padStart(7)}  ${formatInputRate(cached, prompt).padStart(8)}  ${formatTokenCount(prefill).padStart(7)}  ${formatTokenCount(output).padStart(7)}  ${formatHitRate(detail.cacheRead, detail.cacheCreation).padStart(7)}`;
+  const cost = detail.cost === null ? '—' : formatCost(detail.cost);
+  const tokenCount = (value: number) => detail.hasTokenUsage ? formatTokenCount(value) : '—';
+  return `${label.padEnd(labelWidth + 1)}${String(detail.requests).padStart(5)}  ${cost.padStart(9)}  ${tokenCount(total).padStart(7)}  ${tokenCount(cached).padStart(7)}  ${formatInputRate(cached, prompt).padStart(8)}  ${tokenCount(prefill).padStart(7)}  ${tokenCount(output).padStart(7)}  ${formatHitRate(detail.cacheRead, detail.cacheCreation).padStart(7)}`;
 };
 
 const keyMetadataForTokenRecords = (records: readonly DisplayUsageRecord[], metadata: readonly { id: string; name: string; createdAt?: string }[]) => {
