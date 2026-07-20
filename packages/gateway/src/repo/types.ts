@@ -353,9 +353,8 @@ export interface ModelAliasesRepo {
 export interface StoredResponsesItem {
   id: string;
   apiKeyId: string;
-  itemType: string;
   payload: StoredResponsesItemPayload;
-  contentHash: string | null;
+  contentHash: string;
   createdAt: number;
 }
 

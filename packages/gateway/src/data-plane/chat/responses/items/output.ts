@@ -1,4 +1,4 @@
-import { canonicalResponsesItemType, hashResponsesItemContent, responsesItemId } from './identity.ts';
+import { hashResponsesItemContent, responsesItemId } from './identity.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -33,7 +33,6 @@ export const wrapResponsesClientOutput = async function* (
     const row: StoredResponsesItem = {
       id,
       apiKeyId: store.apiKeyId,
-      itemType: canonicalResponsesItemType(item.type),
       payload: privatePayload === undefined
         ? { item: structuredClone(item) }
         : { item: structuredClone(item), private: privatePayload },

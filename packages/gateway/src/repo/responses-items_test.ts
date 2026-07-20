@@ -13,10 +13,9 @@ const factories: Array<[string, () => Promise<Repo>]> = [
   ['sql', async () => new SqlRepo(await createSqliteTestDb())],
 ];
 
-const storedItem = (id: string, apiKeyId: string, contentHash: string | null, createdAt: number): StoredResponsesItem => ({
+const storedItem = (id: string, apiKeyId: string, contentHash: string, createdAt: number): StoredResponsesItem => ({
   id,
   apiKeyId,
-  itemType: 'message',
   payload: { item: { type: 'message', id, role: 'assistant', content: [] } },
   contentHash,
   createdAt,
@@ -61,11 +60,9 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const first = storedItem('msg_first', 'key-a', 'hash-a', 1_000);
     const second = storedItem('msg_second', 'key-a', 'hash-b', 2_000);
     const other = storedItem('msg_other', 'key-b', 'hash-a', 3_000);
-    const unhashed = storedItem('msg_unhashed', 'key-a', null, 4_000);
+    await repo.responsesItems.insertMany([first, second, other]);
 
-    await repo.responsesItems.insertMany([first, second, other, unhashed]);
-
-    expect(await repo.responsesItems.lookupMany('key-a', [second.id, unhashed.id, first.id])).toEqual([second, unhashed, first]);
+    expect(await repo.responsesItems.lookupMany('key-a', [second.id, first.id])).toEqual([second, first]);
     expect(await repo.responsesItems.lookupMany('key-b', [first.id])).toEqual([]);
     expect(await repo.responsesItems.lookupManyByContentHash('key-a', ['hash-a'])).toEqual([first]);
   });
@@ -393,10 +390,10 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
       if (!injectConflict) throw new Error('unexpected second insert batch');
       injectConflict = false;
       const insertWinner = base.prepare(
-        'INSERT INTO responses_items (id, api_key_id, item_type, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO responses_items (id, api_key_id, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?)',
       );
-      await insertWinner.bind('msg_insert_race', 'key-a', 'message', inlinePayload, 'race', 1_000).run();
-      await insertWinner.bind('msg_insert_survivor', 'key-a', 'message', inlinePayload, 'survivor', 1_000).run();
+      await insertWinner.bind('msg_insert_race', 'key-a', inlinePayload, 'race', 1_000).run();
+      await insertWinner.bind('msg_insert_survivor', 'key-a', inlinePayload, 'survivor', 1_000).run();
       const results = [];
       for (const statement of statements) results.push(await statement.run());
       await base.prepare('DELETE FROM responses_items WHERE id = ? AND api_key_id = ?')
@@ -427,11 +424,11 @@ test('SQL conflict cleanup cannot delete a later winner\'s independently owned s
   );
   const winnerFileKey = (JSON.parse(winnerPayload) as { key: string }).key;
   const insertWinner = base.prepare(
-    'INSERT INTO responses_items (id, api_key_id, item_type, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO responses_items (id, api_key_id, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?)',
   );
   const db = sqlDatabaseWithBatch(base, async statements => {
     await insertWinner
-      .bind(item.id, item.apiKeyId, item.itemType, winnerPayload, item.contentHash, item.createdAt)
+      .bind(item.id, item.apiKeyId, winnerPayload, item.contentHash, item.createdAt)
       .run();
     const results = [];
     for (const statement of statements) results.push(await statement.run());
@@ -443,7 +440,7 @@ test('SQL conflict cleanup cannot delete a later winner\'s independently owned s
   files.beforeDelete = async loserFileKey => {
     expect(loserFileKey).not.toBe(winnerFileKey);
     await insertWinner
-      .bind(item.id, item.apiKeyId, item.itemType, winnerPayload, item.contentHash, item.createdAt)
+      .bind(item.id, item.apiKeyId, winnerPayload, item.contentHash, item.createdAt)
       .run();
   };
   const repo = new SqlRepo(db);
@@ -460,7 +457,7 @@ test('migration 0061 invalidates all prior Responses state and installs the exac
   const db = new SQL.Database();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0061_responses_native_item_ids.sql') break;
+      if (filename === '0061_responses_producer_item_ids.sql') break;
       db.run(sql);
     }
     db.run('INSERT INTO responses_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -472,8 +469,8 @@ test('migration 0061 invalidates all prior Responses state and installs the exac
       ['resp_old', 'key-a', '["msg_old"]', 1_000],
     );
 
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0061_responses_native_item_ids.sql');
-    if (migration === undefined) throw new Error('missing migration 0061_responses_native_item_ids.sql');
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0061_responses_producer_item_ids.sql');
+    if (migration === undefined) throw new Error('missing migration 0061_responses_producer_item_ids.sql');
     db.run(migration[1]);
 
     expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
@@ -481,7 +478,6 @@ test('migration 0061 invalidates all prior Responses state and installs the exac
     expect(db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1])).toEqual([
       'id',
       'api_key_id',
-      'item_type',
       'payload_json',
       'content_hash',
       'created_at',

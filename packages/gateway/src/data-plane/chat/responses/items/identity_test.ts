@@ -1,16 +1,11 @@
 import { expect, test } from 'vitest';
 
-import { canonicalResponsesItemType, createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
+import { createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
 
 test('reads arbitrary non-empty producer ids without format filtering', () => {
   expect(responsesItemId({ id: 'raw/provider:id' })).toBe('raw/provider:id');
   expect(responsesItemId({ id: '' })).toBeNull();
   expect(responsesItemId({ type: 'message' })).toBeNull();
-});
-
-test('canonicalizes only the compaction wire alias', () => {
-  expect(canonicalResponsesItemType('compaction_summary')).toBe('compaction');
-  expect(canonicalResponsesItemType('message')).toBe('message');
 });
 
 test('creates collision-resistant internal keys for idless stored inputs', () => {

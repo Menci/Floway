@@ -229,7 +229,6 @@ const SEARCH_USAGE_2: SearchUsageRecord = {
 const STORED_RESPONSES_ITEM: StoredResponsesItem = {
   id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
   apiKeyId: 'key-a',
-  itemType: 'message',
   contentHash: 'stored-content-hash',
   payload: { item: { type: 'message', id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', role: 'assistant', content: [] } },
   createdAt: 1_000,

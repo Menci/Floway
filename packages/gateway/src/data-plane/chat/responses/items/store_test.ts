@@ -24,7 +24,6 @@ describe('StatefulResponsesStore', () => {
     const output = {
       id: 'msg_public',
       apiKeyId: 'key-a',
-      itemType: 'message',
       payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
       contentHash: 'output-hash',
       createdAt: 1_000,
@@ -48,7 +47,6 @@ describe('StatefulResponsesStore', () => {
     const output = {
       id: 'msg_public',
       apiKeyId: 'key-a',
-      itemType: 'message',
       payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
       contentHash: 'output-hash',
       createdAt: 1_000,
@@ -71,7 +69,6 @@ describe('StatefulResponsesStore', () => {
     const output = {
       id: 'cmp_public',
       apiKeyId: 'key-a',
-      itemType: 'compaction',
       payload: { item: { type: 'compaction', id: 'cmp_public', encrypted_content: 'opaque' } },
       contentHash: 'output-hash',
       createdAt: 1_000,
@@ -83,7 +80,7 @@ describe('StatefulResponsesStore', () => {
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact'))?.itemIds).toEqual([output.id]);
   });
 
-  test('stages compaction_summary metadata under its canonical item type', async () => {
+  test('stores a compaction_summary input verbatim', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', true);
@@ -95,7 +92,7 @@ describe('StatefulResponsesStore', () => {
     expect(snapshot).not.toBeNull();
     if (snapshot === null) throw new Error('Expected Responses snapshot');
     const rows = await repo.responsesItems.lookupMany('key-a', snapshot.itemIds);
-    expect(rows[0].itemType).toBe('compaction');
+    expect(rows[0].payload.item).toEqual(item);
   });
 
   test('append snapshots refresh the lifetime of every referenced item', async () => {
@@ -104,7 +101,6 @@ describe('StatefulResponsesStore', () => {
     const item = {
       id: 'msg_old',
       apiKeyId: 'key-a',
-      itemType: 'message',
       payload: { item: { type: 'message', id: 'msg_old', role: 'assistant', content: [] } },
       contentHash: 'old-hash',
       createdAt: 1,
@@ -135,7 +131,6 @@ describe('StatefulResponsesStore', () => {
     const directRow = {
       id: directInput.id,
       apiKeyId: 'key-a',
-      itemType: 'message',
       payload: { item: directInput },
       contentHash: await hashResponsesItemContent(directInput),
       createdAt: 1,
@@ -143,7 +138,6 @@ describe('StatefulResponsesStore', () => {
     const hashedRow = {
       id: 'msg_hashed',
       apiKeyId: 'key-a',
-      itemType: 'message',
       payload: { item: hashedInput },
       contentHash: await hashResponsesItemContent(hashedInput),
       createdAt: 1,
@@ -167,7 +161,6 @@ describe('StatefulResponsesStore', () => {
     const row = {
       id: 'msg_future',
       apiKeyId: 'key-a',
-      itemType: 'message',
       payload: { item: input },
       contentHash: await hashResponsesItemContent(input),
       createdAt: futureCreatedAt,

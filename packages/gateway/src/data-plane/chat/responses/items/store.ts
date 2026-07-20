@@ -1,4 +1,4 @@
-import { canonicalResponsesItemType, createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
+import { createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
@@ -207,7 +207,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const row: StoredResponsesItem = {
       id: id ?? createResponsesStorageKey(),
       apiKeyId: this.apiKeyId,
-      itemType: canonicalResponsesItemType(item.type),
       payload: { item: structuredClone(item) },
       contentHash,
       createdAt: Date.now(),
@@ -220,13 +219,11 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private rememberItem(row: StoredResponsesItem): void {
     const cloned = cloneStoredResponsesItem(row);
     this.loadedItems.set(cloned.id, cloned);
-    if (cloned.contentHash !== null) {
-      const byHash = this.loadedByContentHash.get(cloned.contentHash) ?? [];
-      if (!byHash.some(existing => existing.id === cloned.id)) {
-        byHash.push(cloned);
-        byHash.sort(compareResponsesItemsByFreshness);
-        this.loadedByContentHash.set(cloned.contentHash, byHash);
-      }
+    const byHash = this.loadedByContentHash.get(cloned.contentHash) ?? [];
+    if (!byHash.some(existing => existing.id === cloned.id)) {
+      byHash.push(cloned);
+      byHash.sort(compareResponsesItemsByFreshness);
+      this.loadedByContentHash.set(cloned.contentHash, byHash);
     }
   }
 
@@ -276,7 +273,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     const ids = new Set(query.ids);
     const hashes = new Set(query.contentHashes);
     return Promise.resolve([...this.items.values()]
-      .filter(row => row.apiKeyId === query.apiKeyId && (ids.has(row.id) || (row.contentHash !== null && hashes.has(row.contentHash))))
+      .filter(row => row.apiKeyId === query.apiKeyId && (ids.has(row.id) || hashes.has(row.contentHash)))
       .map(cloneStoredResponsesItem)
       .toSorted(compareResponsesItemsByFreshness));
   }

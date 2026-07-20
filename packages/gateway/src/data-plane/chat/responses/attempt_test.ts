@@ -87,13 +87,14 @@ const installRepo = () => {
   return repo;
 };
 
-const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredResponsesItem> & Pick<StoredResponsesItem, 'id' | 'itemType'>): Promise<StoredResponsesItem> => {
+const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredResponsesItem> & Pick<StoredResponsesItem, 'id'> & { type: string }): Promise<StoredResponsesItem> => {
+  const { type, ...itemOverrides } = overrides;
   const row: StoredResponsesItem = {
     apiKeyId: API_KEY_ID,
     contentHash: `hash-${overrides.id}`,
-    payload: { item: { type: overrides.itemType, id: overrides.id } },
+    payload: { item: { type, id: overrides.id } },
     createdAt: 1_000,
-    ...overrides,
+    ...itemOverrides,
   };
   await repo.responsesItems.insertMany([row]);
   return row;
@@ -489,7 +490,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   };
   await insertStoredItem(repo, {
     id: storedId,
-    itemType: 'web_search_call',
+    type: 'web_search_call',
     payload: {
       item: storedItem,
       private: {

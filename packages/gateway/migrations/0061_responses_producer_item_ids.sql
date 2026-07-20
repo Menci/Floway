@@ -4,15 +4,13 @@ DROP TABLE responses_items;
 CREATE TABLE responses_items (
   id TEXT NOT NULL,
   api_key_id TEXT NOT NULL,
-  item_type TEXT NOT NULL,
   payload_json TEXT NOT NULL,
-  content_hash TEXT,
+  content_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   CHECK (length(id) > 0),
   CHECK (length(api_key_id) > 0),
-  CHECK (length(item_type) > 0),
   CHECK (length(payload_json) > 0),
-  CHECK (content_hash IS NULL OR length(content_hash) > 0)
+  CHECK (length(content_hash) > 0)
 );
 
 CREATE TABLE responses_snapshots (

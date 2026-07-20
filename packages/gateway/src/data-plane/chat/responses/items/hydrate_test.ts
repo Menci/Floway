@@ -14,7 +14,6 @@ describe('Responses stored-item hydration', () => {
     const row: StoredResponsesItem = {
       id,
       apiKeyId: 'key-a',
-      itemType: 'reasoning',
       payload: {
         item: { type: 'reasoning', id, summary: [], encrypted_content: 'wrapped' },
         private: { replay: true },
@@ -49,7 +48,6 @@ describe('Responses stored-item hydration', () => {
     const row: StoredResponsesItem = {
       id,
       apiKeyId: 'key-a',
-      itemType: 'compaction_summary',
       payload: { item: { type: 'compaction_summary', id, encrypted_content: 'wrapped' } },
       contentHash: 'hash',
       createdAt: 1_000,

@@ -3,9 +3,6 @@ export const responsesItemId = (item: object): string | null => {
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
-export const canonicalResponsesItemType = (itemType: string): string =>
-  itemType === 'compaction_summary' ? 'compaction' : itemType;
-
 export const hashResponsesItemContent = async (item: unknown): Promise<string> =>
   await sha256Hex(JSON.stringify(sortJson(item)));
 
