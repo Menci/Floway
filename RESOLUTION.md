@@ -353,16 +353,32 @@ kind.
 
 ## Pricing and Cost
 
-Model metadata uses `pricing?: ModelPricing`. A schedule contains symmetric
-entries: exactly one Base entry has no selector, while every non-Base entry
-declares the same rate dimensions at an explicit coordinate.
+Model metadata uses `pricing?: ModelPricing`. `units` gives each rate dimension
+its denominator, and `entries` contains the symmetric price schedule: exactly
+one Base entry has no selector, while every non-Base entry declares the same
+rate dimensions at an explicit coordinate.
+
+```ts
+{
+  units: { input: 'minutes' },
+  entries: [{ rates: { input: 0.60 } }],
+}
+```
+
+The known units are `tokens_1m`, `minutes`, and `searches_1k`. Quantities stay
+in the natural counter supplied by the endpoint: raw token counts, seconds of
+audio, or search operations. Cost divides by 1,000,000, 60, or 1,000
+respectively before multiplying by the unit price. `input` and `output` retain
+the upstream's general meaning; they are not assumed to be text-only. Explicit
+modality dimensions such as `input_image` are used only when the upstream
+reports a disjoint counter.
 
 ```text
 ModelPricing
   → runtime facts (service tier, input-token count)
   → exact PricingEntry
-  → PriceVector rates snapshot
-  → token counts × rates
+  → units + PriceVector rates snapshot
+  → measured quantities × rates ÷ unit scale
   → realized USD cost
 ```
 
@@ -376,13 +392,24 @@ Base vector, never a field-by-field merge or a lower threshold band.
 The naming boundary is enforced in code and on the wire:
 
 - `pricing` is reusable model metadata and operator-authored configuration;
-- `rates` is the resolved `PriceVector` stored with one usage bucket;
-- `unit_price` is the persisted scalar for one billing dimension;
+- `units` is the per-dimension denominator shared by every pricing entry;
+- `rates` is the resolved `PriceVector` for one request;
+- `quantity` is the persisted measured amount for one dimension and unit;
+- `unit_price` is the persisted rate snapshot for that dimension and unit;
 - `cost` is the aggregatable USD result exposed by usage views.
 
-Telemetry snapshots the selected coordinate and rates from the exact dispatched
-`ProviderModel`. Later catalog changes therefore cannot rewrite historical
-usage, and SQL bucket identity remains stable through canonical selector JSON.
+Every settled request increments `usage_requests`, even when the upstream gives
+no detailed breakdown. Detailed usage is stored separately as
+`dimension + unit + quantity + unit_price` rows; request-only records therefore
+remain visible while their metric and cost values are unknown. The SQL schema
+requires non-empty dimension and unit strings but does not enumerate either in
+a table constraint, so extending the application contract does not require
+rebuilding the table.
+
+Telemetry snapshots the selected coordinate, units, and rates from the exact
+dispatched `ProviderModel`. Later catalog changes therefore cannot rewrite
+historical usage, and bucket identity remains stable through canonical selector
+JSON plus the dimension-unit pair.
 
 ## Candidate Ordering
 
