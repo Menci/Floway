@@ -532,3 +532,43 @@ test('migration 0059 drops every prior Responses table and creates item-origin s
     db.close();
   }
 });
+
+test('migration 0061 invalidates prior Responses state and removes origin columns', async () => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0061_responses_native_item_ids.sql') break;
+      db.run(sql);
+    }
+    db.run(
+      `INSERT INTO responses_items
+        (id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, content_hash, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['msg_old', 'key-a', 'upstream-a', 'msg_raw', 'message', '{}', 'hash', 1_000],
+    );
+    db.run(
+      `INSERT INTO responses_snapshots
+        (id, api_key_id, item_ids_json, created_at)
+       VALUES (?, ?, ?, ?)`,
+      ['resp_old', 'key-a', '["msg_old"]', 1_000],
+    );
+
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0061_responses_native_item_ids.sql');
+    if (migration === undefined) throw new Error('missing migration 0061_responses_native_item_ids.sql');
+    db.run(migration[1]);
+
+    expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
+    expect(db.exec('SELECT * FROM responses_snapshots')[0]?.values ?? []).toEqual([]);
+    expect(db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1])).toEqual([
+      'id',
+      'api_key_id',
+      'item_type',
+      'payload_json',
+      'content_hash',
+      'created_at',
+    ]);
+  } finally {
+    db.close();
+  }
+});
