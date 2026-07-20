@@ -101,7 +101,6 @@ export const wrapResponsesClientOutput = async function* (
   // Fallback for an out-of-order delta that references an upstream id before
   // its output-index lifecycle is available.
   const seenItemTypes = new Map<string, string>();
-  const finalizedOutputIndexes = new Set<number>();
   let sawCompactionItem = false;
 
   const rewriteEnvelopeIds = (response: ResponsesResult): ResponsesResult => ({
@@ -144,10 +143,7 @@ export const wrapResponsesClientOutput = async function* (
       if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
       const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
       if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
-      if (!finalizedOutputIndexes.has(event.output_index)) {
-        await persistFinalizedItem(event.item as unknown as ResponsesInputItem, newId, event.output_index);
-        finalizedOutputIndexes.add(event.output_index);
-      }
+      await persistFinalizedItem(event.item as unknown as ResponsesInputItem, newId, event.output_index);
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
       continue;
     }
@@ -159,10 +155,7 @@ export const wrapResponsesClientOutput = async function* (
         const upstreamId = responsesItemId(item);
         if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
         const newId = clientIdForOutput(upstreamId, item.type, outputIndex);
-        if (!finalizedOutputIndexes.has(outputIndex)) {
-          await persistFinalizedItem(item as unknown as ResponsesInputItem, newId, outputIndex);
-          finalizedOutputIndexes.add(outputIndex);
-        }
+        await persistFinalizedItem(item as unknown as ResponsesInputItem, newId, outputIndex);
         output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
       }
       const rewritten = eventFrame({
