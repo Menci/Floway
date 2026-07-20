@@ -154,7 +154,7 @@ test('/v1/audio/transcriptions does not invent a content type for an untyped raw
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
   await withMockedFetch(
-    () => new Response('plain transcript'),
+    () => new Response(new TextEncoder().encode('plain transcript')),
     async () => {
       const response = await requestApp('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'text']]),
