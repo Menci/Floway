@@ -1159,7 +1159,7 @@ interface ResponsesItemRow {
   id: string;
   api_key_id: string;
   payload_json: string;
-  content_hash: string | null;
+  content_hash: string;
   created_at: number;
 }
 
