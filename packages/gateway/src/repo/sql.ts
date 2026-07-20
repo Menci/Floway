@@ -1129,13 +1129,11 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     if (cleanupErrors.length === 0) {
       const obsoleteFileKeys = new Set<string>();
       for (const write of writes) {
-        const descriptor = persisted.get(scopedResponsesKey(write.item.apiKeyId, write.item.id));
         if (write.generatedFileKey !== null && !retainedFileKeys.has(write.generatedFileKey)) {
           obsoleteFileKeys.add(write.generatedFileKey);
         }
         if (
           write.kind === 'refresh'
-          && descriptor !== undefined
           && write.previousFileKey !== null
           && !retainedFileKeys.has(write.previousFileKey)
         ) {

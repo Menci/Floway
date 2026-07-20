@@ -247,7 +247,7 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
   await expect(repo.responsesItems.refreshMany([item], 1_000 + 2 * 60 * 60 * 1000))
     .rejects.toThrow('Responses item disappeared before lifetime refresh: msg_race');
 
-  expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
+  expect(await files.listKeys('responses-items/')).toEqual([]);
   expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toEqual([]);
 });
 
@@ -468,7 +468,7 @@ test('SQL refresh rejects a conflicting row that replaces the CAS snapshot', asy
 
   await expect(repo.responsesItems.refreshMany([first], 1_000 + 2 * 60 * 60 * 1000))
     .rejects.toThrow(`Responses item id collision: ${first.id}`);
-  expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
+  expect(await files.listKeys('responses-items/')).toEqual([]);
   expect(await repo.responsesItems.lookupMany('key-a', [winner.id])).toEqual([winner]);
 });
 
