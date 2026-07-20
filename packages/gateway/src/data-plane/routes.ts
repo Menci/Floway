@@ -6,6 +6,7 @@ import { mountCodexRoutes } from './codex/routes.ts';
 import { completions } from './completions/serve.ts';
 import { embeddings } from './embeddings/serve.ts';
 import { imagesEdits, imagesGenerations } from './images/serve.ts';
+import { dispatchModels } from './models/dispatch.ts';
 import { serveGeminiModelInfo, serveGeminiModels } from './models/gemini.ts';
 import { models } from './models/serve.ts';
 import type { AuthVars } from '../middleware/auth.ts';
@@ -16,7 +17,7 @@ export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
   mountCodexRoutes(app);
 
   app.get('/v1/models', models);
-  app.get('/models', models);
+  app.get('/models', dispatchModels);
   app.get('/v1beta/models', serveGeminiModels);
   app.get('/v1beta/models/:modelId{.+}', serveGeminiModelInfo);
   app.post('/v1/embeddings', embeddings);

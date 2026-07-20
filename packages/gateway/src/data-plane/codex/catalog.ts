@@ -1,7 +1,7 @@
 // Resolve a codex models catalog for a given codex client version.
 //
 // Strategy:
-//   1. Parse `codex_exec/<version>` from the request user-agent
+//   1. Parse `codex_cli_rs/<version>` or `codex_exec/<version>` from the request user-agent
 //   2. In-memory cache by version (catalog of a released codex tag is immutable)
 //   3. On cache miss, fetch the matching tag from
 //      `https://raw.githubusercontent.com/openai/codex/rust-v<version>/codex-rs/models-manager/models.json`
@@ -19,6 +19,7 @@
 // then bump the tag reference in this comment to match.
 
 import bundledCatalog from './catalog/bundled.json' with { type: 'json' };
+import { parseCodexVersion } from './user-agent.ts';
 
 export interface CatalogModel {
   slug: string;
@@ -29,14 +30,9 @@ export interface CodexCatalog {
   models: CatalogModel[];
 }
 
-const VERSION_FROM_USER_AGENT = /codex_exec\/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/;
-
 const inMemoryCache = new Map<string, CodexCatalog>();
 
 const bundled = bundledCatalog as unknown as CodexCatalog;
-
-const parseCodexVersion = (userAgent: string | undefined): string | null =>
-  userAgent?.match(VERSION_FROM_USER_AGENT)?.[1] ?? null;
 
 const fetchCodexCatalog = async (version: string): Promise<CodexCatalog | null> => {
   const url = `https://raw.githubusercontent.com/openai/codex/rust-v${version}/codex-rs/models-manager/models.json`;
