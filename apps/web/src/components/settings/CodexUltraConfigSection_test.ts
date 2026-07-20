@@ -3,11 +3,12 @@ import { expect, test, vi } from 'vitest';
 import { nextTick } from 'vue';
 
 const mocks = vi.hoisted(() => ({
+  get: vi.fn(async () => Response.json({ enabled: true, redirectEffort: 'high' })),
   put: vi.fn(async ({ json }: { json: unknown }) => Response.json(json)),
 }));
 
 vi.mock('../../api/client.ts', () => ({
-  useApi: () => ({ api: { 'codex-ultra-config': { $put: mocks.put } } }),
+  useApi: () => ({ api: { 'codex-ultra-config': { $get: mocks.get, $put: mocks.put } } }),
   callApi: async (fn: () => Promise<Response>) => {
     const response = await fn();
     return { data: await response.json() };
@@ -44,7 +45,7 @@ test('Codex Ultra settings enable an open-string redirect target and save it', a
   expect(wrapper.text()).toContain('future-tier');
 });
 
-test('Codex Ultra settings surface their initial load error', () => {
+test('Codex Ultra settings block stale-default saves and retry the failed load', async () => {
   const wrapper = mount(CodexUltraConfigSection, {
     props: {
       initialConfig: { enabled: false, redirectEffort: 'max' },
@@ -52,4 +53,18 @@ test('Codex Ultra settings surface their initial load error', () => {
     },
   });
   expect(wrapper.text()).toContain('config unavailable');
+  expect(wrapper.find('button[role="switch"]').attributes('disabled')).toBeDefined();
+  const save = wrapper.findAll('button').find(button => button.text().includes('Save Ultra Config'));
+  expect(save?.attributes('disabled')).toBeDefined();
+
+  const retry = wrapper.findAll('button').find(button => button.text().includes('Retry'));
+  expect(retry).toBeDefined();
+  await retry!.trigger('click');
+  await nextTick();
+
+  expect(mocks.get).toHaveBeenCalledOnce();
+  expect(wrapper.text()).not.toContain('config unavailable');
+  expect(wrapper.find('button[role="switch"]').attributes('disabled')).toBeUndefined();
+  expect(wrapper.find('label[for="codex-ultra-redirect-effort"]').exists()).toBe(true);
+  expect(wrapper.find('#codex-ultra-redirect-effort').exists()).toBe(true);
 });
