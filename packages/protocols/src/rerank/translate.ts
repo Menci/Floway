@@ -1,7 +1,5 @@
 import type { ParsedRerankRequest, CanonicalRerankRequest, CanonicalRerankResponse, CanonicalRerankResult, RerankInput } from './types.ts';
-import type { RerankProtocol } from '../common/models.ts';
-
-type InboundRerankProtocol = Exclude<RerankProtocol, 'dashscope-compatible' | 'dashscope-native'>;
+import type { RerankProtocol, RerankSourceProtocol } from '../common/models.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -12,13 +10,13 @@ const requiredString = (value: unknown, field: string): string => {
 };
 
 const optionalBoolean = (value: unknown, field: string): boolean | undefined => {
-  if (value === undefined || value === null) return undefined;
+  if (value === undefined) return undefined;
   if (typeof value !== 'boolean') throw new Error(`${field} must be a boolean`);
   return value;
 };
 
 const optionalFiniteNumber = (value: unknown, field: string): number | undefined => {
-  if (value === undefined || value === null) return undefined;
+  if (value === undefined) return undefined;
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${field} must be a finite number`);
   return value;
 };
@@ -28,6 +26,9 @@ const optionalPositiveInteger = (value: unknown, field: string): number | undefi
   if (number !== undefined && (!Number.isInteger(number) || number < 1)) throw new Error(`${field} must be a positive integer`);
   return number;
 };
+
+const optionalNullablePositiveInteger = (value: unknown, field: string): number | undefined =>
+  value === null ? undefined : optionalPositiveInteger(value, field);
 
 const optionalInteger = (value: unknown, field: string): number | undefined => {
   const number = optionalFiniteNumber(value, field);
@@ -65,17 +66,17 @@ const jinaDocuments = (value: unknown): RerankInput[] => {
   return value.map((document, index) => jinaInput(document, `documents[${index}]`));
 };
 
-const baseRequest = (body: Record<string, unknown>, sourceProtocol: InboundRerankProtocol): Omit<CanonicalRerankRequest, 'query' | 'documents'> => ({
+const baseRequest = (body: Record<string, unknown>, sourceProtocol: RerankSourceProtocol): Omit<CanonicalRerankRequest, 'query' | 'documents'> => ({
   sourceProtocol,
   raw: body,
 });
 
-const rejectFields = (body: Record<string, unknown>, protocol: InboundRerankProtocol, fields: readonly string[]): void => {
+const rejectFields = (body: Record<string, unknown>, protocol: RerankSourceProtocol, fields: readonly string[]): void => {
   const unsupported = fields.filter(field => body[field] !== undefined);
   if (unsupported.length > 0) throw new Error(`${protocol} does not support ${unsupported.join(', ')}`);
 };
 
-export const parseRerankRequest = (protocol: InboundRerankProtocol, value: unknown): ParsedRerankRequest => {
+export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknown): ParsedRerankRequest => {
   if (!isRecord(value)) throw new Error('Rerank request body must be an object');
   const model = requiredString(value.model, 'model');
   switch (protocol) {
@@ -88,7 +89,7 @@ export const parseRerankRequest = (protocol: InboundRerankProtocol, value: unkno
         ...baseRequest(value, protocol),
         query: requiredString(value.query, 'query'),
         documents: cohereV1Documents(value.documents),
-        ...(optionalPositiveInteger(value.top_n, 'top_n') === undefined ? {} : { topN: value.top_n as number }),
+        ...(optionalNullablePositiveInteger(value.top_n, 'top_n') === undefined ? {} : { topN: value.top_n as number }),
         ...(rankFields === undefined ? {} : { rankFields }),
         ...(optionalBoolean(value.return_documents, 'return_documents') === undefined ? {} : { returnDocuments: value.return_documents as boolean }),
         ...(optionalPositiveInteger(value.max_chunks_per_doc, 'max_chunks_per_doc') === undefined ? {} : { maxChunksPerDocument: value.max_chunks_per_doc as number }),
@@ -140,7 +141,7 @@ export const parseRerankRequest = (protocol: InboundRerankProtocol, value: unkno
         ...baseRequest(value, protocol),
         query: requiredString(value.query, 'query'),
         documents: stringArray(value.documents, 'documents'),
-        ...(optionalPositiveInteger(value.top_k, 'top_k') === undefined ? {} : { topN: value.top_k as number }),
+        ...(optionalNullablePositiveInteger(value.top_k, 'top_k') === undefined ? {} : { topN: value.top_k as number }),
         returnDocuments,
         truncation,
       },
@@ -239,15 +240,19 @@ export const serializeRerankRequest = (
   }
 };
 
+const optionalEmbedding = (value: unknown, field: string): number[] | undefined => {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'number' || !Number.isFinite(item))) {
+    throw new Error(`${field} must be an array of finite numbers`);
+  }
+  return value as number[];
+};
+
 const resultItem = (value: unknown, field: string): CanonicalRerankResult => {
   if (!isRecord(value)) throw new Error(`${field} must be an object`);
   if (typeof value.index !== 'number' || !Number.isInteger(value.index) || value.index < 0) throw new Error(`${field}.index must be a non-negative integer`);
   if (typeof value.relevance_score !== 'number' || !Number.isFinite(value.relevance_score)) throw new Error(`${field}.relevance_score must be a finite number`);
-  const embedding = value.embedding === undefined || value.embedding === null
-    ? undefined
-    : Array.isArray(value.embedding) && value.embedding.every(item => typeof item === 'number' && Number.isFinite(item))
-      ? value.embedding as number[]
-      : (() => { throw new Error(`${field}.embedding must be an array of finite numbers`); })();
+  const embedding = optionalEmbedding(value.embedding, `${field}.embedding`);
   return {
     index: value.index,
     relevanceScore: value.relevance_score,
@@ -261,16 +266,12 @@ const resultsArray = (value: unknown, field: string): CanonicalRerankResult[] =>
   return value.map((item, index) => resultItem(item, `${field}[${index}]`));
 };
 
-const totalTokensFrom = (value: unknown): number | undefined => {
-  if (!isRecord(value) || value.total_tokens === undefined) return undefined;
-  const tokens = optionalFiniteNumber(value.total_tokens, 'usage.total_tokens');
-  if (tokens !== undefined && tokens < 0) throw new Error('usage.total_tokens must not be negative');
-  return tokens;
-};
-
 const requiredTotalTokensFrom = (value: unknown): number => {
-  const totalTokens = totalTokensFrom(value);
-  if (totalTokens === undefined) throw new Error('usage.total_tokens must be a finite number');
+  if (!isRecord(value) || typeof value.total_tokens !== 'number' || !Number.isFinite(value.total_tokens)) {
+    throw new Error('usage.total_tokens must be a finite number');
+  }
+  const totalTokens = value.total_tokens;
+  if (totalTokens < 0) throw new Error('usage.total_tokens must not be negative');
   return totalTokens;
 };
 
@@ -364,7 +365,7 @@ const renderedCohereMeta = (response: CanonicalRerankResponse): Record<string, u
       };
 
 export const renderRerankResponse = (
-  sourceProtocol: InboundRerankProtocol,
+  sourceProtocol: RerankSourceProtocol,
   targetProtocol: RerankProtocol,
   response: CanonicalRerankResponse,
   request: CanonicalRerankRequest,

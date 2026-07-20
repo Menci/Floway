@@ -12,12 +12,10 @@ import { forwardUpstreamResponse } from '../shared/passthrough-serve.ts';
 import { buildUpstreamCallOptions, telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attempt-helpers.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
-import type { RerankTarget } from '@floway-dev/protocols/common';
+import type { RerankSourceProtocol, RerankTarget } from '@floway-dev/protocols/common';
 import { parseRerankRequest, parseRerankResponse, renderRerankResponse, type CanonicalRerankRequest, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { ModelCandidate, ProviderRerankCallResult, TelemetryModelIdentity } from '@floway-dev/provider';
-
-export type InboundRerankProtocol = 'cohere-v1' | 'cohere-v2' | 'jina-v1' | 'voyage-v1';
 
 interface RerankAttemptResult {
   readonly type: 'plain';
@@ -79,7 +77,7 @@ const settleRerank = (
 
 const unsupportedMessage = (model: string): string => `Model ${model} does not support rerank.`;
 
-export const rerank = (sourceProtocol: InboundRerankProtocol) => async (c: Context): Promise<Response> => {
+export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
   let parsedRequest: ParsedRerankRequest;
   try {

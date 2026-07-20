@@ -461,6 +461,7 @@ export const RERANK_PROTOCOLS = [
 ] as const;
 
 export type RerankProtocol = typeof RERANK_PROTOCOLS[number];
+export type RerankSourceProtocol = Exclude<RerankProtocol, 'dashscope-compatible' | 'dashscope-native'>;
 
 // Rerank has no vendor-neutral upstream URL. The operator chooses the wire
 // dialect on each model and may replace that dialect's canonical path for a

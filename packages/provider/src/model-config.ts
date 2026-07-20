@@ -286,8 +286,9 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const pricing = pricingField(value.pricing, `${label}.pricing`);
   const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
-  if ((kind === 'rerank') !== (endpoints.rerank !== undefined)) {
-    throw new Error(`Malformed ${label}: kind === 'rerank' and endpoints.rerank must be declared together`);
+  const rerankEndpointOnly = endpoints.rerank !== undefined && Object.keys(endpoints).length === 1;
+  if ((kind === 'rerank') !== rerankEndpointOnly) {
+    throw new Error(`Malformed ${label}: kind === 'rerank' requires endpoints to contain only rerank`);
   }
   const chat = chatField(value.chat, `${label}.chat`);
   const rerankTarget = rerankTargetField(value.rerankTarget, `${label}.rerankTarget`);

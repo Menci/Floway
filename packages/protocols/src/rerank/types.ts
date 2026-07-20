@@ -1,9 +1,9 @@
-import type { RerankProtocol } from '../common/models.ts';
+import type { RerankSourceProtocol } from '../common/models.ts';
 
 export type RerankInput = string | Record<string, unknown>;
 
 export interface CanonicalRerankRequest {
-  sourceProtocol: Exclude<RerankProtocol, 'dashscope-compatible' | 'dashscope-native'>;
+  sourceProtocol: RerankSourceProtocol;
   raw: Record<string, unknown>;
   query: RerankInput;
   documents: RerankInput[];
