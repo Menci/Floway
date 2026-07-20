@@ -1,7 +1,7 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
-import { scopedResponsesKey } from './responses-clone.ts';
+import { assertSameStoredResponsesItem, scopedResponsesKey } from './responses-clone.ts';
 import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPONSES_STATE_TTL_MS, responsesItemPayloadExpiryBucketPrefix, serializeStoredResponsesPayload, storedResponsesPayloadFileKey } from './responses-payload.ts';
 import type {
   ApiKey,
@@ -862,7 +862,9 @@ const uniqueResponsesItems = (items: readonly StoredResponsesItem[]): StoredResp
   const unique = new Map<string, StoredResponsesItem>();
   for (const item of items) {
     const key = scopedResponsesKey(item.apiKeyId, item.id);
-    if (!unique.has(key)) unique.set(key, item);
+    const existing = unique.get(key);
+    if (existing === undefined) unique.set(key, item);
+    else assertSameStoredResponsesItem(item, existing);
   }
   return [...unique.values()];
 };
@@ -911,7 +913,11 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
 
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     const unique = uniqueResponsesItems(items);
-    const existing = await this.lookupDescriptors(unique);
+    const existing = await this.lookupExistingItems(unique);
+    for (const item of unique) {
+      const actual = existing.get(scopedResponsesKey(item.apiKeyId, item.id));
+      if (actual !== undefined) assertSameStoredResponsesItem(item, actual);
+    }
     const pending = unique.filter(item => !existing.has(scopedResponsesKey(item.apiKeyId, item.id)));
     const writes: PreparedResponsesInsertWrite[] = [];
     try {
@@ -951,6 +957,22 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       await this.finishPayloadWrites(writes, error);
     }
     await this.finishPayloadWrites(writes, null);
+
+    const persisted = await this.lookupExistingItems(unique);
+    for (const item of unique) {
+      const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id));
+      if (actual === undefined) throw new Error(`Responses item disappeared after insert: ${item.id}`);
+      assertSameStoredResponsesItem(item, actual);
+    }
+    const stale = unique.filter(item => persisted.get(scopedResponsesKey(item.apiKeyId, item.id))!.createdAt < item.createdAt);
+    if (stale.length > 0) await this.refreshMany(stale, Math.max(...stale.map(item => item.createdAt)));
+  }
+
+  private async lookupExistingItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[]): Promise<Map<string, StoredResponsesItem>> {
+    const idsByApiKey = Map.groupBy(items, item => item.apiKeyId);
+    const rows = (await Promise.all([...idsByApiKey].map(async ([apiKeyId, scoped]) =>
+      await this.lookupMany(apiKeyId, scoped.map(item => item.id))))).flat();
+    return new Map(rows.map(item => [scopedResponsesKey(item.apiKeyId, item.id), item]));
   }
 
   async refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {

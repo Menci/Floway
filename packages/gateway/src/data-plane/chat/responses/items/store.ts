@@ -1,6 +1,6 @@
 import { createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
 import { getRepo } from '../../../../repo/index.ts';
-import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
+import { assertSameStoredResponsesItem, cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
@@ -230,7 +230,19 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {
     const pending = rows.filter(row => !this.committedItemIds.has(row.id));
     if (pending.length === 0) return;
-    await Promise.all(this.options.writes.map(async write => await write.insertItems(pending)));
+    for (const write of this.options.writes) {
+      const existing = await write.lookupItems({
+        apiKeyId: this.apiKeyId,
+        ids: pending.map(item => item.id),
+        contentHashes: [],
+      });
+      const byId = new Map(existing.map(item => [item.id, item]));
+      for (const item of pending) {
+        const actual = byId.get(item.id);
+        if (actual !== undefined) assertSameStoredResponsesItem(item, actual);
+      }
+    }
+    for (const write of this.options.writes) await write.insertItems(pending);
     for (const row of pending) this.committedItemIds.add(row.id);
   }
 }
@@ -279,10 +291,17 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
   }
 
   insertItems(items: readonly StoredResponsesItem[]): Promise<void> {
+    const pending = new Map<string, StoredResponsesItem>();
     for (const item of items) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
-      if (this.items.has(key)) continue;
-      this.items.set(key, cloneStoredResponsesItem(item));
+      const existing = pending.get(key) ?? this.items.get(key);
+      if (existing !== undefined) assertSameStoredResponsesItem(item, existing);
+      else pending.set(key, item);
+    }
+    for (const [key, item] of pending) this.items.set(key, cloneStoredResponsesItem(item));
+    for (const item of items) {
+      const stored = this.items.get(scopedResponsesKey(item.apiKeyId, item.id))!;
+      stored.createdAt = Math.max(stored.createdAt, item.createdAt);
     }
     return Promise.resolve();
   }
@@ -338,7 +357,7 @@ export const createResponsesWsSession = (): {
   const durable = new RepoStatefulResponsesBacking(getRepo);
   return {
     createStore(apiKeyId: string, store: boolean | undefined): StatefulResponsesStore {
-      const writes = store === false ? [local] : [local, durable];
+      const writes = store === false ? [local] : [durable, local];
       return new LayeredStatefulResponsesStore({
         apiKeyId,
         reads: [local, durable],

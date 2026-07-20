@@ -2,6 +2,7 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import {
+  assertSameStoredResponsesItem,
   cloneStoredResponsesItem,
   cloneStoredResponsesSnapshot,
   compareResponsesItemsByFreshness,
@@ -604,10 +605,17 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
+    const pending = new Map<string, StoredResponsesItem>();
     for (const item of items) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
-      if (this.store.has(key)) continue;
-      this.store.set(key, cloneStoredResponsesItem(item));
+      const existing = pending.get(key) ?? this.store.get(key);
+      if (existing !== undefined) assertSameStoredResponsesItem(item, existing);
+      else pending.set(key, item);
+    }
+    for (const [key, item] of pending) this.store.set(key, cloneStoredResponsesItem(item));
+    for (const item of items) {
+      const stored = this.store.get(scopedResponsesKey(item.apiKeyId, item.id))!;
+      stored.createdAt = Math.max(stored.createdAt, item.createdAt);
     }
     return Promise.resolve();
   }

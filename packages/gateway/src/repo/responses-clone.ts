@@ -1,3 +1,5 @@
+import { isEqual } from 'es-toolkit';
+
 import type { StoredResponsesItem, StoredResponsesSnapshot } from './types.ts';
 
 export const cloneStoredResponsesItem = (item: StoredResponsesItem): StoredResponsesItem => ({
@@ -17,3 +19,17 @@ export const compareResponsesItemsByFreshness = (
   b: Pick<StoredResponsesItem, 'id' | 'createdAt'>,
 ): number =>
   b.createdAt - a.createdAt || a.id.localeCompare(b.id);
+
+export const assertSameStoredResponsesItem = (
+  expected: StoredResponsesItem,
+  actual: StoredResponsesItem,
+): void => {
+  if (
+    expected.id !== actual.id
+    || expected.apiKeyId !== actual.apiKeyId
+    || expected.contentHash !== actual.contentHash
+    || !isEqual(expected.payload, actual.payload)
+  ) {
+    throw new Error(`Responses item id collision: ${expected.id}`);
+  }
+};
