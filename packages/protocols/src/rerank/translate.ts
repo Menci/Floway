@@ -268,6 +268,17 @@ const totalTokensFrom = (value: unknown): number | undefined => {
   return tokens;
 };
 
+const requiredTotalTokensFrom = (value: unknown): number => {
+  const totalTokens = totalTokensFrom(value);
+  if (totalTokens === undefined) throw new Error('usage.total_tokens must be a finite number');
+  return totalTokens;
+};
+
+const listEnvelopeModel = (value: Record<string, unknown>): string => {
+  if (value.object !== 'list') throw new Error('object must be "list"');
+  return requiredString(value.model, 'model');
+};
+
 const cohereUsage = (meta: unknown): Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'> => {
   if (!isRecord(meta)) return {};
   const billedUnits = isRecord(meta.billed_units) ? meta.billed_units : undefined;
@@ -293,35 +304,41 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
       results: resultsArray(value.results, 'results'),
       ...cohereUsage(value.meta),
     };
-  case 'jina-v1':
+  case 'jina-v1': {
+    const model = listEnvelopeModel(value);
     return {
       raw: value,
-      ...(typeof value.model === 'string' ? { model: value.model } : {}),
+      model,
       results: resultsArray(value.results, 'results'),
-      ...(totalTokensFrom(value.usage) === undefined ? {} : { totalTokens: totalTokensFrom(value.usage)! }),
+      totalTokens: requiredTotalTokensFrom(value.usage),
     };
-  case 'voyage-v1':
+  }
+  case 'voyage-v1': {
+    const model = listEnvelopeModel(value);
     return {
       raw: value,
-      ...(typeof value.model === 'string' ? { model: value.model } : {}),
+      model,
       results: resultsArray(value.data, 'data'),
-      ...(totalTokensFrom(value.usage) === undefined ? {} : { totalTokens: totalTokensFrom(value.usage)! }),
+      totalTokens: requiredTotalTokensFrom(value.usage),
     };
-  case 'dashscope-compatible':
+  }
+  case 'dashscope-compatible': {
+    const model = listEnvelopeModel(value);
     return {
       raw: value,
-      ...(typeof value.id === 'string' ? { id: value.id } : {}),
-      ...(typeof value.model === 'string' ? { model: value.model } : {}),
+      id: requiredString(value.id, 'id'),
+      model,
       results: resultsArray(value.results, 'results'),
-      ...(totalTokensFrom(value.usage) === undefined ? {} : { totalTokens: totalTokensFrom(value.usage)! }),
+      totalTokens: requiredTotalTokensFrom(value.usage),
     };
+  }
   case 'dashscope-native': {
     if (!isRecord(value.output)) throw new Error('output must be an object');
     return {
       raw: value,
-      ...(typeof value.request_id === 'string' ? { id: value.request_id } : {}),
+      id: requiredString(value.request_id, 'request_id'),
       results: resultsArray(value.output.results, 'output.results'),
-      ...(totalTokensFrom(value.usage) === undefined ? {} : { totalTokens: totalTokensFrom(value.usage)! }),
+      totalTokens: requiredTotalTokensFrom(value.usage),
     };
   }
   }
