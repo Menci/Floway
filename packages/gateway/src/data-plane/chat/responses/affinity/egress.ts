@@ -1,7 +1,6 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
-import { createTemporaryResponsesItemId } from '../items/format.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const canonicalItemType = (itemType: string): string =>
   itemType === 'compaction_summary' ? 'compaction' : itemType;
@@ -170,7 +169,7 @@ const wrapResponsesFirstCarrier = async function* (
     if (prefix !== undefined) return;
     const added: ResponsesOutputReasoning = {
       type: 'reasoning',
-      id: createTemporaryResponsesItemId('reasoning'),
+      id: createRandomResponsesItemId('reasoning'),
       summary: [],
     };
     const item: ResponsesOutputReasoning = {

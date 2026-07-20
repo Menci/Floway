@@ -6,16 +6,17 @@ import { truncatePreservingCodePoints } from '../../shared/text.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type {
-  CanonicalResponsesPayload,
-  ResponsesFunctionTool,
-  ResponsesHostedTool,
-  ResponsesInputItem,
-  ResponsesOutputItem,
-  ResponsesResult,
-  ResponsesStreamEvent,
-  ResponsesTool,
-  ResponsesToolChoice,
+import {
+  createRandomResponsesItemId,
+  type CanonicalResponsesPayload,
+  type ResponsesFunctionTool,
+  type ResponsesHostedTool,
+  type ResponsesInputItem,
+  type ResponsesOutputItem,
+  type ResponsesResult,
+  type ResponsesStreamEvent,
+  type ResponsesTool,
+  type ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
 import type { EventResultMetadata, ExecuteResult } from '@floway-dev/provider';
 
@@ -584,7 +585,7 @@ export const consumeTurnStreaming = async function* (
       const itemId = typeof upstreamItemId === 'string' && upstreamItemId.length > 0
         ? upstreamItemId
         : item.type === 'message'
-          ? `msg_${downstreamIndex}`
+          ? createRandomResponsesItemId('message')
           : undefined;
       if (itemId !== undefined) openItemIds.set(upstreamIndex, itemId);
       yield stamp({
