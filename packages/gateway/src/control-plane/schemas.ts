@@ -53,6 +53,7 @@ const modelEndpointsSchema = z.object({
   embeddings: z.object({}).optional(),
   imagesGenerations: z.object({}).optional(),
   imagesEdits: z.object({}).optional(),
+  rerank: z.object({}).optional(),
 });
 
 const pricingDimensionShape = {
@@ -139,8 +140,12 @@ const limitsSchema = z.object({
 const upstreamModelSchema = z.object({
   upstreamModelId: z.string().min(1),
   publicModelId: z.string().optional(),
-  kind: z.enum(['chat', 'embedding', 'image']).optional(),
+  kind: z.enum(['chat', 'embedding', 'image', 'rerank']).optional(),
   endpoints: modelEndpointsSchema,
+  rerankTarget: z.object({
+    protocol: z.enum(['cohere-v1', 'cohere-v2', 'jina-v1', 'voyage-v1', 'dashscope-compatible', 'dashscope-native']),
+    path: z.string().optional(),
+  }).strict().optional(),
   display_name: z.string().optional(),
   pricing: z.object({
     units: z.object(pricingUnitShape).strict(),
@@ -155,6 +160,12 @@ const upstreamModelSchema = z.object({
 }).refine(
   m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
   { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },
+).refine(
+  m => m.kind !== 'rerank' || m.rerankTarget !== undefined,
+  { message: "rerankTarget is required when kind === 'rerank'", path: ['rerankTarget'] },
+).refine(
+  m => m.rerankTarget === undefined || m.kind === 'rerank',
+  { message: "rerankTarget is only allowed when kind === 'rerank'", path: ['rerankTarget'] },
 );
 
 const customConfigSchema = z.object({

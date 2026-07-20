@@ -1,7 +1,7 @@
 import type { FlagId, FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
@@ -209,6 +209,7 @@ export interface InternalAliasedFrom {
 // the surrounding `InternalModel` map is assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
   providerData?: unknown;
+  rerankTarget?: RerankTarget;
   enabledFlags: ReadonlySet<FlagId>;
   // Provider's per-model flag call as a sparse override — each entry
   // states the provider's opinion for that flag on this specific

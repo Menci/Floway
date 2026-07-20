@@ -23,6 +23,7 @@ export interface ModelEndpoints {
   embeddings?: {};
   imagesGenerations?: {};
   imagesEdits?: {};
+  rerank?: {};
 }
 
 // Names a single endpoint within ModelEndpoints — used where one endpoint is
@@ -38,5 +39,6 @@ export type ModelEndpointKey = keyof ModelEndpoints;
 export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
   if (endpoints.embeddings) return 'embedding';
   if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
+  if (endpoints.rerank) return 'rerank';
   return 'chat';
 };

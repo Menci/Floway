@@ -449,7 +449,27 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
 //
 // Add a value here only when we actually route that endpoint family — do
 // not pre-declare for future capabilities.
-export type ModelKind = 'chat' | 'embedding' | 'image';
+export type ModelKind = 'chat' | 'embedding' | 'image' | 'rerank';
+
+export const RERANK_PROTOCOLS = [
+  'cohere-v1',
+  'cohere-v2',
+  'jina-v1',
+  'voyage-v1',
+  'dashscope-compatible',
+  'dashscope-native',
+] as const;
+
+export type RerankProtocol = typeof RERANK_PROTOCOLS[number];
+
+// Rerank has no vendor-neutral upstream URL. The operator chooses the wire
+// dialect on each model and may replace that dialect's canonical path for a
+// compatible server. Keeping this off the upstream prevents one model's
+// protocol choice from leaking onto every other model at the same base URL.
+export interface RerankTarget {
+  protocol: RerankProtocol;
+  path?: string;
+}
 
 export type Modality = 'text' | 'image';
 
