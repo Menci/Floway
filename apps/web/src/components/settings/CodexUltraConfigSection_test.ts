@@ -5,7 +5,7 @@ import { nextTick } from 'vue';
 const mocks = vi.hoisted(() => ({
   get: vi.fn(async () => Response.json({ enabled: true, redirectEffort: 'high' })),
   put: vi.fn(async ({ json }: { json: unknown }) => Response.json(json)),
-  callApi: vi.fn(async (fn: () => Promise<Response>) => {
+  callApi: vi.fn(async (fn: () => Promise<Response>): Promise<{ data?: unknown; error?: { status: number; message: string } }> => {
     const response = await fn();
     return { data: await response.json() };
   }),
@@ -19,7 +19,7 @@ vi.mock('../../api/client.ts', () => ({
 beforeEach(() => {
   mocks.get.mockReset().mockImplementation(async () => Response.json({ enabled: true, redirectEffort: 'high' }));
   mocks.put.mockReset().mockImplementation(async ({ json }: { json: unknown }) => Response.json(json));
-  mocks.callApi.mockReset().mockImplementation(async (fn: () => Promise<Response>) => {
+  mocks.callApi.mockReset().mockImplementation(async (fn: () => Promise<Response>): Promise<{ data?: unknown; error?: { status: number; message: string } }> => {
     const response = await fn();
     return { data: await response.json() };
   });
