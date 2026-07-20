@@ -5,12 +5,17 @@ import { nextTick } from 'vue';
 import PricingEditor from './PricingEditor.vue';
 import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 
+const tokenPricing = ({ entries }: Pick<ModelPricing, 'entries'>): ModelPricing => ({
+  units: Object.fromEntries([...new Set(entries.flatMap(entry => Object.keys(entry.rates)))].map(dimension => [dimension, 'tokens_1m'])) as ModelPricing['units'],
+  entries,
+});
+
 const mountEditor = (
-  modelValue: ModelPricing | undefined,
+  modelValue: Pick<ModelPricing, 'entries'> | undefined,
   options: { editable?: boolean; kind?: ModelKind } = {},
 ) => mount(PricingEditor, {
   props: {
-    modelValue,
+    modelValue: modelValue === undefined ? undefined : tokenPricing(modelValue),
     editable: options.editable ?? true,
     kind: options.kind ?? 'chat',
   },
@@ -42,7 +47,7 @@ describe('PricingEditor', () => {
     const wrapper = mountEditor({ entries: [{ rates: { input: 1 } }] }, { editable: false });
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('1');
 
-    await wrapper.setProps({ modelValue: { entries: [{ rates: { input: 2 } }] } });
+    await wrapper.setProps({ modelValue: tokenPricing({ entries: [{ rates: { input: 2 } }] }) });
     await nextTick();
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
   });
@@ -55,7 +60,7 @@ describe('PricingEditor', () => {
     expect((threshold.element as HTMLInputElement).value).toBe('100');
 
     await threshold.setValue('');
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({ entries: [{ rates: { input: 1 } }] });
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual(tokenPricing({ entries: [{ rates: { input: 1 } }] }));
   });
 
   it('navigates pricing entries from the left while rendering one editor on the right', async () => {
@@ -79,12 +84,12 @@ describe('PricingEditor', () => {
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
 
     await navigation.get('button[aria-label="Move pricing entry 2 up"]').trigger('click');
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual(tokenPricing({
       entries: [
         { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
         { rates: { input: 1 } },
       ],
-    });
+    }));
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
   });
 
@@ -96,12 +101,12 @@ describe('PricingEditor', () => {
     expect(wrapper.text()).toContain('Image Output ($/MTok)');
     await wrapper.findAll('button').find(button => button.text().includes('Add Entry'))!.trigger('click');
 
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual(tokenPricing({
       entries: [
         { rates: baseRates },
         { rates: baseRates },
       ],
-    });
+    }));
   });
 
   it('keeps out-of-kind dimensions editable while a catalog has no Base', () => {
@@ -120,9 +125,9 @@ describe('PricingEditor', () => {
     expect(wrapper.get('button[aria-label="Input Tokens operator >=; click to toggle"]').text()).toBe('>=');
 
     await pricingInput(wrapper, 'base').setValue('100');
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual(tokenPricing({
       entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }],
-    });
+    }));
   });
 
   it('separates combined pricing coordinates with commas', () => {

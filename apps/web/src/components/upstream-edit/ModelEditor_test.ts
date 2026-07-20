@@ -13,7 +13,7 @@ const row = (uiId: string, model: string, input: number, flagOverrides: Record<s
     upstreamModelId: model,
     kind: 'chat',
     endpoints: { chatCompletions: {} },
-    pricing: { entries: [{ rates: { input } }] },
+    pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input } }] },
     flagOverrides,
   },
 });
@@ -45,7 +45,7 @@ describe('ModelEditor', () => {
   it('resets its pricing child on row changes and forwards pricing updates', async () => {
     const first = row('first', 'model-first', 1, undefined);
     const second = row('second', 'model-second', 2, undefined);
-    second.config.pricing = { entries: [{ rates: {} }] };
+    second.config.pricing = { units: {}, entries: [{ rates: {} }] };
 
     const wrapper = mountEditor(first);
     expect((pricingInput(wrapper).element as HTMLInputElement).value).toBe('1');
@@ -55,7 +55,7 @@ describe('ModelEditor', () => {
     expect((pricingInput(wrapper).element as HTMLInputElement).value).toBe('');
 
     await pricingInput(wrapper).setValue('7');
-    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ pricing: { entries: [{ rates: { input: 7 } }] } });
+    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 7 } }] } });
   });
 
   it('clears cached flag overrides when switching rows', async () => {
