@@ -37,8 +37,10 @@ import type { PerformanceOperation, InternalModel, Provider, ProviderCallResult,
 // hop-by-hop/framing/cookie fields; content-type is retained separately because
 // non-streaming bodies are not rewritten. A missing type falls back to JSON for
 // the existing JSON passthrough endpoints.
-const forwardUpstreamResponse = (resp: Response): Response => {
-  const headers = new Headers({ 'content-type': resp.headers.get('content-type') ?? 'application/json' });
+const forwardUpstreamResponse = (resp: Response, defaultContentType: string | null = 'application/json'): Response => {
+  const headers = new Headers();
+  const contentType = resp.headers.get('content-type') ?? defaultContentType;
+  if (contentType !== null) headers.set('content-type', contentType);
   for (const [name, value] of resp.headers.entries()) {
     if (name.toLowerCase() === 'content-type') continue;
     if (isForwardableUpstreamHeader(name)) headers.set(name, value);
@@ -178,7 +180,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         recordFailedRequest(ctx, performanceContext);
       }
       ctx.dump?.error('upstream', identity.upstream);
-      return forwardUpstreamResponse(response);
+      return forwardUpstreamResponse(response, responseHandling.format === 'audio-transcription' ? null : 'application/json');
     }
 
     if (responseHandling.format === 'audio-transcription') {
@@ -193,7 +195,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         }
         ctx.dump?.success(identity, measurement.dumpTokenUsage);
         settleUsageMeasurement(ctx, performanceContext, identity, measurement, false);
-        return forwardUpstreamResponse(response);
+        return forwardUpstreamResponse(response, null);
       }
 
       const upstreamBody = response.body;
