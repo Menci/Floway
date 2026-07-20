@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { mountCodexRoutes } from './routes.ts';
 import { type AuthVars, authMiddleware } from '../../middleware/auth.ts';
-import { copilotModels, setupAppTest } from '../../test-helpers.ts';
+import { buildCustomUpstreamRecord, copilotModels, setupAppTest, sseResponsesResponse } from '../../test-helpers.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCodexApp = () => {
@@ -170,5 +170,62 @@ describe('Codex model-provider routes', () => {
       effort: 'ultra',
       description: 'Maximum reasoning with automatic task delegation',
     });
+  });
+
+  it('redirects only proactive Ultra requests on the HTTP compatibility route', async () => {
+    const upstream = buildCustomUpstreamRecord({
+      config: {
+        baseUrl: 'https://ultra.example.test/v1',
+        authStyle: 'none',
+        endpoints: { responses: {} },
+        modelsFetch: { enabled: false },
+        models: [{
+          upstreamModelId: 'model-a',
+          endpoints: { responses: {} },
+          chat: { reasoning: { effort: { supported: ['high', 'max'], default: 'high' } } },
+        }],
+      },
+    });
+    const { apiKey, repo } = await setupAppTest({ copilotUpstream: upstream });
+    await repo.codexUltraConfig.save({ enabled: true, redirectEffort: 'high' });
+    const bodies: Array<{ reasoning?: { effort?: string } }> = [];
+    const request = async (mode: string) => await buildCodexApp().request('/azure-api.codex/responses', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'model-a',
+        input: [
+          { type: 'message', role: 'developer', content: mode },
+          { type: 'message', role: 'user', content: 'hello' },
+        ],
+        reasoning: { effort: 'max' },
+        stream: true,
+        store: false,
+      }),
+    });
+
+    await withMockedFetch(
+      async upstreamRequest => {
+        bodies.push(await upstreamRequest.json() as { reasoning?: { effort?: string } });
+        return sseResponsesResponse({
+          id: `resp_${bodies.length}`,
+          object: 'response',
+          model: 'model-a',
+          status: 'completed',
+          output: [],
+          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+        });
+      },
+      async () => {
+        const proactive = await request('<multi_agent_mode>Proactive multi-agent delegation is active. Use sub-agents.</multi_agent_mode>');
+        expect(proactive.status).toBe(200);
+        await proactive.text();
+        const explicit = await request('<multi_agent_mode>Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents.</multi_agent_mode>');
+        expect(explicit.status).toBe(200);
+        await explicit.text();
+      },
+    );
+
+    expect(bodies.map(body => body.reasoning?.effort)).toEqual(['high', 'max']);
   });
 });

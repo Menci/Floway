@@ -200,3 +200,58 @@ it('chains previous_response_id on the Codex Responses WebSocket', async () => {
     ['message', 'user', 'codex second'],
   ]);
 });
+
+it('redirects proactive Ultra but preserves explicit Max on the Codex Responses WebSocket', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.codexUltraConfig.save({ enabled: true, redirectEffort: 'high' });
+  const upstreamBodies: Array<{ reasoning?: { effort?: string } }> = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'test-copilot-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'], reasoningEfforts: ['high', 'max'] }]));
+      }
+      if (url.pathname === '/responses') {
+        upstreamBodies.push(await request.json() as { reasoning?: { effort?: string } });
+        return sseResponsesResponse({
+          id: `resp_codex_ultra_${upstreamBodies.length}`,
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output: [],
+          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async runtime => {
+      const client = await connectCodexResponsesWebSocket(runtime, apiKey.key);
+      const send = async (mode: string) => {
+        const done = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+        client.send(JSON.stringify({
+          type: 'response.create',
+          response: {
+            model: 'gpt-direct-responses',
+            input: [
+              { type: 'message', role: 'developer', content: mode },
+              { type: 'message', role: 'user', content: 'hello' },
+            ],
+            reasoning: { effort: 'max' },
+            store: false,
+          },
+        }));
+        await done;
+      };
+
+      await send('<multi_agent_mode>Proactive multi-agent delegation is active. Use sub-agents.</multi_agent_mode>');
+      await send('<multi_agent_mode>Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents.</multi_agent_mode>');
+    }),
+  );
+
+  expect(upstreamBodies.map(body => body.reasoning?.effort)).toEqual(['high', 'max']);
+});
