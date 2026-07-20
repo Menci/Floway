@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { isResponsesItemId } from './format.ts';
+import { isResponsesItemId, responsesItemId } from './format.ts';
 import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
@@ -189,7 +189,7 @@ test('client output persists a completed item before forwarding an error event',
     store,
     responseId: 'resp_public',
   })) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = responsesItemId(frame.event.item) ?? undefined;
   }
 
   expect(clientId).toEqual(expect.any(String));
@@ -210,7 +210,7 @@ test('client output does not persist a partial item without output_item.done', a
     store,
     responseId: 'resp_public',
   })) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.added') clientId = frame.event.item.id;
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.added') clientId = responsesItemId(frame.event.item) ?? undefined;
   }
 
   expect(clientId).toEqual(expect.any(String));
@@ -232,7 +232,7 @@ test('client output persists completed items before rethrowing an iterator error
       store,
       responseId: 'resp_public',
     })) {
-      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
+      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = responsesItemId(frame.event.item) ?? undefined;
     }
   };
 
@@ -255,7 +255,7 @@ test('client output persists completed items when the source ends without a term
     store,
     responseId: 'resp_public',
   })) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = responsesItemId(frame.event.item) ?? undefined;
   }
 
   expect(clientId).toEqual(expect.any(String));
