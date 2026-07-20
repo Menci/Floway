@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils';
+import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
@@ -56,7 +56,8 @@ describe('PricingEditor', () => {
   it('persists a billing unit independently from its rate', async () => {
     const wrapper = mountEditor({ entries: [{ rates: { input: 0.6 } }] });
 
-    wrapper.findComponent(Select).vm.$emit('update:modelValue', 'minutes');
+    const unitSelect = wrapper.findComponent(Select) as unknown as VueWrapper;
+    unitSelect.vm.$emit('update:modelValue', 'minutes');
     await nextTick();
 
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
