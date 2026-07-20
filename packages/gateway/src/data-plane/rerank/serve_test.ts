@@ -1,0 +1,255 @@
+import { test } from 'vitest';
+
+import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
+import type { Repo } from '../../repo/types.ts';
+import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+const saveRerankUpstream = async (
+  repo: Repo,
+  target: RerankTarget,
+  pricing?: ModelPricing,
+): Promise<void> => {
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_rerank',
+    name: 'Rerank Provider',
+    config: {
+      baseUrl: 'https://rerank.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-rerank',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{
+        upstreamModelId: 'raw-reranker',
+        publicModelId: 'public-reranker',
+        kind: 'rerank',
+        endpoints: { rerank: {} },
+        rerankTarget: target,
+        ...(pricing === undefined ? {} : { pricing }),
+      }],
+    },
+  }));
+};
+
+const requestHeaders = (apiKey: string) => ({
+  'content-type': 'application/json',
+  'x-api-key': apiKey,
+});
+
+test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(
+    repo,
+    { protocol: 'cohere-v2' },
+    { units: { input: 'searches_1k' }, entries: [{ rates: { input: 2 } }] },
+  );
+
+  let upstreamRequest: Request | undefined;
+  await withMockedFetch(
+    async request => {
+      upstreamRequest = request;
+      return new Response(JSON.stringify({
+        id: 'request-1',
+        results: [{ index: 1, relevance_score: 0.9 }],
+        meta: { billed_units: { search_units: 3 }, tokens: { input_tokens: 20 } },
+      }), { status: 200, headers: { 'content-type': 'application/json', 'x-request-id': 'upstream-request' } });
+    },
+    async () => {
+      const response = await requestApp('/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-reranker',
+          query: 'query',
+          documents: [{ title: 'one', text: 'first' }, { title: 'two', text: 'second' }],
+          top_n: 1,
+          return_documents: true,
+        }),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(response.headers.get('x-request-id'), 'upstream-request');
+      assertEquals(await response.json(), {
+        id: 'request-1',
+        results: [{ index: 1, relevance_score: 0.9, document: { title: 'two', text: 'second' } }],
+        meta: { billed_units: { search_units: 3 }, tokens: { input_tokens: 20 } },
+      });
+    },
+  );
+
+  assertExists(upstreamRequest);
+  assertEquals(new URL(upstreamRequest.url).pathname, '/v2/rerank');
+  assertEquals(await upstreamRequest.clone().json(), {
+    model: 'raw-reranker',
+    query: 'query',
+    documents: ['{"title":"one","text":"first"}', '{"title":"two","text":"second"}'],
+    top_n: 1,
+  });
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].dimensions, [{ dimension: 'input', unit: 'searches_1k', quantity: 3, unitPrice: 2 }]);
+  const performance = await repo.performance.listAll();
+  assertEquals(performance[0]?.operation, 'rerank');
+  assertEquals(performance[0]?.requests, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 0);
+});
+
+test('/jina/v1/rerank preserves same-dialect extensions and records request-only usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+
+  let upstreamBody: unknown;
+  const upstreamResponse = {
+    model: 'raw-reranker',
+    object: 'list',
+    usage: { total_tokens: 18 },
+    results: [{ index: 0, relevance_score: 0.8, document: { text: 'one' }, vendor_result: true }],
+    vendor_response: true,
+  };
+  await withMockedFetch(
+    async request => {
+      upstreamBody = await request.json();
+      return jsonResponse(upstreamResponse);
+    },
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-reranker',
+          query: 'query',
+          documents: ['one'],
+          vendor_request: { enabled: true },
+        }),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), upstreamResponse);
+    },
+  );
+  assertEquals(upstreamBody, {
+    model: 'raw-reranker',
+    query: 'query',
+    documents: ['one'],
+    vendor_request: { enabled: true },
+  });
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].dimensions, []);
+});
+
+test('/voyage/v1/rerank translates a DashScope native response', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'dashscope-native' });
+
+  let upstreamBody: unknown;
+  await withMockedFetch(
+    async request => {
+      upstreamBody = await request.json();
+      assertEquals(new URL(request.url).pathname, '/api/v1/services/rerank/text-rerank/text-rerank');
+      return jsonResponse({
+        request_id: 'request-1',
+        output: { results: [{ index: 1, relevance_score: 0.75, document: { text: 'two' } }] },
+        usage: { total_tokens: 16 },
+      });
+    },
+    async () => {
+      const response = await requestApp('/voyage/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-reranker',
+          query: 'query',
+          documents: ['one', 'two'],
+          top_k: 1,
+          return_documents: true,
+        }),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), {
+        object: 'list',
+        model: 'public-reranker',
+        usage: { total_tokens: 16 },
+        data: [{ index: 1, relevance_score: 0.75, document: 'two' }],
+      });
+    },
+  );
+  assertEquals(upstreamBody, {
+    model: 'raw-reranker',
+    input: { query: 'query', documents: ['one', 'two'] },
+    parameters: { top_n: 1, return_documents: true },
+  });
+});
+
+test('/v2/rerank rejects Cohere v1-only fields before dispatch', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'cohere-v2' });
+
+  let fetchCalls = 0;
+  await withMockedFetch(
+    () => {
+      fetchCalls++;
+      return jsonResponse({ results: [] });
+    },
+    async () => {
+      const response = await requestApp('/v2/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-reranker',
+          query: 'query',
+          documents: ['one'],
+          return_documents: true,
+        }),
+      });
+      assertEquals(response.status, 400);
+      assertEquals((await response.json()).error.message, 'cohere-v2 does not support return_documents');
+    },
+  );
+  assertEquals(fetchCalls, 0);
+});
+
+test('upstream rerank errors are forwarded and still record a request-only usage row', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'cohere-v1' });
+
+  await withMockedFetch(
+    () => new Response(JSON.stringify({ message: 'rate limited' }), {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '7', 'x-request-id': 'request-error' },
+    }),
+    async () => {
+      const response = await requestApp('/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      assertEquals(response.status, 429);
+      assertEquals(response.headers.get('retry-after'), '7');
+      assertEquals(await response.json(), { message: 'rate limited' });
+    },
+  );
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].dimensions, []);
+});
+
+test('there is no unversioned /rerank route', async () => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestApp('/rerank', {
+    method: 'POST',
+    headers: requestHeaders(apiKey.key),
+    body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+  });
+  assertEquals(response.status, 404);
+});
