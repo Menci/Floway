@@ -113,7 +113,7 @@ test('modelsField accepts pricing with only a subset of dimensions set', () => {
     [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 2.5 } }] } }],
     'azure',
   );
-  assertEquals(models[0].pricing, { entries: [{ rates: { input: 2.5 } }] });
+  assertEquals(models[0].pricing, { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 2.5 } }] });
 });
 
 test('modelsField rejects pricing with a negative input', () => {

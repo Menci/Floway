@@ -6,6 +6,7 @@ import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 test('pricingField parses explicit flat entries', () => {
   assertEquals(pricingField(undefined, 'pricing'), undefined);
   const value = {
+    units: { input: 'tokens_1m', output: 'tokens_1m' },
     entries: [
       { rates: { input: 5, output: 25 } },
       { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 15, output: 75 } },
@@ -13,6 +14,7 @@ test('pricingField parses explicit flat entries', () => {
     ],
   };
   assertEquals(pricingField(value, 'pricing'), {
+    units: { input: 'tokens_1m', output: 'tokens_1m' },
     entries: [
       { rates: { input: 5, output: 25 } },
       { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 15, output: 75 } },
@@ -22,21 +24,23 @@ test('pricingField parses explicit flat entries', () => {
 });
 
 test('pricingField rejects malformed entries and duplicate coordinates', () => {
-  assertThrows(() => pricingField({}, 'pricing'), Error, 'non-empty array');
-  assertThrows(() => pricingField({ entries: [{ rates: { input: 1 } }], fallback: true }, 'pricing'), Error, 'unknown fields: fallback');
-  assertThrows(() => pricingField({ entries: [{ rates: {} }] }, 'pricing'), Error, 'at least one rate');
-  assertThrows(() => pricingField({ entries: [{ selector: { serviceTier: '' }, rates: { input: 1 } }] }, 'pricing'), Error, 'non-empty string');
-  assertThrows(() => pricingField({ entries: [{ selector: { inputTokens: { operator: 'gt', value: 1.5 } }, rates: { input: 1 } }] }, 'pricing'), Error, 'positive safe integer');
-  assertThrows(() => pricingField({ entries: [{ rates: { input: 1, ouput: 4 } }] }, 'pricing'), Error, 'unknown dimensions: ouput');
-  assertThrows(() => pricingField({ entries: [{ rates: { input: 1 }, fallback: true }] }, 'pricing'), Error, 'unknown fields: fallback');
+  assertThrows(() => pricingField({ units: {} }, 'pricing'), Error, 'non-empty array');
+  assertThrows(() => pricingField({ units: { input: 'tokens_1m' }, entries: [{ rates: { input: 1 } }], fallback: true }, 'pricing'), Error, 'unknown fields: fallback');
+  assertThrows(() => pricingField({ units: {}, entries: [{ rates: {} }] }, 'pricing'), Error, 'at least one rate');
+  assertThrows(() => pricingField({ units: { input: 'tokens_1m' }, entries: [{ selector: { serviceTier: '' }, rates: { input: 1 } }] }, 'pricing'), Error, 'non-empty string');
+  assertThrows(() => pricingField({ units: { input: 'tokens_1m' }, entries: [{ selector: { inputTokens: { operator: 'gt', value: 1.5 } }, rates: { input: 1 } }] }, 'pricing'), Error, 'positive safe integer');
+  assertThrows(() => pricingField({ units: { input: 'tokens_1m' }, entries: [{ rates: { input: 1, ouput: 4 } }] }, 'pricing'), Error, 'unknown dimensions: ouput');
+  assertThrows(() => pricingField({ units: { input: 'tokens_1m' }, entries: [{ rates: { input: 1 }, fallback: true }] }, 'pricing'), Error, 'unknown fields: fallback');
   assertThrows(() => pricingField({
+    units: { input: 'tokens_1m' },
     entries: [
       { rates: { input: 1 } },
       { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
       { selector: { serviceTier: 'priority' }, rates: { input: 3 } },
     ],
   }, 'pricing'), Error, 'duplicate pricing entry selector');
-  assertThrows(() => pricingField({ entries: [{ rates: { input: -1 } }] }, 'pricing'), Error, 'non-negative');
+  assertThrows(() => pricingField({ units: { input: 'tokens_1m' }, entries: [{ rates: { input: -1 } }] }, 'pricing'), Error, 'non-negative');
+  assertThrows(() => pricingField({ units: { input: 'requests_1k' }, entries: [{ rates: { input: 1 } }] }, 'pricing'), Error, 'unknown billing unit');
 });
 
 describe('chatField', () => {

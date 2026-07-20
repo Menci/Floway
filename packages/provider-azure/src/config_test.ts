@@ -249,6 +249,7 @@ test('assertAzureUpstreamRecord round-trips model.pricing with full pricing fiel
     },
   });
   assertEquals(parsed.config.models[0].pricing, {
+    units: { input: 'tokens_1m', input_cache_read: 'tokens_1m', input_cache_write: 'tokens_1m', input_image: 'tokens_1m', output: 'tokens_1m', output_image: 'tokens_1m' },
     entries: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }],
   });
 });
