@@ -21,11 +21,22 @@ target ships in the same repo for self-hosting on a long-lived process.
 | OpenAI Embeddings                       | `POST /v1/embeddings`         |
 | OpenAI Images                           | `POST /v1/images/generations` |
 | OpenAI Image Edits                      | `POST /v1/images/edits`       |
+| Cohere Rerank v1                        | `POST /v1/rerank`             |
+| Cohere Rerank v2                        | `POST /v2/rerank`             |
+| Jina Rerank                             | `POST /jina/v1/rerank`        |
+| Voyage Rerank                           | `POST /voyage/v1/rerank`      |
 | OpenAI Models                           | `GET  /v1/models`             |
 | Google Gemini (generate / count tokens) | `POST /v1beta/models/...`     |
 
 `POST /v1/images/edits` accepts multipart image uploads and JSON `images`
 references.
+
+Rerank models are custom-upstream manual models with the semantic `rerank`
+endpoint. Each model selects its outbound protocol independently: Cohere v1,
+Cohere v2, Jina v1, Voyage v1, DashScope compatible, or DashScope native. The
+protocol supplies its canonical path unless that model sets a path override;
+there is no upstream-wide rerank path. Auto-fetched rerank catalog rows remain
+unroutable until they are switched to manual and a target is persisted.
 
 For each public model, Floway picks the first (provider, model) pair that can
 serve the request, translating between source and target protocols when the
@@ -266,7 +277,7 @@ Chat aliases (kind `chat`) can carry per-target rules — reasoning
 effort, verbosity, service tier, and Anthropic thinking configuration.
 Rules apply post-translate on the chosen target IR; a rule with no
 native slot on that target is dropped by design. Passthrough aliases
-(kinds `embedding` / `image`) must have empty rules.
+(kinds `embedding` / `image` / `rerank`) must have empty rules.
 
 Schema and the seeded `codex-auto-review` alias live in
 `packages/gateway/migrations/0046_model_aliases.sql`; behavior and
