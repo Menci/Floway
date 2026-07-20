@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { settleUsageMeasurement } from './settle.ts';
 import { audioTranscriptionUsageMeasurement, openAICacheTokensFromUsage, recordUsage } from './usage.ts';
-import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import { basePricing } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
