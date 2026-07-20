@@ -45,7 +45,7 @@ const prepareTranscription = async (bytes: Uint8Array, contentType: string | und
 
   const entries: AudioTranscriptionFormEntry[] = [];
   for (const [name, value] of form.entries()) {
-    entries.push(typeof value === 'string' ? { name, value } : { name, value });
+    entries.push({ name, value });
   }
   return {
     type: 'ok',

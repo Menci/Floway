@@ -4,9 +4,10 @@
 // providers rebuild a fresh FormData for every candidate so retries never
 // reuse a consumed request body.
 
-export type AudioTranscriptionFormEntry =
-  | { readonly name: string; readonly value: string }
-  | { readonly name: string; readonly value: File };
+export interface AudioTranscriptionFormEntry {
+  readonly name: string;
+  readonly value: string | File;
+}
 
 export interface AudioTranscriptionRequest {
   readonly entries: readonly AudioTranscriptionFormEntry[];
