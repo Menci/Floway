@@ -17,7 +17,7 @@ import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult
 //
 // Wrap is also the single source of truth for the response envelope id the
 // client sees. The caller mints a `resp_<crc>_<body>` once and passes it
-// in here; every envelope event (`response.created`, `response.in_progress`,
+// in here; every envelope event (`response.queued`, `response.created`, `response.in_progress`,
 // `response.completed`, `response.incomplete`, `response.failed`) yielded
 // downstream has its `response.id` rewritten to it, and the snapshot is
 // committed under the same id. Whatever id the upstream produced
@@ -125,7 +125,7 @@ export const wrapResponsesClientOutput = async function* (
     // forwarder, snapshot collector) sees them. Item-level events
     // (`response.output_item.*`, delta events) do not carry `response.id`
     // and are handled below.
-    if (event.type === 'response.created' || event.type === 'response.in_progress') {
+    if (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress') {
       yield eventFrame({ ...event, response: rewriteEnvelopeIds(event.response) });
       continue;
     }

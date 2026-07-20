@@ -974,6 +974,8 @@ export interface ResponsesOutputImageGenerationCall {
 export type ResponsesStreamEvent = ResponsesStreamEventVariant & { sequence_number?: number };
 
 type ResponsesStreamEventVariant =
+  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L6456-L6471
+  | { type: 'response.queued'; response: ResponsesResult }
   | { type: 'response.created'; response: ResponsesResult }
   | { type: 'response.in_progress'; response: ResponsesResult }
   | {
@@ -1148,7 +1150,7 @@ export const isResponsesTerminalEvent = (event: Pick<ResponsesStreamEvent, 'type
   event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed' || event.type === 'error';
 
 // Typed accessor for the `response` payload carried on lifecycle envelopes
-// (`response.created`, `response.in_progress`, `response.completed`,
+// (`response.queued`, `response.created`, `response.in_progress`, `response.completed`,
 // `response.incomplete`, `response.failed`). Returns null on every other
 // event type so callers don't have to reproduce the variant check.
 export const responsesResultFromStreamEvent = (event: ResponsesStreamEvent): ResponsesResult | null =>

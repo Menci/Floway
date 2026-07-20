@@ -82,7 +82,8 @@ const wrapNaturalResponsesAffinity = async function* (
       continue;
     }
     if (
-      event.type === 'response.created'
+      event.type === 'response.queued'
+      || event.type === 'response.created'
       || event.type === 'response.in_progress'
       || event.type === 'response.completed'
       || event.type === 'response.incomplete'
@@ -268,7 +269,7 @@ const wrapResponsesFirstCarrier = async function* (
       return;
     }
 
-    if (event.type === 'response.created' || event.type === 'response.in_progress') {
+    if (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress') {
       yield* discoverFirstFromSnapshot(event.response, event.sequence_number);
       const response = await rewriteResponse(event.response, false);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
