@@ -24,6 +24,9 @@ const optionalFiniteNumber = (value: unknown, field: string): number | undefined
   return value;
 };
 
+const optionalNullableFiniteNumber = (value: unknown, field: string): number | undefined =>
+  value === null ? undefined : optionalFiniteNumber(value, field);
+
 const optionalPositiveInteger = (value: unknown, field: string): number | undefined => {
   const number = optionalFiniteNumber(value, field);
   if (number !== undefined && (!Number.isInteger(number) || number < 1)) throw new Error(`${field} must be a positive integer`);
@@ -351,8 +354,8 @@ const cohereUsage = (meta: unknown): Pick<CanonicalRerankResponse, 'totalTokens'
   if (metadata === undefined) return {};
   const billedUnits = optionalRecord(metadata.billed_units, 'meta.billed_units');
   const tokens = optionalRecord(metadata.tokens, 'meta.tokens');
-  const searchUnits = billedUnits?.search_units === undefined ? undefined : optionalFiniteNumber(billedUnits.search_units, 'meta.billed_units.search_units');
-  const inputTokens = tokens?.input_tokens === undefined ? undefined : optionalFiniteNumber(tokens.input_tokens, 'meta.tokens.input_tokens');
+  const searchUnits = optionalNullableFiniteNumber(billedUnits?.search_units, 'meta.billed_units.search_units');
+  const inputTokens = optionalNullableFiniteNumber(tokens?.input_tokens, 'meta.tokens.input_tokens');
   if (searchUnits !== undefined && searchUnits < 0) throw new Error('meta.billed_units.search_units must not be negative');
   if (inputTokens !== undefined && inputTokens < 0) throw new Error('meta.tokens.input_tokens must not be negative');
   return {

@@ -226,10 +226,18 @@ describe('rerank response translation', () => {
     expect(parseRerankUsage('cohere-v2', {
       meta: { billed_units: { search_units: 2 }, tokens: null },
     })).toEqual({ searchUnits: 2 });
+    expect(parseRerankUsage('cohere-v2', {
+      meta: { billed_units: { search_units: null }, tokens: { input_tokens: null } },
+    })).toEqual({});
+    expect(parseRerankUsage('cohere-v2', {
+      meta: { billed_units: { search_units: null }, tokens: { input_tokens: 3 } },
+    })).toEqual({ totalTokens: 3 });
 
     expect(() => parseRerankUsage('cohere-v2', { meta: 'bad' })).toThrow('meta must be an object or null');
     expect(() => parseRerankUsage('cohere-v2', { meta: { billed_units: 1 } })).toThrow('meta.billed_units must be an object or null');
     expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: [] } })).toThrow('meta.tokens must be an object or null');
+    expect(() => parseRerankUsage('cohere-v2', { meta: { billed_units: { search_units: '2' } } })).toThrow('meta.billed_units.search_units must be a finite number');
+    expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: { input_tokens: '3' } } })).toThrow('meta.tokens.input_tokens must be a finite number');
   });
 
   test('normalizes Voyage and both DashScope response envelopes', () => {
