@@ -604,7 +604,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
   }
 
-  insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     const pending = new Map<string, StoredResponsesItem>();
     for (const item of items) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
@@ -617,7 +617,6 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       const stored = this.store.get(scopedResponsesKey(item.apiKeyId, item.id))!;
       stored.createdAt = Math.max(stored.createdAt, item.createdAt);
     }
-    return Promise.resolve();
   }
 
   refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {

@@ -290,7 +290,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
       .toSorted(compareResponsesItemsByFreshness));
   }
 
-  insertItems(items: readonly StoredResponsesItem[]): Promise<void> {
+  async insertItems(items: readonly StoredResponsesItem[]): Promise<void> {
     const pending = new Map<string, StoredResponsesItem>();
     for (const item of items) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
@@ -303,7 +303,6 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
       const stored = this.items.get(scopedResponsesKey(item.apiKeyId, item.id))!;
       stored.createdAt = Math.max(stored.createdAt, item.createdAt);
     }
-    return Promise.resolve();
   }
 
   refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
