@@ -5,7 +5,7 @@ import { usageDimensions } from '../../../repo/usage-dimensions.ts';
 import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, type PriceUnits, priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
+export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => usage[dimension] !== undefined);
 
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
 // actually billed. `tier` (a non-numeric service-tier marker) survives the
@@ -13,8 +13,8 @@ export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {
-    const value = counts[dimension] ?? 0;
-    if (value > 0) out[dimension] = value;
+    const value = counts[dimension];
+    if (value !== undefined) out[dimension] = value;
   }
   if (counts.tier != null) out.tier = counts.tier;
   return out;
