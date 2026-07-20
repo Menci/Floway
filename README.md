@@ -141,16 +141,14 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    selection automatically. With no selected key, form edits remain local and
    the output asks for a key instead of creating a setup URL.
 
-   Claude Code exposes Default, Opus, Sonnet, and Haiku model overrides,
-   reasoning effort, gateway discovery, a cleanup period whose Default choice
-   omits the setting and whose explicit choices are 180, 365, or 99999 days, and
-   an AI-attribution opt-out. The model controls and Claude preferences occupy
-   separate rows without changing the responsive field width. Codex exposes its
-   model and reasoning effort. Both pickers retain opaque addressable chat model
-   ids after projecting the catalog through the selected API key's effective
-   user/key upstream cap; client-tool family matching only changes their order.
-   Both configurations live in one lease record and renew through one keepalive.
-   The agent-specific script paths share the same token —
+   Claude Code exposes Default, Opus, Sonnet, and Haiku model overrides plus
+   reasoning effort, gateway discovery, cleanup retention, and AI-attribution
+   opt-out. Codex exposes its model and reasoning effort. Both pickers retain
+   opaque addressable chat model ids after projecting the catalog through the
+   selected API key's effective user/key upstream cap; client-tool family
+   matching only changes their order. Both configurations live in one lease
+   record and renew through one keepalive. The agent-specific script paths share
+   the same token —
    `<token>/claude.sh` and `<token>/codex.sh` (plus their PowerShell variants) —
    and each script installs and configures only its named agent. The command
    picker defaults to Windows on Windows clients and to macOS/Linux elsewhere.
@@ -194,12 +192,10 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
 
    **Config snippets** keeps the manual setup path available for the same
    table-selected key, agent, and configuration form. Its `settings.json` or
-   TOML output updates from those exact model, effort, cleanup, attribution, and
-   discovery choices; it does not mount a second set of controls. Claude Code is
-   presented as a `settings.json` edit: all Floway-managed environment variables
-   live under its `env` object rather than as shell exports, selected top-level
-   settings remain top-level, and attribution opt-out writes empty commit/PR
-   text plus `sessionUrl: false`. Codex also shows provider-token commands.
+   TOML output updates from those exact model, effort, and discovery choices;
+   it does not mount a second set of controls. Claude Code is presented as a
+   JSON edit rather than shell exports, while Codex also shows provider-token
+   commands.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 current payload format is version 11 and is tied to the running deployment, so
