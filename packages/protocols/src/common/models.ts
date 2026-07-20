@@ -7,11 +7,13 @@ import { billableServiceTier } from './usage.ts';
 // one of `input`, `input_cache_read`, `input_cache_write`,
 // `input_cache_write_1h`, or `input_image`, never several at once.
 //
-// Convention borrowed from models.dev and LiteLLM: bare `input`/`output` mean
-// the text modality and the `_image` variants mean the image modality. Every
-// dimension is priced explicitly; an absent rate leaves that dimension
-// unpriced. There are no image cache dimensions on purpose — a live probe of
-// Azure gpt-image-2 confirmed its usage object never emits cached fields.
+// Bare `input`/`output` preserve an upstream's general counters; they are not
+// assumed to be text-only when the upstream does not report modalities
+// separately. The `_image` variants are used only for separately metered image
+// counters, and adapters keep them disjoint from the corresponding general
+// counter. Every dimension is priced explicitly; an absent rate leaves that
+// dimension unpriced. Image cache dimensions are absent until an upstream
+// exposes disjoint counters that can be recorded without inference.
 //
 // `input_cache_write` is the generic cache-write bucket — protocols without
 // a TTL distinction land all their writes here, and on Anthropic it covers
@@ -37,8 +39,7 @@ export const BILLING_UNIT_SCALES: Readonly<Record<BillingUnit, number>> = {
 // size, which projects the request onto the declared inputTokens thresholds.
 export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'];
 
-// USD-per-million-token rates for one entry; input/output are text rates and
-// the _image keys are image rates.
+// USD per declared billing unit for one pricing entry.
 export type PriceVector = Partial<Record<BillingDimension, number>>;
 export type PriceUnits = Partial<Record<BillingDimension, BillingUnit>>;
 
@@ -77,11 +78,12 @@ export interface PricingEntry {
   rates: PriceVector;
 }
 
-// Per-model pricing as symmetric flat entries. `{ rates }` is the unique Base
-// entry; non-default coordinates use the same shape. Threshold bands are
-// implied by selectors rather than maintained as a second catalog. An exact
-// selector miss resolves to the whole Base vector; rates are never merged or
-// inherited field-by-field across entries.
+// Per-model pricing as symmetric flat entries. `units` declares the denominator
+// for each rate dimension. `{ rates }` is the unique Base entry; non-default
+// coordinates use the same shape. Threshold bands are implied by selectors
+// rather than maintained as a second catalog. An exact selector miss resolves
+// to the whole Base vector; rates are never merged or inherited field-by-field
+// across entries.
 export interface ModelPricing {
   units: PriceUnits;
   entries: readonly PricingEntry[];
