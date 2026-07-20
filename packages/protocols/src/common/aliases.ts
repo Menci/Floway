@@ -55,7 +55,7 @@ export interface ChatAliasRules {
 }
 
 // Rule overlay payload. Today only chat-kind aliases carry rules — embedding
-// and image targets pass `{}`, which already satisfies `ChatAliasRules`
+// image, and rerank targets pass `{}`, which already satisfies `ChatAliasRules`
 // because every field is optional. The type is a single alias rather than a
 // union so consumers can read `rules.reasoning?.effort` directly without an
 // unchecked cast.

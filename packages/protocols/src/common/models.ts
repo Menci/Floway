@@ -540,7 +540,7 @@ export interface PublicModel {
   // upstream catalog into the public-facing shape: the three chat endpoints
   // (chatCompletions / messages / responses) appear together because the
   // gateway translates between them, while `completions`, `embeddings`,
-  // `imagesGenerations`, and `imagesEdits` only appear when the upstream
+  // `imagesGenerations`, `imagesEdits`, and `rerank` only appear when the upstream
   // natively serves them. Alias entries surface the UNION of every
   // currently-available target's endpoint map — at request time the
   // resolver narrows the pool to targets that serve the inbound endpoint,

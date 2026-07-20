@@ -29,7 +29,7 @@ const modelsStore = useRawModelsStore();
 const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'));
 
 // Switching kind discards rule state — a chat-only rule must not survive a
-// switch into embedding/image.
+// switch into any non-chat kind.
 const emptyRulesFor = (k: ModelKind): AliasTarget['rules'] => (k === 'chat' ? {} : {} as Record<string, never>);
 
 const blankTarget = (k: ModelKind): AliasTarget => ({ target_model_id: '', rules: emptyRulesFor(k) });

@@ -203,7 +203,7 @@ test('POST /api/aliases accepts kind=embedding with empty rules', async () => {
 });
 
 test('POST /api/aliases rejects announced_metadata.chat on a non-chat alias with 400', async () => {
-  // A `chat` block on an embedding / image alias would land on the row's
+  // A `chat` block on a non-chat alias would land on the row's
   // announced-metadata sidecar and, at listing time, get surfaced onto the
   // /v1/models entry — advertising `chat: {...}` on a row whose `kind` says
   // it has none. The schema keeps the row structurally coherent by rejecting
