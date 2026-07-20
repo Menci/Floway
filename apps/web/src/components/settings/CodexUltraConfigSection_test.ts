@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { expect, test, vi } from 'vitest';
 import { nextTick } from 'vue';
 
@@ -60,6 +60,7 @@ test('Codex Ultra settings block stale-default saves and retry the failed load',
   const retry = wrapper.findAll('button').find(button => button.text().includes('Retry'));
   expect(retry).toBeDefined();
   await retry!.trigger('click');
+  await flushPromises();
   await nextTick();
 
   expect(mocks.get).toHaveBeenCalledOnce();
