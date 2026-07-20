@@ -189,8 +189,11 @@ test('carries program and nested agent-message ids in every available blob', asy
   expect(unwrapCopilotItemId(program.fingerprint)).toMatchObject({ kind: 'owned', value: 'program state', id: 'cm_raw' });
   expect(agent.id).toMatch(/^amsg_[0-9a-f]{32}$/);
   if (agent.type !== 'agent_message') throw new Error('expected agent_message');
-  const encrypted = agent.content.filter(part => part.type === 'encrypted_content');
-  expect(encrypted.map(part => unwrapCopilotItemId(part.encrypted_content))).toEqual([
+  const encrypted = agent.content.flatMap(part =>
+    part.type === 'encrypted_content' && typeof part.encrypted_content === 'string'
+      ? [part.encrypted_content]
+      : []);
+  expect(encrypted.map(unwrapCopilotItemId)).toEqual([
     expect.objectContaining({ kind: 'owned', value: 'agent state one', id: 'amsg_raw' }),
     expect.objectContaining({ kind: 'owned', value: 'agent state two', id: 'amsg_raw' }),
   ]);
