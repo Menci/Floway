@@ -40,6 +40,12 @@ import type { CatalogModel } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
 import type { InternalModel, Modality } from '@floway-dev/provider';
 
+// Ultra selects proactive multi-agent v2 locally while Codex sends `max` on
+// the wire. Keep the catalog preset aligned with the official Codex catalog.
+// https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/models-manager/models.json#L19-L58
+// https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/core/src/session/multi_agents.rs#L39-L54
+const ULTRA_REASONING_LEVEL = { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' };
+
 // A synthesized (miss-path) entry with no registry-supplied
 // `max_context_window_tokens` still needs SOME window — codex's auto-compact
 // math (see `auto_compact_token_limit` in BASELINE for the source URL) blows
@@ -133,6 +139,8 @@ export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel
   const supportedReasoning = registryEffort !== undefined
     ? registryEffort.supported.map(effort => ({ effort, description: '' }))
     : (source.supported_reasoning_levels ?? BASELINE.supported_reasoning_levels);
+  const reasoningLevels = supportedReasoning as Array<{ effort: string; description: string }>;
+  const supportsMax = reasoningLevels.some(level => level.effort === 'max');
 
   const registryWindow = model.limits.max_context_window_tokens;
   const contextWindow = (registryWindow
@@ -149,7 +157,8 @@ export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel
     input_modalities: [...inputModalities],
     supports_image_detail_original: hasImage,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
-    supported_reasoning_levels: supportedReasoning,
+    supported_reasoning_levels: supportsMax && !reasoningLevels.some(level => level.effort === 'ultra') ? [...reasoningLevels, ULTRA_REASONING_LEVEL] : reasoningLevels,
+    multi_agent_version: supportsMax ? 'v2' : source.multi_agent_version,
     service_tiers: deriveServiceTiers(model),
     context_window: contextWindow,
     max_context_window: maxContextWindow,

@@ -93,6 +93,19 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.default_reasoning_level).toBe('low');
   });
 
+  test('adds Ultra and multi-agent v2 when Max is supported', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { effort: { supported: ['low', 'max'], default: 'low' } } },
+    });
+    expect(entry.supported_reasoning_levels).toEqual([
+      { effort: 'low', description: '' },
+      { effort: 'max', description: '' },
+      { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
+    ]);
+    expect(entry.multi_agent_version).toBe('v2');
+  });
+
   test('drops budget_tokens silently — no effort fields on output', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
@@ -221,6 +234,22 @@ describe('synthesizeCatalogEntry', () => {
       }, bundledBase);
       expect(entry.supported_reasoning_levels).toEqual([{ effort: 'high', description: '' }]);
       expect(entry.default_reasoning_level).toBe('high');
+    });
+
+    test('preserves an existing Ultra preset without duplication', () => {
+      const entry = synthesizeCatalogEntry(base, {
+        ...bundledBase,
+        supported_reasoning_levels: [
+          { effort: 'max', description: 'Maximum' },
+          { effort: 'ultra', description: 'Existing Ultra' },
+        ],
+        multi_agent_version: 'v1',
+      });
+      expect(entry.supported_reasoning_levels).toEqual([
+        { effort: 'max', description: 'Maximum' },
+        { effort: 'ultra', description: 'Existing Ultra' },
+      ]);
+      expect(entry.multi_agent_version).toBe('v2');
     });
 
     test('bundled context_window preserved when registry omits max_context_window_tokens', () => {
