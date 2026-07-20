@@ -192,6 +192,25 @@ test('assertAzureUpstreamRecord rejects malformed per-model flagOverrides', () =
   );
 });
 
+test('assertAzureUpstreamRecord rejects rerank models', () => {
+  assertThrows(
+    () => assertAzureUpstreamRecord({
+      ...baseRecord,
+      config: {
+        ...(baseRecord.config as Record<string, unknown>),
+        models: [{
+          upstreamModelId: 'reranker',
+          kind: 'rerank',
+          endpoints: { rerank: {} },
+          rerankTarget: { protocol: 'cohere-v2' },
+        }],
+      },
+    }),
+    Error,
+    'rerank models require a custom upstream',
+  );
+});
+
 test('assertAzureUpstreamRecord rejects per-model flagOverrides with unknown flag id', () => {
   assertThrows(
     () =>
