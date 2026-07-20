@@ -479,7 +479,7 @@ const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> 
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, modelDiscovery: false, ...overrides,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, modelDiscovery: false, ...overrides,
   },
   codex: { model: null, reasoningEffort: null },
 });
@@ -489,7 +489,7 @@ const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}):
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null, ...overrides },
 });
@@ -502,7 +502,7 @@ const bothConfig = (
   apiKeyId: 'key-a',
   claudeCode: {
     model: null, defaultOpusModel: null, defaultSonnetModel: null,
-    defaultHaikuModel: null, effortLevel: null, modelDiscovery: false, ...claude,
+    defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, modelDiscovery: false, ...claude,
   },
   codex: { model: null, reasoningEffort: null, ...codex },
 });
@@ -865,10 +865,10 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   }));
   const run = await runShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', cleanupPeriodDays: 365, modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  const settings = readSettings(settingsPathFor(ws)) as { theme: string; permissions: unknown; effortLevel: string; env: Record<string, string> };
+  const settings = readSettings(settingsPathFor(ws)) as { theme: string; permissions: unknown; effortLevel: string; cleanupPeriodDays: number; env: Record<string, string> };
   t.equal(settings.theme, 'dark', 'unrelated top-level key preserved');
   t.equal(JSON.stringify(settings.permissions), JSON.stringify({ allow: ['Bash(ls:*)'] }), 'unrelated nested object preserved');
   t.equal(settings.env.OTHER_TOOL, 'keep-me', 'unrelated env key preserved');
@@ -877,6 +877,7 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   t.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'opus-x', 'managed opus default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'managed sonnet default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'haiku-x', 'managed haiku default written');
+  t.equal(settings.cleanupPeriodDays, 365, 'cleanupPeriodDays maps to the top-level numeric setting');
 });
 
 test('claude', 'optional keys are removed when unset', async t => {
@@ -886,6 +887,7 @@ test('claude', 'optional keys are removed when unset', async t => {
   mkdirSync(configDir, { recursive: true });
   writeFileSync(settingsPathFor(ws), JSON.stringify({
     effortLevel: 'high',
+    cleanupPeriodDays: 180,
     env: {
       ANTHROPIC_MODEL: 'stale-model',
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'stale-opus',
@@ -897,23 +899,25 @@ test('claude', 'optional keys are removed when unset', async t => {
   }));
   const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  const settings = readSettings(settingsPathFor(ws)) as { effortLevel?: string; env: Record<string, string> };
+  const settings = readSettings(settingsPathFor(ws)) as { effortLevel?: string; cleanupPeriodDays?: number; env: Record<string, string> };
   t.ok(!('ANTHROPIC_MODEL' in settings.env), 'stale model removed');
   t.ok(!('ANTHROPIC_DEFAULT_OPUS_MODEL' in settings.env), 'stale opus removed');
   t.ok(!('ANTHROPIC_DEFAULT_SONNET_MODEL' in settings.env), 'stale sonnet removed');
   t.ok(!('ANTHROPIC_DEFAULT_HAIKU_MODEL' in settings.env), 'stale haiku removed');
   t.ok(!('CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' in settings.env), 'discovery removed when off');
   t.ok(!('effortLevel' in settings), 'effortLevel removed when unset');
+  t.ok(!('cleanupPeriodDays' in settings), 'cleanupPeriodDays removed when unset');
   t.equal(settings.env.KEEP, 'yes', 'unrelated env key preserved through removal');
 });
 
 test('claude', 'effort and discovery map to the documented keys', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
-  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig({ effortLevel: 'xhigh', modelDiscovery: true }), baseUrl: modelServer.url });
+  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig({ effortLevel: 'xhigh', cleanupPeriodDays: 99999, modelDiscovery: true }), baseUrl: modelServer.url });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  const settings = readSettings(settingsPathFor(ws)) as { effortLevel: string; env: Record<string, string> };
+  const settings = readSettings(settingsPathFor(ws)) as { effortLevel: string; cleanupPeriodDays: number; env: Record<string, string> };
   t.equal(settings.effortLevel, 'xhigh', 'effortLevel maps to the top-level key');
+  t.equal(settings.cleanupPeriodDays, 99999, 'cleanupPeriodDays remains numeric');
   t.equal(settings.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, '1', 'discovery maps to the documented env key with value "1"');
 });
 
@@ -1120,12 +1124,12 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'dark', env: { OTHER_TOOL: 'keep-me' } }));
   const run = await runPowerShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', cleanupPeriodDays: 180, modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   t.ok(existsSync(powerShellCallerSurvivalPath(ws)), 'the IEX caller survives a successful setup');
   t.ok(!existsSync(installerMarker(ws)), 'installer must not run when claude is present');
-  const settings = readSettings(settingsPathFor(ws)) as { theme: string; effortLevel: string; env: Record<string, string> };
+  const settings = readSettings(settingsPathFor(ws)) as { theme: string; effortLevel: string; cleanupPeriodDays: number; env: Record<string, string> };
   t.equal(settings.theme, 'dark', 'unrelated top-level key preserved');
   t.equal(settings.env.OTHER_TOOL, 'keep-me', 'unrelated env key preserved');
   t.equal(settings.env.ANTHROPIC_BASE_URL, modelServer.url, 'base URL written');
@@ -1134,6 +1138,7 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   t.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'opus-x', 'opus default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'sonnet default written');
   t.equal(settings.effortLevel, 'high', 'effortLevel maps to the top-level key');
+  t.equal(settings.cleanupPeriodDays, 180, 'cleanupPeriodDays maps to the top-level numeric setting');
   t.equal(settings.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, '1', 'discovery maps to the documented env key');
 });
 
@@ -1145,14 +1150,16 @@ test('claude', 'PowerShell: optional keys are removed when unset', async t => {
   mkdirSync(configDir, { recursive: true });
   writeFileSync(settingsPathFor(ws), JSON.stringify({
     effortLevel: 'high',
+    cleanupPeriodDays: 365,
     env: { ANTHROPIC_MODEL: 'stale', CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1', KEEP: 'yes' },
   }));
   const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  const settings = readSettings(settingsPathFor(ws)) as { effortLevel?: string; env: Record<string, string> };
+  const settings = readSettings(settingsPathFor(ws)) as { effortLevel?: string; cleanupPeriodDays?: number; env: Record<string, string> };
   t.ok(!('ANTHROPIC_MODEL' in settings.env), 'stale model removed');
   t.ok(!('CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' in settings.env), 'discovery removed when off');
   t.ok(!('effortLevel' in settings), 'effortLevel removed when unset');
+  t.ok(!('cleanupPeriodDays' in settings), 'cleanupPeriodDays removed when unset');
   t.equal(settings.env.KEEP, 'yes', 'unrelated env key preserved');
 });
 

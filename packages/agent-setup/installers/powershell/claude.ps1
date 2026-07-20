@@ -110,6 +110,7 @@ function Write-SetupClaudeSettings {
   if ($SetupClaudeModelDiscovery) { Set-SetupProp $document.env 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' '1' }
   else { Remove-SetupProp $document.env 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' }
   Set-SetupOptionalProp $document 'effortLevel' $SetupClaudeEffortLevel
+  Set-SetupOptionalProp $document 'cleanupPeriodDays' $SetupClaudeCleanupPeriodDays
 
   $stage = "$($script:ClaudeSettingsPath).floway-stage.$PID"
   try {

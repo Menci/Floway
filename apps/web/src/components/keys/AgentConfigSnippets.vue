@@ -25,6 +25,7 @@ const claudeSnippet = computed(() => {
       ...(settings.modelDiscovery ? { CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1' } : {}),
     },
     ...(settings.effortLevel === null ? {} : { effortLevel: settings.effortLevel }),
+    ...(settings.cleanupPeriodDays === null ? {} : { cleanupPeriodDays: settings.cleanupPeriodDays }),
   }, null, 2);
 });
 

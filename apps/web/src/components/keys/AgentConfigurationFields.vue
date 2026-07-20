@@ -18,6 +18,7 @@ const props = defineProps<{
 
 type ClaudeConfiguration = AgentSetupConfiguration['claudeCode'];
 type ClaudeEffortLevel = NonNullable<ClaudeConfiguration['effortLevel']>;
+type ClaudeCleanupPeriodDays = NonNullable<ClaudeConfiguration['cleanupPeriodDays']>;
 type CodexConfiguration = AgentSetupConfiguration['codex'];
 export type ConfigurationPatch = {
   claudeCode?: Partial<ClaudeConfiguration>;
@@ -38,6 +39,7 @@ const fieldIds = {
   claudeSonnet: useId(),
   claudeHaiku: useId(),
   claudeEffort: useId(),
+  claudeCleanupPeriod: useId(),
   codexModel: useId(),
   codexEffort: useId(),
 };
@@ -96,6 +98,17 @@ const claudeEffortOptions: { value: string; label: string }[] = [
   ...claudeEffortLevels.map(value => ({ value, label: claudeEffortLabels[value] })),
 ];
 
+// cleanupPeriodDays is a numeric top-level Claude setting. The offered values
+// favor long-lived local history, while the sentinel omits the setting.
+// Ref: https://code.claude.com/docs/en/settings#available-settings
+const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly ClaudeCleanupPeriodDays[];
+const isClaudeCleanupPeriod = (value: number): value is ClaudeCleanupPeriodDays =>
+  claudeCleanupPeriods.some(period => period === value);
+const claudeCleanupPeriodOptions = [
+  { value: SELECT_NONE, label: 'Default' },
+  ...claudeCleanupPeriods.map(value => ({ value: value.toString(), label: `${value} days` })),
+];
+
 const codexEffortModel = computed(() => {
   const id = props.configuration.codex.model;
   if (id !== null) return props.models.find(model => model.id === id) ?? null;
@@ -131,6 +144,18 @@ const claudeEffort = computed<string>({
     if (value === SELECT_NONE) updateClaude('effortLevel', null);
     else if (isClaudeEffortLevel(value)) updateClaude('effortLevel', value);
     else throw new Error(`Unexpected Claude effort option: ${value}`);
+  },
+});
+const claudeCleanupPeriod = computed<string>({
+  get: () => props.configuration.claudeCode.cleanupPeriodDays?.toString() ?? SELECT_NONE,
+  set: value => {
+    if (value === SELECT_NONE) {
+      updateClaude('cleanupPeriodDays', null);
+      return;
+    }
+    const period = Number(value);
+    if (isClaudeCleanupPeriod(period)) updateClaude('cleanupPeriodDays', period);
+    else throw new Error(`Unexpected Claude cleanup period option: ${value}`);
   },
 });
 const modelDiscovery = computed<boolean>({
@@ -171,6 +196,10 @@ const codexEffort = computed<string>({
       <div data-testid="claude-effort">
         <label :for="fieldIds.claudeEffort" class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
         <Select :id="fieldIds.claudeEffort" v-model="claudeEffort" :options="claudeEffortOptions" />
+      </div>
+      <div data-testid="claude-cleanup-period">
+        <label :for="fieldIds.claudeCleanupPeriod" class="mb-1.5 block text-xs text-gray-500">Cleanup period</label>
+        <Select :id="fieldIds.claudeCleanupPeriod" v-model="claudeCleanupPeriod" :options="claudeCleanupPeriodOptions" />
       </div>
       <div data-testid="claude-model-discovery">
         <span class="mb-1.5 block text-xs text-gray-500">Gateway model discovery</span>

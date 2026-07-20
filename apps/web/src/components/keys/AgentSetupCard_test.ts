@@ -31,7 +31,7 @@ let activeArg: boolean | null;
 const defaultConfig = (): AgentSetupConfiguration => ({
   apiKeyId: 'key-1',
   claudeCode: {
-    model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
+    model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
 });
@@ -224,6 +224,20 @@ describe('AgentSetupCard', () => {
     const effort = selectIn(w, 'claude-effort').props().options;
     expect(effort[0]!.label).toBe('Default');
     expect(effort.slice(1).map(o => o.value)).toEqual(['low', 'medium', 'high', 'xhigh']);
+  });
+
+  it('offers the supported Claude cleanup periods with Default omitting the setting', async () => {
+    const w = mountCard();
+    const cleanup = selectIn(w, 'claude-cleanup-period');
+    expect(cleanup.props().options.map(option => option.label)).toEqual(['Default', '180 days', '365 days', '99999 days']);
+
+    cleanup.vm.$emit('update:modelValue', '365');
+    await nextTick();
+    expect(setupStub.draft.value!.claudeCode.cleanupPeriodDays).toBe(365);
+
+    cleanup.vm.$emit('update:modelValue', cleanup.props().options[0]!.value);
+    await nextTick();
+    expect(setupStub.draft.value!.claudeCode.cleanupPeriodDays).toBeNull();
   });
 
   it('offers a free-form Codex effort combobox seeded with upstream-advertised suggestions', async () => {

@@ -20,6 +20,7 @@ CLAUDE_MERGE_PROGRAM='
   | (if $haiku == "" then del(.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) else .env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $haiku end)
   | (if $discovery == "1" then .env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1" else del(.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY) end)
   | (if $effort == "" then del(.effortLevel) else .effortLevel = $effort end)
+  | (if $cleanup == "" then del(.cleanupPeriodDays) else .cleanupPeriodDays = ($cleanup | tonumber) end)
 '
 
 # Refs:
@@ -135,6 +136,7 @@ claude_write_settings() {
       --arg haiku "$SETUP_CLAUDE_DEFAULT_HAIKU_MODEL" \
       --arg discovery "$SETUP_CLAUDE_MODEL_DISCOVERY" \
       --arg effort "$SETUP_CLAUDE_EFFORT_LEVEL" \
+      --arg cleanup "$SETUP_CLAUDE_CLEANUP_PERIOD_DAYS" \
       "$CLAUDE_MERGE_PROGRAM" > "$_cw_stage"; then
     out_error 'failed to construct updated Claude settings.'
     rm -f "$_cw_stage"
