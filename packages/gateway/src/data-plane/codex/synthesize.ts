@@ -54,7 +54,7 @@ const CONSERVATIVE_DEFAULT_CONTEXT_WINDOW = 128_000;
 // registry-derived overlays on top. Bundled matches use the bundled entry
 // as the base and overlay the same fields, so both paths converge on one
 // field-precedence rule set (documented above).
-const BASELINE: CatalogModel = {
+const BASELINE = {
   slug: '',                                             // always overwritten
   description: '',
   truncation_policy: { mode: 'tokens', limit: 10000 },
@@ -97,7 +97,7 @@ const BASELINE: CatalogModel = {
   auto_compact_token_limit: null,
   context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
   max_context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
-};
+} satisfies CatalogModel;
 
 // Registry-derived: every distinct serviceTier selector is a billable wire-id.
 // Names mirror ids and descriptions are blank — Floway does not carry separate
@@ -139,9 +139,13 @@ export const synthesizeCatalogEntry = (
   const supportedReasoning: CodexReasoningLevel[] = registryEffort !== undefined
     ? registryEffort.supported.map(effort => ({ effort, description: '' }))
     : (source.supported_reasoning_levels ?? BASELINE.supported_reasoning_levels);
-  const shouldEnableUltra = capabilities.ultraReasoningLevel !== undefined
+  const ultraReasoningLevel = capabilities.ultraReasoningLevel;
+  const advertisedReasoning = ultraReasoningLevel !== undefined
     && supportedReasoning.some(level => level.effort === 'max')
-    && !supportedReasoning.some(level => level.effort === 'ultra');
+    && !supportedReasoning.some(level => level.effort === 'ultra')
+    ? [...supportedReasoning, ultraReasoningLevel]
+    : supportedReasoning;
+  const shouldEnableUltra = advertisedReasoning !== supportedReasoning;
 
   const registryWindow = model.limits.max_context_window_tokens;
   const contextWindow = (registryWindow
@@ -158,9 +162,7 @@ export const synthesizeCatalogEntry = (
     input_modalities: [...inputModalities],
     supports_image_detail_original: hasImage,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
-    supported_reasoning_levels: shouldEnableUltra
-      ? [...supportedReasoning, capabilities.ultraReasoningLevel]
-      : supportedReasoning,
+    supported_reasoning_levels: advertisedReasoning,
     service_tiers: deriveServiceTiers(model),
     context_window: contextWindow,
     max_context_window: maxContextWindow,
