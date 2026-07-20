@@ -39,4 +39,5 @@ export interface AudioTranscriptionDoneEvent extends AudioTranscriptionStreamEve
 export const isAudioTranscriptionDoneEvent = (event: unknown): event is AudioTranscriptionDoneEvent =>
   typeof event === 'object'
   && event !== null
-  && (event as { type?: unknown }).type === 'transcript.text.done';
+  && (event as { type?: unknown }).type === 'transcript.text.done'
+  && typeof (event as { text?: unknown }).text === 'string';
