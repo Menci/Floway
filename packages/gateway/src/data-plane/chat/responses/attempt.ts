@@ -68,7 +68,7 @@ type ResponsesAttemptGenerateArgs = Omit<ResponsesAttemptInvokeArgs, 'action'>;
 // presence.
 //
 // Responses state and client affinity both belong to the native source edge,
-// outside this candidate attempt. Native serve passes the already-restored
+// outside this candidate attempt. Native serve passes the already-hydrated
 // candidate payload plus any private source state; translated inner Responses
 // calls pass only their translated payload. Keeping this function free of
 // affinity decoding, state hydration, public-id minting, and persistence
@@ -80,14 +80,7 @@ export const responsesAttempt = {
     const headers = new Headers(sourceHeaders);
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
     const payload = { ...structuredClone(args.payload), model: candidate.model.id };
-    if (args.sourceState === undefined) {
-      ctx.store.beginAttempt(new Map());
-    } else {
-      ctx.store.beginAttempt(args.sourceState.privatePayloads, {
-        upstreamId: candidate.provider.upstream,
-        restoresItemIds: targetApi === 'responses',
-      });
-    }
+    ctx.store.beginAttempt(args.sourceState?.privatePayloads ?? new Map());
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
     // the same items echoed back as input on the next turn. Normalising

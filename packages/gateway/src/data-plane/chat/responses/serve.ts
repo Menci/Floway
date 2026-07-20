@@ -2,7 +2,6 @@ import { responsesAttempt } from './attempt.ts';
 import { wrapNativeResponsesClientOutput } from './client-output.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
-import { rewriteResponsesItemsForCandidate } from './items/rewrite.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
@@ -34,16 +33,10 @@ export const responsesServe = {
       ctx,
       'chat',
       async candidate => {
-        const rewritten = rewriteResponsesItemsForCandidate(
-          plan.affinity.payloadForCandidate(candidate),
-          plan.privatePayloads,
-          ctx.store,
-          candidate,
-        );
         const result = await responsesAttempt.generate({
-          payload: rewritten.payload,
+          payload: plan.affinity.payloadForCandidate(candidate),
           sourceState: {
-            privatePayloads: rewritten.privatePayloads,
+            privatePayloads: plan.privatePayloads,
           },
           ctx,
           candidate,
@@ -74,16 +67,10 @@ export const responsesServe = {
       ctx,
       'chat',
       async candidate => {
-        const rewritten = rewriteResponsesItemsForCandidate(
-          plan.affinity.payloadForCandidate(candidate),
-          plan.privatePayloads,
-          ctx.store,
-          candidate,
-        );
         const result = await responsesAttempt.invoke({
-          payload: rewritten.payload,
+          payload: plan.affinity.payloadForCandidate(candidate),
           sourceState: {
-            privatePayloads: rewritten.privatePayloads,
+            privatePayloads: plan.privatePayloads,
           },
           action: 'compact',
           ctx,

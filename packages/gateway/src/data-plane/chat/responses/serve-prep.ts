@@ -1,7 +1,7 @@
 import { prepareResponsesAffinity } from './affinity/ingress.ts';
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
-import { hydrateResponsesPayload } from './items/rewrite.ts';
+import { hydrateResponsesPayload } from './items/hydrate.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { type PreparedAffinityPayload, routeCandidatesByAffinity } from '../shared/affinity/index.ts';

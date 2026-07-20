@@ -1,8 +1,7 @@
-import { isResponsesItemId, responsesItemId } from './format.ts';
+import { responsesItemId } from './identity.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
-import type { ModelCandidate } from '@floway-dev/provider';
 
 interface HydratedItem {
   readonly item: ResponsesInputItem;
@@ -11,7 +10,7 @@ interface HydratedItem {
 
 const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore): HydratedItem => {
   const id = responsesItemId(item);
-  if (id === null || !isResponsesItemId(id)) return { item };
+  if (id === null) return { item };
   const stored = store.getItemById(id);
   if (stored === undefined) {
     if (item.type === 'item_reference') throwChatServeFailure({ kind: 'item-not-found', itemId: id });
@@ -41,36 +40,5 @@ export const hydrateResponsesPayload = (
   return {
     payload: { ...payload, input: hydrated.map(entry => entry.item) },
     privatePayloads,
-  };
-};
-
-export interface RewrittenResponsesItems {
-  readonly payload: CanonicalResponsesPayload;
-  readonly privatePayloads: ReadonlyMap<string, unknown>;
-}
-
-export const rewriteResponsesItemsForCandidate = (
-  payload: CanonicalResponsesPayload,
-  privatePayloads: ReadonlyMap<string, unknown>,
-  store: StatefulResponsesStore,
-  candidate: ModelCandidate,
-): RewrittenResponsesItems => {
-  const restoredIds = new Map<string, string>();
-  const input = payload.input.map(item => {
-    const id = responsesItemId(item);
-    if (id === null || !isResponsesItemId(id)) return item;
-    const stored = store.getItemById(id);
-    if (
-      stored?.upstreamId !== candidate.provider.upstream
-      || stored.upstreamItemId === null
-    ) return item;
-    restoredIds.set(id, stored.upstreamItemId);
-    return { ...item, id: stored.upstreamItemId } as ResponsesInputItem;
-  });
-  return {
-    payload: { ...payload, input },
-    privatePayloads: new Map(
-      [...privatePayloads].map(([id, value]) => [restoredIds.get(id) ?? id, structuredClone(value)]),
-    ),
   };
 };
