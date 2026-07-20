@@ -304,7 +304,7 @@ test('translateChatCompletionsChunkToResponsesEvents prefers reasoning_items ove
     },
     {
       type: 'message',
-      id: 'msg_1',
+      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
       role: 'assistant',
       content: [{ type: 'output_text', text: 'answer' }],
     },
@@ -401,7 +401,7 @@ test('translateChatCompletionsChunkToResponsesEvents discards scalar reasoning w
     },
     {
       type: 'message',
-      id: 'msg_1',
+      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
       role: 'assistant',
       content: [{ type: 'output_text', text: 'answer' }],
     },
