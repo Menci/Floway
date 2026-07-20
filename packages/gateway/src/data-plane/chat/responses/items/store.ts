@@ -33,8 +33,7 @@ export interface StatefulResponsesStore {
   loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
-  stageOutputItem(row: StoredResponsesItem, outputIndex: number): void;
-  commitStagedOutputItems(): Promise<void>;
+  persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
   // scratchpad from the candidate's rewritten items and records which upstream
@@ -55,8 +54,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItems = new Map<string, StoredResponsesItem>();
   private readonly loadedByContentHash = new Map<string, StoredResponsesItem[]>();
   private readonly stagedInputItemIds: string[] = [];
-  private readonly stagedOutputItems = new Map<string, StoredResponsesItem>();
-  private readonly stagedOutputItemIds = new Map<number, string>();
+  private readonly outputItemIds = new Map<number, string>();
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly freshItemIds = new Set<string>();
@@ -125,21 +123,18 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of items) await this.stageInputItem(item);
   }
 
-  stageOutputItem(row: StoredResponsesItem, outputIndex: number): void {
+  async persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void> {
+    if (this.outputItemIds.has(outputIndex)) return;
     const cloned = cloneStoredResponsesItem(row);
-    this.stagedOutputItems.set(cloned.id, cloned);
-    this.stagedOutputItemIds.set(outputIndex, cloned.id);
+    await this.commitItems([cloned]);
+    this.outputItemIds.set(outputIndex, cloned.id);
     this.freshItemIds.add(cloned.id);
     this.rememberItem(cloned);
   }
 
-  async commitStagedOutputItems(): Promise<void> {
-    await this.commitItems([...this.stagedOutputItems.values()]);
-  }
-
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
     if (this.options.writes.length === 0) return;
-    const outputItemIds = [...this.stagedOutputItemIds.entries()]
+    const outputItemIds = [...this.outputItemIds.entries()]
       .toSorted(([left], [right]) => left - right)
       .map(([, id]) => id);
     const itemIds = mode === 'replace'
