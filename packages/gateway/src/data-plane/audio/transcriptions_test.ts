@@ -150,6 +150,21 @@ test('/v1/audio/transcriptions forwards VTT verbatim and records request-only us
   assertEquals(usage.dimensions, []);
 });
 
+test('/v1/audio/transcriptions does not invent a content type for an untyped raw response', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  await withMockedFetch(
+    () => new Response('plain transcript'),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'text']]),
+      });
+      assertEquals(response.headers.get('content-type'), null);
+      assertEquals(await response.text(), 'plain transcript');
+    },
+  );
+});
+
 test('/v1/audio/transcriptions records duration seconds under the minutes unit', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
@@ -220,6 +235,26 @@ test('/v1/audio/transcriptions treats EOF without transcript.text.done as a fail
       });
       assertEquals(response.status, 200);
       await response.text();
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
+});
+
+test('/v1/audio/transcriptions counts a bodyless SSE response as a failed request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  await withMockedFetch(
+    () => new Response(null, { headers: { 'content-type': 'text/event-stream', 'x-empty-trace': 'empty-sse' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
+      });
+      assertEquals(response.status, 502);
+      assertEquals(response.headers.get('x-empty-trace'), 'empty-sse');
     },
   );
   await flushAsyncWork();
