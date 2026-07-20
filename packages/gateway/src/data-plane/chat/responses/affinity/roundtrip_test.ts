@@ -6,7 +6,7 @@ import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { AffinityCodec } from '../../shared/affinity/index.ts';
 import { wrapResponsesClientOutput } from '../items/output.ts';
-import { hydrateResponsesPayload, rewriteResponsesItemsForCandidate } from '../items/rewrite.ts';
+import { hydrateResponsesPayload } from '../items/hydrate.ts';
 import { createResponsesHttpStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -20,13 +20,13 @@ const modelCandidate = (upstream: string) => {
   });
 };
 
-test('affinity selects the route while item storage independently restores the native upstream id', async () => {
+test('affinity selects the route while item storage preserves the exact producer id', async () => {
   initRepo(new InMemoryRepo());
   const candidateA = modelCandidate('upstream-a');
   const candidateB = modelCandidate('upstream-b');
   const codec = new AffinityCodec('22'.repeat(32));
   const store = createResponsesHttpStore('key-a', true);
-  store.beginAttempt(new Map(), { upstreamId: 'upstream-a', restoresItemIds: true });
+  store.beginAttempt(new Map());
 
   const programOutput = {
     type: 'program_output' as const,
@@ -65,7 +65,7 @@ test('affinity selects the route while item storage independently restores the n
   if (clientResponse === undefined) throw new Error('Expected completed client response');
   const publicProgram = clientResponse.output[1];
   if (publicProgram.type !== 'program_output') throw new Error('Expected program output');
-  expect(publicProgram.id).not.toBe(programOutput.id);
+  expect(publicProgram.id).toBe(programOutput.id);
 
   const input = clientResponse.output as unknown as ResponsesInputItem[];
   await store.loadInputItems(input, input);
@@ -73,21 +73,8 @@ test('affinity selects the route while item storage independently restores the n
   const affinity = await prepareResponsesAffinity(hydrated.payload, codec);
   expect(affinity.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
 
-  const sameUpstream = rewriteResponsesItemsForCandidate(
-    affinity.payloadForCandidate(candidateA),
-    hydrated.privatePayloads,
-    store,
-    candidateA,
-  );
-  expect(sameUpstream.payload.input).toEqual([programOutput]);
-
-  const otherUpstream = rewriteResponsesItemsForCandidate(
-    affinity.payloadForCandidate(candidateB),
-    hydrated.privatePayloads,
-    store,
-    candidateB,
-  );
-  expect(otherUpstream.payload.input).toEqual([publicProgram]);
+  expect(affinity.payloadForCandidate(candidateA).input).toEqual([programOutput]);
+  expect(affinity.payloadForCandidate(candidateB).input).toEqual([programOutput]);
 });
 
 test('agent-message natural and originless nested carriers round-trip without changing ids', async () => {
