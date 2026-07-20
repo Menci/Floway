@@ -132,7 +132,9 @@ remain raw across JSON, verbose JSON, text, SRT, and VTT. Streaming responses
 reuse the shared SSE writer and terminate on `transcript.text.done` without a
 Chat `[DONE]` sentinel. Usage records always count the request; explicit token
 metrics use `tokens_1m`, explicit duration seconds use the `minutes` unit, and
-missing metrics remain request-only.
+missing metrics remain request-only. A concrete metric whose unit disagrees
+with configured pricing is stored with its measured unit and a null price;
+Floway never coerces the quantity or applies a rate with another denominator.
 
 ## Workspace Layout
 
