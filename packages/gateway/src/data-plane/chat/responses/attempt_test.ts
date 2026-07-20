@@ -167,7 +167,7 @@ test('generate treats a translated Responses payload as opaque to native affinit
   );
   const unwrap = vi.spyOn(ctx.affinity.codec, 'unwrap');
   const getStoredItem = vi.spyOn(store, 'getItemById');
-  const itemId = createResponsesItemId('reasoning');
+  const itemId = 'rs_source_edge';
 
   const result = await responsesAttempt.generate({
     payload: makePayload({
