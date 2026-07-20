@@ -1,6 +1,6 @@
-CREATE TABLE model_aliases_with_rerank (
+CREATE TABLE model_aliases_with_open_kind (
   name TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK (kind IN ('chat', 'embedding', 'image', 'rerank')),
+  kind TEXT NOT NULL CHECK (length(kind) > 0),
   selection TEXT NOT NULL CHECK (selection IN ('random', 'first-available')),
   display_name TEXT,
   visible_in_models_list INTEGER NOT NULL DEFAULT 1 CHECK (visible_in_models_list IN (0, 1)),
@@ -11,7 +11,7 @@ CREATE TABLE model_aliases_with_rerank (
   updated_at TEXT NOT NULL
 );
 
-INSERT INTO model_aliases_with_rerank (
+INSERT INTO model_aliases_with_open_kind (
   name,
   kind,
   selection,
@@ -37,5 +37,5 @@ SELECT
 FROM model_aliases;
 
 DROP TABLE model_aliases;
-ALTER TABLE model_aliases_with_rerank RENAME TO model_aliases;
+ALTER TABLE model_aliases_with_open_kind RENAME TO model_aliases;
 CREATE INDEX idx_model_aliases_sort ON model_aliases (sort_order, created_at);
