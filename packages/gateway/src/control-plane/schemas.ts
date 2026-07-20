@@ -65,10 +65,16 @@ const pricingDimensionShape = {
   output_image: z.number().nonnegative().optional(),
 };
 
-const pricingUnitShape = Object.fromEntries(Object.keys(pricingDimensionShape).map(dimension => [
-  dimension,
-  z.enum(['tokens_1m', 'minutes', 'searches_1k']).optional(),
-])) as { [K in keyof typeof pricingDimensionShape]: z.ZodOptional<z.ZodEnum<['tokens_1m', 'minutes', 'searches_1k']>> };
+const billingUnitSchema = z.enum(['tokens_1m', 'minutes', 'searches_1k']);
+const pricingUnitShape = {
+  input: billingUnitSchema.optional(),
+  output: billingUnitSchema.optional(),
+  input_cache_read: billingUnitSchema.optional(),
+  input_cache_write: billingUnitSchema.optional(),
+  input_cache_write_1h: billingUnitSchema.optional(),
+  input_image: billingUnitSchema.optional(),
+  output_image: billingUnitSchema.optional(),
+};
 
 // Modality arrays: both input and output require at least one entry and
 // deduplicate via transform. Input additionally requires 'text' to be present

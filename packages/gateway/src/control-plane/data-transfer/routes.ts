@@ -20,7 +20,7 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, UsageDimensionRecord, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
@@ -30,7 +30,7 @@ import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type PriceVector, type PricingSelector, validatePriceVector } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, type BillingDimension, type BillingUnit, type PricingSelector } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
@@ -50,7 +50,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 11;
+  version: 12;
   exportedAt: string;
   data: {
     users: User[];
@@ -65,7 +65,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 11;
+const EXPORT_VERSION = 12;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -387,42 +387,26 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
   return null;
 };
 
-const parseImportedRates = (value: unknown): { type: 'ok'; rates: UsageRecord['rates'] } | { type: 'invalid'; error: string } => {
-  if (value === undefined) return { type: 'invalid', error: 'rates is required' };
-  if (value === null) return { type: 'ok', rates: null };
-  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid', error: 'rates must be an object or null' };
-  const obj = value as Record<string, unknown>;
-  const unknownDimensions = Object.keys(obj).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
-  if (unknownDimensions.length > 0) return { type: 'invalid', error: `rates has unknown dimensions: ${unknownDimensions.join(', ')}` };
-  const rates: PriceVector = {};
-  for (const dimension of BILLING_DIMENSIONS) {
-    const rate = obj[dimension];
-    if (rate === undefined) continue;
-    rates[dimension] = rate as number;
+const parseImportedDimensions = (value: unknown): { type: 'ok'; dimensions: UsageDimensionRecord[] } | { type: 'invalid'; error: string } => {
+  if (!Array.isArray(value)) return { type: 'invalid', error: 'dimensions must be an array' };
+  const dimensions: UsageDimensionRecord[] = [];
+  for (const row of value) {
+    if (!isRecord(row)) return { type: 'invalid', error: 'dimensions must contain objects' };
+    if (typeof row.dimension !== 'string' || !BILLING_DIMENSIONS.includes(row.dimension as BillingDimension)) {
+      return { type: 'invalid', error: `unknown usage dimension: ${JSON.stringify(row.dimension)}` };
+    }
+    if (typeof row.unit !== 'string' || !BILLING_UNITS.includes(row.unit as BillingUnit)) {
+      return { type: 'invalid', error: `unknown billing unit: ${JSON.stringify(row.unit)}` };
+    }
+    if (typeof row.quantity !== 'number' || !Number.isFinite(row.quantity) || row.quantity < 0) {
+      return { type: 'invalid', error: 'dimension quantity must be a finite non-negative number' };
+    }
+    if (row.unitPrice !== null && (typeof row.unitPrice !== 'number' || !Number.isFinite(row.unitPrice) || row.unitPrice < 0)) {
+      return { type: 'invalid', error: 'dimension unitPrice must be a finite non-negative number or null' };
+    }
+    dimensions.push({ dimension: row.dimension as BillingDimension, unit: row.unit as BillingUnit, quantity: row.quantity, unitPrice: row.unitPrice });
   }
-  if (Object.keys(rates).length === 0) return { type: 'ok', rates: null };
-  try {
-    validatePriceVector(rates, 'rates');
-    return { type: 'ok', rates };
-  } catch (error) {
-    return { type: 'invalid', error: error instanceof Error ? error.message : String(error) };
-  }
-};
-
-const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid'; error: string } => {
-  if (value === undefined) return { type: 'invalid', error: 'tokens is required' };
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return { type: 'invalid', error: 'tokens must be an object' };
-  const obj = value as Record<string, unknown>;
-  const unknownDimensions = Object.keys(obj).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
-  if (unknownDimensions.length > 0) return { type: 'invalid', error: `tokens has unknown dimensions: ${unknownDimensions.join(', ')}` };
-  const tokens: TokenUsage = {};
-  for (const dimension of BILLING_DIMENSIONS) {
-    const count = obj[dimension];
-    if (count === undefined) continue;
-    if (!isNonNegativeSafeInteger(count)) return { type: 'invalid', error: 'tokens must contain non-negative safe integers' };
-    if (count > 0) tokens[dimension] = count;
-  }
-  return { type: 'ok', tokens };
+  return { type: 'ok', dimensions };
 };
 
 const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[] } | { type: 'invalid'; index: number; error: string } => {
@@ -456,10 +440,8 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     } catch (cause) {
       return { type: 'invalid', index: i, error: `invalid pricingSelector: ${cause instanceof Error ? cause.message : String(cause)}` };
     }
-    const tokensResult = parseImportedTokens(record.tokens);
-    if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: tokensResult.error };
-    const ratesResult = parseImportedRates(record.rates);
-    if (ratesResult.type === 'invalid') return { type: 'invalid', index: i, error: ratesResult.error };
+    const dimensionsResult = parseImportedDimensions(record.dimensions);
+    if (dimensionsResult.type === 'invalid') return { type: 'invalid', index: i, error: dimensionsResult.error };
     records.push({
       keyId: record.keyId,
       model: record.model,
@@ -468,8 +450,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       hour: record.hour,
       pricingSelector,
       requests: record.requests,
-      tokens: tokensResult.tokens,
-      rates: ratesResult.rates,
+      dimensions: dimensionsResult.dimensions,
     });
   }
 

@@ -8,6 +8,7 @@ import {
   PRICING_AXES,
   canonicalPricingSelectorKey,
   type BillingDimension,
+  type BillingUnit,
   type ModelKind,
   type ModelPricing,
   type ModelPricingIssue,
@@ -15,7 +16,7 @@ import {
   type PricingSelector,
   type PricingThresholdOperator,
 } from '@floway-dev/protocols/common';
-import { Button, Input } from '@floway-dev/ui';
+import { Button, Input, Select } from '@floway-dev/ui';
 
 const props = defineProps<{
   kind: ModelKind;
@@ -23,15 +24,22 @@ const props = defineProps<{
 }>();
 
 const pricing = defineModel<ModelPricing | undefined>({ required: true });
+const pricingUnits = ref<ModelPricing['units']>({ ...(pricing.value?.units ?? {}) });
+
+const BILLING_UNIT_OPTIONS: { value: BillingUnit; label: string }[] = [
+  { value: 'tokens_1m', label: '1M tokens' },
+  { value: 'minutes', label: 'Minute' },
+  { value: 'searches_1k', label: '1K searches' },
+];
 
 const PRICING_LABELS: Record<BillingDimension, string> = {
-  input: 'Input ($/MTok)',
-  input_cache_read: 'Cache Read ($/MTok)',
-  input_cache_write: 'Cache Write ($/MTok)',
-  input_cache_write_1h: 'Cache Write (1h) ($/MTok)',
-  input_image: 'Image Input ($/MTok)',
-  output: 'Output ($/MTok)',
-  output_image: 'Image Output ($/MTok)',
+  input: 'Input',
+  input_cache_read: 'Cache Read',
+  input_cache_write: 'Cache Write',
+  input_cache_write_1h: 'Cache Write (1h)',
+  input_image: 'Image Input',
+  output: 'Output',
+  output_image: 'Image Output',
 };
 
 const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
@@ -70,6 +78,7 @@ const selectedPricingEntryId = ref<number | null>(pricingEntryDrafts.value[0]?.i
 
 watch(pricing, value => {
   if (props.editable) return;
+  pricingUnits.value = { ...(value?.units ?? {}) };
   pricingEntryDrafts.value = pricingEntryDraftsFor(value);
   selectedPricingEntryId.value = pricingEntryDrafts.value[0]?.id ?? null;
 });
@@ -97,6 +106,7 @@ const coordinateKey = (draft: PricingEntryDraft): string | null => {
 const basePricingEntry = computed(() => pricingEntryDrafts.value.find(draft => coordinateKey(draft) === '{}'));
 const visiblePricingDimensions = computed(() => BILLING_DIMENSIONS.filter(dimension =>
   PRICING_BY_KIND[props.kind].includes(dimension)
+  || pricingUnits.value[dimension] !== undefined
   || pricingEntryDrafts.value.some(draft => draft.rates[dimension] !== undefined)));
 
 const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
@@ -113,6 +123,7 @@ const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
 const pricingIssues = computed<readonly ModelPricingIssue[]>(() => {
   if (pricingEntryDrafts.value.length > 0) {
     return collectModelPricingIssues({
+      units: pricingUnits.value,
       entries: pricingEntryDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
     });
   }
@@ -132,8 +143,10 @@ const formatList = (values: readonly string[]): string => {
   return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
 };
 
-const rateFieldName = (dimension: BillingDimension): string =>
-  PRICING_LABELS[dimension].replace(/ \(\$\/MTok\)$/, '');
+const rateFieldName = (dimension: BillingDimension): string => PRICING_LABELS[dimension];
+
+const billingUnitLabel = (dimension: BillingDimension): string =>
+  BILLING_UNIT_OPTIONS.find(option => option.value === (pricingUnits.value[dimension] ?? 'tokens_1m'))!.label;
 
 const pricingValidationErrors = computed<readonly string[]>(() => {
   const errors = new Set<string>();
@@ -209,7 +222,19 @@ const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
     const selector = compactSelector(draft);
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates: { ...draft.rates } };
   });
-  pricing.value = { entries };
+  const pricedDimensions = new Set(Object.keys(basePricingEntry.value?.rates ?? {}));
+  const units: ModelPricing['units'] = {};
+  for (const dimension of BILLING_DIMENSIONS) {
+    if (pricedDimensions.has(dimension)) units[dimension] = pricingUnits.value[dimension] ?? 'tokens_1m';
+  }
+  pricingUnits.value = units;
+  pricing.value = { units, entries };
+};
+
+const updatePricingUnit = (dimension: BillingDimension, unit: BillingUnit) => {
+  if (!props.editable) return;
+  pricingUnits.value = { ...pricingUnits.value, [dimension]: unit };
+  writePricingEntries(pricingEntryDrafts.value);
 };
 
 const updateEqualityCoordinate = (index: number, axisId: string, raw: string | number | null | undefined) => {
@@ -283,6 +308,17 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
   <section>
     <div class="mb-3">
       <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Pricing Entries</h3>
+    </div>
+    <div v-if="pricingEntryDrafts.length > 0" class="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4" aria-label="Pricing billing units">
+      <label v-for="dimension in visiblePricingDimensions.filter(dimension => basePricingEntry?.rates[dimension] !== undefined)" :key="dimension" class="block space-y-1.5">
+        <span class="block text-xs font-medium text-gray-500">{{ rateFieldName(dimension) }} unit</span>
+        <Select
+          :model-value="pricingUnits[dimension] ?? 'tokens_1m'"
+          :options="BILLING_UNIT_OPTIONS"
+          :disabled="!editable"
+          @update:model-value="value => updatePricingUnit(dimension, value as BillingUnit)"
+        />
+      </label>
     </div>
     <div class="pricing-entry-container overflow-hidden rounded-lg border border-white/[0.06]" aria-label="Pricing entry form">
       <div class="pricing-entry-layout">
@@ -380,7 +416,7 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
           </div>
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <label v-for="dimension in visiblePricingDimensions" :key="dimension" class="block space-y-1.5">
-              <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dimension] }}</span>
+              <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dimension] }} ($/{{ billingUnitLabel(dimension) }})</span>
               <Input
                 type="number"
                 min="0"

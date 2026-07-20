@@ -6,7 +6,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi, type ApiClient } from '../../api/client.ts';
-import type { BillingDimension } from '../../api/types.ts';
+import type { BillingDimension, BillingUnit } from '../../api/types.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
 import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
@@ -23,8 +23,8 @@ interface DisplayUsageRecord {
   model: string;
   hour: string;
   requests: number;
-  tokens: Partial<Record<BillingDimension, number>>;
-  cost: number;
+  dimensions: Array<{ dimension: BillingDimension; unit: BillingUnit; quantity: number }>;
+  cost: number | null;
 }
 
 interface UsageResponse {
@@ -46,8 +46,8 @@ interface UsageByUserResponse {
     model: string;
     hour: string;
     requests: number;
-    tokens: Partial<Record<BillingDimension, number>>;
-    cost: number;
+    dimensions: Array<{ dimension: BillingDimension; unit: BillingUnit; quantity: number }>;
+    cost: number | null;
   }>;
   users: Array<{ id: number; username: string }>;
 }
@@ -75,7 +75,7 @@ const fetchUsageForView = async (
     ]);
     return {
       usage: usageRes.data
-        ? { records: usageRes.data.records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, tokens: r.tokens, cost: r.cost })), keys: usageRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })) }
+        ? { records: usageRes.data.records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, dimensions: r.dimensions, cost: r.cost })), keys: usageRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })) }
         : null,
       search: searchRes.data
         ? { records: searchRes.data.records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests })), keys: searchRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })), activeProvider: searchRes.data.activeProvider }
@@ -114,7 +114,8 @@ type Metric =
   | 'cacheCreation' | 'cacheHitRate';
 type Range = DashboardRange;
 
-const dim = (r: DisplayUsageRecord, k: BillingDimension): number => r.tokens[k] ?? 0;
+const dim = (r: DisplayUsageRecord, dimension: BillingDimension): number =>
+  r.dimensions.find(row => row.dimension === dimension && row.unit === 'tokens_1m')?.quantity ?? 0;
 
 const api = useApi();
 const auth = useAuthStore();
@@ -235,7 +236,7 @@ const isPercentMetric = (metric: Metric) => TOKEN_CHART_METRICS[metric].kind ===
 const metricValue = (r: DisplayUsageRecord, metric: Metric): number => {
   switch (metric) {
   case 'requests': return r.requests;
-  case 'cost': return r.cost;
+  case 'cost': return r.cost ?? 0;
   case 'total': return dim(r, 'input') + dim(r, 'output') + dim(r, 'input_cache_read') + dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h') + dim(r, 'input_image') + dim(r, 'output_image');
   case 'input': return dim(r, 'input') + dim(r, 'input_cache_read') + dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h') + dim(r, 'input_image');
   case 'output': return dim(r, 'output') + dim(r, 'output_image');
@@ -342,7 +343,7 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
     detail.cacheCreation += dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h');
     detail.inputImage += dim(r, 'input_image');
     detail.outputImage += dim(r, 'output_image');
-    detail.cost += r.cost;
+    detail.cost += r.cost ?? 0;
     bucketDetails.set(group, detail);
     if (!isPercentMetric(metric)) {
       const bucketValues = values.get(bucket)!;
