@@ -218,11 +218,12 @@ session-local.
 
 Codex Ultra compatibility is owned by the `azure-api.codex` source membrane,
 not by any upstream provider. Its disabled-by-default global singleton setting
-adds an `ultra` reasoning preset plus `multi_agent_version: "v2"` to that
-namespace's model catalog. Official Codex clients turn Ultra into proactive
-multi-agent developer context and send `reasoning.effort: "max"`; Floway does
-not rewrite request effort values. The setting round-trips in admin
-export/import data.
+adds an `ultra` reasoning preset plus `multi_agent_version: "v2"` only when the
+request User-Agent contains `codex` case-insensitively and the final catalog
+entry is a `gpt-*` family model whose effective reasoning levels already
+include `max`. Official Codex clients turn Ultra into proactive multi-agent
+developer context and send `reasoning.effort: "max"`; Floway does not rewrite
+request effort values. The setting round-trips in admin export/import data.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, translation pair layout, control-plane route surface, flag

@@ -52,7 +52,7 @@ const save = async () => {
   <div class="glass-card p-5 sm:p-6 animate-in delay-2">
     <div class="mb-4">
       <h3 class="mb-1 font-semibold text-white">Codex Ultra</h3>
-      <p class="text-sm text-gray-400">Add Codex's proactive multi-agent mode to models in Floway's Codex catalog.</p>
+      <p class="text-sm text-gray-400">Add Codex's proactive multi-agent mode to eligible GPT models in Floway's Codex catalog.</p>
     </div>
 
     <div v-if="error" role="alert" class="mb-4 flex items-center justify-between gap-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">
@@ -64,7 +64,7 @@ const save = async () => {
       <div class="flex items-start justify-between gap-4">
         <div>
           <p class="text-sm font-medium text-white">Enable Ultra support</p>
-          <p class="mt-1 text-xs leading-relaxed text-gray-500">Floway advertises Ultra in the Codex model picker. Codex enables proactive delegation locally and sends <code class="text-gray-300">max</code> on the wire.</p>
+          <p class="mt-1 text-xs leading-relaxed text-gray-500">For Codex clients, Floway advertises Ultra only on GPT models that already support <code class="text-gray-300">max</code>. Codex enables proactive delegation locally and sends <code class="text-gray-300">max</code> on the wire.</p>
           <div class="mt-3 inline-flex items-center gap-2 rounded-lg border border-white/[0.06] bg-surface-900 px-3 py-2 font-mono text-xs">
             <span class="font-semibold text-violet-300">Ultra</span>
             <i class="i-lucide-arrow-right size-3.5 text-gray-600" />
@@ -78,7 +78,7 @@ const save = async () => {
 
     <div class="mt-5 flex items-center gap-3">
       <Button :loading="saving" :disabled="!loaded" @click="save">Save Ultra Config</Button>
-      <p class="text-xs text-gray-600">Existing model effort values are not changed.</p>
+      <p class="text-xs text-gray-600">Other models and existing effort values are not changed.</p>
     </div>
   </div>
 </template>

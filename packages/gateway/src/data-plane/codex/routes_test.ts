@@ -13,7 +13,7 @@ const buildCodexApp = () => {
   return app;
 };
 
-const copilotFetch = (models: Array<{ id: string; maxContextWindowTokens?: number; supported_endpoints?: string[] }>) =>
+const copilotFetch = (models: Array<{ id: string; maxContextWindowTokens?: number; supported_endpoints?: string[]; reasoningEfforts?: string[] }>) =>
   (request: Request): Response => {
     const url = new URL(request.url);
     if (url.hostname === 'update.code.visualstudio.com') {
@@ -111,13 +111,13 @@ describe('Codex model-provider routes', () => {
     });
   });
 
-  it('does not inject fake Ultra for a client version that predates the mode', async () => {
+  it('does not inject Ultra when the User-Agent lacks the Codex marker', async () => {
     const { apiKey, repo } = await setupAppTest();
     await repo.codexUltraConfig.save({ enabled: true });
     const body = await withMockedFetch(
-      copilotFetch([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]),
+      copilotFetch([{ id: 'gpt-custom-pro', reasoningEfforts: ['low', 'max'] }]),
       async () => await (await buildCodexApp().request('/azure-api.codex/models', {
-        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': 'codex_exec/0.143.9 (test)' },
+        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': 'curl/8.0' },
       })).json() as CodexModelsResponse,
     );
 
@@ -168,13 +168,13 @@ describe('Codex model-provider routes', () => {
     expect(body.models[0].slug).toBe('claude-sonnet-4');
   });
 
-  it('advertises fake Ultra with multi-agent v2 when support is enabled', async () => {
+  it('advertises Ultra to Codex Desktop for a GPT model that supports Max', async () => {
     const { apiKey, repo } = await setupAppTest();
     await repo.codexUltraConfig.save({ enabled: true });
     const body = await withMockedFetch(
-      copilotFetch([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]),
+      copilotFetch([{ id: 'gpt-custom-pro', reasoningEfforts: ['low', 'max'] }]),
       async () => await (await buildCodexApp().request('/azure-api.codex/models', {
-        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': 'codex_cli_rs/0.144.1 (test)' },
+        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': 'Codex Desktop/0.145.0-alpha.18 (Windows 10.0.28000; x86_64) unknown' },
       })).json() as CodexModelsResponse,
     );
 
@@ -184,6 +184,25 @@ describe('Codex model-provider routes', () => {
       effort: 'ultra',
       description: 'Maximum reasoning with automatic task delegation',
     });
+  });
+
+  it('does not advertise Ultra to ineligible models in a Codex catalog', async () => {
+    const { apiKey, repo } = await setupAppTest();
+    await repo.codexUltraConfig.save({ enabled: true });
+    const body = await withMockedFetch(
+      copilotFetch([
+        { id: 'gpt-no-max', reasoningEfforts: ['low', 'high'] },
+        { id: 'claude-max', reasoningEfforts: ['low', 'max'] },
+      ]),
+      async () => await (await buildCodexApp().request('/azure-api.codex/models', {
+        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': 'codex-test-client' },
+      })).json() as CodexModelsResponse,
+    );
+
+    for (const model of body.models) {
+      expect(model.multi_agent_version).not.toBe('v2');
+      expect(model.supported_reasoning_levels).not.toContainEqual(expect.objectContaining({ effort: 'ultra' }));
+    }
   });
 
 });

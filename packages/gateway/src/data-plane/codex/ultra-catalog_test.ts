@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
 import type { CatalogModel } from './catalog.ts';
-import { applyCodexUltraCatalogSupport, codexClientSupportsUltra } from './ultra-catalog.ts';
+import { applyCodexUltraCatalogSupport, isCodexClient } from './ultra-catalog.ts';
 
-const base = (): CatalogModel => ({
-  slug: 'model-a',
+const base = (slug = 'gpt-5.6-sol'): CatalogModel => ({
+  slug,
   supported_reasoning_levels: [
     { effort: 'low', description: 'Low' },
     { effort: 'max', description: 'Max' },
@@ -14,15 +14,15 @@ const base = (): CatalogModel => ({
 
 describe('Codex Ultra catalog support', () => {
   test.each([
-    ['codex_exec/0.143.9 (test)', false],
-    ['codex_exec/0.144.0-rc.1 (test)', false],
-    ['codex_exec/0.144.0 (test)', true],
+    ['Codex Desktop/0.145.0-alpha.18 (Windows 10.0.28000; x86_64) unknown', true],
+    ['codex_exec/0.143.9 (test)', true],
     ['codex_cli_rs/0.144.1 (test)', true],
-    ['codex_cli_rs/1.0.0-test (test)', true],
+    ['MY-CODEX-PROXY', true],
     ['curl/8.0', false],
+    ['', false],
     [undefined, false],
-  ] as const)('detects client support from %s', (userAgent, supported) => {
-    expect(codexClientSupportsUltra(userAgent)).toBe(supported);
+  ] as const)('detects the Codex product marker in %s', (userAgent, supported) => {
+    expect(isCodexClient(userAgent)).toBe(supported);
   });
 
   test('returns the original model when disabled', () => {
@@ -42,6 +42,30 @@ describe('Codex Ultra catalog support', () => {
       { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
     ]);
     expect(model).toEqual(base());
+  });
+
+  test('leaves non-GPT models unchanged even when they support Max', () => {
+    const model = base('claude-opus-4.7');
+    expect(applyCodexUltraCatalogSupport(model, { enabled: true })).toBe(model);
+  });
+
+  test('leaves GPT models unchanged when they do not support Max', () => {
+    const model: CatalogModel = {
+      ...base(),
+      supported_reasoning_levels: [{ effort: 'high', description: 'High' }],
+    };
+    expect(applyCodexUltraCatalogSupport(model, { enabled: true })).toBe(model);
+  });
+
+  test('recognizes a prefixed GPT model with a variant suffix', () => {
+    const model = base('openrouter/gpt-5.6-sol:nitro');
+    const result = applyCodexUltraCatalogSupport(model, { enabled: true });
+    expect(result.supported_reasoning_levels).toContainEqual(expect.objectContaining({ effort: 'ultra' }));
+  });
+
+  test('uses the final public-id segment instead of a GPT-looking provider prefix', () => {
+    const model = base('gpt-provider/claude-opus-4.7');
+    expect(applyCodexUltraCatalogSupport(model, { enabled: true })).toBe(model);
   });
 
   test('does not duplicate an existing Ultra entry', () => {

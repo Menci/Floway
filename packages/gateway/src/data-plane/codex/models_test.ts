@@ -23,6 +23,11 @@ const chat = (id: string, displayName?: string, ctx = 100000): InternalModel => 
   providerModels: {},
 });
 
+const chatWithEfforts = (id: string, supported: string[]): InternalModel => ({
+  ...chat(id),
+  chat: { reasoning: { effort: { supported, default: supported[0]! } } },
+});
+
 const entry = (model: InternalModel, unlisted?: true): AddressableIdEntry => ({
   id: model.id,
   unlisted,
@@ -101,6 +106,24 @@ describe('assembleCatalog', () => {
     expect(e.context_window).toBe(128000);
     expect(e.shell_type).toBe('shell_command');     // hardcoded baseline
     expect(e.prefer_websockets).toBe(true);
+  });
+
+  test('Ultra decorates only GPT public ids whose final reasoning levels support Max', () => {
+    const out = assembleCatalog(bundled, entries(
+      chatWithEfforts('openrouter/gpt-5.5:nitro', ['low', 'max']),
+      chatWithEfforts('gpt-no-max', ['low', 'high']),
+      chatWithEfforts('claude-max', ['low', 'max']),
+    ), { enabled: true }, true);
+
+    const eligible = out.models.find(model => model.slug === 'openrouter/gpt-5.5:nitro');
+    expect(eligible?.multi_agent_version).toBe('v2');
+    expect(eligible?.supported_reasoning_levels).toContainEqual(expect.objectContaining({ effort: 'ultra' }));
+
+    for (const slug of ['gpt-no-max', 'claude-max']) {
+      const ineligible = out.models.find(model => model.slug === slug);
+      expect(ineligible?.multi_agent_version).toBeUndefined();
+      expect(ineligible?.supported_reasoning_levels).not.toContainEqual(expect.objectContaining({ effort: 'ultra' }));
+    }
   });
 
   test('non-chat models are dropped', () => {

@@ -37,6 +37,7 @@ test('Codex Ultra settings toggle and save the catalog switch', async () => {
 
   expect(wrapper.text()).toContain('Ultra');
   expect(wrapper.text()).toContain('max');
+  expect(wrapper.text()).toContain('GPT models');
 
   await wrapper.find('button[role="switch"]').trigger('click');
   await nextTick();

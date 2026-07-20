@@ -18,7 +18,7 @@ import type { Context } from 'hono';
 
 import { resolveCodexCatalog, type CatalogModel, type CodexCatalog } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
-import { applyCodexUltraCatalogSupport, codexClientSupportsUltra } from './ultra-catalog.ts';
+import { applyCodexUltraCatalogSupport, isCodexClient } from './ultra-catalog.ts';
 import { loadCodexUltraConfig, type CodexUltraConfig } from './ultra-config.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
@@ -36,7 +36,7 @@ export const assembleCatalog = (
   bundled: CodexCatalog,
   addressable: readonly AddressableIdEntry[],
   ultraConfig: CodexUltraConfig = { enabled: false },
-  clientSupportsUltra = false,
+  codexClient = false,
 ): CodexCatalog => {
   const bundledBySlug = new Map<string, CatalogModel>();
   for (const m of bundled.models) bundledBySlug.set(m.slug.toLowerCase(), m);
@@ -66,7 +66,7 @@ export const assembleCatalog = (
     const model = synthesizeCatalogEntry(entry.model, matchBundled(entry.model.id));
     models.push(applyCodexUltraCatalogSupport(model, {
       ...ultraConfig,
-      enabled: ultraConfig.enabled && clientSupportsUltra,
+      enabled: ultraConfig.enabled && codexClient,
     }));
   }
   return { models };
@@ -83,7 +83,7 @@ const computeCatalog = async (
     resolveCodexCatalog(userAgent),
     enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
   ]);
-  return assembleCatalog(bundled, addressable, ultraConfig, codexClientSupportsUltra(userAgent));
+  return assembleCatalog(bundled, addressable, ultraConfig, isCodexClient(userAgent));
 };
 
 export const codexModels = async (c: Context): Promise<Response> => {
