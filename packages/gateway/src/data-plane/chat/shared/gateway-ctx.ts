@@ -55,7 +55,7 @@ export interface GatewayCtx {
 // the server-tool shim's request-private state always has a home. Every chat
 // HTTP/WS entry constructs this via `createChatGatewayCtxFromHono` and threads
 // it through serve → narrow → attempt. Passthrough endpoints (embeddings /
-// images / completions) have no stored-items concept and stay on plain
+// images / audio transcription / completions) have no stored-items concept and stay on plain
 // `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
   readonly affinity: AffinityRequestContext;
