@@ -67,6 +67,50 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     expect(await repo.responsesItems.lookupManyByContentHash('key-a', ['hash-a'])).toEqual([first]);
   });
 
+  test('exact producer-id reuse is idempotent and refreshes the item lifetime', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await createRepo();
+    const first = storedItem('msg_reused', 'key-a', 'same-hash', 1_000);
+    const refreshed = { ...first, createdAt: 3_000 };
+
+    await repo.responsesItems.insertMany([first]);
+    await repo.responsesItems.insertMany([refreshed]);
+
+    expect(await repo.responsesItems.lookupMany('key-a', [first.id])).toEqual([refreshed]);
+  });
+
+  test.each([
+    ['visible payload', (first: StoredResponsesItem): StoredResponsesItem => ({
+      ...first,
+      payload: { item: { type: 'message', id: first.id, role: 'assistant', content: [{ type: 'output_text', text: 'different' }] } },
+      contentHash: 'different-hash',
+    })],
+    ['private payload', (first: StoredResponsesItem): StoredResponsesItem => ({
+      ...first,
+      payload: { ...first.payload, private: { replay: 'different' } },
+    })],
+  ] as const)('rejects a producer-id collision with different %s', async (_kind, collide) => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await createRepo();
+    const first = storedItem('msg_collision', 'key-a', 'same-hash', 1_000);
+    await repo.responsesItems.insertMany([first]);
+
+    await expect(repo.responsesItems.insertMany([collide(first)]))
+      .rejects.toThrow(`Responses item id collision: ${first.id}`);
+    expect(await repo.responsesItems.lookupMany('key-a', [first.id])).toEqual([first]);
+  });
+
+  test('rejects conflicting duplicate ids within one insert batch', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await createRepo();
+    const first = storedItem('msg_batch_collision', 'key-a', 'first-hash', 1_000);
+    const second = { ...first, contentHash: 'second-hash', payload: { item: { type: 'message', id: first.id, content: 'different' } } };
+
+    await expect(repo.responsesItems.insertMany([first, second]))
+      .rejects.toThrow(`Responses item id collision: ${first.id}`);
+    expect(await repo.responsesItems.lookupMany('key-a', [first.id])).toEqual([]);
+  });
+
   test('deletes complete items and snapshots by their refreshable retention timestamp', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await createRepo();
@@ -283,7 +327,7 @@ test('SQL Responses item writes stay within D1 bind limits and use bounded state
   await repo.responsesItems.insertMany(items);
   await repo.responsesItems.refreshMany(items, 2_000);
 
-  expect(batchSizes).toEqual([15, 10]);
+  expect(batchSizes).toEqual([12, 10]);
   expect(maxBindCount).toBeLessThanOrEqual(100);
   expect(await repo.responsesItems.lookupMany('key-a', items.map(item => item.id))).toHaveLength(items.length);
 });
@@ -355,7 +399,7 @@ test('SQL refresh cleans replacement spills and keeps originals when its batch f
   expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
 });
 
-test('SQL duplicate insert does not write an unreferenced replacement spill', async () => {
+test('SQL exact duplicate refreshes its spill lifetime without leaving the old file', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const repo = new SqlRepo(await createSqliteTestDb());
@@ -365,11 +409,17 @@ test('SQL duplicate insert does not write an unreferenced replacement spill', as
   expect(originalFiles).toHaveLength(1);
 
   const put = vi.spyOn(files, 'put');
-  await repo.responsesItems.insertMany([{ ...original, createdAt: 1_000 + 2 * 60 * 60 * 1000 }]);
+  const refreshedAt = 1_000 + 2 * 60 * 60 * 1000;
+  await repo.responsesItems.insertMany([{ ...original, createdAt: refreshedAt }]);
 
-  expect(put).not.toHaveBeenCalled();
-  expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
-  expect(await repo.responsesItems.lookupMany('key-a', [original.id])).toEqual([original]);
+  expect(put).toHaveBeenCalledTimes(1);
+  const refreshedFiles = await files.listKeys('responses-items/');
+  expect(refreshedFiles).toHaveLength(1);
+  expect(refreshedFiles).not.toEqual(originalFiles);
+  expect((await repo.responsesItems.lookupMany('key-a', [original.id]))[0]).toMatchObject({
+    ...original,
+    createdAt: refreshedAt,
+  });
 });
 
 test('SQL insert conflict cleans its spill when the winning row disappears', async () => {
@@ -409,6 +459,33 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
   await expect(repo.responsesItems.insertMany([item, survivor]))
     .rejects.toThrow('Responses item conflict disappeared before spill cleanup: msg_insert_race');
   expect(await files.listKeys('responses-items/')).toEqual([]);
+});
+
+test('SQL rejects a different concurrent winner and cleans the losing spill', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const contender = spilledItem('msg_concurrent_collision', 'key-a', 2_000);
+  const winner = storedItem(contender.id, contender.apiKeyId, 'winner-hash', 1_000);
+  const winnerPayload = await serializeStoredResponsesPayload(winner.id, winner.apiKeyId, winner.createdAt, winner.payload);
+  let injected = false;
+  const db = sqlDatabaseWithBatch(base, async statements => {
+    if (!injected) {
+      injected = true;
+      await base.prepare(
+        'INSERT INTO responses_items (id, api_key_id, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?)',
+      ).bind(winner.id, winner.apiKeyId, winnerPayload, winner.contentHash, winner.createdAt).run();
+    }
+    const results = [];
+    for (const statement of statements) results.push(await statement.run());
+    return results;
+  });
+  const repo = new SqlRepo(db);
+
+  await expect(repo.responsesItems.insertMany([contender]))
+    .rejects.toThrow(`Responses item id collision: ${contender.id}`);
+  expect(await files.listKeys('responses-items/')).toEqual([]);
+  expect(await repo.responsesItems.lookupMany('key-a', [winner.id])).toEqual([winner]);
 });
 
 test('SQL conflict cleanup cannot delete a later winner\'s independently owned spill', async () => {

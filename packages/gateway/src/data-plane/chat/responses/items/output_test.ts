@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { responsesItemId } from './identity.ts';
+import { hashResponsesItemContent, responsesItemId } from './identity.ts';
 import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
@@ -135,6 +135,26 @@ test('client output does not publish output_item.done when persistence fails', a
   })[Symbol.asyncIterator]();
 
   await expect(iterator.next()).rejects.toBe(persistenceError);
+});
+
+test('client output rejects an item-id collision before publishing output_item.done', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const first: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_collision', summary: [{ type: 'summary_text', text: 'first' }] };
+  const conflicting: ResponsesOutputReasoning = { type: 'reasoning', id: first.id, summary: [{ type: 'summary_text', text: 'second' }] };
+  await repo.responsesItems.insertMany([{
+    id: first.id,
+    apiKeyId: 'key-a',
+    payload: { item: first },
+    contentHash: await hashResponsesItemContent(first),
+    createdAt: 1_000,
+  }]);
+  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: conflicting });
+  })();
+  const iterator = wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })[Symbol.asyncIterator]();
+
+  await expect(iterator.next()).rejects.toThrow(`Responses item id collision: ${first.id}`);
+  expect((await repo.responsesItems.lookupMany('key-a', [first.id]))[0].payload.item).toEqual(first);
 });
 
 test('store=false passes the producer item id through without persistence', async () => {

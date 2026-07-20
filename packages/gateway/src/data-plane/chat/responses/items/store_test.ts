@@ -206,6 +206,36 @@ describe('StatefulResponsesStore', () => {
     expect(await repo.responsesItems.lookupMany('key-a', snapshot.itemIds)).toHaveLength(snapshot.itemIds.length);
   });
 
+  test('WebSocket local collision aborts before partially writing durable state', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const session = createResponsesWsSession();
+    const firstItem = { type: 'reasoning' as const, id: 'rs_collision', summary: [{ type: 'summary_text' as const, text: 'first' }] };
+    const secondItem = { type: 'reasoning' as const, id: firstItem.id, summary: [{ type: 'summary_text' as const, text: 'second' }] };
+    const local = session.createStore('key-a', false);
+    await local.persistOutputItem({
+      id: firstItem.id,
+      apiKeyId: 'key-a',
+      payload: { item: firstItem },
+      contentHash: await hashResponsesItemContent(firstItem),
+      createdAt: 1_000,
+    }, 0);
+
+    const durable = session.createStore('key-a', true);
+    await expect(durable.persistOutputItem({
+      id: secondItem.id,
+      apiKeyId: 'key-a',
+      payload: { item: secondItem },
+      contentHash: await hashResponsesItemContent(secondItem),
+      createdAt: 2_000,
+    }, 0)).rejects.toThrow(`Responses item id collision: ${firstItem.id}`);
+
+    expect(await repo.responsesItems.lookupMany('key-a', [firstItem.id])).toEqual([]);
+    const reader = session.createStore('key-a', false);
+    await reader.loadInputItems([{ type: 'item_reference', id: firstItem.id }], []);
+    expect(reader.getItemById(firstItem.id)?.payload.item).toEqual(firstItem);
+  });
+
   test('per-attempt private payloads reset on each beginAttempt', () => {
     const store = createResponsesHttpStore('key-a', true);
     store.beginAttempt(new Map([['item', { first: true }]]));
