@@ -10,57 +10,64 @@ import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L68023-L68281
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L68333-L68748
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L74970-L75020
-const COPILOT_OUTPUT_ITEM_PREFIXES = {
-  message: 'msg',
-  reasoning: 'rs',
-  function_call: 'fc',
-  custom_tool_call: 'ctc',
-  web_search_call: 'ws',
-  tool_search_call: 'tsc',
-  program: 'cm',
-  program_output: 'cmo',
-  agent_message: 'amsg',
-  compaction: 'cmp',
-  shell_call: 'sh',
-  shell_call_output: 'sho',
-  apply_patch_call: 'apc',
+const COPILOT_OUTPUT_ITEM_POLICIES = {
+  message: { prefix: 'msg', carrier: null },
+  reasoning: { prefix: 'rs', carrier: 'encrypted_content' },
+  function_call: { prefix: 'fc', carrier: null },
+  custom_tool_call: { prefix: 'ctc', carrier: null },
+  web_search_call: { prefix: 'ws', carrier: null },
+  tool_search_call: { prefix: 'tsc', carrier: null },
+  program: { prefix: 'cm', carrier: 'fingerprint' },
+  program_output: { prefix: 'cmo', carrier: null },
+  agent_message: { prefix: 'amsg', carrier: 'agent_content' },
+  compaction: { prefix: 'cmp', carrier: 'encrypted_content' },
+  shell_call: { prefix: 'sh', carrier: null },
+  shell_call_output: { prefix: 'sho', carrier: null },
+  apply_patch_call: { prefix: 'apc', carrier: null },
 } as const;
 
-type CopilotOutputItemType = keyof typeof COPILOT_OUTPUT_ITEM_PREFIXES;
+type CopilotOutputItemType = keyof typeof COPILOT_OUTPUT_ITEM_POLICIES;
 type CarrierItem = ResponsesInputItem | ResponsesOutputItem;
 
 const copilotOutputItemType = (item: ResponsesOutputItem): CopilotOutputItemType => {
-  if (Object.hasOwn(COPILOT_OUTPUT_ITEM_PREFIXES, item.type)) return item.type as CopilotOutputItemType;
+  if (Object.hasOwn(COPILOT_OUTPUT_ITEM_POLICIES, item.type)) return item.type as CopilotOutputItemType;
   throw new TypeError(`Unsupported Copilot Responses output item type '${item.type}'`);
 };
 
 const createPublicItemId = (type: CopilotOutputItemType): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   const suffix = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
-  return `${COPILOT_OUTPUT_ITEM_PREFIXES[type]}_${suffix}`;
+  return `${COPILOT_OUTPUT_ITEM_POLICIES[type].prefix}_${suffix}`;
 };
 
 const mapCarrierValues = <TItem extends CarrierItem>(
   item: TItem,
   transform: (value: string) => string,
 ): TItem => {
-  switch (item.type) {
-  case 'reasoning':
-  case 'compaction':
-    return typeof item.encrypted_content === 'string'
-      ? { ...item, encrypted_content: transform(item.encrypted_content) } as TItem
+  if (!Object.hasOwn(COPILOT_OUTPUT_ITEM_POLICIES, item.type)) return item;
+  const policy = COPILOT_OUTPUT_ITEM_POLICIES[item.type as CopilotOutputItemType];
+  switch (policy.carrier) {
+  case 'encrypted_content': {
+    const record = item as CarrierItem & { encrypted_content?: unknown };
+    return typeof record.encrypted_content === 'string'
+      ? { ...item, encrypted_content: transform(record.encrypted_content) } as TItem
       : item;
-  case 'program':
-    return { ...item, fingerprint: transform(item.fingerprint) } as TItem;
-  case 'agent_message':
+  }
+  case 'fingerprint': {
+    const record = item as CarrierItem & { fingerprint: string };
+    return { ...item, fingerprint: transform(record.fingerprint) } as TItem;
+  }
+  case 'agent_content': {
+    const record = item as Extract<CarrierItem, { type: 'agent_message' }>;
     return {
       ...item,
-      content: item.content.map(content =>
+      content: record.content.map(content =>
         content.type === 'encrypted_content' && typeof content.encrypted_content === 'string'
           ? { ...content, encrypted_content: transform(content.encrypted_content) }
           : content),
     } as TItem;
-  default:
+  }
+  case null:
     return item;
   }
 };
@@ -76,7 +83,7 @@ const restoreInputItem = (item: ResponsesInputItem): ResponsesInputItem => {
 
   if (upstreamIds.size === 0) return restored;
   if (upstreamIds.size > 1) {
-    throw new TypeError(`Copilot Responses item carries conflicting upstream ids: ${[...upstreamIds].join(', ')}`);
+    throw new TypeError('Copilot Responses item carries conflicting upstream ids');
   }
   return { ...restored, id: [...upstreamIds][0] } as ResponsesInputItem;
 };

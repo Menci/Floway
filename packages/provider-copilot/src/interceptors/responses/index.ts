@@ -17,10 +17,9 @@ import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 // switches on `ctx.action` to pick the wire shape. Order matters:
 // payload-mutating interceptors run first so the header interceptors see
 // the final outgoing payload, then the header interceptors populate
-// `ctx.headers` for the upstream call. Event-stream mutators
-// (whitespace-abort, item-id membrane) sit between — they only act on
-// the streaming generate branch and pass the compact value envelope
-// through unchanged, so listing them in the unified chain is harmless.
+// `ctx.headers` for the upstream call. Result mutators sit between: the
+// whitespace guard acts only on generate streams, while the item-id membrane
+// also normalizes the generated item in compact value envelopes.
 export const COPILOT_RESPONSES_BOUNDARY = [
   withInlineImagesCompressed,
   withServiceTierStripped,

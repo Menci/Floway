@@ -259,12 +259,13 @@ The same boundary runs for both `/v1/responses` (streaming) and
 - restores a raw Copilot item ID only when the post-affinity request blob
   carries the provider's own plaintext `{version, origin, id}` trailer;
   foreign blobs and items without blobs pass through unchanged
-- allocates a stable type-correct random public ID as soon as each streaming
-  output item is added, rewrites its child and done frames to that ID, and
-  appends the canonical done-frame raw ID behind every available reasoning,
-  compaction, program, or agent-message blob. The compact value path applies
-  the same rule to its generated compaction item. Unknown Copilot output types
-  fail closed before a raw ID can reach the client
+- allocates a stable type-correct random provider-facing ID as soon as each
+  streaming output item is added, rewrites its child and later frames to that
+  ID, and appends each frame's matching raw ID behind every available
+  reasoning, compaction, program, or agent-message blob. The state-writing
+  client-output membrane may still alias this ID. The compact value path
+  applies the same rule to its generated compaction item. Unknown Copilot
+  output types fail closed before a raw ID can reach the client
 
 ### Responses — Codex provider boundary chain
 
