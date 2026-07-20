@@ -130,7 +130,7 @@ test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a
   }
 });
 
-test('passthrough-serve: response header allow-list forwards expected headers and drops the rest', async () => {
+test('passthrough-serve: response header blocklist preserves vendor metadata and drops unsafe headers', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerEmbeddingsUpstream(repo);
 
@@ -176,7 +176,7 @@ test('passthrough-serve: response header allow-list forwards expected headers an
       assertEquals(response.headers.get('x-ratelimit-remaining'), '100');
       assertEquals(response.headers.get('retry-after'), '30');
       assertEquals(response.headers.get('cf-ray'), 'abc');
-      assertEquals(response.headers.get('x-internal-secret'), null);
+      assertEquals(response.headers.get('x-internal-secret'), 'leak');
       assertEquals(response.headers.get('set-cookie'), null);
       await response.json();
     },
