@@ -465,6 +465,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     // model, so these stubs are unreachable.
     callImagesGenerations: rejectUnsupported('callImagesGenerations'),
     callImagesEdits: rejectUnsupported('callImagesEdits'),
+    callRerank: rejectUnsupported('callRerank'),
   };
 
   return {

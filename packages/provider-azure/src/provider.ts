@@ -97,6 +97,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: upstreamModelId };
     },
+    callRerank: () => Promise.reject(new Error('Azure provider does not support callRerank')),
   };
 
   return {

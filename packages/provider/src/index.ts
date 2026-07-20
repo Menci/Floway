@@ -50,6 +50,7 @@ export type {
   Provider,
   ProviderInstance,
   ProviderCallResult,
+  ProviderRerankCallResult,
   ProviderModule,
   ProviderResponsesResult,
   ProviderStreamResult,

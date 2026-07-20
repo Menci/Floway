@@ -174,6 +174,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     // routes one here. /v1/images/* is not exposed by the upstream binary.
     callImagesGenerations: rejectUnsupported('callImagesGenerations'),
     callImagesEdits: rejectUnsupported('callImagesEdits'),
+    callRerank: rejectUnsupported('callRerank'),
   };
 
   return {

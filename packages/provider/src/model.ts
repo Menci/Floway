@@ -122,7 +122,8 @@ export type PerformanceOperation =
   | 'text_completion'
   | 'embeddings'
   | 'image_generation'
-  | 'image_edit';
+  | 'image_edit'
+  | 'rerank';
 
 export interface PerformanceTelemetryContext {
   keyId: string;
