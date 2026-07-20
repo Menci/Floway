@@ -143,20 +143,20 @@ export const wrapResponsesClientOutput = async function* (
       if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
       const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
       if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
-        await persistFinalizedItem(event.item, newId, event.output_index);
+      await persistFinalizedItem(event.item, newId, event.output_index);
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
       continue;
     }
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
-        const output: ResponsesOutputItem[] = [];
+      const output: ResponsesOutputItem[] = [];
       for (const [outputIndex, item] of event.response.output.entries()) {
         if (isCompactionItemType(item.type)) sawCompactionItem = true;
         const upstreamId = responsesItemId(item);
         if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
         const newId = clientIdForOutput(upstreamId, item.type, outputIndex);
-          await persistFinalizedItem(item, newId, outputIndex);
-          output.push({ ...item, id: newId } as ResponsesOutputItem);
+        await persistFinalizedItem(item, newId, outputIndex);
+        output.push({ ...item, id: newId } as ResponsesOutputItem);
       }
       const rewritten = eventFrame({
         ...event,
