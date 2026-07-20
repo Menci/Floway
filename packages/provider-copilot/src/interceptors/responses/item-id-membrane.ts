@@ -30,7 +30,7 @@ type CopilotOutputItemType = keyof typeof COPILOT_OUTPUT_ITEM_PREFIXES;
 type CarrierItem = ResponsesInputItem | ResponsesOutputItem;
 
 const copilotOutputItemType = (item: ResponsesOutputItem): CopilotOutputItemType => {
-  if (item.type in COPILOT_OUTPUT_ITEM_PREFIXES) return item.type as CopilotOutputItemType;
+  if (Object.hasOwn(COPILOT_OUTPUT_ITEM_PREFIXES, item.type)) return item.type as CopilotOutputItemType;
   throw new TypeError(`Unsupported Copilot Responses output item type '${item.type}'`);
 };
 
@@ -112,7 +112,7 @@ const normalizeFinalItem = (item: ResponsesOutputItem, publicId: string): Respon
 interface TrackedItem {
   readonly type: CopilotOutputItemType;
   readonly publicId: string;
-  finalItem?: ResponsesOutputItem;
+  added: boolean;
 }
 
 interface StreamItemState {
@@ -125,47 +125,77 @@ const trackedAt = (state: StreamItemState, outputIndex: number): TrackedItem => 
   return tracked;
 };
 
+const trackObservedItem = (
+  state: StreamItemState,
+  outputIndex: number,
+  item: ResponsesOutputItem,
+): TrackedItem => {
+  const type = copilotOutputItemType(item);
+  const existing = state.items.get(outputIndex);
+  if (existing === undefined) {
+    const tracked: TrackedItem = { type, publicId: createPublicItemId(type), added: false };
+    state.items.set(outputIndex, tracked);
+    return tracked;
+  }
+  if (existing.type !== type) {
+    throw new TypeError(`Copilot Responses output_index ${outputIndex} changed type from ${existing.type} to ${item.type}`);
+  }
+  return existing;
+};
+
 const normalizeResponseOutput = (
   response: ResponsesResult,
   state: StreamItemState,
-  requireFinal: boolean,
+  terminal: boolean,
 ): ResponsesResult => {
   if (response.output.length === 0) return response;
   return {
     ...response,
     output: response.output.map((item, outputIndex) => {
-      const tracked = trackedAt(state, outputIndex);
-      if (copilotOutputItemType(item) !== tracked.type) {
-        throw new TypeError(`Copilot Responses output_index ${outputIndex} changed type from ${tracked.type} to ${item.type}`);
-      }
-      if (tracked.finalItem !== undefined) return tracked.finalItem;
-      if (requireFinal) throw new TypeError(`Copilot Responses terminal event arrived before output_item.done for output_index ${outputIndex}`);
-      return { ...item, id: tracked.publicId } as ResponsesOutputItem;
+      const tracked = trackObservedItem(state, outputIndex, item);
+      return terminal
+        ? normalizeFinalItem(item, tracked.publicId)
+        : { ...item, id: tracked.publicId } as ResponsesOutputItem;
     }),
   };
 };
 
+const ITEM_ID_EVENT_TYPES = new Set<ResponsesStreamEvent['type']>([
+  'response.content_part.added',
+  'response.content_part.done',
+  'response.reasoning_summary_part.added',
+  'response.reasoning_summary_part.done',
+  'response.reasoning_summary_text.delta',
+  'response.reasoning_summary_text.done',
+  'response.output_text.delta',
+  'response.output_text.done',
+  'response.output_text.annotation.added',
+  'response.web_search_call.in_progress',
+  'response.web_search_call.searching',
+  'response.web_search_call.completed',
+  'response.image_generation_call.in_progress',
+  'response.image_generation_call.generating',
+  'response.image_generation_call.partial_image',
+  'response.image_generation_call.completed',
+  'response.function_call_arguments.delta',
+  'response.function_call_arguments.done',
+  'response.custom_tool_call_input.delta',
+  'response.custom_tool_call_input.done',
+]);
+
 const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemState): ResponsesStreamEvent => {
   if (event.type === 'response.output_item.added') {
-    if (state.items.has(event.output_index)) {
+    const tracked = trackObservedItem(state, event.output_index, event.item);
+    if (tracked.added) {
       throw new TypeError(`Copilot Responses emitted output_item.added twice for output_index ${event.output_index}`);
     }
-    const type = copilotOutputItemType(event.item);
-    const tracked: TrackedItem = { type, publicId: createPublicItemId(type) };
-    state.items.set(event.output_index, tracked);
+    tracked.added = true;
     return { ...event, item: { ...event.item, id: tracked.publicId } as ResponsesOutputItem };
   }
 
   if (event.type === 'response.output_item.done') {
-    const tracked = trackedAt(state, event.output_index);
-    if (copilotOutputItemType(event.item) !== tracked.type) {
-      throw new TypeError(`Copilot Responses output_index ${event.output_index} changed type from ${tracked.type} to ${event.item.type}`);
-    }
-    if (tracked.finalItem !== undefined) {
-      throw new TypeError(`Copilot Responses emitted output_item.done twice for output_index ${event.output_index}`);
-    }
-    tracked.finalItem = normalizeFinalItem(event.item, tracked.publicId);
-    return { ...event, item: tracked.finalItem };
+    const tracked = trackObservedItem(state, event.output_index, event.item);
+    return { ...event, item: normalizeFinalItem(event.item, tracked.publicId) };
   }
 
   if (
@@ -179,8 +209,14 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
     return { ...event, response: normalizeResponseOutput(event.response, state, terminal) };
   }
 
+  if (event.type === 'error' || event.type === 'ping') return event;
+  if (!ITEM_ID_EVENT_TYPES.has(event.type)) {
+    throw new TypeError(`Unsupported Copilot Responses stream event type '${event.type}'`);
+  }
   const carrier = event as ResponsesStreamEvent & { item_id?: unknown; output_index?: unknown };
-  if (typeof carrier.item_id !== 'string') return event;
+  if (typeof carrier.item_id !== 'string') {
+    throw new TypeError(`Copilot Responses event '${event.type}' is missing item_id`);
+  }
   if (typeof carrier.output_index !== 'number') {
     throw new TypeError(`Copilot Responses event '${event.type}' carries item_id without output_index`);
   }

@@ -129,7 +129,14 @@ test('streams a public id immediately, then carries the canonical done id inside
     origin: 'raw',
     id: 'rs_done',
   });
-  expect(completed.response.output).toEqual([doneEvent.item]);
+  const completedItem = completed.response.output[0];
+  expect(completedItem.id).toBe(publicId);
+  if (completedItem.type !== 'reasoning') throw new Error('expected terminal reasoning item');
+  expect(unwrapCopilotItemId(completedItem.encrypted_content!)).toMatchObject({
+    kind: 'owned',
+    value: 'opaque terminal',
+    id: 'rs_terminal',
+  });
 });
 
 const uncarriedOutputItems = [
@@ -297,6 +304,56 @@ test('fails closed on unknown output types before yielding a raw id', async () =
   ]);
 
   await expect(collect(result)).rejects.toThrow("Unsupported Copilot Responses output item type 'future_call'");
+});
+
+test.each(['toString', 'constructor', '__proto__'])('does not accept Object prototype key %s as an output item type', async type => {
+  const unknown = { type, id: 'raw_future' } as unknown as ResponsesOutputItem;
+  const { result } = await runStream([eventFrame(outputItemEvent('added', 0, unknown))]);
+
+  await expect(collect(result)).rejects.toThrow(`Unsupported Copilot Responses output item type '${type}'`);
+});
+
+test('fails closed on unknown event envelopes that could hide an item id', async () => {
+  const future = {
+    type: 'response.future',
+    item: { type: 'message', id: 'raw_future' },
+  } as unknown as ResponsesStreamEvent;
+  const { result } = await runStream([eventFrame(future)]);
+
+  await expect(collect(result)).rejects.toThrow("Unsupported Copilot Responses stream event type 'response.future'");
+});
+
+test('forwards repeated done frames with stable public identity and each frame own content', async () => {
+  const first: ResponsesOutputItem = { type: 'reasoning', id: 'rs_first', summary: [], encrypted_content: 'first' };
+  const second: ResponsesOutputItem = { type: 'reasoning', id: 'rs_second', summary: [], encrypted_content: 'second' };
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, { type: 'reasoning', id: 'rs_added', summary: [] })),
+    eventFrame(outputItemEvent('done', 0, first)),
+    eventFrame(outputItemEvent('done', 0, second)),
+  ]);
+  const frames = await collect(result);
+  const doneItems = frames.flatMap(frame =>
+    frame.type === 'event' && frame.event.type === 'response.output_item.done' ? [frame.event.item] : []);
+
+  expect(doneItems).toHaveLength(2);
+  expect(doneItems[1].id).toBe(doneItems[0].id);
+  if (doneItems[0].type !== 'reasoning' || doneItems[1].type !== 'reasoning') throw new Error('expected reasoning items');
+  expect(unwrapCopilotItemId(doneItems[0].encrypted_content!)).toMatchObject({ value: 'first', id: 'rs_first' });
+  expect(unwrapCopilotItemId(doneItems[1].encrypted_content!)).toMatchObject({ value: 'second', id: 'rs_second' });
+});
+
+test('normalizes a failed response with an open item instead of suppressing the failure', async () => {
+  const partial: ResponsesOutputItem = { type: 'message', id: 'msg_failed', role: 'assistant', content: [] };
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, partial)),
+    eventFrame({ type: 'response.failed', response: { ...response([partial]), status: 'failed' } }),
+  ]);
+  const frames = await collect(result);
+  const added = eventAt(frames, 'response.output_item.added');
+  const failed = eventAt(frames, 'response.failed');
+
+  expect(failed.response.output[0].id).toBe(added.item.id);
+  expect(failed.response.output[0]).toMatchObject({ type: 'message', role: 'assistant', content: [] });
 });
 
 test('rejects an id-bearing child event before its output item opens', async () => {
