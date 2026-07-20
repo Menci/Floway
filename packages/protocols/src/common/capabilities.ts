@@ -1,7 +1,5 @@
-// Protocol-level model capability types, plus the kind-derivation that is
-// intrinsic to them. Runtime computation that consumes these (registry
-// projection, request routing, image-endpoint dispatch) lives in
-// packages/gateway/src/data-plane/.
+// Protocol-level model capability types and their intrinsic kind projection.
+// Provider projection and endpoint dispatch live in packages/gateway/src/data-plane/.
 
 import type { ModelKind } from './models.ts';
 

@@ -8,7 +8,7 @@ import { enumerateModelCandidates } from '../providers/registry.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { inboundHeadersForUpstream } from '../shared/inbound-headers.ts';
 import { iterateCandidates } from '../shared/iterate-candidates.ts';
-import { forwardUpstreamResponse } from '../shared/passthrough-serve.ts';
+import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
 import { buildUpstreamCallOptions, telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attempt-helpers.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
@@ -178,7 +178,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
     usageSettled = true;
     const response = sourceProtocol === terminal.target.protocol
       ? forwardUpstreamResponse(terminal.response)
-      : forwardUpstreamResponse(terminal.response, JSON.stringify(rendered));
+      : forwardUpstreamResponse(terminal.response, { body: JSON.stringify(rendered) });
     return finalizeGatewayResponse(ctx, response);
   } catch (error) {
     if (terminal !== undefined && !usageSettled) {
