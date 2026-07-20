@@ -31,20 +31,16 @@
 //      modality list so they cannot drift from it.
 //   6. `supported_reasoning_levels` / `default_reasoning_level` — same
 //      `chat.reasoning.effort ?? source's` precedence as the modalities.
+//      Ultra is appended only when the exact client-version catalog proves
+//      v2 Ultra semantics and the resulting model supports Max.
 //
 // Fields not listed above ride through from `source` unchanged: the base
 // pass supplies bundled defaults for bundled-hit and hardcoded baselines
 // for the miss path.
 
-import type { CatalogModel } from './catalog.ts';
+import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
 import type { InternalModel, Modality } from '@floway-dev/provider';
-
-// Ultra selects proactive multi-agent v2 locally while Codex sends `max` on
-// the wire. Keep the catalog preset aligned with the official Codex catalog.
-// https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/models-manager/models.json#L19-L58
-// https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/core/src/session/multi_agents.rs#L39-L54
-const ULTRA_REASONING_LEVEL = { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' };
 
 // A synthesized (miss-path) entry with no registry-supplied
 // `max_context_window_tokens` still needs SOME window — codex's auto-compact
@@ -111,7 +107,11 @@ const deriveServiceTiers = (model: InternalModel): { id: string; name: string; d
   return [...ids].map(id => ({ id, name: id, description: '' }));
 };
 
-export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel): CatalogModel => {
+export const synthesizeCatalogEntry = (
+  model: InternalModel,
+  base?: CatalogModel,
+  capabilities: CodexCatalogCapabilities = {},
+): CatalogModel => {
   const source = base ?? BASELINE;
 
   // Overlay chain for every registry-derived field: `registry ?? source ?? BASELINE`.
@@ -136,11 +136,12 @@ export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel
   // effort value into the appropriate upstream representation (e.g.
   // Anthropic `thinking.budget_tokens`).
   const registryEffort = model.chat?.reasoning?.effort;
-  const supportedReasoning = registryEffort !== undefined
+  const supportedReasoning: CodexReasoningLevel[] = registryEffort !== undefined
     ? registryEffort.supported.map(effort => ({ effort, description: '' }))
     : (source.supported_reasoning_levels ?? BASELINE.supported_reasoning_levels);
-  const reasoningLevels = supportedReasoning as Array<{ effort: string; description: string }>;
-  const supportsMax = reasoningLevels.some(level => level.effort === 'max');
+  const shouldEnableUltra = capabilities.ultraReasoningLevel !== undefined
+    && supportedReasoning.some(level => level.effort === 'max')
+    && !supportedReasoning.some(level => level.effort === 'ultra');
 
   const registryWindow = model.limits.max_context_window_tokens;
   const contextWindow = (registryWindow
@@ -157,12 +158,18 @@ export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel
     input_modalities: [...inputModalities],
     supports_image_detail_original: hasImage,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
-    supported_reasoning_levels: supportsMax && !reasoningLevels.some(level => level.effort === 'ultra') ? [...reasoningLevels, ULTRA_REASONING_LEVEL] : reasoningLevels,
-    multi_agent_version: supportsMax ? 'v2' : source.multi_agent_version,
+    supported_reasoning_levels: shouldEnableUltra
+      ? [...supportedReasoning, capabilities.ultraReasoningLevel]
+      : supportedReasoning,
     service_tiers: deriveServiceTiers(model),
     context_window: contextWindow,
     max_context_window: maxContextWindow,
   };
+
+  // Ultra is a client-local v2 orchestration mode whose wire effort remains
+  // Max. The caller supplies this capability only from an exact Codex catalog;
+  // a model advertising Max alone does not establish either client behavior.
+  if (shouldEnableUltra) entry.multi_agent_version = 'v2';
 
   // `default_reasoning_level` pairs with `supported_reasoning_levels` — both
   // come from the same source. When registry supplied `effort`, its schema
