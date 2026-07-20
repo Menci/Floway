@@ -31,13 +31,24 @@ describe('resolveCodexCatalog', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const { resolveCodexCatalog: resolve } = await import('./catalog.ts');
-    const ua = 'codex_exec/0.999.0 (Mac OS 15.0; arm64)';
+    const ua = 'codex_cli_rs/0.999.0 (Mac OS 15.0; arm64)';
     const first = await resolve(ua);
     const second = await resolve(ua);
     expect(first).toEqual(fake);
     expect(second).toEqual(fake);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://raw.githubusercontent.com/openai/codex/rust-v0.999.0/codex-rs/models-manager/models.json');
+  });
+
+  it('parses the app-server version from the Codex Desktop originator', async () => {
+    const fake = { models: [{ slug: 'desktop-version' }] };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(fake), { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { resolveCodexCatalog: resolve } = await import('./catalog.ts');
+    const ua = 'codex_desktop/0.145.0-alpha.18 (Windows 10.0.28000; x86_64) unknown (codex_desktop; 1.2.3)';
+    expect(await resolve(ua)).toEqual(fake);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://raw.githubusercontent.com/openai/codex/rust-v0.145.0-alpha.18/codex-rs/models-manager/models.json');
   });
 
   it('falls back to bundled on a 4xx response and still caches the negative result', async () => {

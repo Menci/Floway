@@ -1,7 +1,7 @@
 // Resolve a codex models catalog for a given codex client version.
 //
 // Strategy:
-//   1. Parse `codex_exec/<version>` from the request user-agent
+//   1. Parse `<codex-originator>/<version>` from the request user-agent
 //   2. In-memory cache by version (catalog of a released codex tag is immutable)
 //   3. On cache miss, fetch the matching tag from
 //      `https://raw.githubusercontent.com/openai/codex/rust-v<version>/codex-rs/models-manager/models.json`
@@ -29,7 +29,11 @@ export interface CodexCatalog {
   models: CatalogModel[];
 }
 
-const VERSION_FROM_USER_AGENT = /codex_exec\/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/;
+// Codex uses its active originator as the User-Agent product token, followed
+// by the app-server build version. This covers CLI, Desktop, IDE, and legacy
+// `codex_exec` originators without coupling catalog resolution to one surface.
+// https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/login/src/auth/default_client.rs#L161-L172
+const VERSION_FROM_USER_AGENT = /^codex[^/]*\/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/i;
 
 const inMemoryCache = new Map<string, CodexCatalog>();
 
