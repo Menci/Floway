@@ -1,19 +1,29 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { expect, test, vi } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 import { nextTick } from 'vue';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(async () => Response.json({ enabled: true, redirectEffort: 'high' })),
   put: vi.fn(async ({ json }: { json: unknown }) => Response.json(json)),
+  callApi: vi.fn(async (fn: () => Promise<Response>) => {
+    const response = await fn();
+    return { data: await response.json() };
+  }),
 }));
 
 vi.mock('../../api/client.ts', () => ({
   useApi: () => ({ api: { 'codex-ultra-config': { $get: mocks.get, $put: mocks.put } } }),
-  callApi: async (fn: () => Promise<Response>) => {
+  callApi: mocks.callApi,
+}));
+
+beforeEach(() => {
+  mocks.get.mockReset().mockImplementation(async () => Response.json({ enabled: true, redirectEffort: 'high' }));
+  mocks.put.mockReset().mockImplementation(async ({ json }: { json: unknown }) => Response.json(json));
+  mocks.callApi.mockReset().mockImplementation(async (fn: () => Promise<Response>) => {
     const response = await fn();
     return { data: await response.json() };
-  },
-}));
+  });
+});
 
 const { default: CodexUltraConfigSection } = await import('./CodexUltraConfigSection.vue');
 
@@ -68,4 +78,23 @@ test('Codex Ultra settings block stale-default saves and retry the failed load',
   expect(wrapper.find('button[role="switch"]').attributes('disabled')).toBeUndefined();
   expect(wrapper.find('label[for="codex-ultra-redirect-effort"]').exists()).toBe(true);
   expect(wrapper.find('#codex-ultra-redirect-effort').exists()).toBe(true);
+});
+
+test('Codex Ultra settings retain the draft and announce save failures', async () => {
+  const wrapper = mount(CodexUltraConfigSection, {
+    props: {
+      initialConfig: { enabled: true, redirectEffort: 'max' },
+      initialError: null,
+    },
+  });
+  const input = wrapper.find('#codex-ultra-redirect-effort');
+  await input.setValue('vendor-tier');
+  mocks.callApi.mockResolvedValueOnce({ error: { status: 500, message: 'save unavailable' } });
+
+  const save = wrapper.findAll('button').find(button => button.text().includes('Save Ultra Config'));
+  await save!.trigger('click');
+  await flushPromises();
+
+  expect(wrapper.get('[role="alert"]').text()).toContain('save unavailable');
+  expect((input.element as HTMLInputElement).value).toBe('vendor-tier');
 });
