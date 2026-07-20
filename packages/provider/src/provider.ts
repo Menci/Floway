@@ -1,6 +1,6 @@
+import type { AudioTranscriptionRequest } from './audio.ts';
 import type { FlagDefaults } from './flags.ts';
 import type { ImagesEditsRequest } from './images.ts';
-import type { AudioTranscriptionRequest } from './audio.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';

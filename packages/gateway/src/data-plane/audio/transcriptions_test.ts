@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import type { InMemoryRepo } from '../../repo/memory.ts';
+import { flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
