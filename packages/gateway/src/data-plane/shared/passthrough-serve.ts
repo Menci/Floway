@@ -4,7 +4,9 @@
 // matching endpoint and the upstream response is passed through back to
 // the client. Embeddings and images run the `json` branch (single-shot
 // body, OpenAI-shape `usage` block); /v1/completions runs the `sse` branch
-// (frame-level transformFrame closure + settleUsage). Usage and
+// (frame-level transformFrame closure + settleUsage); audio transcription
+// selects raw text/JSON or transcript-event SSE from the upstream media type.
+// Usage and
 // request-performance writes are scheduled through the runtime's
 // background scheduler so transient repo failures cannot turn a
 // successful 200 from upstream into a 502.
@@ -18,34 +20,27 @@ import { appendFailedUpstreams } from './failed-upstreams.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import { recordFailedRequest } from './telemetry/performance.ts';
-import { settle } from './telemetry/settle.ts';
+import { settle, settleUsageMeasurement } from './telemetry/settle.ts';
+import { requestOnlyUsageMeasurement, type UsageMeasurement } from './telemetry/usage.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
+import { forwardUpstreamHeaders, isForwardableUpstreamHeader } from '../chat/shared/respond.ts';
 import { enumerateModelCandidates } from '../providers/registry.ts';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { PerformanceOperation, InternalModel, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
 
-// Headers we forward verbatim from a successful upstream response, plus
-// content-type with an application/json fallback when the upstream omitted
-// it. The set is intentionally narrow and matches the passthrough contract
-// OpenAI clients (and the OpenAI Node SDK retry policy) expect to see —
-// correlation, organisation/model metadata, quota signals, retry-after.
-const FORWARDED_RESPONSE_HEADER_PREFIXES = ['openai-', 'x-ratelimit-'] as const;
-const FORWARDED_RESPONSE_HEADERS = new Set(['x-request-id', 'retry-after', 'cf-ray']);
-
-const isForwardedResponseHeader = (name: string): boolean => {
-  const lower = name.toLowerCase();
-  return FORWARDED_RESPONSE_HEADERS.has(lower) || FORWARDED_RESPONSE_HEADER_PREFIXES.some(prefix => lower.startsWith(prefix));
-};
-
+// Forward every safe end-to-end upstream header. The shared predicate strips
+// hop-by-hop/framing/cookie fields; content-type is retained separately because
+// non-streaming bodies are not rewritten. A missing type falls back to JSON for
+// the existing JSON passthrough endpoints.
 const forwardUpstreamResponse = (resp: Response): Response => {
   const headers = new Headers({ 'content-type': resp.headers.get('content-type') ?? 'application/json' });
   for (const [name, value] of resp.headers.entries()) {
     if (name.toLowerCase() === 'content-type') continue;
-    if (isForwardedResponseHeader(name)) headers.set(name, value);
+    if (isForwardableUpstreamHeader(name)) headers.set(name, value);
   }
   return new Response(resp.body, { status: resp.status, headers });
 };
@@ -54,15 +49,14 @@ const forwardUpstreamResponse = (resp: Response): Response => {
 // SSE response Hono builds emits them. `streamSSE`'s internal `c.newResponse`
 // honors anything set via `c.header()` before it runs.
 const stageForwardedResponseHeaders = (c: Context, resp: Response): void => {
-  for (const [name, value] of resp.headers.entries()) {
-    if (isForwardedResponseHeader(name)) c.header(name, value);
-  }
+  forwardUpstreamHeaders(c, resp.headers);
 };
 
 // `json` (embeddings, images): single-shot body, `extractBilling` reads
 // usage / metadata off the parsed root. `sse` (/v1/completions): frame
 // stream, `transformFrame` mutates or drops frames (return null), then
-// `settleUsage` reports billing once the stream ends.
+// `settleUsage` reports billing once the stream ends. Audio transcription
+// preserves raw non-SSE bodies and forwards SSE until transcript.text.done.
 type PassthroughResponseHandling =
   | {
     readonly format: 'json';
@@ -72,6 +66,10 @@ type PassthroughResponseHandling =
     readonly format: 'sse';
     readonly transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null;
     readonly settleUsage: () => TokenUsage | null;
+  }
+  | {
+    readonly format: 'audio-transcription';
+    readonly extractUsage: (body: unknown) => UsageMeasurement;
   };
 
 interface PassthroughServeContext {
@@ -173,9 +171,74 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       // Exhausted — forward the last upstream response verbatim so clients
       // still see real upstream telemetry (status, retry-after, request-id,
       // ...) rather than a synthetic gateway envelope.
-      recordFailedRequest(ctx, performanceContext);
+      if (responseHandling.format === 'audio-transcription') {
+        settleUsageMeasurement(ctx, performanceContext, identity, requestOnlyUsageMeasurement(), true);
+      } else {
+        recordFailedRequest(ctx, performanceContext);
+      }
       ctx.dump?.error('upstream', identity.upstream);
       return forwardUpstreamResponse(response);
+    }
+
+    if (responseHandling.format === 'audio-transcription') {
+      const contentType = response.headers.get('content-type')?.replace(/;.*$/u, '').trim().toLowerCase();
+      if (contentType !== 'text/event-stream') {
+        let measurement = requestOnlyUsageMeasurement();
+        try {
+          measurement = responseHandling.extractUsage(await response.clone().json());
+        } catch {
+          // text/srt/vtt and JSON bodies from providers without usage are
+          // successful request-only observations, not parse failures.
+        }
+        ctx.dump?.success(identity, measurement.dumpTokenUsage);
+        settleUsageMeasurement(ctx, performanceContext, identity, measurement, false);
+        return forwardUpstreamResponse(response);
+      }
+
+      const upstreamBody = response.body;
+      if (!upstreamBody) {
+        ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
+        recordFailedRequest(ctx, performanceContext);
+        stageForwardedResponseHeaders(c, response);
+        return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
+      }
+      stageForwardedResponseHeaders(c, response);
+      return streamSSE(c, async stream => {
+        let completion: StreamCompletion = 'error';
+        let streamError: unknown;
+        let terminalEventSeen = false;
+        let measurement = requestOnlyUsageMeasurement();
+        try {
+          const frames = (async function* () {
+            for await (const frame of parseSSEStream(upstreamBody, { signal: ctx.abortSignal })) {
+              let event: unknown;
+              try {
+                event = JSON.parse(frame.data) as unknown;
+              } catch (error) {
+                throw new Error(`Malformed upstream ${sourceApi} SSE JSON: ${frame.data}`, { cause: error });
+              }
+              const protocolFrame = eventFrame(event);
+              ctx.dump?.frame(protocolFrame);
+              if (event && typeof event === 'object' && (event as { type?: unknown }).type === 'transcript.text.done') {
+                terminalEventSeen = true;
+                measurement = responseHandling.extractUsage(event);
+              }
+              yield frame;
+            }
+          })();
+          completion = await writeSSEFrames(stream, frames, {
+            keepAlive: { frame: sseCommentFrame('keepalive') },
+            downstreamAbortController: ctx.downstreamAbortController,
+          });
+        } catch (error) {
+          streamError = error;
+        } finally {
+          const failed = streamError !== undefined || completion === 'error' || !terminalEventSeen;
+          if (failed) ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
+          else ctx.dump?.success(identity, measurement.dumpTokenUsage);
+          settleUsageMeasurement(ctx, performanceContext, identity, measurement, failed);
+        }
+      });
     }
 
     if (responseHandling.format === 'json') {

@@ -1,6 +1,7 @@
 import type { Hono } from 'hono';
 
 import { mountAlphaSearchRoutes } from './alpha-search/routes.ts';
+import { audioTranscriptions } from './audio/transcriptions.ts';
 import { mountChatRoutes } from './chat/routes.ts';
 import { mountCodexRoutes } from './codex/routes.ts';
 import { completions } from './completions/serve.ts';
@@ -27,4 +28,5 @@ export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
   app.post('/images/generations', imagesGenerations);
   app.post('/v1/images/edits', imagesEdits);
   app.post('/images/edits', imagesEdits);
+  app.post('/v1/audio/transcriptions', audioTranscriptions);
 };

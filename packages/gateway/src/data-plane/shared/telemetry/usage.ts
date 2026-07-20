@@ -85,6 +85,76 @@ export const tokenUsageFromEmbeddingsBody = (body: unknown): TokenUsage | null =
   return typeof promptTokens === 'number' ? tokenUsage({ input: promptTokens }) : null;
 };
 
+export interface UsageMeasurement {
+  readonly quantities: UsageQuantities;
+  readonly units: PriceUnits;
+  readonly pricingFacts: PricingRuntimeFacts;
+  // Dump frames predate per-dimension units. Only token measurements populate
+  // this compatibility view; duration counts would otherwise be mislabeled as
+  // tokens in the dump UI.
+  readonly dumpTokenUsage: TokenUsage | null;
+}
+
+export const requestOnlyUsageMeasurement = (): UsageMeasurement => ({
+  quantities: {},
+  units: {},
+  pricingFacts: {},
+  dumpTokenUsage: null,
+});
+
+export const tokenUsageMeasurement = (usage: TokenUsage | null): UsageMeasurement => {
+  const { tier, ...tokens } = usage ?? {};
+  const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
+  const units = Object.fromEntries(
+    BILLING_DIMENSIONS.filter(dimension => tokens[dimension] !== undefined).map(dimension => [dimension, 'tokens_1m']),
+  ) as PriceUnits;
+  return {
+    quantities: tokens,
+    units,
+    pricingFacts: { serviceTier: tier, inputTokens },
+    dumpTokenUsage: usage,
+  };
+};
+
+// OpenAI transcription responses discriminate usage by `type`. Token-based
+// models expose independent input/output counts; duration-based models expose
+// seconds. We preserve the raw seconds as the quantity and declare the
+// denominator as minutes, so price scaling converts seconds without rounding.
+// Missing or malformed breakdowns record the request only: total_tokens and a
+// top-level duration are never used to invent a provider-owned metric.
+// https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L36378-L36562
+export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurement => {
+  if (!body || typeof body !== 'object') return requestOnlyUsageMeasurement();
+  const usage = (body as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== 'object') return requestOnlyUsageMeasurement();
+  const metric = usage as { type?: unknown; seconds?: unknown; input_tokens?: unknown; output_tokens?: unknown };
+
+  if (metric.type === 'duration') {
+    if (typeof metric.seconds !== 'number' || !Number.isFinite(metric.seconds) || metric.seconds < 0) {
+      return requestOnlyUsageMeasurement();
+    }
+    return {
+      quantities: { input: metric.seconds },
+      units: { input: 'minutes' },
+      pricingFacts: {},
+      dumpTokenUsage: null,
+    };
+  }
+
+  if (metric.type !== 'tokens') return requestOnlyUsageMeasurement();
+  if (metric.input_tokens !== undefined && (typeof metric.input_tokens !== 'number' || !Number.isFinite(metric.input_tokens) || metric.input_tokens < 0)) {
+    return requestOnlyUsageMeasurement();
+  }
+  if (metric.output_tokens !== undefined && (typeof metric.output_tokens !== 'number' || !Number.isFinite(metric.output_tokens) || metric.output_tokens < 0)) {
+    return requestOnlyUsageMeasurement();
+  }
+  const tokens = tokenUsage({
+    ...(typeof metric.input_tokens === 'number' ? { input: metric.input_tokens } : {}),
+    ...(typeof metric.output_tokens === 'number' ? { output: metric.output_tokens } : {}),
+  });
+  return tokenUsageMeasurement(tokens);
+};
+
 // OpenAI Images responses report usage as
 // `{input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}`,
 // where the details objects split each total into `text_tokens` and
@@ -177,8 +247,6 @@ export const recordUsage = async (
 };
 
 export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  const { tier, ...tokens } = usage ?? {};
-  const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
-  const units = Object.fromEntries(BILLING_DIMENSIONS.map(dimension => [dimension, 'tokens_1m'])) as PriceUnits;
-  await recordUsage(keyId, modelIdentity, tokens, units, { serviceTier: tier, inputTokens });
+  const measurement = tokenUsageMeasurement(usage);
+  await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.units, measurement.pricingFacts);
 };

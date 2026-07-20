@@ -8,4 +8,4 @@
 // non-chat endpoint that lives here because there is nothing to translate
 // to or from. The value is the public URL fragment, so it can be used
 // directly in error messages and route comparisons without a lookup table.
-export type PassthroughServeApiName = '/completions' | '/embeddings' | '/images/generations' | '/images/edits';
+export type PassthroughServeApiName = '/completions' | '/embeddings' | '/images/generations' | '/images/edits' | '/audio/transcriptions';
