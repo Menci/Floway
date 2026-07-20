@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { responsesResultToEvents } from './from-result.ts';
 import type { ResponsesOutputItem, ResponsesResult } from './index.ts';
-import { assertEquals, assertFalse } from '../test-assert.ts';
+import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
 
 const completedResponse: ResponsesResult = {
   id: 'resp_completed',
@@ -22,6 +22,14 @@ const completedResponse: ResponsesResult = {
   incomplete_details: null,
   usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
 };
+
+test.each(['queued', 'in_progress', 'cancelled'] as const)('responsesResultToEvents rejects nonterminal status %s', status => {
+  assertThrows(
+    () => Array.from(responsesResultToEvents({ ...completedResponse, status })),
+    TypeError,
+    `Cannot expand nonterminal Responses status '${status}'`,
+  );
+});
 
 test('responsesResultToEvents projects terminal JSON into Responses stream events', () => {
   const frames = Array.from(responsesResultToEvents(completedResponse));
@@ -226,7 +234,13 @@ test('responsesResultToEvents preserves advanced tool item wire fields', () => {
       call_id: 'call_search',
       execution: 'client',
       status: 'completed',
-      tools: [{ type: 'function', name: 'lookup', parameters: {}, strict: true }],
+      tools: [
+        { type: 'function', name: 'lookup', parameters: {}, strict: true },
+        { type: 'file_search', vector_store_ids: ['vs_1'] },
+        { type: 'computer' },
+        { type: 'computer_use_preview', display_height: 768, display_width: 1024, environment: 'browser' },
+        { type: 'local_shell' },
+      ],
     },
     {
       type: 'code_interpreter_call',

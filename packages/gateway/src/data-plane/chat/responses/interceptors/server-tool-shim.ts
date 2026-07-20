@@ -324,14 +324,15 @@ export const parseServerToolArguments = (argumentsJson: string): Record<string, 
   return parsed as Record<string, unknown>;
 };
 
-const syntheticInProgressResponse = (
+const syntheticPrologueResponse = (
   state: MergeState,
   id: string,
   model: string,
   active: readonly ActiveServerTool[],
+  status: 'queued' | 'in_progress',
 ): ResponsesResult => {
   if (state.upstreamResponseSnapshot === undefined) {
-    throw new Error('Server-tool shim cannot synthesize a Responses in-progress envelope before upstream `response.created` is captured.');
+    throw new Error('Server-tool shim cannot synthesize a Responses prologue envelope before an upstream response snapshot is captured.');
   }
   const snapshot = state.upstreamResponseSnapshot;
   const restoredTools = restoreEchoedTools(snapshot.tools, active);
@@ -342,7 +343,7 @@ const syntheticInProgressResponse = (
     object: 'response',
     model,
     output: [],
-    status: 'in_progress',
+    status,
     error: null,
     incomplete_details: null,
     ...(restoredTools !== undefined ? { tools: restoredTools } : {}),
@@ -492,6 +493,20 @@ export const consumeTurnStreaming = async function* (
     }
     const event = frame.event;
 
+    if (event.type === 'response.queued') {
+      const reportedModel = event.response.model;
+      if (typeof reportedModel === 'string' && reportedModel.length > 0) merge.lastSeenModel = reportedModel;
+      merge.upstreamResponseSnapshot = event.response;
+      ensureModel();
+      if (isFirstTurn) {
+        yield stamp({
+          type: 'response.queued',
+          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, 'queued'),
+        });
+      }
+      continue;
+    }
+
     if (event.type === 'response.created') {
       const reportedModel = event.response.model;
       if (typeof reportedModel === 'string' && reportedModel.length > 0) merge.lastSeenModel = reportedModel;
@@ -500,7 +515,7 @@ export const consumeTurnStreaming = async function* (
       if (isFirstTurn) {
         yield stamp({
           type: 'response.created',
-          response: syntheticInProgressResponse(merge, merge.synthesizedResponseId, ensureModel(), active),
+          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, 'in_progress'),
         });
       }
       continue;
@@ -510,7 +525,7 @@ export const consumeTurnStreaming = async function* (
       if (isFirstTurn) {
         yield stamp({
           type: 'response.in_progress',
-          response: syntheticInProgressResponse(merge, merge.synthesizedResponseId, ensureModel(), active),
+          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, 'in_progress'),
         });
       }
       continue;

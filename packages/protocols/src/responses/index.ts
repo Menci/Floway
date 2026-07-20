@@ -326,7 +326,17 @@ export interface ResponsesFileSearchCallItem {
   results?: ResponsesFileSearchResult[] | null;
 }
 
-export type ResponsesComputerAction = Record<string, unknown> & { type: string };
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L298-L535
+export type ResponsesComputerAction =
+  | { type: 'click'; button: 'left' | 'right' | 'wheel' | 'back' | 'forward'; x: number; y: number; keys?: string[] | null }
+  | { type: 'double_click'; keys: string[] | null; x: number; y: number }
+  | { type: 'drag'; path: Array<{ x: number; y: number }>; keys?: string[] | null }
+  | { type: 'keypress'; keys: string[] }
+  | { type: 'move'; x: number; y: number; keys?: string[] | null }
+  | { type: 'screenshot' }
+  | { type: 'scroll'; scroll_x: number; scroll_y: number; x: number; y: number; keys?: string[] | null }
+  | { type: 'type'; text: string }
+  | { type: 'wait' };
 
 export interface ResponsesComputerSafetyCheck {
   id: string;
@@ -338,15 +348,25 @@ export interface ResponsesComputerSafetyCheck {
 // `pending_safety_checks`; the legacy `computer_use_preview` shape uses the
 // singular `action` plus safety checks. Keep both wire generations explicit.
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1990-L2035
-export interface ResponsesComputerCallItem {
+interface ResponsesComputerCallItemBase {
   type: 'computer_call';
   id: string;
   call_id: string;
   status: string;
-  action?: ResponsesComputerAction;
-  actions?: ResponsesComputerAction[];
-  pending_safety_checks?: ResponsesComputerSafetyCheck[];
 }
+
+export type ResponsesComputerCallItem = ResponsesComputerCallItemBase & (
+  | {
+    actions: ResponsesComputerAction[];
+    action?: never;
+    pending_safety_checks?: never;
+  }
+  | {
+    action: ResponsesComputerAction;
+    actions?: never;
+    pending_safety_checks: ResponsesComputerSafetyCheck[];
+  }
+);
 
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L2280-L2359
 export interface ResponsesComputerCallOutputItem {
@@ -719,6 +739,36 @@ export interface ResponsesCodeInterpreterTool {
   allowed_callers?: ResponsesToolAllowedCaller[] | null;
 }
 
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L541-L577
+export interface ResponsesComputerTool {
+  type: 'computer';
+}
+
+export interface ResponsesComputerUsePreviewTool {
+  type: 'computer_use_preview';
+  display_height: number;
+  display_width: number;
+  environment: 'windows' | 'mac' | 'linux' | 'ubuntu' | 'browser';
+}
+
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L729-L806
+export interface ResponsesFileSearchTool {
+  type: 'file_search';
+  vector_store_ids: string[];
+  filters?: Record<string, unknown> | null;
+  max_num_results?: number;
+  ranking_options?: {
+    hybrid_search?: { embedding_weight: number; text_weight: number };
+    ranker?: 'auto' | 'default-2024-11-15';
+    score_threshold?: number;
+  };
+}
+
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L8239-L8247
+export interface ResponsesLocalShellTool {
+  type: 'local_shell';
+}
+
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L803-L815
 export interface ResponsesShellTool {
   type: 'shell';
@@ -739,6 +789,10 @@ export type ResponsesTool =
   | ResponsesProgrammaticTool
   | ResponsesMcpTool
   | ResponsesCodeInterpreterTool
+  | ResponsesComputerTool
+  | ResponsesComputerUsePreviewTool
+  | ResponsesFileSearchTool
+  | ResponsesLocalShellTool
   | ResponsesShellTool
   | ResponsesApplyPatchTool;
 
@@ -770,7 +824,8 @@ export interface ResponsesResult {
   // that happen to emit it (some OpenAPI implementations do) are
   // preserved as-is on pass-through.
   output_text?: string;
-  status: 'queued' | 'completed' | 'incomplete' | 'failed' | 'in_progress';
+  // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L6866-L6870
+  status: 'queued' | 'completed' | 'incomplete' | 'failed' | 'in_progress' | 'cancelled';
   // `error` and `incomplete_details` are REQUIRED on the wire shape
   // per the OpenAI Responses spec (both can be null). Reference:
   // https://github.com/openai/openai-openapi/blob/master/openapi.yaml

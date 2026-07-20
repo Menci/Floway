@@ -68,6 +68,12 @@ const mkResponseCreated = (responseId = 'upstream_test'): ProtocolFrame<Response
     response: emptyResult(responseId, 'in_progress'),
   });
 
+const mkResponseQueued = (responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
+  eventFrame({
+    type: 'response.queued',
+    response: emptyResult(responseId, 'queued'),
+  });
+
 const mkResponseInProgress = (responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
   eventFrame({
     type: 'response.in_progress',
@@ -4677,6 +4683,27 @@ const consumeTurn = async (
     records,
   );
 };
+
+test('consumeTurn forwards queued only from the first upstream turn', async () => {
+  const firstState = createMergeState();
+  const first = await consumeTurn(
+    framesOf(mkResponseQueued('queued_first'), mkResponseCreated('created_first'), mkResponseCompleted()),
+    firstState,
+    true,
+  );
+  assertEquals(eventTypesOf(first.downstreamFrames), ['response.queued', 'response.created']);
+  const queued = first.downstreamFrames[0];
+  assert(queued.type === 'event' && queued.event.type === 'response.queued');
+  assertEquals(queued.event.response.id, firstState.synthesizedResponseId);
+  assertEquals(queued.event.response.status, 'queued');
+
+  const later = await consumeTurn(
+    framesOf(mkResponseQueued('queued_later'), mkResponseCreated('created_later'), mkResponseCompleted()),
+    createMergeState(),
+    false,
+  );
+  assertEquals(later.downstreamFrames, []);
+});
 
 test('consumeTurn first turn synthesizes response.created with the once-per-request synthesized id (not the upstream id)', async () => {
   const state = createMergeState();

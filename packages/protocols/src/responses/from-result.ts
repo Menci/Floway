@@ -3,11 +3,16 @@ import type { ResponsesOutputCustomToolCall, ResponsesOutputFunctionCall, Respon
 import { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 import { type EventFrame, eventFrame } from '../common/index.ts';
 
-const getTerminalEventName = (response: ResponsesResult): 'response.failed' | 'response.incomplete' | 'response.in_progress' | 'response.completed' => {
-  if (response.status === 'failed') return 'response.failed';
-  if (response.status === 'incomplete') return 'response.incomplete';
-  if (response.status === 'in_progress') return 'response.in_progress';
-  return 'response.completed';
+const getTerminalEventName = (response: ResponsesResult): 'response.failed' | 'response.incomplete' | 'response.completed' => {
+  switch (response.status) {
+  case 'completed': return 'response.completed';
+  case 'failed': return 'response.failed';
+  case 'incomplete': return 'response.incomplete';
+  case 'queued':
+  case 'in_progress':
+  case 'cancelled':
+    throw new TypeError(`Cannot expand nonterminal Responses status '${response.status}' into terminal events`);
+  }
 };
 
 const responsesStartSnapshot = (response: ResponsesResult): ResponsesResult => {
