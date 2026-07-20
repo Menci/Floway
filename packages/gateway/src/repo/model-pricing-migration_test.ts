@@ -16,7 +16,16 @@ const inputRates = (input: number, output?: number) => ({
   ...(output === undefined ? {} : { output, output_image: output }),
 });
 
-test('0054 materializes legacy pricing semantics', async () => {
+const tokenPricing = (entries: ModelPricing['entries']): ModelPricing => {
+  const base = entries.find(entry => entry.selector === undefined);
+  if (!base) throw new Error('tokenPricing requires a Base entry');
+  return {
+    units: Object.fromEntries(Object.keys(base.rates).map(dimension => [dimension, 'tokens_1m'])) as ModelPricing['units'],
+    entries,
+  };
+};
+
+test('model pricing migrations materialize legacy semantics with explicit units', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   for (const [filename, sql] of migrationSqlByFilename) {
@@ -102,99 +111,83 @@ test('0054 materializes legacy pricing semantics', async () => {
     models: [
       {
         upstreamModelId: 'base-and-overlay',
-        pricing: {
-          entries: [
-            { rates: inputRates(1, 4) },
-            { selector: { serviceTier: 'priority' }, rates: inputRates(2, 4) },
-          ],
-        },
+        pricing: tokenPricing([
+          { rates: inputRates(1, 4) },
+          { selector: { serviceTier: 'priority' }, rates: inputRates(2, 4) },
+        ]),
       },
       {
         upstreamModelId: 'cache-overrides',
-        pricing: {
-          entries: [
-            {
-              rates: {
-                input: 1,
-                input_cache_read: 0.1,
-                input_cache_write: 1.25,
-                input_cache_write_1h: 1.25,
-                input_image: 1,
-                output: 4,
-                output_image: 4,
-              },
+        pricing: tokenPricing([
+          {
+            rates: {
+              input: 1,
+              input_cache_read: 0.1,
+              input_cache_write: 1.25,
+              input_cache_write_1h: 1.25,
+              input_image: 1,
+              output: 4,
+              output_image: 4,
             },
-            {
-              selector: { serviceTier: 'fast' },
-              rates: {
-                input: 2,
-                input_cache_read: 0.1,
-                input_cache_write: 3,
-                input_cache_write_1h: 3,
-                input_image: 2,
-                output: 4,
-                output_image: 4,
-              },
+          },
+          {
+            selector: { serviceTier: 'fast' },
+            rates: {
+              input: 2,
+              input_cache_read: 0.1,
+              input_cache_write: 3,
+              input_cache_write_1h: 3,
+              input_image: 2,
+              output: 4,
+              output_image: 4,
             },
-          ],
-        },
+          },
+        ]),
       },
       {
         upstreamModelId: 'tier-adds-output',
-        pricing: {
-          entries: [
-            { rates: inputRates(1, 0) },
-            { selector: { serviceTier: 'priority' }, rates: inputRates(1, 8) },
-          ],
-        },
+        pricing: tokenPricing([
+          { rates: inputRates(1, 0) },
+          { selector: { serviceTier: 'priority' }, rates: inputRates(1, 8) },
+        ]),
       },
       {
         upstreamModelId: 'tier-only',
-        pricing: {
-          entries: [
-            { rates: inputRates(0) },
-            { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
-          ],
-        },
+        pricing: tokenPricing([
+          { rates: inputRates(0) },
+          { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
+        ]),
       },
       {
         upstreamModelId: 'empty-tier',
-        pricing: {
-          entries: [
-            { rates: inputRates(1) },
-            { selector: { serviceTier: 'priority' }, rates: inputRates(1) },
-          ],
-        },
+        pricing: tokenPricing([
+          { rates: inputRates(1) },
+          { selector: { serviceTier: 'priority' }, rates: inputRates(1) },
+        ]),
       },
       { upstreamModelId: 'empty-rates' },
       {
         upstreamModelId: 'write-and-output-only',
-        pricing: {
-          entries: [{ rates: { input_cache_write: 1.25, input_cache_write_1h: 1.25, output: 4, output_image: 4 } }],
-        },
+        pricing: tokenPricing([{ rates: { input_cache_write: 1.25, input_cache_write_1h: 1.25, output: 4, output_image: 4 } }]),
       },
       {
         upstreamModelId: 'zero-input',
-        pricing: {
-          entries: [
-            { rates: inputRates(0) },
-            { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
-          ],
-        },
+        pricing: tokenPricing([
+          { rates: inputRates(0) },
+          { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
+        ]),
       },
       {
         upstreamModelId: 'tier-order',
-        pricing: {
-          entries: [
-            { rates: inputRates(1) },
-            { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
-            { selector: { serviceTier: 'flex' }, rates: inputRates(0.5) },
-          ],
-        },
+        pricing: tokenPricing([
+          { rates: inputRates(1) },
+          { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
+          { selector: { serviceTier: 'flex' }, rates: inputRates(0.5) },
+        ]),
       },
       {
         upstreamModelId: 'base-equivalent-tiers',
-        pricing: { entries: [{ rates: inputRates(1) }] },
+        pricing: tokenPricing([{ rates: inputRates(1) }]),
       },
       { upstreamModelId: 'base-equivalent-tier-only' },
       { upstreamModelId: 'unpriced', display_name: 'Unpriced' },
@@ -205,6 +198,6 @@ test('0054 materializes legacy pricing semantics', async () => {
     if (!model.pricing) continue;
     validateModelPricing(model.pricing);
     const base = model.pricing.entries.find(entry => entry.selector === undefined)!.rates;
-    assertEquals(priceRequest(model.pricing, { inputTokens: 1, serviceTier: 'unknown' }), { selector: {}, rates: base });
+    assertEquals(priceRequest(model.pricing, { inputTokens: 1, serviceTier: 'unknown' }), { selector: {}, units: model.pricing.units, rates: base });
   }
 });
