@@ -770,7 +770,7 @@ export interface ResponsesResult {
   // that happen to emit it (some OpenAPI implementations do) are
   // preserved as-is on pass-through.
   output_text?: string;
-  status: 'completed' | 'incomplete' | 'failed' | 'in_progress';
+  status: 'queued' | 'completed' | 'incomplete' | 'failed' | 'in_progress';
   // `error` and `incomplete_details` are REQUIRED on the wire shape
   // per the OpenAI Responses spec (both can be null). Reference:
   // https://github.com/openai/openai-openapi/blob/master/openapi.yaml
