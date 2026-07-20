@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { translateMessagesToResponses } from './request.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
@@ -22,7 +22,7 @@ test('translateMessagesToResponses preserves a native thinking signature as encr
   const reasoning = result.input[0] as ResponsesInputReasoning;
   assertEquals(reasoning, {
     type: 'reasoning',
-    id: 'rs_0',
+    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
     summary: [{ type: 'summary_text', text: 'trace' }],
     encrypted_content: 'sig',
   });
@@ -302,7 +302,7 @@ test('translateMessagesToResponses preserves redacted_thinking as a native-signa
   assertEquals(result.input, [
     {
       type: 'reasoning',
-      id: 'rs_0',
+      id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
       summary: [],
       encrypted_content: 'opaque_sig',
     },
@@ -348,7 +348,7 @@ test('translateMessagesToResponses preserves text-only thinking input', () => {
   const reasoning = result.input[0] as ResponsesInputReasoning;
   assertEquals(reasoning, {
     type: 'reasoning',
-    id: 'rs_0',
+    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
     summary: [{ type: 'summary_text', text: 'trace' }],
   });
 });

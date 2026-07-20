@@ -321,8 +321,8 @@ const isWebSearchCallPrivatePayload = (value: unknown): value is WebSearchCallPr
 
 export const synthesizeWebSearchCallId = (): string => createRandomResponsesItemId('web_search_call');
 
-// Distinct id namespace (cc_replay_*) from synthesized wsc ids (ws_gw_*)
-// so a replay call_id never reads as a wsc id in logs.
+// Distinct id namespace (cc_replay_*) from web-search item ids (ws_*) so a
+// replay call_id never reads as a web-search item id in logs.
 const synthesizeReplayCallId = (): string => shortId('cc_replay');
 
 // Re-serializes a wire `action` back into the shim's JSON arguments
