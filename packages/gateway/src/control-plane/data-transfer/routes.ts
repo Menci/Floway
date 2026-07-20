@@ -10,6 +10,7 @@
 
 import type { Context } from 'hono';
 
+import { parseCodexUltraConfigDefault, parseCodexUltraConfigStrict, type CodexUltraConfig } from '../../data-plane/codex/ultra-config.ts';
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
@@ -50,7 +51,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 11;
+  version: 12;
   exportedAt: string;
   data: {
     users: User[];
@@ -62,10 +63,11 @@ interface ExportPayload {
     performance?: PerformanceTelemetryRecord[];
     performanceIncluded: boolean;
     searchConfig: SearchConfig;
+    codexUltraConfig: CodexUltraConfig;
   };
 }
 
-const EXPORT_VERSION = 11;
+const EXPORT_VERSION = 12;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -515,6 +517,14 @@ const parseSearchConfig = (value: unknown): { type: 'ok'; config: SearchConfig }
   }
 };
 
+const parseCodexUltraConfig = (value: unknown): { type: 'ok'; config: CodexUltraConfig } | { type: 'invalid'; error: string } => {
+  try {
+    return { type: 'ok', config: parseCodexUltraConfigStrict(value) };
+  } catch (error) {
+    return { type: 'invalid', error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
 const parsePerformanceIncluded = (data: Record<string, unknown>): { type: 'ok'; included: boolean } | { type: 'invalid'; error: string } => {
   if (typeof data.performanceIncluded !== 'boolean') return { type: 'invalid', error: 'performanceIncluded must be a boolean' };
   if (!data.performanceIncluded && hasOwn(data, 'performance')) {
@@ -672,13 +682,14 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
 
-  const [users, apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams, proxies] = await Promise.all([
+  const [users, apiKeys, usage, searchUsage, performance, rawSearchConfig, rawCodexUltraConfig, upstreams, proxies] = await Promise.all([
     repo.users.listIncludingDeleted(),
     repo.apiKeys.listIncludingDeleted(),
     repo.usage.listAll(),
     repo.searchUsage.listAll(),
     includePerformance ? repo.performance.listAll() : Promise.resolve([]),
     repo.searchConfig.get(),
+    repo.codexUltraConfig.get(),
     repo.upstreams.list(),
     repo.proxies.list(),
   ]);
@@ -695,6 +706,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
       searchUsage,
       performanceIncluded: includePerformance,
       searchConfig: rawSearchConfig === null ? parseSearchConfigDefault() : parseSearchConfigStrict(rawSearchConfig),
+      codexUltraConfig: rawCodexUltraConfig === null ? parseCodexUltraConfigDefault() : parseCodexUltraConfigStrict(rawCodexUltraConfig),
     },
   };
   if (includePerformance) payload.data.performance = performance;
@@ -767,6 +779,12 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     return c.json({ error: `invalid searchConfig: ${searchConfigResult.error}` }, 400);
   }
   const searchConfig = searchConfigResult.config;
+
+  const codexUltraConfigResult = parseCodexUltraConfig(data.codexUltraConfig);
+  if (codexUltraConfigResult.type === 'invalid') {
+    return c.json({ error: `invalid codexUltraConfig: ${codexUltraConfigResult.error}` }, 400);
+  }
+  const codexUltraConfig = codexUltraConfigResult.config;
 
   const performanceIncludedResult = parsePerformanceIncluded(data);
   if (performanceIncludedResult.type === 'invalid') {
@@ -864,6 +882,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   await Promise.all(upstreams.map(upstream => warmModelsCache(upstream, c)));
   for (const record of performance) await repo.performance.set(record);
   await repo.searchConfig.save(searchConfig);
+  await repo.codexUltraConfig.save(codexUltraConfig);
 
   return c.json({
     ok: true,
