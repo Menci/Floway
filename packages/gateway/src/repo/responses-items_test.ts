@@ -72,35 +72,6 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     expect(await repo.responsesItems.lookupManyByContentHash('key-a', ['hash-a'])).toEqual([first]);
   });
 
-  test('replaces an existing complete item without changing its scope', async () => {
-    initFileProvider(new MemoryFileProvider());
-    const repo = await createRepo();
-    const original = storedItem('msg_replace', 'key-a', 'old-hash', 1_000);
-    const replacement: StoredResponsesItem = {
-      ...original,
-      upstreamId: 'upstream-a',
-      upstreamItemId: 'msg_upstream',
-      payload: { item: { type: 'message', id: original.id, role: 'assistant', content: [{ type: 'output_text', text: 'new' }] } },
-      contentHash: 'new-hash',
-      createdAt: 2_000,
-    };
-    await repo.responsesItems.insertMany([original]);
-
-    await repo.responsesItems.replaceMany([replacement]);
-
-    expect(await repo.responsesItems.lookupMany('key-a', [original.id])).toEqual([replacement]);
-    expect(await repo.responsesItems.lookupMany('key-b', [original.id])).toEqual([]);
-  });
-
-  test('rejects replacement after an item disappears', async () => {
-    initFileProvider(new MemoryFileProvider());
-    const repo = await createRepo();
-    const item = storedItem('msg_replace_missing', 'key-a', 'hash', 1_000);
-
-    await expect(repo.responsesItems.replaceMany([item]))
-      .rejects.toThrow('Responses item disappeared before replacement: msg_replace_missing');
-  });
-
   test('deletes complete items and snapshots by their refreshable retention timestamp', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await createRepo();
@@ -404,41 +375,6 @@ test('SQL duplicate insert does not write an unreferenced replacement spill', as
   expect(put).not.toHaveBeenCalled();
   expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
   expect(await repo.responsesItems.lookupMany('key-a', [original.id])).toEqual([original]);
-});
-
-test('SQL replacement swaps a spilled payload without retaining the previous file', async () => {
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
-  const repo = new SqlRepo(await createSqliteTestDb());
-  const original = spilledItem('msg_replace_spill', 'key-a', 1_000);
-  const replacement = spilledItem('msg_replace_spill', 'key-a', original.createdAt);
-  await repo.responsesItems.insertMany([original]);
-  const originalFiles = await files.listKeys('responses-items/');
-
-  await repo.responsesItems.replaceMany([replacement]);
-
-  const replacementFiles = await files.listKeys('responses-items/');
-  expect(replacementFiles).toHaveLength(1);
-  expect(replacementFiles).not.toEqual(originalFiles);
-  expect((await repo.responsesItems.lookupMany('key-a', [original.id]))[0]).toEqual(replacement);
-});
-
-test('SQL replacement keeps its original spill when the write fails', async () => {
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
-  const base = await createSqliteTestDb();
-  const originalRepo = new SqlRepo(base);
-  const original = spilledItem('msg_replace_failure', 'key-a', 1_000);
-  await originalRepo.responsesItems.insertMany([original]);
-  const originalFiles = await files.listKeys('responses-items/');
-  const replacement = spilledItem('msg_replace_failure', 'key-a', original.createdAt);
-  const batchFailure = new Error('simulated replacement batch failure');
-  const repo = new SqlRepo(sqlDatabaseWithBatch(base, () => Promise.reject(batchFailure)));
-
-  await expect(repo.responsesItems.replaceMany([replacement])).rejects.toBe(batchFailure);
-
-  expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
-  expect((await originalRepo.responsesItems.lookupMany('key-a', [original.id]))[0]).toEqual(original);
 });
 
 test('SQL insert conflict cleans its spill when the winning row disappears', async () => {

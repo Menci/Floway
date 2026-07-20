@@ -30,7 +30,6 @@ const memoryOutputHarness = () => {
 
 test('client output rewrites ids and persists the exact complete item before terminal', async () => {
   const { repo, store } = memoryOutputHarness();
-  const replace = vi.spyOn(repo.responsesItems, 'replaceMany');
   const result: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -58,7 +57,6 @@ test('client output rewrites ids and persists the exact complete item before ter
   expect(rows[0].payload.item).toEqual(publicItem);
   expect(rows[0].payload.item).toMatchObject({ encrypted_content: 'wrapped-affinity' });
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).not.toBeNull();
-  expect(replace).not.toHaveBeenCalled();
 });
 
 test('client output waits for persistence before publishing output_item.done', async () => {
@@ -408,7 +406,7 @@ test('client output binds a later delta item_id to an id-less lifecycle', async 
   expect(delta.item_id).toBe(added.item.id);
 });
 
-test('client output persists the terminal item snapshot after an earlier done event', async () => {
+test('client output forwards terminal item drift while retaining the first done snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const doneItem = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
   const terminalItem = { ...doneItem, summary: [{ type: 'summary_text' as const, text: 'new' }] };
@@ -426,53 +424,29 @@ test('client output persists the terminal item snapshot after an earlier done ev
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: doneItem });
     yield eventFrame({ type: 'response.completed', response });
   };
+  let terminal: ResponsesResult | undefined;
   const collect = async () => {
-    for await (const _frame of wrapResponsesClientOutput(input(), {
+    for await (const frame of wrapResponsesClientOutput(input(), {
       store,
       responseId: 'resp_public',
-    })) void _frame;
+    })) {
+      if (frame.type === 'event' && frame.event.type === 'response.completed') terminal = frame.event.response;
+    }
   };
 
   await collect();
+  expect(terminal?.output[0]).toMatchObject({
+    summary: [{ type: 'summary_text', text: 'new' }],
+  });
   const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_public');
   expect(snapshot).not.toBeNull();
   if (snapshot === null) throw new Error('Expected persisted snapshot');
   expect((await repo.responsesItems.lookupMany('key-a', snapshot.itemIds))[0].payload.item).toMatchObject({
-    summary: [{ type: 'summary_text', text: 'new' }],
+    summary: [{ type: 'summary_text', text: 'old' }],
   });
 });
 
-test('client output propagates a terminal item replacement failure without retrying it', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const first = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
-  const changed = { ...first, summary: [{ type: 'summary_text' as const, text: 'new' }] };
-  const response: ResponsesResult = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [changed],
-    error: null,
-    incomplete_details: null,
-  };
-  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
-    yield eventFrame({ type: 'response.completed', response });
-  };
-  const replacementError = new Error('simulated replacement failure');
-  const replace = vi.spyOn(repo.responsesItems, 'replaceMany').mockRejectedValue(replacementError);
-  const iterator = wrapResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })[Symbol.asyncIterator]();
-
-  const done = await iterator.next();
-  expect(done.value?.type === 'event' && done.value.event.type).toBe('response.output_item.done');
-  await expect(iterator.next()).rejects.toBe(replacementError);
-  expect(replace).toHaveBeenCalledTimes(1);
-});
-
-test('client output persists the latest repeated output_item.done snapshot', async () => {
+test('client output forwards repeated done drift while retaining the first done snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const first = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
   const changed = { ...first, summary: [{ type: 'summary_text' as const, text: 'new' }] };
@@ -481,22 +455,24 @@ test('client output persists the latest repeated output_item.done snapshot', asy
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: changed });
   };
-  let clientId: string | undefined;
+  const publicItems: Array<typeof first> = [];
   const collect = async () => {
     for await (const frame of wrapResponsesClientOutput(input(), {
       store,
       responseId: 'resp_public',
     })) {
       if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
-        clientId = frame.event.item.id;
+        publicItems.push(frame.event.item as typeof first);
       }
     }
   };
 
   await collect();
-  if (clientId === undefined) throw new Error('Expected client item id');
-  expect((await repo.responsesItems.lookupMany('key-a', [clientId]))[0].payload.item).toMatchObject({
-    summary: [{ type: 'summary_text', text: 'new' }],
+  expect(publicItems).toHaveLength(2);
+  expect(publicItems[0].id).toBe(publicItems[1].id);
+  expect(publicItems[1]).toMatchObject({ summary: [{ type: 'summary_text', text: 'new' }] });
+  expect((await repo.responsesItems.lookupMany('key-a', [publicItems[0].id]))[0].payload.item).toMatchObject({
+    summary: [{ type: 'summary_text', text: 'old' }],
   });
 });
 
