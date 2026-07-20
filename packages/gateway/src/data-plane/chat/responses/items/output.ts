@@ -26,9 +26,9 @@ export const wrapResponsesClientOutput = async function* (
   let sawCompactionItem = false;
 
   const persistFinalizedItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<void> => {
-    if (!store.writesState || finalizedOutputIndexes.has(outputIndex)) return;
     const id = responsesItemId(item);
-    if (id === null) throw new TypeError(`Cannot persist Responses ${item.type} output without an id`);
+    if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
+    if (!store.writesState || finalizedOutputIndexes.has(outputIndex)) return;
     const privatePayload = store.getPrivatePayload(id);
     const row: StoredResponsesItem = {
       id,
@@ -69,10 +69,11 @@ export const wrapResponsesClientOutput = async function* (
     }
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+      for (const [outputIndex, item] of event.response.output.entries()) {
+        if (isCompactionItemType(item.type)) sawCompactionItem = true;
+        await persistFinalizedItem(item, outputIndex);
+      }
       if (store.writesState) {
-        for (const [outputIndex, item] of event.response.output.entries()) {
-          await persistFinalizedItem(item, outputIndex);
-        }
         await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
       }
       yield eventFrame({ ...event, response: clientEnvelope(event.response) });

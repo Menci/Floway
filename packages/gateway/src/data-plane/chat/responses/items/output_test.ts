@@ -381,10 +381,10 @@ test('client output refuses to persist an id-less upstream item', async () => {
     })) { /* drain */ }
   };
 
-  await expect(collect()).rejects.toThrow('Cannot persist Responses message output without an id');
+  await expect(collect()).rejects.toThrow('Responses message output has no producer id');
 });
 
-test('store=false leaves an id-less lifecycle and later child item_id unchanged', async () => {
+test('store=false also rejects an id-less finalized item', async () => {
   initRepo(new InMemoryRepo());
   const store = createResponsesHttpStore('key-a', false);
   const item = {
@@ -409,21 +409,14 @@ test('store=false leaves an id-less lifecycle and later child item_id unchanged'
     yield eventFrame({ type: 'response.completed', response });
   };
 
-  const events: ResponsesStreamEvent[] = [];
-  for await (const frame of wrapResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })) if (frame.type === 'event') events.push(frame.event);
+  const collect = async () => {
+    for await (const _frame of wrapResponsesClientOutput(input(), {
+      store,
+      responseId: 'resp_public',
+    })) { /* drain */ }
+  };
 
-  const added = events.find(event => event.type === 'response.output_item.added');
-  const delta = events.find(event => event.type === 'response.output_text.delta');
-  expect(added?.type).toBe('response.output_item.added');
-  expect(delta?.type).toBe('response.output_text.delta');
-  if (added?.type !== 'response.output_item.added' || delta?.type !== 'response.output_text.delta') {
-    throw new Error('Expected added and delta events');
-  }
-  expect(added.item.id).toBeUndefined();
-  expect(delta.item_id).toBe('msg_late_upstream');
+  await expect(collect()).rejects.toThrow('Responses message output has no producer id');
 });
 
 test('client output forwards terminal item drift while retaining the first done snapshot', async () => {
@@ -550,4 +543,29 @@ test('finalized item validation accepts the compaction_summary alias', async () 
   })) if (frame.type === 'event') events.push(frame.event);
 
   expect(events.at(-1)?.type).toBe('response.completed');
+});
+
+test('terminal-only compaction replaces prior snapshot history', async () => {
+  const { repo, store } = memoryOutputHarness();
+  await store.stageInputItems([{ type: 'message', role: 'user', content: 'old history' }]);
+  const compaction = { type: 'compaction' as const, id: 'cmp_terminal', encrypted_content: 'opaque' };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [compaction],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.completed', response });
+  })();
+
+  for await (const _frame of wrapResponsesClientOutput(input, {
+    store,
+    responseId: 'resp_compacted',
+  })) { /* drain */ }
+
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compacted'))?.itemIds).toEqual(['cmp_terminal']);
 });
