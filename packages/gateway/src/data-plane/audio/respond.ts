@@ -30,6 +30,7 @@ const respondNonStreaming = async ({ c, ctx, sourceApi, response, performance, i
       } catch (error) {
         ctx.dump?.failed(error);
         settleUsageMeasurement(ctx, performance, identity, requestOnlyUsageMeasurement(), true);
+        forwardUpstreamHeaders(c, response.headers);
         return c.json({ error: toInternalDebugError(error) }, 502);
       }
     }

@@ -219,12 +219,17 @@ test('/v1/audio/transcriptions rejects malformed declared usage after recording 
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
   await withMockedFetch(
-    () => Response.json({ text: 'hello', usage: { type: 'duration', seconds: 'invalid' } }),
+    () => Response.json(
+      { text: 'hello', usage: { type: 'duration', seconds: 'invalid' } },
+      { headers: { 'x-provider-trace': 'malformed-usage', 'set-cookie': 'upstream-session=secret' } },
+    ),
     async () => {
       const response = await requestApp('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
       });
       assertEquals(response.status, 502);
+      assertEquals(response.headers.get('x-provider-trace'), 'malformed-usage');
+      assertEquals(response.headers.get('set-cookie'), null);
     },
   );
   await flushAsyncWork();
