@@ -67,8 +67,13 @@ const settleRerank = (
   usage: Pick<CanonicalRerankResponse, 'searchUnits' | 'totalTokens'> | undefined,
   failed: boolean,
 ): void => {
+  const pricingUnit = identity.pricing?.units.input;
   let measurement: { quantity: number; unit: 'searches_1k' | 'tokens_1m' } | undefined;
-  if (usage?.searchUnits !== undefined) {
+  if (usage?.searchUnits !== undefined && usage.totalTokens !== undefined) {
+    measurement = pricingUnit === 'tokens_1m'
+      ? { quantity: usage.totalTokens, unit: 'tokens_1m' }
+      : { quantity: usage.searchUnits, unit: 'searches_1k' };
+  } else if (usage?.searchUnits !== undefined) {
     measurement = { quantity: usage.searchUnits, unit: 'searches_1k' };
   } else if (usage?.totalTokens !== undefined) {
     measurement = { quantity: usage.totalTokens, unit: 'tokens_1m' };
@@ -76,7 +81,10 @@ const settleRerank = (
   const quantities = measurement === undefined ? {} : { input: measurement.quantity };
   const units = measurement === undefined ? {} : { input: measurement.unit };
   const pricingFacts = usage?.totalTokens === undefined ? {} : { inputTokens: usage.totalTokens };
-  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, units, pricingFacts).catch(error => {
+  const measuredIdentity = measurement === undefined || pricingUnit === undefined || pricingUnit === measurement.unit
+    ? identity
+    : { ...identity, pricing: null };
+  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, measuredIdentity, quantities, units, pricingFacts).catch(error => {
     console.error('Failed to record rerank usage:', error);
   }));
   recordPerformance(ctx, performanceContext, failed, 0, performance.now());

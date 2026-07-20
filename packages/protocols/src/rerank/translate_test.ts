@@ -71,6 +71,22 @@ describe('rerank request ingress', () => {
     expect(voyage.request.returnDocuments).toBe(false);
     expect(voyage.request.truncation).toBe(true);
   });
+
+  test('Jina accepts its documented nullable controls', () => {
+    const jina = parseRerankRequest('jina-v1', {
+      model: 'jina-reranker-v3',
+      query: 'query',
+      documents: ['one'],
+      top_n: null,
+      return_documents: null,
+      truncation: null,
+      return_embeddings: null,
+    });
+    expect(jina.request.topN).toBeUndefined();
+    expect(jina.request.returnDocuments).toBe(true);
+    expect(jina.request.truncation).toBeUndefined();
+    expect(jina.request.returnEmbeddings).toBeUndefined();
+  });
 });
 
 describe('rerank request egress', () => {
@@ -141,6 +157,18 @@ describe('rerank request egress', () => {
       'dashscope-native': '/api/v1/services/rerank/text-rerank/text-rerank',
     });
   });
+
+  test('rejects source-only controls that the target cannot represent', () => {
+    const jina = parseRerankRequest('jina-v1', {
+      model: 'jina', query: 'query', documents: ['one'], return_embeddings: true,
+    }).request;
+    expect(() => serializeRerankRequest('cohere-v2', 'raw', jina)).toThrow('return_embeddings=true requires a Jina target');
+
+    const voyage = parseRerankRequest('voyage-v1', {
+      model: 'voyage', query: 'query', documents: ['one'], truncation: false,
+    }).request;
+    expect(() => serializeRerankRequest('dashscope-compatible', 'raw', voyage)).toThrow('truncation=false requires a Jina or Voyage target');
+  });
 });
 
 describe('rerank response translation', () => {
@@ -171,7 +199,7 @@ describe('rerank response translation', () => {
       object: 'list', model: 'qwen', id: 'request', results: [{ index: 0, relevance_score: 0.6 }], usage: { total_tokens: 11 },
     }).results[0]).toEqual({ index: 0, relevanceScore: 0.6 });
     expect(parseRerankResponse('dashscope-native', {
-      request_id: 'request', output: { results: [{ index: 0, relevance_score: 0.5 }] }, usage: { total_tokens: 12 },
+      request_id: 'request', output: { results: [{ index: 0, relevance_score: 0.5 }] }, usage: { input_tokens: 12 },
     }).results[0]).toEqual({ index: 0, relevanceScore: 0.5 });
   });
 

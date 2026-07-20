@@ -55,7 +55,7 @@ test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', as
         id: 'request-1',
         results: [{ index: 1, relevance_score: 0.9 }],
         meta: { billed_units: { search_units: 3 }, tokens: { input_tokens: 20 } },
-      }), { status: 200, headers: { 'content-type': 'application/json', 'x-request-id': 'upstream-request' } });
+      }), { status: 200, headers: { 'content-type': 'application/json', 'x-api-warning': 'trial quota', 'x-request-id': 'upstream-request' } });
     },
     async () => {
       const response = await requestApp('/v1/rerank', {
@@ -70,6 +70,7 @@ test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', as
         }),
       });
       assertEquals(response.status, 200);
+      assertEquals(response.headers.get('x-api-warning'), 'trial quota');
       assertEquals(response.headers.get('x-request-id'), 'upstream-request');
       assertEquals(await response.json(), {
         id: 'request-1',
@@ -99,9 +100,13 @@ test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', as
   assertEquals(performance[0]?.errorsNoOutput, 0);
 });
 
-test('/jina/v1/rerank preserves same-dialect extensions and records request-only usage', async () => {
+test('/jina/v1/rerank preserves same-dialect extensions and records token usage', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+  await saveRerankUpstream(
+    repo,
+    { protocol: 'jina-v1' },
+    { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 0.5 } }] },
+  );
 
   let upstreamBody: unknown;
   const upstreamResponse = {
@@ -142,7 +147,7 @@ test('/jina/v1/rerank preserves same-dialect extensions and records request-only
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, []);
+  assertEquals(usage[0].dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 18, unitPrice: 0.5 }]);
 });
 
 test('/voyage/v1/rerank translates a DashScope native response', async () => {
@@ -157,7 +162,7 @@ test('/voyage/v1/rerank translates a DashScope native response', async () => {
       return jsonResponse({
         request_id: 'request-1',
         output: { results: [{ index: 1, relevance_score: 0.75, document: { text: 'two' } }] },
-        usage: { total_tokens: 16 },
+        usage: { input_tokens: 16 },
       });
     },
     async () => {
@@ -242,6 +247,97 @@ test('upstream rerank errors are forwarded and still record a request-only usage
   assertEquals(usage.length, 1);
   assertEquals(usage[0].requests, 1);
   assertEquals(usage[0].dimensions, []);
+});
+
+test('a concrete token metric survives incompatible per-search pricing without a false rate', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(
+    repo,
+    { protocol: 'jina-v1' },
+    { units: { input: 'searches_1k' }, entries: [{ rates: { input: 2 } }] },
+  );
+
+  await withMockedFetch(
+    () => jsonResponse({
+      model: 'raw-reranker',
+      object: 'list',
+      usage: { total_tokens: 9 },
+      results: [{ index: 0, relevance_score: 0.8 }],
+    }),
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 9, unitPrice: null }]);
+});
+
+test('target-incompatible source controls return 400 without dispatch', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'cohere-v2' });
+  let fetchCalls = 0;
+
+  await withMockedFetch(
+    () => {
+      fetchCalls++;
+      return jsonResponse({ results: [] });
+    },
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-reranker',
+          query: 'query',
+          documents: ['one'],
+          return_embeddings: true,
+        }),
+      });
+      assertEquals(response.status, 400);
+      assertEquals((await response.json()).error.message, 'Model public-reranker does not support this rerank request: return_embeddings=true requires a Jina target.');
+    },
+  );
+  assertEquals(fetchCalls, 0);
+});
+
+test('usage parsed before a cross-protocol render failure is still recorded', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'cohere-v2' });
+
+  await withMockedFetch(
+    () => jsonResponse({
+      results: [{ index: 4, relevance_score: 0.8 }],
+      meta: { billed_units: { search_units: 2 } },
+    }),
+    async () => {
+      const response = await requestApp('/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({
+          model: 'public-reranker',
+          query: 'query',
+          documents: ['one'],
+          return_documents: true,
+        }),
+      });
+      assertEquals(response.status, 502);
+      await response.json();
+    },
+  );
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].dimensions, [{ dimension: 'input', unit: 'searches_1k', quantity: 2, unitPrice: null }]);
 });
 
 test('there is no unversioned /rerank route', async () => {
