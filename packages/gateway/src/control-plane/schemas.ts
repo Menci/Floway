@@ -190,6 +190,9 @@ const azureConfigSchema = z.object({
   endpoint: z.string().min(1),
   apiKey: z.string().optional(),
   models: z.array(upstreamModelSchema).min(1, 'models must be a non-empty array'),
+}).refine(config => config.models.every(model => model.kind !== 'rerank'), {
+  message: 'rerank models require a custom upstream',
+  path: ['models'],
 });
 
 const ollamaConfigSchema = z.object({
@@ -198,6 +201,9 @@ const ollamaConfigSchema = z.object({
   // daemon. PATCH passes `null` to explicitly clear it.
   apiKey: z.string().nullable().optional(),
   models: z.array(upstreamModelSchema).optional(),
+}).refine(config => config.models?.every(model => model.kind !== 'rerank') !== false, {
+  message: 'rerank models require a custom upstream',
+  path: ['models'],
 });
 
 // --- auth ---
