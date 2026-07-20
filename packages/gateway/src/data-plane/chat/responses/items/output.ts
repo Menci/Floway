@@ -2,7 +2,7 @@ import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemCon
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Mints gateway-owned item ids and presents finalized client items to the
 // configured state store when it has a write target; without one (HTTP
@@ -74,7 +74,7 @@ export const wrapResponsesClientOutput = async function* (
     return clientId;
   };
 
-  const persistFinalizedItem = async (originalItem: ResponsesInputItem, newId: string, outputIndex: number): Promise<void> => {
+  const persistFinalizedItem = async (originalItem: ResponsesOutputItem, newId: string, outputIndex: number): Promise<void> => {
     if (!store.writesState) return;
     const wireId = responsesItemId(originalItem);
     const source = wireId === null ? null : store.outputItemSource(wireId);
@@ -82,7 +82,7 @@ export const wrapResponsesClientOutput = async function* (
     // Attaching it lets a later turn restore the real success/failure state
     // even when the client stripped fields from the echoed wire item.
     const privatePayload = wireId === null ? undefined : store.getPrivatePayload(wireId);
-    const clientItem = { ...originalItem, id: newId } as ResponsesInputItem;
+    const clientItem = { ...originalItem, id: newId } as ResponsesOutputItem;
     const persistedPayload = privatePayload !== undefined ? { item: clientItem, private: privatePayload } : { item: clientItem };
     const now = Date.now();
     const row: StoredResponsesItem = {
@@ -143,20 +143,20 @@ export const wrapResponsesClientOutput = async function* (
       if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
       const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
       if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
-      await persistFinalizedItem(event.item as unknown as ResponsesInputItem, newId, event.output_index);
+        await persistFinalizedItem(event.item, newId, event.output_index);
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
       continue;
     }
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
-      const output: ResponsesInputItem[] = [];
+        const output: ResponsesOutputItem[] = [];
       for (const [outputIndex, item] of event.response.output.entries()) {
         if (isCompactionItemType(item.type)) sawCompactionItem = true;
         const upstreamId = responsesItemId(item);
         if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
         const newId = clientIdForOutput(upstreamId, item.type, outputIndex);
-        await persistFinalizedItem(item as unknown as ResponsesInputItem, newId, outputIndex);
-        output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
+          await persistFinalizedItem(item, newId, outputIndex);
+          output.push({ ...item, id: newId } as ResponsesOutputItem);
       }
       const rewritten = eventFrame({
         ...event,
