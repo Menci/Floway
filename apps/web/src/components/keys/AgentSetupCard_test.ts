@@ -163,19 +163,21 @@ describe('AgentSetupCard', () => {
     expect(codexEffortField.get('label').attributes('for')).toBe(codexEffortField.get('input').attributes('id'));
   });
 
-  it('starts Claude preferences on a new row without changing responsive field widths', async () => {
+  it('starts the two new Claude preferences on a new row in the unchanged field grid', async () => {
     const w = mountCard();
-    const modelFields = w.get('[data-testid="claude-model-fields"]');
-    const preferenceFields = w.get('[data-testid="claude-preference-fields"]');
-    expect(modelFields.classes()).toContain('xl:grid-cols-5');
-    expect(preferenceFields.classes()).toContain('xl:grid-cols-5');
-    expect(preferenceFields.classes()).not.toContain('xl:grid-cols-2');
-    expect(modelFields.element.children).toHaveLength(5);
-    expect([...preferenceFields.element.children].map(element => element.getAttribute('data-testid'))).toEqual([
+    const fields = w.get('[data-testid="claude-fields"]');
+    expect(fields.classes()).toContain('xl:grid-cols-5');
+    expect([...fields.element.children].map(element => element.getAttribute('data-testid'))).toEqual([
+      'claude-model',
+      'claude-opus',
+      'claude-sonnet',
+      'claude-haiku',
+      'claude-effort',
+      'claude-model-discovery',
       'claude-cleanup-period',
       'claude-attribution-opt-out',
-      'claude-model-discovery',
     ]);
+    expect(w.get('[data-testid="claude-cleanup-period"]').classes()).toContain('sm:col-start-1');
 
     const discovery = w.get('[data-testid="claude-model-discovery"]');
     expect(discovery.text()).toContain('Gateway model discovery');
@@ -183,7 +185,7 @@ describe('AgentSetupCard', () => {
     expect(discovery.get('div').classes()).toContain('h-9');
     expect(discovery.get('div').classes()).not.toContain('border');
     await selectAgent(w, 'Codex');
-    expect(w.get('[data-testid="codex-fields"]').classes()).toEqual(modelFields.classes());
+    expect(w.get('[data-testid="codex-fields"]').classes()).toEqual(fields.classes());
   });
 
   it('moves a restored lease onto the API key selected by the table', async () => {

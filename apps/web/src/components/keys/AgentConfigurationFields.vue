@@ -179,8 +179,8 @@ const codexEffort = computed<string>({
 </script>
 
 <template>
-  <section v-if="agent === 'claude'" data-testid="claude-fields">
-    <div data-testid="claude-model-fields" :class="fieldGridClass">
+  <section v-if="agent === 'claude'">
+    <div data-testid="claude-fields" :class="fieldGridClass">
       <div data-testid="claude-model">
         <label :for="fieldIds.claudeModel" class="mb-1.5 block text-xs text-gray-500">Default model</label>
         <Select :id="fieldIds.claudeModel" v-model="claudeModel" :options="claudeModelOptions" />
@@ -201,9 +201,14 @@ const codexEffort = computed<string>({
         <label :for="fieldIds.claudeEffort" class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
         <Select :id="fieldIds.claudeEffort" v-model="claudeEffort" :options="claudeEffortOptions" />
       </div>
-    </div>
-    <div data-testid="claude-preference-fields" :class="[fieldGridClass, 'mt-4']">
-      <div data-testid="claude-cleanup-period">
+      <div data-testid="claude-model-discovery">
+        <span class="mb-1.5 block text-xs text-gray-500">Gateway model discovery</span>
+        <div class="flex h-9 items-center gap-2">
+          <Switch v-model="modelDiscovery" size="sm" aria-label="Enable Claude Code gateway model discovery" />
+          <span class="text-sm text-white">{{ modelDiscovery ? 'Enabled' : 'Disabled' }}</span>
+        </div>
+      </div>
+      <div data-testid="claude-cleanup-period" class="sm:col-start-1">
         <label :for="fieldIds.claudeCleanupPeriod" class="mb-1.5 block text-xs text-gray-500">Cleanup retention</label>
         <Select :id="fieldIds.claudeCleanupPeriod" v-model="claudeCleanupPeriod" :options="claudeCleanupPeriodOptions" />
       </div>
@@ -212,13 +217,6 @@ const codexEffort = computed<string>({
         <div class="flex h-9 items-center gap-2">
           <Switch v-model="optOutAiAttribution" size="sm" aria-label="Opt out of Claude Code AI attribution" />
           <span class="text-sm text-white">{{ optOutAiAttribution ? 'Enabled' : 'Disabled' }}</span>
-        </div>
-      </div>
-      <div data-testid="claude-model-discovery">
-        <span class="mb-1.5 block text-xs text-gray-500">Gateway model discovery</span>
-        <div class="flex h-9 items-center gap-2">
-          <Switch v-model="modelDiscovery" size="sm" aria-label="Enable Claude Code gateway model discovery" />
-          <span class="text-sm text-white">{{ modelDiscovery ? 'Enabled' : 'Disabled' }}</span>
         </div>
       </div>
     </div>
