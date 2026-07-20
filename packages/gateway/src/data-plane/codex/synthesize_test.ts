@@ -132,7 +132,7 @@ describe('synthesizeCatalogEntry', () => {
   test('service_tiers derived from pricing.entries keys', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
+      pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
     });
     expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
   });
@@ -145,7 +145,7 @@ describe('synthesizeCatalogEntry', () => {
   test('service_tiers preserves key order for multiple tiers', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'flex' }, rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] },
+      pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'flex' }, rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] },
     });
     expect(entry.service_tiers).toEqual([
       { id: 'flex', name: 'flex', description: '' },
@@ -250,7 +250,7 @@ describe('synthesizeCatalogEntry', () => {
     test('service_tiers picks up the registry-configured tiers', () => {
       const entry = synthesizeCatalogEntry({
         ...base,
-        pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
+        pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
       }, bundledBase);
       expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
     });

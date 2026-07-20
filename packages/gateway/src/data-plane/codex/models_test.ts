@@ -126,7 +126,7 @@ describe('assembleCatalog', () => {
   test('bundled reuse: registry pricing.entries replaces bundled service_tiers', () => {
     const im: InternalModel = {
       ...chat('openrouter/gpt-5.5:nitro'),
-      pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
+      pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
     };
     const out = assembleCatalog(bundled, entries(im));
     expect(out.models[0].service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);

@@ -137,7 +137,7 @@ const drainEvents = async <T>(result: Awaited<ReturnType<typeof providerStreamRe
 
 describe('providerStreamResultToExecuteResult (first-output-token stamping)', () => {
   test('captures pricing from the exact dispatched provider model', () => {
-    const pricing = { entries: [{ rates: { input: 3, output: 12 } }] };
+    const pricing = { units: { input: 'tokens_1m' as const, output: 'tokens_1m' as const }, entries: [{ rates: { input: 3, output: 12 } }] };
     const candidate = stubModelCandidate({ model: { pricing } });
     expect(telemetryModelIdentity(candidate, 'raw-model')).toEqual({
       model: 'test-model',
