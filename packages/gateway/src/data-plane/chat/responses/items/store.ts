@@ -54,8 +54,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItems = new Map<string, StoredResponsesItem>();
   private readonly loadedByContentHash = new Map<string, StoredResponsesItem[]>();
   private readonly stagedInputItemIds: string[] = [];
-  private readonly stagedOutputItems = new Map<string, StoredResponsesItem>();
-  private readonly stagedOutputItemIds = new Map<number, string>();
+  private readonly outputItemIds = new Map<number, string>();
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly freshItemIds = new Set<string>();
@@ -125,18 +124,17 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void> {
-    if (this.stagedOutputItemIds.has(outputIndex)) return;
+    if (this.outputItemIds.has(outputIndex)) return;
     const cloned = cloneStoredResponsesItem(row);
     await this.commitItems([cloned]);
-    this.stagedOutputItems.set(cloned.id, cloned);
-    this.stagedOutputItemIds.set(outputIndex, cloned.id);
+    this.outputItemIds.set(outputIndex, cloned.id);
     this.freshItemIds.add(cloned.id);
     this.rememberItem(cloned);
   }
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
     if (this.options.writes.length === 0) return;
-    const outputItemIds = [...this.stagedOutputItemIds.entries()]
+    const outputItemIds = [...this.outputItemIds.entries()]
       .toSorted(([left], [right]) => left - right)
       .map(([, id]) => id);
     const itemIds = mode === 'replace'
