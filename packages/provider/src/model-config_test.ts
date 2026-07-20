@@ -217,3 +217,38 @@ describe('modelsField chat integration', () => {
     expect(m.chat?.modalities?.input).toEqual(['text']);
   });
 });
+
+describe('modelsField rerank targets', () => {
+  test('requires an explicit target for a rerank model', () => {
+    expect(() => modelsField([{
+      upstreamModelId: 'reranker',
+      kind: 'rerank',
+      endpoints: { rerank: {} },
+    }], 'p')).toThrow(/rerankTarget is required/);
+  });
+
+  test('accepts a supported protocol and normalized model-specific path', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'reranker',
+      kind: 'rerank',
+      endpoints: { rerank: {} },
+      rerankTarget: { protocol: 'dashscope-native', path: ' /custom/rerank ' },
+    }], 'p');
+    expect(model.rerankTarget).toEqual({ protocol: 'dashscope-native', path: '/custom/rerank' });
+  });
+
+  test('rejects targets on other model kinds and kind/endpoint mismatches', () => {
+    expect(() => modelsField([{
+      upstreamModelId: 'chat',
+      kind: 'chat',
+      endpoints: { chatCompletions: {} },
+      rerankTarget: { protocol: 'cohere-v2' },
+    }], 'p')).toThrow(/rerankTarget is only allowed/);
+    expect(() => modelsField([{
+      upstreamModelId: 'reranker',
+      kind: 'rerank',
+      endpoints: { chatCompletions: {} },
+      rerankTarget: { protocol: 'cohere-v2' },
+    }], 'p')).toThrow(/does not match the declared chat endpoints/);
+  });
+});
