@@ -455,85 +455,7 @@ test('SQL conflict cleanup cannot delete a later winner\'s independently owned s
   expect((await repo.responsesItems.lookupMany(item.apiKeyId, [item.id]))[0].payload).toEqual(item.payload);
 });
 
-test('migration 0058 replaces legacy Responses state with the full-state schema', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
-  try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0058_responses_full_state.sql') break;
-      db.run(sql);
-    }
-
-    const descriptor = JSON.stringify({ version: 1, storage: 'inline', encoding: 'gzip', payload: 'H4sIAAAAAAAA' });
-    const insertItem = `INSERT INTO responses_items
-      (id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, content_hash, created_at, refreshed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-    db.run(insertItem, ['msg_old', 'key-a', 'upstream-a', 'msg_upstream', 'message', descriptor, 'hash-a', 1_000, 9_000]);
-    db.run(`INSERT INTO responses_snapshots
-      (id, api_key_id, item_ids_json, created_at, refreshed_at)
-      VALUES (?, ?, ?, ?, ?)`, ['resp_old', 'key-a', '["msg_old"]', 1_000, 9_000]);
-
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0058_responses_full_state.sql');
-    if (migration === undefined) throw new Error('missing migration 0058_responses_full_state.sql');
-    db.run(migration[1]);
-
-    expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
-    expect(db.exec('SELECT * FROM responses_snapshots')[0]?.values ?? []).toEqual([]);
-    const columns = db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1]);
-    expect(columns).not.toContain('upstream_id');
-    expect(columns).not.toContain('upstream_item_id');
-  } finally {
-    db.close();
-  }
-});
-
-test('migration 0059 drops every prior Responses table and creates item-origin storage', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
-  try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0059_responses_item_origins.sql') break;
-      db.run(sql);
-    }
-    db.run(
-      `INSERT INTO responses_items
-        (id, api_key_id, item_type, payload_json, content_hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      ['msg_current', 'key-a', 'message', '{}', 'hash', 1_000],
-    );
-    db.run(
-      `INSERT INTO responses_snapshots
-        (id, api_key_id, item_ids_json, created_at)
-       VALUES (?, ?, ?, ?)`,
-      ['resp_current', 'key-a', '["msg_current"]', 1_000],
-    );
-
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0059_responses_item_origins.sql');
-    if (migration === undefined) throw new Error('missing migration 0059_responses_item_origins.sql');
-    db.run(migration[1]);
-
-    expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
-    expect(db.exec('SELECT * FROM responses_snapshots')[0]?.values ?? []).toEqual([]);
-    expect(db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1])).toEqual([
-      'id',
-      'api_key_id',
-      'upstream_id',
-      'upstream_item_id',
-      'item_type',
-      'payload_json',
-      'content_hash',
-      'created_at',
-    ]);
-    expect(db.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'responses_%' ORDER BY name")[0]?.values).toEqual([
-      ['responses_items'],
-      ['responses_snapshots'],
-    ]);
-  } finally {
-    db.close();
-  }
-});
-
-test('migration 0061 invalidates prior Responses state and removes origin columns', async () => {
+test('migration 0061 invalidates all prior Responses state and installs the exact-item schema', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
@@ -541,12 +463,8 @@ test('migration 0061 invalidates prior Responses state and removes origin column
       if (filename === '0061_responses_native_item_ids.sql') break;
       db.run(sql);
     }
-    db.run(
-      `INSERT INTO responses_items
-        (id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, content_hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['msg_old', 'key-a', 'upstream-a', 'msg_raw', 'message', '{}', 'hash', 1_000],
-    );
+    db.run('INSERT INTO responses_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      ['msg_old', 'key-a', 'provider-a', 'msg_raw', 'message', '{}', 'hash', 1_000]);
     db.run(
       `INSERT INTO responses_snapshots
         (id, api_key_id, item_ids_json, created_at)
