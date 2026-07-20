@@ -1,10 +1,12 @@
 import { test } from 'vitest';
 
+import { settleUsageMeasurement } from './settle.ts';
 import { audioTranscriptionUsageMeasurement, hasTokenUsage, openAICacheTokensFromUsage, recordUsage, tokenUsage } from './usage.ts';
+import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { basePricing } from '@floway-dev/protocols/common';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
 test('token usage preserves an explicitly observed zero', () => {
   const usage = tokenUsage({ input: 0 });
@@ -162,11 +164,48 @@ test('audio transcription usage without a recognized metric is request-only', ()
   for (const body of [
     { duration: 10 },
     { usage: { seconds: 10 } },
-    { usage: { type: 'duration', seconds: '10' } },
-    { usage: { type: 'tokens', input_tokens: -1 } },
+    { usage: { type: 'future_metric', samples: 10 } },
   ]) {
     assertEquals(audioTranscriptionUsageMeasurement(body), {
       quantities: {}, units: {}, pricingFacts: {}, dumpTokenUsage: null,
     });
   }
+});
+
+test('audio transcription usage rejects malformed declared metrics', () => {
+  for (const [body, message] of [
+    [{ usage: null }, 'usage must be an object'],
+    [{ usage: 'tokens' }, 'usage must be an object'],
+    [{ usage: { type: 'duration' } }, 'duration usage.seconds'],
+    [{ usage: { type: 'duration', seconds: '10' } }, 'duration usage.seconds'],
+    [{ usage: { type: 'tokens', input_tokens: -1 } }, 'token usage.input_tokens'],
+    [{ usage: { type: 'tokens', output_tokens: Number.NaN } }, 'token usage.output_tokens'],
+    [{ usage: { type: 'tokens', total_tokens: '59' } }, 'token usage.total_tokens'],
+  ] as const) {
+    assertThrows(() => audioTranscriptionUsageMeasurement(body), Error, message);
+  }
+});
+
+test('measurement settling rejects a token-denominated output without its quantity', () => {
+  const ctx: GatewayCtx = {
+    apiKeyId: 'key-a',
+    upstreamIds: null,
+    wantsStream: false,
+    backgroundScheduler: () => {},
+    attempt: { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined },
+    runtimeLocation: 'TEST',
+    dump: null,
+    responseHeaders: new Headers(),
+  };
+  assertThrows(
+    () => settleUsageMeasurement(
+      ctx,
+      undefined,
+      { model: 'audio-model', upstream: 'upstream-a', modelKey: 'audio-model', pricing: null },
+      { quantities: {}, units: { output: 'tokens_1m' }, pricingFacts: {}, dumpTokenUsage: null },
+      false,
+    ),
+    Error,
+    'requires an output quantity',
+  );
 });

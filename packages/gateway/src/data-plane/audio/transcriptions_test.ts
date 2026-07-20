@@ -195,6 +195,46 @@ test('/v1/audio/transcriptions warns on malformed declared JSON while forwarding
   }
 });
 
+test('/v1/audio/transcriptions preserves unknown future usage metrics as request-only', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const upstreamBody = { text: 'hello', usage: { type: 'future_metric', samples: 42 } };
+  await withMockedFetch(
+    () => Response.json(upstreamBody),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), upstreamBody);
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.dimensions, []);
+});
+
+test('/v1/audio/transcriptions rejects malformed declared usage after recording a failed request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  await withMockedFetch(
+    () => Response.json({ text: 'hello', usage: { type: 'duration', seconds: 'invalid' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+      });
+      assertEquals(response.status, 502);
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.dimensions, []);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
+});
+
 test('/v1/audio/transcriptions does not invent a content type for an untyped raw response', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);

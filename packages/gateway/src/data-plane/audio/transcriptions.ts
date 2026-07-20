@@ -7,10 +7,10 @@
 import type { Context } from 'hono';
 
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { respondAudioTranscription } from './respond.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody } from '../chat/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { audioTranscriptionUsageMeasurement } from '../shared/telemetry/usage.ts';
 import type { AudioTranscriptionFormEntry } from '@floway-dev/provider';
 
 type PreparedTranscription =
@@ -78,7 +78,7 @@ export const audioTranscriptions = async (c: Context): Promise<Response> => {
     kind: 'audio',
     modelServesEndpoint: model => model.endpoints.audioTranscriptions !== undefined,
     call: (provider, model, opts) => provider.instance.callAudioTranscriptions(model, { entries: request.entries }, ctx.abortSignal, opts),
-    response: { format: 'audio-transcription', extractUsage: audioTranscriptionUsageMeasurement },
+    response: { format: 'strategy', respond: respondAudioTranscription },
   });
   return finalizeGatewayResponse(ctx, response);
 };

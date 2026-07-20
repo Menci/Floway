@@ -120,18 +120,23 @@ export const tokenUsageMeasurement = (usage: TokenUsage | null): UsageMeasuremen
 // models expose independent input/output counts; duration-based models expose
 // seconds. We preserve the raw seconds as the quantity and declare the
 // denominator as minutes, so price scaling converts seconds without rounding.
-// Missing or malformed breakdowns record the request only: total_tokens and a
-// top-level duration are never used to invent a provider-owned metric.
+// Missing or unknown breakdowns record the request only: total_tokens and a
+// top-level duration are never used to invent a provider-owned metric. Once an
+// upstream selects a known discriminator, malformed declared fields are a
+// protocol violation and must remain observable to the response boundary.
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L36378-L36562
 export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurement => {
   if (!body || typeof body !== 'object') return requestOnlyUsageMeasurement();
-  const usage = (body as { usage?: unknown }).usage;
-  if (!usage || typeof usage !== 'object') return requestOnlyUsageMeasurement();
-  const metric = usage as { type?: unknown; seconds?: unknown; input_tokens?: unknown; output_tokens?: unknown };
+  if (!Object.hasOwn(body, 'usage')) return requestOnlyUsageMeasurement();
+  const usage = (body as { usage: unknown }).usage;
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) {
+    throw new Error('Audio transcription usage must be an object');
+  }
+  const metric = usage as { type?: unknown; seconds?: unknown; input_tokens?: unknown; output_tokens?: unknown; total_tokens?: unknown };
 
   if (metric.type === 'duration') {
     if (typeof metric.seconds !== 'number' || !Number.isFinite(metric.seconds) || metric.seconds < 0) {
-      return requestOnlyUsageMeasurement();
+      throw new Error('Audio transcription duration usage.seconds must be a finite non-negative number');
     }
     return {
       quantities: { input: metric.seconds },
@@ -142,11 +147,14 @@ export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurem
   }
 
   if (metric.type !== 'tokens') return requestOnlyUsageMeasurement();
-  if (metric.input_tokens !== undefined && (typeof metric.input_tokens !== 'number' || !Number.isFinite(metric.input_tokens) || metric.input_tokens < 0)) {
-    return requestOnlyUsageMeasurement();
-  }
-  if (metric.output_tokens !== undefined && (typeof metric.output_tokens !== 'number' || !Number.isFinite(metric.output_tokens) || metric.output_tokens < 0)) {
-    return requestOnlyUsageMeasurement();
+  for (const [field, value] of [
+    ['input_tokens', metric.input_tokens],
+    ['output_tokens', metric.output_tokens],
+    ['total_tokens', metric.total_tokens],
+  ] as const) {
+    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
+      throw new Error(`Audio transcription token usage.${field} must be a finite non-negative number`);
+    }
   }
   const tokens = tokenUsage({
     ...(typeof metric.input_tokens === 'number' ? { input: metric.input_tokens } : {}),
