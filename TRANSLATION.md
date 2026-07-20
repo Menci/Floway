@@ -842,12 +842,14 @@ model selects one of six target wires.
 
 The IR keeps the query, ordered source documents, top-N intent,
 return-documents intent, and the source protocol's representable optional
-controls. String-only targets receive structured inputs as JSON text; native
-Jina and DashScope inputs retain structured or multimodal objects. A ranked
-result normalizes to `(index, relevanceScore)` plus optional document and
-embedding data. Cross-protocol output reconstructs returned documents from
-the original indexed source array, preventing a target-specific document
-wrapper from leaking onto the source wire.
+controls. Jina text objects can become JSON text on string-only targets. Jina
+image queries or documents narrow the candidate pool to Jina and DashScope
+native targets, which preserve their multimodal objects; text-only dialects
+are never asked to reinterpret an image as text. A ranked result normalizes to
+`(index, relevanceScore)` plus optional document and embedding data.
+Cross-protocol output reconstructs returned documents from the original
+indexed source array, preventing a target-specific document wrapper from
+leaking onto the source wire.
 
 Same-dialect calls preserve opaque request fields while replacing only the
 model id, and forward the successful upstream response body unchanged. A
