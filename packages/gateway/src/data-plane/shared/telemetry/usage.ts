@@ -214,16 +214,24 @@ export const recordUsage = async (
   quantities: UsageQuantities,
   units: PriceUnits,
   pricingFacts: PricingRuntimeFacts,
+  options: { readonly unitMismatch?: 'reject' | 'unpriced' } = {},
 ): Promise<void> => {
   const priced = priceRequest(modelIdentity.pricing, pricingFacts);
+  let applicableRates = priced.rates;
   for (const dimension of BILLING_DIMENSIONS) {
     const pricingUnit = priced.units?.[dimension];
     const usageUnit = units[dimension];
     if (pricingUnit !== undefined && usageUnit !== undefined && pricingUnit !== usageUnit) {
-      throw new Error(`Usage dimension ${dimension} is measured in ${usageUnit} but priced in ${pricingUnit}`);
+      if (options.unitMismatch !== 'unpriced') {
+        throw new Error(`Usage dimension ${dimension} is measured in ${usageUnit} but priced in ${pricingUnit}`);
+      }
+      if (applicableRates !== null && applicableRates[dimension] !== undefined) {
+        const { [dimension]: _mismatchedRate, ...matchingRates } = applicableRates;
+        applicableRates = matchingRates;
+      }
     }
   }
-  const dimensions = usageDimensions(quantities, units, priced.rates);
+  const dimensions = usageDimensions(quantities, units, applicableRates);
   await Promise.all([
     getRepo().usage.record({
       keyId,

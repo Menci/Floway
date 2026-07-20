@@ -272,8 +272,9 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
   const hasAudioEndpoint = endpoints.audioTranscriptions !== undefined;
-  if ((kind === 'audio') !== hasAudioEndpoint) {
-    throw new Error(`Malformed ${label}: kind audio and endpoint audioTranscriptions must be declared together`);
+  const audioEndpointOnly = hasAudioEndpoint && Object.keys(endpoints).length === 1;
+  if ((kind === 'audio') !== audioEndpointOnly || (hasAudioEndpoint && !audioEndpointOnly)) {
+    throw new Error(`Malformed ${label}: kind audio requires exactly the audioTranscriptions endpoint, which cannot be mixed with other endpoints`);
   }
   const chat = chatField(value.chat, `${label}.chat`);
   if (chat !== undefined && kind !== 'chat') {

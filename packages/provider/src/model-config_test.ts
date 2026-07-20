@@ -211,7 +211,7 @@ describe('modelsField chat integration', () => {
       upstreamModelId: 'transcriber',
       kind: 'audio',
       endpoints: { chatCompletions: {} },
-    }], 'p')).toThrow(/kind audio and endpoint audioTranscriptions must be declared together/);
+    }], 'p')).toThrow(/kind audio requires exactly the audioTranscriptions endpoint/);
   });
 
   test('rejects the audio endpoint under another kind', () => {
@@ -219,7 +219,15 @@ describe('modelsField chat integration', () => {
       upstreamModelId: 'transcriber',
       kind: 'chat',
       endpoints: { audioTranscriptions: {} },
-    }], 'p')).toThrow(/kind audio and endpoint audioTranscriptions must be declared together/);
+    }], 'p')).toThrow(/kind audio requires exactly the audioTranscriptions endpoint/);
+  });
+
+  test('rejects audio transcription mixed with a chat endpoint', () => {
+    expect(() => modelsField([{
+      upstreamModelId: 'transcriber',
+      kind: 'audio',
+      endpoints: { audioTranscriptions: {}, chatCompletions: {} },
+    }], 'p')).toThrow(/audioTranscriptions endpoint, which cannot be mixed with other endpoints/);
   });
 
   test('rejects chat on non-chat kind', () => {

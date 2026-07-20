@@ -186,6 +186,53 @@ test('/v1/audio/transcriptions records duration seconds under the minutes unit',
   assertEquals(usage.dimensions, [{ dimension: 'input', unit: 'minutes', quantity: 91, unitPrice: 0.6 }]);
 });
 
+test('/v1/audio/transcriptions preserves duration usage unpriced when the model is priced per token', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo, {
+    units: { input: 'tokens_1m', output: 'tokens_1m' },
+    entries: [{ rates: { input: 2, output: 4 } }],
+  });
+  await withMockedFetch(
+    () => Response.json({ text: 'hello', usage: { type: 'duration', seconds: 75 } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+      });
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.dimensions, [{ dimension: 'input', unit: 'minutes', quantity: 75, unitPrice: null }]);
+});
+
+test('/v1/audio/transcriptions preserves token usage unpriced when the model is priced per minute', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo, {
+    units: { input: 'minutes' },
+    entries: [{ rates: { input: 0.6 } }],
+  });
+  await withMockedFetch(
+    () => Response.json({ text: 'hello', usage: { type: 'tokens', input_tokens: 12, output_tokens: 8, total_tokens: 20 } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+      });
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.dimensions, [
+    { dimension: 'input', unit: 'tokens_1m', quantity: 12, unitPrice: null },
+    { dimension: 'output', unit: 'tokens_1m', quantity: 8, unitPrice: null },
+  ]);
+});
+
 test('/v1/audio/transcriptions streams through transcript.text.done without adding Chat termination', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {

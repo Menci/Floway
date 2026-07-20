@@ -50,6 +50,7 @@ export const settleUsageMeasurement = (
     observed.quantities,
     observed.units,
     observed.pricingFacts,
+    { unitMismatch: 'unpriced' },
   ).catch(error => {
     console.error('Failed to record usage:', error);
   }));
