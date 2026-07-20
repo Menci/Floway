@@ -198,7 +198,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       const upstreamBody = response.body;
       if (!upstreamBody) {
         ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
-        recordFailedRequest(ctx, performanceContext);
+        settleUsageMeasurement(ctx, performanceContext, identity, requestOnlyUsageMeasurement(), true);
         stageForwardedResponseHeaders(c, response);
         return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
       }
