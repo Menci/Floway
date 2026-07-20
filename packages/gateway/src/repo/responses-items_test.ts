@@ -447,6 +447,7 @@ test('SQL refresh rejects a conflicting row that replaces the CAS snapshot', asy
   const first = spilledItem('msg_refresh_concurrent_collision', 'key-a', 1_000);
   await seedRepo.responsesItems.insertMany([first]);
   const originalFiles = await files.listKeys('responses-items/');
+  expect(originalFiles).toHaveLength(1);
   const winner = storedItem(first.id, first.apiKeyId, 'winner-hash', 3_000);
   const winnerPayload = await serializeStoredResponsesPayload(winner.id, winner.apiKeyId, winner.createdAt, winner.payload);
   let injected = false;
