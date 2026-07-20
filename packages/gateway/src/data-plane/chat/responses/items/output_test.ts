@@ -186,6 +186,44 @@ test('store=false passes the producer item id through without persistence', asyn
   expect(await repo.responsesItems.lookupMany('key-a', ['rs_upstream'])).toEqual([]);
 });
 
+test('store=false validates readable durable identity without writing state', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const stored: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_durable', summary: [{ type: 'summary_text', text: 'stored' }] };
+  await repo.responsesItems.insertMany([{
+    id: stored.id,
+    apiKeyId: 'key-a',
+    payload: { item: stored },
+    contentHash: await hashResponsesItemContent(stored),
+    createdAt: 1_000,
+  }]);
+  const exactStore = createResponsesHttpStore('key-a', false);
+  const exactInput = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: stored });
+  })();
+  const exact: ProtocolFrame<ResponsesStreamEvent>[] = [];
+  for await (const frame of wrapResponsesClientOutput(exactInput, {
+    store: exactStore,
+    responseId: 'resp_exact',
+  })) exact.push(frame);
+  expect(exact).toEqual([eventFrame({ type: 'response.output_item.done', output_index: 0, item: stored })]);
+
+  const conflicting = { ...stored, summary: [{ type: 'summary_text' as const, text: 'different' }] };
+  const conflictStore = createResponsesHttpStore('key-a', false);
+  const conflictInput = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: conflicting });
+  })();
+  const collect = async () => {
+    for await (const _frame of wrapResponsesClientOutput(conflictInput, {
+      store: conflictStore,
+      responseId: 'resp_conflict',
+    })) { /* drain */ }
+  };
+
+  await expect(collect()).rejects.toThrow(`Responses item id collision: ${stored.id}`);
+  expect((await repo.responsesItems.lookupMany('key-a', [stored.id]))[0].payload.item).toEqual(stored);
+});
+
 test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' };

@@ -116,6 +116,15 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   async persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void> {
     if (this.outputItemIds.has(outputIndex)) return;
     const cloned = cloneStoredResponsesItem(row);
+    for (const read of this.options.reads) {
+      const existing = await read.lookupItems({
+        apiKeyId: this.apiKeyId,
+        ids: [cloned.id],
+        contentHashes: [],
+      });
+      for (const actual of existing) assertSameStoredResponsesItem(cloned, actual);
+    }
+    if (!this.writesState) return;
     await this.commitItems([cloned]);
     this.outputItemIds.set(outputIndex, cloned.id);
     this.freshItemIds.add(cloned.id);
