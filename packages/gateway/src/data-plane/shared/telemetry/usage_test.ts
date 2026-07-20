@@ -95,7 +95,7 @@ test('recordUsage persists caller-supplied quantities and units with resolved pr
     },
     { input: 90 },
     { input: 'minutes' },
-    { inputTokens: 0 },
+    {},
   );
 
   const rows = await repo.usage.listAll();
@@ -118,7 +118,7 @@ test('recordUsage rejects a measured unit that disagrees with model pricing', as
       },
       { input: 1 },
       { input: 'tokens_1m' },
-      { inputTokens: 0 },
+      {},
     ),
     Error,
     'measured in tokens_1m but priced in searches_1k',

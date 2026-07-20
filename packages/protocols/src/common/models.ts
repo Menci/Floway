@@ -55,7 +55,7 @@ export type PricingSelector = Readonly<Record<string, PricingCoordinateValue>>;
 
 export type PricingRuntimeFacts = Readonly<{
   serviceTier?: string | null;
-  inputTokens: number;
+  inputTokens?: number;
 }>;
 
 type PricingRuntimeFactKey<Value> = {
