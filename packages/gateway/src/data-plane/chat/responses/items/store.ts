@@ -48,6 +48,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedByContentHash = new Map<string, StoredResponsesItem[]>();
   private readonly stagedInputItemIds: string[] = [];
   private readonly outputItemIds = new Map<number, string>();
+  private readonly outputItemsById = new Map<string, StoredResponsesItem>();
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly freshItemIds = new Set<string>();
@@ -116,6 +117,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   async persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void> {
     if (this.outputItemIds.has(outputIndex)) return;
     const cloned = cloneStoredResponsesItem(row);
+    const sameTurn = this.outputItemsById.get(cloned.id);
+    if (sameTurn !== undefined) assertSameStoredResponsesItem(cloned, sameTurn);
     for (const read of this.options.reads) {
       const existing = await read.lookupItems({
         apiKeyId: this.apiKeyId,
@@ -124,6 +127,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       });
       for (const actual of existing) assertSameStoredResponsesItem(cloned, actual);
     }
+    this.outputItemsById.set(cloned.id, cloned);
     if (!this.writesState) return;
     await this.commitItems([cloned]);
     this.outputItemIds.set(outputIndex, cloned.id);

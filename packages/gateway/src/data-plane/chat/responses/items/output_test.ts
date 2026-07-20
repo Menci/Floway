@@ -224,6 +224,21 @@ test('store=false validates readable durable identity without writing state', as
   expect((await repo.responsesItems.lookupMany('key-a', [stored.id]))[0].payload.item).toEqual(stored);
 });
 
+test('store=false rejects conflicting reuse within one output stream', async () => {
+  initRepo(new InMemoryRepo());
+  const store = createResponsesHttpStore('key-a', false);
+  const first: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_same_turn', summary: [{ type: 'summary_text', text: 'first' }] };
+  const second: ResponsesOutputReasoning = { type: 'reasoning', id: first.id, summary: [{ type: 'summary_text', text: 'second' }] };
+  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 1, item: second });
+  })();
+  const iterator = wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })[Symbol.asyncIterator]();
+
+  expect((await iterator.next()).value).toEqual(eventFrame({ type: 'response.output_item.done', output_index: 0, item: first }));
+  await expect(iterator.next()).rejects.toThrow(`Responses item id collision: ${first.id}`);
+});
+
 test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' };
