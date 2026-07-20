@@ -1,19 +1,12 @@
 import { test } from 'vitest';
 
 import { settleUsageMeasurement } from './settle.ts';
-import { audioTranscriptionUsageMeasurement, hasTokenUsage, openAICacheTokensFromUsage, recordUsage, tokenUsage } from './usage.ts';
+import { audioTranscriptionUsageMeasurement, openAICacheTokensFromUsage, recordUsage } from './usage.ts';
 import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { basePricing } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
-
-test('token usage preserves an explicitly observed zero', () => {
-  const usage = tokenUsage({ input: 0 });
-  assertEquals(usage, { input: 0 });
-  assertEquals(hasTokenUsage(usage), true);
-  assertEquals(hasTokenUsage({}), false);
-});
 
 test('OpenAI canonical shape — prompt_tokens_details.cached_tokens lands in cacheRead', () => {
   assertEquals(
