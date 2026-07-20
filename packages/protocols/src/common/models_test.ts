@@ -213,6 +213,11 @@ test('shared pricing helpers canonicalize and eagerly validate catalogs', () => 
     Error,
     'duplicate pricing entry selector',
   );
+  assertThrows(
+    () => tokenModelPricing(pricingEntry({ input: 1 }, { serviceTier: 'priority' })),
+    Error,
+    'exactly one base entry',
+  );
 });
 
 const GRID: ModelPricing = {

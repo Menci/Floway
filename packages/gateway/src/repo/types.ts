@@ -65,11 +65,13 @@ export interface UsageDimensionRecord {
   unitPrice: number | null;
 }
 
+export type UsageQuantities = Partial<Record<BillingDimension, number>>;
+
 // Disjoint per-dimension token counts. Absent keys mean zero for that
 // dimension. No key's count overlaps another's. `tier` is only the normalized
 // upstream observation used as a runtime pricing fact; it is projected into the
 // generic `pricingSelector` at recording time and is not persisted directly.
-export interface TokenUsage extends Partial<Record<BillingDimension, number>> {
+export interface TokenUsage extends UsageQuantities {
   tier?: string | null;
 }
 

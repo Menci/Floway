@@ -1,8 +1,8 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
-import type { TokenUsage } from '../../../repo/types.ts';
+import type { TokenUsage, UsageQuantities } from '../../../repo/types.ts';
 import { usageDimensions } from '../../../repo/usage-dimensions.ts';
-import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, type PriceUnits, type PriceVector, priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, type PriceUnits, priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
@@ -141,7 +141,7 @@ const splitModalityCounts = (
 export const recordUsage = async (
   keyId: string,
   modelIdentity: TelemetryModelIdentity,
-  quantities: PriceVector,
+  quantities: UsageQuantities,
   units: PriceUnits,
   pricingFacts: PricingRuntimeFacts,
 ): Promise<void> => {

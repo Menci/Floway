@@ -399,9 +399,8 @@ const tokenUnitsFor = (rates: PriceVector): PriceUnits =>
   Object.fromEntries(BILLING_DIMENSIONS.filter(dimension => rates[dimension] !== undefined).map(dimension => [dimension, 'tokens_1m'])) as PriceUnits;
 
 export const tokenModelPricing = (...entries: PricingEntry[]): ModelPricing => {
-  const base = entries.find(entry => Object.keys(canonicalizePricingSelector(entry.selector)).length === 0);
-  if (!base) return modelPricing({}, ...entries);
-  return modelPricing(tokenUnitsFor(base.rates), ...entries);
+  const reference = entries.find(entry => Object.keys(canonicalizePricingSelector(entry.selector)).length === 0) ?? entries[0];
+  return modelPricing(reference ? tokenUnitsFor(reference.rates) : {}, ...entries);
 };
 
 export const tokenBasePricing = (rates: PriceVector): ModelPricing => basePricing(tokenUnitsFor(rates), rates);
