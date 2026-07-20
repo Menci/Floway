@@ -231,27 +231,34 @@ it('redirects proactive Ultra but preserves explicit Max on the Codex Responses 
     },
     async () => await withWorkerWebSocketRuntime(async runtime => {
       const client = await connectCodexResponsesWebSocket(runtime, apiKey.key);
-      const send = async (mode: string) => {
+      const send = async (input: unknown[], previousResponseId?: string) => {
         const done = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
         client.send(JSON.stringify({
           type: 'response.create',
           response: {
             model: 'gpt-direct-responses',
-            input: [
-              { type: 'message', role: 'developer', content: mode },
-              { type: 'message', role: 'user', content: 'hello' },
-            ],
+            input,
+            ...(previousResponseId === undefined ? {} : { previous_response_id: previousResponseId }),
             reasoning: { effort: 'max' },
             store: false,
           },
         }));
-        await done;
+        return responseDoneId(await done);
       };
 
-      await send('<multi_agent_mode>Proactive multi-agent delegation is active. Use sub-agents.</multi_agent_mode>');
-      await send('<multi_agent_mode>Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents.</multi_agent_mode>');
+      const proactiveId = await send([
+        { type: 'message', role: 'developer', content: '<multi_agent_mode>Proactive multi-agent delegation is active. Use sub-agents.</multi_agent_mode>' },
+        { type: 'message', role: 'user', content: 'first' },
+      ]);
+      const continuedId = await send([
+        { type: 'message', role: 'user', content: 'second' },
+      ], proactiveId);
+      await send([
+        { type: 'message', role: 'developer', content: '<multi_agent_mode>Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents.</multi_agent_mode>' },
+        { type: 'message', role: 'user', content: 'third' },
+      ], continuedId);
     }),
   );
 
-  expect(upstreamBodies.map(body => body.reasoning?.effort)).toEqual(['high', 'max']);
+  expect(upstreamBodies.map(body => body.reasoning?.effort)).toEqual(['high', 'high', 'max']);
 });
