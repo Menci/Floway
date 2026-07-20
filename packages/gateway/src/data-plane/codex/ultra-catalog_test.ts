@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { CatalogModel } from './catalog.ts';
-import { applyCodexUltraCatalogSupport } from './ultra-catalog.ts';
+import { applyCodexUltraCatalogSupport, codexClientSupportsUltra } from './ultra-catalog.ts';
 
 const base = (): CatalogModel => ({
   slug: 'model-a',
@@ -13,6 +13,17 @@ const base = (): CatalogModel => ({
 });
 
 describe('Codex Ultra catalog support', () => {
+  test.each([
+    ['codex_exec/0.143.9 (test)', false],
+    ['codex_exec/0.144.0 (test)', true],
+    ['codex_cli_rs/0.144.1 (test)', true],
+    ['codex_cli_rs/1.0.0-test (test)', true],
+    ['curl/8.0', false],
+    [undefined, false],
+  ] as const)('detects client support from %s', (userAgent, supported) => {
+    expect(codexClientSupportsUltra(userAgent)).toBe(supported);
+  });
+
   test('returns the original model when disabled', () => {
     const model = base();
     expect(applyCodexUltraCatalogSupport(model, { enabled: false, redirectEffort: 'high' })).toBe(model);

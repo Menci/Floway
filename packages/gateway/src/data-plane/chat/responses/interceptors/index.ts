@@ -21,9 +21,9 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 // after pairwise translation has finished.
 //
 // Order matters: earlier entries wrap later ones.
-//   - withCodexUltraEffortRedirected: runs before the compact shim so a native
-//     compact action is never rewritten, while Codex's generate-shaped remote
-//     compaction request still receives the configured Ultra target.
+//   - withCodexUltraEffortRedirected: runs before the compact shim so both
+//     ordinary turns and compact requests that pivot into a generated summary
+//     receive the configured Ultra target.
 //   - withResponsesCompactShim: runs immediately inside the source-compat
 //     redirect so the action pivot ('compact' → 'generate' for the inner
 //     summarization turn) is visible to every downstream interceptor + the

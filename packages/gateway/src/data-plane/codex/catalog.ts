@@ -29,13 +29,13 @@ export interface CodexCatalog {
   models: CatalogModel[];
 }
 
-const VERSION_FROM_USER_AGENT = /codex_exec\/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/;
+const VERSION_FROM_USER_AGENT = /(?:codex_exec|codex_cli_rs)\/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/;
 
 const inMemoryCache = new Map<string, CodexCatalog>();
 
 const bundled = bundledCatalog as unknown as CodexCatalog;
 
-const parseCodexVersion = (userAgent: string | undefined): string | null =>
+export const parseCodexVersion = (userAgent: string | undefined): string | null =>
   userAgent?.match(VERSION_FROM_USER_AGENT)?.[1] ?? null;
 
 const fetchCodexCatalog = async (version: string): Promise<CodexCatalog | null> => {

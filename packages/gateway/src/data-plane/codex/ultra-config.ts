@@ -6,6 +6,8 @@ export interface CodexUltraConfig {
   redirectEffort: string;
 }
 
+// Codex maps its client-only Ultra selection to `max` on Responses requests.
+// https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/core/src/client.rs#L175-L180
 export const DEFAULT_CODEX_ULTRA_CONFIG: CodexUltraConfig = {
   enabled: false,
   redirectEffort: 'max',

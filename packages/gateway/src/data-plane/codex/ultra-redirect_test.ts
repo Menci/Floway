@@ -47,8 +47,9 @@ describe('Codex Ultra effort redirect', () => {
     expect(redirectCodexUltraEffort(source, 'xhigh').reasoning?.effort).toBe('xhigh');
   });
 
-  test('maps a direct ultra value from compatible third-party clients', () => {
-    expect(redirectCodexUltraEffort(payload([developer(proactive)], 'ultra'), 'future-tier').reasoning?.effort).toBe('future-tier');
+  test('preserves a direct open-string ultra wire value', () => {
+    const source = payload([developer(proactive)], 'ultra');
+    expect(redirectCodexUltraEffort(source, 'future-tier')).toBe(source);
   });
 
   test.each(['low', 'medium', 'high', 'xhigh', 'future-tier'])('preserves non-Ultra effort %s', effort => {

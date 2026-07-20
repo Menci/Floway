@@ -40,6 +40,16 @@ describe('resolveCodexCatalog', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://raw.githubusercontent.com/openai/codex/rust-v0.999.0/codex-rs/models-manager/models.json');
   });
 
+  it('accepts the official codex_cli_rs user-agent prefix', async () => {
+    const fake = { models: [{ slug: 'official-prefix' }] };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(fake), { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const { resolveCodexCatalog: resolve } = await import('./catalog.ts');
+    expect(await resolve('codex_cli_rs/0.144.1 (Windows; x86_64)')).toEqual(fake);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://raw.githubusercontent.com/openai/codex/rust-v0.144.1/codex-rs/models-manager/models.json');
+  });
+
   it('falls back to bundled on a 4xx response and still caches the negative result', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 404 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;

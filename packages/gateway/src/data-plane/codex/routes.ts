@@ -36,7 +36,7 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
   mountAlphaSearchRoute(app, `${CODEX_BASE_PATH}/alpha/search`);
   app.post(`${CODEX_BASE_PATH}/responses`, responsesHttp.generateCodex);
-  app.post(`${CODEX_BASE_PATH}/responses/compact`, responsesHttp.compact);
+  app.post(`${CODEX_BASE_PATH}/responses/compact`, responsesHttp.compactCodex);
   app.get(`${CODEX_BASE_PATH}/responses`, codexResponsesWebSocket);
   app.post(`${CODEX_BASE_PATH}/images/generations`, imagesGenerations);
   app.post(`${CODEX_BASE_PATH}/images/edits`, imagesEdits);

@@ -86,6 +86,43 @@ const generate = async (c: AuthedContext, codexUltraRedirectEffort: string | nul
   }
 };
 
+const compact = async (c: AuthedContext, codexUltraRedirectEffort: string | null): Promise<Response> => {
+  const requestBody = await readRequestBody(c);
+  let ctx: ChatGatewayCtx | undefined;
+  try {
+    const payload = parsePayload(requestBody);
+    ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c), codexUltraRedirectEffort }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+    const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
+    if (result.type === 'result') {
+      // Compact drains the upstream stream into a single envelope with
+      // no per-token stamps; recordPerformance therefore lands in
+      // the neutral bucket (request counted, no TTFT/TPOT sample). The
+      // envelope's own `status` is authoritative for failure — a compact
+      // that surfaced as `response.failed` must be recorded as such so it
+      // shows up in the error column instead of masquerading as a success.
+      const failed = result.result.status === 'failed';
+      if (failed) {
+        ctx.dump?.failed('compact envelope status=failed');
+      } else {
+        ctx.dump?.success(result.modelIdentity, result.usage);
+      }
+      settle(
+        ctx,
+        result.performance,
+        result.modelIdentity,
+        result.usage,
+        failed,
+      );
+      const compactResponse = Response.json(result.result);
+      return finalizeGatewayResponse(ctx, compactResponse);
+    }
+    const response = await respondResponses(c, result, false, ctx);
+    return finalizeGatewayResponse(ctx, response);
+  } catch (error) {
+    return await respondToThrow(c, error, requestBody, ctx);
+  }
+};
+
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => await generate(c, null),
 
@@ -94,40 +131,10 @@ export const responsesHttp = {
     return await generate(c, config.enabled ? config.redirectEffort : null);
   },
 
-  compact: async (c: AuthedContext): Promise<Response> => {
-    const requestBody = await readRequestBody(c);
-    let ctx: ChatGatewayCtx | undefined;
-    try {
-      const payload = parsePayload(requestBody);
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
-      const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
-      if (result.type === 'result') {
-        // Compact drains the upstream stream into a single envelope with
-        // no per-token stamps; recordPerformance therefore lands in
-        // the neutral bucket (request counted, no TTFT/TPOT sample). The
-        // envelope's own `status` is authoritative for failure — a compact
-        // that surfaced as `response.failed` must be recorded as such so it
-        // shows up in the error column instead of masquerading as a success.
-        const failed = result.result.status === 'failed';
-        if (failed) {
-          ctx.dump?.failed('compact envelope status=failed');
-        } else {
-          ctx.dump?.success(result.modelIdentity, result.usage);
-        }
-        settle(
-          ctx,
-          result.performance,
-          result.modelIdentity,
-          result.usage,
-          failed,
-        );
-        const compactResponse = Response.json(result.result);
-        return finalizeGatewayResponse(ctx, compactResponse);
-      }
-      const response = await respondResponses(c, result, false, ctx);
-      return finalizeGatewayResponse(ctx, response);
-    } catch (error) {
-      return await respondToThrow(c, error, requestBody, ctx);
-    }
+  compact: async (c: AuthedContext): Promise<Response> => await compact(c, null),
+
+  compactCodex: async (c: AuthedContext): Promise<Response> => {
+    const config = await loadCodexUltraConfig();
+    return await compact(c, config.enabled ? config.redirectEffort : null);
   },
 };

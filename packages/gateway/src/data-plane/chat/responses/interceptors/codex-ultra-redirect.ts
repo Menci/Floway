@@ -6,7 +6,7 @@ import { redirectCodexUltraEffort } from '../../../codex/ultra-redirect.ts';
 // requests retain every open-string effort value verbatim.
 export const withCodexUltraEffortRedirected: ResponsesInterceptor = async (ctx, gatewayCtx, run) => {
   const redirectEffort = gatewayCtx.codexUltraRedirectEffort;
-  if (redirectEffort === null || ctx.action !== 'generate') return await run();
+  if (redirectEffort === null) return await run();
   ctx.payload = redirectCodexUltraEffort(ctx.payload, redirectEffort);
   return await run();
 };

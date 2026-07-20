@@ -35,8 +35,8 @@ test('ordinary Responses source context leaves max untouched', async () => {
   assertEquals(input.payload.reasoning, { effort: 'max', summary: 'detailed' });
 });
 
-test('native compact action never applies the Ultra redirect', async () => {
+test('compact action carries the Ultra redirect into any generated shim turn', async () => {
   const input = invocation('compact');
   await withCodexUltraEffortRedirected(input, mockChatGatewayCtx({ codexUltraRedirectEffort: 'low' }), run);
-  assertEquals(input.payload.reasoning, { effort: 'max', summary: 'detailed' });
+  assertEquals(input.payload.reasoning, { effort: 'low', summary: 'detailed' });
 });

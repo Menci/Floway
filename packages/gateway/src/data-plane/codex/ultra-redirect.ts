@@ -56,7 +56,7 @@ export const redirectCodexUltraEffort = (
   redirectEffort: string,
 ): CanonicalResponsesPayload => {
   const effort = payload.reasoning?.effort;
-  if (effort !== 'max' && effort !== 'ultra') return payload;
+  if (effort !== 'max') return payload;
   if (activeCodexMultiAgentMode(payload.input) !== 'proactive') return payload;
   return {
     ...payload,
