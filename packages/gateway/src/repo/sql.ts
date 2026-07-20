@@ -51,8 +51,8 @@ import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { getFileProvider, type SqlDatabase, type SqlPreparedStatement, type SqlResult } from '@floway-dev/platform';
 import { canonicalPricingSelectorKey, parseBillingDimension, parseBillingUnit, parseModelKind, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
-import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, PerformanceOperation, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix } from '@floway-dev/provider';
+import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamRecord } from '@floway-dev/provider';
+import { normalizeModelPrefix, parsePerformanceOperation } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -569,7 +569,7 @@ const performanceDimensionsFromRow = (row: PerformanceDimensionRow): Performance
   keyId: row.key_id,
   model: row.model,
   upstream: row.upstream,
-  operation: row.operation as PerformanceOperation,
+  operation: parsePerformanceOperation(row.operation),
   runtimeLocation: row.runtime_location,
 });
 
