@@ -1,5 +1,5 @@
 import type { ChatCompletionsReasoningItem } from '@floway-dev/protocols/chat-completions';
-import type { ResponsesInputItem, ResponsesOutputReasoning, ResponsesReasoningItem } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesInputItem, type ResponsesOutputReasoning, type ResponsesReasoningItem } from '@floway-dev/protocols/responses';
 
 export type ChatCompletionsReasoningSourceItem = Extract<ResponsesInputItem, { type: 'reasoning' }> | ResponsesOutputReasoning;
 
@@ -49,7 +49,7 @@ export const scalarToResponsesReasoningItem = <T extends ResponsesReasoningItem>
 
 export const hasReadableSummary = (item: ChatCompletionsReasoningItem): boolean => item.summary?.some(part => part.text) === true;
 
-export const translateChatCompletionsReasoningItems = <T extends ResponsesReasoningItem>(reasoningItems: ChatCompletionsReasoningItem[] | null | undefined, nextIdIndex: () => number): T[] | null => {
+export const translateChatCompletionsReasoningItems = <T extends ResponsesReasoningItem>(reasoningItems: ChatCompletionsReasoningItem[] | null | undefined): T[] | null => {
   if (!reasoningItems?.length) return null;
 
   // `reasoning_items[]` is a LiteLLM-inspired compatibility workaround for
@@ -58,7 +58,6 @@ export const translateChatCompletionsReasoningItems = <T extends ResponsesReason
   // References:
   // - https://github.com/BerriAI/litellm/blob/70492cee4282541256fb9ac963be94412b1a109c/litellm/completion_extras/litellm_responses_transformation/transformation.py#L59-L104
   // - https://github.com/BerriAI/litellm/blob/70492cee4282541256fb9ac963be94412b1a109c/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1322-L1355
-  const startIndex = nextIdIndex();
-  const translated = reasoningItems.flatMap((item, index) => (hasReadableSummary(item) ? [toResponsesReasoningItem<T>(item, `rs_${startIndex + index}`)] : []));
+  const translated = reasoningItems.flatMap(item => (hasReadableSummary(item) ? [toResponsesReasoningItem<T>(item, createRandomResponsesItemId('reasoning'))] : []));
   return translated.length > 0 ? translated : null;
 };
