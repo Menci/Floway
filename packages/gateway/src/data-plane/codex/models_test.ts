@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
+import type { CodexCatalogCapabilities } from './catalog.ts';
 import { assembleCatalog } from './models.ts';
 import type { AddressableIdEntry } from '../shared/listing/addressable.ts';
 import type { InternalModel } from '@floway-dev/provider';
@@ -31,6 +32,10 @@ const entry = (model: InternalModel, unlisted?: true): AddressableIdEntry => ({
 });
 
 const entries = (...models: InternalModel[]): AddressableIdEntry[] => models.map(m => entry(m));
+
+const ultraCapabilities: CodexCatalogCapabilities = {
+  ultraReasoningLevel: { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
+};
 
 describe('assembleCatalog', () => {
   test('bundled match: reuses bundled entry, slug=publicId, display_name from registry', () => {
@@ -101,6 +106,27 @@ describe('assembleCatalog', () => {
     expect(e.context_window).toBe(128000);
     expect(e.shell_type).toBe('shell_command');     // hardcoded baseline
     expect(e.prefer_websockets).toBe(true);
+  });
+
+  test('threads exact-client Ultra capability into Max-capable synthesized entries', () => {
+    const maxModel: InternalModel = {
+      ...chat('deepseek-v4-pro'),
+      chat: { reasoning: { effort: { supported: ['high', 'max'], default: 'high' } } },
+    };
+    const withoutCapability = assembleCatalog(bundled, entries(maxModel));
+    const withCapability = assembleCatalog(bundled, entries(maxModel), ultraCapabilities);
+
+    expect(withoutCapability.models[0].supported_reasoning_levels).toEqual([
+      { effort: 'high', description: '' },
+      { effort: 'max', description: '' },
+    ]);
+    expect(withoutCapability.models[0].multi_agent_version).toBeUndefined();
+    expect(withCapability.models[0].supported_reasoning_levels).toEqual([
+      { effort: 'high', description: '' },
+      { effort: 'max', description: '' },
+      { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
+    ]);
+    expect(withCapability.models[0].multi_agent_version).toBe('v2');
   });
 
   test('non-chat models are dropped', () => {

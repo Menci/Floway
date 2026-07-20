@@ -427,6 +427,7 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
         assertExists(error);
         assertEquals(error.status_code, 500);
         assertEquals(error.error?.message, 'simulated item persistence failure');
+        assert(!messages.some(message => message.type === 'response.output_item.done'));
         assert(!messages.some(message => message.type === 'response.completed'));
         assert(!messages.some(message => message.type === 'response.done'));
       }),
@@ -878,6 +879,108 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
   assertExists(firstSnapshot);
   assertExists(secondSnapshot);
   assertEquals(secondSnapshot.itemIds.length > firstSnapshot.itemIds.length, true);
+});
+
+test('Responses WebSocket makes a done reasoning item reusable from a fresh connection before terminal', async () => {
+  const { apiKey } = await setupAppTest();
+  const encoder = new TextEncoder();
+  const originalReasoning = {
+    type: 'reasoning' as const,
+    id: 'rs_original',
+    summary: [],
+    encrypted_content: 'opaque',
+  };
+  let responseCalls = 0;
+  let resolveSecondBody!: (body: { store?: unknown; input?: unknown }) => void;
+  const secondBody = new Promise<{ store?: unknown; input?: unknown }>(resolve => { resolveSecondBody = resolve; });
+  let firstClient: TestWorkerWebSocket | undefined;
+  let secondClient: TestWorkerWebSocket | undefined;
+
+  const enqueue = (controller: ReadableStreamDefaultController<Uint8Array>, event: string, data: unknown): void =>
+    controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        const body = JSON.parse(await request.text()) as { store?: unknown; input?: unknown };
+        responseCalls += 1;
+        if (responseCalls === 1) {
+          const response = {
+            id: 'resp_first',
+            object: 'response',
+            model: 'gpt-direct-responses',
+            status: 'in_progress',
+            output: [],
+            output_text: '',
+            error: null,
+            incomplete_details: null,
+          };
+          return new Response(new ReadableStream<Uint8Array>({
+            start(controller) {
+              enqueue(controller, 'response.created', { type: 'response.created', response, sequence_number: 0 });
+              enqueue(controller, 'response.output_item.added', { type: 'response.output_item.added', output_index: 0, item: originalReasoning, sequence_number: 1 });
+              enqueue(controller, 'response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: originalReasoning, sequence_number: 2 });
+            },
+          }), { headers: { 'content-type': 'text/event-stream' } });
+        }
+        resolveSecondBody(body);
+        return sseResponsesResponse({
+          id: 'resp_second',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output: [],
+          output_text: 'ok',
+          error: null,
+          incomplete_details: null,
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      try {
+        firstClient = await connectResponsesWebSocket(apiKey.key);
+        const firstDone = waitForMessages(firstClient, messages =>
+          messages.some(message => message.type === 'response.output_item.done'));
+        firstClient.send(JSON.stringify({
+          type: 'response.create',
+          response: { model: 'gpt-direct-responses', store: true, input: 'first' },
+        }));
+        const messages = await firstDone;
+        const done = messages.find(message => message.type === 'response.output_item.done') as { item?: typeof originalReasoning } | undefined;
+        assertExists(done?.item);
+        assert(isResponsesItemId(done.item.id));
+        assert(done.item.encrypted_content !== originalReasoning.encrypted_content);
+        firstClient.close();
+
+        secondClient = await connectResponsesWebSocket(apiKey.key);
+        secondClient.send(JSON.stringify({
+          type: 'response.create',
+          response: {
+            model: 'gpt-direct-responses',
+            store: true,
+            input: [done.item, { type: 'message', role: 'user', content: 'continue' }],
+          },
+        }));
+        const replay = await secondBody;
+        assert(Array.isArray(replay.input));
+        assertEquals(replay.input[0], originalReasoning);
+        assertEquals(replay.store, false);
+      } finally {
+        firstClient?.close();
+        secondClient?.close();
+        await waitForMicrotasks();
+      }
+    }),
+  );
 });
 
 // Exercises the session-level item cache directly: createResponsesWsSession

@@ -31,7 +31,7 @@ describe('StatefulResponsesStore', () => {
       contentHash: 'output-hash',
       createdAt: 1_000,
     };
-    writer.stageOutputItem(output, 0);
+    await writer.persistOutputItem(output, 0);
     await writer.commitSnapshot('resp_saved', 'append');
 
     // A store=false turn writes nothing but must still resolve a
@@ -57,7 +57,7 @@ describe('StatefulResponsesStore', () => {
       contentHash: 'output-hash',
       createdAt: 1_000,
     };
-    store.stageOutputItem(output, 0);
+    await store.persistOutputItem(output, 0);
     await store.commitSnapshot('resp_saved', 'append');
 
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_saved');
@@ -82,7 +82,7 @@ describe('StatefulResponsesStore', () => {
       contentHash: 'output-hash',
       createdAt: 1_000,
     };
-    store.stageOutputItem(output, 0);
+    await store.persistOutputItem(output, 0);
     await store.commitSnapshot('resp_compact', 'replace');
 
     expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await hashResponsesItemContent(input)])).toEqual([]);
