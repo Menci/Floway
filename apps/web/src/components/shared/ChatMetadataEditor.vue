@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Shared editor for a chat/embedding/audio model's `limits` + `chat` metadata.
+// Shared editor for a chat/embedding model's `limits` + `chat` metadata.
 // Hosts the Limits + Modalities + Reasoning sub-blocks consumed by both
 // `ModelEditor.vue` (a real catalog row's editor) and
 // `AliasEditDialog.vue` (the alias's announced-metadata override).
@@ -12,8 +12,8 @@
 //
 // Kind-gated sub-blocks:
 //   - `chat`      → Limits + Modalities + Reasoning.
-//   - `embedding` / `audio` → Limits only.
-//   - `image`               → renders nothing (callers should not mount this).
+//   - `embedding` → Limits only.
+//   - `image` / `audio` → renders nothing (callers should not mount this).
 
 import { computed, ref, watch } from 'vue';
 
@@ -34,7 +34,7 @@ const emit = defineEmits<{
 const value = computed<AnnouncedMetadata>(() => props.modelValue ?? {});
 const editable = computed(() => props.mode === 'manual');
 const showChatBlocks = computed(() => props.kind === 'chat');
-const renderAnything = computed(() => props.kind !== 'image');
+const renderAnything = computed(() => props.kind === 'chat' || props.kind === 'embedding');
 
 // Known Codex CLI effort presets as of v0.137. Codex's wire type is open
 // (ReasoningEffort::Custom(String)) so any string is accepted upstream;

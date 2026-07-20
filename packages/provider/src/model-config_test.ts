@@ -206,6 +206,14 @@ describe('modelsField chat integration', () => {
     expect(model.kind).toBe('audio');
   });
 
+  test('rejects an explicit kind that disagrees with the endpoint family', () => {
+    expect(() => modelsField([{
+      upstreamModelId: 'transcriber',
+      kind: 'audio',
+      endpoints: { chatCompletions: {} },
+    }], 'p')).toThrow(/kind audio does not match endpoint-derived kind chat/);
+  });
+
   test('rejects chat on non-chat kind', () => {
     expect(() => modelsField([{
       upstreamModelId: 'm',

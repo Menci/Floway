@@ -190,7 +190,7 @@ const onChatMetadataChange = (next: AnnouncedMetadata | undefined) => {
         </section>
 
         <ChatMetadataEditor
-          v-if="rowKind !== 'image'"
+          v-if="rowKind === 'chat' || rowKind === 'embedding'"
           :model-value="chatMetadataValue"
           :kind="rowKind"
           :mode="editable ? 'manual' : 'auto'"

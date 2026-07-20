@@ -88,7 +88,7 @@ const computedAnnouncedMetadata = computed<AnnouncedMetadata>(() =>
 
 const overrideEnabled = computed<boolean>(() => announcedOverride.value !== null);
 
-const showAnnouncedSection = computed(() => kind.value !== 'image');
+const showAnnouncedSection = computed(() => kind.value === 'chat' || kind.value === 'embedding');
 
 const announcedSectionExpanded = ref(false);
 const toggleAnnouncedSection = () => { announcedSectionExpanded.value = !announcedSectionExpanded.value; };
@@ -123,7 +123,7 @@ const onAnnouncedChange = (next: AnnouncedMetadata | undefined) => {
 // carry a `chat` block).
 watch(kind, k => {
   if (announcedOverride.value === null) return;
-  if (k === 'image') {
+  if (k === 'image' || k === 'audio') {
     announcedOverride.value = null;
     return;
   }
