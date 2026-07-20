@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { isResponsesItemId, responsesItemId } from './format.ts';
+import { responsesItemId } from './identity.ts';
 import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
@@ -28,7 +28,7 @@ const memoryOutputHarness = () => {
   return { repo, store: createResponsesHttpStore('key-a', true) };
 };
 
-test('client output rewrites response and item ids inside queued envelopes', async () => {
+test('client output rewrites only the response id inside queued envelopes', async () => {
   const { store } = memoryOutputHarness();
   const queued: ResponsesResult = {
     id: 'resp_upstream',
@@ -53,10 +53,10 @@ test('client output rewrites response and item ids inside queued envelopes', asy
   });
   const frame = output[0];
   if (frame.type !== 'event' || frame.event.type !== 'response.queued') throw new Error('expected queued event');
-  expect(frame.event.response.output[0].id).not.toBe('rs_upstream');
+  expect(frame.event.response.output[0].id).toBe('rs_upstream');
 });
 
-test('client output rewrites ids and persists the exact complete item before terminal', async () => {
+test('client output preserves producer ids and persists the exact complete item before terminal', async () => {
   const { repo, store } = memoryOutputHarness();
   const result: ResponsesResult = {
     id: 'resp_upstream',
@@ -80,7 +80,7 @@ test('client output rewrites ids and persists the exact complete item before ter
   expect(terminal?.type).toBe('response.completed');
   if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
   const publicItem = terminal.response.output[0];
-  expect(publicItem.id).not.toBe('rs_upstream');
+  expect(publicItem.id).toBe('rs_upstream');
   const rows = await repo.responsesItems.lookupMany('key-a', [publicItem.id!]);
   expect(rows[0].payload.item).toEqual(publicItem);
   expect(rows[0].payload.item).toMatchObject({ encrypted_content: 'wrapped-affinity' });
@@ -137,7 +137,7 @@ test('client output does not publish output_item.done when persistence fails', a
   await expect(iterator.next()).rejects.toBe(persistenceError);
 });
 
-test('store=false passes the upstream item id through and mints no gateway id', async () => {
+test('store=false passes the producer item id through without persistence', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const store = createResponsesHttpStore('key-a', false);
@@ -158,8 +158,7 @@ test('store=false passes the upstream item id through and mints no gateway id', 
 
   const terminal = events.at(-1);
   if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
-  // The envelope id stays gateway-owned, but the item id is the upstream's own
-  // so the origin upstream recognizes it if the client echoes it next turn.
+  // The envelope id stays Floway-owned, while item identity remains producer-owned.
   expect(terminal.response.id).toBe('resp_public');
   expect(terminal.response.output[0].id).toBe('rs_upstream');
   const added = events.find(event => event.type === 'response.output_item.added');
@@ -347,7 +346,7 @@ test('client output makes every finalized item durable before publishing its don
     if (next.value?.type !== 'event' || next.value.event.type !== 'response.output_item.done') {
       throw new Error('Expected finalized output item');
     }
-    expect(next.value.event.item.id).not.toBe(item.id);
+    expect(next.value.event.item.id).toBe(item.id);
     expect(await repo.responsesItems.lookupMany('key-a', [next.value.event.item.id!])).toHaveLength(1);
   }
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
@@ -357,8 +356,8 @@ test('client output makes every finalized item durable before publishing its don
   expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toHaveLength(items.length);
 });
 
-test('client output mints and persists one lifecycle id for an id-less item', async () => {
-  const { repo, store } = memoryOutputHarness();
+test('client output refuses to persist an id-less upstream item', async () => {
+  const { store } = memoryOutputHarness();
   const item = {
     type: 'message' as const,
     role: 'assistant' as const,
@@ -375,26 +374,19 @@ test('client output mints and persists one lifecycle id for an id-less item', as
     incomplete_details: null,
   };
 
-  const events: ResponsesStreamEvent[] = [];
-  for await (const frame of wrapResponsesClientOutput(frames(result), {
-    store,
-    responseId: 'resp_public',
-  })) if (frame.type === 'event') events.push(frame.event);
+  const collect = async () => {
+    for await (const _frame of wrapResponsesClientOutput(frames(result), {
+      store,
+      responseId: 'resp_public',
+    })) { /* drain */ }
+  };
 
-  const itemIds = events.flatMap(event => {
-    if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') return [event.item.id];
-    if (event.type === 'response.completed') return event.response.output.map(output => output.id);
-    return [];
-  });
-  expect(new Set(itemIds).size).toBe(1);
-  const [clientId] = itemIds;
-  expect(typeof clientId === 'string' && isResponsesItemId(clientId)).toBe(true);
-  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toHaveLength(1);
-  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toContain(clientId);
+  await expect(collect()).rejects.toThrow('Cannot persist Responses message output without an id');
 });
 
-test('client output binds a later delta item_id to an id-less lifecycle', async () => {
-  const { store } = memoryOutputHarness();
+test('store=false leaves an id-less lifecycle and later child item_id unchanged', async () => {
+  initRepo(new InMemoryRepo());
+  const store = createResponsesHttpStore('key-a', false);
   const item = {
     type: 'message' as const,
     role: 'assistant' as const,
@@ -430,8 +422,8 @@ test('client output binds a later delta item_id to an id-less lifecycle', async 
   if (added?.type !== 'response.output_item.added' || delta?.type !== 'response.output_text.delta') {
     throw new Error('Expected added and delta events');
   }
-  expect(isResponsesItemId(added.item.id!)).toBe(true);
-  expect(delta.item_id).toBe(added.item.id);
+  expect(added.item.id).toBeUndefined();
+  expect(delta.item_id).toBe('msg_late_upstream');
 });
 
 test('client output forwards terminal item drift while retaining the first done snapshot', async () => {
