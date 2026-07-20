@@ -26,7 +26,7 @@
 
 Floway is an LLM API gateway. It exposes OpenAI Completions, Anthropic
 Messages, OpenAI Responses, OpenAI Chat Completions, Embeddings, OpenAI
-Images, and Google Gemini-compatible APIs over a unified upstream
+Images, OpenAI Audio Transcriptions, and Google Gemini-compatible APIs over a unified upstream
 model. Provider kinds are
 `copilot`, `custom`, `azure`, `codex` (ChatGPT subscription via the
 Codex CLI's OAuth client), `claude-code` (Claude.ai Pro/Max subscription
@@ -120,6 +120,19 @@ returns structured fetch failures for native-facing callers; its translation
 adapter maps those failures onto each pair's existing image-drop semantics.
 `packages/gateway` (the gateway core) imports only platform contracts and is
 ESLint-prohibited from reaching into any `apps/platform-*`.
+
+Audio transcription is a buffered OpenAI-compatible multipart passthrough.
+The full body is parsed before routing because `model` may follow `file`; an
+ordered semantic form preserves duplicate text fields and uploaded file
+bytes/name/type while each candidate replaces only the upstream model id.
+Models use kind `audio` and declare `audioTranscriptions`. Custom, Azure, and
+Ollama providers implement the call; Ollama catalog discovery does not infer
+audio support, so its audio models are operator-authored. Successful bodies
+remain raw across JSON, verbose JSON, text, SRT, and VTT. Streaming responses
+reuse the shared SSE writer and terminate on `transcript.text.done` without a
+Chat `[DONE]` sentinel. Usage records always count the request; explicit token
+metrics use `tokens_1m`, explicit duration seconds use the `minutes` unit, and
+missing metrics remain request-only.
 
 ## Workspace Layout
 

@@ -18,6 +18,13 @@ describe('ChatMetadataEditor', () => {
     expect(w.html().trim()).toBe('<!--v-if-->');
   });
 
+  it('renders nothing when kind="audio"', () => {
+    const wrapper = mount(ChatMetadataEditor, {
+      props: { modelValue: baseValue(), kind: 'audio', mode: 'manual' },
+    });
+    expect(wrapper.text()).toBe('');
+  });
+
   it('kind="embedding" renders only the Limits section — no Modalities, no Reasoning', () => {
     const w = mount(ChatMetadataEditor, {
       props: { modelValue: baseValue(), kind: 'embedding', mode: 'manual' },

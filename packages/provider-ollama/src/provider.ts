@@ -1,7 +1,7 @@
 // Ollama provider. Builds a ProviderModel catalog from /api/tags + /api/show
 // (see fetch-models.ts) and routes inference through Ollama's OpenAI-/
 // Anthropic-compat shims at /v1/chat/completions, /v1/responses, /v1/messages,
-// /v1/completions, /v1/embeddings — the same paths the cloud (ollama.com) and
+// /v1/completions, /v1/embeddings, /v1/audio/transcriptions — the same paths the cloud (ollama.com) and
 // self-hosted Ollama daemons share. Authentication is a single optional
 // bearer token.
 //
@@ -14,6 +14,11 @@
 // Vision, tool calling, and reasoning/thinking are request-time features, not
 // per-endpoint capabilities, so they do not change routing. They surface to
 // the dashboard via the model's `chat` field for display purposes only.
+//
+// Audio has no dedicated /api/show capability. The transcription route is
+// therefore available only to manual config.models[] entries declaring the
+// semantic endpoint; ordinary catalog rows stay chat/embedding.
+// https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/middleware/openai.go#L682-L789
 //
 // Manual config.models[] entries override auto-fetched models with the same
 // upstreamModelId, mirroring the custom provider's pinning behavior.

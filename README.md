@@ -21,11 +21,17 @@ target ships in the same repo for self-hosting on a long-lived process.
 | OpenAI Embeddings                       | `POST /v1/embeddings`         |
 | OpenAI Images                           | `POST /v1/images/generations` |
 | OpenAI Image Edits                      | `POST /v1/images/edits`       |
+| OpenAI Audio Transcriptions             | `POST /v1/audio/transcriptions` |
 | OpenAI Models                           | `GET  /v1/models`             |
 | Google Gemini (generate / count tokens) | `POST /v1beta/models/...`     |
 
 `POST /v1/images/edits` accepts multipart image uploads and JSON `images`
 references.
+
+`POST /v1/audio/transcriptions` accepts buffered multipart audio uploads and
+forwards JSON, verbose JSON, text, SRT, VTT, or transcription SSE responses.
+Custom, Azure, and Ollama upstreams can serve models of kind `audio`; every
+model must explicitly declare the `audioTranscriptions` endpoint.
 
 For each public model, Floway picks the first (provider, model) pair that can
 serve the request, translating between source and target protocols when the
@@ -266,10 +272,11 @@ Chat aliases (kind `chat`) can carry per-target rules — reasoning
 effort, verbosity, service tier, and Anthropic thinking configuration.
 Rules apply post-translate on the chosen target IR; a rule with no
 native slot on that target is dropped by design. Passthrough aliases
-(kinds `embedding` / `image`) must have empty rules.
+(kinds `embedding` / `image` / `audio`) must have empty rules.
 
-Schema and the seeded `codex-auto-review` alias live in
-`packages/gateway/migrations/0046_model_aliases.sql`; behavior and
+Schema and the seeded `codex-auto-review` alias originate in
+`packages/gateway/migrations/0046_model_aliases.sql`; the open model-kind
+constraint lives in `0062_model_alias_kind.sql`. Behavior and
 rule-mapping details are covered in [RESOLUTION.md](./RESOLUTION.md) and
 [TRANSLATION.md](./TRANSLATION.md).
 

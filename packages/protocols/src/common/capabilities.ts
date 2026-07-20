@@ -32,7 +32,8 @@ export type ModelEndpointKey = keyof ModelEndpoints;
 
 // Derive the high-level model kind from the supported endpoints. Each model
 // belongs to exactly one kind. `embeddings` implies embedding,
-// `imagesGenerations`/`imagesEdits` implies image, everything else is chat.
+// `audioTranscriptions` implies audio, `imagesGenerations`/`imagesEdits`
+// implies image, and every remaining endpoint belongs to chat.
 // Mixed endpoint sets (e.g. a model tagged with both `embeddings` and
 // `chatCompletions`) are configuration errors; the first matching branch wins.
 // `kind` is a pure projection of `endpoints`; the dispatch layer never reads it.
