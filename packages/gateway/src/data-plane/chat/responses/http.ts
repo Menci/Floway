@@ -3,6 +3,7 @@ import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
+import { loadCodexUltraConfig } from '../../codex/ultra-config.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
@@ -70,20 +71,27 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
 const parsePayload = (requestBody: RequestBody): CanonicalResponsesPayload =>
   canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesRequestPayload);
 
+const generate = async (c: AuthedContext, codexUltraRedirectEffort: string | null): Promise<Response> => {
+  const requestBody = await readRequestBody(c);
+  let ctx: ChatGatewayCtx | undefined;
+  try {
+    const payload = parsePayload(requestBody);
+    const wantsStream = payload.stream === true;
+    ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c), codexUltraRedirectEffort }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+    const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
+    const response = await respondResponses(c, result, wantsStream, ctx);
+    return finalizeGatewayResponse(ctx, response);
+  } catch (error) {
+    return await respondToThrow(c, error, requestBody, ctx);
+  }
+};
+
 export const responsesHttp = {
-  generate: async (c: AuthedContext): Promise<Response> => {
-    const requestBody = await readRequestBody(c);
-    let ctx: ChatGatewayCtx | undefined;
-    try {
-      const payload = parsePayload(requestBody);
-      const wantsStream = payload.stream === true;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
-      const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
-      const response = await respondResponses(c, result, wantsStream, ctx);
-      return finalizeGatewayResponse(ctx, response);
-    } catch (error) {
-      return await respondToThrow(c, error, requestBody, ctx);
-    }
+  generate: async (c: AuthedContext): Promise<Response> => await generate(c, null),
+
+  generateCodex: async (c: AuthedContext): Promise<Response> => {
+    const config = await loadCodexUltraConfig();
+    return await generate(c, config.enabled ? config.redirectEffort : null);
   },
 
   compact: async (c: AuthedContext): Promise<Response> => {

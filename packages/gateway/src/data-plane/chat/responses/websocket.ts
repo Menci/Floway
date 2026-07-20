@@ -5,6 +5,7 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
+import { loadCodexUltraConfig } from '../../codex/ultra-config.ts';
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
@@ -75,12 +76,12 @@ interface ResponsesWebSocketClientEvent {
   [key: string]: unknown;
 }
 
-export const responsesWebSocket = async (c: AuthedContext): Promise<Response> => {
+const openResponsesWebSocket = async (c: AuthedContext, codexUltraRedirectEffort: string | null): Promise<Response> => {
   if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
     return Response.json({ error: 'Expected Upgrade: websocket' }, { status: 426 });
   }
 
-  const events = createResponsesWebSocketEvents(c);
+  const events = createResponsesWebSocketEvents(c, codexUltraRedirectEffort);
   if (_responsesWebSocketUpgradeResolver !== null) {
     return await _responsesWebSocketUpgradeResolver(c, events);
   }
@@ -97,7 +98,14 @@ export const responsesWebSocket = async (c: AuthedContext): Promise<Response> =>
   return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
 };
 
-const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHandlers => {
+export const responsesWebSocket = async (c: AuthedContext): Promise<Response> => await openResponsesWebSocket(c, null);
+
+export const codexResponsesWebSocket = async (c: AuthedContext): Promise<Response> => {
+  const config = await loadCodexUltraConfig();
+  return await openResponsesWebSocket(c, config.enabled ? config.redirectEffort : null);
+};
+
+const createResponsesWebSocketEvents = (c: AuthedContext, codexUltraRedirectEffort: string | null): ResponsesWebSocketHandlers => {
   // The upgrade authenticates the connection, but every response.create is a
   // separate data-plane request. Codex deliberately reuses one socket across
   // turns, so retain the presented credential and resolve it again before each
@@ -165,7 +173,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
           const abortController = new AbortController();
           activeAbortController = abortController;
           try {
-            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler);
+            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler, codexUltraRedirectEffort);
           } finally {
             if (activeAbortController === abortController) activeAbortController = undefined;
           }
@@ -189,6 +197,7 @@ const handleClientMessage = async (
   downstreamAbortController: AbortController,
   isClosed: () => boolean,
   backgroundScheduler: BackgroundScheduler,
+  codexUltraRedirectEffort: string | null,
 ): Promise<void> => {
   const signal = downstreamAbortController.signal;
   let eventId: string | undefined;
@@ -240,6 +249,7 @@ const handleClientMessage = async (
       method: 'WS',
       model: payload.model,
       backgroundScheduler,
+      codexUltraRedirectEffort,
     }, apiKeyId => session.createStore(apiKeyId, payload.store ?? undefined));
 
     let result;
