@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
-import { isResponsesResponseId } from './items/format.ts';
+import { isResponsesItemId, isResponsesResponseId } from './items/format.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -188,6 +188,97 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
+test('POST /v1/responses makes a done reasoning item reusable before terminal', async () => {
+  installRepo();
+  const originalReasoning = {
+    type: 'reasoning' as const,
+    id: 'rs_upstream',
+    summary: [],
+    encrypted_content: 'opaque',
+  };
+  const observedBodies: Array<Omit<CanonicalResponsesPayload, 'model'>> = [];
+  let releaseFirst!: () => void;
+  const firstReleased = new Promise<void>(resolve => { releaseFirst = resolve; });
+  let responseCall = 0;
+  const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
+    observedBodies.push(body as Omit<CanonicalResponsesPayload, 'model'>);
+    responseCall += 1;
+    if (responseCall === 1) {
+      const inProgress = {
+        ...makeResponsesResult('resp_first'),
+        status: 'in_progress' as const,
+        output: [],
+        output_text: '',
+      };
+      return {
+        action: 'generate',
+        ok: true,
+        events: (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+          yield eventFrame({ type: 'response.created', response: inProgress });
+          yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: originalReasoning });
+          yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: originalReasoning });
+          await firstReleased;
+        })(),
+        modelKey: 'test-model-key',
+        headers: new Headers(),
+      };
+    }
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents([completedEvent('resp_second')]),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  const candidate = makeCandidate({ callResponses });
+  queueResolution([candidate]);
+  queueResolution([candidate]);
+
+  const firstResponse = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'first', store: true, stream: true }),
+  });
+  const reader = firstResponse.body?.getReader();
+  if (reader === undefined) throw new Error('Expected streaming response body');
+  const decoder = new TextDecoder();
+  let buffered = '';
+  let publicReasoning: typeof originalReasoning | undefined;
+  while (publicReasoning === undefined) {
+    const next = await reader.read();
+    if (next.done) throw new Error('Response ended before output_item.done');
+    buffered += decoder.decode(next.value, { stream: true });
+    for (const block of buffered.split('\n\n')) {
+      if (!block.startsWith('event: response.output_item.done\n')) continue;
+      const data = block.split('\n').find(line => line.startsWith('data: '))?.slice(6);
+      if (data === undefined) throw new Error('output_item.done had no data line');
+      const event = JSON.parse(data) as { item: typeof originalReasoning };
+      publicReasoning = event.item;
+    }
+  }
+  assert(isResponsesItemId(publicReasoning.id));
+  assert(publicReasoning.encrypted_content !== originalReasoning.encrypted_content);
+  await reader.cancel();
+
+  try {
+    const secondResponse = await makeApp().request('/v1/responses', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        model: 'test-model',
+        store: true,
+        input: [publicReasoning, { type: 'message', role: 'user', content: 'continue' }],
+      }),
+    });
+    assertEquals(secondResponse.status, 200);
+    await secondResponse.json();
+    assertEquals(observedBodies[1]?.input[0], originalReasoning);
+  } finally {
+    releaseFirst();
+  }
+});
+
 test('POST /v1/responses canonicalizes and promotes an implicit system message', async () => {
   installRepo();
   let observedBody: Omit<CanonicalResponsesPayload, 'model'> | undefined;
@@ -299,6 +390,7 @@ test('POST /v1/responses terminates an SSE stream with error when an output item
     const body = await response.text();
     assert(body.includes('event: error'));
     assert(body.includes('simulated item persistence failure'));
+    assert(!body.includes('event: response.output_item.done'));
     assert(!body.includes('event: response.completed'));
   } finally {
     persistence.mockRestore();

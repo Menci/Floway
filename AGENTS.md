@@ -210,8 +210,11 @@ protocol owns its `affinity/ingress.ts` and `affinity/egress.ts`. Wire behavior
 lives in `AFFINITY.md`, and candidate ordering lives in `RESOLUTION.md`.
 
 Native Responses persistence is independent from affinity. It stores complete
-API-key-scoped items and snapshots for 30 days; HTTP `store: false` writes no
-state, while WebSocket `store: false` is session-local.
+API-key-scoped items and snapshots for 30 days. A completed output item becomes
+reusable at `response.output_item.done`, so its row commits before that event is
+published; the response snapshot commits at the successful terminal event.
+HTTP `store: false` writes no state, while WebSocket `store: false` is
+session-local.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, translation pair layout, control-plane route surface, flag
