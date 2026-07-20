@@ -225,7 +225,7 @@ export const recordUsage = async (
       if (options.unitMismatch !== 'unpriced') {
         throw new Error(`Usage dimension ${dimension} is measured in ${usageUnit} but priced in ${pricingUnit}`);
       }
-      if (applicableRates !== null && applicableRates[dimension] !== undefined) {
+      if (applicableRates?.[dimension] !== undefined) {
         const { [dimension]: _mismatchedRate, ...matchingRates } = applicableRates;
         applicableRates = matchingRates;
       }

@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
@@ -150,6 +150,51 @@ test('/v1/audio/transcriptions forwards VTT verbatim and records request-only us
   assertEquals(usage.dimensions, []);
 });
 
+test('/v1/audio/transcriptions skips JSON parsing for text responses without warning', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await withMockedFetch(
+      () => new Response('plain transcript', { headers: { 'content-type': 'text/plain' } }),
+      async () => {
+        const response = await requestApp('/v1/audio/transcriptions', {
+          method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['response_format', 'text']]),
+        });
+        assertEquals(await response.text(), 'plain transcript');
+      },
+    );
+    assertEquals(warnSpy.mock.calls.length, 0);
+  } finally {
+    warnSpy.mockRestore();
+  }
+});
+
+test('/v1/audio/transcriptions warns on malformed declared JSON while forwarding it raw', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await withMockedFetch(
+      () => new Response('{not-json', { headers: { 'content-type': 'application/json' } }),
+      async () => {
+        const response = await requestApp('/v1/audio/transcriptions', {
+          method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+        });
+        assertEquals(response.status, 200);
+        assertEquals(await response.text(), '{not-json');
+      },
+    );
+    await flushAsyncWork();
+    const [usage] = await repo.usage.listAll();
+    assertEquals(usage.requests, 1);
+    assertEquals(usage.dimensions, []);
+    assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('failed to parse 2xx upstream body for /audio/transcriptions')), true);
+  } finally {
+    warnSpy.mockRestore();
+  }
+});
+
 test('/v1/audio/transcriptions does not invent a content type for an untyped raw response', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
@@ -267,6 +312,33 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.neutral, 1);
   assertEquals(performance.errorsNoOutput, 0);
+});
+
+test('/v1/audio/transcriptions completes and cancels an upstream kept open after transcript.text.done', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  let upstreamCancelled = false;
+  const encoder = new TextEncoder();
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"type":"transcript.text.delta","delta":"hel"}\n\n'));
+        controller.enqueue(encoder.encode('data: {"type":"transcript.text.done","text":"hello"}\n\n'));
+      },
+      cancel() {
+        upstreamCancelled = true;
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }),
+    async () => {
+      const response = await requestApp('/v1/audio/transcriptions', {
+        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
+      });
+      const text = await response.text();
+      assertEquals(text.includes('transcript.text.done'), true);
+      assertEquals(text.includes('[DONE]'), false);
+    },
+  );
+  assertEquals(upstreamCancelled, true);
 });
 
 test('/v1/audio/transcriptions treats EOF without transcript.text.done as a failed request', async () => {

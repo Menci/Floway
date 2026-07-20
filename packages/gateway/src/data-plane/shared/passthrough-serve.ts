@@ -187,11 +187,18 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       const contentType = response.headers.get('content-type')?.replace(/;.*$/u, '').trim().toLowerCase();
       if (contentType !== 'text/event-stream') {
         let measurement = requestOnlyUsageMeasurement();
-        try {
-          measurement = responseHandling.extractUsage(await response.clone().json());
-        } catch {
-          // text/srt/vtt and JSON bodies from providers without usage are
-          // successful request-only observations, not parse failures.
+        const jsonMediaType = contentType === 'application/json' || contentType?.endsWith('+json') === true;
+        if (jsonMediaType) {
+          let parsed: unknown;
+          try {
+            parsed = await response.clone().json();
+          } catch (error) {
+            console.warn(
+              `passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be request-only`,
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+          if (parsed !== undefined) measurement = responseHandling.extractUsage(parsed);
         }
         ctx.dump?.success(identity, measurement.dumpTokenUsage);
         settleUsageMeasurement(ctx, performanceContext, identity, measurement, false);
@@ -225,6 +232,8 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
               if (isAudioTranscriptionDoneEvent(event)) {
                 terminalEventSeen = true;
                 measurement = responseHandling.extractUsage(event);
+                yield frame;
+                return;
               }
               yield frame;
             }
