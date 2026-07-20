@@ -5,6 +5,7 @@ import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, UsageRecord } from './types.ts';
+import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageDimensions } from './usage-dimensions.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -27,8 +28,7 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   hour: '2026-07-12T00',
   pricingSelector: {},
   requests: 1,
-  tokens: { input: 300_000, input_cache_read: 20_000, output: 100_000 },
-  rates: longPricing,
+  dimensions: tokenUsageDimensions({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, longPricing),
   ...overrides,
 });
 
@@ -50,12 +50,12 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
     }
     db.run(sql);
   }
-  const usageRows = db.exec('SELECT pricing_selector, tokens, unit_price FROM usage ORDER BY tokens')[0]!.values;
+  const usageRows = db.exec('SELECT pricing_selector, unit, quantity, unit_price FROM usage ORDER BY quantity')[0]!.values;
   const requestRows = db.exec('SELECT pricing_selector, requests FROM usage_requests ORDER BY requests')[0]!.values;
   assertEquals(usageRows, [
-    ['{}', 10, 1],
-    ['{"serviceTier":"  "}', 20, 2],
-    ['{"serviceTier":"pri\\"雪"}', 30, 3],
+    ['{}', 'tokens_1m', 10, 1],
+    ['{"serviceTier":"  "}', 'tokens_1m', 20, 2],
+    ['{"serviceTier":"pri\\"雪"}', 'tokens_1m', 30, 3],
   ]);
   assertEquals(requestRows, [
     ['{}', 1],
@@ -72,19 +72,19 @@ for (const backend of backends) {
     assertEquals(row.pricingSelector, { inputTokens: { operator: 'gt', value: 272000 } });
     // The whole bucket is priced at the long-band rates, not the base rates.
     // Only dimensions that carry tokens get a unit-price snapshot.
-    assertEquals(row.rates, { input: 10, input_cache_read: 1, output: 45 });
+    assertEquals(tokenRatesFromUsage(row), { input: 10, input_cache_read: 1, output: 45 });
   });
 
   test(`${backend.name} usage repo keeps different input-length bands in separate buckets`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ rates: { input: 5, input_cache_read: 0.5, output: 30 }, pricingSelector: {}, tokens: { input: 100, input_cache_read: 20, output: 50 } }));
-    await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } }, tokens: { input: 300_000, input_cache_read: 20_000, output: 100_000 } }));
+    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 100, input_cache_read: 20, output: 50 }, { input: 5, input_cache_read: 0.5, output: 30 }), pricingSelector: {} }));
+    await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } }, dimensions: tokenUsageDimensions({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, longPricing) }));
     const rows = (await query(repo)).sort((a, b) => Object.keys(a.pricingSelector).length - Object.keys(b.pricingSelector).length);
     assertEquals(rows.length, 2);
     assertEquals(rows[0].pricingSelector, {});
-    assertEquals(rows[0].rates, { input: 5, input_cache_read: 0.5, output: 30 });
+    assertEquals(tokenRatesFromUsage(rows[0]), { input: 5, input_cache_read: 0.5, output: 30 });
     assertEquals(rows[1].pricingSelector, { inputTokens: { operator: 'gt', value: 272000 } });
-    assertEquals(rows[1].rates, { input: 10, input_cache_read: 1, output: 45 });
+    assertEquals(tokenRatesFromUsage(rows[1]), { input: 10, input_cache_read: 1, output: 45 });
   });
 
   test(`${backend.name} usage repo sums additive writes within one pricing entry`, async () => {
@@ -93,23 +93,23 @@ for (const backend of backends) {
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } }));
     const rows = await query(repo);
     assertEquals(rows.length, 1);
-    assertEquals(rows[0].tokens, { input: 600_000, input_cache_read: 40_000, output: 200_000 });
+    assertEquals(tokenCountsFromUsage(rows[0]), { input: 600_000, input_cache_read: 40_000, output: 200_000 });
     assertEquals(rows[0].requests, 2);
   });
 
   test(`${backend.name} usage repo stores requests from models without pricing as unpriced`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ rates: null, pricingSelector: {} }));
+    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, null), pricingSelector: {} }));
     const [row] = await query(repo);
-    assertEquals(row.rates, null);
+    assertEquals(tokenRatesFromUsage(row), null);
   });
 
   test(`${backend.name} usage repo keeps an unpriced first-write snapshot when later writes are priced`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ rates: null, tokens: { input: 100 } }));
-    await repo.usage.record(record({ rates: { input: 7 }, tokens: { input: 200 } }));
+    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 100 }, null) }));
+    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 200 }, { input: 7 }) }));
     const [row] = await query(repo);
-    assertEquals(row.tokens, { input: 300 });
-    assertEquals(row.rates, null);
+    assertEquals(tokenCountsFromUsage(row), { input: 300 });
+    assertEquals(tokenRatesFromUsage(row), null);
   });
 }
