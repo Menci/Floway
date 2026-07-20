@@ -35,7 +35,7 @@ const EMBEDDING_TOKENS = new Set([
   'voyage',
 ]);
 
-const AUDIO_TRANSCRIPTION_TOKENS = new Set(['whisper', 'transcribe', 'transcription']);
+const AUDIO_TRANSCRIPTION_TOKENS = new Set(['whisper', 'transcribe']);
 
 export const inferEndpointsFromModelId = (id: string): ModelEndpoints | null => {
   const lower = id.toLowerCase();
