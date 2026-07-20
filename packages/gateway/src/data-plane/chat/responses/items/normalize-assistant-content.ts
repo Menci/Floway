@@ -5,7 +5,7 @@
 // items when echoed back as input on the next turn:
 //   `Invalid value: 'input_text'. Supported values are: 'output_text' and
 //    'refusal'.`
-// We normalize the rewritten payload (i.e. after `item_reference` items have
+// We normalize the hydrated payload (i.e. after `item_reference` items have
 // been expanded from the snapshot store) so a turn that replays prior
 // upstream-produced history — direct client echo, snapshot expansion,
 // compaction tail — always crosses the wire with the canonical assistant

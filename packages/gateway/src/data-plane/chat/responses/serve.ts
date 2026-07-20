@@ -53,7 +53,7 @@ export const responsesServe = {
     const { payload, ctx, headers } = args;
     // Compact accepts `previous_response_id` (the official endpoint documents
     // it). When present serve-prep expands it the same way generate does so
-    // the candidate rewrite can restore the stored history before dispatch.
+    // stored history is hydrated before candidate dispatch.
     //
     // For non-responses targets the responses-compact-shim picks up the
     // request inside the interceptor chain, flips action='compact' to

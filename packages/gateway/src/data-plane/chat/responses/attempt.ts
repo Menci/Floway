@@ -71,7 +71,7 @@ type ResponsesAttemptGenerateArgs = Omit<ResponsesAttemptInvokeArgs, 'action'>;
 // outside this candidate attempt. Native serve passes the already-hydrated
 // candidate payload plus any private source state; translated inner Responses
 // calls pass only their translated payload. Keeping this function free of
-// affinity decoding, state hydration, public-id minting, and persistence
+// affinity decoding, state hydration, and persistence
 // prevents an inner Responses target from owning another source protocol's
 // client-visible state.
 export const responsesAttempt = {
