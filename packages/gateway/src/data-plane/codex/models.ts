@@ -18,6 +18,8 @@ import type { Context } from 'hono';
 
 import { resolveCodexCatalog, type CatalogModel, type CodexCatalog } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
+import { applyCodexUltraCatalogSupport } from './ultra-catalog.ts';
+import { loadCodexUltraConfig, type CodexUltraConfig } from './ultra-config.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -33,6 +35,7 @@ import type { Fetcher } from '@floway-dev/provider';
 export const assembleCatalog = (
   bundled: CodexCatalog,
   addressable: readonly AddressableIdEntry[],
+  ultraConfig: CodexUltraConfig = { enabled: false, redirectEffort: 'max' },
 ): CodexCatalog => {
   const bundledBySlug = new Map<string, CatalogModel>();
   for (const m of bundled.models) bundledBySlug.set(m.slug.toLowerCase(), m);
@@ -59,7 +62,8 @@ export const assembleCatalog = (
     // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
     if (entry.model.kind !== 'chat') continue;
-    models.push(synthesizeCatalogEntry(entry.model, matchBundled(entry.model.id)));
+    const model = synthesizeCatalogEntry(entry.model, matchBundled(entry.model.id));
+    models.push(applyCodexUltraCatalogSupport(model, ultraConfig));
   }
   return { models };
 };
@@ -69,12 +73,13 @@ const computeCatalog = async (
   upstreamIds: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  ultraConfig: CodexUltraConfig,
 ): Promise<CodexCatalog> => {
   const [bundled, addressable] = await Promise.all([
     resolveCodexCatalog(userAgent),
     enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
   ]);
-  return assembleCatalog(bundled, addressable);
+  return assembleCatalog(bundled, addressable, ultraConfig);
 };
 
 export const codexModels = async (c: Context): Promise<Response> => {
@@ -82,5 +87,6 @@ export const codexModels = async (c: Context): Promise<Response> => {
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
   const scheduler = backgroundSchedulerFromContext(c);
-  return Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler));
+  const ultraConfig = await loadCodexUltraConfig();
+  return Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler, ultraConfig));
 };
