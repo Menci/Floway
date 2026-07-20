@@ -272,9 +272,9 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const pricing = pricingField(value.pricing, `${label}.pricing`);
   const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
-  const endpointKind = kindForEndpoints(endpoints);
-  if (kind !== endpointKind) {
-    throw new Error(`Malformed ${label}: kind ${kind} does not match endpoint-derived kind ${endpointKind}`);
+  const hasAudioEndpoint = endpoints.audioTranscriptions !== undefined;
+  if ((kind === 'audio') !== hasAudioEndpoint) {
+    throw new Error(`Malformed ${label}: kind audio and endpoint audioTranscriptions must be declared together`);
   }
   const chat = chatField(value.chat, `${label}.chat`);
   if (chat !== undefined && kind !== 'chat') {

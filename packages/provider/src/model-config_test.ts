@@ -206,12 +206,20 @@ describe('modelsField chat integration', () => {
     expect(model.kind).toBe('audio');
   });
 
-  test('rejects an explicit kind that disagrees with the endpoint family', () => {
+  test('rejects an audio kind without its semantic endpoint', () => {
     expect(() => modelsField([{
       upstreamModelId: 'transcriber',
       kind: 'audio',
       endpoints: { chatCompletions: {} },
-    }], 'p')).toThrow(/kind audio does not match endpoint-derived kind chat/);
+    }], 'p')).toThrow(/kind audio and endpoint audioTranscriptions must be declared together/);
+  });
+
+  test('rejects the audio endpoint under another kind', () => {
+    expect(() => modelsField([{
+      upstreamModelId: 'transcriber',
+      kind: 'chat',
+      endpoints: { audioTranscriptions: {} },
+    }], 'p')).toThrow(/kind audio and endpoint audioTranscriptions must be declared together/);
   });
 
   test('rejects chat on non-chat kind', () => {
