@@ -1,5 +1,4 @@
-import type { UsageDimensionRecord, UsageRecord } from './types.ts';
-import type { TokenUsage } from './types.ts';
+import type { TokenUsage, UsageDimensionRecord, UsageRecord } from './types.ts';
 import { BILLING_DIMENSIONS, type PriceUnits, type PriceVector } from '@floway-dev/protocols/common';
 
 export const usageDimensionRows = (record: UsageRecord): UsageDimensionRecord[] => record.dimensions.filter(row => row.quantity > 0);

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { tokenUsageDimensions } from '../../repo/usage-dimensions.ts';
+import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const seedUsage = async (
