@@ -31,7 +31,7 @@ export const parseBillingDimension = (value: unknown, label = 'billing dimension
   throw new TypeError(`${label} is invalid: ${JSON.stringify(value)}`);
 };
 
-export const BILLING_UNITS = ['tokens_1m', 'minutes', 'searches_1k'] as const;
+export const BILLING_UNITS = ['tokens_1m', 'minutes'] as const;
 export type BillingUnit = typeof BILLING_UNITS[number];
 
 export const parseBillingUnit = (value: unknown, label = 'billing unit'): BillingUnit => {
@@ -42,7 +42,6 @@ export const parseBillingUnit = (value: unknown, label = 'billing unit'): Billin
 export const BILLING_UNIT_SCALES: Readonly<Record<BillingUnit, number>> = {
   tokens_1m: 1_000_000,
   minutes: 60,
-  searches_1k: 1_000,
 };
 
 // The input-side dimensions. Their disjoint sum is a request's total prompt

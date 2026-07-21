@@ -19,7 +19,7 @@ import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
-import { MODEL_KINDS } from '@floway-dev/protocols/common';
+import { BILLING_UNITS, MODEL_KINDS } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -67,7 +67,7 @@ const pricingDimensionShape = {
   output_image: z.number().nonnegative().optional(),
 };
 
-const billingUnitSchema = z.enum(['tokens_1m', 'minutes', 'searches_1k']);
+const billingUnitSchema = z.enum(BILLING_UNITS);
 const pricingUnitShape = {
   input: billingUnitSchema.optional(),
   output: billingUnitSchema.optional(),

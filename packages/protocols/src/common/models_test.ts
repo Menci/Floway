@@ -26,6 +26,7 @@ test('parseModelKind accepts the current model families and rejects unknown stor
 
 test('billing storage parsers accept current vocabulary and reject unknown values', () => {
   assertEquals(parseBillingDimension('input'), 'input');
+  assertEquals(parseBillingUnit('tokens_1m'), 'tokens_1m');
   assertEquals(parseBillingUnit('minutes'), 'minutes');
   assertThrows(() => parseBillingDimension('reasoning'), TypeError, 'billing dimension is invalid: "reasoning"');
   assertThrows(() => parseBillingUnit('requests'), TypeError, 'billing unit is invalid: "requests"');
