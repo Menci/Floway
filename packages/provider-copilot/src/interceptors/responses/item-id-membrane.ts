@@ -226,11 +226,17 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
   }
 
   if (event.type === 'error' || event.type === 'ping') return event;
-  if (NO_ITEM_ID_EVENT_TYPES.has(event.type)) return event;
+  const carrier = event as ResponsesStreamEvent & { item_id?: unknown; output_index?: unknown };
+  if (NO_ITEM_ID_EVENT_TYPES.has(event.type)) {
+    if (!Object.hasOwn(carrier, 'item_id')) return event;
+    if (typeof carrier.item_id !== 'string' || typeof carrier.output_index !== 'number') {
+      throw new TypeError(`Copilot Responses event '${event.type}' carries an invalid item_id extension`);
+    }
+    return { ...carrier, item_id: trackedAt(state, carrier.output_index).publicId } as ResponsesStreamEvent;
+  }
   if (!ITEM_ID_EVENT_TYPES.has(event.type)) {
     throw new TypeError(`Unsupported Copilot Responses stream event type '${event.type}'`);
   }
-  const carrier = event as ResponsesStreamEvent & { item_id?: unknown; output_index?: unknown };
   if (typeof carrier.item_id !== 'string') {
     throw new TypeError(`Copilot Responses event '${event.type}' is missing item_id`);
   }

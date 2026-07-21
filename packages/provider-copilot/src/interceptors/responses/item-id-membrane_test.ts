@@ -217,6 +217,33 @@ test('preserves shell command events that carry no item id', async () => {
   expect(events.slice(1, 4)).toEqual(commandEvents);
 });
 
+test('rewrites a future item_id extension on a shell command event', async () => {
+  const item: ResponsesOutputItem = {
+    type: 'shell_call',
+    id: 'sh_raw',
+    call_id: 'call_shell',
+    action: { commands: ['pwd'] },
+    status: 'completed',
+  };
+  const extended = {
+    type: 'response.shell_call_command.delta',
+    output_index: 0,
+    command_index: 0,
+    delta: 'pwd',
+    item_id: 'sh_raw',
+  } as unknown as ResponsesStreamEvent;
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, item)),
+    eventFrame(extended),
+    eventFrame(outputItemEvent('done', 0, item)),
+  ]);
+  const frames = await collect(result);
+  const added = eventAt(frames, 'response.output_item.added');
+  const command = eventAt(frames, 'response.shell_call_command.delta') as typeof extended & { item_id: string };
+
+  expect(command.item_id).toBe(added.item.id);
+});
+
 test('rewrites apply-patch diff item ids', async () => {
   const item: ResponsesOutputItem = {
     type: 'apply_patch_call',

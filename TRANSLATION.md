@@ -260,13 +260,14 @@ The same boundary runs for both `/v1/responses` (streaming) and
   carries the provider's own plaintext `{version, origin, id}` trailer;
   foreign blobs and items without blobs pass through unchanged
 - allocates a stable type-correct random provider-facing ID as soon as each
-  streaming output item is added, rewrites its child and later frames to that
-  ID, and appends each frame's matching raw ID behind every available
+  streaming output item is added, rewrites its ID-bearing child and later
+  frames to that ID, and appends each frame's matching raw ID behind every available
   reasoning, compaction, program, or agent-message blob. A source state store
   with a write backing aliases this provider-facing ID; otherwise it passes
-  through. The compact value path applies the same rule to its generated
-  compaction item. Unknown Copilot output types fail closed before a raw ID can
-  reach the client
+  through. Verified shell-command child frames carry only `output_index` and
+  pass through unchanged. The compact value path applies the same rule to its
+  generated compaction item. Unknown Copilot output types fail closed before a
+  raw ID can reach the client
 
 ### Responses — Codex provider boundary chain
 
