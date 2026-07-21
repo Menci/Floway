@@ -205,7 +205,7 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
     });
     errors.add(`All pricing entries must set the same rate fields: ${differences.join('; ')}.`);
   }
-  if (unitDimensionIssue?.code === 'unit-dimensions') {
+  if (unitDimensionIssue) {
     const missing = unitDimensionIssue.missingDimensions.map(rateFieldName);
     const added = unitDimensionIssue.addedDimensions.map(rateFieldName);
     const differences = [
@@ -290,7 +290,7 @@ const toggleThresholdOperator = (index: number, axisId: string) => {
 
 const updatePricingRate = (index: number, dimension: BillingDimension, raw: string | number | null | undefined) => {
   const value = parseOptionalNumber(raw);
-  if (value !== undefined && pricingEntryDrafts.value[index]?.rates[dimension] === undefined && pricingUnits.value[dimension] === undefined) {
+  if (value !== undefined && pricingEntryDrafts.value[index]!.rates[dimension] === undefined && pricingUnits.value[dimension] === undefined) {
     pricingUnits.value = { ...pricingUnits.value, [dimension]: NEW_RATE_BILLING_UNIT[props.kind] };
   }
   writePricingEntries(pricingEntryDrafts.value.map((draft, entryIndex) => {
