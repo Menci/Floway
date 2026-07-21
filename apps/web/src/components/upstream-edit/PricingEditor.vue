@@ -47,11 +47,12 @@ interface PricingField {
 }
 
 const tokenPricingField = (dimension: BillingDimension): PricingField => ({ dimension, unit: 'tokens_1m' });
+const tokenPricingFields = (...dimensions: BillingDimension[]): PricingField[] => dimensions.map(tokenPricingField);
 
 const PRICING_FIELDS_BY_KIND: Record<ModelKind, readonly PricingField[]> = {
-  chat: ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'output'].map(tokenPricingField),
-  embedding: [tokenPricingField('input')],
-  image: ['input', 'input_image', 'output', 'output_image'].map(tokenPricingField),
+  chat: tokenPricingFields('input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'output'),
+  embedding: tokenPricingFields('input'),
+  image: tokenPricingFields('input', 'input_image', 'output', 'output_image'),
   rerank: [tokenPricingField('input'), { dimension: 'input', unit: 'searches_1k' }],
 };
 
