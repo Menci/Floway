@@ -2,9 +2,6 @@
 
 ## Hard Rules
 
-- Do not open a Pull Request without explicit human approval. The human must
-  understand the goal and risk, read the AI-generated code and PR text, and
-  believe code, docs, and tests are internally consistent.
 - Do not create commits on the main branch unless the human explicitly asks
   for a commit. Inside a git worktree (any non-main branch), commit every
   change immediately and autonomously — do not ask first, and do not leave
@@ -21,6 +18,18 @@
   absence from the working tree is the statement.
 - Keep this file aligned with real architecture. When something changes,
   rewrite the relevant section; do not accrete contradictory notes.
+
+## Pull Requests
+
+Open a Pull Request only when the human explicitly includes PR work in the
+request. That request authorizes creating the PR; do not ask for a separate
+approval when the PR is ready to open.
+
+For stacked PRs, every PR that does not target `main` must remain a draft.
+After any PR in the stack is merged, reevaluate the remaining stack. For each
+PR whose dependencies are now all present on `main`, retarget it to `main` if
+needed and publish it by marking it ready for review. PRs with unmerged
+dependencies remain targeted at their predecessor branches and remain drafts.
 
 ## Project
 
