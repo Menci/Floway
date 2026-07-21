@@ -1078,9 +1078,14 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       await this.finishPayloadWrites(writes, error);
     }
     const persisted = await this.finishPayloadWrites(writes, null);
-    for (const write of writes) {
+    const reconciled = writes.map(write => {
       const descriptor = persisted.get(scopedResponsesKey(write.item.apiKeyId, write.item.id));
-      if (descriptor === undefined) continue;
+      if (descriptor === undefined) {
+        throw new Error(`Responses item disappeared after payload reconciliation: ${write.item.id}`);
+      }
+      return { write, descriptor };
+    });
+    for (const { write, descriptor } of reconciled) {
       assertSameStoredResponsesItem(write.item, {
         ...write.item,
         payload: await parseStoredResponsesPayload(write.item.id, descriptor.payloadJson),
@@ -1088,10 +1093,8 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         createdAt: descriptor.createdAt,
       });
     }
-    const staleItems = writes.flatMap(write => {
-      const descriptor = persisted.get(scopedResponsesKey(write.item.apiKeyId, write.item.id));
-      return descriptor !== undefined && descriptor.createdAt < createdAt ? [write.item] : [];
-    });
+    const staleItems = reconciled.flatMap(({ write, descriptor }) =>
+      descriptor.createdAt < createdAt ? [write.item] : []);
     if (staleItems.length > 0) await this.refreshMany(staleItems, createdAt);
   }
 
