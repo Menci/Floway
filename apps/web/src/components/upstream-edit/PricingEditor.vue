@@ -5,7 +5,6 @@ import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import {
   collectModelPricingIssues,
   BILLING_DIMENSIONS,
-  BILLING_UNITS,
   PRICING_AXES,
   canonicalPricingSelectorKey,
   type BillingDimension,
@@ -17,7 +16,7 @@ import {
   type PricingSelector,
   type PricingThresholdOperator,
 } from '@floway-dev/protocols/common';
-import { Button, Input, Select } from '@floway-dev/ui';
+import { Button, Input } from '@floway-dev/ui';
 
 const props = defineProps<{
   kind: ModelKind;
@@ -31,7 +30,6 @@ const BILLING_UNIT_LABELS: Record<BillingUnit, string> = {
   tokens_1m: '1M tokens',
   minutes: 'Minute',
 };
-const BILLING_UNIT_OPTIONS = BILLING_UNITS.map(value => ({ value, label: BILLING_UNIT_LABELS[value] }));
 
 const PRICING_LABELS: Record<BillingDimension, string> = {
   input: 'Input',
@@ -43,18 +41,18 @@ const PRICING_LABELS: Record<BillingDimension, string> = {
   output_image: 'Image Output',
 };
 
-const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
-  chat: ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'output'],
-  embedding: ['input'],
-  image: ['input', 'input_image', 'output', 'output_image'],
-  audio: ['input', 'output'],
-};
+interface PricingField {
+  readonly dimension: BillingDimension;
+  readonly unit: BillingUnit;
+}
 
-const NEW_RATE_BILLING_UNIT: Record<ModelKind, (dimension: BillingDimension) => BillingUnit | undefined> = {
-  chat: () => 'tokens_1m',
-  embedding: () => 'tokens_1m',
-  image: () => 'tokens_1m',
-  audio: dimension => dimension === 'output' ? 'tokens_1m' : undefined,
+const tokenPricingField = (dimension: BillingDimension): PricingField => ({ dimension, unit: 'tokens_1m' });
+
+const PRICING_FIELDS_BY_KIND: Record<ModelKind, readonly PricingField[]> = {
+  chat: ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'output'].map(tokenPricingField),
+  embedding: [tokenPricingField('input')],
+  image: ['input', 'input_image', 'output', 'output_image'].map(tokenPricingField),
+  audio: [tokenPricingField('input'), { dimension: 'input', unit: 'minutes' }, tokenPricingField('output')],
 };
 
 interface PricingThresholdDraft {
@@ -113,10 +111,16 @@ const coordinateKey = (draft: PricingEntryDraft): string | null => {
 };
 
 const basePricingEntry = computed(() => pricingEntryDrafts.value.find(draft => coordinateKey(draft) === '{}'));
-const visiblePricingDimensions = computed(() => BILLING_DIMENSIONS.filter(dimension =>
-  PRICING_BY_KIND[props.kind].includes(dimension)
-  || pricingUnits.value[dimension] !== undefined
-  || pricingEntryDrafts.value.some(draft => draft.rates[dimension] !== undefined)));
+const pricingFieldKey = ({ dimension, unit }: PricingField): string => `${dimension}:${unit}`;
+
+const visiblePricingFields = computed<readonly PricingField[]>(() => {
+  const fields = new Map(PRICING_FIELDS_BY_KIND[props.kind].map(field => [pricingFieldKey(field), field]));
+  for (const dimension of BILLING_DIMENSIONS) {
+    const unit = pricingUnits.value[dimension];
+    if (unit !== undefined) fields.set(pricingFieldKey({ dimension, unit }), { dimension, unit });
+  }
+  return [...fields.values()];
+});
 
 const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
   const labels = PRICING_AXES.flatMap(axis => {
@@ -154,13 +158,11 @@ const formatList = (values: readonly string[]): string => {
 
 const rateFieldName = (dimension: BillingDimension): string => PRICING_LABELS[dimension];
 
-const billingUnitLabel = (dimension: BillingDimension): string => {
-  const unit = pricingUnits.value[dimension];
-  if (unit !== undefined) return BILLING_UNIT_LABELS[unit];
-  if (pricingEntryDrafts.value.some(draft => draft.rates[dimension] !== undefined)) return 'unit required';
-  const newRateUnit = NEW_RATE_BILLING_UNIT[props.kind](dimension);
-  return newRateUnit === undefined ? 'select unit' : BILLING_UNIT_LABELS[newRateUnit];
-};
+const pricingFieldLabel = ({ dimension, unit }: PricingField): string =>
+  `${rateFieldName(dimension)} ($/${BILLING_UNIT_LABELS[unit]})`;
+
+const pricingFieldRate = (draft: PricingEntryDraft, { dimension, unit }: PricingField): number | undefined =>
+  pricingUnits.value[dimension] === unit ? draft.rates[dimension] : undefined;
 
 const pricingValidationErrors = computed<readonly string[]>(() => {
   const errors = new Set<string>();
@@ -260,12 +262,6 @@ const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
   pricing.value = { units, entries };
 };
 
-const updatePricingUnit = (dimension: BillingDimension, unit: BillingUnit) => {
-  if (!props.editable) return;
-  pricingUnits.value = { ...pricingUnits.value, [dimension]: unit };
-  writePricingEntries(pricingEntryDrafts.value);
-};
-
 const updateEqualityCoordinate = (index: number, axisId: string, raw: string | number | null | undefined) => {
   const value = String(raw ?? '').trim();
   writePricingEntries(pricingEntryDrafts.value.map((draft, entryIndex) => entryIndex === index
@@ -294,14 +290,12 @@ const toggleThresholdOperator = (index: number, axisId: string) => {
   updateThresholdCoordinate(index, axisId, { operator });
 };
 
-const updatePricingRate = (index: number, dimension: BillingDimension, raw: string | number | null | undefined) => {
+const updatePricingRate = (index: number, field: PricingField, raw: string | number | null | undefined) => {
   const value = parseOptionalNumber(raw);
   if (pricingEntryDrafts.value[index] === undefined) throw new RangeError(`Pricing entry index is out of range: ${index}`);
-  const isNewPricingDimension = pricingEntryDrafts.value.every(draft => draft.rates[dimension] === undefined);
-  const newRateUnit = NEW_RATE_BILLING_UNIT[props.kind](dimension);
-  if (value !== undefined && isNewPricingDimension && pricingUnits.value[dimension] === undefined && newRateUnit !== undefined) {
-    pricingUnits.value = { ...pricingUnits.value, [dimension]: newRateUnit };
-  }
+  const { dimension, unit } = field;
+  if (value === undefined && pricingUnits.value[dimension] !== unit) return;
+  if (value !== undefined) pricingUnits.value = { ...pricingUnits.value, [dimension]: unit };
   writePricingEntries(pricingEntryDrafts.value.map((draft, entryIndex) => {
     if (entryIndex !== index) return draft;
     const rates = { ...draft.rates };
@@ -343,18 +337,6 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
   <section>
     <div class="mb-3">
       <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Pricing Entries</h3>
-    </div>
-    <div v-if="pricingEntryDrafts.length > 0" class="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4" aria-label="Pricing billing units">
-      <label v-for="dimension in visiblePricingDimensions.filter(dimension => basePricingEntry?.rates[dimension] !== undefined)" :key="dimension" class="block space-y-1.5">
-        <span class="block text-xs font-medium text-gray-500">{{ rateFieldName(dimension) }} unit</span>
-        <Select
-          :model-value="pricingUnits[dimension]"
-          :options="BILLING_UNIT_OPTIONS"
-          placeholder="Select unit"
-          :disabled="!editable"
-          @update:model-value="value => updatePricingUnit(dimension, value as BillingUnit)"
-        />
-      </label>
     </div>
     <div class="pricing-entry-container overflow-hidden rounded-lg border border-white/[0.06]" aria-label="Pricing entry form">
       <div class="pricing-entry-layout">
@@ -451,16 +433,16 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
             </label>
           </div>
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <label v-for="dimension in visiblePricingDimensions" :key="dimension" class="block space-y-1.5">
-              <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dimension] }} ($/{{ billingUnitLabel(dimension) }})</span>
+            <label v-for="field in visiblePricingFields" :key="pricingFieldKey(field)" class="block space-y-1.5">
+              <span class="block text-xs font-medium text-gray-500">{{ pricingFieldLabel(field) }}</span>
               <Input
                 type="number"
                 min="0"
-                :model-value="selectedPricingEntry.rates[dimension]"
+                :model-value="pricingFieldRate(selectedPricingEntry, field)"
                 :readonly="!editable"
                 placeholder="unpriced"
                 class="font-mono"
-                @update:model-value="value => updatePricingRate(selectedPricingEntryIndex, dimension, value)"
+                @update:model-value="value => updatePricingRate(selectedPricingEntryIndex, field, value)"
               />
             </label>
           </div>
