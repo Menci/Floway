@@ -13,10 +13,12 @@ CREATE TABLE usage_new (
 WITH formatted_usage AS (
   SELECT
     key_id, model, upstream, model_key, hour, pricing_selector,
-    dimension, tokens, unit_price,
+    dimension, tokens, typeof(tokens) AS quantity_type, unit_price,
     typeof(unit_price) AS decimal_type,
     CASE
       WHEN unit_price IS NULL THEN NULL
+      WHEN typeof(unit_price) = 'integer' THEN CAST(unit_price AS TEXT)
+      WHEN typeof(unit_price) != 'real' THEN NULL
       ELSE (
         WITH RECURSIVE precisions(digit_count) AS (
           VALUES (1)
@@ -79,10 +81,13 @@ SELECT
     WHEN 'output' THEN 'output_tokens'
     WHEN 'output_image' THEN 'output_image_tokens'
   END,
-  CAST(tokens AS TEXT),
+  CASE
+    WHEN quantity_type = 'integer' AND tokens >= 0 THEN CAST(tokens AS TEXT)
+    ELSE json('invalid legacy usage quantity')
+  END,
   CASE
     WHEN unit_price IS NULL THEN NULL
-    WHEN decimal_type NOT IN ('integer', 'real') OR unit_price < 0 THEN json('invalid legacy usage unit price')
+    WHEN decimal_type NOT IN ('integer', 'real') OR unit_price < 0 OR decimal_text IS NULL THEN json('invalid legacy usage unit price')
     WHEN unit_price = 0 THEN '0'
     WHEN decimal_position <= 0 THEN sign || '0.' || printf('%0*d', -decimal_position, 0) || digits
     WHEN decimal_position >= length(digits) THEN sign || digits || printf('%0*d', decimal_position - length(digits), 0)
