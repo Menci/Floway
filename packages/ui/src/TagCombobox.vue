@@ -13,12 +13,14 @@
 // and permanently disable free-form add.
 // Ref: reka-ui 2.9.8 TagsInput/TagsInputInput.vue + Listbox/ListboxRoot.vue.
 import {
-  ComboboxAnchor, ComboboxContent, ComboboxEmpty, ComboboxGroup, ComboboxInput,
-  ComboboxItem, ComboboxItemIndicator, ComboboxPortal, ComboboxRoot, ComboboxTrigger,
-  ComboboxViewport, TagsInputInput, TagsInputItem, TagsInputItemDelete, TagsInputRoot,
+  ComboboxAnchor, ComboboxEmpty, ComboboxGroup, ComboboxInput,
+  ComboboxItem, ComboboxItemIndicator, ComboboxRoot, ComboboxTrigger,
+  TagsInputInput, TagsInputItem, TagsInputItemDelete, TagsInputRoot,
   useFilter,
 } from 'reka-ui';
 import { computed, ref, watch } from 'vue';
+
+import ListboxPopover from './internal/ListboxPopover.vue';
 
 interface Item {
   value: string;
@@ -94,37 +96,29 @@ watch(value, () => { query.value = ''; }, { deep: true });
       </TagsInputRoot>
     </ComboboxAnchor>
 
-    <ComboboxPortal>
-      <ComboboxContent
-        position="popper"
-        :side-offset="4"
-        class="z-50 max-h-72 w-[--reka-combobox-trigger-width] overflow-hidden rounded-[10px] border border-white/[0.06] bg-surface-800 shadow-xl"
-      >
-        <ComboboxViewport class="p-1">
-          <ComboboxEmpty class="px-2 py-1.5 text-xs text-gray-500">
-            {{ emptyText }}
-          </ComboboxEmpty>
-          <ComboboxGroup>
-            <ComboboxItem
-              v-for="item in filteredItems"
-              :key="item.value"
-              :value="item.value"
-              :class="[
-                'relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-sm outline-none data-[highlighted]:bg-accent-cyan/10 data-[highlighted]:text-accent-cyan',
-                isHighlighted(item.value) ? 'text-accent-cyan' : 'text-white',
-              ]"
-            >
-              <span class="absolute left-2 flex size-3.5 items-center justify-center">
-                <ComboboxItemIndicator>
-                  <i class="i-lucide-check size-3.5 text-accent-cyan" />
-                </ComboboxItemIndicator>
-              </span>
-              <span class="truncate">{{ item.label }}</span>
-              <span v-if="item.detail" class="ml-auto pl-3 font-mono text-xs text-gray-500">{{ item.detail }}</span>
-            </ComboboxItem>
-          </ComboboxGroup>
-        </ComboboxViewport>
-      </ComboboxContent>
-    </ComboboxPortal>
+    <ListboxPopover>
+      <ComboboxEmpty class="px-2 py-1.5 text-xs text-gray-500">
+        {{ emptyText }}
+      </ComboboxEmpty>
+      <ComboboxGroup>
+        <ComboboxItem
+          v-for="item in filteredItems"
+          :key="item.value"
+          :value="item.value"
+          :class="[
+            'relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-sm outline-none data-[highlighted]:bg-accent-cyan/10 data-[highlighted]:text-accent-cyan',
+            isHighlighted(item.value) ? 'text-accent-cyan' : 'text-white',
+          ]"
+        >
+          <span class="absolute left-2 flex size-3.5 items-center justify-center">
+            <ComboboxItemIndicator>
+              <i class="i-lucide-check size-3.5 text-accent-cyan" />
+            </ComboboxItemIndicator>
+          </span>
+          <span class="truncate">{{ item.label }}</span>
+          <span v-if="item.detail" class="ml-auto pl-3 font-mono text-xs text-gray-500">{{ item.detail }}</span>
+        </ComboboxItem>
+      </ComboboxGroup>
+    </ListboxPopover>
   </ComboboxRoot>
 </template>

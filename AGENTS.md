@@ -2,9 +2,6 @@
 
 ## Hard Rules
 
-- Do not open a Pull Request without explicit human approval. The human must
-  understand the goal and risk, read the AI-generated code and PR text, and
-  believe code, docs, and tests are internally consistent.
 - Do not create commits on the main branch unless the human explicitly asks
   for a commit. Inside a git worktree (any non-main branch), commit every
   change immediately and autonomously — do not ask first, and do not leave
@@ -21,6 +18,18 @@
   absence from the working tree is the statement.
 - Keep this file aligned with real architecture. When something changes,
   rewrite the relevant section; do not accrete contradictory notes.
+
+## Pull Requests
+
+Open a Pull Request only when the human explicitly includes PR work in the
+request. That request authorizes creating the PR; do not ask for a separate
+approval when the PR is ready to open.
+
+For stacked PRs, every PR that does not target `main` must remain a draft.
+After any PR in the stack is merged, reevaluate the remaining stack. For each
+PR whose dependencies are now all present on `main`, retarget it to `main` if
+needed and publish it by marking it ready for review. PRs with unmerged
+dependencies remain targeted at their predecessor branches and remain drafts.
 
 ## Project
 
@@ -103,25 +112,16 @@ kind (`kind: 'claude-code'`); and vendor-locked provider packages
 request/header mimicry captured verbatim from a live wire probe with a
 reference URL.
 
+## Architecture
+
 Stack: Hono on Web APIs, TypeScript, pnpm, Vitest. The dashboard is a
 Vue + Vite SPA. Cloudflare Workers is the production deployment target;
 Node.js (`node:sqlite` + `sharp` + filesystem) is a parallel deployment
-target with the same Hono app and the same `packages/gateway/migrations` SQL.
-The `@floway-dev/platform` package owns the abstract runtime contracts
-(`FileProvider`, `ImageProcessor`, `ExternalResourceFetcher`, `SqlDatabase`,
-`BackgroundScheduler`, `EnvGetter`, `SocketDial`); each `apps/platform-*`
-app supplies the concrete impls (including the runtime's root-CA list as a
-plain `readonly string[]`) and its own entry. External-resource fetchers make
-one credential-free GET with redirects exposed to the caller; the Node
-implementation additionally pins DNS resolution to public addresses so
-untrusted URLs cannot reach local or special-purpose networks. The gateway's
-external-image loader owns redirect traversal, timeout and byte limits, then
-returns structured fetch failures for native-facing callers; its translation
-adapter maps those failures onto each pair's existing image-drop semantics.
-`packages/gateway` (the gateway core) imports only platform contracts and is
-ESLint-prohibited from reaching into any `apps/platform-*`.
-
-## Workspace Layout
+target with the same Hono app and the same `packages/gateway/migrations`
+SQL. The `@floway-dev/platform` package owns the abstract runtime
+contracts (`FileProvider`, `ImageProcessor`, `ExternalResourceFetcher`,
+`SqlDatabase`, `BackgroundScheduler`, `EnvGetter`, `SocketDial`); each
+`apps/platform-*` app supplies the concrete impls and its own entry.
 
 ```text
 Floway/
@@ -207,7 +207,7 @@ through `test.projects`.
 Client-carried affinity is a source-protocol membrane. Shared codec, routing,
 and request context live under `data-plane/chat/shared/affinity`; each source
 protocol owns its `affinity/ingress.ts` and `affinity/egress.ts`. Wire behavior
-lives in `AFFINITY.md`, and candidate ordering lives in `RESOLUTION.md`.
+lives in `docs/AFFINITY.md`, and candidate ordering lives in `docs/RESOLUTION.md`.
 
 Native Responses persistence is independent from affinity. It stores complete
 API-key-scoped items and snapshots for 30 days. A completed output item becomes
@@ -217,19 +217,27 @@ HTTP `store: false` writes no state, while WebSocket `store: false` is
 session-local.
 
 Everything else — provider interfaces, request execution flow, interceptor
-shapes, translation pair layout, control-plane route surface, flag
-resolution, pricing — lives in the code and its comments. Read the relevant
-directory.
+shapes, control-plane route surface, flag resolution, pricing — lives in
+the code and its comments. Translation pair layout, model resolution, and
+affinity wire behavior have dedicated specs under `docs/`.
 
 ## Verification
-
-Run from the repo root:
 
 ```bash
 pnpm run test                # vitest across all packages
 pnpm run lint                # eslint across the workspace
 pnpm run typecheck           # tsc --noEmit per package
 pnpm run test:agent-setup-installers  # assembled Agent Setup scripts vs. fake CLIs/installers (not in `test`)
+```
+
+To work on a single package, use pnpm filters (e.g.
+`pnpm --filter @floway-dev/translate run typecheck`). Wrangler commands
+go through the local dependency with `pnpm wrangler` or package scripts.
+When deploying, do not pass `--dry-run`.
+
+## Development
+
+```bash
 pnpm run dev                 # parallel wrangler dev (8788) + Vite dev (5174)
 pnpm run dev:node            # Node.js entry (tsx apps/platform-node/entry.ts)
 pnpm run deploy              # builds apps/web, then wrangler deploys apps/platform-cloudflare
@@ -238,40 +246,34 @@ pnpm run db:migrate:remote   # production D1
 ```
 
 `dev` runs the Worker on `http://127.0.0.1:8788` and the SPA on
-`http://localhost:5174`. For frontend development open the Vite SPA (5174):
-Vite proxies the gateway's HTTP paths to the Worker (see the canonical
-list in `apps/web/vite.config.ts`'s `wranglerProxiedPaths`), so relative-URL
-fetches in `apps/web` work identically in dev and prod. The Worker port
-serves the last built
-`apps/web/dist` via Workers Static Assets; direct SPA routes (e.g.
-`/login`, `/dashboard/...`) require
+`http://localhost:5174`. For frontend development open the Vite SPA
+(5174): Vite proxies the gateway's HTTP paths to the Worker (see the
+canonical list in `apps/web/vite.config.ts`'s `wranglerProxiedPaths`),
+so relative-URL fetches in `apps/web` work identically in dev and prod.
+The Worker port serves the last built `apps/web/dist` via Workers Static
+Assets; direct SPA routes (e.g. `/login`, `/dashboard/...`) require
 `assets.not_found_handling: "single-page-application"` plus the
 backend-only `assets.run_worker_first` route list in the gitignored
-`wrangler.jsonc` (see `wrangler.example.jsonc`). To work on a single
-package, use pnpm filters (e.g.
-`pnpm --filter @floway-dev/translate run typecheck`).
+`wrangler.jsonc` (see `wrangler.example.jsonc`).
 
 `dev:node` boots the Node deployment target. Configure via
-`FLOWAY_DB_PATH` (sqlite file path), `FLOWAY_FILES_DIR` (filesystem store
-root), `ADMIN_KEY` (admin secret; optional on dev, mandatory when
+`FLOWAY_DB_PATH` (sqlite file path), `FLOWAY_FILES_DIR` (filesystem
+store root), `ADMIN_KEY` (admin secret; optional on dev, mandatory when
 `NODE_ENV=production`), `PORT`, and optionally `RUNTIME_LOCATION`
 (instance tag used as the perf-telemetry `runtimeLocation` dimension and
 the dial-time colo-whitelist key — uppercased on read, defaults to
-`LOCAL` when unset). Default ports/paths in `apps/platform-node/entry.ts`.
-The Node entry runs `applyMigrations` against
-`packages/gateway/migrations/*.sql` at boot, then serves the same Hono app
-through `@hono/node-server`. Static-asset serving is Workers-only; the Node
-target serves no SPA.
+`LOCAL` when unset). The Node entry runs `applyMigrations` against
+`packages/gateway/migrations/*.sql` at boot, then serves the same Hono
+app through `@hono/node-server`. Static-asset serving is Workers-only;
+the Node target serves no SPA.
 
 The public Agent Setup installers are composed from the checked-in
-`packages/agent-setup/installers/{bash,powershell}/common/` fragments and the
-adjacent `{claude,codex}.{sh,ps1}` agent fragments. Each source fragment is
-embedded verbatim into `packages/agent-setup/src/script-assets.generated.ts`;
-regenerate with `pnpm --filter @floway-dev/agent-setup run generate-assets`
-(pass `--check` to fail on drift) after editing any fragment.
-
-Wrangler commands go through the local dependency with `pnpm wrangler` or
-package scripts. When deploying, do not pass `--dry-run`.
+`packages/agent-setup/installers/{bash,powershell}/common/` fragments
+and the adjacent `{claude,codex}.{sh,ps1}` agent fragments. Each source
+fragment is embedded verbatim into
+`packages/agent-setup/src/script-assets.generated.ts`; regenerate with
+`pnpm --filter @floway-dev/agent-setup run generate-assets` (pass
+`--check` to fail on drift) after editing any fragment.
 
 `ADMIN_KEY` is optional on dev instances so a fresh checkout is usable
 without any secret setup: with the env var unset (which is the default
@@ -292,8 +294,8 @@ in via `POST /auth/login`.
 
 When investigating Copilot upstream quirks, compare at least one other
 Copilot gateway implementation before inventing a policy. For generic
-adapter behavior, compare at least one Copilot gateway and one general LLM
-gateway. Do not cargo-cult from a single project.
+adapter behavior, compare at least one Copilot gateway and one general
+LLM gateway. Do not cargo-cult from a single project.
 
 ## Deployment
 
@@ -309,17 +311,19 @@ announce that the deploy is starting. That announcement is the only place
 during a deploy where the agent talks *to* the user instead of running the
 next tool.
 
-After that announcement the deploy is fully autonomous and must not stop.
-Never end a turn waiting for the user to reply or to take any action — no
-"shall I continue?", no "ready for Step 3?", no implicit pause after
-printing rollback commands, no waiting for the user to acknowledge the
-backup path. As soon as a step's tool output is in hand, the very next
-agent turn must call the next step's tool. The only legitimate reasons to
-stop are: the Worker is live and Step 3 succeeded, or a tool exited
-non-zero and the failure genuinely requires human judgement. Reporting
-findings, printing commands, and announcing the next step are inlined
-*alongside* the next tool call in the same turn — never as a standalone
-turn that ends and waits.
+After that announcement the deploy is autonomous and must not stop —
+except at Step 2 when breaking changes require user confirmation. Never
+end a turn waiting for the user to reply or to take any action outside of
+that single checkpoint — no "shall I continue?", no "ready for Step 4?",
+no implicit pause after printing rollback commands, no waiting for the
+user to acknowledge the backup path. As soon as a step's tool output is
+in hand, the very next agent turn must call the next step's tool. The
+only legitimate reasons to stop are: the Worker is live and Step 4
+succeeded, Step 2 is awaiting user confirmation of breaking changes, or a
+tool exited non-zero and the failure genuinely requires human judgement.
+Reporting findings, printing commands, and announcing the next step are
+inlined *alongside* the next tool call in the same turn — never as a
+standalone turn that ends and waits.
 
 When the user's request is the deploy itself — the human asked to deploy
 and not to deploy as the tail of a wider piece of work — git is read-only
@@ -327,7 +331,7 @@ for the duration of the deploy flow. This constraint covers git only;
 code and config edits are not bound by it and remain a per-situation
 judgement call. Inspection commands such as `git branch`, `git status`,
 `git log`, `git diff`, and `git show` are fine and are often needed to
-gather state for Step 1 and Step 2. Anything that mutates repository
+gather state for Steps 1 and 2. Anything that mutates repository
 state is forbidden: `git stash`, `git reset`, `git checkout` of files or
 branches, `git commit`, `git rebase`, `git merge`, `git pull`,
 `git push`, and any branch or tag creation/deletion.
@@ -346,11 +350,40 @@ pnpm wrangler deployments list \
 
 `deployments list` shows recent deployments with their version ids and
 marks the currently active one — that gives both the active deployment
-timestamp and the version id you would later roll back to.
+timestamp, the version id you would later roll back to, and the deploy
+message (which records the commit revision of that deployment).
 `d1 migrations list --remote` prints applied migrations and the pending
 diff this deploy would apply.
 
-**Step 2 — report findings and stage the rollback.** Tell the user the
+**Step 2 — declare breaking changes.** Extract the deploy message of the
+currently active deployment from Step 1's output. The message is a short
+commit revision (recorded by the previous deploy's `--message` flag). Use
+it to diff `CHANGELOG.md` between that revision and the current working
+tree:
+
+```bash
+git diff <PREVIOUS_COMMIT_REV> -- CHANGELOG.md
+```
+
+If the active deployment has no message, or its message is not a
+recognizable commit revision (i.e. it predates the introduction of this
+workflow), and the database shows applied migrations (confirming Floway
+is already running in production), treat the entire content of
+`CHANGELOG.md` as potentially new to the user.
+
+When the diff (or full content) contains new breaking-change entries,
+summarize their combined user-facing impact to the user. When the same
+area was broken by consecutive entries, do not enumerate each
+intermediate state — synthesize the net effect. Tell the user that all
+listed breaking changes are intentional, describe their impact, and ask
+the user to confirm before proceeding. This is the **only** point in the
+deploy flow where the agent pauses and waits for user input.
+
+When there are no new breaking-change entries, or when `CHANGELOG.md`
+does not exist at the previous revision and is empty now, skip
+confirmation and proceed to Step 3 immediately.
+
+**Step 3 — report findings and stage the rollback.** Tell the user the
 active version id, the active deployment timestamp, the latest applied
 migration, and the migrations this deploy will apply (or that there are
 none).
@@ -383,21 +416,23 @@ honored by the rollback handler.
 
 If no migrations are pending, skip the bookmark capture and the
 database-rollback command; give only the code-rollback command and
-proceed straight to Step 3.
+proceed straight to Step 4.
 
-**Step 3 — deploy with one chained command.** Migrate (when needed) and
+**Step 4 — deploy with one chained command.** Migrate (when needed) and
 publish in the same command so the system spends as little time as
-possible in an inconsistent state:
+possible in an inconsistent state. The deploy message is the short commit
+revision of HEAD at deploy time (`git rev-parse --short HEAD`):
 
 ```bash
-pnpm run db:migrate:remote && pnpm run deploy
+pnpm run db:migrate:remote && pnpm run deploy -- --message "$(git rev-parse --short HEAD)"
 ```
 
 Print this exact command before running it, and tell the user that if the
 deploy stops halfway they can rerun the same command to recover —
 `wrangler d1 migrations apply --remote` is idempotent on already-applied
 migrations and `wrangler deploy` always publishes the current code. When
-there are no pending migrations, the command reduces to `pnpm run deploy`.
+there are no pending migrations, the command reduces to
+`pnpm run deploy -- --message "$(git rev-parse --short HEAD)"`.
 
 Worker rollback by version id (`pnpm wrangler rollback <VERSION_ID>`)
 works across the 100 most recent versions, but Cloudflare blocks rollback
@@ -414,15 +449,53 @@ from `account_id`, the one personal-only key the gate allowlists). So
 plain code rollback stays safe; D1 state is rolled back separately as
 above.
 
-A complete deploy fits in a strict turn budget: **three agent turns when
-migrations are pending** (Step 1 = gather, Step 2 = bookmark + report +
-two rollback commands, Step 3 = deploy) and **two agent turns when no
-migrations are pending** (Step 2 collapses into Turn 1: gather + report +
-single code-rollback command; Turn 2 = deploy). A turn boundary in this
-flow exists only because a tool result has to arrive before the next tool
-call can be issued — it is never a checkpoint where the agent stops and
-waits for the user. Every turn in this budget ends on its step's tool
-call, and the agent re-enters the loop the instant that tool result
-returns. Do not insert extra turns to ask for confirmation along the way,
-and do not let any turn end on a text-only message that has no tool call
-attached.
+A complete deploy without breaking changes fits in a strict turn budget:
+**three agent turns when migrations are pending** (Step 1 = gather,
+Step 3 = bookmark + report + two rollback commands, Step 4 = deploy)
+and **two agent turns when no migrations are pending** (Step 3 collapses
+into Turn 1: gather + report + single code-rollback command; Turn 2 =
+deploy). Step 2 adds one turn only when new breaking-change entries
+exist — the agent presents them and pauses for user confirmation. A turn
+boundary in this flow exists only because a tool result has to arrive
+before the next tool call can be issued, or because user confirmation is
+required — it is never an arbitrary checkpoint. Every turn in this budget
+ends on its step's tool call (or on the breaking-change confirmation
+prompt), and the agent re-enters the loop the instant that tool result
+or user reply returns.
+
+## Breaking Changes (CHANGELOG.md)
+
+`CHANGELOG.md` records user-facing breaking changes. It is prepend-only:
+new entries go at the top, below the file header. Each entry has a date
+heading and a description of what broke and what users need to know.
+
+Each entry carries a severity: **hard** (all users are affected;
+previously working functionality fails or behaves differently) or
+**minor** (specific behaviors, fields, or integration patterns change;
+users who depend on them need to adapt, but the primary functionality
+continues to work). The date heading format is `## YYYY-MM-DD · hard`
+or `## YYYY-MM-DD · minor`.
+
+A change qualifies as a breaking change when it causes previously working
+user-facing behavior to stop working or behave differently in a way
+users must be aware of. Examples:
+
+- Affinity or routing redesigns that invalidate existing conversation
+  context, causing requests to route to unexpected upstreams.
+- Dropping stored state (Responses items, snapshots) that clients may
+  reference by id.
+- Removing or renaming fields from public API responses (`/models`,
+  data-plane output) that downstream consumers or cascaded Floway
+  instances read.
+
+The following are NOT breaking changes and must not appear:
+
+- Database schema migrations (internal storage detail).
+- Control-plane API changes (admin-only surface).
+- Export version bumps, internal refactors, new features that do not
+  alter existing behavior.
+
+When working on a change and it is unclear whether it constitutes a
+breaking change, do not unilaterally add a CHANGELOG entry — ask the
+user to make the call. The user declares what is breaking; the agent
+records it.

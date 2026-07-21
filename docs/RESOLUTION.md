@@ -146,9 +146,12 @@ enumerateModelCandidates({upstreamIds, model, kind, ...})            ← entry
    loop then cascades across the flat list, so a target's upstreams all
    failing over falls through into the next target's candidates instead
    of hard-failing at the first target. When no target has kind-matching
-   candidates, the resolver returns empty candidates + `sawModel: false`,
-   which surfaces as the regular model-missing 404 with the alias name
-   in the wording.
+   candidates and no target was seen under any kind, the resolver returns
+   empty candidates + `sawModel: false`, which surfaces as the regular
+   model-missing 404 with the alias name in the wording. When targets
+   exist in catalogs under a different kind, `sawModel: true` propagates
+   and the caller returns a 400 (model exists but cannot serve this
+   endpoint).
 3. When the inbound id is not an alias, run the real-catalog walk
    directly. If the walk returns at least one candidate, OR its
    `sawAnyId` is true (the id exists in some catalog under any kind), OR
@@ -259,10 +262,12 @@ target matches its own name) resolves to the real model on the first
 pass.
 
 The alias-resolved target id, not the alias name, is what dispatch
-addresses upstream. When no target has kind-matching candidates, the
-resolver returns empty candidates + `sawModel: false`, and the caller
-renders the regular model-missing 404 with the alias name (still on
-`payload.model`) in the wording. The upstream response's `model` field
+addresses upstream. When no target has kind-matching candidates and no
+target was seen under any kind, the resolver returns empty candidates +
+`sawModel: false`, and the caller renders the regular model-missing 404
+with the alias name (still on `payload.model`) in the wording. When
+targets exist under a different kind, `sawModel: true` surfaces a 400.
+The upstream response's `model` field
 reports the model that actually served the request, so a client that
 wants to attribute a response to a particular target can compare that
 against the id it sent. Alias listing behavior on `/v1/models`,
@@ -395,12 +400,8 @@ Candidates are ordered before they reach dispatch:
   one when both apply.
 
 Chat-shaped ingress authenticates client-carried affinity before dispatch.
-Ordinary carriers prefer the latest available candidate with the same upstream,
-model, and optional alias rules. Non-portable state forces the recorded
-upstream and model but never forces alias rules; an exact-rule preferred variant
-still wins when available. Affinity only reorders or narrows candidates already
-produced by resolution. Empty alias rules and absent direct-candidate rules both
-mean no overlay. Protocol placement and restoration are documented in
+Affinity only reorders or narrows candidates already produced by resolution;
+it never adds new ones. Protocol placement and restoration are documented in
 [AFFINITY.md](./AFFINITY.md).
 
 Serve dispatches the first candidate of the ordered list exactly once.

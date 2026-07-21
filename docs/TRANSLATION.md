@@ -16,42 +16,6 @@ canonical internal request IR. Provider-specific quirks live in provider-owned
 model projection or provider interceptor collections rather than inside pairwise
 translators.
 
-## Routing
-
-`/v1/messages` selects:
-
-1. native `/v1/messages`
-2. translated `/responses`
-3. translated `/chat/completions`
-
-`/v1/responses` selects:
-
-1. native `/responses`
-2. translated `/v1/messages`
-3. translated `/chat/completions`
-
-`/v1/chat/completions` selects:
-
-1. native `/chat/completions`
-2. translated `/v1/messages`
-3. translated `/responses`
-
-If no upstream's catalog advertises a capability-backed Chat target, the gateway
-returns a source-shaped unsupported-model error. It does not invent legacy
-model-name routing outside provider capability metadata. Copilot Claude models
-still route through Messages because the Copilot provider does not expose Chat
-support for them.
-
-`/v1beta/models/{model}:generateContent` and
-`/v1beta/models/{model}:streamGenerateContent` select:
-
-1. translated `/chat/completions`
-2. translated `/v1/messages`
-3. translated `/responses`
-
-If no upstream's catalog advertises a capability-backed Gemini generation target,
-the gateway returns a Gemini-shaped unsupported-model error.
-
 ## Boundary Rules
 
 - Pairwise translators preserve source semantics where the target API has a
@@ -682,13 +646,8 @@ Request mapping:
 - Responses function tools become Chat function tools, preserving `strict`.
   Freeform `custom` tools are wrapped as single-string function tools; see
   "Responses Custom Tool Wrapping".
-- Programmatic Tool Calling state is native-Responses-only: `additional_tools`,
-  `program`, `program_output`, program callers and tool declarations, deferred
-  tools, and forced programmatic choice are rejected rather than projected
-  lossily. Native Responses paths retain these items, caller metadata, and
-  opaque fingerprints whenever snapshot persistence is active; HTTP
-  `store: false` disables snapshots, while WebSocket `store: false` keeps them
-  only in the current session's memory.
+- Programmatic Tool Calling state handling is identical to Responses →
+  Messages (see above).
 
 Response mapping:
 
