@@ -14,6 +14,15 @@ Severity levels:
 
 ---
 
+## 2026-07-22 · hard
+
+**Responses stored state reset.**
+
+Responses item persistence now stores exact producer-owned IDs and payloads.
+Deploying this schema drops every existing Responses item and snapshot; old
+`previous_response_id` and stored `item_reference` chains will no longer
+resolve. Clients must start new stateful Responses chains after deployment.
+
 ## 2026-07-18 · hard
 
 **Affinity and Responses state reset.**
