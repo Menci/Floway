@@ -74,6 +74,40 @@ describe('PricingEditor', () => {
     });
   });
 
+  it('requires every minute-priced entry to be cleared before enabling token pricing', async () => {
+    const wrapper = mount(PricingEditor, {
+      props: {
+        modelValue: {
+          units: { input: 'minutes' },
+          entries: [
+            { rates: { input: 0.6 } },
+            { selector: { serviceTier: 'priority' }, rates: { input: 1.2 } },
+          ],
+        },
+        editable: true,
+        kind: 'audio',
+      },
+    });
+    const input = (label: string) => wrapper.findAll('label').find(candidate => candidate.text().includes(label))!.get('input');
+
+    expect(input('Input ($/MTok)').attributes('disabled')).toBeDefined();
+    await input('Input ($/Minute)').setValue('');
+    expect(input('Input ($/MTok)').attributes('disabled')).toBeDefined();
+
+    await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
+    await input('Input ($/Minute)').setValue('');
+    expect(input('Input ($/MTok)').attributes('disabled')).toBeUndefined();
+
+    await input('Input ($/MTok)').setValue('2');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: { input: 'tokens_1m' },
+      entries: [
+        { rates: {} },
+        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      ],
+    });
+  });
+
   it('defaults new audio output pricing to tokens', async () => {
     const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'audio' });
     const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/MTok)'))!.get('input');
