@@ -102,7 +102,7 @@ const carrierValueCount = (item: ResponsesOutputItem): number => {
   return count;
 };
 
-const normalizeFinalItem = (item: ResponsesOutputItem, publicId: string): ResponsesOutputItem => {
+const normalizeObservedItem = (item: ResponsesOutputItem, publicId: string): ResponsesOutputItem => {
   copilotOutputItemType(item);
   if (carrierValueCount(item) === 0) return { ...item, id: publicId } as ResponsesOutputItem;
 
@@ -153,16 +153,13 @@ const trackObservedItem = (
 const normalizeResponseOutput = (
   response: ResponsesResult,
   state: StreamItemState,
-  terminal: boolean,
 ): ResponsesResult => {
   if (response.output.length === 0) return response;
   return {
     ...response,
     output: response.output.map((item, outputIndex) => {
       const tracked = trackObservedItem(state, outputIndex, item);
-      return terminal
-        ? normalizeFinalItem(item, tracked.publicId)
-        : { ...item, id: tracked.publicId } as ResponsesOutputItem;
+      return normalizeObservedItem(item, tracked.publicId);
     }),
   };
 };
@@ -205,12 +202,12 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
       throw new TypeError(`Copilot Responses emitted output_item.added twice for output_index ${event.output_index}`);
     }
     tracked.added = true;
-    return { ...event, item: { ...event.item, id: tracked.publicId } as ResponsesOutputItem };
+    return { ...event, item: normalizeObservedItem(event.item, tracked.publicId) };
   }
 
   if (event.type === 'response.output_item.done') {
     const tracked = trackObservedItem(state, event.output_index, event.item);
-    return { ...event, item: normalizeFinalItem(event.item, tracked.publicId) };
+    return { ...event, item: normalizeObservedItem(event.item, tracked.publicId) };
   }
 
   if (
@@ -221,8 +218,7 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
     || event.type === 'response.incomplete'
     || event.type === 'response.failed'
   ) {
-    const terminal = event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed';
-    return { ...event, response: normalizeResponseOutput(event.response, state, terminal) };
+    return { ...event, response: normalizeResponseOutput(event.response, state) };
   }
 
   if (event.type === 'error' || event.type === 'ping') return event;
@@ -261,7 +257,7 @@ const normalizeCompactionResult = (response: ResponsesResult): ResponsesResult =
   ...response,
   output: response.output.map(item => {
     if (item.type !== 'compaction') return item;
-    return normalizeFinalItem(item, createPublicItemId('compaction'));
+    return normalizeObservedItem(item, createPublicItemId('compaction'));
   }),
 });
 
