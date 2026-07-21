@@ -19,8 +19,7 @@ export interface ResponsesBoundaryCtx {
 // terminal; the terminal switches on `ctx.action` and emits the matching
 // ProviderResponsesResult variant. Pure payload/header mutators are written
 // with a `<TResult>` generic so they fit; event-stream mutators (whitespace
-// abort, output-item id sync) inspect the result variant and pass the value
-// branch (compact envelope) through unchanged.
+// abort, item-id membrane) inspect the result variant directly.
 export type CopilotResponsesBoundaryInterceptor = Interceptor<
   ResponsesBoundaryCtx,
   object,

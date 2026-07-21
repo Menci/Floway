@@ -1101,6 +1101,22 @@ type ResponsesStreamEventVariant =
     summary_index: number;
     text: string;
   }
+  // https://github.com/openai/openai-python/blob/d4dceb221b9a92c55c232d5b330ae89beb539415/src/openai/types/responses/response_reasoning_text_delta_event.py#L9-L31
+  // https://github.com/openai/openai-python/blob/d4dceb221b9a92c55c232d5b330ae89beb539415/src/openai/types/responses/response_reasoning_text_done_event.py#L9-L34
+  | {
+    type: 'response.reasoning_text.delta';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    delta: string;
+  }
+  | {
+    type: 'response.reasoning_text.done';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    text: string;
+  }
   | {
     type: 'response.output_text.delta';
     item_id: string;
@@ -1197,6 +1213,40 @@ type ResponsesStreamEventVariant =
     item_id: string;
     output_index: number;
     input: string;
+  }
+  // https://github.com/vercel/ai/blob/6b6a8bbe9247e0ed70c8a7f6e850a1ab16096528/packages/openai/src/responses/__fixtures__/openai-shell-tool.1.chunks.txt#L4-L10
+  | {
+    type: 'response.shell_call_command.added';
+    output_index: number;
+    command_index: number;
+    command: string;
+  }
+  | {
+    type: 'response.shell_call_command.delta';
+    output_index: number;
+    command_index: number;
+    delta: string;
+    obfuscation?: string;
+  }
+  | {
+    type: 'response.shell_call_command.done';
+    output_index: number;
+    command_index: number;
+    command: string;
+  }
+  // https://github.com/vercel/ai/blob/6b6a8bbe9247e0ed70c8a7f6e850a1ab16096528/packages/openai/src/responses/__fixtures__/openai-apply-patch-tool.1.chunks.txt#L4-L36
+  | {
+    type: 'response.apply_patch_call_operation_diff.delta';
+    item_id: string;
+    output_index: number;
+    delta: string;
+    obfuscation?: string;
+  }
+  | {
+    type: 'response.apply_patch_call_operation_diff.done';
+    item_id: string;
+    output_index: number;
+    diff: string;
   }
   | { type: 'response.completed'; response: ResponsesResult }
   | { type: 'response.incomplete'; response: ResponsesResult }
