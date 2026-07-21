@@ -5,7 +5,7 @@ import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, UsageRecord } from './types.ts';
-import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageDimensions } from './usage-dimensions.ts';
+import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from './usage-metrics.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -18,7 +18,7 @@ const backends: { name: string; make: () => Promise<Repo> }[] = [
   { name: 'memory', make: () => Promise.resolve(new InMemoryRepo()) },
 ];
 
-const longPricing: PriceVector = { input: 10, input_cache_read: 1, output: 45 };
+const longPricing: PriceVector = { input_tokens: '0.00001', input_cache_read_tokens: '0.000001', output_tokens: '0.000045' };
 
 const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   keyId: 'key-1',
@@ -28,7 +28,7 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   hour: '2026-07-12T00',
   pricingSelector: {},
   requests: 1,
-  dimensions: tokenUsageDimensions({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, longPricing),
+  metrics: tokenUsageMetrics({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, longPricing),
   ...overrides,
 });
 
@@ -50,12 +50,12 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
     }
     db.run(sql);
   }
-  const usageRows = db.exec('SELECT pricing_selector, unit, quantity, unit_price FROM usage ORDER BY quantity')[0]!.values;
+  const usageRows = db.exec('SELECT pricing_selector, metric, quantity, unit_price FROM usage ORDER BY CAST(quantity AS REAL)')[0]!.values;
   const requestRows = db.exec('SELECT pricing_selector, requests FROM usage_requests ORDER BY requests')[0]!.values;
   assertEquals(usageRows, [
-    ['{}', 'tokens_1m', 10, 1],
-    ['{"serviceTier":"  "}', 'tokens_1m', 20, 2],
-    ['{"serviceTier":"pri\\"雪"}', 'tokens_1m', 30, 3],
+    ['{}', 'input_tokens', '10', '0.000001'],
+    ['{"serviceTier":"  "}', 'input_tokens', '20', '0.000002'],
+    ['{"serviceTier":"pri\\"雪"}', 'input_tokens', '30', '0.000003'],
   ]);
   assertEquals(requestRows, [
     ['{}', 1],
@@ -65,26 +65,27 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
 });
 
 for (const backend of backends) {
-  test(`${backend.name} usage repo folds the selected input-length pricing entry into per-dimension unit prices at write time`, async () => {
+  test(`${backend.name} usage repo folds the selected input-length pricing entry into per-metric unit prices at write time`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } }));
     const [row] = await query(repo);
     assertEquals(row.pricingSelector, { inputTokens: { operator: 'gt', value: 272000 } });
     // The whole bucket is priced at the long-band rates, not the base rates.
-    // Only dimensions that carry tokens get a unit-price snapshot.
-    assertEquals(tokenRatesFromUsage(row), { input: 10, input_cache_read: 1, output: 45 });
+    // Only metrics that carry tokens get a unit-price snapshot.
+    assertEquals(tokenRatesFromUsage(row), longPricing);
   });
 
   test(`${backend.name} usage repo keeps different input-length bands in separate buckets`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 100, input_cache_read: 20, output: 50 }, { input: 5, input_cache_read: 0.5, output: 30 }), pricingSelector: {} }));
-    await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } }, dimensions: tokenUsageDimensions({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, longPricing) }));
+    const basePricing: PriceVector = { input_tokens: '0.000005', input_cache_read_tokens: '0.0000005', output_tokens: '0.00003' };
+    await repo.usage.record(record({ metrics: tokenUsageMetrics({ input: 100, input_cache_read: 20, output: 50 }, basePricing), pricingSelector: {} }));
+    await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } }, metrics: tokenUsageMetrics({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, longPricing) }));
     const rows = (await query(repo)).sort((a, b) => Object.keys(a.pricingSelector).length - Object.keys(b.pricingSelector).length);
     assertEquals(rows.length, 2);
     assertEquals(rows[0].pricingSelector, {});
-    assertEquals(tokenRatesFromUsage(rows[0]), { input: 5, input_cache_read: 0.5, output: 30 });
+    assertEquals(tokenRatesFromUsage(rows[0]), basePricing);
     assertEquals(rows[1].pricingSelector, { inputTokens: { operator: 'gt', value: 272000 } });
-    assertEquals(tokenRatesFromUsage(rows[1]), { input: 10, input_cache_read: 1, output: 45 });
+    assertEquals(tokenRatesFromUsage(rows[1]), longPricing);
   });
 
   test(`${backend.name} usage repo sums additive writes within one pricing entry`, async () => {
@@ -99,15 +100,15 @@ for (const backend of backends) {
 
   test(`${backend.name} usage repo stores requests from models without pricing as unpriced`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, null), pricingSelector: {} }));
+    await repo.usage.record(record({ metrics: tokenUsageMetrics({ input: 300_000, input_cache_read: 20_000, output: 100_000 }, null), pricingSelector: {} }));
     const [row] = await query(repo);
     assertEquals(tokenRatesFromUsage(row), null);
   });
 
   test(`${backend.name} usage repo keeps an unpriced first-write snapshot when later writes are priced`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 100 }, null) }));
-    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 200 }, { input: 7 }) }));
+    await repo.usage.record(record({ metrics: tokenUsageMetrics({ input: 100 }, null) }));
+    await repo.usage.record(record({ metrics: tokenUsageMetrics({ input: 200 }, { input_tokens: '0.000007' }) }));
     const [row] = await query(repo);
     assertEquals(tokenCountsFromUsage(row), { input: 300 });
     assertEquals(tokenRatesFromUsage(row), null);
@@ -116,36 +117,36 @@ for (const backend of backends) {
   test(`${backend.name} usage repo preserves fractional quantities`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({
-      dimensions: [{ dimension: 'input', unit: 'tokens_1m', quantity: 90.5, unitPrice: 0.6 }],
+      metrics: [{ metric: 'input_tokens', quantity: '90.5', unitPrice: '0.0000006' }],
     }));
     const [row] = await query(repo);
-    assertEquals(row.dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 90.5, unitPrice: 0.6 }]);
+    assertEquals(row.metrics, [{ metric: 'input_tokens', quantity: '90.5', unitPrice: '0.0000006' }]);
   });
 
-  test(`${backend.name} usage repo preserves minute-denominated duration`, async () => {
+  test(`${backend.name} usage repo preserves audio duration seconds`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({
-      dimensions: [{ dimension: 'input', unit: 'minutes', quantity: 90.5, unitPrice: 0.6 }],
+      metrics: [{ metric: 'input_audio_seconds', quantity: '90.5', unitPrice: '0.01' }],
     }));
     const [row] = await query(repo);
-    assertEquals(row.dimensions, [{ dimension: 'input', unit: 'minutes', quantity: 90.5, unitPrice: 0.6 }]);
+    assertEquals(row.metrics, [{ metric: 'input_audio_seconds', quantity: '90.5', unitPrice: '0.01' }]);
   });
 
   test(`${backend.name} usage repo preserves an explicitly measured zero`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ dimensions: tokenUsageDimensions({ input: 0 }, { input: 2 }) }));
+    await repo.usage.record(record({ metrics: tokenUsageMetrics({ input: 0 }, { input_tokens: '0.000002' }) }));
     const [row] = await query(repo);
-    assertEquals(row.dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 0, unitPrice: 2 }]);
+    assertEquals(row.metrics, [{ metric: 'input_tokens', quantity: '0', unitPrice: '0.000002' }]);
   });
 
-  test(`${backend.name} usage repo rejects duplicate dimension-unit rows`, async () => {
+  test(`${backend.name} usage repo rejects duplicate metric rows`, async () => {
     const repo = await backend.make();
     await assertRejects(() => repo.usage.set(record({
-      dimensions: [
-        { dimension: 'input', unit: 'tokens_1m', quantity: 1, unitPrice: null },
-        { dimension: 'input', unit: 'tokens_1m', quantity: 2, unitPrice: null },
+      metrics: [
+        { metric: 'input_tokens', quantity: '1', unitPrice: null },
+        { metric: 'input_tokens', quantity: '2', unitPrice: null },
       ],
-    })), Error, 'Duplicate usage dimension and unit: input, tokens_1m');
+    })), Error, 'Duplicate usage metric: input_tokens');
   });
 }
 
@@ -153,10 +154,10 @@ test('SQL usage hydration rejects vocabulary unknown to the current application'
   const db = await createSqliteTestDb();
   await db.prepare(`INSERT INTO usage (
     key_id, model, upstream, model_key, hour, pricing_selector,
-    dimension, unit, quantity, unit_price
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    metric, quantity, unit_price
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
     'key-1', 'model', null, 'model', '2026-07-12T00', '{}',
-    'reasoning', 'tokens_1m', 1, null,
+    'reasoning', '1', null,
   ).run();
-  await assertRejects(() => new SqlRepo(db).usage.listAll(), TypeError, 'usage.dimension is invalid: "reasoning"');
+  await assertRejects(() => new SqlRepo(db).usage.listAll(), TypeError, 'usage.metric is invalid: "reasoning"');
 });

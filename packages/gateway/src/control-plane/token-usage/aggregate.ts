@@ -1,10 +1,9 @@
 import type { UsageRecord } from '../../repo/types.ts';
-import { BILLING_UNIT_SCALES, type BillingDimension, type BillingUnit } from '@floway-dev/protocols/common';
+import { addDecimalStrings, multiplyDecimalStrings, type BillingMetric, type DecimalString } from '@floway-dev/protocols/common';
 
-export interface DisplayUsageDimension {
-  dimension: BillingDimension;
-  unit: BillingUnit;
-  quantity: number;
+export interface DisplayUsageMetric {
+  metric: BillingMetric;
+  quantity: DecimalString;
 }
 
 export interface DisplayUsageRecord {
@@ -12,8 +11,8 @@ export interface DisplayUsageRecord {
   model: string;
   hour: string;
   requests: number;
-  dimensions: DisplayUsageDimension[];
-  cost: number | null;
+  metrics: DisplayUsageMetric[];
+  cost: DecimalString | null;
 }
 
 export interface DisplayUsageByUserRecord {
@@ -21,32 +20,32 @@ export interface DisplayUsageByUserRecord {
   model: string;
   hour: string;
   requests: number;
-  dimensions: DisplayUsageDimension[];
-  cost: number | null;
+  metrics: DisplayUsageMetric[];
+  cost: DecimalString | null;
 }
 
-const recordCostUsd = (record: UsageRecord): number | null => {
-  let total = 0;
+const recordCostUsd = (record: UsageRecord): DecimalString | null => {
+  let total: DecimalString = '0';
   let priced = false;
-  for (const row of record.dimensions) {
+  for (const row of record.metrics) {
     if (row.unitPrice === null) continue;
-    total += row.quantity * row.unitPrice / BILLING_UNIT_SCALES[row.unit];
+    total = addDecimalStrings(total, multiplyDecimalStrings(row.quantity, row.unitPrice));
     priced = true;
   }
   return priced ? total : null;
 };
 
 const accumulate = (
-  bucket: { requests: number; cost: number | null; dimensions: DisplayUsageDimension[] },
+  bucket: { requests: number; cost: DecimalString | null; metrics: DisplayUsageMetric[] },
   record: UsageRecord,
 ) => {
   bucket.requests += record.requests;
   const cost = recordCostUsd(record);
-  if (cost !== null) bucket.cost = (bucket.cost ?? 0) + cost;
-  for (const row of record.dimensions) {
-    const existing = bucket.dimensions.find(candidate => candidate.dimension === row.dimension && candidate.unit === row.unit);
-    if (existing) existing.quantity += row.quantity;
-    else bucket.dimensions.push({ dimension: row.dimension, unit: row.unit, quantity: row.quantity });
+  if (cost !== null) bucket.cost = addDecimalStrings(bucket.cost ?? '0', cost);
+  for (const row of record.metrics) {
+    const existing = bucket.metrics.find(candidate => candidate.metric === row.metric);
+    if (existing) existing.quantity = addDecimalStrings(existing.quantity, row.quantity);
+    else bucket.metrics.push({ metric: row.metric, quantity: row.quantity });
   }
 };
 
@@ -57,7 +56,7 @@ export function aggregateUsageForDisplay(records: readonly UsageRecord[]): Displ
     const key = `${record.keyId}\0${record.model}\0${record.hour}`;
     let existing = byKey.get(key);
     if (!existing) {
-      existing = { keyId: record.keyId, model: record.model, hour: record.hour, requests: 0, dimensions: [], cost: null };
+      existing = { keyId: record.keyId, model: record.model, hour: record.hour, requests: 0, metrics: [], cost: null };
       byKey.set(key, existing);
     }
     accumulate(existing, record);
@@ -82,7 +81,7 @@ export function aggregateUsageByUserForDisplay(
     const key = `${userId}\0${record.model}\0${record.hour}`;
     let existing = byUser.get(key);
     if (!existing) {
-      existing = { userId, model: record.model, hour: record.hour, requests: 0, dimensions: [], cost: null };
+      existing = { userId, model: record.model, hour: record.hour, requests: 0, metrics: [], cost: null };
       byUser.set(key, existing);
     }
     accumulate(existing, record);

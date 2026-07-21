@@ -5,8 +5,8 @@ import type {
   AliasSelection,
   AliasTarget,
   AnnouncedMetadata,
-  BillingDimension,
-  BillingUnit,
+  BillingMetric,
+  DecimalString,
   ChatAliasRules,
   ChatModelInfo,
   ModelAlias,
@@ -22,7 +22,7 @@ import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
-export type { BillingDimension, BillingUnit, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+export type { BillingMetric, DecimalString, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { UpstreamModelConfig };
 export type { AddressableForm, ModelPrefixConfig };
 export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };

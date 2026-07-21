@@ -1,10 +1,8 @@
 import { test } from 'vitest';
 
-import { settleUsageMeasurement } from './settle.ts';
 import { audioTranscriptionUsageMeasurement, openAICacheTokensFromUsage, recordUsage } from './usage.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import { basePricing } from '@floway-dev/protocols/common';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
@@ -83,7 +81,7 @@ test('Zero is a valid count, not a missing signal', () => {
   );
 });
 
-test('recordUsage persists caller-supplied quantities and units with resolved prices', async () => {
+test('recordUsage persists caller-supplied metrics with resolved prices', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
 
@@ -93,26 +91,47 @@ test('recordUsage persists caller-supplied quantities and units with resolved pr
       model: 'metered-model',
       upstream: 'upstream-a',
       modelKey: 'metered-model',
-      pricing: basePricing({ input: 'tokens_1m' }, { input: 0.6 }),
+      pricing: basePricing({ input_tokens: '0.6' }),
     },
-    { input: 90 },
-    { input: 'tokens_1m' },
+    { input_tokens: '90' },
     {},
   );
 
   const rows = await repo.usage.listAll();
   assertEquals(rows.length, 1);
   assertEquals(rows[0].requests, 1);
-  assertEquals(rows[0].dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 90, unitPrice: 0.6 }]);
+  assertEquals(rows[0].metrics, [{ metric: 'input_tokens', quantity: '90', unitPrice: '0.6' }]);
 });
 
-test('audio transcription usage preserves duration seconds with a minutes denominator', () => {
+test('recordUsage prices audio duration and token metrics together', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+
+  await recordUsage(
+    'key-a',
+    {
+      model: 'composite-audio-model',
+      upstream: 'upstream-a',
+      modelKey: 'composite-audio-model',
+      pricing: basePricing({ input_audio_seconds: '0.0001', input_audio_tokens: '0.000005' }),
+    },
+    { input_audio_seconds: '90.5', input_audio_tokens: '2400' },
+    { inputTokens: 2400 },
+  );
+
+  const [row] = await repo.usage.listAll();
+  assertEquals(row.metrics, [
+    { metric: 'input_audio_tokens', quantity: '2400', unitPrice: '0.000005' },
+    { metric: 'input_audio_seconds', quantity: '90.5', unitPrice: '0.0001' },
+  ]);
+});
+
+test('audio transcription usage preserves duration seconds as a base-unit metric', () => {
   assertEquals(audioTranscriptionUsageMeasurement({
     usage: { type: 'duration', seconds: 91 },
     duration: 91.8,
   }), {
-    quantities: { input: 91 },
-    units: { input: 'minutes' },
+    quantities: { input_audio_seconds: '91' },
     pricingFacts: {},
     dumpTokenUsage: null,
   });
@@ -122,9 +141,8 @@ test('audio transcription usage maps explicit token counts without inferring fro
   assertEquals(audioTranscriptionUsageMeasurement({
     usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 59 },
   }), {
-    quantities: { input: 14, output: 45 },
-    units: { input: 'tokens_1m', output: 'tokens_1m' },
-    pricingFacts: { serviceTier: undefined, inputTokens: 14 },
+    quantities: { input_audio_tokens: '14', output_tokens: '45' },
+    pricingFacts: { inputTokens: 14 },
     dumpTokenUsage: { input: 14, output: 45 },
   });
   assertEquals(audioTranscriptionUsageMeasurement({
@@ -139,7 +157,7 @@ test('audio transcription usage without a recognized metric is request-only', ()
     { usage: { type: 'future_metric', samples: 10 } },
   ]) {
     assertEquals(audioTranscriptionUsageMeasurement(body), {
-      quantities: {}, units: {}, pricingFacts: {}, dumpTokenUsage: null,
+      quantities: {}, pricingFacts: {}, dumpTokenUsage: null,
     });
   }
 });
@@ -156,28 +174,4 @@ test('audio transcription usage rejects malformed declared metrics', () => {
   ] as const) {
     assertThrows(() => audioTranscriptionUsageMeasurement(body), Error, message);
   }
-});
-
-test('measurement settling rejects a token-denominated output without its quantity', () => {
-  const ctx: GatewayCtx = {
-    apiKeyId: 'key-a',
-    upstreamIds: null,
-    wantsStream: false,
-    backgroundScheduler: () => {},
-    attempt: { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined },
-    runtimeLocation: 'TEST',
-    dump: null,
-    responseHeaders: new Headers(),
-  };
-  assertThrows(
-    () => settleUsageMeasurement(
-      ctx,
-      undefined,
-      { model: 'audio-model', upstream: 'upstream-a', modelKey: 'audio-model', pricing: null },
-      { quantities: {}, units: { output: 'tokens_1m' }, pricingFacts: {}, dumpTokenUsage: null },
-      false,
-    ),
-    Error,
-    'requires an output quantity',
-  );
 });

@@ -20,7 +20,7 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 // waitUntil binds it to the fetch handler (or, for the WS transport, to
 // a session-scoped waitUntil opened on 101), and Node keeps the process
 // event loop alive. Every settled request increments its request bucket;
-// detailed dimension rows are present only when the upstream meters them.
+// detailed metric rows are present only when the upstream meters them.
 export const settle = (
   ctx: GatewayCtx,
   telemetry: PerformanceTelemetryContext | undefined,
@@ -43,19 +43,12 @@ export const settleUsageMeasurement = (
   failed: boolean,
   requestFinishedAt: number = performance.now(),
 ): void => {
-  const outputTokens = measurement.units.output === 'tokens_1m'
-    ? measurement.quantities.output
-    : 0;
-  if (outputTokens === undefined) {
-    throw new Error('Token-denominated output usage requires an output quantity');
-  }
+  const outputTokens = Number(measurement.quantities.output_tokens ?? '0');
   ctx.backgroundScheduler(recordUsage(
     ctx.apiKeyId,
     identity,
     measurement.quantities,
-    measurement.units,
     measurement.pricingFacts,
-    { unitMismatch: 'unpriced' },
   ).catch(error => {
     console.error('Failed to record usage:', error);
   }));

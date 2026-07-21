@@ -3,11 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
 import PricingEditor from './PricingEditor.vue';
-import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import { perMillionTokenRates, type ModelKind, type ModelPricing } from '@floway-dev/protocols/common';
 
 const tokenPricing = ({ entries }: Pick<ModelPricing, 'entries'>): ModelPricing => ({
-  units: Object.fromEntries([...new Set(entries.flatMap(entry => Object.keys(entry.rates)))].map(dimension => [dimension, 'tokens_1m'])) as ModelPricing['units'],
-  entries,
+  entries: entries.map(entry => ({ ...entry, rates: perMillionTokenRates(entry.rates) })),
 });
 
 const mountEditor = (
@@ -44,10 +43,10 @@ describe('PricingEditor', () => {
   });
 
   it('refreshes read-only drafts when an auto catalog snapshot changes', async () => {
-    const wrapper = mountEditor({ entries: [{ rates: { input: 1 } }] }, { editable: false });
+    const wrapper = mountEditor({ entries: [{ rates: { input_tokens: '1' } }] }, { editable: false });
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('1');
 
-    await wrapper.setProps({ modelValue: tokenPricing({ entries: [{ rates: { input: 2 } }] }) });
+    await wrapper.setProps({ modelValue: tokenPricing({ entries: [{ rates: { input_tokens: '2' } }] }) });
     await nextTick();
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
   });
@@ -56,103 +55,58 @@ describe('PricingEditor', () => {
     const wrapper = mountEditor({ entries: [{ rates: {} }] });
     await pricingInput(wrapper, 'unpriced').setValue('2');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      units: { input: 'tokens_1m' },
-      entries: [{ rates: { input: 2 } }],
+      entries: [{ rates: { input_tokens: '0.000002' } }],
     });
   });
 
-  it.each([
-    ['minutes', 'Minute'],
-    ['tokens_1m', 'MTok'],
-  ] as const)('persists the fixed audio input %s field', async (unit, label) => {
+  it('persists audio token, duration, and output metrics independently', async () => {
     const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'audio' });
-    const input = wrapper.findAll('label').find(candidate => candidate.text().includes(`Input ($/${label})`))!.get('input');
-    await input.setValue('0.6');
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      units: { input: unit },
-      entries: [{ rates: { input: 0.6 } }],
-    });
-  });
-
-  it('requires every minute-priced entry to be cleared before enabling token pricing', async () => {
-    const wrapper = mount(PricingEditor, {
-      props: {
-        modelValue: {
-          units: { input: 'minutes' },
-          entries: [
-            { rates: { input: 0.6 } },
-            { selector: { serviceTier: 'priority' }, rates: { input: 1.2 } },
-          ],
-        },
-        editable: true,
-        kind: 'audio',
-      },
-    });
     const input = (label: string) => wrapper.findAll('label').find(candidate => candidate.text().includes(label))!.get('input');
-
-    expect(input('Input ($/MTok)').attributes('disabled')).toBeDefined();
-    await input('Input ($/Minute)').setValue('');
-    expect(input('Input ($/MTok)').attributes('disabled')).toBeDefined();
-
-    await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
-    await input('Input ($/Minute)').setValue('');
-    expect(input('Input ($/MTok)').attributes('disabled')).toBeUndefined();
-
-    await input('Input ($/MTok)').setValue('2');
+    await input('Audio Input ($/MTok)').setValue('0.6');
+    await input('Audio Input ($/Minute)').setValue('0.6');
+    await input('Output ($/MTok)').setValue('4');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      units: { input: 'tokens_1m' },
-      entries: [
-        { rates: {} },
-        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
-      ],
+      entries: [{ rates: {
+        input_audio_tokens: '0.0000006',
+        input_audio_seconds: '0.01',
+        output_tokens: '0.000004',
+      } }],
     });
   });
 
-  it('defaults new audio output pricing to tokens', async () => {
-    const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'audio' });
-    const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/MTok)'))!.get('input');
-    await output.setValue('4');
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      units: { output: 'tokens_1m' },
-      entries: [{ rates: { output: 4 } }],
-    });
-  });
-
-  it('does not display a rate under a unit that the pricing catalog does not declare', async () => {
+  it('displays a base-unit price through its fixed MTok field', async () => {
     const wrapper = mount(PricingEditor, {
       props: {
-        modelValue: { units: {}, entries: [{ rates: { input: 1 } }] },
+        modelValue: { entries: [{ rates: { input_tokens: '0.000001' } }] },
         editable: true,
         kind: 'chat',
       },
     });
 
-    expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('');
-    expect(wrapper.get('[aria-label="Pricing validation errors"]').text()).toContain('Pricing units must match Base rate fields: missing Input.');
+    expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('1');
 
     await pricingInput(wrapper, 'unpriced').setValue('2');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      units: { input: 'tokens_1m' },
-      entries: [{ rates: { input: 2 } }],
+      entries: [{ rates: { input_tokens: '0.000002' } }],
     });
   });
 
   it('clears a threshold value while preserving operator-only updates', async () => {
     const wrapper = mountEditor({
-      entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }],
+      entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input_tokens: '1' } }],
     });
     const threshold = pricingInput(wrapper, 'base');
     expect((threshold.element as HTMLInputElement).value).toBe('100');
 
     await threshold.setValue('');
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual(tokenPricing({ entries: [{ rates: { input: 1 } }] }));
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual(tokenPricing({ entries: [{ rates: { input_tokens: '1' } }] }));
   });
 
   it('navigates pricing entries from the left while rendering one editor on the right', async () => {
     const wrapper = mountEditor({
       entries: [
-        { rates: { input: 1 } },
-        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+        { rates: { input_tokens: '1' } },
+        { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
       ],
     });
     const navigation = wrapper.get('[aria-label="Pricing entry navigation"]');
@@ -171,15 +125,15 @@ describe('PricingEditor', () => {
     await navigation.get('button[aria-label="Move pricing entry 2 up"]').trigger('click');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual(tokenPricing({
       entries: [
-        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
-        { rates: { input: 1 } },
+        { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
+        { rates: { input_tokens: '1' } },
       ],
     }));
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
   });
 
-  it('shows Base dimensions outside the kind defaults and clones Base rates into new entries', async () => {
-    const baseRates = { input: 1, input_image: 2, output: 3, output_image: 4 };
+  it('shows Base metrics outside the kind defaults and clones Base rates into new entries', async () => {
+    const baseRates = { input_tokens: '1', input_image_tokens: '2', output_tokens: '3', output_image_tokens: '4' };
     const wrapper = mountEditor({ entries: [{ rates: baseRates }] }, { kind: 'chat' });
 
     expect(wrapper.text()).toContain('Image Input ($/MTok)');
@@ -194,15 +148,15 @@ describe('PricingEditor', () => {
     }));
   });
 
-  it('keeps out-of-kind dimensions editable while a catalog has no Base', () => {
+  it('keeps out-of-kind metrics editable while a catalog has no Base', () => {
     const wrapper = mountEditor({
-      entries: [{ selector: { serviceTier: 'priority' }, rates: { input_image: 2 } }],
+      entries: [{ selector: { serviceTier: 'priority' }, rates: { input_image_tokens: '2' } }],
     }, { kind: 'chat' });
     expect(wrapper.text()).toContain('Image Input ($/MTok)');
   });
 
   it('toggles the compact threshold operator before a value is entered', async () => {
-    const wrapper = mountEditor({ entries: [{ rates: { input: 1 } }] });
+    const wrapper = mountEditor({ entries: [{ rates: { input_tokens: '1' } }] });
     const operator = wrapper.get('button[aria-label="Input Tokens operator >; click to toggle"]');
 
     expect(operator.text()).toBe('>');
@@ -211,17 +165,17 @@ describe('PricingEditor', () => {
 
     await pricingInput(wrapper, 'base').setValue('100');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual(tokenPricing({
-      entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }],
+      entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input_tokens: '1' } }],
     }));
   });
 
   it('separates combined pricing coordinates with commas', () => {
     const wrapper = mountEditor({
       entries: [
-        { rates: { input: 1 } },
+        { rates: { input_tokens: '1' } },
         {
           selector: { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 512_000 } },
-          rates: { input: 2 },
+          rates: { input_tokens: '2' },
         },
       ],
     });
@@ -234,8 +188,8 @@ describe('PricingEditor', () => {
   it('requires every pricing entry to set the same rate fields', async () => {
     const wrapper = mountEditor({
       entries: [
-        { rates: { input: 1, output: 4 } },
-        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+        { rates: { input_tokens: '1', output_tokens: '4' } },
+        { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
       ],
     });
 
@@ -252,9 +206,9 @@ describe('PricingEditor', () => {
     const wrapper = mountEditor({
       entries: [
         { selector: { serviceTier: '' }, rates: {} },
-        { rates: { input: 1 } },
-        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
-        { selector: { serviceTier: 'priority' }, rates: { input: 3 } },
+        { rates: { input_tokens: '1' } },
+        { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
+        { selector: { serviceTier: 'priority' }, rates: { input_tokens: '3' } },
       ],
     });
     const form = wrapper.get('[aria-label="Pricing entry form"]');
@@ -270,13 +224,13 @@ describe('PricingEditor', () => {
 
   it('requires exactly one Base entry before comparing rate fields', () => {
     const wrapper = mountEditor({
-      entries: [{ selector: { serviceTier: 'priority' }, rates: { input: 2 } }],
+      entries: [{ selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }],
     });
     expect(wrapper.get('[aria-label="Pricing validation errors"]').text()).toBe(
       'Pricing must contain exactly one Base entry: none is configured.',
     );
 
-    const duplicate = mountEditor({ entries: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] });
+    const duplicate = mountEditor({ entries: [{ rates: { input_tokens: '1' } }, { selector: {}, rates: { input_tokens: '2' } }] });
     expect(duplicate.get('[aria-label="Pricing validation errors"]').text()).toBe(
       'Pricing must contain exactly one Base entry: entries 1 and 2 are Base.',
     );
@@ -285,8 +239,8 @@ describe('PricingEditor', () => {
   it.each(['default', ' Standard ', '  '])('rejects Base-equivalent service tier %j', serviceTier => {
     const wrapper = mountEditor({
       entries: [
-        { rates: { input: 1 } },
-        { selector: { serviceTier }, rates: { input: 2 } },
+        { rates: { input_tokens: '1' } },
+        { selector: { serviceTier }, rates: { input_tokens: '2' } },
       ],
     });
     expect(wrapper.get('[aria-label="Pricing validation errors"]').text()).toBe('Selector values are invalid: entry 2.');
@@ -307,7 +261,7 @@ describe('PricingEditor', () => {
 
   it.each(['0', '1.5'])('shows validation instead of throwing for threshold %s', async value => {
     const wrapper = mountEditor({
-      entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }],
+      entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }],
     });
     await pricingInput(wrapper, 'base').setValue(value);
     expect(wrapper.text()).toContain('Selector values are invalid: entry 1.');

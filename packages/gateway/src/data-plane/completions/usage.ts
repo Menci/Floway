@@ -8,8 +8,8 @@ import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/prot
 // counts so the variant field names wild OpenAI-compatible upstreams
 // emit (DeepSeek's `prompt_cache_hit_tokens`, Moonshot's flat
 // `cached_tokens`, OpenRouter's `cache_write_tokens`, …) land in the
-// correct dimensions automatically. The bare `input` dimension subtracts
-// both cache counts so the three input dimensions stay disjoint.
+// correct metrics automatically. The bare `input` token category subtracts
+// both cache counts so the three input metrics stay disjoint.
 //
 // `service_tier` lives on the response root, not inside `usage`, and is
 // supplied separately by the caller. vLLM surfaces it on the

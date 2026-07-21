@@ -131,11 +131,12 @@ use an operator-authored row. Azure and Ollama audio rows are operator-authored.
 All three providers implement the call. Successful bodies
 remain raw across JSON, verbose JSON, text, SRT, and VTT. Streaming responses
 reuse the shared SSE writer and terminate on `transcript.text.done` without a
-Chat `[DONE]` sentinel. Usage records always count the request; explicit token
-metrics use `tokens_1m`, explicit duration seconds use the `minutes` unit, and
-missing metrics remain request-only. A concrete metric whose unit disagrees
-with configured pricing is stored with its measured unit and a null price;
-Floway never coerces the quantity or applies a rate with another denominator.
+Chat `[DONE]` sentinel. Usage records always count the request. Explicit token
+usage maps onto `input_audio_tokens` and `output_tokens`; duration maps onto
+`input_audio_seconds`. Rates are canonical decimal strings per one token or
+second, and a model may price all metrics simultaneously. Missing measurements
+remain request-only, while measured metrics without configured rates remain
+unpriced.
 
 ## Workspace Layout
 

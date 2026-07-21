@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { tokenUsageDimensions } from '../../repo/usage-dimensions.ts';
+import { tokenUsageMetrics } from '../../repo/usage-metrics.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -19,7 +19,7 @@ const seedUsage = async (
     hour,
     pricingSelector: {},
     requests,
-    dimensions: tokenUsageDimensions({ input: 100, output: 50 }, null),
+    metrics: tokenUsageMetrics({ input: 100, output: 50 }, null),
   });
 };
 

@@ -3,14 +3,12 @@ import { test, vi } from 'vitest';
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const registerAudioModel = async (
   repo: InMemoryRepo,
-  pricing?: {
-    units: { input: 'minutes' } | { input: 'tokens_1m'; output: 'tokens_1m' };
-    entries: readonly [{ rates: { input: number; output?: number } }];
-  },
+  pricing?: ModelPricing,
 ): Promise<void> => {
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
@@ -74,8 +72,7 @@ test('/v1/audio/transcriptions requires multipart model and file fields', async 
 test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, and token usage', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
-    units: { input: 'tokens_1m', output: 'tokens_1m' },
-    entries: [{ rates: { input: 2, output: 4 } }],
+    entries: [{ rates: { input_audio_tokens: '0.000002', output_tokens: '0.000004' } }],
   });
   let upstreamForm: FormData | undefined;
 
@@ -122,9 +119,9 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
-  assertEquals(usage.dimensions, [
-    { dimension: 'input', unit: 'tokens_1m', quantity: 14, unitPrice: 2 },
-    { dimension: 'output', unit: 'tokens_1m', quantity: 45, unitPrice: 4 },
+  assertEquals(usage.metrics, [
+    { metric: 'input_audio_tokens', quantity: '14', unitPrice: '0.000002' },
+    { metric: 'output_tokens', quantity: '45', unitPrice: '0.000004' },
   ]);
 });
 
@@ -147,7 +144,7 @@ test('/v1/audio/transcriptions forwards VTT verbatim and records request-only us
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
-  assertEquals(usage.dimensions, []);
+  assertEquals(usage.metrics, []);
 });
 
 test('/v1/audio/transcriptions skips JSON parsing for text responses without warning', async () => {
@@ -188,7 +185,7 @@ test('/v1/audio/transcriptions warns on malformed declared JSON while forwarding
     await flushAsyncWork();
     const [usage] = await repo.usage.listAll();
     assertEquals(usage.requests, 1);
-    assertEquals(usage.dimensions, []);
+    assertEquals(usage.metrics, []);
     assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('failed to parse 2xx upstream body for /audio/transcriptions')), true);
   } finally {
     warnSpy.mockRestore();
@@ -212,7 +209,7 @@ test('/v1/audio/transcriptions preserves unknown future usage metrics as request
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
-  assertEquals(usage.dimensions, []);
+  assertEquals(usage.metrics, []);
 });
 
 test('/v1/audio/transcriptions rejects malformed declared usage after recording a failed request', async () => {
@@ -235,7 +232,7 @@ test('/v1/audio/transcriptions rejects malformed declared usage after recording 
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
-  assertEquals(usage.dimensions, []);
+  assertEquals(usage.metrics, []);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });
@@ -255,11 +252,10 @@ test('/v1/audio/transcriptions does not invent a content type for an untyped raw
   );
 });
 
-test('/v1/audio/transcriptions records duration seconds under the minutes unit', async () => {
+test('/v1/audio/transcriptions records duration under the per-second metric', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
-    units: { input: 'minutes' },
-    entries: [{ rates: { input: 0.6 } }],
+    entries: [{ rates: { input_audio_seconds: '0.01' } }],
   });
   await withMockedFetch(
     () => Response.json({ text: 'hello', duration: 91.8, usage: { type: 'duration', seconds: 91 } }),
@@ -273,14 +269,13 @@ test('/v1/audio/transcriptions records duration seconds under the minutes unit',
   );
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
-  assertEquals(usage.dimensions, [{ dimension: 'input', unit: 'minutes', quantity: 91, unitPrice: 0.6 }]);
+  assertEquals(usage.metrics, [{ metric: 'input_audio_seconds', quantity: '91', unitPrice: '0.01' }]);
 });
 
 test('/v1/audio/transcriptions preserves duration usage unpriced when the model is priced per token', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
-    units: { input: 'tokens_1m', output: 'tokens_1m' },
-    entries: [{ rates: { input: 2, output: 4 } }],
+    entries: [{ rates: { input_audio_tokens: '0.000002', output_tokens: '0.000004' } }],
   });
   await withMockedFetch(
     () => Response.json({ text: 'hello', usage: { type: 'duration', seconds: 75 } }),
@@ -295,14 +290,13 @@ test('/v1/audio/transcriptions preserves duration usage unpriced when the model 
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
-  assertEquals(usage.dimensions, [{ dimension: 'input', unit: 'minutes', quantity: 75, unitPrice: null }]);
+  assertEquals(usage.metrics, [{ metric: 'input_audio_seconds', quantity: '75', unitPrice: null }]);
 });
 
-test('/v1/audio/transcriptions preserves token usage unpriced when the model is priced per minute', async () => {
+test('/v1/audio/transcriptions preserves token usage unpriced when the model is priced per second', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
-    units: { input: 'minutes' },
-    entries: [{ rates: { input: 0.6 } }],
+    entries: [{ rates: { input_audio_seconds: '0.01' } }],
   });
   await withMockedFetch(
     () => Response.json({ text: 'hello', usage: { type: 'tokens', input_tokens: 12, output_tokens: 8, total_tokens: 20 } }),
@@ -317,17 +311,16 @@ test('/v1/audio/transcriptions preserves token usage unpriced when the model is 
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
-  assertEquals(usage.dimensions, [
-    { dimension: 'input', unit: 'tokens_1m', quantity: 12, unitPrice: null },
-    { dimension: 'output', unit: 'tokens_1m', quantity: 8, unitPrice: null },
+  assertEquals(usage.metrics, [
+    { metric: 'input_audio_tokens', quantity: '12', unitPrice: null },
+    { metric: 'output_tokens', quantity: '8', unitPrice: null },
   ]);
 });
 
 test('/v1/audio/transcriptions streams through transcript.text.done without adding Chat termination', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
-    units: { input: 'tokens_1m', output: 'tokens_1m' },
-    entries: [{ rates: { input: 1, output: 1 } }],
+    entries: [{ rates: { input_audio_tokens: '0.000001', output_tokens: '0.000001' } }],
   });
   await withMockedFetch(
     () => new Response([
@@ -350,9 +343,9 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
   );
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
-  assertEquals(usage.dimensions.map(row => ({ dimension: row.dimension, quantity: row.quantity })), [
-    { dimension: 'input', quantity: 3 },
-    { dimension: 'output', quantity: 1 },
+  assertEquals(usage.metrics.map(row => ({ metric: row.metric, quantity: row.quantity })), [
+    { metric: 'input_audio_tokens', quantity: '3' },
+    { metric: 'output_tokens', quantity: '1' },
   ]);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.neutral, 1);
@@ -449,7 +442,7 @@ test('/v1/audio/transcriptions forwards exhausted upstream errors and records th
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
-  assertEquals(usage.dimensions, []);
+  assertEquals(usage.metrics, []);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });

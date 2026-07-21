@@ -1,20 +1,23 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage, UsageQuantities } from '../../../repo/types.ts';
-import { usageDimensions } from '../../../repo/usage-dimensions.ts';
-import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, type PriceUnits, priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
+import { tokenUsageQuantities, usageMetrics } from '../../../repo/usage-metrics.ts';
+import { canonicalDecimalString, priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
+const TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
+const INPUT_TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
 
-// Drop zero / undefined dimensions so a usage map only carries the dimensions
+export const hasTokenUsage = (usage: TokenUsage): boolean => TOKEN_USAGE_KEYS.some(key => (usage[key] ?? 0) > 0);
+
+// Drop zero / undefined token categories so a usage map only carries the metrics
 // actually billed. `tier` (a non-numeric service-tier marker) survives the
 // filter so service-tier selector entries resolve at recording time.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
-  for (const dimension of BILLING_DIMENSIONS) {
-    const value = counts[dimension] ?? 0;
-    if (value > 0) out[dimension] = value;
+  for (const key of TOKEN_USAGE_KEYS) {
+    const value = counts[key] ?? 0;
+    if (value > 0) out[key] = value;
   }
   if (counts.tier != null) out.tier = counts.tier;
   return out;
@@ -42,7 +45,7 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
 //     (Anthropic / Gemini-explicit / Alibaba-routed).
 //
 // Each count is a subset of `prompt_tokens`, so subtracting them in the
-// caller recovers the disjoint bare-input dimension. Upstreams that report
+// caller recovers the disjoint bare-input metric. Upstreams that report
 // no cache fields at all (Together, Perplexity, SiliconFlow, TGI, Ollama-
 // compat, plus most providers without a cache layer) fall through to zero,
 // leaving the whole prompt count on the bare input bucket.
@@ -87,30 +90,23 @@ export const tokenUsageFromEmbeddingsBody = (body: unknown): TokenUsage | null =
 
 export interface UsageMeasurement {
   readonly quantities: UsageQuantities;
-  readonly units: PriceUnits;
   readonly pricingFacts: PricingRuntimeFacts;
-  // Dump frames predate per-dimension units. Only token measurements populate
-  // this compatibility view; duration counts would otherwise be mislabeled as
-  // tokens in the dump UI.
+  // Dump frames only expose token measurements; duration counts would be
+  // mislabeled as tokens in the dump UI.
   readonly dumpTokenUsage: TokenUsage | null;
 }
 
 export const requestOnlyUsageMeasurement = (): UsageMeasurement => ({
   quantities: {},
-  units: {},
   pricingFacts: {},
   dumpTokenUsage: null,
 });
 
 export const tokenUsageMeasurement = (usage: TokenUsage | null): UsageMeasurement => {
   const { tier, ...tokens } = usage ?? {};
-  const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
-  const units = Object.fromEntries(
-    BILLING_DIMENSIONS.filter(dimension => tokens[dimension] !== undefined).map(dimension => [dimension, 'tokens_1m']),
-  ) as PriceUnits;
+  const inputTokens = INPUT_TOKEN_USAGE_KEYS.reduce((sum, key) => sum + (tokens[key] ?? 0), 0);
   return {
-    quantities: tokens,
-    units,
+    quantities: tokenUsageQuantities(tokens),
     pricingFacts: { serviceTier: tier, inputTokens },
     dumpTokenUsage: usage,
   };
@@ -118,8 +114,7 @@ export const tokenUsageMeasurement = (usage: TokenUsage | null): UsageMeasuremen
 
 // OpenAI transcription responses discriminate usage by `type`. Token-based
 // models expose independent input/output counts; duration-based models expose
-// seconds. We preserve the raw seconds as the quantity and declare the
-// denominator as minutes, so price scaling converts seconds without rounding.
+// seconds. Each value maps directly to its flat base-unit metric.
 // Missing or unknown breakdowns record the request only: total_tokens and a
 // top-level duration are never used to invent a provider-owned metric. Once an
 // upstream selects a known discriminator, malformed declared fields are a
@@ -139,8 +134,7 @@ export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurem
       throw new Error('Audio transcription duration usage.seconds must be a finite non-negative number');
     }
     return {
-      quantities: { input: metric.seconds },
-      units: { input: 'minutes' },
+      quantities: { input_audio_seconds: canonicalDecimalString(String(metric.seconds)) },
       pricingFacts: {},
       dumpTokenUsage: null,
     };
@@ -156,22 +150,30 @@ export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurem
       throw new Error(`Audio transcription token usage.${field} must be a finite non-negative number`);
     }
   }
-  const tokens = tokenUsage({
-    ...(typeof metric.input_tokens === 'number' ? { input: metric.input_tokens } : {}),
-    ...(typeof metric.output_tokens === 'number' ? { output: metric.output_tokens } : {}),
-  });
-  return tokenUsageMeasurement(tokens);
+  const inputTokens = typeof metric.input_tokens === 'number' ? metric.input_tokens : undefined;
+  const outputTokens = typeof metric.output_tokens === 'number' ? metric.output_tokens : undefined;
+  return {
+    quantities: {
+      ...(inputTokens === undefined ? {} : { input_audio_tokens: canonicalDecimalString(String(inputTokens)) }),
+      ...(outputTokens === undefined ? {} : { output_tokens: canonicalDecimalString(String(outputTokens)) }),
+    },
+    pricingFacts: { ...(inputTokens === undefined ? {} : { inputTokens }) },
+    dumpTokenUsage: tokenUsage({
+      ...(inputTokens === undefined ? {} : { input: inputTokens }),
+      ...(outputTokens === undefined ? {} : { output: outputTokens }),
+    }),
+  };
 };
 
 // OpenAI Images responses report usage as
 // `{input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}`,
 // where the details objects split each total into `text_tokens` and
-// `image_tokens`. We map that split onto the billing dimensions: bare
+// `image_tokens`. We map that split onto the billing metrics: bare
 // input/output for the text modality, input_image/output_image for the image
 // modality. The details splits are disjoint and sum to their respective total.
 //
 // When a details object is missing but its total is present, the whole total is
-// charged on the bare dimension rather than inventing a split. A present field
+// charged on the bare metric rather than inventing a split. A present field
 // that is a non-number is treated as a malformed upstream payload (return
 // null) rather than silently coerced.
 export const tokenUsageFromImagesBody = (body: unknown): TokenUsage | null => {
@@ -200,8 +202,8 @@ interface ImagesUsageShape {
 }
 
 const splitModalityCounts = (
-  textDimension: BillingDimension,
-  imageDimension: BillingDimension,
+  textDimension: Exclude<keyof TokenUsage, 'tier'>,
+  imageDimension: Exclude<keyof TokenUsage, 'tier'>,
   total: number | undefined,
   details: unknown,
 ): TokenUsage | null => {
@@ -220,26 +222,10 @@ export const recordUsage = async (
   keyId: string,
   modelIdentity: TelemetryModelIdentity,
   quantities: UsageQuantities,
-  units: PriceUnits,
   pricingFacts: PricingRuntimeFacts,
-  options: { readonly unitMismatch?: 'reject' | 'unpriced' } = {},
 ): Promise<void> => {
   const priced = priceRequest(modelIdentity.pricing, pricingFacts);
-  let applicableRates = priced.rates;
-  for (const dimension of BILLING_DIMENSIONS) {
-    const pricingUnit = priced.units?.[dimension];
-    const usageUnit = units[dimension];
-    if (pricingUnit !== undefined && usageUnit !== undefined && pricingUnit !== usageUnit) {
-      if (options.unitMismatch !== 'unpriced') {
-        throw new Error(`Usage dimension ${dimension} is measured in ${usageUnit} but priced in ${pricingUnit}`);
-      }
-      if (applicableRates?.[dimension] !== undefined) {
-        const { [dimension]: _mismatchedRate, ...matchingRates } = applicableRates;
-        applicableRates = matchingRates;
-      }
-    }
-  }
-  const dimensions = usageDimensions(quantities, units, applicableRates);
+  const metrics = usageMetrics(quantities, priced.rates);
   await Promise.all([
     getRepo().usage.record({
       keyId,
@@ -249,7 +235,7 @@ export const recordUsage = async (
       hour: currentHour(),
       pricingSelector: priced.selector,
       requests: 1,
-      dimensions,
+      metrics,
     }),
     (async () => {
       const key = await getRepo().apiKeys.getById(keyId);
@@ -264,5 +250,5 @@ export const recordUsage = async (
 
 export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
   const measurement = tokenUsageMeasurement(usage);
-  await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.units, measurement.pricingFacts);
+  await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.pricingFacts);
 };

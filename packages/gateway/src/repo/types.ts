@@ -1,7 +1,7 @@
 import type { SearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 export type { SearchConfig } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
-import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, BillingUnit, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
@@ -55,23 +55,29 @@ export interface UsageRecord {
   // object. `{}` is the base coordinate.
   pricingSelector: PricingSelector;
   requests: number;
-  dimensions: UsageDimensionRecord[];
+  metrics: UsageMetricRecord[];
 }
 
-export interface UsageDimensionRecord {
-  dimension: BillingDimension;
-  unit: BillingUnit;
-  quantity: number;
-  unitPrice: number | null;
+export interface UsageMetricRecord {
+  metric: BillingMetric;
+  quantity: DecimalString;
+  unitPrice: DecimalString | null;
 }
 
-export type UsageQuantities = Partial<Record<BillingDimension, number>>;
+export type UsageQuantities = Partial<Record<BillingMetric, DecimalString>>;
 
-// Disjoint per-dimension token counts. Absent keys mean zero for that
-// dimension. No key's count overlaps another's. `tier` is only the normalized
+// Disjoint protocol-level token counts. Absent keys mean zero for that
+// token category. No key's count overlaps another's. `tier` is only the normalized
 // upstream observation used as a runtime pricing fact; it is projected into the
 // generic `pricingSelector` at recording time and is not persisted directly.
-export interface TokenUsage extends UsageQuantities {
+export interface TokenUsage {
+  input?: number;
+  input_cache_read?: number;
+  input_cache_write?: number;
+  input_cache_write_1h?: number;
+  input_image?: number;
+  output?: number;
+  output_image?: number;
   tier?: string | null;
 }
 
@@ -181,7 +187,7 @@ export interface SessionsRepo {
 
 export interface UsageRepo {
   // Additive upsert: on (keyId, model, upstream, modelKey, hour,
-  // pricingSelector, dimension, unit) conflict, quantities are summed. The
+  // pricingSelector, metric) conflict, quantities are summed exactly. The
   // first write establishes the unit-price snapshot, including an unpriced
   // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
