@@ -454,7 +454,36 @@ test('Jina image inputs reject pure-text targets before dispatch', async () => {
   assertEquals(fetchCalls, 0);
 });
 
-test('valid usage is recorded before malformed result items fail envelope parsing', async () => {
+test('same-protocol success forwards opaque result items while still recording usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+
+  const upstreamBody = {
+    model: 'raw-reranker',
+    object: 'list',
+    usage: { total_tokens: 7 },
+    results: [{ relevance_score: 0.8 }],
+  };
+  await withMockedFetch(
+    () => jsonResponse(upstreamBody),
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), upstreamBody);
+    },
+  );
+
+  await flushAsyncWork();
+  const usage = await repo.usage.listAll();
+  assertEquals(usage[0].requests, 1);
+  assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '7', unitPrice: null }]);
+});
+
+test('cross-protocol success still validates result items before rendering', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(repo, { protocol: 'jina-v1' });
 
@@ -466,7 +495,7 @@ test('valid usage is recorded before malformed result items fail envelope parsin
       results: [{ relevance_score: 0.8 }],
     }),
     async () => {
-      const response = await requestApp('/jina/v1/rerank', {
+      const response = await requestApp('/voyage/v1/rerank', {
         method: 'POST',
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
@@ -480,6 +509,29 @@ test('valid usage is recorded before malformed result items fail envelope parsin
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
   assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '7', unitPrice: null }]);
+});
+
+test('same-protocol malformed JSON is forwarded as request-only usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+
+  await withMockedFetch(
+    () => new Response('{not-json', { status: 200, headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const response = await requestApp('/jina/v1/rerank', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+      });
+      assertEquals(response.status, 200);
+      assertEquals(await response.text(), '{not-json');
+    },
+  );
+
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.metrics, []);
 });
 
 test('usage parsed before a cross-protocol render failure is still recorded', async () => {

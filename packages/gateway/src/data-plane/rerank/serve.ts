@@ -157,17 +157,29 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
     }
 
-    const upstreamBody = await terminal.response.clone().json() as unknown;
+    const sameProtocol = sourceProtocol === terminal.target.protocol;
+    let upstreamBody: unknown;
+    try {
+      upstreamBody = await terminal.response.clone().json() as unknown;
+    } catch (error) {
+      if (!sameProtocol) throw error;
+      console.warn(
+        `rerank: failed to parse same-protocol 2xx upstream body for ${sourceProtocol}; usage row will be request-only`,
+        error instanceof Error ? error.message : String(error),
+      );
+      ctx.dump?.success(terminal.identity, null);
+      settleRerank(ctx, terminal.performance, terminal.identity, undefined, false);
+      usageSettled = true;
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+    }
     measuredUsage = parseRerankUsage(terminal.target.protocol, upstreamBody);
-    const canonical = parseRerankResponse(terminal.target.protocol, upstreamBody);
-    const rendered = renderRerankResponse(sourceProtocol, terminal.target.protocol, canonical, request);
     ctx.dump?.success(terminal.identity, null);
     settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
     usageSettled = true;
-    const response = sourceProtocol === terminal.target.protocol
-      ? forwardUpstreamResponse(terminal.response)
-      : forwardUpstreamResponse(terminal.response, { body: JSON.stringify(rendered) });
-    return finalizeGatewayResponse(ctx, response);
+    if (sameProtocol) return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+    const canonical = parseRerankResponse(terminal.target.protocol, upstreamBody);
+    const rendered = renderRerankResponse(sourceProtocol, terminal.target.protocol, canonical, request);
+    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response, { body: JSON.stringify(rendered) }));
   } catch (error) {
     if (terminal !== undefined && !usageSettled) {
       settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, true);
