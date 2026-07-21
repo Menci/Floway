@@ -100,10 +100,11 @@ test('image transports append the Azure preview api-version', async () => {
   assertEquals(seenUrl, 'https://example.openai.azure.com/openai/v1/images/generations?api-version=preview');
 });
 
-test('audio transcription resolves every admitted OpenAI endpoint shape', async () => {
+test('audio transcription selects the resource deployment or Foundry v1 surface', async () => {
   const endpoints = [
-    ['https://example.openai.azure.com/', 'https://example.openai.azure.com/openai/v1/audio/transcriptions?api-version=preview'],
-    ['https://example.openai.azure.com/openai/v1/', 'https://example.openai.azure.com/openai/v1/audio/transcriptions?api-version=preview'],
+    ['https://example.openai.azure.com/', 'https://example.openai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2024-10-21'],
+    ['https://example.openai.azure.com/openai/v1/', 'https://example.openai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2024-10-21'],
+    ['https://example.services.ai.azure.com/', 'https://example.services.ai.azure.com/openai/v1/audio/transcriptions?api-version=preview'],
     ['https://example.services.ai.azure.com/api/projects/prod/', 'https://example.services.ai.azure.com/api/projects/prod/openai/v1/audio/transcriptions?api-version=preview'],
   ] as const;
 
@@ -119,7 +120,7 @@ test('audio transcription resolves every admitted OpenAI endpoint shape', async 
         return new Response('{}', { status: 200 });
       },
       async () => {
-        await azureFetchAudioTranscriptions(config, { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+        await azureFetchAudioTranscriptions(config, 'transcribe deployment', { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       },
     );
     assertEquals(seenUrl, expected);

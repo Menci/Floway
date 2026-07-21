@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { serializeOpenAIAudioTranscriptionRequest } from './audio.ts';
+import { serializeModelPathAudioTranscriptionRequest, serializeOpenAIAudioTranscriptionRequest } from './audio.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 test('serializeOpenAIAudioTranscriptionRequest preserves ordered fields and file metadata while replacing model', async () => {
@@ -28,4 +28,17 @@ test('serializeOpenAIAudioTranscriptionRequest preserves ordered fields and file
   assertEquals((serializedFile as File).type, 'audio/wav');
   assertEquals((serializedFile as File).lastModified, file.lastModified);
   assertEquals(new Uint8Array(await (serializedFile as File).arrayBuffer()), new Uint8Array([1, 2, 3, 4]));
+});
+
+test('serializeModelPathAudioTranscriptionRequest omits model fields selected by the URL', () => {
+  const form = serializeModelPathAudioTranscriptionRequest({
+    entries: [
+      { name: 'model', value: 'public-model' },
+      { name: 'file', value: new File(['audio'], 'meeting.wav', { type: 'audio/wav' }) },
+      { name: 'response_format', value: 'json' },
+    ],
+  });
+
+  assertEquals([...form.keys()], ['file', 'response_format']);
+  assertEquals(form.get('model'), null);
 });

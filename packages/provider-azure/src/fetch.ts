@@ -34,15 +34,13 @@ const azureAnthropicBaseUrl = (endpoint: string): string => {
   return trimTrailingSlash(url.href);
 };
 
-const azureFetchInternal = async (
+const azureFetchUrl = async (
   config: AzureUpstreamConfig,
   surface: 'openai' | 'anthropic',
-  path: string,
+  url: string,
   init: RequestInit,
   options: UpstreamFetchOptions,
-  query?: string,
 ): Promise<Response> => {
-  const baseUrl = surface === 'openai' ? azureOpenAiV1BaseUrl(config.endpoint) : azureAnthropicBaseUrl(config.endpoint);
   const headers = new Headers(init.headers);
   if (surface === 'anthropic') {
     headers.set('x-api-key', config.apiKey);
@@ -56,15 +54,39 @@ const azureFetchInternal = async (
   if (options.extraHeaders) {
     for (const [key, value] of options.extraHeaders) headers.set(key, value);
   }
+  return await options.wrapUpstreamCall(() => options.fetcher(url, { ...init, headers }));
+};
+
+const azureFetchInternal = async (
+  config: AzureUpstreamConfig,
+  surface: 'openai' | 'anthropic',
+  path: string,
+  init: RequestInit,
+  options: UpstreamFetchOptions,
+  query?: string,
+): Promise<Response> => {
+  const baseUrl = surface === 'openai' ? azureOpenAiV1BaseUrl(config.endpoint) : azureAnthropicBaseUrl(config.endpoint);
   const url = joinBaseAndPath(baseUrl, path);
   if (!query) {
-    return await options.wrapUpstreamCall(() => options.fetcher(url, { ...init, headers }));
+    return await azureFetchUrl(config, surface, url, init, options);
   }
   // Append per-endpoint query through URL.searchParams so a future path
   // that itself carries a query suffix does not produce `path?a?b`.
   const parsed = new URL(url);
   for (const [key, value] of new URLSearchParams(query).entries()) parsed.searchParams.append(key, value);
-  return await options.wrapUpstreamCall(() => options.fetcher(parsed.href, { ...init, headers }));
+  return await azureFetchUrl(config, surface, parsed.href, init, options);
+};
+
+export const usesAzureDeploymentScopedAudioTranscriptions = (config: AzureUpstreamConfig): boolean =>
+  new URL(config.endpoint).hostname.endsWith('.openai.azure.com');
+
+const azureDeploymentScopedAudioTranscriptionUrl = (config: AzureUpstreamConfig, deployment: string): string => {
+  const url = new URL(config.endpoint);
+  url.pathname = `/openai/deployments/${encodeURIComponent(deployment)}/audio/transcriptions`;
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('api-version', '2024-10-21');
+  return url.href;
 };
 
 export const azureFetchChatCompletions = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
@@ -84,11 +106,16 @@ export const azureFetchImagesGenerations = (config: AzureUpstreamConfig, init: R
   azureFetchInternal(config, 'openai', '/images/generations', init, options, 'api-version=preview');
 export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/images/edits', init, options, 'api-version=preview');
-// Azure's OpenAI v1 transcription endpoint is currently documented on the
-// preview lifecycle, including SSE streaming and multipart fields.
-// https://github.com/MicrosoftDocs/azure-ai-docs/blob/ba628bac0272c655bbc42e85cc137adde016aa14/articles/foundry/openai/includes/api-versions/new-inference-preview.md#create-transcription
-export const azureFetchAudioTranscriptions = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  azureFetchInternal(config, 'openai', '/audio/transcriptions', init, options, 'api-version=preview');
+// Classic Azure OpenAI resources select a deployment in the GA URL and omit
+// `model` from the multipart body. Foundry service/project endpoints use the
+// v1-preview model-in-body surface instead.
+// https://github.com/Azure/azure-rest-api-specs/blob/69fd7074df3358b7e2880a354c540f036fc4d863/specification/cognitiveservices/data-plane/AzureOpenAI/inference/stable/2024-10-21/inference.json#L383-L414
+// https://github.com/Azure/azure-rest-api-specs/blob/69fd7074df3358b7e2880a354c540f036fc4d863/specification/cognitiveservices/data-plane/AzureOpenAI/inference/stable/2024-10-21/inference.json#L3334-L3362
+// https://github.com/MicrosoftDocs/azure-ai-docs/blob/910fdabff565be2b5011d866efccf5d2053cd426/articles/foundry/openai/includes/api-versions/new-inference-preview.md#L95-L140
+export const azureFetchAudioTranscriptions = (config: AzureUpstreamConfig, deployment: string, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
+  usesAzureDeploymentScopedAudioTranscriptions(config)
+    ? azureFetchUrl(config, 'openai', azureDeploymentScopedAudioTranscriptionUrl(config, deployment), init, options)
+    : azureFetchInternal(config, 'openai', '/audio/transcriptions', init, options, 'api-version=preview');
 export const azureFetchMessages = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages', init, options);
 export const azureFetchMessagesCountTokens = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

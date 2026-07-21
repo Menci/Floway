@@ -13,14 +13,18 @@ export interface AudioTranscriptionRequest {
   readonly entries: readonly AudioTranscriptionFormEntry[];
 }
 
-export const serializeOpenAIAudioTranscriptionRequest = (
+type AudioTranscriptionModelField =
+  | { readonly type: 'replace'; readonly value: string }
+  | { readonly type: 'omit' };
+
+const serializeAudioTranscriptionRequest = (
   request: AudioTranscriptionRequest,
-  model: string,
+  modelField: AudioTranscriptionModelField,
 ): FormData => {
   const form = new FormData();
   for (const entry of request.entries) {
     if (entry.name === 'model') {
-      form.append(entry.name, model);
+      if (modelField.type === 'replace') form.append(entry.name, modelField.value);
     } else if (typeof entry.value === 'string') {
       form.append(entry.name, entry.value);
     } else {
@@ -29,3 +33,12 @@ export const serializeOpenAIAudioTranscriptionRequest = (
   }
   return form;
 };
+
+export const serializeOpenAIAudioTranscriptionRequest = (
+  request: AudioTranscriptionRequest,
+  model: string,
+): FormData => serializeAudioTranscriptionRequest(request, { type: 'replace', value: model });
+
+export const serializeModelPathAudioTranscriptionRequest = (
+  request: AudioTranscriptionRequest,
+): FormData => serializeAudioTranscriptionRequest(request, { type: 'omit' });

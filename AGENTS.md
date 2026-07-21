@@ -131,8 +131,10 @@ bytes/name/type while each candidate replaces only the upstream model id.
 Models use kind `audio` and declare `audioTranscriptions`. Custom catalogs may
 publish that kind, fall back to standard transcription model-id inference, or
 use an operator-authored row. Azure and Ollama audio rows are operator-authored.
-All three providers implement the call. Successful bodies
-remain raw across JSON, verbose JSON, text, SRT, and VTT. Streaming responses
+All three providers implement the call. Classic Azure OpenAI resources select
+the configured deployment in the GA URL and omit the multipart `model`; Foundry
+service/project endpoints use the v1-preview model-in-body surface. Successful
+bodies remain raw across JSON, verbose JSON, text, SRT, and VTT. Streaming responses
 reuse the shared SSE writer and terminate on `transcript.text.done` without a
 Chat `[DONE]` sentinel. Usage records always count the request. Token details
 split known audio tokens into `input_audio_tokens` and leave the remaining
