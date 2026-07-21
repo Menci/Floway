@@ -39,7 +39,7 @@ export interface StatefulResponsesStore {
   // scratchpad from hydrated items; interceptors can add server-only state
   // during the turn and output capture persists it with the exact wire item.
   beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void;
-  addSyntheticItem(id: string, privatePayload: unknown): void;
+  registerPrivatePayload(id: string, privatePayload: unknown): void;
   getPrivatePayload(id: string): unknown;
 }
 
@@ -183,7 +183,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const [id, payload] of privatePayloads) this.privatePayloads.set(id, structuredClone(payload));
   }
 
-  addSyntheticItem(id: string, privatePayload: unknown): void {
+  registerPrivatePayload(id: string, privatePayload: unknown): void {
     if (privatePayload !== undefined) this.privatePayloads.set(id, structuredClone(privatePayload));
   }
 
@@ -405,8 +405,8 @@ export const createResponsesHttpStore = (apiKeyId: string, store: boolean | unde
 
 // Non-Responses sources (Messages / Gemini / Chat Completions) never persist
 // Responses items, even when translation enters a Responses attempt — but the
-// server-tool shim still runs there, and its request-private scratchpad
-// (private payloads, synthetic ids) lives on the store. So they get a store
+// server-tool shim still runs there, and its request-private payload
+// scratchpad lives on the store. So they get a store
 // with no backing: it holds per-attempt state in memory and reads/writes
 // nothing durable, keeping the store present on every chat ctx.
 export const createNonResponsesSourceStore = (apiKeyId: string): StatefulResponsesStore =>

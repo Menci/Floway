@@ -253,7 +253,7 @@ describe('StatefulResponsesStore', () => {
 
     expect(store.getPrivatePayload('item')).toEqual({ first: true });
 
-    store.addSyntheticItem('ws_aabbccdd', { value: 2 });
+    store.registerPrivatePayload('ws_aabbccdd', { value: 2 });
     expect(store.getPrivatePayload('ws_aabbccdd')).toEqual({ value: 2 });
 
     store.beginAttempt(new Map());
@@ -281,7 +281,7 @@ describe('StatefulResponsesStore', () => {
     const store = createNonResponsesSourceStore('key-a');
     expect(store.writesState).toBe(false);
     store.beginAttempt(new Map());
-    store.addSyntheticItem('ws_aabbccdd', { ir: 'search result' });
+    store.registerPrivatePayload('ws_aabbccdd', { ir: 'search result' });
     expect(store.getPrivatePayload('ws_aabbccdd')).toEqual({ ir: 'search result' });
     expect(store.getItemById('anything')).toBeUndefined();
     expect(await store.loadSnapshot('resp_x')).toBeNull();

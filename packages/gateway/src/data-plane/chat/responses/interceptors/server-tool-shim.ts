@@ -843,7 +843,7 @@ async function* materializeServerToolItems(
       // Register private dispatcher state under the emitted item id so output
       // persistence captures it and replay-side `transformItems` can restore
       // it on the next loop turn.
-      store.addSyntheticItem(slot.id, step.value.privatePayload);
+      store.registerPrivatePayload(slot.id, step.value.privatePayload);
       yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
     }
   }
