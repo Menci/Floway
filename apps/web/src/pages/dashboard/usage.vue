@@ -180,7 +180,7 @@ useIntervalFn(() => { void load(); }, 60_000);
 
 const tokenSummary = computed(() => {
   const records = (data.value?.records ?? []).filter(r => !hiddenKeys.value.has(r.keyId) && !hiddenModels.value.has(r.model));
-  let requests = 0, cost: number | null = null, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, inputImage = 0, outputImage = 0;
+  let requests = 0, cost: number | null = null, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, inputImage = 0, inputAudio = 0, outputImage = 0;
   for (const r of records) {
     requests += r.requests;
     if (r.cost !== null) cost = (cost ?? 0) + Number(r.cost);
@@ -189,6 +189,7 @@ const tokenSummary = computed(() => {
     cacheRead += metricQuantity(r, 'input_cache_read_tokens');
     cacheCreation += metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens');
     inputImage += metricQuantity(r, 'input_image_tokens');
+    inputAudio += metricQuantity(r, 'input_audio_tokens');
     outputImage += metricQuantity(r, 'output_image_tokens');
   }
   return {
@@ -198,10 +199,10 @@ const tokenSummary = computed(() => {
     // so we avoid extra image-only columns. Input is the inclusive prompt total
     // (text + image, uncached + cache read + cache write); prefill is that total
     // minus cache reads; output is text + image output.
-    input: input + cacheRead + cacheCreation + inputImage,
+    input: input + cacheRead + cacheCreation + inputImage + inputAudio,
     output: output + outputImage,
-    total: input + output + cacheRead + cacheCreation + inputImage + outputImage,
-    prefill: input + cacheCreation + inputImage,
+    total: input + output + cacheRead + cacheCreation + inputImage + inputAudio + outputImage,
+    prefill: input + cacheCreation + inputImage + inputAudio,
   };
 });
 
@@ -237,10 +238,10 @@ const metricValue = (r: DisplayUsageRecord, metric: Metric): number | null => {
   switch (metric) {
   case 'requests': return r.requests;
   case 'cost': return r.cost === null ? null : Number(r.cost);
-  case 'total': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'output_tokens') + metricQuantity(r, 'input_cache_read_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens') + metricQuantity(r, 'output_image_tokens');
-  case 'input': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'input_cache_read_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens');
+  case 'total': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'output_tokens') + metricQuantity(r, 'input_cache_read_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens') + metricQuantity(r, 'input_audio_tokens') + metricQuantity(r, 'output_image_tokens');
+  case 'input': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'input_cache_read_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens') + metricQuantity(r, 'input_audio_tokens');
   case 'output': return metricQuantity(r, 'output_tokens') + metricQuantity(r, 'output_image_tokens');
-  case 'prefill': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens');
+  case 'prefill': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens') + metricQuantity(r, 'input_audio_tokens');
   case 'cached': return metricQuantity(r, 'input_cache_read_tokens');
   case 'cacheCreation': return metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens');
   case 'cachedRate':
@@ -263,6 +264,7 @@ interface TokenDetail {
   cacheRead: number;
   cacheCreation: number;
   inputImage: number;
+  inputAudio: number;
   outputImage: number;
   cost: number | null;
   hasTokenUsage: boolean;
@@ -315,13 +317,13 @@ const tokenDetailMetricValue = (detail: TokenDetail, metric: Metric): number | n
     return total > 0 ? (detail.cacheRead / total) * 100 : null;
   }
   if (metric === 'cachedRate') {
-    const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage;
+    const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage + detail.inputAudio;
     return prompt > 0 ? (detail.cacheRead / prompt) * 100 : null;
   }
   return null;
 };
 
-const emptyDetail = (): TokenDetail => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, inputImage: 0, outputImage: 0, cost: null, hasTokenUsage: false });
+const emptyDetail = (): TokenDetail => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, inputImage: 0, inputAudio: 0, outputImage: 0, cost: null, hasTokenUsage: false });
 
 const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey: 'keyId' | 'model', metric: Metric) => {
   const { keys: bucketKeys, labels } = buckets.value;
@@ -343,6 +345,7 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
     detail.cacheRead += metricQuantity(r, 'input_cache_read_tokens');
     detail.cacheCreation += metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens');
     detail.inputImage += metricQuantity(r, 'input_image_tokens');
+    detail.inputAudio += metricQuantity(r, 'input_audio_tokens');
     detail.outputImage += metricQuantity(r, 'output_image_tokens');
     if (r.cost !== null) detail.cost = (detail.cost ?? 0) + Number(r.cost);
     if (r.metrics.some(row => row.metric.endsWith('_tokens'))) detail.hasTokenUsage = true;
@@ -378,10 +381,10 @@ const tooltipHeader = (labelWidth: number) =>
 
 const tooltipRow = (label: string, labelWidth: number, detail: TokenDetail) => {
   const cached = detail.cacheRead;
-  const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage;
+  const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage + detail.inputAudio;
   const output = detail.output + detail.outputImage;
   const total = prompt + output;
-  const prefill = detail.input + detail.cacheCreation + detail.inputImage;
+  const prefill = detail.input + detail.cacheCreation + detail.inputImage + detail.inputAudio;
   const cost = detail.cost === null ? '—' : formatCost(detail.cost);
   const tokenCount = (value: number) => detail.hasTokenUsage ? formatTokenCount(value) : '—';
   return `${label.padEnd(labelWidth + 1)}${String(detail.requests).padStart(5)}  ${cost.padStart(9)}  ${tokenCount(total).padStart(7)}  ${tokenCount(cached).padStart(7)}  ${formatInputRate(cached, prompt).padStart(8)}  ${tokenCount(prefill).padStart(7)}  ${tokenCount(output).padStart(7)}  ${formatHitRate(detail.cacheRead, detail.cacheCreation).padStart(7)}`;
