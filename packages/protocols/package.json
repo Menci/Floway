@@ -4,46 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": {
-      "import": "./src/index.ts",
-      "types": "./src/index.ts"
-    },
-    "./common": {
-      "import": "./src/common/index.ts",
-      "types": "./src/common/index.ts"
-    },
-    "./completions": {
-      "import": "./src/completions/index.ts",
-      "types": "./src/completions/index.ts"
-    },
-    "./chat-completions": {
-      "import": "./src/chat-completions/index.ts",
-      "types": "./src/chat-completions/index.ts"
-    },
-    "./responses": {
-      "import": "./src/responses/index.ts",
-      "types": "./src/responses/index.ts"
-    },
-    "./messages": {
-      "import": "./src/messages/index.ts",
-      "types": "./src/messages/index.ts"
-    },
-    "./gemini": {
-      "import": "./src/gemini/index.ts",
-      "types": "./src/gemini/index.ts"
-    },
-    "./embeddings": {
-      "import": "./src/embeddings/index.ts",
-      "types": "./src/embeddings/index.ts"
-    },
-    "./images": {
-      "import": "./src/images/index.ts",
-      "types": "./src/images/index.ts"
-    },
-    "./audio": {
-      "import": "./src/audio/index.ts",
-      "types": "./src/audio/index.ts"
-    }
+    ".": { "import": "./src/index.ts", "types": "./src/index.ts" },
+    "./common": { "import": "./src/common/index.ts", "types": "./src/common/index.ts" },
+    "./completions": { "import": "./src/completions/index.ts", "types": "./src/completions/index.ts" },
+    "./chat-completions": { "import": "./src/chat-completions/index.ts", "types": "./src/chat-completions/index.ts" },
+    "./responses": { "import": "./src/responses/index.ts", "types": "./src/responses/index.ts" },
+    "./messages": { "import": "./src/messages/index.ts", "types": "./src/messages/index.ts" },
+    "./gemini": { "import": "./src/gemini/index.ts", "types": "./src/gemini/index.ts" },
+    "./embeddings": { "import": "./src/embeddings/index.ts", "types": "./src/embeddings/index.ts" },
+    "./images": { "import": "./src/images/index.ts", "types": "./src/images/index.ts" },
+    "./audio": { "import": "./src/audio/index.ts", "types": "./src/audio/index.ts" }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

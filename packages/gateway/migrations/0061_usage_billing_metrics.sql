@@ -14,10 +14,21 @@ WITH formatted_usage AS (
   SELECT
     key_id, model, upstream, model_key, hour, pricing_selector,
     dimension, tokens, unit_price,
+    typeof(unit_price) AS decimal_type,
     CASE
       WHEN unit_price IS NULL THEN NULL
-      WHEN typeof(unit_price) IN ('integer', 'real') THEN CAST(unit_price AS TEXT)
-      ELSE json('invalid legacy usage unit price')
+      ELSE (
+        WITH RECURSIVE precisions(digit_count) AS (
+          VALUES (1)
+          UNION ALL
+          SELECT digit_count + 1 FROM precisions WHERE digit_count < 17
+        )
+        SELECT printf('%!.*g', digit_count, unit_price)
+        FROM precisions
+        WHERE CAST(printf('%!.*g', digit_count, unit_price) AS REAL) = unit_price
+        ORDER BY digit_count
+        LIMIT 1
+      )
     END AS decimal_text
   FROM usage
 ), usage_mantissas AS (
@@ -71,6 +82,7 @@ SELECT
   CAST(tokens AS TEXT),
   CASE
     WHEN unit_price IS NULL THEN NULL
+    WHEN decimal_type NOT IN ('integer', 'real') OR unit_price < 0 THEN json('invalid legacy usage unit price')
     WHEN unit_price = 0 THEN '0'
     WHEN decimal_position <= 0 THEN sign || '0.' || printf('%0*d', -decimal_position, 0) || digits
     WHEN decimal_position >= length(digits) THEN sign || digits || printf('%0*d', decimal_position - length(digits), 0)
@@ -107,11 +119,9 @@ SET config_json = json_set(
                       WITH formatted_rates AS (
                         SELECT
                           rate.key,
+                          rate.type AS decimal_type,
                           CAST(rate.value AS REAL) AS decimal_value,
-                          CASE
-                            WHEN rate.type IN ('integer', 'real') THEN CAST(rate.value AS TEXT)
-                            ELSE json('invalid legacy model price')
-                          END AS decimal_text
+                          json_extract(entry.value, '$.rates') -> rate.key AS decimal_text
                         FROM json_each(json_extract(entry.value, '$.rates')) AS rate
                       ), rate_mantissas AS (
                         SELECT
@@ -152,6 +162,7 @@ SET config_json = json_set(
                           WHEN 'output_image' THEN 'output_image_tokens'
                         END,
                         CASE
+                          WHEN decimal_type NOT IN ('integer', 'real') OR decimal_value < 0 THEN json('invalid legacy model price')
                           WHEN decimal_value = 0 THEN '0'
                           WHEN decimal_position <= 0 THEN sign || '0.' || printf('%0*d', -decimal_position, 0) || digits
                           WHEN decimal_position >= length(digits) THEN sign || digits || printf('%0*d', decimal_position - length(digits), 0)
