@@ -280,7 +280,7 @@ test('/voyage/v1/rerank translates a DashScope native response', async () => {
       return jsonResponse({
         request_id: 'request-1',
         output: { results: [{ index: 1, relevance_score: 0.75, document: { text: 'two' } }] },
-        usage: { input_tokens: 16 },
+        usage: { total_tokens: 16 },
       });
     },
     async () => {
