@@ -172,13 +172,30 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       usageSettled = true;
       return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
     }
-    measuredUsage = parseRerankUsage(terminal.target.protocol, upstreamBody);
+    try {
+      measuredUsage = parseRerankUsage(terminal.target.protocol, upstreamBody);
+    } catch (error) {
+      if (!sameProtocol) throw error;
+      console.warn(
+        `rerank: failed to parse same-protocol usage for ${sourceProtocol}; usage row will be request-only`,
+        error instanceof Error ? error.message : String(error),
+      );
+      ctx.dump?.success(terminal.identity, null);
+      settleRerank(ctx, terminal.performance, terminal.identity, undefined, false);
+      usageSettled = true;
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+    }
+    if (sameProtocol) {
+      ctx.dump?.success(terminal.identity, null);
+      settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
+      usageSettled = true;
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+    }
+    const canonical = parseRerankResponse(terminal.target.protocol, upstreamBody);
+    const rendered = renderRerankResponse(sourceProtocol, terminal.target.protocol, canonical, request);
     ctx.dump?.success(terminal.identity, null);
     settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
     usageSettled = true;
-    if (sameProtocol) return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
-    const canonical = parseRerankResponse(terminal.target.protocol, upstreamBody);
-    const rendered = renderRerankResponse(sourceProtocol, terminal.target.protocol, canonical, request);
     return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response, { body: JSON.stringify(rendered) }));
   } catch (error) {
     if (terminal !== undefined && !usageSettled) {

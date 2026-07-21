@@ -126,7 +126,7 @@ test('/v2/rerank accepts null Cohere meta and records request-only usage', async
   assertEquals(usage[0].metrics, []);
 });
 
-test('/v2/rerank rejects malformed Cohere usage objects and still records the request', async () => {
+test('/v2/rerank preserves same-protocol successes with malformed usage as request-only', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(repo, { protocol: 'cohere-v2' });
 
@@ -138,8 +138,8 @@ test('/v2/rerank rejects malformed Cohere usage objects and still records the re
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
       });
-      assertEquals(response.status, 502);
-      await response.json();
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), { id: 'request-bad-usage', results: [], meta: { tokens: 3 } });
     },
   );
 
@@ -147,6 +147,8 @@ test('/v2/rerank rejects malformed Cohere usage objects and still records the re
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
   assertEquals(usage[0].metrics, []);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 0);
 });
 
 test('/jina/v1/rerank preserves same-dialect extensions and records token usage', async () => {
@@ -509,6 +511,8 @@ test('cross-protocol success still validates result items before rendering', asy
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
   assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '7', unitPrice: null }]);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
 });
 
 test('same-protocol malformed JSON is forwarded as request-only usage', async () => {

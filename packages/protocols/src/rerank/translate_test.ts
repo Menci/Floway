@@ -109,20 +109,20 @@ describe('rerank request egress', () => {
     expect(serializeRerankRequest('cohere-v2', 'raw', request)).toEqual({
       model: 'raw',
       query: 'query',
-      documents: ['one', '{"text":"two"}'],
+      documents: ['one', 'two'],
       top_n: 2,
     });
     expect(serializeRerankRequest('voyage-v1', 'raw', request)).toEqual({
       model: 'raw',
       query: 'query',
-      documents: ['one', '{"text":"two"}'],
+      documents: ['one', 'two'],
       top_k: 2,
       return_documents: true,
     });
     expect(serializeRerankRequest('dashscope-compatible', 'raw', request)).toEqual({
       model: 'raw',
       query: 'query',
-      documents: ['one', '{"text":"two"}'],
+      documents: ['one', 'two'],
       top_n: 2,
     });
     expect(serializeRerankRequest('dashscope-native', 'raw', request)).toEqual({

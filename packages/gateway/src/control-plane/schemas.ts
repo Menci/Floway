@@ -19,7 +19,7 @@ import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
-import { MODEL_KINDS, parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
+import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -142,7 +142,7 @@ const upstreamModelSchema = z.object({
   kind: z.enum(MODEL_KINDS).optional(),
   endpoints: modelEndpointsSchema,
   rerankTarget: z.object({
-    protocol: z.enum(['cohere-v1', 'cohere-v2', 'jina-v1', 'voyage-v1', 'dashscope-compatible', 'dashscope-native']),
+    protocol: z.enum(RERANK_PROTOCOLS),
     path: z.string().optional(),
   }).strict().optional(),
   display_name: z.string().optional(),
@@ -156,13 +156,20 @@ const upstreamModelSchema = z.object({
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
 }).refine(
-  m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
+  m => m.chat === undefined || (m.kind ?? kindForEndpoints(m.endpoints)) === 'chat',
   { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },
 ).refine(
-  m => m.kind !== 'rerank' || m.rerankTarget !== undefined,
+  m => {
+    const rerankEndpointOnly = m.endpoints.rerank !== undefined && Object.keys(m.endpoints).length === 1;
+    if (m.endpoints.rerank !== undefined && !rerankEndpointOnly) return false;
+    return ((m.kind ?? kindForEndpoints(m.endpoints)) === 'rerank') === rerankEndpointOnly;
+  },
+  { message: "kind === 'rerank' requires endpoints to contain only rerank", path: ['endpoints'] },
+).refine(
+  m => (m.kind ?? kindForEndpoints(m.endpoints)) !== 'rerank' || m.rerankTarget !== undefined,
   { message: "rerankTarget is required when kind === 'rerank'", path: ['rerankTarget'] },
 ).refine(
-  m => m.rerankTarget === undefined || m.kind === 'rerank',
+  m => m.rerankTarget === undefined || (m.kind ?? kindForEndpoints(m.endpoints)) === 'rerank',
   { message: "rerankTarget is only allowed when kind === 'rerank'", path: ['rerankTarget'] },
 );
 
@@ -690,7 +697,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(13, { error: 'version must be 13 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(14, { error: 'version must be 14 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

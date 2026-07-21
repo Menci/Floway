@@ -54,7 +54,7 @@ const setPath = (path: string) => {
         <span class="block text-xs font-medium text-gray-500">Path override</span>
         <Input
           :model-value="target.path"
-          :readonly="disabled"
+          :disabled="disabled"
           :placeholder="pathPlaceholder"
           class="font-mono"
           @update:model-value="setPath"

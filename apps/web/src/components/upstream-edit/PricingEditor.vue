@@ -36,7 +36,7 @@ const PRICING_LABELS: Record<BillingMetric, string> = {
   input_image_tokens: 'Image Input',
   output_tokens: 'Output',
   output_image_tokens: 'Image Output',
-  rerank_searches: 'Input',
+  rerank_searches: 'Searches',
 };
 
 interface PricingField {

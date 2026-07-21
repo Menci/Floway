@@ -146,6 +146,12 @@ describe('upstreamModelSchema rerank', () => {
     expect(createUpstreamBody.safeParse(customRerank()).success).toBe(true);
   });
 
+  test('derives rerank from its sole endpoint before validating the target', () => {
+    const body = customRerank();
+    delete (body.config.models[0] as Partial<typeof body.config.models[0]>).kind;
+    expect(createUpstreamBody.safeParse(body).success).toBe(true);
+  });
+
   test('rejects a rerank model without its target', () => {
     const body = customRerank();
     delete (body.config.models[0] as Partial<typeof body.config.models[0]>).rerankTarget;
@@ -159,5 +165,15 @@ describe('upstreamModelSchema rerank', () => {
     model.endpoints = { rerank: {} };
     model.rerankTarget = { protocol: 'cohere-v2' };
     expect(createUpstreamBody.safeParse(body).success).toBe(false);
+  });
+
+  test('rejects explicit chat kind and mixed endpoint maps containing rerank', () => {
+    const chat = customRerank();
+    (chat.config.models[0] as Record<string, unknown>).kind = 'chat';
+    expect(createUpstreamBody.safeParse(chat).success).toBe(false);
+
+    const mixed = customRerank();
+    (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, chatCompletions: {} };
+    expect(createUpstreamBody.safeParse(mixed).success).toBe(false);
   });
 });

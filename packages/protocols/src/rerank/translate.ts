@@ -170,7 +170,10 @@ export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknow
   }
 };
 
-const stringInput = (input: RerankInput): string => typeof input === 'string' ? input : JSON.stringify(input);
+const stringInput = (input: RerankInput): string => {
+  if (typeof input === 'string') return input;
+  return typeof input.text === 'string' ? input.text : JSON.stringify(input);
+};
 
 export const DEFAULT_RERANK_PATHS: Readonly<Record<RerankProtocol, string>> = {
   // Cohere SDK source: https://github.com/cohere-ai/cohere-python/blob/41f344bde2b195e0a7e51d259f4b3701e62605b5/src/cohere/raw_base_client.py#L1837-L1908

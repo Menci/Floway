@@ -80,7 +80,7 @@ describe('PricingEditor', () => {
     const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'rerank' });
     const input = (label: string) => wrapper.findAll('label').find(candidate => candidate.text().includes(label))!.get('input');
     await input('Input ($/MTok)').setValue('4');
-    await input('Input ($/1K searches)').setValue('2');
+    await input('Searches ($/1K searches)').setValue('2');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
       entries: [{ rates: { input_tokens: '0.000004', rerank_searches: '0.002' } }],
     });

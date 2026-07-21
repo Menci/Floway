@@ -110,6 +110,7 @@ export const useUsagePageData = defineBasicLoader(async () => {
 <script setup lang="ts">
 type Metric =
   | 'requests' | 'cost'
+  | 'rerankSearches'
   | 'total' | 'input' | 'output' | 'prefill'
   | 'cached' | 'cachedRate'
   | 'cacheCreation' | 'cacheHitRate';
@@ -183,7 +184,7 @@ const tokenSummary = computed(() => {
   const records = (data.value?.records ?? []).filter(r => !hiddenKeys.value.has(r.keyId) && !hiddenModels.value.has(r.model));
   let requests = 0;
   let cost: DecimalString | null = null;
-  let input: DecimalString = '0', output: DecimalString = '0', cacheRead: DecimalString = '0', cacheCreation: DecimalString = '0', inputImage: DecimalString = '0', outputImage: DecimalString = '0';
+  let input: DecimalString = '0', output: DecimalString = '0', cacheRead: DecimalString = '0', cacheCreation: DecimalString = '0', inputImage: DecimalString = '0', outputImage: DecimalString = '0', rerankSearches: DecimalString = '0';
   for (const r of records) {
     requests += r.requests;
     if (r.cost !== null) cost = sumDecimalStrings(cost ?? '0', r.cost);
@@ -193,9 +194,10 @@ const tokenSummary = computed(() => {
     cacheCreation = sumDecimalStrings(cacheCreation, metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'));
     inputImage = sumDecimalStrings(inputImage, metricQuantity(r, 'input_image_tokens'));
     outputImage = sumDecimalStrings(outputImage, metricQuantity(r, 'output_image_tokens'));
+    rerankSearches = sumDecimalStrings(rerankSearches, metricQuantity(r, 'rerank_searches'));
   }
   return {
-    requests, cost, cacheRead, cacheCreation,
+    requests, cost, cacheRead, cacheCreation, rerankSearches,
     // Input and Output mix text and image token counts into one figure. The
     // per-modality split only affects pricing (applied per metric already),
     // so we avoid extra image-only columns. Input is the inclusive prompt total
@@ -224,6 +226,7 @@ const buckets = computed(() => dashboardBuckets(loadedTokenRange.value, loadedAt
 const TOKEN_CHART_METRICS: Record<Metric, { label: string; kind: 'count' | 'cost' | 'tokens' | 'percent' }> = {
   requests: { label: 'Requests', kind: 'count' },
   cost: { label: 'Est. Cost', kind: 'cost' },
+  rerankSearches: { label: 'Rerank Searches', kind: 'count' },
   total: { label: 'Total Tokens', kind: 'tokens' },
   input: { label: 'Input Tokens', kind: 'tokens' },
   output: { label: 'Output Tokens', kind: 'tokens' },
@@ -240,6 +243,7 @@ const metricValue = (r: DisplayUsageRecord, metric: Metric): DecimalString | nul
   switch (metric) {
   case 'requests': return String(r.requests);
   case 'cost': return r.cost;
+  case 'rerankSearches': return metricQuantity(r, 'rerank_searches');
   case 'total': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'output_tokens'), metricQuantity(r, 'input_cache_read_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'), metricQuantity(r, 'output_image_tokens'));
   case 'input': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'input_cache_read_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'));
   case 'output': return sumDecimalStrings(metricQuantity(r, 'output_tokens'), metricQuantity(r, 'output_image_tokens'));
@@ -522,6 +526,7 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
               const entry = datasetEntries[ctx.datasetIndex]?.entry;
               const detail = bucket && entry ? details.get(bucket)?.get(entry.id) : undefined;
               if (!entry || !detail) return `${ctx.dataset.label}: ${formatTokenChartAxisValue(Number(ctx.parsed.y ?? 0), metric)}`;
+              if (metric === 'rerankSearches') return `${ctx.dataset.label}: ${formatTokenChartAxisValue(Number(ctx.parsed.y ?? 0), metric)}`;
               return tooltipRow(String(ctx.dataset.label ?? ''), labelWidth, detail);
             },
           },
@@ -647,7 +652,7 @@ const formatChartCost = (v: number | null) => {
     <div class="glass-card p-6 animate-in">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div class="flex items-center gap-3">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Token Usage</span>
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Usage</span>
           <div v-if="auth.canViewGlobalTelemetry" class="inline-flex rounded-md bg-surface-800 p-0.5" role="tablist">
             <button
               type="button"
@@ -698,7 +703,7 @@ const formatChartCost = (v: number | null) => {
       </div>
 
       <div class="mb-2 flex justify-end">
-        <ChartSeriesControls label="Token usage series selection" @select="applySeriesSelection(hiddenKeys, byKeySeriesIds, $event)" />
+        <ChartSeriesControls label="Usage series selection" @select="applySeriesSelection(hiddenKeys, byKeySeriesIds, $event)" />
       </div>
       <div style="height: 320px; position: relative;">
         <ChartCanvas :config="byKeyConfig" />
@@ -714,7 +719,7 @@ const formatChartCost = (v: number | null) => {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-6 pt-5 border-t border-white/5">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mt-6 pt-5 border-t border-white/5">
         <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
           <UsageSummaryMetric metric="requests" label="Requests" :active="tokenChartMetric === 'requests'" :value="tokenSummary.requests.toLocaleString()" @select="switchTokenChartMetric" />
           <UsageSummaryMetric metric="cost" label="Est. Cost" :active="tokenChartMetric === 'cost'" :value="formatUsd(tokenSummary.cost)" @select="switchTokenChartMetric" />
@@ -734,6 +739,9 @@ const formatChartCost = (v: number | null) => {
         <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
           <UsageSummaryMetric metric="cacheCreation" label="Cache Write" :active="tokenChartMetric === 'cacheCreation'" :value="formatDecimalQuantity(tokenSummary.cacheCreation)" @select="switchTokenChartMetric" />
           <UsageSummaryMetric metric="cacheHitRate" label="Cache Hit Rate" :active="tokenChartMetric === 'cacheHitRate'" :value="formatHitRate(tokenSummary.cacheRead, tokenSummary.cacheCreation)" @select="switchTokenChartMetric" />
+        </div>
+        <div class="grid grid-cols-1 gap-2">
+          <UsageSummaryMetric metric="rerankSearches" label="Rerank Searches" :active="tokenChartMetric === 'rerankSearches'" :value="formatDecimalQuantity(tokenSummary.rerankSearches)" @select="switchTokenChartMetric" />
         </div>
       </div>
 
