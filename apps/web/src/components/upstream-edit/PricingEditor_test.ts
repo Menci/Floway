@@ -1,9 +1,10 @@
-import { mount } from '@vue/test-utils';
+import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
 import PricingEditor from './PricingEditor.vue';
 import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import { Select } from '@floway-dev/ui';
 
 const tokenPricing = ({ entries }: Pick<ModelPricing, 'entries'>): ModelPricing => ({
   units: Object.fromEntries([...new Set(entries.flatMap(entry => Object.keys(entry.rates)))].map(dimension => [dimension, 'tokens_1m'])) as ModelPricing['units'],
@@ -61,19 +62,37 @@ describe('PricingEditor', () => {
     });
   });
 
-  it('defaults audio duration input to minutes and token output to tokens', async () => {
+  it.each([
+    ['minutes', 'Minute'],
+    ['tokens_1m', '1M tokens'],
+  ] as const)('requires an explicit audio input unit and accepts %s', async (unit, label) => {
     const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'audio' });
+    expect(wrapper.text()).toContain('Input ($/select unit)');
+
     await pricingInput(wrapper, 'unpriced').setValue('0.6');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      units: { input: 'minutes' },
+      units: {},
       entries: [{ rates: { input: 0.6 } }],
     });
+    expect(wrapper.text()).toContain('Input ($/unit required)');
 
-    const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/unit required)'))!.get('input');
+    const unitSelect = wrapper.get('[aria-label="Pricing billing units"]').findComponent(Select) as unknown as VueWrapper;
+    unitSelect.vm.$emit('update:modelValue', unit);
+    await nextTick();
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: { input: unit },
+      entries: [{ rates: { input: 0.6 } }],
+    });
+    expect(wrapper.text()).toContain(`Input ($/${label})`);
+  });
+
+  it('defaults new audio output pricing to tokens', async () => {
+    const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'audio' });
+    const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/1M tokens)'))!.get('input');
     await output.setValue('4');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      units: { input: 'minutes', output: 'tokens_1m' },
-      entries: [{ rates: { input: 0.6, output: 4 } }],
+      units: { output: 'tokens_1m' },
+      entries: [{ rates: { output: 4 } }],
     });
   });
 
@@ -93,6 +112,32 @@ describe('PricingEditor', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
       units: {},
       entries: [{ rates: { input: 2 } }],
+    });
+  });
+
+  it('does not assign a unit when a pricing dimension already exists in another entry', async () => {
+    const wrapper = mount(PricingEditor, {
+      props: {
+        modelValue: {
+          units: {},
+          entries: [
+            { rates: { input: 1 } },
+            { selector: { serviceTier: 'priority' }, rates: {} },
+          ],
+        },
+        editable: true,
+        kind: 'chat',
+      },
+    });
+
+    await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
+    await pricingInput(wrapper, 'unpriced').setValue('2');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: {},
+      entries: [
+        { rates: { input: 1 } },
+        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      ],
     });
   });
 
