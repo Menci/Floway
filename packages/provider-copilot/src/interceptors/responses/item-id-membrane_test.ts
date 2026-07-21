@@ -326,6 +326,21 @@ test('rewrites apply-patch diff item ids', async () => {
   expect(eventAt(frames, 'response.apply_patch_call_operation_diff.done').item_id).toBe(added.item.id);
 });
 
+test('rewrites reasoning-text item ids', async () => {
+  const item: ResponsesOutputItem = { type: 'reasoning', id: 'rs_raw', summary: [] };
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, item)),
+    eventFrame({ type: 'response.reasoning_text.delta', item_id: 'rs_raw', output_index: 0, content_index: 0, delta: 'trace' }),
+    eventFrame({ type: 'response.reasoning_text.done', item_id: 'rs_raw', output_index: 0, content_index: 0, text: 'trace' }),
+    eventFrame(outputItemEvent('done', 0, item)),
+  ]);
+  const frames = await collect(result);
+  const added = eventAt(frames, 'response.output_item.added');
+
+  expect(eventAt(frames, 'response.reasoning_text.delta').item_id).toBe(added.item.id);
+  expect(eventAt(frames, 'response.reasoning_text.done').item_id).toBe(added.item.id);
+});
+
 test('carries program and nested agent-message ids in every available blob', async () => {
   const items: ResponsesOutputItem[] = [
     { type: 'program', id: 'cm_raw', call_id: 'call_program', code: 'return 1', fingerprint: 'program state' },
@@ -506,6 +521,48 @@ test('fails closed on unknown event envelopes that could hide an item id', async
   const { result } = await runStream([eventFrame(future)]);
 
   await expect(collect(result)).rejects.toThrow("Unsupported Copilot Responses stream event type 'response.future'");
+});
+
+test('passes through an unknown scalar event without item identity', async () => {
+  const future = {
+    type: 'response.future_progress',
+    progress: 0.5,
+  } as unknown as ResponsesStreamEvent;
+  const { result } = await runStream([eventFrame(future)]);
+  const frames = await collect(result);
+
+  expect(frames).toEqual([eventFrame(future)]);
+});
+
+test('rewrites an item id extension on an unknown scalar event', async () => {
+  const item: ResponsesOutputItem = { type: 'message', id: 'msg_raw', role: 'assistant', content: [] };
+  const future = {
+    type: 'response.future_delta',
+    item_id: 'msg_raw',
+    output_index: 0,
+    delta: 'future',
+  } as unknown as ResponsesStreamEvent;
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, item)),
+    eventFrame(future),
+  ]);
+  const frames = await collect(result);
+  const added = eventAt(frames, 'response.output_item.added');
+  const normalized = frames[1];
+
+  if (normalized.type !== 'event') throw new Error('expected future event');
+  expect((normalized.event as unknown as { item_id: string }).item_id).toBe(added.item.id);
+});
+
+test('rejects an invalid item id extension on an unknown event', async () => {
+  const future = {
+    type: 'response.future_delta',
+    item_id: 42,
+    output_index: 0,
+  } as unknown as ResponsesStreamEvent;
+  const { result } = await runStream([eventFrame(future)]);
+
+  await expect(collect(result)).rejects.toThrow(/carries an invalid item_id extension/);
 });
 
 test('forwards repeated done frames with stable public identity and each frame own content', async () => {
