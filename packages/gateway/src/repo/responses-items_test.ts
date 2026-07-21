@@ -603,12 +603,12 @@ test('SQL conflict cleanup cannot delete a later winner\'s independently owned s
   expect((await repo.responsesItems.lookupMany(item.apiKeyId, [item.id]))[0].payload).toEqual(item.payload);
 });
 
-test('migration 0061 invalidates all prior Responses state and installs the exact-item schema', async () => {
+test('migration 0062 invalidates all prior Responses state and installs the exact-item schema', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0061_responses_producer_item_ids.sql') break;
+      if (filename === '0062_responses_producer_item_ids.sql') break;
       db.run(sql);
     }
     db.run('INSERT INTO responses_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -620,8 +620,8 @@ test('migration 0061 invalidates all prior Responses state and installs the exac
       ['resp_old', 'key-a', '["msg_old"]', 1_000],
     );
 
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0061_responses_producer_item_ids.sql');
-    if (migration === undefined) throw new Error('missing migration 0061_responses_producer_item_ids.sql');
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0062_responses_producer_item_ids.sql');
+    if (migration === undefined) throw new Error('missing migration 0062_responses_producer_item_ids.sql');
     db.run(migration[1]);
 
     expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
