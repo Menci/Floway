@@ -165,18 +165,18 @@ export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurem
       ['text_tokens', details.text_tokens],
       ['audio_tokens', details.audio_tokens],
     ] as const) {
-      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+      if (value !== undefined && (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)) {
         throw new Error(`Audio transcription token usage.input_token_details.${field} must be a non-negative safe integer`);
       }
     }
-    const textTokens = details.text_tokens as number;
-    const audioTokens = details.audio_tokens as number;
-    if (textTokens + audioTokens !== inputTokens) {
-      throw new Error('Audio transcription token usage.input_token_details must sum to input_tokens');
+    const textTokens = details.text_tokens as number | undefined;
+    const audioTokens = details.audio_tokens as number | undefined;
+    if ((textTokens ?? 0) + (audioTokens ?? 0) > inputTokens) {
+      throw new Error('Audio transcription token usage.input_token_details must not exceed input_tokens');
     }
     inputQuantities = {
-      input_tokens: canonicalDecimalString(String(textTokens)),
-      input_audio_tokens: canonicalDecimalString(String(audioTokens)),
+      input_tokens: canonicalDecimalString(String(inputTokens - (audioTokens ?? 0))),
+      ...(audioTokens === undefined ? {} : { input_audio_tokens: canonicalDecimalString(String(audioTokens)) }),
     };
   }
   return {

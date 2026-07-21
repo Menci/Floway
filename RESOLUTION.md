@@ -380,12 +380,12 @@ when the upstream reports a disjoint counter. The dashboard displays token
 rates as dollars per million tokens, but that scale exists only at the UI
 boundary; model metadata and usage snapshots always store the per-token rate.
 
-Measured usage is authoritative over pricing configuration. When an upstream
-reports a concrete quantity whose unit disagrees with the selected price unit
-(for example duration seconds against token pricing, or tokens against minute
-pricing), the usage row retains the measured quantity and unit with
-`unit_price: null`. The request remains counted; no mismatched rate is applied
-and no conversion between unrelated metrics is invented.
+Measured usage is authoritative over pricing configuration. Each observed
+metric looks up only its matching rate: `input_audio_seconds` is never converted
+to tokens, and token metrics are never inferred from duration. A metric without
+a configured rate remains present with `unit_price: null`, while the request is
+still counted. A model may price seconds, audio tokens, general input tokens,
+and output tokens simultaneously.
 
 ```text
 ModelPricing

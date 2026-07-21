@@ -159,6 +159,18 @@ test('audio transcription usage keeps aggregate input tokens general when detail
   }).quantities, { input_tokens: '14', output_tokens: '45' });
 });
 
+test('audio transcription usage accepts partial details and leaves unclassified input general', () => {
+  for (const [input_token_details, quantities] of [
+    [{}, { input_tokens: '14', output_tokens: '45' }],
+    [{ text_tokens: 4 }, { input_tokens: '14', output_tokens: '45' }],
+    [{ audio_tokens: 10 }, { input_tokens: '4', input_audio_tokens: '10', output_tokens: '45' }],
+  ] as const) {
+    assertEquals(audioTranscriptionUsageMeasurement({
+      usage: { type: 'tokens', input_tokens: 14, input_token_details, output_tokens: 45, total_tokens: 59 },
+    }).quantities, quantities);
+  }
+});
+
 test('audio transcription usage without a recognized metric is request-only', () => {
   for (const body of [
     { duration: 10 },
@@ -182,8 +194,8 @@ test('audio transcription usage rejects malformed declared metrics', () => {
     [{ usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: '59' } }, 'token usage.total_tokens'],
     [{ usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 58 } }, 'total_tokens must equal'],
     [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: null, output_tokens: 45, total_tokens: 59 } }, 'input_token_details must be an object'],
-    [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 4 }, output_tokens: 45, total_tokens: 59 } }, 'audio_tokens must be'],
-    [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 4, audio_tokens: 9 }, output_tokens: 45, total_tokens: 59 } }, 'input_token_details must sum'],
+    [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 4, audio_tokens: '10' }, output_tokens: 45, total_tokens: 59 } }, 'audio_tokens must be'],
+    [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 6, audio_tokens: 9 }, output_tokens: 45, total_tokens: 59 } }, 'input_token_details must not exceed'],
   ] as const) {
     assertThrows(() => audioTranscriptionUsageMeasurement(body), Error, message);
   }
