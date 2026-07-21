@@ -59,15 +59,17 @@ describe('PricingEditor', () => {
     });
   });
 
-  it('persists audio token, duration, and output metrics independently', async () => {
+  it('persists general input, audio token, duration, and output metrics independently', async () => {
     const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'audio' });
     const input = (label: string) => wrapper.findAll('label').find(candidate => candidate.text().includes(label))!.get('input');
+    await input('Input ($/MTok)').setValue('2');
     await input('Audio Input ($/MTok)').setValue('0.6');
-    await input('Audio Input ($/Minute)').setValue('0.6');
+    await input('Audio Input ($/Second)').setValue('0.01');
     await input('Output ($/MTok)').setValue('4');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
       entries: [{
         rates: {
+          input_tokens: '0.000002',
           input_audio_tokens: '0.0000006',
           input_audio_seconds: '0.01',
           output_tokens: '0.000004',

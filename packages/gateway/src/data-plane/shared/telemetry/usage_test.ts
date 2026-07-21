@@ -137,17 +137,26 @@ test('audio transcription usage preserves duration seconds as a base-unit metric
   });
 });
 
-test('audio transcription usage maps explicit token counts without inferring from totals', () => {
+test('audio transcription usage maps text and audio input token details to disjoint metrics', () => {
   assertEquals(audioTranscriptionUsageMeasurement({
-    usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 59 },
+    usage: {
+      type: 'tokens',
+      input_tokens: 14,
+      input_token_details: { text_tokens: 4, audio_tokens: 10 },
+      output_tokens: 45,
+      total_tokens: 59,
+    },
   }), {
-    quantities: { input_audio_tokens: '14', output_tokens: '45' },
+    quantities: { input_tokens: '4', input_audio_tokens: '10', output_tokens: '45' },
     pricingFacts: { inputTokens: 14 },
     dumpTokenUsage: { input: 14, output: 45 },
   });
+});
+
+test('audio transcription usage keeps aggregate input tokens general when details are absent', () => {
   assertEquals(audioTranscriptionUsageMeasurement({
-    usage: { type: 'tokens', total_tokens: 59 },
-  }).quantities, {});
+    usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 59 },
+  }).quantities, { input_tokens: '14', output_tokens: '45' });
 });
 
 test('audio transcription usage without a recognized metric is request-only', () => {
@@ -168,9 +177,13 @@ test('audio transcription usage rejects malformed declared metrics', () => {
     [{ usage: 'tokens' }, 'usage must be an object'],
     [{ usage: { type: 'duration' } }, 'duration usage.seconds'],
     [{ usage: { type: 'duration', seconds: '10' } }, 'duration usage.seconds'],
-    [{ usage: { type: 'tokens', input_tokens: -1 } }, 'token usage.input_tokens'],
-    [{ usage: { type: 'tokens', output_tokens: Number.NaN } }, 'token usage.output_tokens'],
-    [{ usage: { type: 'tokens', total_tokens: '59' } }, 'token usage.total_tokens'],
+    [{ usage: { type: 'tokens', input_tokens: -1, output_tokens: 45, total_tokens: 44 } }, 'token usage.input_tokens'],
+    [{ usage: { type: 'tokens', input_tokens: 14, output_tokens: Number.NaN, total_tokens: 59 } }, 'token usage.output_tokens'],
+    [{ usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: '59' } }, 'token usage.total_tokens'],
+    [{ usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 58 } }, 'total_tokens must equal'],
+    [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: null, output_tokens: 45, total_tokens: 59 } }, 'input_token_details must be an object'],
+    [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 4 }, output_tokens: 45, total_tokens: 59 } }, 'audio_tokens must be'],
+    [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 4, audio_tokens: 9 }, output_tokens: 45, total_tokens: 59 } }, 'input_token_details must sum'],
   ] as const) {
     assertThrows(() => audioTranscriptionUsageMeasurement(body), Error, message);
   }

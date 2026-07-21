@@ -51,7 +51,7 @@ const tokenPricingFields = (...metrics: BillingMetric[]): PricingField[] => metr
 const PRICING_FIELD_BY_METRIC = Object.fromEntries(BILLING_METRICS.map(metric => [
   metric,
   metric === 'input_audio_seconds'
-    ? { metric, displayUnit: 'Minute', displayScale: '60' }
+    ? { metric, displayUnit: 'Second', displayScale: '1' }
     : tokenPricingField(metric),
 ])) as Record<BillingMetric, PricingField>;
 
@@ -59,7 +59,7 @@ const PRICING_FIELDS_BY_KIND: Record<ModelKind, readonly PricingField[]> = {
   chat: tokenPricingFields('input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'output_tokens'),
   embedding: tokenPricingFields('input_tokens'),
   image: tokenPricingFields('input_tokens', 'input_image_tokens', 'output_tokens', 'output_image_tokens'),
-  audio: [tokenPricingField('input_audio_tokens'), PRICING_FIELD_BY_METRIC.input_audio_seconds, tokenPricingField('output_tokens')],
+  audio: [tokenPricingField('input_tokens'), tokenPricingField('input_audio_tokens'), PRICING_FIELD_BY_METRIC.input_audio_seconds, tokenPricingField('output_tokens')],
 };
 
 interface PricingThresholdDraft {

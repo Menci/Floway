@@ -72,7 +72,7 @@ test('/v1/audio/transcriptions requires multipart model and file fields', async 
 test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, and token usage', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
-    entries: [{ rates: { input_audio_tokens: '0.000002', output_tokens: '0.000004' } }],
+    entries: [{ rates: { input_tokens: '0.000001', input_audio_tokens: '0.000002', output_tokens: '0.000004' } }],
   });
   let upstreamForm: FormData | undefined;
 
@@ -82,7 +82,7 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
       upstreamForm = await request.formData();
       return new Response(JSON.stringify({
         text: 'hello world',
-        usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 59 },
+        usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 4, audio_tokens: 10 }, output_tokens: 45, total_tokens: 59 },
       }), {
         headers: { 'content-type': 'application/json', 'x-provider-trace': 'trace-a' },
       });
@@ -101,7 +101,7 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
       assertEquals(response.headers.get('x-provider-trace'), 'trace-a');
       assertEquals(await response.json(), {
         text: 'hello world',
-        usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 59 },
+        usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 4, audio_tokens: 10 }, output_tokens: 45, total_tokens: 59 },
       });
     },
   );
@@ -120,7 +120,8 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
   assertEquals(usage.metrics, [
-    { metric: 'input_audio_tokens', quantity: '14', unitPrice: '0.000002' },
+    { metric: 'input_tokens', quantity: '4', unitPrice: '0.000001' },
+    { metric: 'input_audio_tokens', quantity: '10', unitPrice: '0.000002' },
     { metric: 'output_tokens', quantity: '45', unitPrice: '0.000004' },
   ]);
 });
@@ -312,7 +313,7 @@ test('/v1/audio/transcriptions preserves token usage unpriced when the model is 
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
   assertEquals(usage.metrics, [
-    { metric: 'input_audio_tokens', quantity: '12', unitPrice: null },
+    { metric: 'input_tokens', quantity: '12', unitPrice: null },
     { metric: 'output_tokens', quantity: '8', unitPrice: null },
   ]);
 });
@@ -344,7 +345,7 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.metrics.map(row => ({ metric: row.metric, quantity: row.quantity })), [
-    { metric: 'input_audio_tokens', quantity: '3' },
+    { metric: 'input_tokens', quantity: '3' },
     { metric: 'output_tokens', quantity: '1' },
   ]);
   const [performance] = await repo.performance.listAll();

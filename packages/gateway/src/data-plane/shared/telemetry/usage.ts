@@ -113,12 +113,10 @@ export const tokenUsageMeasurement = (usage: TokenUsage | null): UsageMeasuremen
 };
 
 // OpenAI transcription responses discriminate usage by `type`. Token-based
-// models expose independent input/output counts; duration-based models expose
-// seconds. Each value maps directly to its flat base-unit metric.
-// Missing or unknown breakdowns record the request only: total_tokens and a
-// top-level duration are never used to invent a provider-owned metric. Once an
-// upstream selects a known discriminator, malformed declared fields are a
-// protocol violation and must remain observable to the response boundary.
+// models split input_token_details into text and audio metrics; without that
+// optional split, the aggregate stays on the general input metric. Duration-
+// based models expose seconds. Unknown breakdowns record the request only,
+// while malformed fields under a known discriminator remain observable.
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L36378-L36562
 export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurement => {
   if (!body || typeof body !== 'object') return requestOnlyUsageMeasurement();
@@ -127,7 +125,7 @@ export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurem
   if (!usage || typeof usage !== 'object' || Array.isArray(usage)) {
     throw new Error('Audio transcription usage must be an object');
   }
-  const metric = usage as { type?: unknown; seconds?: unknown; input_tokens?: unknown; output_tokens?: unknown; total_tokens?: unknown };
+  const metric = usage as { type?: unknown; seconds?: unknown; input_tokens?: unknown; input_token_details?: unknown; output_tokens?: unknown; total_tokens?: unknown };
 
   if (metric.type === 'duration') {
     if (typeof metric.seconds !== 'number' || !Number.isFinite(metric.seconds) || metric.seconds < 0) {
@@ -146,22 +144,48 @@ export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurem
     ['output_tokens', metric.output_tokens],
     ['total_tokens', metric.total_tokens],
   ] as const) {
-    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
-      throw new Error(`Audio transcription token usage.${field} must be a finite non-negative number`);
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`Audio transcription token usage.${field} must be a non-negative safe integer`);
     }
   }
-  const inputTokens = typeof metric.input_tokens === 'number' ? metric.input_tokens : undefined;
-  const outputTokens = typeof metric.output_tokens === 'number' ? metric.output_tokens : undefined;
+  const inputTokens = metric.input_tokens as number;
+  const outputTokens = metric.output_tokens as number;
+  const totalTokens = metric.total_tokens as number;
+  if (totalTokens !== inputTokens + outputTokens) {
+    throw new Error('Audio transcription token usage.total_tokens must equal input_tokens plus output_tokens');
+  }
+
+  let inputQuantities: UsageQuantities = { input_tokens: canonicalDecimalString(String(inputTokens)) };
+  if (metric.input_token_details !== undefined) {
+    if (!metric.input_token_details || typeof metric.input_token_details !== 'object' || Array.isArray(metric.input_token_details)) {
+      throw new Error('Audio transcription token usage.input_token_details must be an object');
+    }
+    const details = metric.input_token_details as { text_tokens?: unknown; audio_tokens?: unknown };
+    for (const [field, value] of [
+      ['text_tokens', details.text_tokens],
+      ['audio_tokens', details.audio_tokens],
+    ] as const) {
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new Error(`Audio transcription token usage.input_token_details.${field} must be a non-negative safe integer`);
+      }
+    }
+    const textTokens = details.text_tokens as number;
+    const audioTokens = details.audio_tokens as number;
+    if (textTokens + audioTokens !== inputTokens) {
+      throw new Error('Audio transcription token usage.input_token_details must sum to input_tokens');
+    }
+    inputQuantities = {
+      input_tokens: canonicalDecimalString(String(textTokens)),
+      input_audio_tokens: canonicalDecimalString(String(audioTokens)),
+    };
+  }
   return {
     quantities: {
-      ...(inputTokens === undefined ? {} : { input_audio_tokens: canonicalDecimalString(String(inputTokens)) }),
-      ...(outputTokens === undefined ? {} : { output_tokens: canonicalDecimalString(String(outputTokens)) }),
+      ...inputQuantities,
+      output_tokens: canonicalDecimalString(String(outputTokens)),
     },
-    pricingFacts: { ...(inputTokens === undefined ? {} : { inputTokens }) },
-    dumpTokenUsage: tokenUsage({
-      ...(inputTokens === undefined ? {} : { input: inputTokens }),
-      ...(outputTokens === undefined ? {} : { output: outputTokens }),
-    }),
+    pricingFacts: { inputTokens },
+    dumpTokenUsage: tokenUsage({ input: inputTokens, output: outputTokens }),
   };
 };
 
