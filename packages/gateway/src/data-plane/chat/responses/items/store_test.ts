@@ -99,7 +99,7 @@ describe('StatefulResponsesStore', () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', true);
-    const item = { type: 'compaction_summary', id: 'cmp_client', encrypted_content: 'opaque' } as unknown as Parameters<typeof store.stageInputItems>[0][number];
+    const item = { type: 'compaction_summary', id: 'cmp_client', encrypted_content: 'opaque' } as unknown as ResponsesInputItem;
     await store.stageInputItems(identified([item]));
     await store.commitSnapshot('resp_summary', 'append');
 
