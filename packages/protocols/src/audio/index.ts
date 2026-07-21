@@ -4,11 +4,18 @@
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L36378-L36562
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L61780-L61924
 
+export interface AudioTranscriptionInputTokenDetails {
+  text_tokens?: number;
+  audio_tokens?: number;
+  [key: string]: unknown;
+}
+
 export interface AudioTranscriptionTokenUsage {
   type: 'tokens';
-  input_tokens?: number;
-  output_tokens?: number;
-  total_tokens?: number;
+  input_tokens: number;
+  input_token_details?: AudioTranscriptionInputTokenDetails;
+  output_tokens: number;
+  total_tokens: number;
   [key: string]: unknown;
 }
 
