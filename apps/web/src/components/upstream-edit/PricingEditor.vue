@@ -165,6 +165,19 @@ const pricingFieldLabel = ({ dimension, unit }: PricingField): string =>
 const pricingFieldRate = (draft: PricingEntryDraft, { dimension, unit }: PricingField): number | undefined =>
   pricingUnits.value[dimension] === unit ? draft.rates[dimension] : undefined;
 
+const pricingFieldDisabled = ({ dimension, unit }: PricingField): boolean => {
+  const activeUnit = pricingUnits.value[dimension];
+  return activeUnit !== undefined
+    && activeUnit !== unit
+    && pricingEntryDrafts.value.some(draft => draft.rates[dimension] !== undefined);
+};
+
+const pricingFieldDisabledTitle = (field: PricingField): string | undefined => {
+  if (!pricingFieldDisabled(field)) return undefined;
+  const activeUnit = pricingUnits.value[field.dimension]!;
+  return `Clear all ${rateFieldName(field.dimension)} rates priced in ${BILLING_UNIT_LABELS[activeUnit]} before using ${BILLING_UNIT_LABELS[field.unit]}.`;
+};
+
 const pricingValidationErrors = computed<readonly string[]>(() => {
   const errors = new Set<string>();
   const numberedEntries = pricingEntryDrafts.value.map((draft, index): NumberedPricingEntryDraft => ({ draft, number: index + 1 }));
@@ -296,6 +309,8 @@ const updatePricingRate = (index: number, field: PricingField, raw: string | num
   if (pricingEntryDrafts.value[index] === undefined) throw new RangeError(`Pricing entry index is out of range: ${index}`);
   const { dimension, unit } = field;
   if (value === undefined && pricingUnits.value[dimension] !== unit) return;
+  const disabledReason = pricingFieldDisabledTitle(field);
+  if (value !== undefined && disabledReason !== undefined) throw new Error(disabledReason);
   if (value !== undefined) pricingUnits.value = { ...pricingUnits.value, [dimension]: unit };
   writePricingEntries(pricingEntryDrafts.value.map((draft, entryIndex) => {
     if (entryIndex !== index) return draft;
@@ -441,6 +456,8 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
                 min="0"
                 :model-value="pricingFieldRate(selectedPricingEntry, field)"
                 :readonly="!editable"
+                :disabled="pricingFieldDisabled(field)"
+                :title="pricingFieldDisabledTitle(field)"
                 placeholder="unpriced"
                 class="font-mono"
                 @update:model-value="value => updatePricingRate(selectedPricingEntryIndex, field, value)"
