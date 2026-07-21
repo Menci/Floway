@@ -390,18 +390,44 @@ class SqlSessionsRepo implements SessionsRepo {
 class SqlUsageRepo implements UsageRepo {
   constructor(private db: SqlDatabase) {}
 
+  private async addMetric(
+    record: UsageRecord,
+    upstream: string | null,
+    selector: string,
+    row: ReturnType<typeof usageMetricRows>[number],
+  ): Promise<void> {
+    const identity = [record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.metric];
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const current = await this.db.prepare(
+        "SELECT quantity FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ? AND metric = ?",
+      ).bind(...identity).first<{ quantity: string }>();
+      if (!current) {
+        const inserted = await this.db.prepare(
+          'INSERT OR IGNORE INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ).bind(...identity, row.quantity, row.unitPrice).run();
+        if (inserted.meta.changes === undefined) throw new Error('SQL runtime did not report inserted usage row count');
+        if (inserted.meta.changes > 0) return;
+        continue;
+      }
+
+      const quantity = addDecimalStrings(current.quantity, row.quantity);
+      const updated = await this.db.prepare(
+        "UPDATE usage SET quantity = ? WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ? AND metric = ? AND quantity = ?",
+      ).bind(quantity, ...identity, current.quantity).run();
+      if (updated.meta.changes === undefined) throw new Error('SQL runtime did not report updated usage row count');
+      if (updated.meta.changes > 0) return;
+    }
+    throw new Error(`Failed to aggregate usage metric ${row.metric} after 100 concurrent updates`);
+  }
+
   async record(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
     const selector = canonicalPricingSelectorKey(record.pricingSelector);
-    const statements: SqlPreparedStatement[] = usageMetricRows(record).map(row =>
-      this.db.prepare(
-        'INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.metric, row.quantity, row.unitPrice));
-    statements.push(this.db.prepare(
+    await Promise.all(usageMetricRows(record).map(row => this.addMetric(record, upstream, selector, row)));
+    await this.db.prepare(
       `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
-    ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, record.requests));
-    await runStatements(this.db, statements);
+    ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, record.requests).run();
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
@@ -474,8 +500,8 @@ const assembleUsageRecords = (metrics: readonly UsageMetricRow[], requests: read
     const quantity = parseNonNegativeDecimalString(row.quantity, `usage metric ${metric} quantity`);
     const unitPrice = row.unit_price === null ? null : parseNonNegativeDecimalString(row.unit_price, `usage metric ${metric} unit price`);
     const existing = record.metrics.find(candidate => candidate.metric === metric);
-    if (existing) existing.quantity = addDecimalStrings(existing.quantity, quantity);
-    else record.metrics.push({ metric, quantity, unitPrice });
+    if (existing) throw new Error(`Duplicate stored usage metric: ${metric}`);
+    record.metrics.push({ metric, quantity, unitPrice });
   }
   for (const row of requests) ensureRecord(row).requests = row.requests;
   return [...byBucket.values()].sort((a, b) => a.hour.localeCompare(b.hour));

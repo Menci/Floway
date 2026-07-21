@@ -10,6 +10,40 @@ CREATE TABLE usage_new (
   unit_price TEXT
 );
 
+WITH formatted_usage AS (
+  SELECT
+    key_id, model, upstream, model_key, hour, pricing_selector,
+    dimension, tokens, unit_price,
+    CASE WHEN unit_price IS NULL THEN NULL ELSE CAST(unit_price AS TEXT) END AS decimal_text
+  FROM usage
+), usage_mantissas AS (
+  SELECT
+    *,
+    CASE
+      WHEN instr(lower(decimal_text), 'e') > 0 THEN substr(decimal_text, 1, instr(lower(decimal_text), 'e') - 1)
+      ELSE decimal_text
+    END AS mantissa,
+    CASE
+      WHEN instr(lower(decimal_text), 'e') > 0 THEN CAST(substr(decimal_text, instr(lower(decimal_text), 'e') + 1) AS INTEGER)
+      ELSE 0
+    END AS source_exponent
+  FROM formatted_usage
+), usage_decimal_parts AS (
+  SELECT
+    *,
+    CASE WHEN substr(mantissa, 1, 1) = '-' THEN '-' ELSE '' END AS sign,
+    CASE WHEN substr(mantissa, 1, 1) = '-' THEN substr(mantissa, 2) ELSE mantissa END AS unsigned_mantissa
+  FROM usage_mantissas
+), shifted_usage AS (
+  SELECT
+    *,
+    rtrim(replace(unsigned_mantissa, '.', ''), '0') AS digits,
+    (CASE
+      WHEN instr(unsigned_mantissa, '.') > 0 THEN instr(unsigned_mantissa, '.') - 1
+      ELSE length(unsigned_mantissa)
+    END) + source_exponent - 6 AS decimal_position
+  FROM usage_decimal_parts
+)
 INSERT INTO usage_new (
   key_id, model, upstream, model_key, hour, pricing_selector,
   metric, quantity, unit_price
@@ -34,13 +68,15 @@ SELECT
   CASE
     WHEN unit_price IS NULL THEN NULL
     WHEN unit_price = 0 THEN '0'
-    ELSE rtrim(rtrim(printf('%.12f', unit_price / 1000000.0), '0'), '.')
+    WHEN decimal_position <= 0 THEN sign || '0.' || printf('%0*d', -decimal_position, 0) || digits
+    WHEN decimal_position >= length(digits) THEN sign || digits || printf('%0*d', decimal_position - length(digits), 0)
+    ELSE sign || substr(digits, 1, decimal_position) || '.' || substr(digits, decimal_position + 1)
   END
-FROM usage;
+FROM shifted_usage;
 
 DROP TABLE usage;
 ALTER TABLE usage_new RENAME TO usage;
-CREATE INDEX idx_usage_metric_identity
+CREATE UNIQUE INDEX idx_usage_metric_identity
   ON usage (key_id, model, COALESCE(upstream, ''), model_key, hour, pricing_selector, metric);
 CREATE INDEX idx_usage_metric_hour ON usage (hour);
 
@@ -64,8 +100,42 @@ SET config_json = json_set(
                     entry.value,
                     '$.rates',
                     json((
+                      WITH formatted_rates AS (
+                        SELECT
+                          rate.key,
+                          CAST(rate.value AS REAL) AS decimal_value,
+                          CAST(rate.value AS TEXT) AS decimal_text
+                        FROM json_each(json_extract(entry.value, '$.rates')) AS rate
+                      ), rate_mantissas AS (
+                        SELECT
+                          *,
+                          CASE
+                            WHEN instr(lower(decimal_text), 'e') > 0 THEN substr(decimal_text, 1, instr(lower(decimal_text), 'e') - 1)
+                            ELSE decimal_text
+                          END AS mantissa,
+                          CASE
+                            WHEN instr(lower(decimal_text), 'e') > 0 THEN CAST(substr(decimal_text, instr(lower(decimal_text), 'e') + 1) AS INTEGER)
+                            ELSE 0
+                          END AS source_exponent
+                        FROM formatted_rates
+                      ), rate_decimal_parts AS (
+                        SELECT
+                          *,
+                          CASE WHEN substr(mantissa, 1, 1) = '-' THEN '-' ELSE '' END AS sign,
+                          CASE WHEN substr(mantissa, 1, 1) = '-' THEN substr(mantissa, 2) ELSE mantissa END AS unsigned_mantissa
+                        FROM rate_mantissas
+                      ), shifted_rates AS (
+                        SELECT
+                          *,
+                          rtrim(replace(unsigned_mantissa, '.', ''), '0') AS digits,
+                          (CASE
+                            WHEN instr(unsigned_mantissa, '.') > 0 THEN instr(unsigned_mantissa, '.') - 1
+                            ELSE length(unsigned_mantissa)
+                          END) + source_exponent - 6 AS decimal_position
+                        FROM rate_decimal_parts
+                      )
                       SELECT json_group_object(
-                        CASE rate.key
+                        CASE shifted_rate.key
                           WHEN 'input' THEN 'input_tokens'
                           WHEN 'input_cache_read' THEN 'input_cache_read_tokens'
                           WHEN 'input_cache_write' THEN 'input_cache_write_tokens'
@@ -75,11 +145,13 @@ SET config_json = json_set(
                           WHEN 'output_image' THEN 'output_image_tokens'
                         END,
                         CASE
-                          WHEN CAST(rate.value AS REAL) = 0 THEN '0'
-                          ELSE rtrim(rtrim(printf('%.12f', CAST(rate.value AS REAL) / 1000000.0), '0'), '.')
+                          WHEN decimal_value = 0 THEN '0'
+                          WHEN decimal_position <= 0 THEN sign || '0.' || printf('%0*d', -decimal_position, 0) || digits
+                          WHEN decimal_position >= length(digits) THEN sign || digits || printf('%0*d', decimal_position - length(digits), 0)
+                          ELSE sign || substr(digits, 1, decimal_position) || '.' || substr(digits, decimal_position + 1)
                         END
                       )
-                      FROM json_each(json_extract(entry.value, '$.rates')) AS rate
+                      FROM shifted_rates AS shifted_rate
                     ))
                   )))
                 FROM json_each(json_extract(model.value, '$.pricing.entries')) AS entry

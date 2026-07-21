@@ -42,11 +42,13 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
       db.run(`INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES
         ('k', 'm', NULL, 'mk', '2026-01-01T00', NULL, 'input', 10, 1),
         ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 'input', 20, 2),
-        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 'input', 30, 3)`);
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 'input', 30, 3),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'tiny', 'input', 40, 1e-20)`);
       db.run(`INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES
         ('k', 'm', NULL, 'mk', '2026-01-01T00', NULL, 1),
         ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 2),
-        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 3)`);
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 3),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'tiny', 4)`);
     }
     db.run(sql);
   }
@@ -56,11 +58,13 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
     ['{}', 'input_tokens', '10', '0.000001'],
     ['{"serviceTier":"  "}', 'input_tokens', '20', '0.000002'],
     ['{"serviceTier":"pri\\"雪"}', 'input_tokens', '30', '0.000003'],
+    ['{"serviceTier":"tiny"}', 'input_tokens', '40', '0.00000000000000000000000001'],
   ]);
   assertEquals(requestRows, [
     ['{}', 1],
     ['{"serviceTier":"  "}', 2],
     ['{"serviceTier":"pri\\"雪"}', 3],
+    ['{"serviceTier":"tiny"}', 4],
   ]);
 });
 
@@ -151,4 +155,17 @@ test('SQL usage hydration rejects vocabulary unknown to the current application'
     'reasoning', '1', null,
   ).run();
   await assertRejects(() => new SqlRepo(db).usage.listAll(), TypeError, 'usage.metric is invalid: "reasoning"');
+});
+
+test('SQL usage repo atomically rolls concurrent decimal writes into one metric row', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await Promise.all(Array.from({ length: 50 }, () => repo.usage.record(record({
+    metrics: [{ metric: 'input_tokens', quantity: '0.1', unitPrice: '0.000002' }],
+  }))));
+
+  const [stored] = await query(repo);
+  assertEquals(stored.metrics, [{ metric: 'input_tokens', quantity: '5', unitPrice: '0.000002' }]);
+  assertEquals(stored.requests, 50);
+  assertEquals(await db.prepare('SELECT COUNT(*) AS count FROM usage').first(), { count: 1 });
 });

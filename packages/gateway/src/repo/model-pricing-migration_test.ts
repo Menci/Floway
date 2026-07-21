@@ -21,7 +21,7 @@ const inputRates = (input: number, output?: number) => ({
 
 const tokenPricing = (entries: ModelPricing['entries']): ModelPricing => ({ entries });
 
-test('model pricing migrations materialize legacy semantics with explicit units', async () => {
+test('model pricing migrations materialize legacy semantics as base-unit metric rates', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   for (const [filename, sql] of migrationSqlByFilename) {
@@ -42,6 +42,10 @@ test('model pricing migrations materialize legacy semantics with explicit units'
               output: 4,
               tiers: { fast: { input: 2, input_cache_write: 3 } },
             },
+          },
+          {
+            upstreamModelId: 'tiny-rate',
+            [legacyKey]: { input: 1e-20 },
           },
           {
             upstreamModelId: 'tier-adds-output',
@@ -139,6 +143,16 @@ test('model pricing migrations materialize legacy semantics with explicit units'
             },
           },
         ]),
+      },
+      {
+        upstreamModelId: 'tiny-rate',
+        pricing: tokenPricing([{ rates: {
+          input_tokens: '0.00000000000000000000000001',
+          input_cache_read_tokens: '0.00000000000000000000000001',
+          input_cache_write_tokens: '0.00000000000000000000000001',
+          input_cache_write_1h_tokens: '0.00000000000000000000000001',
+          input_image_tokens: '0.00000000000000000000000001',
+        } }]),
       },
       {
         upstreamModelId: 'tier-adds-output',

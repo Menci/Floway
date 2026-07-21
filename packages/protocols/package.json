@@ -47,8 +47,5 @@
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"
-  },
-  "dependencies": {
-    "decimal.js": "^10.6.0"
   }
 }
