@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { isResponsesItemId } from './format.ts';
+import { isResponsesItemId, responsesItemId } from './format.ts';
 import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
@@ -27,6 +27,34 @@ const memoryOutputHarness = () => {
   initRepo(repo);
   return { repo, store: createResponsesHttpStore('key-a', true) };
 };
+
+test('client output rewrites response and item ids inside queued envelopes', async () => {
+  const { store } = memoryOutputHarness();
+  const queued: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'queued',
+    output: [completedReasoningItem],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.queued', response: queued });
+  })();
+  const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+  for await (const frame of wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })) output.push(frame);
+
+  expect(output[0]).toMatchObject({
+    event: {
+      type: 'response.queued',
+      response: { id: 'resp_public', output: [{ type: 'reasoning' }] },
+    },
+  });
+  const frame = output[0];
+  if (frame.type !== 'event' || frame.event.type !== 'response.queued') throw new Error('expected queued event');
+  expect(frame.event.response.output[0].id).not.toBe('rs_upstream');
+});
 
 test('client output rewrites ids and persists the exact complete item before terminal', async () => {
   const { repo, store } = memoryOutputHarness();
@@ -189,7 +217,7 @@ test('client output persists a completed item before forwarding an error event',
     store,
     responseId: 'resp_public',
   })) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = responsesItemId(frame.event.item) ?? undefined;
   }
 
   expect(clientId).toEqual(expect.any(String));
@@ -210,7 +238,7 @@ test('client output does not persist a partial item without output_item.done', a
     store,
     responseId: 'resp_public',
   })) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.added') clientId = frame.event.item.id;
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.added') clientId = responsesItemId(frame.event.item) ?? undefined;
   }
 
   expect(clientId).toEqual(expect.any(String));
@@ -232,7 +260,7 @@ test('client output persists completed items before rethrowing an iterator error
       store,
       responseId: 'resp_public',
     })) {
-      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
+      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = responsesItemId(frame.event.item) ?? undefined;
     }
   };
 
@@ -255,7 +283,7 @@ test('client output persists completed items when the source ends without a term
     store,
     responseId: 'resp_public',
   })) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = responsesItemId(frame.event.item) ?? undefined;
   }
 
   expect(clientId).toEqual(expect.any(String));

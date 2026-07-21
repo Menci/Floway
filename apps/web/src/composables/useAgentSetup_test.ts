@@ -57,7 +57,7 @@ const makeApi = () => {
 const defaultConfig = () => ({
   apiKeyId: 'key-1',
   claudeCode: {
-    model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
+    model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
 });

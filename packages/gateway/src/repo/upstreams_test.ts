@@ -656,11 +656,11 @@ test('migration 0044 rewrites pathOverrides keys to the OpenAI-canonical /path/f
 test('migration 0062 opens model alias kind while preserving existing aliases', async () => {
   const db = await createMigratedSqlJsDatabase();
   try {
-    for (const filename of [...migrationSqlByFilename.keys()].filter(filename => filename >= '0010_unified_upstreams.sql' && filename < '0062_model_alias_kind.sql').toSorted()) {
+    for (const filename of [...migrationSqlByFilename.keys()].filter(filename => filename >= '0010_unified_upstreams.sql' && filename < '0063_model_alias_kind.sql').toSorted()) {
       applySqlJsFile(db, filename);
     }
 
-    applySqlJsFile(db, '0062_model_alias_kind.sql');
+    applySqlJsFile(db, '0063_model_alias_kind.sql');
     db.run(`INSERT INTO model_aliases (name, kind, selection, visible_in_models_list, targets, sort_order, created_at, updated_at)
             VALUES ('rerank-alias', 'rerank', 'first-available', 1, '[]', 1, '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z')`);
 

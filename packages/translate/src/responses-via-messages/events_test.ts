@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { createMessagesToResponsesStreamState, translateMessagesEventToResponsesEvents } from './events.ts';
 import { assertEquals } from '../test-assert.ts';
@@ -152,7 +152,7 @@ test('redacted_thinking stream block round-trips its opaque data as encrypted_co
   assertEquals(state.completedItems, [
     {
       type: 'reasoning',
-      id: 'rs_0',
+      id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
       summary: [],
       encrypted_content: 'opaque_sig',
     },
@@ -191,7 +191,7 @@ test('thinking stream block carries the upstream signature verbatim as encrypted
   assertEquals(state.completedItems, [
     {
       type: 'reasoning',
-      id: 'rs_0',
+      id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
       summary: [{ type: 'summary_text', text: 'trace' }],
       encrypted_content: 'upstream-opaque-signature',
     },
@@ -218,7 +218,7 @@ test('thinking stream block start emits a plain reasoning item', () => {
     throw new Error('expected reasoning item');
   }
 
-  assertEquals(added.item, { type: 'reasoning', id: 'rs_0', summary: [] });
+  assertEquals(added.item, { type: 'reasoning', id: expect.stringMatching(/^rs_[0-9a-f]{32}$/), summary: [] });
 });
 
 test('thinking stream block stop emits a plain reasoning item', () => {
@@ -252,7 +252,7 @@ test('thinking stream block stop emits a plain reasoning item', () => {
 
   assertEquals(done.item, {
     type: 'reasoning',
-    id: 'rs_0',
+    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
     summary: [{ type: 'summary_text', text: 'trace' }],
   });
 });
@@ -455,7 +455,7 @@ test('search_result_location citation_delta becomes one url_citation annotation'
   const [annotation] = annotations;
   assertEquals(annotation.output_index, 0);
   assertEquals(annotation.content_index, 0);
-  assertEquals(annotation.item_id, 'msg_0');
+  expect(annotation.item_id).toMatch(/^msg_[0-9a-f]{32}$/);
   assertEquals(annotation.annotation_index, 0);
   assertEquals(annotation.annotation, {
     type: 'url_citation',
@@ -741,11 +741,11 @@ test('synthesized message item carries a stable id consistent across added, chil
   const doneId = itemIdOf(stopEvents, 'response.output_item.done');
   const allChildIds = [...childItemIds(startEvents), ...childItemIds(deltaEvents), ...childItemIds(stopEvents)];
 
-  assertEquals(addedId, 'msg_0');
-  assertEquals(doneId, 'msg_0');
-  assertEquals(new Set(allChildIds), new Set(['msg_0']));
+  expect(addedId).toMatch(/^msg_[0-9a-f]{32}$/);
+  assertEquals(doneId, addedId);
+  assertEquals(new Set(allChildIds), new Set([addedId]));
   assertEquals(state.completedItems, [
-    { type: 'message', id: 'msg_0', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] },
+    { type: 'message', id: addedId, role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] },
   ]);
 });
 
@@ -766,11 +766,11 @@ test('synthesized function_call item carries a stable id consistent across added
   const doneId = itemIdOf(stopEvents, 'response.output_item.done');
   const allChildIds = [...childItemIds(startEvents), ...childItemIds(deltaEvents), ...childItemIds(stopEvents)];
 
-  assertEquals(addedId, 'fc_0');
-  assertEquals(doneId, 'fc_0');
-  assertEquals(new Set(allChildIds), new Set(['fc_0']));
+  expect(addedId).toMatch(/^fc_[0-9a-f]{32}$/);
+  assertEquals(doneId, addedId);
+  assertEquals(new Set(allChildIds), new Set([addedId]));
   assertEquals(state.completedItems, [
-    { type: 'function_call', id: 'fc_0', call_id: 'toolu_1', name: 'lookup', arguments: '{"q":"x"}', status: 'completed' },
+    { type: 'function_call', id: addedId, call_id: 'toolu_1', name: 'lookup', arguments: '{"q":"x"}', status: 'completed' },
   ]);
 });
 

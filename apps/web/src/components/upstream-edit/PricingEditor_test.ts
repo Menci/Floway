@@ -85,7 +85,6 @@ describe('PricingEditor', () => {
       entries: [{ rates: { input_tokens: '0.000004', rerank_searches: '0.002' } }],
     });
   });
-
   it('clears a threshold value while preserving operator-only updates', async () => {
     const wrapper = mountEditor({
       entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input_tokens: '1' } }],

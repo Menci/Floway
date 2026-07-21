@@ -38,6 +38,7 @@ const shellLiteral = (value: string): string => {
 // managed key".
 const shellFlag = (enabled: boolean): string => (enabled ? '1' : '');
 const shellOptional = (value: string | null): string => value ?? '';
+const shellOptionalNumber = (value: number | null): string => value?.toString() ?? '';
 
 // `set +x` leads so a caller who piped us into `set -x` cannot echo the API-key
 // assignment to its trace stream; the trailing newline lets the fixed installer
@@ -56,6 +57,8 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
       ['SETUP_CLAUDE_DEFAULT_SONNET_MODEL', shellOptional(claudeCode.defaultSonnetModel)],
       ['SETUP_CLAUDE_DEFAULT_HAIKU_MODEL', shellOptional(claudeCode.defaultHaikuModel)],
       ['SETUP_CLAUDE_EFFORT_LEVEL', shellOptional(claudeCode.effortLevel)],
+      ['SETUP_CLAUDE_CLEANUP_PERIOD_DAYS', shellOptionalNumber(claudeCode.cleanupPeriodDays)],
+      ['SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION', shellFlag(claudeCode.optOutAiAttribution)],
       ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
     );
   } else {
@@ -80,6 +83,7 @@ const powerShellLiteral = (value: string): string => {
 // encoder cannot be applied uniformly the way the POSIX renderer applies it.
 const powerShellBool = (value: boolean): string => (value ? '$true' : '$false');
 const powerShellOptional = (value: string | null): string => (value === null ? '$null' : powerShellLiteral(value));
+const powerShellOptionalNumber = (value: number | null): string => value?.toString() ?? '$null';
 
 // `Set-PSDebug -Off` leads for the same reason `set +x` does in POSIX.
 export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
@@ -96,6 +100,8 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
       ['$SetupClaudeDefaultSonnetModel', powerShellOptional(claudeCode.defaultSonnetModel)],
       ['$SetupClaudeDefaultHaikuModel', powerShellOptional(claudeCode.defaultHaikuModel)],
       ['$SetupClaudeEffortLevel', powerShellOptional(claudeCode.effortLevel)],
+      ['$SetupClaudeCleanupPeriodDays', powerShellOptionalNumber(claudeCode.cleanupPeriodDays)],
+      ['$SetupClaudeOptOutAiAttribution', powerShellBool(claudeCode.optOutAiAttribution)],
       ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
     );
   } else {

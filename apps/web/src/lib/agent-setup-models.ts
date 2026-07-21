@@ -11,15 +11,13 @@ export type AgentModelRanking =
   | { family: 'claude'; picker: ClaudePicker }
   | { family: 'codex' };
 
-// A single model select row. `value` is the form that gets persisted — `null`
-// for the "no override" row, otherwise the id in its persisted shape; `modelId`
-// is the raw catalog id for display, `null` marking the "no override" row. A
-// restored id no longer in the catalog rides along as an `unavailable` option so
-// reopening the page never silently drops it.
+// A single selectable model row. `value` is the form that gets persisted (the
+// Claude `[1m]` rule is baked in here), while `modelId` is the raw catalog id
+// shown as the label. The "no override" choice is not part of this list — the
+// picker renders its own Default row.
 export interface ModelOption {
-  value: string | null;
-  modelId: string | null;
-  unavailable: boolean;
+  value: string;
+  modelId: string;
 }
 
 const CLAUDE_DEFAULT_ORDER: readonly ClaudeTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other'];
@@ -116,19 +114,15 @@ const claudeModelOverride = (
 
 export const buildModelOptions = (
   models: readonly PublicModel[],
-  currentValue: string | null,
   ranking: AgentModelRanking,
 ): ModelOption[] => {
-  const options: ModelOption[] = [{ value: null, modelId: null, unavailable: false }];
+  const options: ModelOption[] = [];
   const values = new Set<string>();
   for (const model of rankAgentSetupModels(models, ranking)) {
     const value = ranking.family === 'claude' ? claudeModelOverride(model.id, model.limits, ranking.picker) : model.id;
     if (values.has(value)) continue;
     values.add(value);
-    options.push({ value, modelId: model.id, unavailable: false });
-  }
-  if (currentValue !== null && !options.some(option => option.value === currentValue)) {
-    options.push({ value: currentValue, modelId: currentValue, unavailable: true });
+    options.push({ value, modelId: model.id });
   }
   return options;
 };

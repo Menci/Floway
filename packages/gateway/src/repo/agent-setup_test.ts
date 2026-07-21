@@ -1,10 +1,11 @@
+import initSqlJs from 'sql.js';
 import { describe, expect, test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
-import { createSqliteTestDb } from './test-sqlite.ts';
+import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo } from './types.ts';
-import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
+import { type AgentSetupConfiguration, AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 
 type RepoFactory = () => Promise<Repo>;
 
@@ -15,6 +16,62 @@ const backends: ReadonlyArray<readonly [string, RepoFactory]> = [
   ['memory', makeMemoryRepo],
   ['sql', makeSqlRepo],
 ];
+
+test('migration 0061 adds optional Claude settings without replacing existing choices', async () => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0061_agent_setup_claude_settings.sql') break;
+      db.run(sql);
+    }
+    const baseConfiguration = {
+      apiKeyId: 'key-a',
+      claudeCode: {
+        model: null,
+        defaultOpusModel: null,
+        defaultSonnetModel: null,
+        defaultHaikuModel: null,
+        effortLevel: null,
+        modelDiscovery: true,
+      },
+      codex: { model: null, reasoningEffort: null },
+    };
+    db.run(
+      `INSERT INTO agent_setup
+        (token, user_id, configuration_json, configuration_revision, expires_at, created_at, updated_at)
+       VALUES (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000)`,
+      [
+        'legacy', 1, JSON.stringify(baseConfiguration),
+        'selected', 1, JSON.stringify({
+          ...baseConfiguration,
+          claudeCode: { ...baseConfiguration.claudeCode, cleanupPeriodDays: 365 },
+        }),
+        'opted-out', 1, JSON.stringify({
+          ...baseConfiguration,
+          claudeCode: { ...baseConfiguration.claudeCode, optOutAiAttribution: true },
+        }),
+      ],
+    );
+
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0061_agent_setup_claude_settings.sql');
+    if (migration === undefined) throw new Error('missing migration 0061_agent_setup_claude_settings.sql');
+    db.run(migration[1]);
+
+    const rows = db.exec('SELECT token, configuration_json FROM agent_setup ORDER BY token')[0];
+    if (rows === undefined) throw new Error('migration 0061 returned no agent_setup rows');
+    const configurations = Object.fromEntries(rows.values.map(([token, json]) => [
+      token as string,
+      JSON.parse(json as string) as AgentSetupConfiguration,
+    ]));
+    expect(configurations.legacy?.claudeCode.cleanupPeriodDays).toBeNull();
+    expect(configurations.legacy?.claudeCode.optOutAiAttribution).toBe(false);
+    expect(configurations.selected?.claudeCode.cleanupPeriodDays).toBe(365);
+    expect(configurations['opted-out']?.claudeCode.optOutAiAttribution).toBe(true);
+  } finally {
+    db.close();
+  }
+});
 
 const insert = (repo: Repo, over: Partial<Parameters<Repo['agentSetup']['insertForUser']>[0]> = {}) =>
   repo.agentSetup.insertForUser({

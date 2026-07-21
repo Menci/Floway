@@ -11,15 +11,7 @@
 // After changing this table, run the unit-price backfill for existing rows.
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 import { copilotPublicModelId } from './model-name.ts';
-import { basePricing, divideDecimalString, modelPricing, pricingEntry as exactPricingEntry, type ModelPricing, type PriceVector, type PricingSelector } from '@floway-dev/protocols/common';
-
-const tokenRates = (publishedPerMillion: PriceVector): PriceVector => Object.fromEntries(
-  Object.entries(publishedPerMillion).map(([metric, price]) => [metric, divideDecimalString(price, '1000000')]),
-) as PriceVector;
-
-const tokenBasePricing = (publishedPerMillion: PriceVector): ModelPricing => basePricing(tokenRates(publishedPerMillion));
-const pricingEntry = (publishedPerMillion: PriceVector, selector?: PricingSelector) => exactPricingEntry(tokenRates(publishedPerMillion), selector);
-const tokenModelPricing = modelPricing;
+import { tokenBasePricing, tokenModelPricing, tokenPricingEntry as pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
 
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 

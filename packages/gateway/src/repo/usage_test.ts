@@ -72,7 +72,7 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
   ]);
 });
 
-test('0061 rejects malformed legacy usage quantities and prices', async () => {
+test('0062 rejects malformed legacy usage quantities and prices', async () => {
   for (const [tokens, unitPrice] of [
     ['1', "'not-a-price'"],
     ['1', '1e999'],
@@ -83,7 +83,7 @@ test('0061 rejects malformed legacy usage quantities and prices', async () => {
     const SQL = await initSqlJs();
     const db = new SQL.Database();
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0061_usage_billing_metrics.sql') {
+      if (filename === '0062_usage_billing_metrics.sql') {
         db.run(`INSERT INTO usage (
           key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price
         ) VALUES ('k', 'm', NULL, 'mk', '2026-01-01T00', '{}', 'input', ${tokens}, ${unitPrice})`);

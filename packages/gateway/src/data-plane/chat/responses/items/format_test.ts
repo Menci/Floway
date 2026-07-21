@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import {
   createResponsesItemId,
-  createTemporaryResponsesItemId,
   hashResponsesItemContent,
   isResponsesItemId,
 } from './format.ts';
@@ -67,7 +66,6 @@ test('generates a valid client id for every explicit supported item type', () =>
 
 test.each(['unknown_item', '__proto__', 'constructor', 'toString'])('throws for unknown item type %s instead of using a generic fallback prefix', itemType => {
   assertThrows(() => createResponsesItemId(itemType), TypeError, 'Unknown Responses item type');
-  assertThrows(() => createTemporaryResponsesItemId(itemType), TypeError, 'Unknown Responses item type');
 });
 
 // `compaction_trigger` is intentionally absent from the prefix map. It is a
@@ -77,7 +75,6 @@ test.each(['unknown_item', '__proto__', 'constructor', 'toString'])('throws for 
 // that nobody adds a prefix back without also re-introducing a use case.
 test('rejects compaction_trigger — a control signal that should never be stored', () => {
   assertThrows(() => createResponsesItemId('compaction_trigger'), TypeError, 'Unknown Responses item type');
-  assertThrows(() => createTemporaryResponsesItemId('compaction_trigger'), TypeError, 'Unknown Responses item type');
 });
 
 test('successive client ids for the same item type collide-free under random body', () => {
@@ -88,12 +85,6 @@ test('successive client ids for the same item type collide-free under random bod
     seen.add(id);
     assert(isResponsesItemId(id));
   }
-});
-
-test('temporary ids use the item prefix without becoming client ids', () => {
-  const temporary = createTemporaryResponsesItemId('reasoning');
-  assert(/^rs_tmp_[A-Za-z0-9_-]{22}$/.test(temporary), temporary);
-  assertFalse(isResponsesItemId(temporary));
 });
 
 test('input content hashing includes the item id', async () => {

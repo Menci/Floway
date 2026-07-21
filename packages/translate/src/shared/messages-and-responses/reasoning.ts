@@ -1,5 +1,5 @@
 import type { MessagesRedactedThinkingBlock, MessagesThinkingBlock } from '@floway-dev/protocols/messages';
-import type { ResponsesInputReasoning, ResponsesReasoningItem } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesInputReasoning, type ResponsesReasoningItem } from '@floway-dev/protocols/responses';
 
 export type MessagesReasoningBlock = MessagesThinkingBlock | MessagesRedactedThinkingBlock;
 
@@ -47,7 +47,7 @@ export const packReasoningSignature = (id: string, encryptedContent: string): st
  * - `opaque-sig` (no `@`) → `{ id: null, encryptedContent: 'opaque-sig' }` —
  *   a genuine upstream signature (native Anthropic encrypted reasoning, or a
  *   base64 blob that contains no `@`). It is preserved verbatim and the caller
- *   synthesizes an `rs_${index}` id; we NEVER fabricate or overwrite it.
+ *   synthesizes a fresh reasoning id; we NEVER overwrite the signature.
  * - `enc@` (trailing `@`, empty id) → treated as a native signature.
  *
  * Splitting on the LAST `@` is safe because genuine upstream signatures are
@@ -66,17 +66,17 @@ export const unpackReasoningSignature = (signature: string): { id: string | null
  * Project a Messages reasoning carrier echoed by a downstream Messages CLIENT
  * into a Responses reasoning item bound for the Responses UPSTREAM. Unpacks the
  * carrier so the upstream sees the original id and a clean `encrypted_content`
- * blob. `rs_${index}` is the synthetic fallback id used when the carrier holds
- * a genuine (unpacked) upstream signature.
+ * blob. A fresh random id is used when the carrier holds a genuine (unpacked)
+ * upstream signature.
  */
-export const messagesReasoningBlockToResponsesReasoning = (block: MessagesReasoningBlock, index: number): ResponsesInputReasoning => {
+export const messagesReasoningBlockToResponsesReasoning = (block: MessagesReasoningBlock): ResponsesInputReasoning => {
   const carrier = block.type === 'thinking' ? block.signature : block.data;
   const { id, encryptedContent } = carrier !== undefined ? unpackReasoningSignature(carrier) : { id: null, encryptedContent: undefined };
   const summary = block.type === 'thinking' && block.thinking ? [{ type: 'summary_text' as const, text: block.thinking }] : [];
 
   return {
     type: 'reasoning',
-    id: id ?? `rs_${index}`,
+    id: id ?? createRandomResponsesItemId('reasoning'),
     summary,
     ...(encryptedContent !== undefined ? { encrypted_content: encryptedContent } : {}),
   };

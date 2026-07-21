@@ -8,16 +8,17 @@ import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gatew
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
-import type {
-  ResponsesFunctionCallOutputItem,
-  ResponsesFunctionTool,
-  ResponsesFunctionToolCallItem,
-  ResponsesHostedTool,
-  ResponsesInputImage,
-  ResponsesInputImageGenerationCall,
-  ResponsesInputItem,
-  ResponsesOutputImageGenerationCall,
-  ResponsesTool,
+import {
+  createRandomResponsesItemId,
+  type ResponsesFunctionCallOutputItem,
+  type ResponsesFunctionTool,
+  type ResponsesFunctionToolCallItem,
+  type ResponsesHostedTool,
+  type ResponsesInputImage,
+  type ResponsesInputImageGenerationCall,
+  type ResponsesInputItem,
+  type ResponsesOutputImageGenerationCall,
+  type ResponsesTool,
 } from '@floway-dev/protocols/responses';
 import { providerModelOf, type Fetcher, type ImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
@@ -484,7 +485,7 @@ export const buildImageGenerationFunctionTool = (_canonical: ResponsesHostedTool
 });
 
 export const synthesizeImageGenerationCallId = (): string =>
-  `ig_gw_${crypto.randomUUID().replace(/-/g, '')}`;
+  createRandomResponsesItemId('image_generation_call');
 
 // Collect all image sources from the request input in forward declaration
 // order: inline/remote `input_image` blocks in messages and function/custom

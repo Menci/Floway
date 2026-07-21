@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { translateChatCompletionsToResponses } from './request.ts';
 import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents } from '../responses-via-chat-completions/events.ts';
@@ -49,7 +49,7 @@ test('translateChatCompletionsToResponses uses rs-prefixed ids for reasoning inp
   if (!Array.isArray(result.input)) throw new Error('expected input array');
   const reasoning = result.input[0] as ResponsesInputReasoning;
   assertEquals(reasoning.type, 'reasoning');
-  assertEquals(reasoning.id, 'rs_0');
+  expect(reasoning.id).toMatch(/^rs_[0-9a-f]{32}$/);
 });
 
 test('translateChatCompletionsToResponses preserves text-only scalar reasoning', () => {
@@ -67,7 +67,7 @@ test('translateChatCompletionsToResponses preserves text-only scalar reasoning',
   if (!Array.isArray(result.input)) throw new Error('expected input array');
   assertEquals(result.input[0], {
     type: 'reasoning',
-    id: 'rs_0',
+    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
     summary: [{ type: 'summary_text', text: 'visible trace' }],
   });
 });
@@ -259,7 +259,7 @@ test('translateChatCompletionsChunkToResponsesEvents keeps late opaque with prio
   assertEquals(reasoningDoneEvents[0].output_index, 0);
   assertEquals(reasoningDoneEvents[0].item, {
     type: 'reasoning',
-    id: 'rs_0',
+    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
     summary: [{ type: 'summary_text', text: 'trace' }],
   });
 });
@@ -304,7 +304,7 @@ test('translateChatCompletionsChunkToResponsesEvents prefers reasoning_items ove
     },
     {
       type: 'message',
-      id: 'msg_1',
+      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
       role: 'assistant',
       content: [{ type: 'output_text', text: 'answer' }],
     },
@@ -401,7 +401,7 @@ test('translateChatCompletionsChunkToResponsesEvents discards scalar reasoning w
     },
     {
       type: 'message',
-      id: 'msg_1',
+      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
       role: 'assistant',
       content: [{ type: 'output_text', text: 'answer' }],
     },

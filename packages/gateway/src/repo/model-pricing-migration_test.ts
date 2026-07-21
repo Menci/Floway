@@ -218,7 +218,7 @@ test('model pricing migration preserves every digit in current numeric rate lexe
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   for (const [filename, sql] of migrationSqlByFilename) {
-    if (filename === '0061_usage_billing_metrics.sql') {
+    if (filename === '0062_usage_billing_metrics.sql') {
       const configJson = '{"models":[{"upstreamModelId":"precise-rate","pricing":{"entries":[{"rates":{"input":0.12345678901234566,"output":1e-20,"input_cache_read":9223372036854775807,"input_cache_write":1e-324}}]}}]}';
       db.run(
         `INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json)
@@ -244,7 +244,7 @@ test('model pricing migration rejects malformed, negative, and non-finite legacy
     const SQL = await initSqlJs();
     const db = new SQL.Database();
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0061_usage_billing_metrics.sql') {
+      if (filename === '0062_usage_billing_metrics.sql') {
         const configJson = `{"models":[{"upstreamModelId":"invalid-rate","pricing":{"entries":[{"rates":{"input":${invalidRateJson}}]}}]}`;
         db.run(
           `INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json)

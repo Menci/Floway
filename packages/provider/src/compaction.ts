@@ -9,7 +9,7 @@
 //   codex-rs/core/src/compact_remote_v2.rs#L409-L457
 //   codex-rs/utils/string/src/truncate.rs#L71-L74
 
-import type { ResponsesCompactionTriggerItem, ResponsesInputContent, ResponsesInputItem, ResponsesInputMessage, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesCompactionTriggerItem, type ResponsesInputContent, type ResponsesInputItem, type ResponsesInputMessage, type ResponsesOutputItem, type ResponsesResult } from '@floway-dev/protocols/responses';
 
 export const COMPACTION_TRIGGER: ResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
@@ -45,12 +45,10 @@ const isRetainedMessage = (item: ResponsesInputItem): item is ResponsesInputMess
 // roles, so the final cast records that the compaction envelope's `output` is
 // deliberately input-shaped.
 //
-// A retained message with no id gets a synthetic one (so the store can mint a
-// stored id and persist it). Retained messages persist as upstream-owned with
-// an id the upstream never issued (giving them `portable` affinity); the
-// compaction blob carries the real `forcing` affinity. Benign: retained
-// messages are resent as full content rather than `item_reference`s, so the
-// synthetic id is never replayed to the upstream.
+// Retained messages are newly synthesized output items, so their producer IDs
+// are assigned here instead of inherited from input. The current state-writing
+// client membrane may still alias them. They are resent as full content rather
+// than item references; the compaction blob carries next-turn state.
 export const compactionResponse = (input: ResponsesInputItem[], generated: ResponsesResult): ResponsesResult => {
   const kept: ResponsesInputMessage[] = [];
   let used = 0;
@@ -68,7 +66,7 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
 
     kept.push({
       type: 'message',
-      id: item.id ?? `msg_${crypto.randomUUID().replace(/-/g, '')}`,
+      id: createRandomResponsesItemId('message'),
       status: item.status ?? 'completed',
       role: item.role,
       content,
