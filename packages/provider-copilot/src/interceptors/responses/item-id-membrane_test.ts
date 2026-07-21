@@ -4,7 +4,7 @@ import { unwrapCopilotItemId, wrapCopilotItemId } from './item-id-carrier.ts';
 import { withCopilotResponsesItemIdMembrane } from './item-id-membrane.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesInputItem, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { responsesResultToEvents, type ResponsesInputItem, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ProviderResponsesResult } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
@@ -82,7 +82,7 @@ const eventAt = <TType extends ResponsesStreamEvent['type']>(
 };
 
 test('normalizes queued output and reuses its public id when the item is added', async () => {
-  const item: ResponsesOutputItem = { type: 'reasoning', id: 'rs_queued', summary: [] };
+  const item: ResponsesOutputItem = { type: 'reasoning', id: 'rs_queued', summary: [], encrypted_content: 'queued state' };
   const { result } = await runStream([
     eventFrame({ type: 'response.queued', response: { ...response([item]), status: 'queued' } }),
     eventFrame(outputItemEvent('added', 0, item)),
@@ -94,12 +94,18 @@ test('normalizes queued output and reuses its public id when the item is added',
   const done = eventAt(frames, 'response.output_item.done');
 
   expect(queued.response.output[0].id).toMatch(/^rs_[0-9a-f]{32}$/);
+  if (queued.response.output[0].type !== 'reasoning') throw new Error('expected reasoning item');
+  expect(unwrapCopilotItemId(queued.response.output[0].encrypted_content!)).toMatchObject({
+    kind: 'owned',
+    value: 'queued state',
+    id: 'rs_queued',
+  });
   expect(added.item.id).toBe(queued.response.output[0].id);
   expect(done.item.id).toBe(queued.response.output[0].id);
 });
 
-test('streams a public id immediately, then carries the canonical done id inside reasoning state', async () => {
-  const added: ResponsesOutputItem = { type: 'reasoning', id: 'rs_added', summary: [] };
+test('normalizes each reasoning lifecycle observation with its own upstream id and state', async () => {
+  const added: ResponsesOutputItem = { type: 'reasoning', id: 'rs_added', summary: [], encrypted_content: 'opaque added' };
   const done: ResponsesOutputItem = { type: 'reasoning', id: 'rs_done', summary: [], encrypted_content: 'opaque done' };
   const terminal: ResponsesOutputItem = { type: 'reasoning', id: 'rs_terminal', summary: [], encrypted_content: 'opaque terminal' };
   let release!: () => void;
@@ -129,6 +135,12 @@ test('streams a public id immediately, then carries the canonical done id inside
   }
   const publicId = first.value.event.item.id;
   expect(publicId).toMatch(/^rs_[0-9a-f]{32}$/);
+  if (first.value.event.item.type !== 'reasoning') throw new Error('expected reasoning item');
+  expect(unwrapCopilotItemId(first.value.event.item.encrypted_content!)).toMatchObject({
+    kind: 'owned',
+    value: 'opaque added',
+    id: 'rs_added',
+  });
 
   release();
   const rest: ProtocolFrame<ResponsesStreamEvent>[] = [];
@@ -154,6 +166,55 @@ test('streams a public id immediately, then carries the canonical done id inside
     value: 'opaque terminal',
     id: 'rs_terminal',
   });
+});
+
+test.each([
+  ['program', { type: 'program', id: 'cm_raw', call_id: 'call_program', code: 'return 1', fingerprint: 'program state' }],
+  ['agent_message', {
+    type: 'agent_message',
+    id: 'amsg_raw',
+    author: 'a',
+    recipient: 'b',
+    content: [{ type: 'encrypted_content', encrypted_content: 'agent state' }],
+  }],
+  ['compaction', { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compaction state' }],
+] as const)('normalizes carrier state on generic fast-path %s added frames', async (_type, fixture) => {
+  const { result } = await runStream(responsesResultToEvents(response([fixture as ResponsesOutputItem])));
+  const frames = await collect(result);
+  const added = eventAt(frames, 'response.output_item.added').item;
+  const done = eventAt(frames, 'response.output_item.done').item;
+  const terminal = eventAt(frames, 'response.completed').response.output[0];
+
+  expect(done.id).toBe(added.id);
+  expect(terminal.id).toBe(added.id);
+  if (added.type === 'program' && done.type === 'program' && terminal.type === 'program') {
+    expect([added, done, terminal].map(item => unwrapCopilotItemId(item.fingerprint))).toEqual([
+      expect.objectContaining({ kind: 'owned', value: 'program state', id: 'cm_raw' }),
+      expect.objectContaining({ kind: 'owned', value: 'program state', id: 'cm_raw' }),
+      expect.objectContaining({ kind: 'owned', value: 'program state', id: 'cm_raw' }),
+    ]);
+    return;
+  }
+  if (added.type === 'agent_message' && done.type === 'agent_message' && terminal.type === 'agent_message') {
+    const carried = [added, done, terminal].map(item => item.content[0]);
+    expect(carried.map(content => content.type === 'encrypted_content' && typeof content.encrypted_content === 'string'
+      ? unwrapCopilotItemId(content.encrypted_content)
+      : null)).toEqual([
+      expect.objectContaining({ kind: 'owned', value: 'agent state', id: 'amsg_raw' }),
+      expect.objectContaining({ kind: 'owned', value: 'agent state', id: 'amsg_raw' }),
+      expect.objectContaining({ kind: 'owned', value: 'agent state', id: 'amsg_raw' }),
+    ]);
+    return;
+  }
+  if (added.type === 'compaction' && done.type === 'compaction' && terminal.type === 'compaction') {
+    expect([added, done, terminal].map(item => unwrapCopilotItemId(item.encrypted_content))).toEqual([
+      expect.objectContaining({ kind: 'owned', value: 'compaction state', id: 'cmp_raw' }),
+      expect.objectContaining({ kind: 'owned', value: 'compaction state', id: 'cmp_raw' }),
+      expect.objectContaining({ kind: 'owned', value: 'compaction state', id: 'cmp_raw' }),
+    ]);
+    return;
+  }
+  throw new Error('expected matching carrier item types');
 });
 
 const uncarriedOutputItems = [
@@ -263,6 +324,21 @@ test('rewrites apply-patch diff item ids', async () => {
 
   expect(eventAt(frames, 'response.apply_patch_call_operation_diff.delta').item_id).toBe(added.item.id);
   expect(eventAt(frames, 'response.apply_patch_call_operation_diff.done').item_id).toBe(added.item.id);
+});
+
+test('rewrites reasoning-text item ids', async () => {
+  const item: ResponsesOutputItem = { type: 'reasoning', id: 'rs_raw', summary: [] };
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, item)),
+    eventFrame({ type: 'response.reasoning_text.delta', item_id: 'rs_raw', output_index: 0, content_index: 0, delta: 'trace' }),
+    eventFrame({ type: 'response.reasoning_text.done', item_id: 'rs_raw', output_index: 0, content_index: 0, text: 'trace' }),
+    eventFrame(outputItemEvent('done', 0, item)),
+  ]);
+  const frames = await collect(result);
+  const added = eventAt(frames, 'response.output_item.added');
+
+  expect(eventAt(frames, 'response.reasoning_text.delta').item_id).toBe(added.item.id);
+  expect(eventAt(frames, 'response.reasoning_text.done').item_id).toBe(added.item.id);
 });
 
 test('carries program and nested agent-message ids in every available blob', async () => {
@@ -404,6 +480,32 @@ test('fails closed on unknown output types before yielding a raw id', async () =
   await expect(collect(result)).rejects.toThrow("Unsupported Copilot Responses output item type 'future_call'");
 });
 
+test('rejects a repeated output_item.added observation', async () => {
+  const item: ResponsesOutputItem = { type: 'message', id: 'msg_raw', role: 'assistant', content: [] };
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, item)),
+    eventFrame(outputItemEvent('added', 0, item)),
+  ]);
+
+  await expect(collect(result)).rejects.toThrow(/output_item\.added twice/);
+});
+
+test('rejects an output index whose observed item type changes', async () => {
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, { type: 'message', id: 'msg_raw', role: 'assistant', content: [] })),
+    eventFrame(outputItemEvent('done', 0, { type: 'reasoning', id: 'rs_raw', summary: [] })),
+  ]);
+
+  await expect(collect(result)).rejects.toThrow(/changed type from message to reasoning/);
+});
+
+test('rejects replay state without the upstream id that authenticates it', async () => {
+  const item = { type: 'reasoning', summary: [], encrypted_content: 'opaque state' } as unknown as ResponsesOutputItem;
+  const { result } = await runStream([eventFrame(outputItemEvent('added', 0, item))]);
+
+  await expect(collect(result)).rejects.toThrow(/has replay state but no upstream id/);
+});
+
 test.each(['toString', 'constructor', '__proto__'])('does not accept Object prototype key %s as an output item type', async type => {
   const unknown = { type, id: 'raw_future' } as unknown as ResponsesOutputItem;
   const { result } = await runStream([eventFrame(outputItemEvent('added', 0, unknown))]);
@@ -419,6 +521,48 @@ test('fails closed on unknown event envelopes that could hide an item id', async
   const { result } = await runStream([eventFrame(future)]);
 
   await expect(collect(result)).rejects.toThrow("Unsupported Copilot Responses stream event type 'response.future'");
+});
+
+test('passes through an unknown scalar event without item identity', async () => {
+  const future = {
+    type: 'response.future_progress',
+    progress: 0.5,
+  } as unknown as ResponsesStreamEvent;
+  const { result } = await runStream([eventFrame(future)]);
+  const frames = await collect(result);
+
+  expect(frames).toEqual([eventFrame(future)]);
+});
+
+test('rewrites an item id extension on an unknown scalar event', async () => {
+  const item: ResponsesOutputItem = { type: 'message', id: 'msg_raw', role: 'assistant', content: [] };
+  const future = {
+    type: 'response.future_delta',
+    item_id: 'msg_raw',
+    output_index: 0,
+    delta: 'future',
+  } as unknown as ResponsesStreamEvent;
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, item)),
+    eventFrame(future),
+  ]);
+  const frames = await collect(result);
+  const added = eventAt(frames, 'response.output_item.added');
+  const normalized = frames[1];
+
+  if (normalized.type !== 'event') throw new Error('expected future event');
+  expect((normalized.event as unknown as { item_id: string }).item_id).toBe(added.item.id);
+});
+
+test('rejects an invalid item id extension on an unknown event', async () => {
+  const future = {
+    type: 'response.future_delta',
+    item_id: 42,
+    output_index: 0,
+  } as unknown as ResponsesStreamEvent;
+  const { result } = await runStream([eventFrame(future)]);
+
+  await expect(collect(result)).rejects.toThrow(/carries an invalid item_id extension/);
 });
 
 test('forwards repeated done frames with stable public identity and each frame own content', async () => {

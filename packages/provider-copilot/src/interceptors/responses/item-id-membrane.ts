@@ -102,7 +102,7 @@ const carrierValueCount = (item: ResponsesOutputItem): number => {
   return count;
 };
 
-const normalizeFinalItem = (item: ResponsesOutputItem, publicId: string): ResponsesOutputItem => {
+const normalizeObservedItem = (item: ResponsesOutputItem, publicId: string): ResponsesOutputItem => {
   copilotOutputItemType(item);
   if (carrierValueCount(item) === 0) return { ...item, id: publicId } as ResponsesOutputItem;
 
@@ -153,16 +153,13 @@ const trackObservedItem = (
 const normalizeResponseOutput = (
   response: ResponsesResult,
   state: StreamItemState,
-  terminal: boolean,
 ): ResponsesResult => {
   if (response.output.length === 0) return response;
   return {
     ...response,
     output: response.output.map((item, outputIndex) => {
       const tracked = trackObservedItem(state, outputIndex, item);
-      return terminal
-        ? normalizeFinalItem(item, tracked.publicId)
-        : { ...item, id: tracked.publicId } as ResponsesOutputItem;
+      return normalizeObservedItem(item, tracked.publicId);
     }),
   };
 };
@@ -174,6 +171,8 @@ const ITEM_ID_EVENT_TYPES = new Set<ResponsesStreamEvent['type']>([
   'response.reasoning_summary_part.done',
   'response.reasoning_summary_text.delta',
   'response.reasoning_summary_text.done',
+  'response.reasoning_text.delta',
+  'response.reasoning_text.done',
   'response.output_text.delta',
   'response.output_text.done',
   'response.output_text.annotation.added',
@@ -205,12 +204,12 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
       throw new TypeError(`Copilot Responses emitted output_item.added twice for output_index ${event.output_index}`);
     }
     tracked.added = true;
-    return { ...event, item: { ...event.item, id: tracked.publicId } as ResponsesOutputItem };
+    return { ...event, item: normalizeObservedItem(event.item, tracked.publicId) };
   }
 
   if (event.type === 'response.output_item.done') {
     const tracked = trackObservedItem(state, event.output_index, event.item);
-    return { ...event, item: normalizeFinalItem(event.item, tracked.publicId) };
+    return { ...event, item: normalizeObservedItem(event.item, tracked.publicId) };
   }
 
   if (
@@ -221,26 +220,29 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
     || event.type === 'response.incomplete'
     || event.type === 'response.failed'
   ) {
-    const terminal = event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed';
-    return { ...event, response: normalizeResponseOutput(event.response, state, terminal) };
+    return { ...event, response: normalizeResponseOutput(event.response, state) };
   }
 
   if (event.type === 'error' || event.type === 'ping') return event;
   const carrier = event as ResponsesStreamEvent & { item_id?: unknown; output_index?: unknown };
-  if (NO_ITEM_ID_EVENT_TYPES.has(event.type)) {
-    if (!Object.hasOwn(carrier, 'item_id')) return event;
-    if (typeof carrier.item_id !== 'string' || typeof carrier.output_index !== 'number') {
-      throw new TypeError(`Copilot Responses event '${event.type}' carries an invalid item_id extension`);
+  const requiresItemId = ITEM_ID_EVENT_TYPES.has(event.type);
+  const permitsMissingItemId = NO_ITEM_ID_EVENT_TYPES.has(event.type);
+  if (!requiresItemId && !permitsMissingItemId) {
+    if (Object.hasOwn(event, 'item') || Object.hasOwn(event, 'response')) {
+      throw new TypeError(`Unsupported Copilot Responses stream event type '${event.type}'`);
     }
-    return { ...carrier, item_id: trackedAt(state, carrier.output_index).publicId } as ResponsesStreamEvent;
-  }
-  if (!ITEM_ID_EVENT_TYPES.has(event.type)) {
-    throw new TypeError(`Unsupported Copilot Responses stream event type '${event.type}'`);
+    if (!Object.hasOwn(carrier, 'item_id')) return event;
+  } else if (permitsMissingItemId && !Object.hasOwn(carrier, 'item_id')) {
+    return event;
   }
   if (typeof carrier.item_id !== 'string') {
-    throw new TypeError(`Copilot Responses event '${event.type}' is missing item_id`);
+    const reason = requiresItemId ? 'is missing item_id' : 'carries an invalid item_id extension';
+    throw new TypeError(`Copilot Responses event '${event.type}' ${reason}`);
   }
   if (typeof carrier.output_index !== 'number') {
+    if (!requiresItemId) {
+      throw new TypeError(`Copilot Responses event '${event.type}' carries an invalid item_id extension`);
+    }
     throw new TypeError(`Copilot Responses event '${event.type}' carries item_id without output_index`);
   }
   return { ...carrier, item_id: trackedAt(state, carrier.output_index).publicId } as ResponsesStreamEvent;
@@ -261,7 +263,7 @@ const normalizeCompactionResult = (response: ResponsesResult): ResponsesResult =
   ...response,
   output: response.output.map(item => {
     if (item.type !== 'compaction') return item;
-    return normalizeFinalItem(item, createPublicItemId('compaction'));
+    return normalizeObservedItem(item, createPublicItemId('compaction'));
   }),
 });
 

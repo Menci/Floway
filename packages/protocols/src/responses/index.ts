@@ -1101,6 +1101,22 @@ type ResponsesStreamEventVariant =
     summary_index: number;
     text: string;
   }
+  // https://github.com/openai/openai-python/blob/d4dceb221b9a92c55c232d5b330ae89beb539415/src/openai/types/responses/response_reasoning_text_delta_event.py#L9-L31
+  // https://github.com/openai/openai-python/blob/d4dceb221b9a92c55c232d5b330ae89beb539415/src/openai/types/responses/response_reasoning_text_done_event.py#L9-L34
+  | {
+    type: 'response.reasoning_text.delta';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    delta: string;
+  }
+  | {
+    type: 'response.reasoning_text.done';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    text: string;
+  }
   | {
     type: 'response.output_text.delta';
     item_id: string;
