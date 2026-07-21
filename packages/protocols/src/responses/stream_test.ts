@@ -124,12 +124,13 @@ test('parseResponsesStream expands upstream fast-path (created+in_progress+compl
   assertEquals(frames.at(-1)?.type, 'done');
 });
 
-test('parseResponsesStream passes wrapper frames through before fast-path expansion synthesises the structured events', async () => {
+test('parseResponsesStream passes queued/created/in-progress wrappers through before fast-path expansion', async () => {
   const response = makeResponse('completed');
   const frames = await collect(parse(
-    sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
-    sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 1 }), 'response.in_progress'),
-    sseFrame(JSON.stringify({ response, sequence_number: 2 }), 'response.completed'),
+    sseFrame(JSON.stringify({ response: { ...response, status: 'queued' }, sequence_number: 0 }), 'response.queued'),
+    sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 1 }), 'response.created'),
+    sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 2 }), 'response.in_progress'),
+    sseFrame(JSON.stringify({ response, sequence_number: 3 }), 'response.completed'),
     sseFrame('[DONE]'),
   ));
 
@@ -139,6 +140,7 @@ test('parseResponsesStream passes wrapper frames through before fast-path expans
   assertEquals(
     frames.map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
     [
+      'response.queued',
       'response.created',
       'response.in_progress',
       'response.output_item.added',
@@ -151,10 +153,8 @@ test('parseResponsesStream passes wrapper frames through before fast-path expans
       'done',
     ],
   );
-  // The two wrappers we wrote on the wire reach downstream verbatim — same
-  // payload (in_progress snapshot), same sequence number.
   assertEquals((frames[0] as { event: { sequence_number: number } }).event.sequence_number, 0);
-  assertEquals((frames[1] as { event: { sequence_number: number } }).event.sequence_number, 1);
+  assertEquals((frames[2] as { event: { sequence_number: number } }).event.sequence_number, 2);
 });
 
 test('parseResponsesStream passes structured upstream events through unchanged when upstream already streams them', async () => {

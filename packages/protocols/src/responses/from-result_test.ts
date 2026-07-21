@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { responsesResultToEvents } from './from-result.ts';
-import type { ResponsesResult } from './index.ts';
-import { assertEquals, assertFalse } from '../test-assert.ts';
+import type { ResponsesOutputItem, ResponsesResult } from './index.ts';
+import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
 
 const completedResponse: ResponsesResult = {
   id: 'resp_completed',
@@ -22,6 +22,14 @@ const completedResponse: ResponsesResult = {
   incomplete_details: null,
   usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
 };
+
+test.each(['queued', 'in_progress', 'cancelled'] as const)('responsesResultToEvents rejects nonterminal status %s', status => {
+  assertThrows(
+    () => Array.from(responsesResultToEvents({ ...completedResponse, status })),
+    TypeError,
+    `Cannot expand nonterminal Responses status '${status}'`,
+  );
+});
 
 test('responsesResultToEvents projects terminal JSON into Responses stream events', () => {
   const frames = Array.from(responsesResultToEvents(completedResponse));
@@ -194,6 +202,129 @@ test('responsesResultToEvents propagates the real function_call item id to the a
     .map(event => event.item_id);
   assertEquals(childItemIds.length, 2);
   for (const itemId of childItemIds) assertEquals(itemId, 'fc_real');
+});
+
+test('responsesResultToEvents preserves advanced tool item wire fields', () => {
+  const output = [
+    {
+      type: 'computer_call',
+      id: 'cu_1',
+      call_id: 'call_computer',
+      status: 'completed',
+      actions: [{ type: 'screenshot' }],
+    },
+    {
+      type: 'computer_call_output',
+      id: 'cuo_1',
+      call_id: 'call_computer',
+      output: { type: 'computer_screenshot', image_url: 'data:image/png;base64,AA==' },
+      status: 'completed',
+    },
+    {
+      type: 'tool_search_call',
+      id: 'tsc_1',
+      call_id: 'call_search',
+      arguments: { query: 'lookup', limit: 3 },
+      execution: 'client',
+      status: 'completed',
+    },
+    {
+      type: 'tool_search_output',
+      id: 'tso_1',
+      call_id: 'call_search',
+      execution: 'client',
+      status: 'completed',
+      tools: [
+        { type: 'function', name: 'lookup', parameters: {}, strict: true },
+        { type: 'file_search', vector_store_ids: ['vs_1'] },
+        { type: 'computer' },
+        { type: 'computer_use_preview', display_height: 768, display_width: 1024, environment: 'browser' },
+        { type: 'local_shell' },
+      ],
+    },
+    {
+      type: 'code_interpreter_call',
+      id: 'ci_1',
+      code: 'print(1)',
+      container_id: 'cntr_1',
+      outputs: [{ type: 'logs', logs: '1' }],
+      status: 'completed',
+    },
+    {
+      type: 'shell_call',
+      id: 'sh_1',
+      call_id: 'call_shell',
+      action: { commands: ['pwd'], max_output_length: 1024, timeout_ms: 1000 },
+      environment: { type: 'local' },
+      status: 'completed',
+    },
+    {
+      type: 'shell_call_output',
+      id: 'sho_1',
+      call_id: 'call_shell',
+      max_output_length: 1024,
+      output: [{ stdout: '/tmp', stderr: '', outcome: { type: 'exit', exit_code: 0 } }],
+      status: 'completed',
+    },
+    {
+      type: 'apply_patch_call',
+      id: 'apc_1',
+      call_id: 'call_patch',
+      operation: { type: 'update_file', path: 'a.ts', diff: '@@' },
+      status: 'completed',
+    },
+    {
+      type: 'apply_patch_call_output',
+      id: 'apco_1',
+      call_id: 'call_patch',
+      status: 'completed',
+      output: 'Done',
+    },
+    {
+      type: 'mcp_call',
+      id: 'mcp_1',
+      arguments: '{}',
+      name: 'lookup',
+      server_label: 'docs',
+      output: 'result',
+      status: 'completed',
+    },
+    {
+      type: 'mcp_list_tools',
+      id: 'mcpl_1',
+      server_label: 'docs',
+      tools: [{ name: 'lookup', input_schema: {} }],
+    },
+    {
+      type: 'mcp_approval_request',
+      id: 'mcpr_1',
+      arguments: '{}',
+      name: 'lookup',
+      server_label: 'docs',
+    },
+    {
+      type: 'mcp_approval_response',
+      id: 'mcpa_1',
+      approval_request_id: 'mcpr_1',
+      approve: true,
+    },
+  ] satisfies ResponsesOutputItem[];
+
+  const frames = Array.from(responsesResultToEvents({
+    ...completedResponse,
+    output,
+  }));
+  const added = frames
+    .map(frame => frame.event)
+    .filter(event => event.type === 'response.output_item.added')
+    .map(event => event.item);
+  const done = frames
+    .map(frame => frame.event)
+    .filter(event => event.type === 'response.output_item.done')
+    .map(event => event.item);
+
+  assertEquals(added, output);
+  assertEquals(done, output);
 });
 
 test('responsesResultToEvents surfaces a missing function_call item id instead of inventing one', () => {

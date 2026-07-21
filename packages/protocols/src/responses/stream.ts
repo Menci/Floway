@@ -7,15 +7,16 @@ export interface ParseResponsesStreamOptions {
   signal?: AbortSignal;
 }
 
-// Deny-list: anything that is not a wrapper (`response.created` /
-// `response.in_progress` / `ping`) and not terminal is treated as content-
+// Deny-list: anything that is not a wrapper (`response.queued` /
+// `response.created` / `response.in_progress` / `ping`) and not terminal is treated as content-
 // bearing. `ping` is a transport-level keep-alive with no content semantics,
 // so its presence must not commit us out of the fast-path. Future Responses
 // event types fall through as structured by default, which is safer than
 // missing an allow-list entry and incorrectly triggering the fast-path
 // expansion below.
 const isStructuredResponsesEvent = (event: { type: string }): boolean =>
-  event.type !== 'response.created'
+  event.type !== 'response.queued'
+  && event.type !== 'response.created'
   && event.type !== 'response.in_progress'
   && event.type !== 'ping'
   && !isResponsesTerminalEvent(event as ResponsesStreamEvent);
@@ -96,7 +97,7 @@ export const parseResponsesStream = (
       sawStructured = true;
     }
 
-    if (!sawStructured && (event.type === 'response.created' || event.type === 'response.in_progress')) sentWrapperTypes.add(event.type);
+    if (!sawStructured && (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress')) sentWrapperTypes.add(event.type);
     yield eventFrame(stamp(event));
   }
 })();

@@ -1,7 +1,6 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
-import { createTemporaryResponsesItemId } from '../items/format.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const canonicalItemType = (itemType: string): string =>
   itemType === 'compaction_summary' ? 'compaction' : itemType;
@@ -82,7 +81,8 @@ const wrapNaturalResponsesAffinity = async function* (
       continue;
     }
     if (
-      event.type === 'response.created'
+      event.type === 'response.queued'
+      || event.type === 'response.created'
       || event.type === 'response.in_progress'
       || event.type === 'response.completed'
       || event.type === 'response.incomplete'
@@ -169,7 +169,7 @@ const wrapResponsesFirstCarrier = async function* (
     if (prefix !== undefined) return;
     const added: ResponsesOutputReasoning = {
       type: 'reasoning',
-      id: createTemporaryResponsesItemId('reasoning'),
+      id: createRandomResponsesItemId('reasoning'),
       summary: [],
     };
     const item: ResponsesOutputReasoning = {
@@ -266,6 +266,12 @@ const wrapResponsesFirstCarrier = async function* (
       const response = await rewriteResponse(event.response, true);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
       return;
+    }
+
+    if (event.type === 'response.queued') {
+      const response = await rewriteResponse(event.response, false);
+      yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
+      continue;
     }
 
     if (event.type === 'response.created' || event.type === 'response.in_progress') {

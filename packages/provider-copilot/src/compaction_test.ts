@@ -55,6 +55,17 @@ test('normalizes every retained text part to input_text — assistant output_tex
   expect(userPart.type).toBe('input_text');
 });
 
+test('assigns final random ids to retained messages instead of reusing input ids', () => {
+  const result = compactionResponse(
+    [{ type: 'message', id: 'msg_input', role: 'user', content: 'hello' }],
+    generatedResult([compaction]),
+  );
+
+  const id = (result.output[0] as { id?: string }).id;
+  expect(id).toMatch(/^msg_[0-9a-f]{32}$/);
+  expect(id).not.toBe('msg_input');
+});
+
 test('throws when the trigger turn did not return exactly one compaction item', () => {
   expect(() => compactionResponse([], generatedResult([]))).toThrow(/exactly one compaction/);
   expect(() => compactionResponse([], generatedResult([compaction, { type: 'compaction', id: 'cmp_2', encrypted_content: 'X' }]))).toThrow(/exactly one compaction/);

@@ -416,7 +416,7 @@ Request mapping:
   unpacked from the `${encrypted_content}@${id}` shape this gateway emits: the
   Responses reasoning id and any opaque `encrypted_content` are recovered. A
   native signature carrying no `@` is preserved verbatim as `encrypted_content`
-  with a synthesized `rs_${index}` id; it is never overwritten.
+  with a fresh random `rs_` id; it is never overwritten.
 - `max_tokens`, `temperature`, `top_p`, `metadata`, and `stream` pass through
   when present.
 - `output_config.effort` maps directly to `reasoning.effort`; disabled thinking
@@ -497,7 +497,7 @@ Response mapping:
 - Responses output items are converted in output order.
 - `reasoning` maps to a Messages thinking carrier; the upstream's genuine
   `signature` (or `redacted_thinking` `data`) is carried verbatim as the
-  reasoning item's `encrypted_content`, with a synthesized `rs_${index}` id.
+  reasoning item's `encrypted_content`, with a fresh random `rs_` id.
 - `message` content maps to text. `refusal` content is kept visible as text
   because Messages has no local refusal block.
 - `function_call` maps to `tool_use`.

@@ -37,7 +37,7 @@ const isCyberPolicyFrame = (frame: ProtocolFrame<ResponsesStreamEvent>): boolean
   frame.type === 'event' && valueHasCyberPolicyCode(frame.event);
 
 const isRetryProbePrologue = (frame: ProtocolFrame<ResponsesStreamEvent>): boolean =>
-  frame.type === 'event' && (frame.event.type === 'response.created' || frame.event.type === 'response.in_progress');
+  frame.type === 'event' && (frame.event.type === 'response.queued' || frame.event.type === 'response.created' || frame.event.type === 'response.in_progress');
 
 const isDownstreamAborted = (ctx: GatewayCtx): boolean => ctx.abortSignal?.aborted === true;
 
