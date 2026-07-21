@@ -259,8 +259,8 @@ test('fetchCustomModels reads chat metadata from Floway-shaped upstreams', async
         id: 'm-1',
         chat: {
           modalities: {
-            input_tokens: ['text', 'image'],
-            output_tokens: ['text'],
+            input: ['text', 'image'],
+            output: ['text'],
           },
           reasoning: {
             effort: {
