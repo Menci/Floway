@@ -1,5 +1,5 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
-import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
@@ -128,11 +128,12 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
       throw new Error(`Malformed ${label}.entries[${index}].selector: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
     if (!isRecord(rawEntry.rates)) throw new Error(`Malformed ${label}.entries[${index}].rates: must be an object`);
-    const unknownRateKeys = Object.keys(rawEntry.rates).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
-    if (unknownRateKeys.length > 0) throw new Error(`Malformed ${label}.entries[${index}].rates: unknown dimensions: ${unknownRateKeys.join(', ')}`);
-    const rates: Partial<Record<BillingDimension, number>> = {};
-    for (const dimension of BILLING_DIMENSIONS) {
-      if (rawEntry.rates[dimension] !== undefined) rates[dimension] = rawEntry.rates[dimension] as number;
+    const unknownRateKeys = Object.keys(rawEntry.rates).filter(key => !BILLING_METRICS.includes(key as BillingMetric));
+    if (unknownRateKeys.length > 0) throw new Error(`Malformed ${label}.entries[${index}].rates: unknown metrics: ${unknownRateKeys.join(', ')}`);
+    const rates: PriceVector = {};
+    for (const metric of BILLING_METRICS) {
+      const rate = rawEntry.rates[metric];
+      if (rate !== undefined) rates[metric] = parseNonNegativeDecimalString(rate, `${label}.entries[${index}].rates.${metric}`);
     }
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates };
   });

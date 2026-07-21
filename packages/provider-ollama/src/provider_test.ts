@@ -65,8 +65,8 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into
     // the ProviderModel on the auto path.
-    assertEquals(gptoss.pricing?.entries[0]?.rates.input, 0.15);
-    assertEquals(gptoss.pricing?.entries[0]?.rates.output, 0.6);
+    assertEquals(gptoss.pricing?.entries[0]?.rates.input_tokens, '0.00000015');
+    assertEquals(gptoss.pricing?.entries[0]?.rates.output_tokens, '0.0000006');
   });
 });
 
@@ -90,7 +90,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
         kind: 'chat',
         endpoints: { chatCompletions: {} },
         display_name: 'Pinned 120B',
-        pricing: { entries: [{ rates: { input: 99, output: 99 } }] },
+        pricing: { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] },
       }],
     },
   }));
@@ -101,7 +101,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     assertEquals(models[0].id, 'gpt-oss:120b');
     assertEquals(models[0].display_name, 'Pinned 120B');
     assertEquals(Object.keys(models[0].endpoints), ['chatCompletions']);
-    assertEquals(models[0].pricing, { entries: [{ rates: { input: 99, output: 99 } }] });
+    assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
   });
@@ -121,7 +121,7 @@ test('manual known models inherit built-in pricing when no override is configure
   }));
   await withMockedFetch(tagsAndShow, async () => {
     const models = await instance.instance.getProvidedModels(directFetcher);
-    assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input, 0.14);
+    assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input_tokens, '0.00000014');
   });
 });
 

@@ -123,7 +123,7 @@ test('Custom provider projects display_name / created / limits / pricing from a 
         display_name: 'Rich Model',
         created_at: '2026-04-01T00:00:00Z',
         limits: { max_output_tokens: 8192, max_context_window_tokens: 200000 },
-        pricing: { entries: [{ rates: { input: 3, output: 15, input_cache_read: 0.3 } }] },
+        pricing: { entries: [{ rates: { input_tokens: '3', output_tokens: '15', input_cache_read_tokens: '0.3' } }] },
       }],
     }),
     async () => {
@@ -133,9 +133,9 @@ test('Custom provider projects display_name / created / limits / pricing from a 
       assertEquals(model.created, Math.floor(Date.parse('2026-04-01T00:00:00Z') / 1000));
       assertEquals(model.limits.max_output_tokens, 8192);
       assertEquals(model.limits.max_context_window_tokens, 200000);
-      assertEquals(model.pricing?.entries[0]?.rates.input, 3);
-      assertEquals(model.pricing?.entries[0]?.rates.output, 15);
-      assertEquals(model.pricing?.entries[0]?.rates.input_cache_read, 0.3);
+      assertEquals(model.pricing?.entries[0]?.rates.input_tokens, '3');
+      assertEquals(model.pricing?.entries[0]?.rates.output_tokens, '15');
+      assertEquals(model.pricing?.entries[0]?.rates.input_cache_read_tokens, '0.3');
     },
   );
 });
@@ -303,7 +303,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
               endpoints: { chatCompletions: {} },
               display_name: 'Pinned Chat',
               limits: { max_output_tokens: 4096 },
-              pricing: { entries: [{ rates: { input: 1, output: 2 } }] },
+              pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
             },
           ],
         },
@@ -316,7 +316,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       assertEquals(models[0].endpoints, { chatCompletions: {} });
       assertEquals(models[0].display_name, 'Pinned Chat');
       assertEquals(models[0].limits.max_output_tokens, 4096);
-      assertEquals(models[0].pricing?.entries[0]?.rates.input, 1);
+      assertEquals(models[0].pricing?.entries[0]?.rates.input_tokens, '1');
 
     },
   );
@@ -332,7 +332,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
         return jsonResponse({
           object: 'list',
           data: [
-            { id: 'shared', pricing: { entries: [{ rates: { input: 9, output: 9 } }] } },
+            { id: 'shared', pricing: { entries: [{ rates: { input_tokens: '9', output_tokens: '9' } }] } },
             { id: 'auto-only' },
           ],
         });
@@ -353,7 +353,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
               upstreamModelId: 'shared',
               endpoints: { chatCompletions: {} },
               display_name: 'Manual Shared',
-              pricing: { entries: [{ rates: { input: 1, output: 2 } }] },
+              pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
             },
           ],
         },
@@ -365,8 +365,8 @@ test('Custom provider with a manual override sharing an upstream id wins over th
       const shared = models.find(m => m.id === 'shared');
       assertExists(shared);
       assertEquals(shared.display_name, 'Manual Shared');
-      assertEquals(shared.pricing?.entries[0]?.rates.input, 1);
-      assertEquals(shared.pricing?.entries[0]?.rates.output, 2);
+      assertEquals(shared.pricing?.entries[0]?.rates.input_tokens, '1');
+      assertEquals(shared.pricing?.entries[0]?.rates.output_tokens, '2');
       assertEquals(models.find(model => model.id === 'auto-only')?.pricing, undefined);
     },
   );

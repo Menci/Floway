@@ -1,8 +1,12 @@
 import { test } from 'vitest';
 
 import { DEFAULT_SEARCH_CONFIG } from './data-plane/tools/web-search/search-config.ts';
+import { tokenUsageMetrics } from './repo/usage-metrics.ts';
 import { requestApp, setupAppTest } from './test-helpers.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
+
+const displayQuantity = (record: { metrics: Array<{ metric: string; quantity: string }> }, tokenCategory: string) =>
+  record.metrics.find(row => row.metric === `${tokenCategory}_tokens`)?.quantity;
 
 test('session token grants control-plane access but is rejected on data-plane', async () => {
   const { adminSession } = await setupAppTest();
@@ -114,8 +118,7 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
     hour: '2026-03-15T10',
     pricingSelector: {},
     requests: 2,
-    tokens: { input: 10, output: 5, input_cache_read: 4, input_cache_write: 1 },
-    rates: null,
+    metrics: tokenUsageMetrics({ input: 10, output: 5, input_cache_read: 4, input_cache_write: 1 }, null),
   });
   await repo.usage.set({
     keyId: 'key_other',
@@ -125,8 +128,7 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
     hour: '2026-03-15T11',
     pricingSelector: {},
     requests: 1,
-    tokens: { input: 20, output: 8, input_cache_read: 6, input_cache_write: 2 },
-    rates: null,
+    metrics: tokenUsageMetrics({ input: 20, output: 8, input_cache_read: 6, input_cache_write: 2 }, null),
   });
 
   const response = await requestApp('/api/token-usage?start=2026-03-15T00&end=2026-03-16T00', {
@@ -139,8 +141,8 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
   assertEquals(body.length, 1);
   assertEquals(body[0].keyId, apiKey.id);
   assertEquals(body[0].keyName, 'Primary key');
-  assertEquals(body[0].tokens.input_cache_read, 4);
-  assertEquals(body[0].tokens.input_cache_write, 1);
+  assertEquals(displayQuantity(body[0], 'input_cache_read'), '4');
+  assertEquals(displayQuantity(body[0], 'input_cache_write'), '1');
 });
 
 test('/api/token-usage in self-by-key mode includes per-key metadata for the actor only', async () => {
@@ -165,8 +167,7 @@ test('/api/token-usage in self-by-key mode includes per-key metadata for the act
     hour: '2026-03-16T10',
     pricingSelector: {},
     requests: 1,
-    tokens: { input: 20, output: 8 },
-    rates: null,
+    metrics: tokenUsageMetrics({ input: 20, output: 8 }, null),
   });
 
   const response = await requestApp('/api/token-usage?start=2026-03-16T00&end=2026-03-17T00&include_key_metadata=1', {
@@ -193,8 +194,7 @@ test('/api/token-usage all-by-user view aggregates across keys per user', async 
     hour: '2026-03-15T10',
     pricingSelector: {},
     requests: 1,
-    tokens: { input: 10, output: 5 },
-    rates: null,
+    metrics: tokenUsageMetrics({ input: 10, output: 5 }, null),
   });
 
   const response = await requestApp(
@@ -205,7 +205,7 @@ test('/api/token-usage all-by-user view aggregates across keys per user', async 
   const body = await response.json();
   assertEquals(body.length, 1);
   assertEquals(body[0].userId, apiKey.userId);
-  assertEquals(body[0].tokens.input, 10);
+  assertEquals(displayQuantity(body[0], 'input'), '10');
 });
 
 test('/api/token-usage rejects all-by-user from a user without canViewGlobalTelemetry', async () => {
@@ -225,33 +225,29 @@ test('/api/token-usage merges Claude variants into backend base model records', 
     upstream: 'copilot:1',
     pricingSelector: {},
     requests: 1,
-    tokens: { input: 10, output: 5, input_cache_read: 2, input_cache_write: 1 },
+    metrics: tokenUsageMetrics({ input: 10, output: 5, input_cache_read: 2, input_cache_write: 1 }, null),
   };
 
   await repo.usage.set({
     ...shared,
     model: 'claude-opus-4-7',
     modelKey: 'claude-opus-4.7',
-    rates: null,
   });
   await repo.usage.set({
     ...shared,
     model: 'claude-opus-4-7',
     modelKey: 'claude-opus-4.7-xhigh',
-    rates: null,
   });
   await repo.usage.set({
     ...shared,
     model: 'claude-opus-4-7',
     modelKey: 'claude-opus-4.7-1m-internal',
-    rates: null,
   });
   await repo.usage.set({
     ...shared,
     model: 'gpt-5.3-codex',
     modelKey: 'gpt-5.3-codex',
-    tokens: { input: 3, output: 4 },
-    rates: null,
+    metrics: tokenUsageMetrics({ input: 3, output: 4 }, null),
   });
 
   const response = await requestApp('/api/token-usage?start=2026-03-17T00&end=2026-03-18T00', { headers: { 'x-api-key': apiKey.key } });
@@ -264,8 +260,8 @@ test('/api/token-usage merges Claude variants into backend base model records', 
   assertExists(opus);
   assertExists(gpt);
   assertEquals(opus.requests, 3);
-  assertEquals(opus.tokens.input, 30);
-  assertEquals(opus.tokens.output, 15);
-  assertEquals(opus.tokens.input_cache_read, 6);
-  assertEquals(opus.tokens.input_cache_write, 3);
+  assertEquals(displayQuantity(opus, 'input'), '30');
+  assertEquals(displayQuantity(opus, 'output'), '15');
+  assertEquals(displayQuantity(opus, 'input_cache_read'), '6');
+  assertEquals(displayQuantity(opus, 'input_cache_write'), '3');
 });

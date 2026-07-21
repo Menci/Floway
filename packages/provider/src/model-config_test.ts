@@ -7,36 +7,37 @@ test('pricingField parses explicit flat entries', () => {
   assertEquals(pricingField(undefined, 'pricing'), undefined);
   const value = {
     entries: [
-      { rates: { input: 5, output: 25 } },
-      { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 15, output: 75 } },
-      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 30, output: 150 } },
+      { rates: { input_tokens: '5', output_tokens: '25' } },
+      { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '15', output_tokens: '75' } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '30', output_tokens: '150' } },
     ],
   };
   assertEquals(pricingField(value, 'pricing'), {
     entries: [
-      { rates: { input: 5, output: 25 } },
-      { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 15, output: 75 } },
-      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 30, output: 150 } },
+      { rates: { input_tokens: '5', output_tokens: '25' } },
+      { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '15', output_tokens: '75' } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '30', output_tokens: '150' } },
     ],
   });
 });
 
 test('pricingField rejects malformed entries and duplicate coordinates', () => {
   assertThrows(() => pricingField({}, 'pricing'), Error, 'non-empty array');
-  assertThrows(() => pricingField({ entries: [{ rates: { input: 1 } }], fallback: true }, 'pricing'), Error, 'unknown fields: fallback');
+  assertThrows(() => pricingField({ entries: [{ rates: { input_tokens: '1' } }], fallback: true }, 'pricing'), Error, 'unknown fields: fallback');
   assertThrows(() => pricingField({ entries: [{ rates: {} }] }, 'pricing'), Error, 'at least one rate');
-  assertThrows(() => pricingField({ entries: [{ selector: { serviceTier: '' }, rates: { input: 1 } }] }, 'pricing'), Error, 'non-empty string');
-  assertThrows(() => pricingField({ entries: [{ selector: { inputTokens: { operator: 'gt', value: 1.5 } }, rates: { input: 1 } }] }, 'pricing'), Error, 'positive safe integer');
-  assertThrows(() => pricingField({ entries: [{ rates: { input: 1, ouput: 4 } }] }, 'pricing'), Error, 'unknown dimensions: ouput');
-  assertThrows(() => pricingField({ entries: [{ rates: { input: 1 }, fallback: true }] }, 'pricing'), Error, 'unknown fields: fallback');
+  assertThrows(() => pricingField({ entries: [{ selector: { serviceTier: '' }, rates: { input_tokens: '1' } }] }, 'pricing'), Error, 'non-empty string');
+  assertThrows(() => pricingField({ entries: [{ selector: { inputTokens: { operator: 'gt', value: 1.5 } }, rates: { input_tokens: '1' } }] }, 'pricing'), Error, 'positive safe integer');
+  assertThrows(() => pricingField({ entries: [{ rates: { input_tokens: '1', ouput: 4 } }] }, 'pricing'), Error, 'unknown metrics: ouput');
+  assertThrows(() => pricingField({ entries: [{ rates: { input_tokens: '1' }, fallback: true }] }, 'pricing'), Error, 'unknown fields: fallback');
   assertThrows(() => pricingField({
     entries: [
-      { rates: { input: 1 } },
-      { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
-      { selector: { serviceTier: 'priority' }, rates: { input: 3 } },
+      { rates: { input_tokens: '1' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '3' } },
     ],
   }, 'pricing'), Error, 'duplicate pricing entry selector');
-  assertThrows(() => pricingField({ entries: [{ rates: { input: -1 } }] }, 'pricing'), Error, 'non-negative');
+  assertThrows(() => pricingField({ entries: [{ rates: { input_tokens: '-1' } }] }, 'pricing'), Error, 'non-negative');
+  assertThrows(() => pricingField({ entries: [{ rates: { input_tokens: 1 } }] }, 'pricing'), Error, 'must be a decimal string');
 });
 
 describe('chatField', () => {

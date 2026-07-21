@@ -62,13 +62,13 @@ translators.
 
 ## Usage And Billing Facts
 
-Usage translation keeps billing dimensions disjoint. OpenAI-style inclusive
+Usage translation keeps billing metrics disjoint. OpenAI-style inclusive
 input totals are checked and split into uncached input, cache read, and cache
 write counts; inclusive output totals are likewise split into visible output
 and reasoning where the target exposes both. Negative, fractional, or
 overlapping counts are rejected rather than clamped.
 
-Messages already reports disjoint input dimensions. Its flat cache-creation
+Messages already reports disjoint input metrics. Its flat cache-creation
 total and optional 5-minute / 1-hour detail are normalized into two cache-write
 buckets. Streaming `message_start` and `message_delta` usage is accumulated as
 one snapshot, including late input counts and atomic replacement of the
@@ -668,9 +668,8 @@ Known losses:
   data plane expands `previous_response_id` and stored item ids before invoking
   this translator, with readable reasoning ids then carried through
   `reasoning_items[]`.
-- Freeform `custom` tool `format.definition` is preserved as a
-  `Lark grammar: ${definition}` description on the wrapped `input` parameter;
-  other `format` fields are not preserved.
+- Freeform `custom` tool `format.definition` handling is identical to
+  Responses → Messages (see above).
 - Lifting tool-output images into a user message changes their speaker role but
   keeps the visual bytes usable on Chat targets.
 - `input_file` message/tool-output content and assistant-side files or images

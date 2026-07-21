@@ -1,6 +1,9 @@
 import { test } from 'vitest';
 
-import { openAICacheTokensFromUsage } from './usage.ts';
+import { openAICacheTokensFromUsage, recordUsage } from './usage.ts';
+import { initRepo } from '../../../repo/index.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
+import { basePricing } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('OpenAI canonical shape — prompt_tokens_details.cached_tokens lands in cacheRead', () => {
@@ -76,4 +79,26 @@ test('Zero is a valid count, not a missing signal', () => {
     openAICacheTokensFromUsage({ prompt_tokens: 10, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 0 }, cached_tokens: 999 }),
     { cacheRead: 0, cacheWrite: 0 },
   );
+});
+
+test('recordUsage persists caller-supplied metrics with resolved prices', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+
+  await recordUsage(
+    'key-a',
+    {
+      model: 'metered-model',
+      upstream: 'upstream-a',
+      modelKey: 'metered-model',
+      pricing: basePricing({ input_tokens: '0.6' }),
+    },
+    { input_tokens: '90' },
+    {},
+  );
+
+  const rows = await repo.usage.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].requests, 1);
+  assertEquals(rows[0].metrics, [{ metric: 'input_tokens', quantity: '90', unitPrice: '0.6' }]);
 });

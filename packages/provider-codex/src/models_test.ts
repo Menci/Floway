@@ -132,10 +132,10 @@ describe('codexRawToProviderModel', () => {
     const flagship = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
     expect(flagship.pricing).toEqual({
       entries: [
-        { rates: { input: 2.5, input_cache_read: 0.25, output: 15 } },
-        { selector: { serviceTier: 'flex' }, rates: { input: 1.25, input_cache_read: 0.13, output: 7.5 } },
-        { selector: { serviceTier: 'priority' }, rates: { input: 5, input_cache_read: 0.5, output: 30 } },
-        { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 5, input_cache_read: 0.5, output: 22.5 } },
+        { rates: { input_tokens: '0.0000025', input_cache_read_tokens: '0.00000025', output_tokens: '0.000015' } },
+        { selector: { serviceTier: 'flex' }, rates: { input_tokens: '0.00000125', input_cache_read_tokens: '0.00000013', output_tokens: '0.0000075' } },
+        { selector: { serviceTier: 'priority' }, rates: { input_tokens: '0.000005', input_cache_read_tokens: '0.0000005', output_tokens: '0.00003' } },
+        { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '0.000005', input_cache_read_tokens: '0.0000005', output_tokens: '0.0000225' } },
       ],
     });
     const review = codexRawToProviderModel({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000 }, noFlags);
@@ -149,19 +149,19 @@ describe('codexRawToProviderModel', () => {
     if (!flagship.pricing) throw new Error('expected pricing to be defined');
 
     expect(priceRequest(flagship.pricing, { serviceTier: 'priority', inputTokens: 0 }).rates).toEqual({
-      input: 5,
-      input_cache_read: 0.5,
-      output: 30,
+      input_tokens: '0.000005',
+      input_cache_read_tokens: '0.0000005',
+      output_tokens: '0.00003',
     });
     expect(priceRequest(flagship.pricing, { serviceTier: 'flex', inputTokens: 0 }).rates).toEqual({
-      input: 1.25,
-      input_cache_read: 0.13,
-      output: 7.5,
+      input_tokens: '0.00000125',
+      input_cache_read_tokens: '0.00000013',
+      output_tokens: '0.0000075',
     });
     expect(priceRequest(flagship.pricing, { inputTokens: 0 }).rates).toEqual({
-      input: 2.5,
-      input_cache_read: 0.25,
-      output: 15,
+      input_tokens: '0.0000025',
+      input_cache_read_tokens: '0.00000025',
+      output_tokens: '0.000015',
     });
   });
 

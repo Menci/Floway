@@ -4,6 +4,7 @@ import type { GatewayCtx } from './gateway-ctx.ts';
 import { SourceStreamState } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { tokenCountsFromUsage } from '../../../repo/usage-metrics.ts';
 import { recordPerformance } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -177,29 +178,35 @@ test('recordPerformance skips when performance context is absent', async () => {
 
 // ── settle ──
 
-test('settle records a usage row when the figure carries a billable dimension', async () => {
+test('settle records a usage row when the figure carries a billable metric', async () => {
   settle(harness.ctx(), testPerformanceContext, testTelemetryModelIdentity, { input: 10, output: 5 }, false);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.usage.listAll();
   assertEquals(rows.length, 1);
   assertEquals(rows[0].keyId, 'key_a');
-  assertEquals(rows[0].tokens, { input: 10, output: 5 });
+  assertEquals(tokenCountsFromUsage(rows[0]), { input: 10, output: 5 });
   assertEquals(rows[0].requests, 1);
 });
 
-test('settle skips the usage row when usage is null', async () => {
+test('settle records the request without metrics when usage is null', async () => {
   settle(harness.ctx(), testPerformanceContext, testTelemetryModelIdentity, null, false);
   await Promise.all(harness.background);
 
-  assertEquals(await harness.repo.usage.listAll(), []);
+  const rows = await harness.repo.usage.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].requests, 1);
+  assertEquals(rows[0].metrics, []);
 });
 
-test('settle skips the usage row when usage carries no billable dimension', async () => {
+test('settle records the request when usage carries no billable metric', async () => {
   settle(harness.ctx(), testPerformanceContext, testTelemetryModelIdentity, {}, false);
   await Promise.all(harness.background);
 
-  assertEquals(await harness.repo.usage.listAll(), []);
+  const rows = await harness.repo.usage.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].requests, 1);
+  assertEquals(rows[0].metrics, []);
 });
 
 // TPOT reflects the token stream, not the D1 write that follows it.

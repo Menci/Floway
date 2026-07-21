@@ -161,7 +161,7 @@ describe('synthesizeCatalogEntry', () => {
   test('service_tiers derived from pricing.entries keys', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
+      pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'fast' }, rates: { input_tokens: '1' } }] },
     });
     expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
   });
@@ -174,7 +174,7 @@ describe('synthesizeCatalogEntry', () => {
   test('service_tiers preserves key order for multiple tiers', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'flex' }, rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] },
+      pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'flex' }, rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
     });
     expect(entry.service_tiers).toEqual([
       { id: 'flex', name: 'flex', description: '' },
@@ -285,7 +285,7 @@ describe('synthesizeCatalogEntry', () => {
 
     test('service_tiers is a hard override — bundled tiers do not survive when registry has none', () => {
       // Bundled entries may advertise OpenAI 1p tiers Floway cannot bill;
-      // publishing them without registry-side unit prices would surface a
+      // publishing them without registry-side prices would surface a
       // toggle we could not honor. Registry-derived tiers (from
       // model.pricing.entries) always win, even when the registry list is empty.
       const entry = synthesizeCatalogEntry(base, bundledBase);
@@ -295,7 +295,7 @@ describe('synthesizeCatalogEntry', () => {
     test('service_tiers picks up the registry-configured tiers', () => {
       const entry = synthesizeCatalogEntry({
         ...base,
-        pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
+        pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'fast' }, rates: { input_tokens: '1' } }] },
       }, bundledBase);
       expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
     });

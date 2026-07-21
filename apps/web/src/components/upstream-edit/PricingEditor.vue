@@ -4,10 +4,14 @@ import { computed, ref, watch } from 'vue';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import {
   collectModelPricingIssues,
-  BILLING_DIMENSIONS,
+  BILLING_METRICS,
   PRICING_AXES,
   canonicalPricingSelectorKey,
-  type BillingDimension,
+  divideDecimalString,
+  multiplyDecimalStrings,
+  parseNonNegativeDecimalString,
+  type BillingMetric,
+  type DecimalString,
   type ModelKind,
   type ModelPricing,
   type ModelPricingIssue,
@@ -24,20 +28,30 @@ const props = defineProps<{
 
 const pricing = defineModel<ModelPricing | undefined>({ required: true });
 
-const PRICING_LABELS: Record<BillingDimension, string> = {
-  input: 'Input ($/MTok)',
-  input_cache_read: 'Cache Read ($/MTok)',
-  input_cache_write: 'Cache Write ($/MTok)',
-  input_cache_write_1h: 'Cache Write (1h) ($/MTok)',
-  input_image: 'Image Input ($/MTok)',
-  output: 'Output ($/MTok)',
-  output_image: 'Image Output ($/MTok)',
+const PRICING_LABELS: Record<BillingMetric, string> = {
+  input_tokens: 'Input',
+  input_cache_read_tokens: 'Cache Read',
+  input_cache_write_tokens: 'Cache Write',
+  input_cache_write_1h_tokens: 'Cache Write (1h)',
+  input_image_tokens: 'Image Input',
+  output_tokens: 'Output',
+  output_image_tokens: 'Image Output',
 };
 
-const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
-  chat: ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'output'],
-  embedding: ['input'],
-  image: ['input', 'input_image', 'output', 'output_image'],
+interface PricingField {
+  readonly metric: BillingMetric;
+  readonly displayUnit: string;
+  readonly displayScale: DecimalString;
+}
+
+const tokenPricingField = (metric: BillingMetric): PricingField => ({ metric, displayUnit: 'MTok', displayScale: '1000000' });
+const tokenPricingFields = (...metrics: BillingMetric[]): PricingField[] => metrics.map(tokenPricingField);
+const PRICING_FIELD_BY_METRIC = Object.fromEntries(BILLING_METRICS.map(metric => [metric, tokenPricingField(metric)])) as Record<BillingMetric, PricingField>;
+
+const PRICING_FIELDS_BY_KIND: Record<ModelKind, readonly PricingField[]> = {
+  chat: tokenPricingFields('input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'output_tokens'),
+  embedding: tokenPricingFields('input_tokens'),
+  image: tokenPricingFields('input_tokens', 'input_image_tokens', 'output_tokens', 'output_image_tokens'),
 };
 
 interface PricingThresholdDraft {
@@ -48,7 +62,7 @@ interface PricingThresholdDraft {
 interface PricingEntryDraft {
   id: number;
   selector: Record<string, string | PricingThresholdDraft | undefined>;
-  rates: Partial<Record<BillingDimension, number>>;
+  rates: ModelPricing['entries'][number]['rates'];
 }
 
 interface NumberedPricingEntryDraft {
@@ -95,9 +109,17 @@ const coordinateKey = (draft: PricingEntryDraft): string | null => {
 };
 
 const basePricingEntry = computed(() => pricingEntryDrafts.value.find(draft => coordinateKey(draft) === '{}'));
-const visiblePricingDimensions = computed(() => BILLING_DIMENSIONS.filter(dimension =>
-  PRICING_BY_KIND[props.kind].includes(dimension)
-  || pricingEntryDrafts.value.some(draft => draft.rates[dimension] !== undefined)));
+const pricingFieldKey = ({ metric }: PricingField): string => metric;
+
+const visiblePricingFields = computed<readonly PricingField[]>(() => {
+  const fields = new Map(PRICING_FIELDS_BY_KIND[props.kind].map(field => [pricingFieldKey(field), field]));
+  for (const metric of BILLING_METRICS) {
+    if (pricingEntryDrafts.value.some(draft => draft.rates[metric] !== undefined)) {
+      fields.set(metric, PRICING_FIELD_BY_METRIC[metric]);
+    }
+  }
+  return [...fields.values()];
+});
 
 const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
   const labels = PRICING_AXES.flatMap(axis => {
@@ -132,8 +154,15 @@ const formatList = (values: readonly string[]): string => {
   return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
 };
 
-const rateFieldName = (dimension: BillingDimension): string =>
-  PRICING_LABELS[dimension].replace(/ \(\$\/MTok\)$/, '');
+const rateFieldName = (metric: BillingMetric): string => PRICING_LABELS[metric];
+
+const pricingFieldLabel = ({ metric, displayUnit }: PricingField): string =>
+  `${rateFieldName(metric)} ($/${displayUnit})`;
+
+const pricingFieldRate = (draft: PricingEntryDraft, { metric, displayScale }: PricingField): DecimalString | undefined => {
+  const price = draft.rates[metric];
+  return price === undefined ? undefined : multiplyDecimalStrings(price, displayScale);
+};
 
 const pricingValidationErrors = computed<readonly string[]>(() => {
   const errors = new Set<string>();
@@ -142,14 +171,14 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
     `entry ${number} (${JSON.stringify(pricingEntryCoordinateLabel(draft))})`;
   const emptyRateIssues = pricingIssues.value.filter(issue => issue.code === 'empty-rates');
   const invalidSelectorIssues = pricingIssues.value.filter(issue => issue.code === 'invalid-selector');
-  const rateDimensionIssues = pricingIssues.value.filter(issue => issue.code === 'rate-dimensions');
+  const rateMetricIssues = pricingIssues.value.filter(issue => issue.code === 'rate-metrics');
   const baseIssue = pricingIssues.value.find(issue => issue.code === 'base-count');
   const duplicateIssues = pricingIssues.value.filter(
     (issue): issue is Extract<ModelPricingIssue, { code: 'duplicate-selector' }> =>
       issue.code === 'duplicate-selector' && issue.selectorKey !== '{}',
   );
 
-  if (emptyRateIssues.length > 0 && rateDimensionIssues.length === 0) {
+  if (emptyRateIssues.length > 0 && rateMetricIssues.length === 0) {
     const entries = emptyRateIssues.map(issue => numberedEntries[issue.entryIndex]!).map(formatEntry);
     const predicate = entries.length === 1 ? 'has' : 'have';
     errors.add(`Set at least one rate: ${formatList(entries)} ${predicate} no rates.`);
@@ -170,11 +199,11 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
     const subject = details.length === 1 ? 'Duplicate selector coordinate' : 'Duplicate selector coordinates';
     errors.add(`${subject}: ${details.join('; ')}.`);
   }
-  if (rateDimensionIssues.length > 0) {
-    const differences = rateDimensionIssues.map(issue => {
+  if (rateMetricIssues.length > 0) {
+    const differences = rateMetricIssues.map(issue => {
       const entry = numberedEntries[issue.entryIndex]!;
-      const missing = issue.missingDimensions.map(rateFieldName);
-      const added = issue.addedDimensions.map(rateFieldName);
+      const missing = issue.missingMetrics.map(rateFieldName);
+      const added = issue.addedMetrics.map(rateFieldName);
       const changes = [
         ...(missing.length > 0 ? [`is missing ${formatList(missing)}`] : []),
         ...(added.length > 0 ? [`adds ${formatList(added)}`] : []),
@@ -186,7 +215,7 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
 
   for (const issue of pricingIssues.value) {
     if (issue.code === 'invalid-rate') {
-      errors.add(`Pricing rate is invalid: ${formatEntry(numberedEntries[issue.entryIndex]!)} has invalid ${rateFieldName(issue.dimension)}.`);
+      errors.add(`Pricing rate is invalid: ${formatEntry(numberedEntries[issue.entryIndex]!)} has invalid ${rateFieldName(issue.metric)}.`);
     } else if (issue.code === 'threshold-operator-conflict') {
       const entries = issue.entryIndexes.map(index => String(index + 1));
       const axis = PRICING_AXES.find(candidate => candidate.id === issue.axisId)!;
@@ -240,13 +269,17 @@ const toggleThresholdOperator = (index: number, axisId: string) => {
   updateThresholdCoordinate(index, axisId, { operator });
 };
 
-const updatePricingRate = (index: number, dimension: BillingDimension, raw: string | number | null | undefined) => {
-  const value = parseOptionalNumber(raw);
+const updatePricingRate = (index: number, field: PricingField, raw: string | number | null | undefined) => {
+  if (pricingEntryDrafts.value[index] === undefined) throw new RangeError(`Pricing entry index is out of range: ${index}`);
+  const displayPrice = String(raw ?? '').trim();
+  const value = displayPrice === ''
+    ? undefined
+    : divideDecimalString(parseNonNegativeDecimalString(displayPrice, `pricing ${field.metric}`), field.displayScale);
   writePricingEntries(pricingEntryDrafts.value.map((draft, entryIndex) => {
     if (entryIndex !== index) return draft;
     const rates = { ...draft.rates };
-    if (value === undefined) delete rates[dimension];
-    else rates[dimension] = value;
+    if (value === undefined) delete rates[field.metric];
+    else rates[field.metric] = value;
     return { ...draft, rates };
   }));
 };
@@ -379,16 +412,16 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
             </label>
           </div>
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <label v-for="dimension in visiblePricingDimensions" :key="dimension" class="block space-y-1.5">
-              <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dimension] }}</span>
+            <label v-for="field in visiblePricingFields" :key="pricingFieldKey(field)" class="block space-y-1.5">
+              <span class="block text-xs font-medium text-gray-500">{{ pricingFieldLabel(field) }}</span>
               <Input
                 type="number"
                 min="0"
-                :model-value="selectedPricingEntry.rates[dimension]"
+                :model-value="pricingFieldRate(selectedPricingEntry, field)"
                 :readonly="!editable"
                 placeholder="unpriced"
                 class="font-mono"
-                @update:model-value="value => updatePricingRate(selectedPricingEntryIndex, dimension, value)"
+                @update:model-value="value => updatePricingRate(selectedPricingEntryIndex, field, value)"
               />
             </label>
           </div>

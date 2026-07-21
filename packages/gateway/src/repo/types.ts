@@ -1,7 +1,7 @@
 import type { SearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 export type { SearchConfig } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
-import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, PriceVector, PricingSelector } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
@@ -55,21 +55,29 @@ export interface UsageRecord {
   // object. `{}` is the base coordinate.
   pricingSelector: PricingSelector;
   requests: number;
-  // Disjoint per-dimension token counts for this selector bucket.
-  tokens: Partial<Record<BillingDimension, number>>;
-  // Resolved per-dimension price snapshot for this exact selector coordinate.
-  // null means the model had no pricing metadata. Selector misses inside a
-  // configured rate card resolve to Base before reaching the repo. Repos
-  // persist one unit price per token-bearing dimension; null contributes zero
-  // realized cost.
-  rates: PriceVector | null;
+  metrics: UsageMetricRecord[];
 }
 
-// Disjoint per-dimension token counts. Absent keys mean zero for that
-// dimension. No key's count overlaps another's. `tier` is only the normalized
+export interface UsageMetricRecord {
+  metric: BillingMetric;
+  quantity: DecimalString;
+  unitPrice: DecimalString | null;
+}
+
+export type UsageQuantities = Partial<Record<BillingMetric, DecimalString>>;
+
+// Disjoint protocol-level token counts. Absent keys mean zero for that
+// token category. No key's count overlaps another's. `tier` is only the normalized
 // upstream observation used as a runtime pricing fact; it is projected into the
 // generic `pricingSelector` at recording time and is not persisted directly.
-export interface TokenUsage extends Partial<Record<BillingDimension, number>> {
+export interface TokenUsage {
+  input?: number;
+  input_cache_read?: number;
+  input_cache_write?: number;
+  input_cache_write_1h?: number;
+  input_image?: number;
+  output?: number;
+  output_image?: number;
   tier?: string | null;
 }
 
@@ -179,13 +187,13 @@ export interface SessionsRepo {
 
 export interface UsageRepo {
   // Additive upsert: on (keyId, model, upstream, modelKey, hour,
-  // pricingSelector) conflict, token counts are summed. The first write for
-  // each dimension establishes its pricing snapshot, including an unpriced
-  // snapshot; later writes that share the bucket keep it unchanged.
+  // pricingSelector, metric) conflict, quantities are summed exactly. The
+  // first write establishes the unit-price snapshot, including an unpriced
+  // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
   listAll(): Promise<UsageRecord[]>;
-  // Replacement upsert: counts and rates are both overwritten from the record.
+  // Replacement upsert: quantities and unit prices are overwritten from the record.
   set(record: UsageRecord): Promise<void>;
   deleteAll(): Promise<void>;
 }

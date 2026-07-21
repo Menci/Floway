@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { tokenCountsFromUsage } from '../../repo/usage-metrics.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -123,7 +124,7 @@ test('/v1/embeddings records usage under request model when upstream omits model
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].model, 'text-embedding-real');
-  assertEquals(usage[0].tokens.input, 1);
+  assertEquals(tokenCountsFromUsage(usage[0]), { input: 1 });
 
   const performanceRows = await repo.performance.listAll();
   assertEquals(performanceRows.length, 1);

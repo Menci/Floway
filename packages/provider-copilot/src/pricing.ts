@@ -11,86 +11,86 @@
 // After changing this table, run the unit-price backfill for existing rows.
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 import { copilotPublicModelId } from './model-name.ts';
-import { basePricing, modelPricing, pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
+import { tokenBasePricing, tokenModelPricing, tokenPricingEntry as pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
 
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
 const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
-  ['claude-opus-4-5', basePricing({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 })],
+  ['claude-opus-4-5', tokenBasePricing({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '25' })],
   // Anthropic public Fast Mode pricing is 6× base for Opus 4.6 / 4.7.
   // https://docs.claude.com/en/build-with-claude/fast-mode
-  [/^claude-opus-4-[67]$/, modelPricing(
-    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
-    pricingEntry({ input: 30, input_cache_read: 3, input_cache_write: 37.5, output: 150 }, { serviceTier: 'fast' }),
+  [/^claude-opus-4-[67]$/, tokenModelPricing(
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '25' }),
+    pricingEntry({ input_tokens: '30', input_cache_read_tokens: '3', input_cache_write_tokens: '37.5', output_tokens: '150' }, { serviceTier: 'fast' }),
   )],
-  ['claude-opus-4-8', modelPricing(
-    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
-    pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 50 }, { serviceTier: 'fast' }),
+  ['claude-opus-4-8', tokenModelPricing(
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '25' }),
+    pricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }, { serviceTier: 'fast' }),
   )],
-  ['claude-sonnet-5', basePricing({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 10 })],
-  [/^claude-sonnet-4(-[56])?$/, basePricing({ input: 3, input_cache_read: 0.3, input_cache_write: 3.75, output: 15 })],
-  ['claude-haiku-4-5', basePricing({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 5 })],
+  ['claude-sonnet-5', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '10' })],
+  [/^claude-sonnet-4(-[56])?$/, tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', output_tokens: '15' })],
+  ['claude-haiku-4-5', tokenBasePricing({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '5' })],
   // GPT-5.6 standard short/long entries. Copilot exposes no priority/flex lane.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
   // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
   // Cross-check only:
   // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
-  ['gpt-5.6-sol', modelPricing(
-    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
-    pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  ['gpt-5.6-sol', tokenModelPricing(
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }),
+    pricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '45' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.6-terra', modelPricing(
-    pricingEntry({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
-    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  ['gpt-5.6-terra', tokenModelPricing(
+    pricingEntry({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '22.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.6-luna', modelPricing(
-    pricingEntry({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
-    pricingEntry({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  ['gpt-5.6-luna', tokenModelPricing(
+    pricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '6' }),
+    pricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '9' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   // Copilot's live catalog exposes a 1.05M context window for GPT-5.5/5.4;
   // OpenAI reprices the whole request above 272k input tokens.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
-  ['gpt-5.5', modelPricing(
-    pricingEntry({ input: 5, input_cache_read: 0.5, output: 30 }),
-    pricingEntry({ input: 10, input_cache_read: 1, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  ['gpt-5.5', tokenModelPricing(
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', output_tokens: '30' }),
+    pricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', output_tokens: '45' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.4', modelPricing(
-    pricingEntry({ input: 2.5, input_cache_read: 0.25, output: 15 }),
-    pricingEntry({ input: 5, input_cache_read: 0.5, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  ['gpt-5.4', tokenModelPricing(
+    pricingEntry({ input_tokens: '2.5', input_cache_read_tokens: '0.25', output_tokens: '15' }),
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', output_tokens: '22.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.4-mini', basePricing({ input: 0.75, input_cache_read: 0.075, output: 4.5 })],
-  ['gpt-5.4-nano', basePricing({ input: 0.2, input_cache_read: 0.02, output: 1.25 })],
-  [/^gpt-5[.][23](-codex)?$/, basePricing({ input: 1.75, input_cache_read: 0.175, output: 14 })],
-  ['gpt-5.1-codex-mini', basePricing({ input: 0.25, input_cache_read: 0.025, output: 2 })],
-  [/^gpt-5[.]1/, basePricing({ input: 1.25, input_cache_read: 0.125, output: 10 })],
-  ['gpt-5-mini', basePricing({ input: 0.25, input_cache_read: 0.025, output: 2 })],
-  [/^gpt-4[.]1/, basePricing({ input: 2, input_cache_read: 0.5, output: 8 })],
-  ['gpt-41-copilot', basePricing({ input: 2, input_cache_read: 0.5, output: 8 })],
-  [/^gpt-4o(-[0-9]{4}-[0-9]{2}-[0-9]{2})?$/, basePricing({ input: 2.5, input_cache_read: 1.25, output: 10 })],
-  ['gpt-4-o-preview', basePricing({ input: 2.5, input_cache_read: 1.25, output: 10 })],
-  [/^gpt-4o-mini/, basePricing({ input: 0.15, input_cache_read: 0.075, output: 0.6 })],
-  [/^gpt-4(-0613)?$/, basePricing({ input: 30, output: 60 })],
-  ['gpt-4-0125-preview', basePricing({ input: 10, output: 30 })],
-  ['gpt-3.5-turbo', basePricing({ input: 0.5, output: 1.5 })],
-  ['gpt-3.5-turbo-0613', basePricing({ input: 1.5, output: 2 })],
+  ['gpt-5.4-mini', tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '4.5' })],
+  ['gpt-5.4-nano', tokenBasePricing({ input_tokens: '0.2', input_cache_read_tokens: '0.02', output_tokens: '1.25' })],
+  [/^gpt-5[.][23](-codex)?$/, tokenBasePricing({ input_tokens: '1.75', input_cache_read_tokens: '0.175', output_tokens: '14' })],
+  ['gpt-5.1-codex-mini', tokenBasePricing({ input_tokens: '0.25', input_cache_read_tokens: '0.025', output_tokens: '2' })],
+  [/^gpt-5[.]1/, tokenBasePricing({ input_tokens: '1.25', input_cache_read_tokens: '0.125', output_tokens: '10' })],
+  ['gpt-5-mini', tokenBasePricing({ input_tokens: '0.25', input_cache_read_tokens: '0.025', output_tokens: '2' })],
+  [/^gpt-4[.]1/, tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.5', output_tokens: '8' })],
+  ['gpt-41-copilot', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.5', output_tokens: '8' })],
+  [/^gpt-4o(-[0-9]{4}-[0-9]{2}-[0-9]{2})?$/, tokenBasePricing({ input_tokens: '2.5', input_cache_read_tokens: '1.25', output_tokens: '10' })],
+  ['gpt-4-o-preview', tokenBasePricing({ input_tokens: '2.5', input_cache_read_tokens: '1.25', output_tokens: '10' })],
+  [/^gpt-4o-mini/, tokenBasePricing({ input_tokens: '0.15', input_cache_read_tokens: '0.075', output_tokens: '0.6' })],
+  [/^gpt-4(-0613)?$/, tokenBasePricing({ input_tokens: '30', output_tokens: '60' })],
+  ['gpt-4-0125-preview', tokenBasePricing({ input_tokens: '10', output_tokens: '30' })],
+  ['gpt-3.5-turbo', tokenBasePricing({ input_tokens: '0.5', output_tokens: '1.5' })],
+  ['gpt-3.5-turbo-0613', tokenBasePricing({ input_tokens: '1.5', output_tokens: '2' })],
   // Google charges higher whole-request rates above 200k input tokens.
   // https://ai.google.dev/gemini-api/docs/pricing
   // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/google/models/gemini-3.1-pro-preview.toml
-  ['gemini-2.5-pro', basePricing({ input: 1.25, input_cache_read: 0.125, output: 10 })],
-  ['gemini-3-flash-preview', basePricing({ input: 0.5, input_cache_read: 0.05, output: 3 })],
-  ['gemini-3.1-pro-preview', modelPricing(
-    pricingEntry({ input: 2, input_cache_read: 0.2, output: 12 }),
-    pricingEntry({ input: 4, input_cache_read: 0.4, output: 18 }, { inputTokens: { operator: 'gt', value: 200000 } }),
+  ['gemini-2.5-pro', tokenBasePricing({ input_tokens: '1.25', input_cache_read_tokens: '0.125', output_tokens: '10' })],
+  ['gemini-3-flash-preview', tokenBasePricing({ input_tokens: '0.5', input_cache_read_tokens: '0.05', output_tokens: '3' })],
+  ['gemini-3.1-pro-preview', tokenModelPricing(
+    pricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', output_tokens: '12' }),
+    pricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.4', output_tokens: '18' }, { inputTokens: { operator: 'gt', value: 200000 } }),
   )],
-  ['gemini-3.5-flash', basePricing({ input: 1.5, input_cache_read: 0.15, output: 9 })],
-  [/^grok-code-fast/, basePricing({ input: 0.2, output: 1.5 })],
-  ['goldeneye', basePricing({ input: 1.25, input_cache_read: 0.125, output: 10 })],
-  ['raptor-mini', basePricing({ input: 0.25, input_cache_read: 0.025, output: 2 })],
-  ['minimax-m2.5', basePricing({ input: 0.3, output: 1.2 })],
-  [/^mai-code-1-flash/, basePricing({ input: 0.75, input_cache_read: 0.075, output: 4.5 })],
-  [/^text-embedding-3-small/, basePricing({ input: 0.02, output: 0 })],
-  ['text-embedding-ada-002', basePricing({ input: 0.1, output: 0 })],
+  ['gemini-3.5-flash', tokenBasePricing({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '9' })],
+  [/^grok-code-fast/, tokenBasePricing({ input_tokens: '0.2', output_tokens: '1.5' })],
+  ['goldeneye', tokenBasePricing({ input_tokens: '1.25', input_cache_read_tokens: '0.125', output_tokens: '10' })],
+  ['raptor-mini', tokenBasePricing({ input_tokens: '0.25', input_cache_read_tokens: '0.025', output_tokens: '2' })],
+  ['minimax-m2.5', tokenBasePricing({ input_tokens: '0.3', output_tokens: '1.2' })],
+  [/^mai-code-1-flash/, tokenBasePricing({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '4.5' })],
+  [/^text-embedding-3-small/, tokenBasePricing({ input_tokens: '0.02', output_tokens: '0' })],
+  ['text-embedding-ada-002', tokenBasePricing({ input_tokens: '0.1', output_tokens: '0' })],
 ];
 
 const matchPricing = (publicName: string): ModelPricing | null => {

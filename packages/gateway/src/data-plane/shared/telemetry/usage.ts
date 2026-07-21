@@ -1,19 +1,23 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
-import type { TokenUsage } from '../../../repo/types.ts';
-import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, priceRequest } from '@floway-dev/protocols/common';
+import type { TokenUsage, UsageQuantities } from '../../../repo/types.ts';
+import { tokenUsageQuantities, usageMetrics } from '../../../repo/usage-metrics.ts';
+import { priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
+const TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
+const INPUT_TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
 
-// Drop zero / undefined dimensions so a usage map only carries the dimensions
+export const hasTokenUsage = (usage: TokenUsage): boolean => TOKEN_USAGE_KEYS.some(key => (usage[key] ?? 0) > 0);
+
+// Drop zero / undefined token categories so a usage map only carries the metrics
 // actually billed. `tier` (a non-numeric service-tier marker) survives the
 // filter so service-tier selector entries resolve at recording time.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
-  for (const dimension of BILLING_DIMENSIONS) {
-    const value = counts[dimension] ?? 0;
-    if (value > 0) out[dimension] = value;
+  for (const key of TOKEN_USAGE_KEYS) {
+    const value = counts[key] ?? 0;
+    if (value > 0) out[key] = value;
   }
   if (counts.tier != null) out.tier = counts.tier;
   return out;
@@ -41,7 +45,7 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
 //     (Anthropic / Gemini-explicit / Alibaba-routed).
 //
 // Each count is a subset of `prompt_tokens`, so subtracting them in the
-// caller recovers the disjoint bare-input dimension. Upstreams that report
+// caller recovers the disjoint bare-input metric. Upstreams that report
 // no cache fields at all (Together, Perplexity, SiliconFlow, TGI, Ollama-
 // compat, plus most providers without a cache layer) fall through to zero,
 // leaving the whole prompt count on the bare input bucket.
@@ -87,12 +91,12 @@ export const tokenUsageFromEmbeddingsBody = (body: unknown): TokenUsage | null =
 // OpenAI Images responses report usage as
 // `{input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}`,
 // where the details objects split each total into `text_tokens` and
-// `image_tokens`. We map that split onto the billing dimensions: bare
+// `image_tokens`. We map that split onto the billing metrics: bare
 // input/output for the text modality, input_image/output_image for the image
 // modality. The details splits are disjoint and sum to their respective total.
 //
 // When a details object is missing but its total is present, the whole total is
-// charged on the bare dimension rather than inventing a split. A present field
+// charged on the bare metric rather than inventing a split. A present field
 // that is a non-number is treated as a malformed upstream payload (return
 // null) rather than silently coerced.
 export const tokenUsageFromImagesBody = (body: unknown): TokenUsage | null => {
@@ -121,8 +125,8 @@ interface ImagesUsageShape {
 }
 
 const splitModalityCounts = (
-  textDimension: BillingDimension,
-  imageDimension: BillingDimension,
+  textDimension: Exclude<keyof TokenUsage, 'tier'>,
+  imageDimension: Exclude<keyof TokenUsage, 'tier'>,
   total: number | undefined,
   details: unknown,
 ): TokenUsage | null => {
@@ -137,10 +141,14 @@ const splitModalityCounts = (
   return { [textDimension]: text ?? 0, [imageDimension]: image ?? 0 };
 };
 
-export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
-  const { tier, ...tokens } = usage;
-  const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
-  const priced = priceRequest(modelIdentity.pricing, { serviceTier: tier, inputTokens });
+export const recordUsage = async (
+  keyId: string,
+  modelIdentity: TelemetryModelIdentity,
+  quantities: UsageQuantities,
+  pricingFacts: PricingRuntimeFacts,
+): Promise<void> => {
+  const priced = priceRequest(modelIdentity.pricing, pricingFacts);
+  const metrics = usageMetrics(quantities, priced.rates);
   await Promise.all([
     getRepo().usage.record({
       keyId,
@@ -150,8 +158,7 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       hour: currentHour(),
       pricingSelector: priced.selector,
       requests: 1,
-      tokens,
-      rates: priced.rates,
+      metrics,
     }),
     (async () => {
       const key = await getRepo().apiKeys.getById(keyId);
@@ -162,4 +169,10 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       });
     })(),
   ]);
+};
+
+export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
+  const { tier, ...tokens } = usage ?? {};
+  const inputTokens = INPUT_TOKEN_USAGE_KEYS.reduce((sum, key) => sum + (tokens[key] ?? 0), 0);
+  await recordUsage(keyId, modelIdentity, tokenUsageQuantities(tokens), { serviceTier: tier, inputTokens });
 };
