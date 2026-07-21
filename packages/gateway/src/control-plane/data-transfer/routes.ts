@@ -20,7 +20,7 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, UsageDimensionRecord, UsageRecord, User } from '../../repo/types.ts';
+import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, UsageMetricRecord, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
@@ -30,7 +30,7 @@ import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, type BillingDimension, type BillingUnit, type PricingSelector } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, type PricingSelector } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
@@ -387,30 +387,29 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
   return null;
 };
 
-const parseImportedDimensions = (value: unknown): { type: 'ok'; dimensions: UsageDimensionRecord[] } | { type: 'invalid'; error: string } => {
-  if (!Array.isArray(value)) return { type: 'invalid', error: 'dimensions must be an array' };
-  const dimensions: UsageDimensionRecord[] = [];
-  const seen = new Set<string>();
+const parseImportedMetrics = (value: unknown): { type: 'ok'; metrics: UsageMetricRecord[] } | { type: 'invalid'; error: string } => {
+  if (!Array.isArray(value)) return { type: 'invalid', error: 'metrics must be an array' };
+  const metrics: UsageMetricRecord[] = [];
+  const seen = new Set<BillingMetric>();
   for (const row of value) {
-    if (!isRecord(row)) return { type: 'invalid', error: 'dimensions must contain objects' };
-    if (typeof row.dimension !== 'string' || !BILLING_DIMENSIONS.includes(row.dimension as BillingDimension)) {
-      return { type: 'invalid', error: `unknown usage dimension: ${JSON.stringify(row.dimension)}` };
+    if (!isRecord(row)) return { type: 'invalid', error: 'metrics must contain objects' };
+    if (typeof row.metric !== 'string' || !BILLING_METRICS.includes(row.metric as BillingMetric)) {
+      return { type: 'invalid', error: `unknown usage metric: ${JSON.stringify(row.metric)}` };
     }
-    if (typeof row.unit !== 'string' || !BILLING_UNITS.includes(row.unit as BillingUnit)) {
-      return { type: 'invalid', error: `unknown billing unit: ${JSON.stringify(row.unit)}` };
+    let quantity: string;
+    let unitPrice: string | null;
+    try {
+      quantity = parseNonNegativeDecimalString(row.quantity, 'metric quantity');
+      unitPrice = row.unitPrice === null ? null : parseNonNegativeDecimalString(row.unitPrice, 'metric unitPrice');
+    } catch (cause) {
+      return { type: 'invalid', error: cause instanceof Error ? cause.message : String(cause) };
     }
-    if (typeof row.quantity !== 'number' || !Number.isFinite(row.quantity) || row.quantity < 0) {
-      return { type: 'invalid', error: 'dimension quantity must be a finite non-negative number' };
-    }
-    if (row.unitPrice !== null && (typeof row.unitPrice !== 'number' || !Number.isFinite(row.unitPrice) || row.unitPrice < 0)) {
-      return { type: 'invalid', error: 'dimension unitPrice must be a finite non-negative number or null' };
-    }
-    const key = `${row.dimension}\0${row.unit}`;
-    if (seen.has(key)) return { type: 'invalid', error: `duplicate usage dimension and unit: ${row.dimension}, ${row.unit}` };
-    seen.add(key);
-    dimensions.push({ dimension: row.dimension as BillingDimension, unit: row.unit as BillingUnit, quantity: row.quantity, unitPrice: row.unitPrice });
+    const metric = row.metric as BillingMetric;
+    if (seen.has(metric)) return { type: 'invalid', error: `duplicate usage metric: ${metric}` };
+    seen.add(metric);
+    metrics.push({ metric, quantity, unitPrice });
   }
-  return { type: 'ok', dimensions };
+  return { type: 'ok', metrics };
 };
 
 const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[] } | { type: 'invalid'; index: number; error: string } => {
@@ -444,8 +443,8 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     } catch (cause) {
       return { type: 'invalid', index: i, error: `invalid pricingSelector: ${cause instanceof Error ? cause.message : String(cause)}` };
     }
-    const dimensionsResult = parseImportedDimensions(record.dimensions);
-    if (dimensionsResult.type === 'invalid') return { type: 'invalid', index: i, error: dimensionsResult.error };
+    const metricsResult = parseImportedMetrics(record.metrics);
+    if (metricsResult.type === 'invalid') return { type: 'invalid', index: i, error: metricsResult.error };
     records.push({
       keyId: record.keyId,
       model: record.model,
@@ -454,7 +453,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       hour: record.hour,
       pricingSelector,
       requests: record.requests,
-      dimensions: dimensionsResult.dimensions,
+      metrics: metricsResult.metrics,
     });
   }
 

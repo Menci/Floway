@@ -1,20 +1,23 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage, UsageQuantities } from '../../../repo/types.ts';
-import { usageDimensions } from '../../../repo/usage-dimensions.ts';
-import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, type PriceUnits, priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
+import { tokenUsageQuantities, usageMetrics } from '../../../repo/usage-metrics.ts';
+import { priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
+const TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
+const INPUT_TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
+
+export const hasTokenUsage = (usage: TokenUsage): boolean => TOKEN_USAGE_KEYS.some(key => (usage[key] ?? 0) > 0);
 
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
 // actually billed. `tier` (a non-numeric service-tier marker) survives the
 // filter so service-tier selector entries resolve at recording time.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
-  for (const dimension of BILLING_DIMENSIONS) {
-    const value = counts[dimension] ?? 0;
-    if (value > 0) out[dimension] = value;
+  for (const key of TOKEN_USAGE_KEYS) {
+    const value = counts[key] ?? 0;
+    if (value > 0) out[key] = value;
   }
   if (counts.tier != null) out.tier = counts.tier;
   return out;
@@ -122,8 +125,8 @@ interface ImagesUsageShape {
 }
 
 const splitModalityCounts = (
-  textDimension: BillingDimension,
-  imageDimension: BillingDimension,
+  textDimension: Exclude<keyof TokenUsage, 'tier'>,
+  imageDimension: Exclude<keyof TokenUsage, 'tier'>,
   total: number | undefined,
   details: unknown,
 ): TokenUsage | null => {
@@ -142,18 +145,10 @@ export const recordUsage = async (
   keyId: string,
   modelIdentity: TelemetryModelIdentity,
   quantities: UsageQuantities,
-  units: PriceUnits,
   pricingFacts: PricingRuntimeFacts,
 ): Promise<void> => {
   const priced = priceRequest(modelIdentity.pricing, pricingFacts);
-  for (const dimension of BILLING_DIMENSIONS) {
-    const pricingUnit = priced.units?.[dimension];
-    const usageUnit = units[dimension];
-    if (pricingUnit !== undefined && usageUnit !== undefined && pricingUnit !== usageUnit) {
-      throw new Error(`Usage dimension ${dimension} is measured in ${usageUnit} but priced in ${pricingUnit}`);
-    }
-  }
-  const dimensions = usageDimensions(quantities, units, priced.rates);
+  const metrics = usageMetrics(quantities, priced.rates);
   await Promise.all([
     getRepo().usage.record({
       keyId,
@@ -163,7 +158,7 @@ export const recordUsage = async (
       hour: currentHour(),
       pricingSelector: priced.selector,
       requests: 1,
-      dimensions,
+      metrics,
     }),
     (async () => {
       const key = await getRepo().apiKeys.getById(keyId);
@@ -178,7 +173,6 @@ export const recordUsage = async (
 
 export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
   const { tier, ...tokens } = usage ?? {};
-  const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
-  const units = Object.fromEntries(BILLING_DIMENSIONS.map(dimension => [dimension, 'tokens_1m'])) as PriceUnits;
-  await recordUsage(keyId, modelIdentity, tokens, units, { serviceTier: tier, inputTokens });
+  const inputTokens = INPUT_TOKEN_USAGE_KEYS.reduce((sum, key) => sum + (tokens[key] ?? 0), 0);
+  await recordUsage(keyId, modelIdentity, tokenUsageQuantities(tokens), { serviceTier: tier, inputTokens });
 };

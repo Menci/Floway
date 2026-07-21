@@ -19,7 +19,7 @@ import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
-import { BILLING_UNITS } from '@floway-dev/protocols/common';
+import { parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -56,25 +56,22 @@ const modelEndpointsSchema = z.object({
   imagesEdits: z.object({}).optional(),
 });
 
-const pricingDimensionShape = {
-  input: z.number().nonnegative().optional(),
-  output: z.number().nonnegative().optional(),
-  input_cache_read: z.number().nonnegative().optional(),
-  input_cache_write: z.number().nonnegative().optional(),
-  input_cache_write_1h: z.number().nonnegative().optional(),
-  input_image: z.number().nonnegative().optional(),
-  output_image: z.number().nonnegative().optional(),
-};
-
-const billingUnitSchema = z.enum(BILLING_UNITS);
-const pricingUnitShape = {
-  input: billingUnitSchema.optional(),
-  output: billingUnitSchema.optional(),
-  input_cache_read: billingUnitSchema.optional(),
-  input_cache_write: billingUnitSchema.optional(),
-  input_cache_write_1h: billingUnitSchema.optional(),
-  input_image: billingUnitSchema.optional(),
-  output_image: billingUnitSchema.optional(),
+const priceSchema = z.string().transform((value, ctx) => {
+  try {
+    return parseNonNegativeDecimalString(value, 'price');
+  } catch (cause) {
+    ctx.issues.push({ code: 'custom', message: cause instanceof Error ? cause.message : String(cause), input: value });
+    return z.NEVER;
+  }
+});
+const pricingMetricShape = {
+  input_tokens: priceSchema.optional(),
+  output_tokens: priceSchema.optional(),
+  input_cache_read_tokens: priceSchema.optional(),
+  input_cache_write_tokens: priceSchema.optional(),
+  input_cache_write_1h_tokens: priceSchema.optional(),
+  input_image_tokens: priceSchema.optional(),
+  output_image_tokens: priceSchema.optional(),
 };
 
 // Modality arrays: both input and output require at least one entry and
@@ -144,10 +141,9 @@ const upstreamModelSchema = z.object({
   endpoints: modelEndpointsSchema,
   display_name: z.string().optional(),
   pricing: z.object({
-    units: z.object(pricingUnitShape).strict(),
     entries: z.array(z.object({
       selector: z.record(z.string(), z.unknown()).optional(),
-      rates: z.object(pricingDimensionShape).strict(),
+      rates: z.object(pricingMetricShape).strict(),
     }).strict()).min(1),
   }).strict().optional(),
   flagOverrides: flagOverridesSchema.optional(),

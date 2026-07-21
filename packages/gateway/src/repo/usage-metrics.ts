@@ -29,14 +29,17 @@ export const usageMetrics = (quantities: UsageQuantities, rates: PriceVector | n
     return [{ metric, quantity, unitPrice: rates?.[metric] ?? null }];
   });
 
-export const tokenUsageMetrics = (tokens: TokenUsage, rates: PriceVector | null): UsageMetricRecord[] => {
+export const tokenUsageQuantities = (tokens: TokenUsage): UsageQuantities => {
   const quantities: UsageQuantities = {};
   for (const [key, metric] of Object.entries(TOKEN_METRIC_BY_USAGE_KEY) as [keyof typeof TOKEN_METRIC_BY_USAGE_KEY, BillingMetric][]) {
     const quantity = tokens[key];
     if (quantity !== undefined) quantities[metric] = canonicalDecimalString(String(quantity), `token usage ${key}`);
   }
-  return usageMetrics(quantities, rates);
+  return quantities;
 };
+
+export const tokenUsageMetrics = (tokens: TokenUsage, rates: PriceVector | null): UsageMetricRecord[] =>
+  usageMetrics(tokenUsageQuantities(tokens), rates);
 
 export const tokenCountsFromUsage = (record: UsageRecord): TokenUsage => Object.fromEntries(
   Object.entries(TOKEN_METRIC_BY_USAGE_KEY).flatMap(([key, metric]) => {
