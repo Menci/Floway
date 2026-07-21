@@ -72,18 +72,26 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
   ]);
 });
 
-test('0061 rejects a malformed legacy usage price instead of converting it to zero', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
-  for (const [filename, sql] of migrationSqlByFilename) {
-    if (filename === '0061_usage_billing_metrics.sql') {
-      db.run(`INSERT INTO usage (
-        key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price
-      ) VALUES ('k', 'm', NULL, 'mk', '2026-01-01T00', '{}', 'input', 1, 'not-a-price')`);
-      assertThrows(() => db.run(sql), Error, 'malformed JSON');
-      break;
+test('0061 rejects malformed legacy usage quantities and prices', async () => {
+  for (const [tokens, unitPrice] of [
+    ['1', "'not-a-price'"],
+    ['1', '1e999'],
+    ['-1', '1'],
+    ['1.5', '1'],
+    ["'not-a-quantity'", '1'],
+  ]) {
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0061_usage_billing_metrics.sql') {
+        db.run(`INSERT INTO usage (
+          key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price
+        ) VALUES ('k', 'm', NULL, 'mk', '2026-01-01T00', '{}', 'input', ${tokens}, ${unitPrice})`);
+        assertThrows(() => db.run(sql), Error, 'malformed JSON');
+        break;
+      }
+      db.run(sql);
     }
-    db.run(sql);
   }
 });
 
