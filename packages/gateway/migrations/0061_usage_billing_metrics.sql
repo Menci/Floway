@@ -167,7 +167,12 @@ SET config_json = json_set(
                           WHEN 'output_image' THEN 'output_image_tokens'
                         END,
                         CASE
-                          WHEN decimal_type NOT IN ('integer', 'real') OR decimal_value < 0 THEN json('invalid legacy model price')
+                          WHEN decimal_type NOT IN ('integer', 'real')
+                            OR decimal_value < 0
+                            OR decimal_value > 1.7976931348623157e308
+                            OR length(decimal_text) > 512
+                            OR abs(source_exponent) > 400
+                            THEN json('invalid legacy model price')
                           WHEN decimal_value = 0 THEN '0'
                           WHEN decimal_position <= 0 THEN sign || '0.' || printf('%0*d', -decimal_position, 0) || digits
                           WHEN decimal_position >= length(digits) THEN sign || digits || printf('%0*d', decimal_position - length(digits), 0)
