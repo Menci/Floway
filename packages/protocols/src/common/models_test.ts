@@ -6,8 +6,7 @@ import {
   canonicalizePricingSelector,
   collectModelPricingIssues,
   tokenModelPricing,
-  parseBillingDimension,
-  parseBillingUnit,
+  parseBillingMetric,
   parsePricingSelectorKey,
   priceRequest,
   pricingEntry,
@@ -18,10 +17,8 @@ import {
 import { assertEquals, assertThrows } from '../test-assert.ts';
 
 test('billing storage parsers accept current vocabulary and reject unknown values', () => {
-  assertEquals(parseBillingDimension('input'), 'input');
-  assertEquals(parseBillingUnit('tokens_1m'), 'tokens_1m');
-  assertThrows(() => parseBillingDimension('reasoning'), TypeError, 'billing dimension is invalid: "reasoning"');
-  assertThrows(() => parseBillingUnit('requests'), TypeError, 'billing unit is invalid: "requests"');
+  assertEquals(parseBillingMetric('input_tokens'), 'input_tokens');
+  assertThrows(() => parseBillingMetric('reasoning'), TypeError, 'billing metric is invalid: "reasoning"');
 });
 
 test('canonical selector JSON sorts axis keys and threshold object keys deterministically', () => {
@@ -57,90 +54,80 @@ test('selector validation rejects unknown axes, empty equality values, and malfo
 
 test('model validation rejects duplicate selectors and conflicting threshold operators in overlapping scopes', () => {
   assertThrows(() => validateModelPricing({
-    units: { input: 'tokens_1m' },
     entries: [
-      { rates: { input: 1 } },
-      { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
-      { selector: { serviceTier: 'priority' }, rates: { input: 3 } },
+      { rates: { input_tokens: '1' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '3' } },
     ],
   }), Error, 'duplicate pricing entry selector');
   assertThrows(() => validateModelPricing({
-    units: { input: 'tokens_1m' },
     entries: [
-      { rates: { input: 1 } },
-      { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 1 } },
-      { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
+      { rates: { input_tokens: '1' } },
+      { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '1' } },
+      { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input_tokens: '2' } },
     ],
   }), Error, 'conflicting pricing threshold operators');
   validateModelPricing({
-    units: { input: 'tokens_1m' },
     entries: [
-      { rates: { input: 1 } },
-      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 16 } }, rates: { input: 2 } },
-      { selector: { serviceTier: 'priority', inputTokens: { operator: 'gte', value: 16 } }, rates: { input: 3 } },
+      { rates: { input_tokens: '1' } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 16 } }, rates: { input_tokens: '2' } },
+      { selector: { serviceTier: 'priority', inputTokens: { operator: 'gte', value: 16 } }, rates: { input_tokens: '3' } },
     ],
   });
   assertThrows(() => validateModelPricing({
-    units: { input: 'tokens_1m' },
     entries: [
-      { rates: { input: 1 } },
-      { selector: { inputTokens: { operator: 'gt', value: 16 } }, rates: { input: 2 } },
-      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gte', value: 16 } }, rates: { input: 3 } },
+      { rates: { input_tokens: '1' } },
+      { selector: { inputTokens: { operator: 'gt', value: 16 } }, rates: { input_tokens: '2' } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gte', value: 16 } }, rates: { input_tokens: '3' } },
     ],
   }), Error, 'overlapping equality scopes');
 });
 
 test('model validation requires exactly one base entry and uses it as the rate-field reference', () => {
   assertThrows(() => validateModelPricing({
-    units: { input: 'tokens_1m' },
-    entries: [{ selector: { serviceTier: 'priority' }, rates: { input: 2 } }],
+    entries: [{ selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }],
   }), Error, 'exactly one base entry');
   assertThrows(() => validateModelPricing({
-    units: { input: 'tokens_1m' },
-    entries: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }],
+    entries: [{ rates: { input_tokens: '1' } }, { selector: {}, rates: { input_tokens: '2' } }],
   }), Error, 'exactly one base entry');
   validateModelPricing({
-    units: { input: 'tokens_1m', output: 'tokens_1m' },
     entries: [
-      { selector: { serviceTier: 'priority' }, rates: { input: 2, output: 8 } },
-      { rates: { input: 1, output: 4 } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2', output_tokens: '8' } },
+      { rates: { input_tokens: '1', output_tokens: '4' } },
     ],
   });
 });
 
-test('model validation requires every entry to price the same dimensions', () => {
+test('model validation requires every entry to price the same metrics', () => {
   assertThrows(
     () => validateModelPricing({
-      units: { input: 'tokens_1m', output: 'tokens_1m' },
       entries: [
-        { rates: { input: 1, output: 4 } },
-        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+        { rates: { input_tokens: '1', output_tokens: '4' } },
+        { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
       ],
     }),
     Error,
-    'must define the same dimensions as the base entry (input, output)',
+    'must define the same metrics as the base entry (input_tokens, output_tokens)',
   );
   validateModelPricing({
-    units: { input: 'tokens_1m', output: 'tokens_1m' },
     entries: [
-      { rates: { input: 1, output: 4 } },
-      { selector: { serviceTier: 'priority' }, rates: { output: 8, input: 2 } },
+      { rates: { input_tokens: '1', output_tokens: '4' } },
+      { selector: { serviceTier: 'priority' }, rates: { output_tokens: '8', input_tokens: '2' } },
     ],
   });
 });
 
-test('structured pricing issues identify entries, selectors, and rate-dimension differences', () => {
+test('structured pricing issues identify entries, selectors, and rate-metric differences', () => {
   const issues = collectModelPricingIssues({
-    units: { input: 'tokens_1m', output: 'tokens_1m' },
     entries: [
-      { rates: { input: 1, output: 4 } },
-      { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
-      { selector: { serviceTier: 'priority' }, rates: { input: 3 } },
+      { rates: { input_tokens: '1', output_tokens: '4' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '3' } },
     ],
   }).map(({ error: _error, ...issue }) => issue);
   assertEquals(issues, [
-    { code: 'rate-dimensions', entryIndex: 1, baseIndex: 0, missingDimensions: ['output'], addedDimensions: [] },
-    { code: 'rate-dimensions', entryIndex: 2, baseIndex: 0, missingDimensions: ['output'], addedDimensions: [] },
+    { code: 'rate-metrics', entryIndex: 1, baseIndex: 0, missingMetrics: ['output_tokens'], addedMetrics: [] },
+    { code: 'rate-metrics', entryIndex: 2, baseIndex: 0, missingMetrics: ['output_tokens'], addedMetrics: [] },
     {
       code: 'duplicate-selector',
       selector: { serviceTier: 'priority' },
@@ -149,10 +136,9 @@ test('structured pricing issues identify entries, selectors, and rate-dimension 
     },
   ]);
   assertEquals(collectModelPricingIssues({
-    units: { input: 'tokens_1m' },
     entries: [
-      { rates: { input: 1 } },
-      { selector: { serviceTier: '' }, rates: { input: 2 } },
+      { rates: { input_tokens: '1' } },
+      { selector: { serviceTier: '' }, rates: { input_tokens: '2' } },
     ],
   }).map(issue => ({ code: issue.code, ...('entryIndex' in issue ? { entryIndex: issue.entryIndex } : {}) })), [
     { code: 'invalid-selector', entryIndex: 1 },
@@ -162,10 +148,9 @@ test('structured pricing issues identify entries, selectors, and rate-dimension 
 test('catalog validation rejects Base-equivalent tiers without narrowing historical selector parsing', () => {
   for (const serviceTier of ['default', ' Standard ', '  ']) {
     const issues = collectModelPricingIssues({
-      units: { input: 'tokens_1m' },
       entries: [
-        { rates: { input: 1 } },
-        { selector: { serviceTier }, rates: { input: 2 } },
+        { rates: { input_tokens: '1' } },
+        { selector: { serviceTier }, rates: { input_tokens: '2' } },
       ],
     });
     assertEquals(issues.map(issue => ({ code: issue.code, ...('entryIndex' in issue ? { entryIndex: issue.entryIndex } : {}) })), [
@@ -177,107 +162,99 @@ test('catalog validation rejects Base-equivalent tiers without narrowing histori
 
 test('service-specific thresholds remain scoped while global thresholds apply to every service tier', () => {
   const pricing: ModelPricing = {
-    units: { input: 'tokens_1m' },
     entries: [
-      { rates: { input: 1 } },
-      { selector: { serviceTier: 'fast' }, rates: { input: 2 } },
-      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 16 } }, rates: { input: 3 } },
-      { selector: { inputTokens: { operator: 'gt', value: 100 } }, rates: { input: 4 } },
-      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 200 } }, rates: { input: 5 } },
+      { rates: { input_tokens: '1' } },
+      { selector: { serviceTier: 'fast' }, rates: { input_tokens: '2' } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 16 } }, rates: { input_tokens: '3' } },
+      { selector: { inputTokens: { operator: 'gt', value: 100 } }, rates: { input_tokens: '4' } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 200 } }, rates: { input_tokens: '5' } },
     ],
   };
-  assertEquals(priceRequest(pricing, { inputTokens: 17 }), { selector: {}, units: { input: 'tokens_1m' }, rates: { input: 1 } });
-  assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 16 }).rates, { input: 2 });
+  assertEquals(priceRequest(pricing, { inputTokens: 17 }), { selector: {}, rates: { input_tokens: '1' } });
+  assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 16 }).rates, { input_tokens: '2' });
   assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 17 }), {
     selector: { inputTokens: { operator: 'gt', value: 16 }, serviceTier: 'fast' },
-    units: { input: 'tokens_1m' },
-    rates: { input: 3 },
+    rates: { input_tokens: '3' },
   });
-  assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 101 }), { selector: {}, units: { input: 'tokens_1m' }, rates: { input: 1 } });
+  assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 101 }), { selector: {}, rates: { input_tokens: '1' } });
   assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 201 }), {
     selector: { inputTokens: { operator: 'gt', value: 200 }, serviceTier: 'fast' },
-    units: { input: 'tokens_1m' },
-    rates: { input: 5 },
+    rates: { input_tokens: '5' },
   });
 });
 
 test('shared pricing helpers canonicalize and eagerly validate catalogs', () => {
-  assertEquals(tokenBasePricing({ input: 1 }), { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 1 } }] });
+  assertEquals(tokenBasePricing({ input_tokens: '1' }), { entries: [{ rates: { input_tokens: '1' } }] });
   assertEquals(tokenModelPricing(
-    pricingEntry({ input: 1 }),
-    pricingEntry({ input: 2 }, { serviceTier: 'priority' }),
+    pricingEntry({ input_tokens: '1' }),
+    pricingEntry({ input_tokens: '2' }, { serviceTier: 'priority' }),
   ), {
-    units: { input: 'tokens_1m' },
     entries: [
-      { rates: { input: 1 } },
-      { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      { rates: { input_tokens: '1' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
     ],
   });
   assertThrows(
     () => tokenModelPricing(
-      pricingEntry({ input: 1 }),
-      pricingEntry({ input: 2 }, { serviceTier: 'priority' }),
-      pricingEntry({ input: 3 }, { serviceTier: 'priority' }),
+      pricingEntry({ input_tokens: '1' }),
+      pricingEntry({ input_tokens: '2' }, { serviceTier: 'priority' }),
+      pricingEntry({ input_tokens: '3' }, { serviceTier: 'priority' }),
     ),
     Error,
     'duplicate pricing entry selector',
   );
   assertThrows(
-    () => tokenModelPricing(pricingEntry({ input: 1 }, { serviceTier: 'priority' })),
+    () => tokenModelPricing(pricingEntry({ input_tokens: '1' }, { serviceTier: 'priority' })),
     Error,
     'exactly one base entry',
   );
 });
 
 const GRID: ModelPricing = {
-  units: { input: 'tokens_1m', output: 'tokens_1m' },
   entries: [
-    { rates: { input: 5, output: 30 } },
-    { selector: { serviceTier: 'priority' }, rates: { input: 10, output: 60 } },
-    { selector: { inputTokens: { operator: 'gt', value: 128000 } }, rates: { input: 7, output: 40 } },
-    { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 10, output: 45 } },
-    { selector: { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 128000 } }, rates: { input: 14, output: 80 } },
+    { rates: { input_tokens: '5', output_tokens: '30' } },
+    { selector: { serviceTier: 'priority' }, rates: { input_tokens: '10', output_tokens: '60' } },
+    { selector: { inputTokens: { operator: 'gt', value: 128000 } }, rates: { input_tokens: '7', output_tokens: '40' } },
+    { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '10', output_tokens: '45' } },
+    { selector: { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 128000 } }, rates: { input_tokens: '14', output_tokens: '80' } },
   ],
 };
 
 test('priceRequest applies gt boundaries and selects the highest matching threshold', () => {
-  assertEquals(priceRequest(GRID, { inputTokens: 128000 }), { selector: {}, units: GRID.units, rates: { input: 5, output: 30 } });
-  assertEquals(priceRequest(GRID, { inputTokens: 128001 }).rates, { input: 7, output: 40 });
-  assertEquals(priceRequest(GRID, { inputTokens: 272000 }).rates, { input: 7, output: 40 });
-  assertEquals(priceRequest(GRID, { inputTokens: 272001 }).rates, { input: 10, output: 45 });
+  assertEquals(priceRequest(GRID, { inputTokens: 128000 }), { selector: {}, rates: { input_tokens: '5', output_tokens: '30' } });
+  assertEquals(priceRequest(GRID, { inputTokens: 128001 }).rates, { input_tokens: '7', output_tokens: '40' });
+  assertEquals(priceRequest(GRID, { inputTokens: 272000 }).rates, { input_tokens: '7', output_tokens: '40' });
+  assertEquals(priceRequest(GRID, { inputTokens: 272001 }).rates, { input_tokens: '10', output_tokens: '45' });
 });
 
 test('priceRequest applies gte at the exact boundary', () => {
   const pricing: ModelPricing = {
-    units: { input: 'tokens_1m' },
     entries: [
-      { rates: { input: 1 } },
-      { selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 2 } },
+      { rates: { input_tokens: '1' } },
+      { selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input_tokens: '2' } },
     ],
   };
-  assertEquals(priceRequest(pricing, { inputTokens: 99 }).rates, { input: 1 });
-  assertEquals(priceRequest(pricing, { inputTokens: 100 }).rates, { input: 2 });
+  assertEquals(priceRequest(pricing, { inputTokens: 99 }).rates, { input_tokens: '1' });
+  assertEquals(priceRequest(pricing, { inputTokens: 100 }).rates, { input_tokens: '2' });
 });
 
 test('priceRequest exact-matches every axis and falls back wholesale to Base on a missing combination', () => {
-  assertEquals(priceRequest(GRID, { inputTokens: 0, serviceTier: 'priority' }).rates, { input: 10, output: 60 });
-  assertEquals(priceRequest(GRID, { inputTokens: 128001, serviceTier: 'priority' }).rates, { input: 14, output: 80 });
+  assertEquals(priceRequest(GRID, { inputTokens: 0, serviceTier: 'priority' }).rates, { input_tokens: '10', output_tokens: '60' });
+  assertEquals(priceRequest(GRID, { inputTokens: 128001, serviceTier: 'priority' }).rates, { input_tokens: '14', output_tokens: '80' });
   const missing = priceRequest(GRID, { inputTokens: 272001, serviceTier: 'priority' });
-  assertEquals(missing, { selector: {}, units: GRID.units, rates: { input: 5, output: 30 } });
+  assertEquals(missing, { selector: {}, rates: { input_tokens: '5', output_tokens: '30' } });
 });
 
 test('unknown runtime service tier falls back to Base', () => {
   assertEquals(priceRequest(GRID, { inputTokens: 0, serviceTier: 'future' }), {
     selector: {},
-    units: GRID.units,
-    rates: { input: 5, output: 30 },
+    rates: { input_tokens: '5', output_tokens: '30' },
   });
 });
 
 test('priceRequest preserves equality facts only when model pricing is unavailable', () => {
   assertEquals(priceRequest(null, { inputTokens: 1, serviceTier: 'future' }), {
     selector: { serviceTier: 'future' },
-    units: null,
     rates: null,
   });
 });
