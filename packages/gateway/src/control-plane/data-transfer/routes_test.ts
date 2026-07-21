@@ -402,7 +402,7 @@ test('import rejects any version other than the current one before deleting data
   await repo.apiKeys.save(KEY_A);
   await repo.upstreams.save(CUSTOM_UPSTREAM);
 
-  const VERSION_ERROR = 'version must be 14 — older export formats are not supported; re-export from the current deployment';
+  const VERSION_ERROR = 'version must be 15 — older export formats are not supported; re-export from the current deployment';
   const previousV11 = await doImport(app, 'replace', latestImportData(), 11);
   const ancientVersion = await doImport(app, 'replace', { apiKeys: [] }, 1);
   const missingVersionResponse = await app.request('/import', {
@@ -1144,7 +1144,7 @@ test('v15 export/import round-trips users and per-key user_id', async () => {
   await repo.apiKeys.save({ ...KEY_B, userId: USER_BOB.id });
 
   const exportResult = await doExport(app);
-  assertEquals(exportResult.version, 14);
+  assertEquals(exportResult.version, 15);
   assertEquals(exportResult.data.users.map((u: any) => u.id).sort(), [SEED_ADMIN.id, USER_BOB.id]);
 
   const result = await doImport(app, 'replace', exportResult.data, 14);
@@ -1221,7 +1221,7 @@ test('import rejects a pre-accounts v3 export instead of coercing its legacy api
   }, 3);
 
   assertEquals(result.status, 400);
-  assertEquals(String(result.body.error).includes('version must be 14'), true);
+  assertEquals(String(result.body.error).includes('version must be 15'), true);
   // Rejected at the version gate, before touching any data.
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals((await repo.users.list()).map(u => u.id), [SEED_ADMIN.id]);
@@ -1322,7 +1322,7 @@ test('a full v15 export re-imports verbatim — the export→import round trip i
   await repo.searchConfig.save(config);
 
   const exported = await doExport(app, true);
-  assertEquals(exported.version, 14);
+  assertEquals(exported.version, 15);
 
   // Replace-import the export's own `data`, verbatim. If the export emits any
   // shape the import parser rejects, this 400s — the round trip is the
@@ -1361,7 +1361,7 @@ test('any data bearing a historical version is rejected on the version gate, bef
   for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]) {
     const result = await doImport(app, 'replace', wellFormed, version);
     assertEquals(result.status, 400);
-    assertEquals(String(result.body.error).includes('version must be 14'), true);
+    assertEquals(String(result.body.error).includes('version must be 15'), true);
   }
 
   // Nothing was touched — the version gate runs before any delete or write.
