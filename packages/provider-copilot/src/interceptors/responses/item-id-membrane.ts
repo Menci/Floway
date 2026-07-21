@@ -171,6 +171,8 @@ const ITEM_ID_EVENT_TYPES = new Set<ResponsesStreamEvent['type']>([
   'response.reasoning_summary_part.done',
   'response.reasoning_summary_text.delta',
   'response.reasoning_summary_text.done',
+  'response.reasoning_text.delta',
+  'response.reasoning_text.done',
   'response.output_text.delta',
   'response.output_text.done',
   'response.output_text.annotation.added',
@@ -223,20 +225,24 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
 
   if (event.type === 'error' || event.type === 'ping') return event;
   const carrier = event as ResponsesStreamEvent & { item_id?: unknown; output_index?: unknown };
-  if (NO_ITEM_ID_EVENT_TYPES.has(event.type)) {
-    if (!Object.hasOwn(carrier, 'item_id')) return event;
-    if (typeof carrier.item_id !== 'string' || typeof carrier.output_index !== 'number') {
-      throw new TypeError(`Copilot Responses event '${event.type}' carries an invalid item_id extension`);
+  const requiresItemId = ITEM_ID_EVENT_TYPES.has(event.type);
+  const permitsMissingItemId = NO_ITEM_ID_EVENT_TYPES.has(event.type);
+  if (!requiresItemId && !permitsMissingItemId) {
+    if (Object.hasOwn(event, 'item') || Object.hasOwn(event, 'response')) {
+      throw new TypeError(`Unsupported Copilot Responses stream event type '${event.type}'`);
     }
-    return { ...carrier, item_id: trackedAt(state, carrier.output_index).publicId } as ResponsesStreamEvent;
-  }
-  if (!ITEM_ID_EVENT_TYPES.has(event.type)) {
-    throw new TypeError(`Unsupported Copilot Responses stream event type '${event.type}'`);
+    if (!Object.hasOwn(carrier, 'item_id')) return event;
+  } else if (permitsMissingItemId && !Object.hasOwn(carrier, 'item_id')) {
+    return event;
   }
   if (typeof carrier.item_id !== 'string') {
-    throw new TypeError(`Copilot Responses event '${event.type}' is missing item_id`);
+    const reason = requiresItemId ? 'is missing item_id' : 'carries an invalid item_id extension';
+    throw new TypeError(`Copilot Responses event '${event.type}' ${reason}`);
   }
   if (typeof carrier.output_index !== 'number') {
+    if (!requiresItemId) {
+      throw new TypeError(`Copilot Responses event '${event.type}' carries an invalid item_id extension`);
+    }
     throw new TypeError(`Copilot Responses event '${event.type}' carries item_id without output_index`);
   }
   return { ...carrier, item_id: trackedAt(state, carrier.output_index).publicId } as ResponsesStreamEvent;
