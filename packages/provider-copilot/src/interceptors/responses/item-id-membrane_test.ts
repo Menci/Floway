@@ -197,7 +197,9 @@ test.each([
   }
   if (added.type === 'agent_message' && done.type === 'agent_message' && terminal.type === 'agent_message') {
     const carried = [added, done, terminal].map(item => item.content[0]);
-    expect(carried.map(content => content.type === 'encrypted_content' ? unwrapCopilotItemId(content.encrypted_content) : null)).toEqual([
+    expect(carried.map(content => content.type === 'encrypted_content' && typeof content.encrypted_content === 'string'
+      ? unwrapCopilotItemId(content.encrypted_content)
+      : null)).toEqual([
       expect.objectContaining({ kind: 'owned', value: 'agent state', id: 'amsg_raw' }),
       expect.objectContaining({ kind: 'owned', value: 'agent state', id: 'amsg_raw' }),
       expect.objectContaining({ kind: 'owned', value: 'agent state', id: 'amsg_raw' }),
@@ -483,7 +485,7 @@ test('rejects an output index whose observed item type changes', async () => {
 });
 
 test('rejects replay state without the upstream id that authenticates it', async () => {
-  const item = { type: 'reasoning', summary: [], encrypted_content: 'opaque state' } as ResponsesOutputItem;
+  const item = { type: 'reasoning', summary: [], encrypted_content: 'opaque state' } as unknown as ResponsesOutputItem;
   const { result } = await runStream([eventFrame(outputItemEvent('added', 0, item))]);
 
   await expect(collect(result)).rejects.toThrow(/has replay state but no upstream id/);
