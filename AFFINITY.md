@@ -149,7 +149,7 @@ client-facing item verbatim under its producer-owned ID; a later done or
 terminal frame remains wire-visible but does not replace that durable item.
 Terminal-only items are stored as the fallback complete view. Full items and
 `item_reference`s hydrate by arbitrary exact ID with no format validation or
-candidate-specific rewrite. Idless input messages use internal storage keys
+candidate-specific rewrite. Idless input items use internal storage keys
 only inside snapshots. Reusing one API-key-scoped producer ID is idempotent
 only when the complete visible and private payload matches; a collision fails
 before the done frame is published. Affinity never reads, writes,

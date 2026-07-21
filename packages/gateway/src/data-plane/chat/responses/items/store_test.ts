@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { hashResponsesItemContent } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
@@ -15,6 +15,17 @@ describe('StatefulResponsesStore', () => {
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     await store.commitSnapshot('resp_none', 'append');
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_none')).toBeNull();
+  });
+
+  test('HTTP store=false skips snapshot staging for idless input', async () => {
+    initRepo(new InMemoryRepo());
+    const digest = vi.spyOn(crypto.subtle, 'digest');
+    const store = createResponsesHttpStore('key-a', false);
+
+    await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
+
+    expect(digest).not.toHaveBeenCalled();
+    digest.mockRestore();
   });
 
   test('HTTP store=false still reads durably-stored items and snapshots', async () => {

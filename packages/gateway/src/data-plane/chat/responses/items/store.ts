@@ -98,8 +98,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       if (id !== null) ids.add(id);
     }
     const contentHashes = new Set<string>();
-    for (const item of inputItemsToStage) {
+    for (const item of this.writesState ? inputItemsToStage : []) {
       if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
+      if (responsesItemId(item) !== null) continue;
       contentHashes.add(await hashResponsesItemContent(item));
     }
     await this.loadItems({ ids: [...ids], contentHashes: [...contentHashes] });
@@ -111,6 +112,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async stageInputItems(items: readonly ResponsesInputItem[]): Promise<void> {
+    if (!this.writesState) {
+      for (const item of items) await this.validateTransientInputItem(item);
+      return;
+    }
     for (const item of items) await this.stageInputItem(item);
   }
 
@@ -119,6 +124,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const cloned = cloneStoredResponsesItem(row);
     const sameTurn = this.outputItemsById.get(cloned.id);
     if (sameTurn !== undefined) assertSameStoredResponsesItem(cloned, sameTurn);
+    const transientInput = this.newInputItemsById.get(cloned.id);
+    if (transientInput !== undefined) assertSameStoredResponsesItem(cloned, transientInput);
     const stagedOrLoaded = this.loadedItems.get(cloned.id);
     if (stagedOrLoaded !== undefined) assertSameStoredResponsesItem(cloned, stagedOrLoaded);
     for (const read of this.options.reads) {
@@ -254,6 +261,22 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     this.stagedInputItemIds.push(row.id);
     this.freshItemIds.add(row.id);
     this.rememberItem(row);
+  }
+
+  private async validateTransientInputItem(item: ResponsesInputItem): Promise<void> {
+    if (item.type === 'item_reference' || item.type === 'compaction_trigger') return;
+    const id = responsesItemId(item);
+    if (id === null || this.loadedItems.has(id)) return;
+    const current = this.newInputItemsById.get(id);
+    const candidate: StoredResponsesItem = {
+      id,
+      apiKeyId: this.apiKeyId,
+      payload: { item: structuredClone(item) },
+      contentHash: await hashResponsesItemContent(item),
+      createdAt: current?.createdAt ?? Date.now(),
+    };
+    if (current === undefined) this.newInputItemsById.set(id, candidate);
+    else assertSameStoredResponsesItem(candidate, current);
   }
 
   private rememberItem(row: StoredResponsesItem): void {
