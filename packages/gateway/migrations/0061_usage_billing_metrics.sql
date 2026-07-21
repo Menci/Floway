@@ -14,7 +14,11 @@ WITH formatted_usage AS (
   SELECT
     key_id, model, upstream, model_key, hour, pricing_selector,
     dimension, tokens, unit_price,
-    CASE WHEN unit_price IS NULL THEN NULL ELSE CAST(unit_price AS TEXT) END AS decimal_text
+    CASE
+      WHEN unit_price IS NULL THEN NULL
+      WHEN typeof(unit_price) IN ('integer', 'real') THEN CAST(unit_price AS TEXT)
+      ELSE json('invalid legacy usage unit price')
+    END AS decimal_text
   FROM usage
 ), usage_mantissas AS (
   SELECT
@@ -104,7 +108,10 @@ SET config_json = json_set(
                         SELECT
                           rate.key,
                           CAST(rate.value AS REAL) AS decimal_value,
-                          CAST(rate.value AS TEXT) AS decimal_text
+                          CASE
+                            WHEN rate.type IN ('integer', 'real') THEN CAST(rate.value AS TEXT)
+                            ELSE json('invalid legacy model price')
+                          END AS decimal_text
                         FROM json_each(json_extract(entry.value, '$.rates')) AS rate
                       ), rate_mantissas AS (
                         SELECT

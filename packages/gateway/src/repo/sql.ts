@@ -499,6 +499,8 @@ const assembleUsageRecords = (metrics: readonly UsageMetricRow[], requests: read
     const metric = parseBillingMetric(row.metric, 'usage.metric');
     const quantity = parseNonNegativeDecimalString(row.quantity, `usage metric ${metric} quantity`);
     const unitPrice = row.unit_price === null ? null : parseNonNegativeDecimalString(row.unit_price, `usage metric ${metric} unit price`);
+    if (quantity !== row.quantity) throw new TypeError(`Stored usage metric ${metric} quantity must be canonical: ${JSON.stringify(row.quantity)}`);
+    if (unitPrice !== row.unit_price) throw new TypeError(`Stored usage metric ${metric} unit price must be canonical: ${JSON.stringify(row.unit_price)}`);
     const existing = record.metrics.find(candidate => candidate.metric === metric);
     if (existing) throw new Error(`Duplicate stored usage metric: ${metric}`);
     record.metrics.push({ metric, quantity, unitPrice });

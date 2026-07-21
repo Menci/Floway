@@ -14,6 +14,7 @@ import { applySeriesSelection, chartSeriesIds, createSeriesIsolation, handleLege
 import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
 import { useAuthStore } from '../../stores/auth.ts';
+import { decimalStringToChartNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display.ts';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 interface DisplayUsageRecord {
@@ -114,8 +115,8 @@ type Metric =
   | 'cacheCreation' | 'cacheHitRate';
 type Range = DashboardRange;
 
-const metricQuantity = (r: DisplayUsageRecord, metric: BillingMetric): number =>
-  Number(r.metrics.find(row => row.metric === metric)?.quantity ?? '0');
+const metricQuantity = (r: DisplayUsageRecord, metric: BillingMetric): DecimalString =>
+  r.metrics.find(row => row.metric === metric)?.quantity ?? '0';
 
 const api = useApi();
 const auth = useAuthStore();
@@ -180,16 +181,18 @@ useIntervalFn(() => { void load(); }, 60_000);
 
 const tokenSummary = computed(() => {
   const records = (data.value?.records ?? []).filter(r => !hiddenKeys.value.has(r.keyId) && !hiddenModels.value.has(r.model));
-  let requests = 0, cost: number | null = null, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, inputImage = 0, outputImage = 0;
+  let requests = 0;
+  let cost: DecimalString | null = null;
+  let input: DecimalString = '0', output: DecimalString = '0', cacheRead: DecimalString = '0', cacheCreation: DecimalString = '0', inputImage: DecimalString = '0', outputImage: DecimalString = '0';
   for (const r of records) {
     requests += r.requests;
-    if (r.cost !== null) cost = (cost ?? 0) + Number(r.cost);
-    input += metricQuantity(r, 'input_tokens');
-    output += metricQuantity(r, 'output_tokens');
-    cacheRead += metricQuantity(r, 'input_cache_read_tokens');
-    cacheCreation += metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens');
-    inputImage += metricQuantity(r, 'input_image_tokens');
-    outputImage += metricQuantity(r, 'output_image_tokens');
+    if (r.cost !== null) cost = sumDecimalStrings(cost ?? '0', r.cost);
+    input = sumDecimalStrings(input, metricQuantity(r, 'input_tokens'));
+    output = sumDecimalStrings(output, metricQuantity(r, 'output_tokens'));
+    cacheRead = sumDecimalStrings(cacheRead, metricQuantity(r, 'input_cache_read_tokens'));
+    cacheCreation = sumDecimalStrings(cacheCreation, metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'));
+    inputImage = sumDecimalStrings(inputImage, metricQuantity(r, 'input_image_tokens'));
+    outputImage = sumDecimalStrings(outputImage, metricQuantity(r, 'output_image_tokens'));
   }
   return {
     requests, cost, cacheRead, cacheCreation,
@@ -198,22 +201,22 @@ const tokenSummary = computed(() => {
     // so we avoid extra image-only columns. Input is the inclusive prompt total
     // (text + image, uncached + cache read + cache write); prefill is that total
     // minus cache reads; output is text + image output.
-    input: input + cacheRead + cacheCreation + inputImage,
-    output: output + outputImage,
-    total: input + output + cacheRead + cacheCreation + inputImage + outputImage,
-    prefill: input + cacheCreation + inputImage,
+    input: sumDecimalStrings(input, cacheRead, cacheCreation, inputImage),
+    output: sumDecimalStrings(output, outputImage),
+    total: sumDecimalStrings(input, output, cacheRead, cacheCreation, inputImage, outputImage),
+    prefill: sumDecimalStrings(input, cacheCreation, inputImage),
   };
 });
 
-const formatInputRate = (cached: number, input: number) => {
-  if (input <= 0) return '—';
-  const pct = (cached / input) * 100;
+const formatInputRate = (cached: DecimalString, input: DecimalString) => {
+  if (input === '0') return '—';
+  const pct = (decimalStringToChartNumber(cached) / decimalStringToChartNumber(input)) * 100;
   return `${pct.toFixed(1)}%`;
 };
-const formatHitRate = (cached: number, created: number) => {
-  const denom = cached + created;
-  if (denom <= 0) return '—';
-  return `${((cached / denom) * 100).toFixed(1)}%`;
+const formatHitRate = (cached: DecimalString, created: DecimalString) => {
+  const denominator = sumDecimalStrings(cached, created);
+  if (denominator === '0') return '—';
+  return `${((decimalStringToChartNumber(cached) / decimalStringToChartNumber(denominator)) * 100).toFixed(1)}%`;
 };
 
 const buckets = computed(() => dashboardBuckets(loadedTokenRange.value, loadedAt.value));
@@ -233,19 +236,19 @@ const TOKEN_CHART_METRICS: Record<Metric, { label: string; kind: 'count' | 'cost
 
 const isPercentMetric = (metric: Metric) => TOKEN_CHART_METRICS[metric].kind === 'percent';
 
-const metricValue = (r: DisplayUsageRecord, metric: Metric): number | null => {
+const metricValue = (r: DisplayUsageRecord, metric: Metric): DecimalString | null => {
   switch (metric) {
-  case 'requests': return r.requests;
-  case 'cost': return r.cost === null ? null : Number(r.cost);
-  case 'total': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'output_tokens') + metricQuantity(r, 'input_cache_read_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens') + metricQuantity(r, 'output_image_tokens');
-  case 'input': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'input_cache_read_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens');
-  case 'output': return metricQuantity(r, 'output_tokens') + metricQuantity(r, 'output_image_tokens');
-  case 'prefill': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens');
+  case 'requests': return String(r.requests);
+  case 'cost': return r.cost;
+  case 'total': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'output_tokens'), metricQuantity(r, 'input_cache_read_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'), metricQuantity(r, 'output_image_tokens'));
+  case 'input': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'input_cache_read_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'));
+  case 'output': return sumDecimalStrings(metricQuantity(r, 'output_tokens'), metricQuantity(r, 'output_image_tokens'));
+  case 'prefill': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'));
   case 'cached': return metricQuantity(r, 'input_cache_read_tokens');
-  case 'cacheCreation': return metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens');
+  case 'cacheCreation': return sumDecimalStrings(metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'));
   case 'cachedRate':
   case 'cacheHitRate':
-    return 0;
+    return '0';
   }
 };
 
@@ -258,13 +261,13 @@ interface KeyMeta {
 
 interface TokenDetail {
   requests: number;
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheCreation: number;
-  inputImage: number;
-  outputImage: number;
-  cost: number | null;
+  input: DecimalString;
+  output: DecimalString;
+  cacheRead: DecimalString;
+  cacheCreation: DecimalString;
+  inputImage: DecimalString;
+  outputImage: DecimalString;
+  cost: DecimalString | null;
   hasTokenUsage: boolean;
 }
 
@@ -311,21 +314,21 @@ const modelChartEntries = (presentModelIds: readonly string[]): ChartEntry[] => 
 
 const tokenDetailMetricValue = (detail: TokenDetail, metric: Metric): number | null => {
   if (metric === 'cacheHitRate') {
-    const total = detail.cacheRead + detail.cacheCreation;
-    return total > 0 ? (detail.cacheRead / total) * 100 : null;
+    const total = sumDecimalStrings(detail.cacheRead, detail.cacheCreation);
+    return total !== '0' ? (decimalStringToChartNumber(detail.cacheRead) / decimalStringToChartNumber(total)) * 100 : null;
   }
   if (metric === 'cachedRate') {
-    const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage;
-    return prompt > 0 ? (detail.cacheRead / prompt) * 100 : null;
+    const prompt = sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage);
+    return prompt !== '0' ? (decimalStringToChartNumber(detail.cacheRead) / decimalStringToChartNumber(prompt)) * 100 : null;
   }
   return null;
 };
 
-const emptyDetail = (): TokenDetail => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, inputImage: 0, outputImage: 0, cost: null, hasTokenUsage: false });
+const emptyDetail = (): TokenDetail => ({ requests: 0, input: '0', output: '0', cacheRead: '0', cacheCreation: '0', inputImage: '0', outputImage: '0', cost: null, hasTokenUsage: false });
 
 const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey: 'keyId' | 'model', metric: Metric) => {
   const { keys: bucketKeys, labels } = buckets.value;
-  const values = new Map<string, Map<string, number | null>>();
+  const values = new Map<string, Map<string, DecimalString | number | null>>();
   const details = new Map<string, Map<string, TokenDetail>>();
   for (const key of bucketKeys) {
     values.set(key, new Map());
@@ -338,19 +341,22 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
     const bucketDetails = details.get(bucket)!;
     const detail = bucketDetails.get(group) ?? emptyDetail();
     detail.requests += r.requests;
-    detail.input += metricQuantity(r, 'input_tokens');
-    detail.output += metricQuantity(r, 'output_tokens');
-    detail.cacheRead += metricQuantity(r, 'input_cache_read_tokens');
-    detail.cacheCreation += metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens');
-    detail.inputImage += metricQuantity(r, 'input_image_tokens');
-    detail.outputImage += metricQuantity(r, 'output_image_tokens');
-    if (r.cost !== null) detail.cost = (detail.cost ?? 0) + Number(r.cost);
+    detail.input = sumDecimalStrings(detail.input, metricQuantity(r, 'input_tokens'));
+    detail.output = sumDecimalStrings(detail.output, metricQuantity(r, 'output_tokens'));
+    detail.cacheRead = sumDecimalStrings(detail.cacheRead, metricQuantity(r, 'input_cache_read_tokens'));
+    detail.cacheCreation = sumDecimalStrings(detail.cacheCreation, metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'));
+    detail.inputImage = sumDecimalStrings(detail.inputImage, metricQuantity(r, 'input_image_tokens'));
+    detail.outputImage = sumDecimalStrings(detail.outputImage, metricQuantity(r, 'output_image_tokens'));
+    if (r.cost !== null) detail.cost = sumDecimalStrings(detail.cost ?? '0', r.cost);
     if (r.metrics.some(row => row.metric.endsWith('_tokens'))) detail.hasTokenUsage = true;
     bucketDetails.set(group, detail);
     if (!isPercentMetric(metric)) {
       const bucketValues = values.get(bucket)!;
       const value = metricValue(r, metric);
-      if (value !== null) bucketValues.set(group, (bucketValues.get(group) ?? 0) + value);
+      if (value !== null) {
+        const current = bucketValues.get(group);
+        bucketValues.set(group, sumDecimalStrings(typeof current === 'string' ? current : '0', value));
+      }
       else if (!bucketValues.has(group)) bucketValues.set(group, null);
     }
   }
@@ -369,7 +375,7 @@ const formatTokenChartAxisValue = (value: number, metric: Metric) => {
   const kind = TOKEN_CHART_METRICS[metric].kind;
   if (kind === 'percent') return `${value.toFixed(0)}%`;
   if (kind === 'count') return Math.round(value).toLocaleString();
-  if (kind === 'cost') return formatCost(value);
+  if (kind === 'cost') return formatChartCost(value);
   return formatTokenCount(value);
 };
 
@@ -378,12 +384,12 @@ const tooltipHeader = (labelWidth: number) =>
 
 const tooltipRow = (label: string, labelWidth: number, detail: TokenDetail) => {
   const cached = detail.cacheRead;
-  const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage;
-  const output = detail.output + detail.outputImage;
-  const total = prompt + output;
-  const prefill = detail.input + detail.cacheCreation + detail.inputImage;
-  const cost = detail.cost === null ? '—' : formatCost(detail.cost);
-  const tokenCount = (value: number) => detail.hasTokenUsage ? formatTokenCount(value) : '—';
+  const prompt = sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage);
+  const output = sumDecimalStrings(detail.output, detail.outputImage);
+  const total = sumDecimalStrings(prompt, output);
+  const prefill = sumDecimalStrings(detail.input, detail.cacheCreation, detail.inputImage);
+  const cost = formatUsd(detail.cost);
+  const tokenCount = (value: DecimalString) => detail.hasTokenUsage ? formatTokenCount(decimalStringToChartNumber(value)) : '—';
   return `${label.padEnd(labelWidth + 1)}${String(detail.requests).padStart(5)}  ${cost.padStart(9)}  ${tokenCount(total).padStart(7)}  ${tokenCount(cached).padStart(7)}  ${formatInputRate(cached, prompt).padStart(8)}  ${tokenCount(prefill).padStart(7)}  ${tokenCount(output).padStart(7)}  ${formatHitRate(detail.cacheRead, detail.cacheCreation).padStart(7)}`;
 };
 
@@ -432,7 +438,9 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
       entry,
       data: bucketKeys.map(k => {
         const bucketValues = values.get(k)!;
-        return bucketValues.has(entry.id) ? bucketValues.get(entry.id)! : (isPercent ? null : 0);
+        const value = bucketValues.has(entry.id) ? bucketValues.get(entry.id)! : (isPercent ? null : '0');
+        if (value === null || typeof value === 'number') return value;
+        return decimalStringToChartNumber(value);
       }),
     }))
     .filter(({ entry, data }) => isPercent ? data.some(v => v !== null) : (data.some(v => v !== 0) || hasRequests(entry.id)));
@@ -626,7 +634,7 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
 
 const searchByKeySeriesIds = computed(() => chartSeriesIds(searchByKeyConfig.value));
 
-const formatCost = (v: number | null) => {
+const formatChartCost = (v: number | null) => {
   if (v === null) return '—';
   if (v >= 1) return `$${v.toFixed(2)}`;
   if (v >= 0.01) return `$${v.toFixed(3)}`;
@@ -710,22 +718,22 @@ const formatCost = (v: number | null) => {
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-6 pt-5 border-t border-white/5">
         <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
           <UsageSummaryMetric metric="requests" label="Requests" :active="tokenChartMetric === 'requests'" :value="tokenSummary.requests.toLocaleString()" @select="switchTokenChartMetric" />
-          <UsageSummaryMetric metric="cost" label="Est. Cost" :active="tokenChartMetric === 'cost'" :value="formatCost(tokenSummary.cost)" @select="switchTokenChartMetric" />
+          <UsageSummaryMetric metric="cost" label="Est. Cost" :active="tokenChartMetric === 'cost'" :value="formatUsd(tokenSummary.cost)" @select="switchTokenChartMetric" />
         </div>
         <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
-          <UsageSummaryMetric metric="total" label="Total Tokens" :active="tokenChartMetric === 'total'" :value="tokenSummary.total.toLocaleString()" @select="switchTokenChartMetric" />
-          <UsageSummaryMetric metric="output" label="Output Tokens" :active="tokenChartMetric === 'output'" :value="tokenSummary.output.toLocaleString()" @select="switchTokenChartMetric" />
+          <UsageSummaryMetric metric="total" label="Total Tokens" :active="tokenChartMetric === 'total'" :value="formatDecimalQuantity(tokenSummary.total)" @select="switchTokenChartMetric" />
+          <UsageSummaryMetric metric="output" label="Output Tokens" :active="tokenChartMetric === 'output'" :value="formatDecimalQuantity(tokenSummary.output)" @select="switchTokenChartMetric" />
         </div>
         <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
-          <UsageSummaryMetric metric="input" label="Input Tokens" :active="tokenChartMetric === 'input'" :value="tokenSummary.input.toLocaleString()" @select="switchTokenChartMetric" />
-          <UsageSummaryMetric metric="prefill" label="Prefill Input" :active="tokenChartMetric === 'prefill'" :value="tokenSummary.prefill.toLocaleString()" @select="switchTokenChartMetric" />
+          <UsageSummaryMetric metric="input" label="Input Tokens" :active="tokenChartMetric === 'input'" :value="formatDecimalQuantity(tokenSummary.input)" @select="switchTokenChartMetric" />
+          <UsageSummaryMetric metric="prefill" label="Prefill Input" :active="tokenChartMetric === 'prefill'" :value="formatDecimalQuantity(tokenSummary.prefill)" @select="switchTokenChartMetric" />
         </div>
         <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
-          <UsageSummaryMetric metric="cached" label="Cached Input" :active="tokenChartMetric === 'cached'" :value="tokenSummary.cacheRead.toLocaleString()" @select="switchTokenChartMetric" />
+          <UsageSummaryMetric metric="cached" label="Cached Input" :active="tokenChartMetric === 'cached'" :value="formatDecimalQuantity(tokenSummary.cacheRead)" @select="switchTokenChartMetric" />
           <UsageSummaryMetric metric="cachedRate" label="Cached Rate" :active="tokenChartMetric === 'cachedRate'" :value="formatInputRate(tokenSummary.cacheRead, tokenSummary.input)" @select="switchTokenChartMetric" />
         </div>
         <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
-          <UsageSummaryMetric metric="cacheCreation" label="Cache Write" :active="tokenChartMetric === 'cacheCreation'" :value="tokenSummary.cacheCreation.toLocaleString()" @select="switchTokenChartMetric" />
+          <UsageSummaryMetric metric="cacheCreation" label="Cache Write" :active="tokenChartMetric === 'cacheCreation'" :value="formatDecimalQuantity(tokenSummary.cacheCreation)" @select="switchTokenChartMetric" />
           <UsageSummaryMetric metric="cacheHitRate" label="Cache Hit Rate" :active="tokenChartMetric === 'cacheHitRate'" :value="formatHitRate(tokenSummary.cacheRead, tokenSummary.cacheCreation)" @select="switchTokenChartMetric" />
         </div>
       </div>
