@@ -219,7 +219,7 @@ test('model pricing migration preserves every digit in current numeric rate lexe
   const db = new SQL.Database();
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === '0061_usage_billing_metrics.sql') {
-      const configJson = '{"models":[{"upstreamModelId":"precise-rate","pricing":{"entries":[{"rates":{"input":0.12345678901234566,"output":1e-20}}]}}]}';
+      const configJson = '{"models":[{"upstreamModelId":"precise-rate","pricing":{"entries":[{"rates":{"input":0.12345678901234566,"output":1e-20,"input_cache_read":9223372036854775807}}]}}]}';
       db.run(
         `INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json)
          VALUES ('up_precise_pricing', 'custom', 'Precise pricing', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z', ${sqlString(configJson)})`,
@@ -234,6 +234,7 @@ test('model pricing migration preserves every digit in current numeric rate lexe
   assertEquals(JSON.parse(row).models[0].pricing.entries[0].rates, {
     input_tokens: '0.00000012345678901234566',
     output_tokens: '0.00000000000000000000000001',
+    input_cache_read_tokens: '9223372036854.775807',
   });
 });
 
