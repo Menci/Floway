@@ -27,7 +27,7 @@ const pricing = defineModel<ModelPricing | undefined>({ required: true });
 const pricingUnits = ref<ModelPricing['units']>({ ...(pricing.value?.units ?? {}) });
 
 const BILLING_UNIT_LABELS: Record<BillingUnit, string> = {
-  tokens_1m: '1M tokens',
+  tokens_1m: 'MTok',
   searches_1k: '1K searches',
 };
 
