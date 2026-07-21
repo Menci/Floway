@@ -257,6 +257,7 @@ const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): Mo
   if (typeof value !== 'string' || !(MODEL_KINDS as readonly string[]).includes(value)) {
     throw new Error(`Malformed ${label}: must be one of ${MODEL_KINDS.join(', ')}`);
   }
+  return value as ModelKind;
 };
 
 const rerankTargetField = (value: unknown, label: string): RerankTarget | undefined => {
