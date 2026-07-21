@@ -16,8 +16,12 @@ export const usageMetricRows = (record: UsageRecord): UsageMetricRecord[] => {
   for (const row of record.metrics) {
     if (seen.has(row.metric)) throw new Error(`Duplicate usage metric: ${row.metric}`);
     seen.add(row.metric);
-    parseNonNegativeDecimalString(row.quantity, `usage metric ${row.metric} quantity`);
-    if (row.unitPrice !== null) parseNonNegativeDecimalString(row.unitPrice, `usage metric ${row.metric} unit price`);
+    const quantity = parseNonNegativeDecimalString(row.quantity, `usage metric ${row.metric} quantity`);
+    if (quantity !== row.quantity) throw new TypeError(`usage metric ${row.metric} quantity must be canonical: ${JSON.stringify(row.quantity)}`);
+    if (row.unitPrice !== null) {
+      const unitPrice = parseNonNegativeDecimalString(row.unitPrice, `usage metric ${row.metric} unit price`);
+      if (unitPrice !== row.unitPrice) throw new TypeError(`usage metric ${row.metric} unit price must be canonical: ${JSON.stringify(row.unitPrice)}`);
+    }
   }
   return record.metrics;
 };
