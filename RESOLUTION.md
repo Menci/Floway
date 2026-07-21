@@ -353,32 +353,34 @@ kind.
 
 ## Pricing and Cost
 
-Model metadata uses `pricing?: ModelPricing`. `units` gives each rate dimension
-its denominator, and `entries` contains the symmetric price schedule: exactly
-one Base entry has no selector, while every non-Base entry declares the same
-rate dimensions at an explicit coordinate.
+Model metadata uses `pricing?: ModelPricing`. Its `entries` form a symmetric
+price schedule: exactly one Base entry has no selector, while every non-Base
+entry declares the same metrics at an explicit coordinate. A metric identifies
+both the measured quantity and its base unit, and every rate is the price of one
+such unit. Prices are canonical non-negative decimal strings.
 
 ```ts
 {
-  units: { input: 'minutes' },
-  entries: [{ rates: { input: 0.60 } }],
+  entries: [{ rates: {
+    input_tokens: '0.000001',
+    output_tokens: '0.000004',
+  } }],
 }
 ```
 
-The known units are `tokens_1m`, `minutes`, and `searches_1k`. Quantities stay
-in the natural counter supplied by the endpoint: raw token counts, seconds of
-audio, or search operations. Cost divides by 1,000,000, 60, or 1,000
-respectively before multiplying by the unit price. `input` and `output` retain
-the upstream's general meaning; they are not assumed to be text-only. Explicit
-modality dimensions such as `input_image` are used only when the upstream
-reports a disjoint counter.
+Token metrics count individual tokens. General `input_tokens` and
+`output_tokens` retain the upstream's meaning and are not assumed to be
+text-only. Explicit modality metrics such as `input_image_tokens` are used only
+when the upstream reports a disjoint counter. The dashboard displays token
+rates as dollars per million tokens, but that scale exists only at the UI
+boundary; model metadata and usage snapshots always store the per-token rate.
 
 ```text
 ModelPricing
   → runtime facts (service tier, input-token count)
   → exact PricingEntry
-  → units + PriceVector rates snapshot
-  → measured quantities × rates ÷ unit scale
+  → PriceVector rates snapshot
+  → measured quantities × base-unit rates
   → realized USD cost
 ```
 
@@ -392,24 +394,25 @@ Base vector, never a field-by-field merge or a lower threshold band.
 The naming boundary is enforced in code and on the wire:
 
 - `pricing` is reusable model metadata and operator-authored configuration;
-- `units` is the per-dimension denominator shared by every pricing entry;
 - `rates` is the resolved `PriceVector` for one request;
-- `quantity` is the persisted measured amount for one dimension and unit;
-- `unit_price` is the persisted rate snapshot for that dimension and unit;
+- `metric` identifies a measured counter and its base unit;
+- `quantity` is the persisted amount measured for one metric;
+- `unit_price` is the persisted per-unit rate snapshot for that metric;
 - `cost` is the aggregatable USD result exposed by usage views.
 
 Every settled request increments `usage_requests`, even when the upstream gives
 no detailed breakdown. Detailed usage is stored separately as
-`dimension + unit + quantity + unit_price` rows; request-only records therefore
-remain visible while their metric and cost values are unknown. The SQL schema
-requires non-empty dimension and unit strings but does not enumerate either in
-a table constraint, so extending the application contract does not require
-rebuilding the table.
+`metric + quantity + unit_price` rows; request-only records therefore remain
+visible while their metric and cost values are unknown. The SQL schema requires
+a non-empty metric string but leaves its vocabulary to application validation,
+so adding a metric does not require rebuilding the table.
 
-Telemetry snapshots the selected coordinate, units, and rates from the exact
-dispatched `ProviderModel`. Later catalog changes therefore cannot rewrite
-historical usage, and bucket identity remains stable through canonical selector
-JSON plus the dimension-unit pair.
+Telemetry snapshots the selected coordinate and rates from the exact dispatched
+`ProviderModel`. Later catalog changes therefore cannot rewrite historical
+usage, and bucket identity remains stable through canonical selector JSON plus
+the metric name. Quantities, rates, and computed costs stay canonical decimal
+strings through persistence and aggregation; numeric conversion occurs only at
+the final chart-coordinate boundary.
 
 ## Candidate Ordering
 

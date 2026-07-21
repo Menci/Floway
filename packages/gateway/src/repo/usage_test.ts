@@ -43,12 +43,14 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
         ('k', 'm', NULL, 'mk', '2026-01-01T00', NULL, 'input', 10, 1),
         ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 'input', 20, 2),
         ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 'input', 30, 3),
-        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'tiny', 'input', 40, 1e-20)`);
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'tiny', 'input', 40, 1e-20),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'precise', 'input', 50, 0.12345678901234566)`);
       db.run(`INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES
         ('k', 'm', NULL, 'mk', '2026-01-01T00', NULL, 1),
         ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 2),
         ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 3),
-        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'tiny', 4)`);
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'tiny', 4),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'precise', 5)`);
     }
     db.run(sql);
   }
@@ -59,12 +61,14 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
     ['{"serviceTier":"  "}', 'input_tokens', '20', '0.000002'],
     ['{"serviceTier":"pri\\"雪"}', 'input_tokens', '30', '0.000003'],
     ['{"serviceTier":"tiny"}', 'input_tokens', '40', '0.00000000000000000000000001'],
+    ['{"serviceTier":"precise"}', 'input_tokens', '50', '0.00000012345678901234566'],
   ]);
   assertEquals(requestRows, [
     ['{}', 1],
     ['{"serviceTier":"  "}', 2],
     ['{"serviceTier":"pri\\"雪"}', 3],
     ['{"serviceTier":"tiny"}', 4],
+    ['{"serviceTier":"precise"}', 5],
   ]);
 });
 
@@ -164,6 +168,16 @@ for (const backend of backends) {
     await assertRejects(() => repo.usage.set(record({
       metrics: [{ metric: 'input_tokens', quantity: '01.0', unitPrice: '0.0000020' }],
     })), TypeError, 'quantity must be canonical');
+  });
+
+  test(`${backend.name} usage repo retains the request when metric persistence fails`, async () => {
+    const repo = await backend.make();
+    await assertRejects(() => repo.usage.record(record({
+      metrics: [{ metric: 'input_tokens', quantity: '01.0', unitPrice: null }],
+    })), TypeError, 'quantity must be canonical');
+    const [stored] = await query(repo);
+    assertEquals(stored.requests, 1);
+    assertEquals(stored.metrics, []);
   });
 }
 

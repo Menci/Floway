@@ -3,7 +3,7 @@ import { test } from 'vitest';
 
 import { migrationSqlByFilename } from './test-sqlite.ts';
 import { divideDecimalString, priceRequest, type ModelPricing, validateModelPricing } from '@floway-dev/protocols/common';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const sqlString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 
@@ -211,5 +211,49 @@ test('model pricing migrations materialize legacy semantics as base-unit metric 
     validateModelPricing(model.pricing);
     const base = model.pricing.entries.find(entry => entry.selector === undefined)!.rates;
     assertEquals(priceRequest(model.pricing, { inputTokens: 1, serviceTier: 'unknown' }), { selector: {}, rates: base });
+  }
+});
+
+test('model pricing migration preserves every digit in current numeric rate lexemes', async () => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  for (const [filename, sql] of migrationSqlByFilename) {
+    if (filename === '0061_usage_billing_metrics.sql') {
+      const configJson = '{"models":[{"upstreamModelId":"precise-rate","pricing":{"entries":[{"rates":{"input":0.12345678901234566,"output":1e-20}}]}}]}';
+      db.run(
+        `INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json)
+         VALUES ('up_precise_pricing', 'custom', 'Precise pricing', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z', ${sqlString(configJson)})`,
+      );
+      db.run(sql);
+      break;
+    }
+    db.run(sql);
+  }
+
+  const row = db.exec("SELECT config_json FROM upstreams WHERE id = 'up_precise_pricing'")[0]!.values[0]![0] as string;
+  assertEquals(JSON.parse(row).models[0].pricing.entries[0].rates, {
+    input_tokens: '0.00000012345678901234566',
+    output_tokens: '0.00000000000000000000000001',
+  });
+});
+
+test('model pricing migration rejects malformed and negative legacy rates', async () => {
+  for (const invalidRate of ['not-a-price', null, true, -1]) {
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0061_usage_billing_metrics.sql') {
+        const configJson = JSON.stringify({
+          models: [{ upstreamModelId: 'invalid-rate', pricing: { entries: [{ rates: { input: invalidRate } }] } }],
+        });
+        db.run(
+          `INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json)
+           VALUES ('up_invalid_pricing', 'custom', 'Invalid pricing', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z', ${sqlString(configJson)})`,
+        );
+        assertThrows(() => db.run(sql), Error, 'malformed JSON');
+        break;
+      }
+      db.run(sql);
+    }
   }
 });

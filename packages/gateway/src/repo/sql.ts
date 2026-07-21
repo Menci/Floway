@@ -423,11 +423,11 @@ class SqlUsageRepo implements UsageRepo {
   async record(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
     const selector = canonicalPricingSelectorKey(record.pricingSelector);
-    await Promise.all(usageMetricRows(record).map(row => this.addMetric(record, upstream, selector, row)));
     await this.db.prepare(
       `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
     ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, record.requests).run();
+    await Promise.all(usageMetricRows(record).map(row => this.addMetric(record, upstream, selector, row)));
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
