@@ -1,21 +1,26 @@
 import { isEqual } from 'es-toolkit';
 
-import { hashResponsesItemContent, responsesItemId } from './identity.ts';
+import { hashResponsesIdentity, responsesItemId } from './identity.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ResponsesOutputIdentity } from '../affinity/ingress.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+
+interface ResponsesOutputIdentity {
+  readonly producerItem: ResponsesOutputItem;
+  readonly stableIdentity: unknown;
+}
 
 // Complete producer-owned items become reusable at their first done frame, so
 // each row commits before that frame is yielded. Later done frames remain
 // visible but cannot replace the durable item. The response snapshot commits
 // separately before a successful terminal frame. Failed/error terminals keep
 // completed item rows but never a snapshot.
-// Identity hashes use the producer item and affinity target before encryption,
-// so fresh authenticated ciphertext does not turn exact reuse into a
-// collision and a different route cannot alias the same producer id. The
-// first client-facing wire projection remains durable.
+// Identity hashes use the producer item and owned-carrier affinity targets
+// before encryption, so fresh authenticated ciphertext does not turn exact
+// reuse into a collision and owned carriers from different routes cannot alias
+// the same producer id. The first client-facing wire projection remains
+// durable.
 //
 // Response envelope ids remain Floway-owned because one client response can
 // span several upstream calls behind the server-tool runtime. The caller mints
@@ -38,7 +43,7 @@ export const wrapResponsesClientOutput = async function* (
     const id = responsesItemId(item);
     if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
     const identity = await producerIdentity(item);
-    if (responsesItemId(identity.item) !== id) {
+    if (responsesItemId(identity.producerItem) !== id) {
       throw new Error(`Responses ${item.type} output id changed while restoring producer identity: ${id}`);
     }
     const privatePayload = store.getPrivatePayload(id);
@@ -47,10 +52,10 @@ export const wrapResponsesClientOutput = async function* (
       apiKeyId: store.apiKeyId,
       payload: {
         item: structuredClone(item),
-        ...(!isEqual(identity.value, item) ? { identity: structuredClone(identity.value) } : {}),
+        ...(!isEqual(identity.stableIdentity, item) ? { identity: structuredClone(identity.stableIdentity) } : {}),
         ...(privatePayload !== undefined ? { private: privatePayload } : {}),
       },
-      contentHash: await hashResponsesItemContent(identity.value),
+      contentHash: await hashResponsesIdentity(identity.stableIdentity),
       createdAt: Date.now(),
     };
     await store.persistOutputItem(row, outputIndex);

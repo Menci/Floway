@@ -4,6 +4,10 @@ import { hashResponsesItemContent } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+
+const identified = (items: readonly ResponsesInputItem[]) =>
+  items.map(item => ({ item, stableIdentity: item }));
 
 describe('StatefulResponsesStore', () => {
   test('HTTP store=false performs no state writes', async () => {
@@ -12,7 +16,7 @@ describe('StatefulResponsesStore', () => {
     const store = createResponsesHttpStore('key-a', false);
     expect(store.writesState).toBe(false);
 
-    await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
+    await store.stageInputItems(identified([{ type: 'message', role: 'user', content: 'hello' }]));
     await store.commitSnapshot('resp_none', 'append');
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_none')).toBeNull();
   });
@@ -22,7 +26,7 @@ describe('StatefulResponsesStore', () => {
     const digest = vi.spyOn(crypto.subtle, 'digest');
     const store = createResponsesHttpStore('key-a', false);
 
-    await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
+    await store.stageInputItems(identified([{ type: 'message', role: 'user', content: 'hello' }]));
 
     expect(digest).not.toHaveBeenCalled();
     digest.mockRestore();
@@ -54,7 +58,7 @@ describe('StatefulResponsesStore', () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', undefined);
-    await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
+    await store.stageInputItems(identified([{ type: 'message', role: 'user', content: 'hello' }]));
     const output = {
       id: 'msg_public',
       apiKeyId: 'key-a',
@@ -76,7 +80,7 @@ describe('StatefulResponsesStore', () => {
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', true);
     const input = { type: 'message' as const, role: 'user' as const, content: 'discarded history' };
-    await store.stageInputItems([input]);
+    await store.stageInputItems(identified([input]));
     const output = {
       id: 'cmp_public',
       apiKeyId: 'key-a',
@@ -96,7 +100,7 @@ describe('StatefulResponsesStore', () => {
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', true);
     const item = { type: 'compaction_summary', id: 'cmp_client', encrypted_content: 'opaque' } as unknown as Parameters<typeof store.stageInputItems>[0][number];
-    await store.stageInputItems([item]);
+    await store.stageInputItems(identified([item]));
     await store.commitSnapshot('resp_summary', 'append');
 
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_summary');
@@ -154,8 +158,8 @@ describe('StatefulResponsesStore', () => {
       createdAt: 1,
     };
     await repo.responsesItems.insertMany([directRow, hashedRow]);
-    await store.loadInputItems([directInput, hashedInput], [directInput, hashedInput]);
-    await store.stageInputItems([directInput, hashedInput]);
+    await store.loadInputItems([directInput, hashedInput], identified([directInput, hashedInput]));
+    await store.stageInputItems(identified([directInput, hashedInput]));
     await store.commitSnapshot('resp_reused', 'append');
 
     const refreshed = await repo.responsesItems.lookupMany('key-a', [directRow.id, hashedRow.id]);
@@ -177,8 +181,8 @@ describe('StatefulResponsesStore', () => {
       createdAt: futureCreatedAt,
     };
     await repo.responsesItems.insertMany([row]);
-    await store.loadInputItems([input], [input]);
-    await store.stageInputItems([input]);
+    await store.loadInputItems([input], identified([input]));
+    await store.stageInputItems(identified([input]));
     await store.commitSnapshot('resp_future', 'append');
 
     expect((await repo.responsesItems.lookupMany('key-a', [row.id]))[0].createdAt).toBe(futureCreatedAt);
@@ -191,7 +195,7 @@ describe('StatefulResponsesStore', () => {
     const session = createResponsesWsSession();
     const first = session.createStore('key-a', false);
     expect(first.writesState).toBe(true);
-    await first.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
+    await first.stageInputItems(identified([{ type: 'message', role: 'user', content: 'hello' }]));
     await first.commitSnapshot('resp_local', 'append');
 
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_local')).toBeNull();
@@ -203,12 +207,12 @@ describe('StatefulResponsesStore', () => {
     initRepo(repo);
     const session = createResponsesWsSession();
     const local = session.createStore('key-a', false);
-    await local.stageInputItems([{ type: 'message', role: 'user', content: 'local' }]);
+    await local.stageInputItems(identified([{ type: 'message', role: 'user', content: 'local' }]));
     await local.commitSnapshot('resp_local', 'append');
 
     const durable = session.createStore('key-a', true);
     expect(await durable.loadSnapshot('resp_local')).not.toBeNull();
-    await durable.stageInputItems([{ type: 'message', role: 'user', content: 'durable' }]);
+    await durable.stageInputItems(identified([{ type: 'message', role: 'user', content: 'durable' }]));
     await durable.commitSnapshot('resp_durable', 'append');
 
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_durable');
@@ -295,10 +299,10 @@ describe('StatefulResponsesStore', () => {
     const store = createResponsesHttpStore('key-a', storeFlag);
     const id = 'msg_input_collision';
 
-    await expect(store.stageInputItems([
+    await expect(store.stageInputItems(identified([
       { type: 'message', id, role: 'user', content: 'first' },
       { type: 'message', id, role: 'user', content: 'second' },
-    ])).rejects.toThrow(`Responses item id collision: ${id}`);
+    ]))).rejects.toThrow(`Responses item id collision: ${id}`);
     expect(await repo.responsesItems.lookupMany('key-a', [id])).toEqual([]);
   });
 

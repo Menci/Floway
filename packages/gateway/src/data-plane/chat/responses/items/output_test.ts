@@ -22,7 +22,7 @@ const wrapResponsesClientOutput = (
 ): ReturnType<typeof wrapResponsesClientOutputImpl> =>
   wrapResponsesClientOutputImpl(input, {
     ...args,
-    producerIdentity: async item => ({ item, value: item }),
+    producerIdentity: async item => ({ producerItem: item, stableIdentity: item }),
   });
 
 const completedReasoningItem: ResponsesOutputReasoning = Object.freeze({
@@ -251,7 +251,10 @@ test('store=false rejects conflicting reuse within one output stream', async () 
 test('output identity cannot conflict with a staged input from the same turn', async () => {
   const { repo, store } = memoryOutputHarness();
   const id = 'msg_input_output_collision';
-  await store.stageInputItems([{ type: 'message', id, role: 'user', content: 'input' }]);
+  await store.stageInputItems([{
+    item: { type: 'message', id, role: 'user', content: 'input' },
+    stableIdentity: { type: 'message', id, role: 'user', content: 'input' },
+  }]);
   const output = { type: 'message' as const, id, role: 'assistant' as const, content: [{ type: 'output_text' as const, text: 'output' }] };
   const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
@@ -266,7 +269,10 @@ test('store=false also validates output identity against current input', async (
   initRepo(new InMemoryRepo());
   const store = createResponsesHttpStore('key-a', false);
   const id = 'msg_store_false_input_collision';
-  await store.stageInputItems([{ type: 'message', id, role: 'user', content: 'input' }]);
+  await store.stageInputItems([{
+    item: { type: 'message', id, role: 'user', content: 'input' },
+    stableIdentity: { type: 'message', id, role: 'user', content: 'input' },
+  }]);
   const output = { type: 'message' as const, id, role: 'assistant' as const, content: [{ type: 'output_text' as const, text: 'output' }] };
   const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
@@ -697,7 +703,10 @@ test('finalized item validation accepts the compaction_summary alias', async () 
 
 test('terminal-only compaction replaces prior snapshot history', async () => {
   const { repo, store } = memoryOutputHarness();
-  await store.stageInputItems([{ type: 'message', role: 'user', content: 'old history' }]);
+  await store.stageInputItems([{
+    item: { type: 'message', role: 'user', content: 'old history' },
+    stableIdentity: { type: 'message', role: 'user', content: 'old history' },
+  }]);
   const compaction = { type: 'compaction' as const, id: 'cmp_terminal', encrypted_content: 'opaque' };
   const response: ResponsesResult = {
     id: 'resp_upstream',

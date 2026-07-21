@@ -51,7 +51,7 @@ const routingEvidenceFrom = (
 };
 
 const opaqueBlobLocations = async (
-  items: readonly ResponsesInputItem[],
+  items: readonly (ResponsesInputItem | ResponsesOutputItem)[],
   codec: AffinityCodec,
 ): Promise<ResponsesBlobLocation[]> => {
   const locations: ResponsesBlobLocation[] = [];
@@ -88,17 +88,12 @@ const opaqueBlobLocations = async (
   return locations;
 };
 
-export interface ResponsesOutputIdentity {
-  readonly item: ResponsesOutputItem;
-  readonly value: unknown;
-}
-
-export const responsesOutputIdentity = async (
-  item: ResponsesOutputItem,
+export const responsesItemIdentity = async <TItem extends ResponsesInputItem | ResponsesOutputItem>(
+  item: TItem,
   codec: AffinityCodec,
-): Promise<ResponsesOutputIdentity> => {
-  const locations = await opaqueBlobLocations([item as unknown as ResponsesInputItem], codec);
-  const restored = structuredClone(item) as ResponsesOutputItem & Record<string, unknown>;
+): Promise<{ readonly producerItem: TItem; readonly stableIdentity: unknown }> => {
+  const locations = await opaqueBlobLocations([item], codec);
+  const restored = structuredClone(item) as TItem & Record<string, unknown>;
   const nested = new Map<number, Extract<DecodedAffinityBlob, { kind: 'owned' }>>();
   const affinity: Array<{ slot: string; target: AffinityTarget }> = [];
   for (const location of locations) {
@@ -122,8 +117,8 @@ export const responsesOutputIdentity = async (
     });
   }
   return {
-    item: restored,
-    value: affinity.length === 0 ? restored : { item: restored, affinity },
+    producerItem: restored,
+    stableIdentity: affinity.length === 0 ? restored : { item: restored, affinity },
   };
 };
 

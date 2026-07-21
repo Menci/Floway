@@ -1,4 +1,6 @@
-import { createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
+import { isEqual } from 'es-toolkit';
+
+import { createResponsesStorageKey, hashResponsesIdentity, responsesItemId } from './identity.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { assertSameStoredResponsesItem, cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
@@ -26,13 +28,37 @@ interface LayeredStatefulResponsesStoreOptions {
 
 type ResponsesSnapshotMode = 'append' | 'replace';
 
+export interface ResponsesInputIdentity {
+  readonly item: ResponsesInputItem;
+  readonly stableIdentity: unknown;
+}
+
+const storedInputRow = async (args: {
+  readonly id: string;
+  readonly apiKeyId: string;
+  readonly input: ResponsesInputIdentity;
+  readonly createdAt: number;
+  readonly contentHash?: string;
+}): Promise<StoredResponsesItem> => ({
+  id: args.id,
+  apiKeyId: args.apiKeyId,
+  payload: {
+    item: structuredClone(args.input.item),
+    ...(!isEqual(args.input.stableIdentity, args.input.item)
+      ? { identity: structuredClone(args.input.stableIdentity) }
+      : {}),
+  },
+  contentHash: args.contentHash ?? await hashResponsesIdentity(args.input.stableIdentity),
+  createdAt: args.createdAt,
+});
+
 export interface StatefulResponsesStore {
   readonly apiKeyId: string;
   readonly writesState: boolean;
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
-  loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
+  loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputIdentity[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
-  stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
+  stageInputItems(items: readonly ResponsesInputIdentity[]): Promise<void>;
   persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
@@ -91,17 +117,20 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     return null;
   }
 
-  async loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void> {
+  async loadInputItems(
+    sourceItems: readonly ResponsesInputItem[],
+    inputItemsToStage: readonly ResponsesInputIdentity[],
+  ): Promise<void> {
     const ids = new Set<string>();
     for (const item of sourceItems) {
       const id = responsesItemId(item);
       if (id !== null) ids.add(id);
     }
     const contentHashes = new Set<string>();
-    for (const item of this.writesState ? inputItemsToStage : []) {
+    for (const { item, stableIdentity } of this.writesState ? inputItemsToStage : []) {
       if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
       if (responsesItemId(item) !== null) continue;
-      contentHashes.add(await hashResponsesItemContent(item));
+      contentHashes.add(await hashResponsesIdentity(stableIdentity));
     }
     await this.loadItems({ ids: [...ids], contentHashes: [...contentHashes] });
   }
@@ -111,12 +140,16 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     return row === undefined ? undefined : cloneStoredResponsesItem(row);
   }
 
-  async stageInputItems(items: readonly ResponsesInputItem[]): Promise<void> {
+  async stageInputItems(items: readonly ResponsesInputIdentity[]): Promise<void> {
     if (!this.writesState) {
-      for (const item of items) await this.validateTransientInputItem(item);
+      for (const { item, stableIdentity } of items) {
+        await this.validateTransientInputItem(item, stableIdentity);
+      }
       return;
     }
-    for (const item of items) await this.stageInputItem(item);
+    for (const { item, stableIdentity } of items) {
+      await this.stageInputItem(item, stableIdentity);
+    }
   }
 
   async persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void> {
@@ -200,7 +233,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     }
   }
 
-  private async stageInputItem(item: ResponsesInputItem): Promise<void> {
+  private async stageInputItem(item: ResponsesInputItem, stableIdentity: unknown): Promise<void> {
     if (item.type === 'compaction_trigger') return;
     if (item.type === 'item_reference') {
       const row = this.getItemById(item.id);
@@ -215,27 +248,24 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       if (row !== undefined) {
         const currentTurn = this.newInputItemsById.get(id);
         if (currentTurn !== undefined) {
-          assertSameStoredResponsesItem(currentTurn, {
+          assertSameStoredResponsesItem(currentTurn, await storedInputRow({
             id,
             apiKeyId: this.apiKeyId,
-            payload: { item: structuredClone(item) },
-            contentHash: await hashResponsesItemContent(item),
+            input: { item, stableIdentity },
             createdAt: currentTurn.createdAt,
-          });
+          }));
         }
         this.stagedInputItemIds.push(row.id);
         return;
       }
 
-      const contentHash = await hashResponsesItemContent(item);
       const createdAt = Date.now();
-      const created: StoredResponsesItem = {
+      const created = await storedInputRow({
         id,
         apiKeyId: this.apiKeyId,
-        payload: { item: structuredClone(item) },
-        contentHash,
+        input: { item, stableIdentity },
         createdAt,
-      };
+      });
       this.stagedInputItemIds.push(id);
       this.freshItemIds.add(id);
       this.newInputItemsById.set(id, created);
@@ -243,37 +273,36 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return;
     }
 
-    const contentHash = await hashResponsesItemContent(item);
+    const contentHash = await hashResponsesIdentity(stableIdentity);
     const existing = this.loadedByContentHash.get(contentHash)?.[0];
     if (existing !== undefined) {
       this.stagedInputItemIds.push(existing.id);
       return;
     }
 
-    const row: StoredResponsesItem = {
+    const row = await storedInputRow({
       id: createResponsesStorageKey(),
       apiKeyId: this.apiKeyId,
-      payload: { item: structuredClone(item) },
+      input: { item, stableIdentity },
       contentHash,
       createdAt: Date.now(),
-    };
+    });
     this.stagedInputItemIds.push(row.id);
     this.freshItemIds.add(row.id);
     this.rememberItem(row);
   }
 
-  private async validateTransientInputItem(item: ResponsesInputItem): Promise<void> {
+  private async validateTransientInputItem(item: ResponsesInputItem, stableIdentity: unknown): Promise<void> {
     if (item.type === 'item_reference' || item.type === 'compaction_trigger') return;
     const id = responsesItemId(item);
     if (id === null || this.loadedItems.has(id)) return;
     const current = this.newInputItemsById.get(id);
-    const candidate: StoredResponsesItem = {
+    const candidate = await storedInputRow({
       id,
       apiKeyId: this.apiKeyId,
-      payload: { item: structuredClone(item) },
-      contentHash: await hashResponsesItemContent(item),
+      input: { item, stableIdentity },
       createdAt: current?.createdAt ?? Date.now(),
-    };
+    });
     if (current === undefined) this.newInputItemsById.set(id, candidate);
     else assertSameStoredResponsesItem(candidate, current);
   }
