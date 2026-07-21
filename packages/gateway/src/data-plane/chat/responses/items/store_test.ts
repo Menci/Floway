@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { hashResponsesItemContent } from './identity.ts';
+import { hashResponsesIdentity } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -91,7 +91,7 @@ describe('StatefulResponsesStore', () => {
     await store.persistOutputItem(output, 0);
     await store.commitSnapshot('resp_compact', 'replace');
 
-    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await hashResponsesItemContent(input)])).toEqual([]);
+    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await hashResponsesIdentity(input)])).toEqual([]);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact'))?.itemIds).toEqual([output.id]);
   });
 
@@ -147,14 +147,14 @@ describe('StatefulResponsesStore', () => {
       id: directInput.id,
       apiKeyId: 'key-a',
       payload: { item: directInput },
-      contentHash: await hashResponsesItemContent(directInput),
+      contentHash: await hashResponsesIdentity(directInput),
       createdAt: 1,
     };
     const hashedRow = {
       id: 'msg_hashed',
       apiKeyId: 'key-a',
       payload: { item: hashedInput },
-      contentHash: await hashResponsesItemContent(hashedInput),
+      contentHash: await hashResponsesIdentity(hashedInput),
       createdAt: 1,
     };
     await repo.responsesItems.insertMany([directRow, hashedRow]);
@@ -177,7 +177,7 @@ describe('StatefulResponsesStore', () => {
       id: 'msg_future',
       apiKeyId: 'key-a',
       payload: { item: input },
-      contentHash: await hashResponsesItemContent(input),
+      contentHash: await hashResponsesIdentity(input),
       createdAt: futureCreatedAt,
     };
     await repo.responsesItems.insertMany([row]);
@@ -232,7 +232,7 @@ describe('StatefulResponsesStore', () => {
       id: firstItem.id,
       apiKeyId: 'key-a',
       payload: { item: firstItem },
-      contentHash: await hashResponsesItemContent(firstItem),
+      contentHash: await hashResponsesIdentity(firstItem),
       createdAt: 1_000,
     }, 0);
 
@@ -241,7 +241,7 @@ describe('StatefulResponsesStore', () => {
       id: secondItem.id,
       apiKeyId: 'key-a',
       payload: { item: secondItem },
-      contentHash: await hashResponsesItemContent(secondItem),
+      contentHash: await hashResponsesIdentity(secondItem),
       createdAt: 2_000,
     }, 0)).rejects.toThrow(`Responses item id collision: ${firstItem.id}`);
 
@@ -263,14 +263,14 @@ describe('StatefulResponsesStore', () => {
       id,
       apiKeyId: 'key-a',
       payload: { item: localItem },
-      contentHash: await hashResponsesItemContent(localItem),
+      contentHash: await hashResponsesIdentity(localItem),
       createdAt: 1_000,
     }, 0);
     await repo.responsesItems.insertMany([{
       id,
       apiKeyId: 'key-a',
       payload: { item: durableItem },
-      contentHash: await hashResponsesItemContent(durableItem),
+      contentHash: await hashResponsesIdentity(durableItem),
       createdAt: 2_000,
     }]);
 

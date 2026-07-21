@@ -209,8 +209,9 @@ and request context live under `data-plane/chat/shared/affinity`; each source
 protocol owns its `affinity/ingress.ts` and `affinity/egress.ts`. Wire behavior
 lives in `docs/AFFINITY.md`, and candidate ordering lives in `docs/RESOLUTION.md`.
 
-Native Responses persistence is independent from affinity. It stores exact
-producer-owned, API-key-scoped items and snapshots for 30 days without
+Native Responses persistence is independent from affinity. It stores the first
+client-facing projection under each producer-owned, API-key-scoped item ID,
+plus stable producer/affinity identity and snapshots, for 30 days without
 rewriting item IDs. A completed output item becomes reusable at its first
 `response.output_item.done`, so its row commits before that event is published;
 the response snapshot commits at the successful terminal event. Producer IDs

@@ -169,6 +169,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       observedOutputIndexes.add(outputIndex);
       return [{ row: cloneStoredResponsesItem(row), outputIndex }];
     });
+    if (pending.length === 0) return;
     const identities = new Map(this.outputItemsById);
     for (const { row } of pending) {
       const sameTurn = identities.get(row.id);

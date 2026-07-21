@@ -6,9 +6,6 @@ export const responsesItemId = (item: object): string | null => {
 export const hashResponsesIdentity = async (identity: unknown): Promise<string> =>
   await sha256Hex(JSON.stringify(sortJson(identity)));
 
-export const hashResponsesItemContent = async (item: unknown): Promise<string> =>
-  await hashResponsesIdentity(item);
-
 export const createResponsesStorageKey = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return `stored_${[...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;

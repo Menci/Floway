@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { hashResponsesItemContent, responsesItemId } from './identity.ts';
+import { hashResponsesIdentity, responsesItemId } from './identity.ts';
 import { wrapResponsesClientOutput as wrapResponsesClientOutputImpl } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
@@ -154,7 +154,7 @@ test('client output rejects an item-id collision before publishing output_item.d
     id: first.id,
     apiKeyId: 'key-a',
     payload: { item: first },
-    contentHash: await hashResponsesItemContent(first),
+    contentHash: await hashResponsesIdentity(first),
     createdAt: 1_000,
   }]);
   const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
@@ -203,7 +203,7 @@ test('store=false validates readable durable identity without writing state', as
     id: stored.id,
     apiKeyId: 'key-a',
     payload: { item: stored },
-    contentHash: await hashResponsesItemContent(stored),
+    contentHash: await hashResponsesIdentity(stored),
     createdAt: 1_000,
   }]);
   const exactStore = createResponsesHttpStore('key-a', false);

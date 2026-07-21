@@ -11,8 +11,8 @@ interface ResponsesOutputIdentity {
   readonly stableIdentity: unknown;
 }
 
-// Complete producer-owned items become reusable at their first done frame, so
-// each row commits before that frame is yielded. Later done frames remain
+// Complete output items become reusable at their first done frame, so each row
+// commits before that frame is yielded. Later done frames remain
 // visible but cannot replace the durable item. The response snapshot commits
 // separately before a successful terminal frame. Failed/error terminals keep
 // completed item rows but never a snapshot.
@@ -38,7 +38,7 @@ export const wrapResponsesClientOutput = async function* (
   const finalizedOutputIndexes = new Set<number>();
   let sawCompactionItem = false;
 
-  const finalizedItem = async (item: ResponsesOutputItem, outputIndex: number) => {
+  const finalizedRow = async (item: ResponsesOutputItem): Promise<StoredResponsesItem> => {
     const id = responsesItemId(item);
     if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
     const identity = await producerIdentity(item);
@@ -57,12 +57,12 @@ export const wrapResponsesClientOutput = async function* (
       contentHash: await hashResponsesIdentity(identity.stableIdentity),
       createdAt: Date.now(),
     };
-    return { row, outputIndex };
+    return row;
   };
 
   const persistFinalizedItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<void> => {
     if (finalizedOutputIndexes.has(outputIndex)) return;
-    await store.persistOutputItem((await finalizedItem(item, outputIndex)).row, outputIndex);
+    await store.persistOutputItem(await finalizedRow(item), outputIndex);
     finalizedOutputIndexes.add(outputIndex);
   };
 
@@ -94,7 +94,7 @@ export const wrapResponsesClientOutput = async function* (
       const pending: ResponsesOutputWrite[] = [];
       for (const [outputIndex, item] of event.response.output.entries()) {
         if (isCompactionItemType(item.type)) sawCompactionItem = true;
-        if (!finalizedOutputIndexes.has(outputIndex)) pending.push(await finalizedItem(item, outputIndex));
+        if (!finalizedOutputIndexes.has(outputIndex)) pending.push({ row: await finalizedRow(item), outputIndex });
       }
       await store.persistOutputItems(pending);
       for (const { outputIndex } of pending) finalizedOutputIndexes.add(outputIndex);
