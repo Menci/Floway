@@ -98,13 +98,13 @@ the gateway returns a Gemini-shaped unsupported-model error.
 
 ## Usage And Billing Facts
 
-Usage translation keeps billing dimensions disjoint. OpenAI-style inclusive
+Usage translation keeps billing metrics disjoint. OpenAI-style inclusive
 input totals are checked and split into uncached input, cache read, and cache
 write counts; inclusive output totals are likewise split into visible output
 and reasoning where the target exposes both. Negative, fractional, or
 overlapping counts are rejected rather than clamped.
 
-Messages already reports disjoint input dimensions. Its flat cache-creation
+Messages already reports disjoint input metrics. Its flat cache-creation
 total and optional 5-minute / 1-hour detail are normalized into two cache-write
 buckets. Streaming `message_start` and `message_delta` usage is accumulated as
 one snapshot, including late input counts and atomic replacement of the

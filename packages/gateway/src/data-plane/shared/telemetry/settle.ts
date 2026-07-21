@@ -20,7 +20,7 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 // waitUntil binds it to the fetch handler (or, for the WS transport, to
 // a session-scoped waitUntil opened on 101), and Node keeps the process
 // event loop alive. Every settled request increments its request bucket;
-// detailed dimension rows are present only when the upstream meters them.
+// detailed metric rows are present only when the upstream meters them.
 export const settle = (
   ctx: GatewayCtx,
   telemetry: PerformanceTelemetryContext | undefined,
