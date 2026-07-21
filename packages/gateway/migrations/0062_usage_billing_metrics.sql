@@ -166,6 +166,17 @@ SET config_json = json_set(
                           WHEN 'output' THEN 'output_tokens'
                           WHEN 'output_image' THEN 'output_image_tokens'
                         END,
+                        -- Reject any legacy rate the runtime DecimalString
+                        -- parser would later refuse, so every migrated value is
+                        -- a canonical, re-parseable decimal that cannot bloat a
+                        -- D1 row. The caps mirror PUBLIC_LIMITS in
+                        -- packages/protocols/src/common/decimal.ts (512-char
+                        -- input, 100 significant digits, |exponent| 400, 400
+                        -- integer and fractional digits, 512-char output).
+                        -- Explicit caps are needed here because a model rate is
+                        -- read as a raw JSON lexeme of arbitrary length; the
+                        -- usage unit_price path needs none, as it reads a REAL
+                        -- already bounded by IEEE-754.
                         CASE
                           WHEN decimal_type NOT IN ('integer', 'real')
                             OR decimal_value < 0
