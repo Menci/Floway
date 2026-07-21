@@ -18,9 +18,12 @@ const frames = async function* (response: ResponsesResult): AsyncIterable<Protoc
 
 const wrapResponsesClientOutput = (
   input: Parameters<typeof wrapResponsesClientOutputImpl>[0],
-  args: Omit<Parameters<typeof wrapResponsesClientOutputImpl>[1], 'producerItem'>,
+  args: Omit<Parameters<typeof wrapResponsesClientOutputImpl>[1], 'producerIdentity'>,
 ): ReturnType<typeof wrapResponsesClientOutputImpl> =>
-  wrapResponsesClientOutputImpl(input, { ...args, producerItem: async item => item });
+  wrapResponsesClientOutputImpl(input, {
+    ...args,
+    producerIdentity: async item => ({ item, value: item }),
+  });
 
 const completedReasoningItem: ResponsesOutputReasoning = Object.freeze({
   type: 'reasoning',

@@ -24,13 +24,13 @@ export const assertSameStoredResponsesItem = (
   expected: StoredResponsesItem,
   actual: StoredResponsesItem,
 ): void => {
-  const expectedProducer = expected.payload.producer ?? expected.payload.item;
-  const actualProducer = actual.payload.producer ?? actual.payload.item;
+  const expectedIdentity = expected.payload.identity ?? expected.payload.item;
+  const actualIdentity = actual.payload.identity ?? actual.payload.item;
   if (
     expected.id !== actual.id
     || expected.apiKeyId !== actual.apiKeyId
     || expected.contentHash !== actual.contentHash
-    || !isEqual(expectedProducer, actualProducer)
+    || !isEqual(expectedIdentity, actualIdentity)
     || !isEqual(expected.payload.private, actual.payload.private)
   ) {
     throw new Error(`Responses item id collision: ${expected.id}`);

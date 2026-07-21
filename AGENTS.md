@@ -214,10 +214,10 @@ producer-owned, API-key-scoped items and snapshots for 30 days without
 rewriting item IDs. A completed output item becomes reusable at its first
 `response.output_item.done`, so its row commits before that event is published;
 the response snapshot commits at the successful terminal event. Producer IDs
-are immutable within one API-key scope: exact pre-affinity producer/private
-payload reuse refreshes lifetime, while a collision fails before the done
-frame. The first client-facing affinity projection stays durable; later
-equivalent projections may use different authenticated ciphertext. HTTP
+are immutable within one API-key scope: exact producer item, affinity target,
+and private payload reuse refreshes lifetime, while a collision fails before
+the done frame. The first client-facing affinity projection stays durable;
+later equivalent projections may use different authenticated ciphertext. HTTP
 `store: false` writes no state, while WebSocket `store: false` is session-local.
 
 Everything else — provider interfaces, request execution flow, interceptor

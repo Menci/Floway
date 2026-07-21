@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { wrapResponsesAffinityEgress } from './egress.ts';
-import { prepareResponsesAffinity, unwrapResponsesOutputAffinity } from './ingress.ts';
+import { prepareResponsesAffinity, responsesOutputIdentity } from './ingress.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { AffinityCodec } from '../../shared/affinity/index.ts';
@@ -56,7 +56,7 @@ test('affinity selects the route while item storage preserves the exact producer
   const client = wrapResponsesClientOutput(withAffinity, {
     store,
     responseId: 'resp_public',
-    producerItem: async item => await unwrapResponsesOutputAffinity(item, codec),
+    producerIdentity: async item => await responsesOutputIdentity(item, codec),
   });
 
   let clientResponse: ResponsesResult | undefined;
@@ -114,7 +114,7 @@ test.each(['HTTP store=true', 'WebSocket store=false'] as const)(
       for await (const frame of wrapResponsesClientOutput(withAffinity, {
         store: createStore(),
         responseId: 'resp_public',
-        producerItem: async candidateItem => await unwrapResponsesOutputAffinity(candidateItem, codec),
+        producerIdentity: async candidateItem => await responsesOutputIdentity(candidateItem, codec),
       })) {
         if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
           output = frame.event.item as typeof item;
@@ -134,6 +134,42 @@ test.each(['HTTP store=true', 'WebSocket store=false'] as const)(
     expect(reader.getItemById(item.id)?.payload.item).toEqual(first);
   },
 );
+
+test('one producer id cannot alias different affinity targets', async () => {
+  initRepo(new InMemoryRepo());
+  const codec = new AffinityCodec('22'.repeat(32));
+  const item = { type: 'reasoning' as const, id: 'rs_cross_target', summary: [], encrypted_content: 'opaque' };
+
+  const runTurn = async (candidate: ReturnType<typeof modelCandidate>): Promise<void> => {
+    const store = createResponsesHttpStore('key-a', true);
+    const response: ResponsesResult = {
+      id: 'resp_upstream',
+      object: 'response',
+      model: candidate.model.id,
+      status: 'completed',
+      output: [item],
+      error: null,
+      incomplete_details: null,
+    };
+    const source = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
+      yield eventFrame({ type: 'response.completed', response });
+    };
+    const frames = wrapResponsesAffinityEgress(source(), {
+      codec,
+      affinity: { upstreamId: candidate.provider.upstream, modelId: candidate.model.id },
+    });
+    for await (const _frame of wrapResponsesClientOutput(frames, {
+      store,
+      responseId: 'resp_public',
+      producerIdentity: async candidateItem => await responsesOutputIdentity(candidateItem, codec),
+    })) { /* drain */ }
+  };
+
+  await runTurn(modelCandidate('upstream-a'));
+  await expect(runTurn(modelCandidate('upstream-b')))
+    .rejects.toThrow(`Responses item id collision: ${item.id}`);
+});
 
 test('agent-message natural and originless nested carriers round-trip without changing ids', async () => {
   const candidate = modelCandidate('upstream-a');

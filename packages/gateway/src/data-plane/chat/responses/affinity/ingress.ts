@@ -88,15 +88,22 @@ const opaqueBlobLocations = async (
   return locations;
 };
 
-export const unwrapResponsesOutputAffinity = async (
+export interface ResponsesOutputIdentity {
+  readonly item: ResponsesOutputItem;
+  readonly value: unknown;
+}
+
+export const responsesOutputIdentity = async (
   item: ResponsesOutputItem,
   codec: AffinityCodec,
-): Promise<ResponsesOutputItem> => {
+): Promise<ResponsesOutputIdentity> => {
   const locations = await opaqueBlobLocations([item as unknown as ResponsesInputItem], codec);
   const restored = structuredClone(item) as ResponsesOutputItem & Record<string, unknown>;
   const nested = new Map<number, Extract<DecodedAffinityBlob, { kind: 'owned' }>>();
+  const affinity: Array<{ slot: string; target: AffinityTarget }> = [];
   for (const location of locations) {
     if (location.decoded.kind !== 'owned') continue;
+    affinity.push({ slot: location.slot, target: location.decoded.affinity });
     if (location.contentIndex !== undefined) {
       nested.set(location.contentIndex, location.decoded);
     } else if (location.decoded.value === undefined) {
@@ -114,7 +121,10 @@ export const unwrapResponsesOutputAffinity = async (
         : [{ ...content, encrypted_content: decoded.value }];
     });
   }
-  return restored;
+  return {
+    item: restored,
+    value: affinity.length === 0 ? restored : { item: restored, affinity },
+  };
 };
 
 const isEmptyOriginlessReasoningCarrier = (

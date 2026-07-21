@@ -86,13 +86,13 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const producer = { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'opaque' };
     first.payload = {
       item: { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'first-affinity-wrapper' },
-      producer,
+      identity: { item: producer, affinity: [{ slot: 'encrypted_content', target: { upstreamId: 'upstream-a', modelId: 'model-a' } }] },
     };
     const repeated = {
       ...first,
       payload: {
         item: { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'second-affinity-wrapper' },
-        producer,
+        identity: { item: producer, affinity: [{ slot: 'encrypted_content', target: { upstreamId: 'upstream-a', modelId: 'model-a' } }] },
       },
       createdAt: 3_000,
     };

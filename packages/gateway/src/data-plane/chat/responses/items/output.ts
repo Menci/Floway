@@ -2,6 +2,7 @@ import { isEqual } from 'es-toolkit';
 
 import { hashResponsesItemContent, responsesItemId } from './identity.ts';
 import type { StatefulResponsesStore } from './store.ts';
+import type { ResponsesOutputIdentity } from '../affinity/ingress.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -11,9 +12,10 @@ import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult
 // visible but cannot replace the durable item. The response snapshot commits
 // separately before a successful terminal frame. Failed/error terminals keep
 // completed item rows but never a snapshot.
-// Identity hashes use the producer item before affinity wrapping, so fresh
-// authenticated ciphertext does not turn exact producer reuse into a
-// collision; the first client-facing wire projection remains durable.
+// Identity hashes use the producer item and affinity target before encryption,
+// so fresh authenticated ciphertext does not turn exact reuse into a
+// collision and a different route cannot alias the same producer id. The
+// first client-facing wire projection remains durable.
 //
 // Response envelope ids remain Floway-owned because one client response can
 // span several upstream calls behind the server-tool runtime. The caller mints
@@ -24,10 +26,10 @@ export const wrapResponsesClientOutput = async function* (
   args: {
     readonly store: StatefulResponsesStore;
     readonly responseId: string;
-    readonly producerItem: (item: ResponsesOutputItem) => Promise<ResponsesOutputItem>;
+    readonly producerIdentity: (item: ResponsesOutputItem) => Promise<ResponsesOutputIdentity>;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { store, responseId, producerItem } = args;
+  const { store, responseId, producerIdentity } = args;
   const finalizedOutputIndexes = new Set<number>();
   let sawCompactionItem = false;
 
@@ -35,8 +37,8 @@ export const wrapResponsesClientOutput = async function* (
     if (finalizedOutputIndexes.has(outputIndex)) return;
     const id = responsesItemId(item);
     if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
-    const identityItem = await producerItem(item);
-    if (responsesItemId(identityItem) !== id) {
+    const identity = await producerIdentity(item);
+    if (responsesItemId(identity.item) !== id) {
       throw new Error(`Responses ${item.type} output id changed while restoring producer identity: ${id}`);
     }
     const privatePayload = store.getPrivatePayload(id);
@@ -45,10 +47,10 @@ export const wrapResponsesClientOutput = async function* (
       apiKeyId: store.apiKeyId,
       payload: {
         item: structuredClone(item),
-        ...(!isEqual(identityItem, item) ? { producer: structuredClone(identityItem) } : {}),
+        ...(!isEqual(identity.value, item) ? { identity: structuredClone(identity.value) } : {}),
         ...(privatePayload !== undefined ? { private: privatePayload } : {}),
       },
-      contentHash: await hashResponsesItemContent(identityItem),
+      contentHash: await hashResponsesItemContent(identity.value),
       createdAt: Date.now(),
     };
     await store.persistOutputItem(row, outputIndex);
