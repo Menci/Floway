@@ -1,9 +1,10 @@
-import { mount } from '@vue/test-utils';
+import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
 import PricingEditor from './PricingEditor.vue';
 import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import { Select } from '@floway-dev/ui';
 
 const tokenPricing = ({ entries }: Pick<ModelPricing, 'entries'>): ModelPricing => ({
   units: Object.fromEntries([...new Set(entries.flatMap(entry => Object.keys(entry.rates)))].map(dimension => [dimension, 'tokens_1m'])) as ModelPricing['units'],
@@ -80,14 +81,54 @@ describe('PricingEditor', () => {
     });
   });
 
-  it('defaults rerank input pricing to searches_1k', async () => {
+  it('does not assign a unit when a pricing dimension already exists in another entry', async () => {
+    const wrapper = mount(PricingEditor, {
+      props: {
+        modelValue: {
+          units: {},
+          entries: [
+            { rates: { input: 1 } },
+            { selector: { serviceTier: 'priority' }, rates: {} },
+          ],
+        },
+        editable: true,
+        kind: 'chat',
+      },
+    });
+
+    await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
+    await pricingInput(wrapper, 'unpriced').setValue('2');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: {},
+      entries: [
+        { rates: { input: 1 } },
+        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      ],
+    });
+  });
+
+  it.each([
+    ['searches_1k', '1K searches'],
+    ['tokens_1m', '1M tokens'],
+  ] as const)('requires an explicit rerank input unit and accepts %s', async (unit, label) => {
     const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'rerank' });
+    expect(wrapper.text()).toContain('Input ($/select unit)');
+
     await pricingInput(wrapper, 'unpriced').setValue('4');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      units: { input: 'searches_1k' },
+      units: {},
       entries: [{ rates: { input: 4 } }],
     });
-    expect(wrapper.text()).toContain('Input ($/1K searches)');
+    expect(wrapper.text()).toContain('Input ($/unit required)');
+
+    const unitSelect = wrapper.get('[aria-label="Pricing billing units"]').findComponent(Select) as unknown as VueWrapper;
+    unitSelect.vm.$emit('update:modelValue', unit);
+    await nextTick();
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: { input: unit },
+      entries: [{ rates: { input: 4 } }],
+    });
+    expect(wrapper.text()).toContain(`Input ($/${label})`);
   });
 
   it('clears a threshold value while preserving operator-only updates', async () => {
