@@ -1078,24 +1078,57 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       await this.finishPayloadWrites(writes, error);
     }
     const persisted = await this.finishPayloadWrites(writes, null);
-    const reconciled = writes.map(write => {
+    const reconciled: Array<{ write: PreparedResponsesRefreshWrite; descriptor: ResponsesItemDescriptor }> = [];
+    for (const write of writes) {
       const descriptor = persisted.get(scopedResponsesKey(write.item.apiKeyId, write.item.id));
       if (descriptor === undefined) {
         throw new Error(`Responses item disappeared after payload reconciliation: ${write.item.id}`);
       }
-      return { write, descriptor };
-    });
-    for (const { write, descriptor } of reconciled) {
-      assertSameStoredResponsesItem(write.item, {
-        ...write.item,
-        payload: await parseStoredResponsesPayload(write.item.id, descriptor.payloadJson),
-        contentHash: descriptor.contentHash,
-        createdAt: descriptor.createdAt,
-      });
+      reconciled.push({ write, descriptor: await this.validateCurrentRefreshIdentity(write, descriptor) });
     }
     const staleItems = reconciled.flatMap(({ write, descriptor }) =>
       descriptor.createdAt < createdAt ? [write.item] : []);
     if (staleItems.length > 0) await this.refreshMany(staleItems, createdAt);
+  }
+
+  private async validateCurrentRefreshIdentity(
+    write: PreparedResponsesRefreshWrite,
+    initial: ResponsesItemDescriptor,
+  ): Promise<ResponsesItemDescriptor> {
+    const key = scopedResponsesKey(write.item.apiKeyId, write.item.id);
+    let descriptor = initial;
+    for (;;) {
+      let payload: StoredResponsesItem['payload'];
+      try {
+        payload = await parseStoredResponsesPayload(write.item.id, descriptor.payloadJson);
+      } catch (error) {
+        const current = (await this.lookupDescriptors([write.item])).get(key);
+        if (current === undefined) throw new Error(`Responses item disappeared after lifetime refresh: ${write.item.id}`);
+        if (current.payloadJson !== descriptor.payloadJson) {
+          descriptor = current;
+          continue;
+        }
+        throw error;
+      }
+
+      const current = (await this.lookupDescriptors([write.item])).get(key);
+      if (current === undefined) throw new Error(`Responses item disappeared after lifetime refresh: ${write.item.id}`);
+      if (
+        current.payloadJson !== descriptor.payloadJson
+        || current.contentHash !== descriptor.contentHash
+        || current.createdAt !== descriptor.createdAt
+      ) {
+        descriptor = current;
+        continue;
+      }
+      assertSameStoredResponsesItem(write.item, {
+        ...write.item,
+        payload,
+        contentHash: current.contentHash,
+        createdAt: current.createdAt,
+      });
+      return current;
+    }
   }
 
   private async lookupDescriptors(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[]): Promise<Map<string, ResponsesItemDescriptor>> {

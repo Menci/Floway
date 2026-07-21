@@ -53,6 +53,15 @@ class DeleteHookFileProvider extends MemoryFileProvider {
   }
 }
 
+class GetHookFileProvider extends MemoryFileProvider {
+  beforeGet: ((key: string) => Promise<void>) | undefined;
+
+  override async get(key: string): Promise<Uint8Array | null> {
+    await this.beforeGet?.(key);
+    return await super.get(key);
+  }
+}
+
 describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
   test('stores complete key-scoped items and looks them up by id and content hash', async () => {
     initFileProvider(new MemoryFileProvider());
@@ -340,6 +349,31 @@ test('SQL newer refresh retries after an older concurrent spill wins CAS', async
   const [persisted] = await repo.responsesItems.lookupMany('key-a', [item.id]);
   expect(persisted.createdAt).toBe(newerCreatedAt);
   expect(persisted.payload).toEqual(item.payload);
+  expect(await files.listKeys('responses-items/')).toHaveLength(1);
+});
+
+test('SQL refresh retries when a concurrent refresh replaces its reconciled spill', async () => {
+  const files = new GetHookFileProvider();
+  initFileProvider(files);
+  const repo = new SqlRepo(await createSqliteTestDb());
+  const item = spilledItem('msg_refresh_reader_race', 'key-a', 1_000);
+  await repo.responsesItems.insertMany([item]);
+  const [originalKey] = await files.listKeys('responses-items/');
+  const firstCreatedAt = 1_000 + 2 * 60 * 60 * 1000;
+  const secondCreatedAt = 1_000 + 4 * 60 * 60 * 1000;
+  let nestedRefresh: Promise<void> | undefined;
+  files.beforeGet = async key => {
+    if (key === originalKey || nestedRefresh !== undefined) return;
+    files.beforeGet = undefined;
+    nestedRefresh = repo.responsesItems.refreshMany([item], secondCreatedAt);
+    await nestedRefresh;
+  };
+
+  await expect(repo.responsesItems.refreshMany([item], firstCreatedAt)).resolves.toBeUndefined();
+  await nestedRefresh;
+
+  const [persisted] = await repo.responsesItems.lookupMany(item.apiKeyId, [item.id]);
+  expect(persisted.createdAt).toBe(secondCreatedAt);
   expect(await files.listKeys('responses-items/')).toHaveLength(1);
 });
 
