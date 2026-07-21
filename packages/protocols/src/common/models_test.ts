@@ -10,7 +10,6 @@ import {
   parseBillingMetric,
   parsePricingSelectorKey,
   priceRequest,
-  pricingEntry,
   validateModelPricing,
   type ModelPricing,
   type PricingSelector,
