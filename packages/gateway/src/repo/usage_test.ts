@@ -72,7 +72,7 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
   ]);
 });
 
-test('0061 rejects malformed legacy usage quantities and prices', async () => {
+test('0062 rejects malformed legacy usage quantities and prices', async () => {
   for (const [tokens, unitPrice] of [
     ['1', "'not-a-price'"],
     ['1', '1e999'],
