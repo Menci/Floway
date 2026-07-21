@@ -157,86 +157,52 @@ describe('rankAgentSetupModels', () => {
 });
 
 describe('buildModelOptions', () => {
-  it('always exposes a nullable "no override" option first', () => {
-    const options = buildModelOptions([buildRealModel({ id: 'claude-sonnet-4-5' })], null, { family: 'claude', picker: 'default' });
-    expect(options[0]).toEqual({ value: null, modelId: null, unavailable: false });
-  });
-
   it('derives Claude option values through the [1m] rule while keeping the raw id as the display', () => {
     const options = buildModelOptions([
       buildRealModel({ id: 'claude-sonnet-4-5', limits: { max_context_window_tokens: 1_000_000 } }),
       buildRealModel({ id: 'claude-haiku-4-5', limits: { max_context_window_tokens: 200_000 } }),
-    ], null, { family: 'claude', picker: 'default' });
-    expect(options.slice(1)).toEqual([
-      { value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5', unavailable: false },
-      { value: 'claude-haiku-4-5', modelId: 'claude-haiku-4-5', unavailable: false },
+    ], { family: 'claude', picker: 'default' });
+    expect(options).toEqual([
+      { value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5' },
+      { value: 'claude-haiku-4-5', modelId: 'claude-haiku-4-5' },
     ]);
   });
 
   it('keeps Haiku ids plain even when the catalog advertises a one-million-token window', () => {
     const options = buildModelOptions([
       buildRealModel({ id: 'claude-haiku-4-5', limits: { max_context_window_tokens: 1_000_000 } }),
-    ], null, { family: 'claude', picker: 'haiku' });
-    expect(options[1]).toEqual({ value: 'claude-haiku-4-5', modelId: 'claude-haiku-4-5', unavailable: false });
+    ], { family: 'claude', picker: 'haiku' });
+    expect(options[0]).toEqual({ value: 'claude-haiku-4-5', modelId: 'claude-haiku-4-5' });
   });
 
   it('keeps raw ids for the Codex family and never applies [1m]', () => {
     const options = buildModelOptions([
       buildRealModel({ id: 'gpt-5-codex', limits: { max_context_window_tokens: 1_000_000 } }),
-    ], null, { family: 'codex' });
-    expect(options.slice(1)).toEqual([
-      { value: 'gpt-5-codex', modelId: 'gpt-5-codex', unavailable: false },
-    ]);
+    ], { family: 'codex' });
+    expect(options).toEqual([{ value: 'gpt-5-codex', modelId: 'gpt-5-codex' }]);
   });
 
   it('sums split prompt/output caps when no combined window is published, then applies [1m]', () => {
     const options = buildModelOptions([
       buildRealModel({ id: 'claude-sonnet-4-5', limits: { max_prompt_tokens: 900_000, max_output_tokens: 100_000 } }),
-    ], null, { family: 'claude', picker: 'default' });
-    expect(options[1]).toEqual({ value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5', unavailable: false });
+    ], { family: 'claude', picker: 'default' });
+    expect(options[0]).toEqual({ value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5' });
   });
 
   it('never double-suffixes a catalog id that already carries [1m]', () => {
     const options = buildModelOptions([
       buildRealModel({ id: 'claude-sonnet-4-5[1m]', limits: { max_context_window_tokens: 1_000_000 } }),
-    ], null, { family: 'claude', picker: 'default' });
-    expect(options[1]!.value).toBe('claude-sonnet-4-5[1m]');
+    ], { family: 'claude', picker: 'default' });
+    expect(options[0]!.value).toBe('claude-sonnet-4-5[1m]');
   });
 
   it('deduplicates option values when raw and pre-suffixed Claude ids converge', () => {
     const options = buildModelOptions([
       buildRealModel({ id: 'claude-sonnet-4-5', limits: { max_context_window_tokens: 1_000_000 } }),
       buildRealModel({ id: 'claude-sonnet-4-5[1m]', limits: { max_context_window_tokens: 1_000_000 } }),
-    ], null, { family: 'claude', picker: 'sonnet' });
-    expect(options.slice(1)).toEqual([
-      { value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5', unavailable: false },
+    ], { family: 'claude', picker: 'sonnet' });
+    expect(options).toEqual([
+      { value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5' },
     ]);
-  });
-
-  it('preserves a restored value missing from the catalog as an unavailable-current option', () => {
-    const options = buildModelOptions(
-      [buildRealModel({ id: 'claude-sonnet-4-5' })],
-      'claude-retired[1m]',
-      { family: 'claude', picker: 'default' },
-    );
-    expect(options.find(o => o.unavailable)).toEqual({
-      value: 'claude-retired[1m]',
-      modelId: 'claude-retired[1m]',
-      unavailable: true,
-    });
-  });
-
-  it('does not add an unavailable option when the restored value is already listed', () => {
-    const options = buildModelOptions(
-      [buildRealModel({ id: 'claude-sonnet-4-5', limits: { max_context_window_tokens: 1_000_000 } })],
-      'claude-sonnet-4-5[1m]',
-      { family: 'claude', picker: 'default' },
-    );
-    expect(options.some(o => o.unavailable)).toBe(false);
-  });
-
-  it('adds no unavailable option for a null "no override" current value', () => {
-    const options = buildModelOptions([buildRealModel({ id: 'claude-sonnet-4-5' })], null, { family: 'claude', picker: 'default' });
-    expect(options.some(o => o.unavailable)).toBe(false);
   });
 });

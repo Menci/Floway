@@ -172,11 +172,11 @@ test('parseWebSearchOperations: wrong-typed open / find surface as wrong-type op
 
 // ── IR builders (private to web-search.ts; exercised end-to-end below) ──
 
-test('synthesizeWebSearchCallId produces unique ws_gw_ prefixed ids', () => {
+test('synthesizeWebSearchCallId produces unique canonical web-search ids', () => {
   const a = synthesizeWebSearchCallId();
   const b = synthesizeWebSearchCallId();
-  assert(a.startsWith('ws_gw_'));
-  assert(b.startsWith('ws_gw_'));
+  assert(/^ws_[0-9a-f]{32}$/.test(a));
+  assert(/^ws_[0-9a-f]{32}$/.test(b));
   assert(a !== b);
 });
 

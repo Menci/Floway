@@ -26,7 +26,7 @@ import type { ConfiguredWebSearchProvider } from '../../../../tools/web-search/t
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
 import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction } from '@floway-dev/protocols/responses';
-import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
 import { providerModelOf } from '@floway-dev/provider';
 
 // Runtime set derived from the canonical tuple declared next to
@@ -319,10 +319,10 @@ const isWebSearchCallPrivatePayload = (value: unknown): value is WebSearchCallPr
   return irObj.action !== undefined && Array.isArray(irObj.results);
 };
 
-export const synthesizeWebSearchCallId = (): string => shortId('ws_gw');
+export const synthesizeWebSearchCallId = (): string => createRandomResponsesItemId('web_search_call');
 
-// Distinct id namespace (cc_replay_*) from synthesized wsc ids (ws_gw_*)
-// so a replay call_id never reads as a wsc id in logs.
+// Distinct id namespace (cc_replay_*) from web-search item ids (ws_*) so a
+// replay call_id never reads as a web-search item id in logs.
 const synthesizeReplayCallId = (): string => shortId('cc_replay');
 
 // Re-serializes a wire `action` back into the shim's JSON arguments

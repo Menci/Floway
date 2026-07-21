@@ -6,16 +6,17 @@ import { truncatePreservingCodePoints } from '../../shared/text.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type {
-  CanonicalResponsesPayload,
-  ResponsesFunctionTool,
-  ResponsesHostedTool,
-  ResponsesInputItem,
-  ResponsesOutputItem,
-  ResponsesResult,
-  ResponsesStreamEvent,
-  ResponsesTool,
-  ResponsesToolChoice,
+import {
+  createRandomResponsesItemId,
+  type CanonicalResponsesPayload,
+  type ResponsesFunctionTool,
+  type ResponsesHostedTool,
+  type ResponsesInputItem,
+  type ResponsesOutputItem,
+  type ResponsesResult,
+  type ResponsesStreamEvent,
+  type ResponsesTool,
+  type ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
 import type { EventResultMetadata, ExecuteResult } from '@floway-dev/provider';
 
@@ -324,14 +325,15 @@ export const parseServerToolArguments = (argumentsJson: string): Record<string, 
   return parsed as Record<string, unknown>;
 };
 
-const syntheticInProgressResponse = (
+const syntheticPrologueResponse = (
   state: MergeState,
   id: string,
   model: string,
   active: readonly ActiveServerTool[],
+  status: 'queued' | 'in_progress',
 ): ResponsesResult => {
   if (state.upstreamResponseSnapshot === undefined) {
-    throw new Error('Server-tool shim cannot synthesize a Responses in-progress envelope before upstream `response.created` is captured.');
+    throw new Error('Server-tool shim cannot synthesize a Responses prologue envelope before an upstream response snapshot is captured.');
   }
   const snapshot = state.upstreamResponseSnapshot;
   const restoredTools = restoreEchoedTools(snapshot.tools, active);
@@ -342,7 +344,7 @@ const syntheticInProgressResponse = (
     object: 'response',
     model,
     output: [],
-    status: 'in_progress',
+    status,
     error: null,
     incomplete_details: null,
     ...(restoredTools !== undefined ? { tools: restoredTools } : {}),
@@ -492,16 +494,17 @@ export const consumeTurnStreaming = async function* (
     }
     const event = frame.event;
 
-    if (event.type === 'response.created') {
+    if (event.type === 'response.queued' || event.type === 'response.created') {
       const reportedModel = event.response.model;
       if (typeof reportedModel === 'string' && reportedModel.length > 0) merge.lastSeenModel = reportedModel;
       merge.upstreamResponseSnapshot = event.response;
       ensureModel();
       if (isFirstTurn) {
+        const status = event.type === 'response.queued' ? 'queued' : 'in_progress';
         yield stamp({
-          type: 'response.created',
-          response: syntheticInProgressResponse(merge, merge.synthesizedResponseId, ensureModel(), active),
-        });
+          type: event.type,
+          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, status),
+        } as ResponsesStreamEvent);
       }
       continue;
     }
@@ -510,7 +513,7 @@ export const consumeTurnStreaming = async function* (
       if (isFirstTurn) {
         yield stamp({
           type: 'response.in_progress',
-          response: syntheticInProgressResponse(merge, merge.synthesizedResponseId, ensureModel(), active),
+          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, 'in_progress'),
         });
       }
       continue;
@@ -582,7 +585,7 @@ export const consumeTurnStreaming = async function* (
       const itemId = typeof upstreamItemId === 'string' && upstreamItemId.length > 0
         ? upstreamItemId
         : item.type === 'message'
-          ? `msg_${downstreamIndex}`
+          ? createRandomResponsesItemId('message')
           : undefined;
       if (itemId !== undefined) openItemIds.set(upstreamIndex, itemId);
       yield stamp({

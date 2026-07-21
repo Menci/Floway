@@ -146,9 +146,12 @@ enumerateModelCandidates({upstreamIds, model, kind, ...})            ← entry
    loop then cascades across the flat list, so a target's upstreams all
    failing over falls through into the next target's candidates instead
    of hard-failing at the first target. When no target has kind-matching
-   candidates, the resolver returns empty candidates + `sawModel: false`,
-   which surfaces as the regular model-missing 404 with the alias name
-   in the wording.
+   candidates and no target was seen under any kind, the resolver returns
+   empty candidates + `sawModel: false`, which surfaces as the regular
+   model-missing 404 with the alias name in the wording. When targets
+   exist in catalogs under a different kind, `sawModel: true` propagates
+   and the caller returns a 400 (model exists but cannot serve this
+   endpoint).
 3. When the inbound id is not an alias, run the real-catalog walk
    directly. If the walk returns at least one candidate, OR its
    `sawAnyId` is true (the id exists in some catalog under any kind), OR
@@ -220,18 +223,6 @@ holds the emitting upstream's `ProviderModel` (with `providerData` and
 
 ## Alias Resolution
 
-Alias resolution is a top-of-chain step inside `enumerateModelCandidates`
-— an alias id matches inside the same call the non-alias path uses, so
-the whole pipeline stays a single two-branch function. The resolver
-looks the inbound id up in the alias repo; if it names an alias, it
-walks EVERY target in `selection`-mode order and delegates each target
-to the real-catalog walk (with dated-suffix retry). Every candidate
-returned by a target walk is tagged with that target's `rules` overlay
-and pushed onto a flat list; the resolver then dedups by
-`(model.id, provider.upstream, rules)` — identical triples collapse,
-but the same physical binding with distinct rules stays as two
-candidates so the operator can pin one binding under two rule variants.
-
 The rule overlay rides on the `ModelCandidate.rules` field. Dispatch
 reads it in each attempt's terminal wire call, right before destructuring
 `payload.model` out of the body, via
@@ -241,28 +232,18 @@ alias-origin candidates through the same iteration but never observe
 non-empty rules (passthrough alias kinds — `embedding`, `image`, `audio` — carry
 `{}` by schema; the apply-rules call is a no-op).
 
-Every chat attempt owns a `structuredClone` of the source payload and a
-fresh `Headers` object, so rewrites and provider-boundary mutations cannot
-leak into a fallback candidate or the caller-owned request. Chat Completions,
-Messages, and Responses stamp `candidate.model.id` only onto that private
-clone, whether the inbound id was an alias name, a prefix-addressable variant
-like `cop/gpt-5.4`, a dated suffix like `claude-opus-4-7-20250929`, or a bare
-public id. The wire body drops `payload.model` at the last step; the provider
-layer stamps the emitting upstream's own id from `providerModelOf(candidate)`.
-Gemini clones for the same attempt isolation but needs no body-model stamp:
-its inbound model rides on the URL path and dispatch keys off
-`candidate.model.id` directly.
-
 By construction alias names never re-enter the alias layer: the target
 id is a real model id, so the shadow pattern (an alias whose first
 target matches its own name) resolves to the real model on the first
 pass.
 
 The alias-resolved target id, not the alias name, is what dispatch
-addresses upstream. When no target has kind-matching candidates, the
-resolver returns empty candidates + `sawModel: false`, and the caller
-renders the regular model-missing 404 with the alias name (still on
-`payload.model`) in the wording. The upstream response's `model` field
+addresses upstream. When no target has kind-matching candidates and no
+target was seen under any kind, the resolver returns empty candidates +
+`sawModel: false`, and the caller renders the regular model-missing 404
+with the alias name (still on `payload.model`) in the wording. When
+targets exist under a different kind, `sawModel: true` surfaces a 400.
+The upstream response's `model` field
 reports the model that actually served the request, so a client that
 wants to attribute a response to a particular target can compare that
 against the id it sent. Alias listing behavior on `/v1/models`,
@@ -379,7 +360,6 @@ text-only. Explicit modality metrics such as `input_image_tokens` are used only
 when the upstream reports a disjoint counter. The dashboard displays token
 rates as dollars per million tokens, but that scale exists only at the UI
 boundary; model metadata and usage snapshots always store the per-token rate.
-
 Measured usage is authoritative over pricing configuration. Each observed
 metric looks up only its matching rate: `input_audio_seconds` is never converted
 to tokens, and token metrics are never inferred from duration. A metric without
@@ -437,12 +417,8 @@ Candidates are ordered before they reach dispatch:
   one when both apply.
 
 Chat-shaped ingress authenticates client-carried affinity before dispatch.
-Ordinary carriers prefer the latest available candidate with the same upstream,
-model, and optional alias rules. Non-portable state forces the recorded
-upstream and model but never forces alias rules; an exact-rule preferred variant
-still wins when available. Affinity only reorders or narrows candidates already
-produced by resolution. Empty alias rules and absent direct-candidate rules both
-mean no overlay. Protocol placement and restoration are documented in
+Affinity only reorders or narrows candidates already produced by resolution;
+it never adds new ones. Protocol placement and restoration are documented in
 [AFFINITY.md](./AFFINITY.md).
 
 Serve dispatches the first candidate of the ordered list exactly once.
@@ -469,5 +445,3 @@ internal-debug failure — is the request's final answer; an upstream
   retain both candidate paths instead of deduping. The unprefixed
   candidate precedes the prefix-stripped one in the ordered list, so it
   is the one dispatched.
-- A missing preferred affinity target falls back normally. A missing forced
-  upstream/model target is an explicit error.

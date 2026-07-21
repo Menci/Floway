@@ -77,7 +77,6 @@ describe('PricingEditor', () => {
       }],
     });
   });
-
   it('displays a base-unit price through its fixed MTok field', async () => {
     const wrapper = mount(PricingEditor, {
       props: {

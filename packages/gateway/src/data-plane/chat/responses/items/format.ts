@@ -78,20 +78,16 @@ export const createResponsesItemId = (itemType: string): string => {
 export const isResponsesItemId = (value: string): boolean =>
   isValidResponsesId(value, prefix => knownPrefixes.has(prefix));
 
-export const responsesItemId = (item: { id?: unknown }): string | null => {
-  const id = item.id;
+export const responsesItemId = (item: object): string | null => {
+  const id = 'id' in item ? item.id : undefined;
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
 export const canonicalResponsesItemType = (itemType: string): string =>
   itemType === 'compaction_summary' ? 'compaction' : itemType;
 
-export const hashResponsesItemContent = async (item: ResponsesInputItem): Promise<string> =>
+export const hashResponsesItemContent = async (item: unknown): Promise<string> =>
   await sha256Hex(JSON.stringify(sortJson(item)));
-
-export const createTemporaryResponsesItemId = (itemType: string): string => `${prefixForItemType(itemType)}_tmp_${randomBody()}`;
-
-export const isTemporaryResponsesItemId = (value: string): boolean => /_tmp_[A-Za-z0-9_-]{22}$/.test(value);
 
 // Gateway-owned response envelope id. A response from this gateway is not
 // a 1:1 wrapper for an upstream response — the server-tool runtime can

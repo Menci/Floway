@@ -102,7 +102,6 @@ test('aggregateUsageForDisplay prices audio duration per second', () => {
   }]);
   assertEquals(out[0].cost, '0.9');
 });
-
 test('aggregateUsageForDisplay charges image metrics separately', () => {
   const rates: PriceVector = { input_tokens: '0.00001', input_image_tokens: '0.000005', output_tokens: '0.00004', output_image_tokens: '0.00003' };
   const out = aggregateUsageForDisplay([

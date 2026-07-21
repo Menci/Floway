@@ -12,8 +12,8 @@ Workarounds rot. Re-validate them against current Copilot upstream.
 
 ## Flow
 
-1. Inventory drift between `index.ts` registrations, AGENTS.md
-   "Data Plane Workarounds", and TRANSLATION.md.
+1. Inventory drift between `index.ts` registrations and AGENTS.md
+   "Data Plane Workarounds".
 2. Dispatch parallel read-only audits, one per source/target × API cluster.
 3. Loop further agent rounds until remaining open questions are only
    "needs live probe" or "needs human decision".

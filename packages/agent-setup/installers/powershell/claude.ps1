@@ -77,6 +77,9 @@ function Write-SetupClaudeSettings {
     if (($document.PSObject.Properties.Name -contains 'env') -and ($document.env -isnot [System.Management.Automation.PSCustomObject])) {
       Stop-Setup "existing Claude settings env is not a JSON object."
     }
+    if (($document.PSObject.Properties.Name -contains 'attribution') -and ($document.attribution -isnot [System.Management.Automation.PSCustomObject])) {
+      Stop-Setup "existing Claude settings attribution is not a JSON object."
+    }
     # DateTimeOffset.ToUnixTimeMilliseconds is unavailable on the .NET
     # Framework version bundled with the Windows PowerShell 5.1 baseline.
     $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
@@ -101,6 +104,7 @@ function Write-SetupClaudeSettings {
   # Refs: https://docs.claude.com/en/docs/claude-code/env-vars
   #       https://docs.claude.com/en/docs/claude-code/model-config#environment-variables
   #       https://docs.claude.com/en/docs/claude-code/settings
+  #       https://code.claude.com/docs/en/settings#attribution-settings
   Set-SetupProp $document.env 'ANTHROPIC_BASE_URL' $SetupEndpoint
   Set-SetupProp $document.env 'ANTHROPIC_AUTH_TOKEN' $SetupApiKey
   Set-SetupOptionalProp $document.env 'ANTHROPIC_MODEL' $SetupClaudeModel
@@ -110,6 +114,20 @@ function Write-SetupClaudeSettings {
   if ($SetupClaudeModelDiscovery) { Set-SetupProp $document.env 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' '1' }
   else { Remove-SetupProp $document.env 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' }
   Set-SetupOptionalProp $document 'effortLevel' $SetupClaudeEffortLevel
+  Set-SetupOptionalProp $document 'cleanupPeriodDays' $SetupClaudeCleanupPeriodDays
+  if ($SetupClaudeOptOutAiAttribution) {
+    if ($document.PSObject.Properties.Name -notcontains 'attribution') {
+      $document | Add-Member -NotePropertyName attribution -NotePropertyValue ([PSCustomObject]@{})
+    }
+    Set-SetupProp $document.attribution 'commit' ''
+    Set-SetupProp $document.attribution 'pr' ''
+    Set-SetupProp $document.attribution 'sessionUrl' $false
+  } elseif ($document.PSObject.Properties.Name -contains 'attribution') {
+    Remove-SetupProp $document.attribution 'commit'
+    Remove-SetupProp $document.attribution 'pr'
+    Remove-SetupProp $document.attribution 'sessionUrl'
+    if ($document.attribution.PSObject.Properties.Count -eq 0) { Remove-SetupProp $document 'attribution' }
+  }
 
   $stage = "$($script:ClaudeSettingsPath).floway-stage.$PID"
   try {

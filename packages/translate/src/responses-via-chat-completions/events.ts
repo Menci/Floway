@@ -3,7 +3,7 @@ import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): ResponsesResult['usage'] | undefined => {
   if (!usage) return undefined;
@@ -154,7 +154,7 @@ const commitPendingScalarReasoning = (state: ChatCompletionsToResponsesStreamSta
   const reasoning = state.pendingScalarReasoning;
   state.pendingScalarReasoning = undefined;
   const outputIndex = state.outputIndex++;
-  const item = responses.reasoningItem(`rs_${outputIndex}`, reasoning.text);
+  const item = responses.reasoningItem(createRandomResponsesItemId('reasoning'), reasoning.text);
 
   return emitCompletedReasoningItem(item, outputIndex, state);
 };
@@ -208,7 +208,7 @@ const openText = (state: ChatCompletionsToResponsesStreamState): { item: Pending
   if (state.openText) return { item: state.openText, events: [] };
 
   const outputIndex = state.outputIndex++;
-  const itemId = `msg_${outputIndex}`;
+  const itemId = createRandomResponsesItemId('message');
   const item = { outputIndex, itemId, text: '' };
   state.openText = item;
 
@@ -227,7 +227,7 @@ const startFunctionCall = (current: PendingFunctionCallItem, state: ChatCompleti
   const outputIndex = state.outputIndex++;
   const streamItem: FunctionCallStreamItem = {
     outputIndex,
-    itemId: isCustom ? `ctc_${outputIndex}` : `fc_${outputIndex}`,
+    itemId: createRandomResponsesItemId(isCustom ? 'custom_tool_call' : 'function_call'),
     kind: isCustom ? 'custom' : 'function',
   };
   current.streamItem = streamItem;
@@ -345,7 +345,7 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
 
       for (const item of readableReasoningItems) {
         const outputIndex = state.outputIndex++;
-        events.push(...emitCompletedReasoningItem(toResponsesReasoningItem<ResponsesOutputReasoning>(item, `rs_${outputIndex}`), outputIndex, state));
+        events.push(...emitCompletedReasoningItem(toResponsesReasoningItem<ResponsesOutputReasoning>(item), outputIndex, state));
       }
 
       if (hadPendingScalarReasoning) {

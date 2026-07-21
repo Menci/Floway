@@ -9,6 +9,7 @@ export { default as Input } from './Input.vue';
 export { default as NumberField } from './NumberField.vue';
 export { default as OverlayScrollbars, type OverlayScrollbarsInitializedEvent } from './OverlayScrollbars.vue';
 export { default as Select } from './Select.vue';
+export { default as SearchableSelect } from './SearchableSelect.vue';
 export { default as Sortable } from './Sortable.vue';
 export { default as Spinner } from './Spinner.vue';
 export { default as Switch } from './Switch.vue';

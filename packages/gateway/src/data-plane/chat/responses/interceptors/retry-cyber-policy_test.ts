@@ -230,16 +230,21 @@ test('withCyberPolicyRetried buffers converted fallback prologue frames before r
       return Promise.resolve(
         protocolResult([
           {
-            type: 'response.created',
+            type: 'response.queued',
             sequence_number: 0,
+            response: { ...inProgressResponse('resp_blocked'), status: 'queued' },
+          },
+          {
+            type: 'response.created',
+            sequence_number: 1,
             response: inProgressResponse('resp_blocked'),
           },
           {
             type: 'response.in_progress',
-            sequence_number: 1,
+            sequence_number: 2,
             response: inProgressResponse('resp_blocked'),
           },
-          cyberPolicyEvent('resp_blocked', 2),
+          cyberPolicyEvent('resp_blocked', 3),
         ]),
       );
     }

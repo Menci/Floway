@@ -12,6 +12,10 @@ const props = defineProps<{
 }>();
 
 const baseUrl = window.location.origin;
+// Claude uses empty strings to suppress commit/PR attribution and a boolean
+// false to suppress session links.
+// Ref: https://code.claude.com/docs/en/settings#attribution-settings
+const attributionOptOut = { commit: '', pr: '', sessionUrl: false } as const;
 const claudeSnippet = computed(() => {
   const settings = props.configuration.claudeCode;
   return JSON.stringify({
@@ -25,6 +29,8 @@ const claudeSnippet = computed(() => {
       ...(settings.modelDiscovery ? { CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1' } : {}),
     },
     ...(settings.effortLevel === null ? {} : { effortLevel: settings.effortLevel }),
+    ...(settings.cleanupPeriodDays === null ? {} : { cleanupPeriodDays: settings.cleanupPeriodDays }),
+    ...(settings.optOutAiAttribution ? { attribution: attributionOptOut } : {}),
   }, null, 2);
 });
 

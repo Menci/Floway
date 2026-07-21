@@ -51,7 +51,7 @@ const canonicalizeOutputItems = async function* (
 
     if (event.type === 'response.output_item.done') {
       canonical.set(event.output_index, {
-        id: event.item.id,
+        id: typeof event.item.id === 'string' ? event.item.id : undefined,
         encryptedContent: (event.item as { encrypted_content?: string }).encrypted_content,
       });
       yield frame;

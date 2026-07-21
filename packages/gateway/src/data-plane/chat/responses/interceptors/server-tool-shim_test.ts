@@ -68,6 +68,12 @@ const mkResponseCreated = (responseId = 'upstream_test'): ProtocolFrame<Response
     response: emptyResult(responseId, 'in_progress'),
   });
 
+const mkResponseQueued = (responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
+  eventFrame({
+    type: 'response.queued',
+    response: emptyResult(responseId, 'queued'),
+  });
+
 const mkResponseInProgress = (responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
   eventFrame({
     type: 'response.in_progress',
@@ -681,7 +687,7 @@ test('synthesized web_search_call ids retain request-private replay state', asyn
   const store = ctx.store;
   assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
   for (const id of wsCallDoneIds) {
-    assert(id.startsWith('ws_gw_'));
+    assert(/^ws_[0-9a-f]{32}$/.test(id));
     assert(store.getPrivatePayload(id) !== undefined, `expected ${id} to retain private replay state`);
   }
   for (const e of doneEvents.filter(e => e.item.type === 'message')) {
@@ -3349,7 +3355,7 @@ test('input preprocessor: web_search_call without an action is replaced by a pla
   assert(fco.output.includes('"id":"ws_no_action"'));
 });
 
-test('input preprocessor: web_search_call with empty id has its id synthesized and produces an upstream pair (codex CLI strips ws_gw_ ids on session persist)', async () => {
+test('input preprocessor: web_search_call with empty id has its id synthesized and produces an upstream pair', async () => {
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -4678,6 +4684,27 @@ const consumeTurn = async (
   );
 };
 
+test('consumeTurn forwards queued only from the first upstream turn', async () => {
+  const firstState = createMergeState();
+  const first = await consumeTurn(
+    framesOf(mkResponseQueued('queued_first'), mkResponseCreated('created_first'), mkResponseCompleted()),
+    firstState,
+    true,
+  );
+  assertEquals(eventTypesOf(first.downstreamFrames), ['response.queued', 'response.created']);
+  const queued = first.downstreamFrames[0];
+  assert(queued.type === 'event' && queued.event.type === 'response.queued');
+  assertEquals(queued.event.response.id, firstState.synthesizedResponseId);
+  assertEquals(queued.event.response.status, 'queued');
+
+  const later = await consumeTurn(
+    framesOf(mkResponseQueued('queued_later'), mkResponseCreated('created_later'), mkResponseCompleted()),
+    createMergeState(),
+    false,
+  );
+  assertEquals(later.downstreamFrames, []);
+});
+
 test('consumeTurn first turn synthesizes response.created with the once-per-request synthesized id (not the upstream id)', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
@@ -5180,13 +5207,17 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
     'response.output_item.done',
   ]);
 
-  // Message-child events get item_id rewritten onto the
-  // downstream-minted `msg_<downstreamIndex>` (0 here).
+  const addedFrame = result.downstreamFrames.find(frame =>
+    frame.type === 'event' && frame.event.type === 'response.output_item.added');
+  assert(addedFrame?.type === 'event');
+  const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
+  assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
+
   for (const f of result.downstreamFrames) {
     if (f.type !== 'event') continue;
     const ev = f.event as { item_id?: string };
     if (ev.item_id !== undefined) {
-      assertEquals(ev.item_id, 'msg_0');
+      assertEquals(ev.item_id, messageId);
     }
   }
 });
@@ -5214,7 +5245,12 @@ test('consumeTurn rewrites any structurally indexed child event without an event
     f.type === 'event' && (f.event as { type: string }).type === 'response.future_child.delta');
   assert(futureFrame?.type === 'event');
   assertEquals((futureFrame.event as { output_index: number }).output_index, 0);
-  assertEquals((futureFrame.event as { item_id: string }).item_id, 'msg_0');
+  const addedFrame = result.downstreamFrames.find(f =>
+    f.type === 'event' && f.event.type === 'response.output_item.added');
+  assert(addedFrame?.type === 'event');
+  const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
+  assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
+  assertEquals((futureFrame.event as { item_id: string }).item_id, messageId);
 });
 
 test('consumeTurn swallows future indexed events attached to an intercepted server tool call', async () => {
@@ -5276,7 +5312,6 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
     true,
   );
 
-  // Child events keep upstream's id verbatim, not rewritten to msg_0.
   const deltaFrame = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.output_text.delta');
   assert(deltaFrame?.type === 'event');

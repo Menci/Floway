@@ -609,10 +609,9 @@ test('parseRetryAfterMs skips an unparseable retry-after-ms and falls through to
 
 // ── synthesizeImageGenerationCallId ──
 
-test('synthesizeImageGenerationCallId produces an ig_gw_-prefixed id', () => {
+test('synthesizeImageGenerationCallId produces a canonical image-generation id', () => {
   const id = synthesizeImageGenerationCallId();
-  assert(id.startsWith('ig_gw_'));
-  assert(id.length > 'ig_gw_'.length);
+  assert(/^ig_[0-9a-f]{32}$/.test(id));
 });
 
 // ── imageGenerationServerTool: unsupported input format (C) ──

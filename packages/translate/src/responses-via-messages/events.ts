@@ -16,7 +16,7 @@ import type {
   MessagesTextCitation,
   MessagesUsageSnapshot,
 } from '@floway-dev/protocols/messages';
-import type { ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const UPSTREAM_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Messages stream ended without a message_stop event.';
 
@@ -139,7 +139,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
   switch (event.content_block.type) {
   case 'thinking': {
     const outputIndex = state.outputIndex++;
-    const itemId = `rs_${outputIndex}`;
+    const itemId = createRandomResponsesItemId('reasoning');
     state.blockMap.set(event.index, {
       type: 'thinking',
       outputIndex,
@@ -154,7 +154,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
     // `data` and no readable text. Surface it as a Responses reasoning item
     // whose `encrypted_content` round-trips that opaque blob.
     const outputIndex = state.outputIndex++;
-    const itemId = `rs_${outputIndex}`;
+    const itemId = createRandomResponsesItemId('reasoning');
     state.blockMap.set(event.index, {
       type: 'thinking',
       outputIndex,
@@ -167,7 +167,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
   }
   case 'text': {
     const outputIndex = state.outputIndex++;
-    const itemId = `msg_${outputIndex}`;
+    const itemId = createRandomResponsesItemId('message');
     state.blockMap.set(event.index, {
       type: 'text',
       outputIndex,
@@ -181,7 +181,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
   case 'tool_use': {
     const outputIndex = state.outputIndex++;
     if (state.customToolNames.has(event.content_block.name)) {
-      const itemId = `ctc_${outputIndex}`;
+      const itemId = createRandomResponsesItemId('custom_tool_call');
       state.blockMap.set(event.index, {
         type: 'custom_tool_use',
         outputIndex,
@@ -194,7 +194,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
       return responses.itemAdded(state, outputIndex, responses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
     }
 
-    const itemId = `fc_${outputIndex}`;
+    const itemId = createRandomResponsesItemId('function_call');
     const info: OutputBlockInfo = {
       type: 'tool_use',
       outputIndex,

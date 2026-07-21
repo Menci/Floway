@@ -8,7 +8,7 @@ import {
   type ModelOption,
   rankAgentSetupModels,
 } from '../../lib/agent-setup-models.ts';
-import { Combobox, Select, Switch } from '@floway-dev/ui';
+import { Combobox, SearchableSelect, Select, Switch } from '@floway-dev/ui';
 
 const props = defineProps<{
   agent: 'claude' | 'codex';
@@ -18,6 +18,7 @@ const props = defineProps<{
 
 type ClaudeConfiguration = AgentSetupConfiguration['claudeCode'];
 type ClaudeEffortLevel = NonNullable<ClaudeConfiguration['effortLevel']>;
+type ClaudeCleanupPeriodDays = NonNullable<ClaudeConfiguration['cleanupPeriodDays']>;
 type CodexConfiguration = AgentSetupConfiguration['codex'];
 export type ConfigurationPatch = {
   claudeCode?: Partial<ClaudeConfiguration>;
@@ -38,46 +39,27 @@ const fieldIds = {
   claudeSonnet: useId(),
   claudeHaiku: useId(),
   claudeEffort: useId(),
+  claudeCleanupPeriod: useId(),
   codexModel: useId(),
   codexEffort: useId(),
 };
 const fieldGridClass = 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5';
 
-// Reka Select reserves the empty string for clearing. NUL cannot occur in a
-// persisted override, so this UI-only value cannot collide with a real model.
+// The reasoning-effort and cleanup pickers stay on <Select>, whose value is a
+// plain string; their Default choice needs a value distinct from every real
+// option. NUL cannot occur in a persisted setting, so this UI-only sentinel
+// never collides.
 const SELECT_NONE = '\u0000none';
-const toSelectOptions = (options: ModelOption[]) => options.map(option => ({
-  value: option.value ?? SELECT_NONE,
-  label: option.modelId === null
-    ? 'Default'
-    : option.unavailable ? `${option.modelId} (unavailable)` : option.modelId,
+const toModelOptions = (options: ModelOption[]) => options.map(option => ({
+  value: option.value,
+  label: option.modelId,
 }));
 
-const claudeModelOptions = computed(() => toSelectOptions(buildModelOptions(
-  props.models,
-  props.configuration.claudeCode.model,
-  { family: 'claude', picker: 'default' },
-)));
-const claudeOpusOptions = computed(() => toSelectOptions(buildModelOptions(
-  props.models,
-  props.configuration.claudeCode.defaultOpusModel,
-  { family: 'claude', picker: 'opus' },
-)));
-const claudeSonnetOptions = computed(() => toSelectOptions(buildModelOptions(
-  props.models,
-  props.configuration.claudeCode.defaultSonnetModel,
-  { family: 'claude', picker: 'sonnet' },
-)));
-const claudeHaikuOptions = computed(() => toSelectOptions(buildModelOptions(
-  props.models,
-  props.configuration.claudeCode.defaultHaikuModel,
-  { family: 'claude', picker: 'haiku' },
-)));
-const codexModelOptions = computed(() => toSelectOptions(buildModelOptions(
-  props.models,
-  props.configuration.codex.model,
-  { family: 'codex' },
-)));
+const claudeModelOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'claude', picker: 'default' })));
+const claudeOpusOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'claude', picker: 'opus' })));
+const claudeSonnetOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'claude', picker: 'sonnet' })));
+const claudeHaikuOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'claude', picker: 'haiku' })));
+const codexModelOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'codex' })));
 
 // Claude Code owns this closed settings enum. Codex effort stays free-form and
 // only uses the selected model's advertised values as suggestions.
@@ -96,6 +78,17 @@ const claudeEffortOptions: { value: string; label: string }[] = [
   ...claudeEffortLevels.map(value => ({ value, label: claudeEffortLabels[value] })),
 ];
 
+// cleanupPeriodDays is a numeric top-level Claude setting. The offered values
+// favor long-lived local history, while the sentinel omits the setting.
+// Ref: https://code.claude.com/docs/en/settings#available-settings
+const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly ClaudeCleanupPeriodDays[];
+const isClaudeCleanupPeriod = (value: number): value is ClaudeCleanupPeriodDays =>
+  claudeCleanupPeriods.some(period => period === value);
+const claudeCleanupPeriodOptions = [
+  { value: SELECT_NONE, label: 'Default' },
+  ...claudeCleanupPeriods.map(value => ({ value: value.toString(), label: `${value} days` })),
+];
+
 const codexEffortModel = computed(() => {
   const id = props.configuration.codex.model;
   if (id !== null) return props.models.find(model => model.id === id) ?? null;
@@ -109,21 +102,21 @@ const codexEffortItems = computed(() => {
   return supported ? [...supported] : [];
 });
 
-const claudeModel = computed<string>({
-  get: () => props.configuration.claudeCode.model ?? SELECT_NONE,
-  set: value => updateClaude('model', value === SELECT_NONE ? null : value),
+const claudeModel = computed<string | null>({
+  get: () => props.configuration.claudeCode.model,
+  set: value => updateClaude('model', value),
 });
-const claudeOpusModel = computed<string>({
-  get: () => props.configuration.claudeCode.defaultOpusModel ?? SELECT_NONE,
-  set: value => updateClaude('defaultOpusModel', value === SELECT_NONE ? null : value),
+const claudeOpusModel = computed<string | null>({
+  get: () => props.configuration.claudeCode.defaultOpusModel,
+  set: value => updateClaude('defaultOpusModel', value),
 });
-const claudeSonnetModel = computed<string>({
-  get: () => props.configuration.claudeCode.defaultSonnetModel ?? SELECT_NONE,
-  set: value => updateClaude('defaultSonnetModel', value === SELECT_NONE ? null : value),
+const claudeSonnetModel = computed<string | null>({
+  get: () => props.configuration.claudeCode.defaultSonnetModel,
+  set: value => updateClaude('defaultSonnetModel', value),
 });
-const claudeHaikuModel = computed<string>({
-  get: () => props.configuration.claudeCode.defaultHaikuModel ?? SELECT_NONE,
-  set: value => updateClaude('defaultHaikuModel', value === SELECT_NONE ? null : value),
+const claudeHaikuModel = computed<string | null>({
+  get: () => props.configuration.claudeCode.defaultHaikuModel,
+  set: value => updateClaude('defaultHaikuModel', value),
 });
 const claudeEffort = computed<string>({
   get: () => props.configuration.claudeCode.effortLevel ?? SELECT_NONE,
@@ -133,13 +126,29 @@ const claudeEffort = computed<string>({
     else throw new Error(`Unexpected Claude effort option: ${value}`);
   },
 });
+const claudeCleanupPeriod = computed<string>({
+  get: () => props.configuration.claudeCode.cleanupPeriodDays?.toString() ?? SELECT_NONE,
+  set: value => {
+    if (value === SELECT_NONE) {
+      updateClaude('cleanupPeriodDays', null);
+      return;
+    }
+    const period = Number(value);
+    if (isClaudeCleanupPeriod(period)) updateClaude('cleanupPeriodDays', period);
+    else throw new Error(`Unexpected Claude cleanup period option: ${value}`);
+  },
+});
 const modelDiscovery = computed<boolean>({
   get: () => props.configuration.claudeCode.modelDiscovery,
   set: value => updateClaude('modelDiscovery', value),
 });
-const codexModel = computed<string>({
-  get: () => props.configuration.codex.model ?? SELECT_NONE,
-  set: value => updateCodex('model', value === SELECT_NONE ? null : value),
+const optOutAiAttribution = computed<boolean>({
+  get: () => props.configuration.claudeCode.optOutAiAttribution,
+  set: value => updateClaude('optOutAiAttribution', value),
+});
+const codexModel = computed<string | null>({
+  get: () => props.configuration.codex.model,
+  set: value => updateCodex('model', value),
 });
 const codexEffort = computed<string>({
   get: () => props.configuration.codex.reasoningEffort ?? '',
@@ -154,19 +163,19 @@ const codexEffort = computed<string>({
     <div data-testid="claude-fields" :class="fieldGridClass">
       <div data-testid="claude-model">
         <label :for="fieldIds.claudeModel" class="mb-1.5 block text-xs text-gray-500">Default model</label>
-        <Select :id="fieldIds.claudeModel" v-model="claudeModel" :options="claudeModelOptions" />
+        <SearchableSelect :id="fieldIds.claudeModel" v-model="claudeModel" :options="claudeModelOptions" />
       </div>
       <div data-testid="claude-opus">
         <label :for="fieldIds.claudeOpus" class="mb-1.5 block text-xs text-gray-500">Opus model</label>
-        <Select :id="fieldIds.claudeOpus" v-model="claudeOpusModel" :options="claudeOpusOptions" />
+        <SearchableSelect :id="fieldIds.claudeOpus" v-model="claudeOpusModel" :options="claudeOpusOptions" />
       </div>
       <div data-testid="claude-sonnet">
         <label :for="fieldIds.claudeSonnet" class="mb-1.5 block text-xs text-gray-500">Sonnet model</label>
-        <Select :id="fieldIds.claudeSonnet" v-model="claudeSonnetModel" :options="claudeSonnetOptions" />
+        <SearchableSelect :id="fieldIds.claudeSonnet" v-model="claudeSonnetModel" :options="claudeSonnetOptions" />
       </div>
       <div data-testid="claude-haiku">
         <label :for="fieldIds.claudeHaiku" class="mb-1.5 block text-xs text-gray-500">Haiku model</label>
-        <Select :id="fieldIds.claudeHaiku" v-model="claudeHaikuModel" :options="claudeHaikuOptions" />
+        <SearchableSelect :id="fieldIds.claudeHaiku" v-model="claudeHaikuModel" :options="claudeHaikuOptions" />
       </div>
       <div data-testid="claude-effort">
         <label :for="fieldIds.claudeEffort" class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
@@ -179,6 +188,17 @@ const codexEffort = computed<string>({
           <span class="text-sm text-white">{{ modelDiscovery ? 'Enabled' : 'Disabled' }}</span>
         </div>
       </div>
+      <div data-testid="claude-cleanup-period" class="sm:col-start-1">
+        <label :for="fieldIds.claudeCleanupPeriod" class="mb-1.5 block text-xs text-gray-500">Cleanup retention</label>
+        <Select :id="fieldIds.claudeCleanupPeriod" v-model="claudeCleanupPeriod" :options="claudeCleanupPeriodOptions" />
+      </div>
+      <div data-testid="claude-attribution-opt-out">
+        <span class="mb-1.5 block text-xs text-gray-500">Opt-out AI attribution</span>
+        <div class="flex h-9 items-center gap-2">
+          <Switch v-model="optOutAiAttribution" size="sm" aria-label="Opt out of Claude Code AI attribution" />
+          <span class="text-sm text-white">{{ optOutAiAttribution ? 'Enabled' : 'Disabled' }}</span>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -186,7 +206,7 @@ const codexEffort = computed<string>({
     <div data-testid="codex-fields" :class="fieldGridClass">
       <div data-testid="codex-model">
         <label :for="fieldIds.codexModel" class="mb-1.5 block text-xs text-gray-500">Model</label>
-        <Select :id="fieldIds.codexModel" v-model="codexModel" :options="codexModelOptions" />
+        <SearchableSelect :id="fieldIds.codexModel" v-model="codexModel" :options="codexModelOptions" />
       </div>
       <div data-testid="codex-effort">
         <label :for="fieldIds.codexEffort" class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>

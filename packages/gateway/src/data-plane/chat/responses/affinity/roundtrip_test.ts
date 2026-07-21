@@ -63,7 +63,8 @@ test('affinity selects the route while item storage independently restores the n
     if (frame.type === 'event' && frame.event.type === 'response.completed') clientResponse = frame.event.response;
   }
   if (clientResponse === undefined) throw new Error('Expected completed client response');
-  const publicProgram = clientResponse.output[1] as ResponsesInputItem;
+  const publicProgram = clientResponse.output[1];
+  if (publicProgram.type !== 'program_output') throw new Error('Expected program output');
   expect(publicProgram.id).not.toBe(programOutput.id);
 
   const input = clientResponse.output as unknown as ResponsesInputItem[];

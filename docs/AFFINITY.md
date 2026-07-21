@@ -108,7 +108,7 @@ This costs one upstream event of latency. It favors direct Google GenAI Chat
 compatibility and cannot repair a first-wins client when a natural function
 signature arrives more than one continuation after the first chunk. Evidence
 and client tradeoffs are recorded beside the
-[Gemini egress state machine](./packages/gateway/src/data-plane/chat/gemini/affinity/egress.ts).
+[Gemini egress state machine](../packages/gateway/src/data-plane/chat/gemini/affinity/egress.ts).
 
 ### Responses
 
