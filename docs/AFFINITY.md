@@ -125,6 +125,27 @@ program-output items inherit force from the latest earlier owned carrier; they
 do not receive additional blobs. Failed streams do not invent a missing first
 carrier.
 
+The Copilot provider has an independent inner item-identity membrane. For
+reasoning, compaction, program, and agent-message outputs that already carry an
+opaque blob, it appends plaintext JSON `{version:1, origin, id}` plus a trailing
+big-endian two-byte JSON length to the decoded/original blob bytes. `origin` is
+`raw`, `base64`, or `base64url`; no account identifier or encryption is part of
+this provider-private layer. The provider-facing item receives a fresh
+type-correct random ID at `output_item.added`, while the raw Copilot ID from
+each canonical blob-bearing frame travels only inside that frame's blob
+trailer. Verified Copilot output types without a blob also receive random IDs.
+When the source state store has a write backing, the client-output membrane
+aliases that provider-facing ID; without one, it passes through. An unknown
+output type fails the stream before its raw ID is yielded.
+
+Affinity egress subsequently appends its own authenticated outer layer. Two
+appends on the client-visible blob are therefore expected and remain
+independent. On the next request, affinity ingress removes or projects the
+outer layer before candidate dispatch. If Copilot receives its inner layer, the
+provider restores the raw ID and original blob; a blob without that layer, or
+an item whose blob was stripped by affinity routing, remains foreign and passes
+through unchanged. Neither layer buffers visible stream deltas.
+
 Responses persistence is a separate membrane. It stores complete client items
 and their native upstream item identity. After affinity has selected a
 candidate, the item layer restores a stored upstream item ID only when the

@@ -188,15 +188,13 @@ test('[sql] migration 0046 seeds the codex-auto-review alias with its two-target
   ]);
 });
 
-test('[sql] rejects an unknown model kind read from open-kind storage', async () => {
+test('[sql] rejects an unknown kind stored under the open database constraint', async () => {
   const db = await createSqliteTestDb();
-  await db.prepare(`INSERT INTO model_aliases (
-    name, kind, selection, display_name, visible_in_models_list, targets,
-    announced_metadata_json, sort_order, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
-    'invalid-kind', 'video', 'first-available', null, 1, '[]', null, 0,
-    '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z',
-  ).run();
+  await db.prepare(
+    `INSERT INTO model_aliases (name, kind, selection, visible_in_models_list, targets, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind('future-alias', 'future-kind', 'first-available', 1, '[]', 1, '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z').run();
+
   const repo = new SqlRepo(db);
-  await assertRejects(() => repo.modelAliases.getByName('invalid-kind'), TypeError, 'Invalid model kind: "video"');
+  await assertRejects(() => repo.modelAliases.getByName('future-alias'), Error, 'model_aliases.kind for future-alias is invalid');
 });

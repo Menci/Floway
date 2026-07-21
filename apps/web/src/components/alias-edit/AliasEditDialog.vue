@@ -29,7 +29,7 @@ const modelsStore = useRawModelsStore();
 const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'));
 
 // Switching kind discards rule state — a chat-only rule must not survive a
-// switch into embedding/image/audio.
+// switch into any non-chat kind.
 const emptyRulesFor = (k: ModelKind): AliasTarget['rules'] => (k === 'chat' ? {} : {} as Record<string, never>);
 
 const blankTarget = (k: ModelKind): AliasTarget => ({ target_model_id: '', rules: emptyRulesFor(k) });
@@ -118,12 +118,12 @@ const onAnnouncedChange = (next: AnnouncedMetadata | undefined) => {
   announcedOverride.value = next ?? {};
 };
 
-// Switching alias kind discards a chat-only override since the
-// schema would reject it on save (e.g. embedding aliases can not
-// carry a `chat` block).
+// Non-chat generation metadata has no meaning for image, rerank, or audio
+// aliases.
+// Embedding retains limits but drops the chat-only block.
 watch(kind, k => {
   if (announcedOverride.value === null) return;
-  if (k === 'image' || k === 'audio') {
+  if (k === 'image' || k === 'rerank' || k === 'audio') {
     announcedOverride.value = null;
     return;
   }
@@ -216,6 +216,7 @@ const KIND_OPTIONS: { value: ModelKind; label: string }[] = [
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
   { value: 'audio', label: 'Audio' },
+  { value: 'rerank', label: 'Rerank' },
 ];
 </script>
 

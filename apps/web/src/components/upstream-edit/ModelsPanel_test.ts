@@ -68,3 +68,28 @@ test('ModelsPanel refuses malformed pricing from JSON mode', async () => {
   expect(wrapper.text()).toContain('Cannot leave JSON mode:');
   expect(wrapper.find('textarea[aria-label="Models JSON"]').exists()).toBe(true);
 });
+
+test('ModelsPanel marks rerank invalid when the host is not a custom upstream', async () => {
+  const rerank: UpstreamModelConfig = {
+    upstreamModelId: 'reranker',
+    kind: 'rerank',
+    endpoints: { rerank: {} },
+    rerankTarget: { protocol: 'cohere-v2' },
+  };
+  const wrapper = mount(ModelsPanel, {
+    props: {
+      modelValue: [rerank],
+      disabledIds: [],
+      flags: [],
+      upstreamFlagOverrides: {},
+      providerFlagDefaults: {} as FlagDefaults,
+      upstreamIdLabel: 'Deployment',
+      allowRerank: false,
+      'onUpdate:modelValue': () => {},
+      'onUpdate:disabledIds': () => {},
+    },
+    global: { stubs: { ModelsGrid: true, ModelEditor: true } },
+  });
+  await nextTick();
+  expect(wrapper.emitted('update:invalid')?.at(-1)).toEqual([true]);
+});

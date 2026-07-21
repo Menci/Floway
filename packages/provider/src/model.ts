@@ -1,7 +1,7 @@
 import type { FlagId, FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
@@ -112,9 +112,9 @@ export interface TelemetryModelIdentity {
 }
 
 // `chat`, `text_completion`, and `embeddings` are the OTel `gen_ai.operation.name`
-// well-known values we route; `image_generation`, `image_edit`, and
-// `audio_transcription` are Floway extensions covering concrete non-chat
-// endpoints OTel does not name. Extend
+// well-known values we route; `image_generation`, `image_edit`, `rerank`, and
+// `audio_transcription` are Floway extensions covering concrete endpoints OTel
+// does not name. Extend
 // only when a new route lands — no wildcard string.
 // OTel canonical set:
 // https://github.com/open-telemetry/semantic-conventions/blob/v1.37.0/docs/gen-ai/gen-ai-spans.md#gen_aioperationname
@@ -124,6 +124,7 @@ export const PERFORMANCE_OPERATIONS = [
   'embeddings',
   'image_generation',
   'image_edit',
+  'rerank',
   'audio_transcription',
 ] as const;
 export type PerformanceOperation = typeof PERFORMANCE_OPERATIONS[number];
@@ -152,6 +153,7 @@ export interface PerformanceTelemetryContext {
 // at the producer boundary:
 //   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
 //   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
+//   `kind === 'rerank'`    ⇔ `endpoints === { rerank: {} }`
 //   `kind === 'audio'`     ⇔ `endpoints === { audioTranscriptions: {} }`
 //   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
 interface ModelMetadata {
@@ -219,6 +221,7 @@ export interface InternalAliasedFrom {
 // the surrounding `InternalModel` map is assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
   providerData?: unknown;
+  rerankTarget?: RerankTarget;
   enabledFlags: ReadonlySet<FlagId>;
   // Provider's per-model flag call as a sparse override — each entry
   // states the provider's opinion for that flag on this specific

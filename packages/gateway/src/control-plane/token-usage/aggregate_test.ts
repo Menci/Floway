@@ -35,6 +35,7 @@ const displayTokens = (record: ReturnType<typeof aggregateUsageForDisplay>[numbe
       output_image_tokens: 'output_image',
       input_audio_tokens: undefined,
       input_audio_seconds: undefined,
+      rerank_searches: undefined,
     }[row.metric];
     return key ? [[key, Number(row.quantity)]] : [];
   }),
@@ -101,6 +102,14 @@ test('aggregateUsageForDisplay prices audio duration per second', () => {
     metrics: [{ metric: 'input_audio_seconds', quantity: '90', unitPrice: '0.01' }],
   }]);
   assertEquals(out[0].cost, '0.9');
+});
+
+test('aggregateUsageForDisplay prices rerank searches per base unit', () => {
+  const out = aggregateUsageForDisplay([{
+    ...baseRecord({ tokens: {} }),
+    metrics: [{ metric: 'rerank_searches', quantity: '1500', unitPrice: '0.002' }],
+  }]);
+  assertEquals(out[0].cost, '3');
 });
 test('aggregateUsageForDisplay charges image metrics separately', () => {
   const rates: PriceVector = { input_tokens: '0.00001', input_image_tokens: '0.000005', output_tokens: '0.00004', output_image_tokens: '0.00003' };

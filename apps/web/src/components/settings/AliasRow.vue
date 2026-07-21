@@ -22,6 +22,7 @@ const KIND_LABELS: Record<ModelAlias['kind'], string> = {
   embedding: 'Embedding',
   image: 'Image',
   audio: 'Audio',
+  rerank: 'Rerank',
 };
 
 const SELECTION_LABELS: Record<ModelAlias['selection'], string> = {

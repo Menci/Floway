@@ -38,6 +38,7 @@ const PRICING_LABELS: Record<BillingMetric, string> = {
   output_image_tokens: 'Image Output',
   input_audio_tokens: 'Audio Input',
   input_audio_seconds: 'Audio Input',
+  rerank_searches: 'Searches',
 };
 
 interface PricingField {
@@ -52,6 +53,8 @@ const PRICING_FIELD_BY_METRIC = Object.fromEntries(BILLING_METRICS.map(metric =>
   metric,
   metric === 'input_audio_seconds'
     ? { metric, displayUnit: 'Second', displayScale: '1' }
+    : metric === 'rerank_searches'
+    ? { metric, displayUnit: '1K searches', displayScale: '1000' }
     : tokenPricingField(metric),
 ])) as Record<BillingMetric, PricingField>;
 
@@ -60,6 +63,7 @@ const PRICING_FIELDS_BY_KIND: Record<ModelKind, readonly PricingField[]> = {
   embedding: tokenPricingFields('input_tokens'),
   image: tokenPricingFields('input_tokens', 'input_image_tokens', 'output_tokens', 'output_image_tokens'),
   audio: [tokenPricingField('input_tokens'), tokenPricingField('input_audio_tokens'), PRICING_FIELD_BY_METRIC.input_audio_seconds, tokenPricingField('output_tokens')],
+  rerank: [tokenPricingField('input_tokens'), PRICING_FIELD_BY_METRIC.rerank_searches],
 };
 
 interface PricingThresholdDraft {

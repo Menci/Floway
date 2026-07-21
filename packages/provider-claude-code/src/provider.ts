@@ -95,6 +95,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     callImagesGenerations: rejectUnsupported('callImagesGenerations'),
     callImagesEdits: rejectUnsupported('callImagesEdits'),
     callAudioTranscriptions: rejectUnsupported('callAudioTranscriptions'),
+    callRerank: rejectUnsupported('callRerank'),
   };
 
   return {

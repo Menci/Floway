@@ -18,15 +18,16 @@ import {
 import { assertEquals, assertThrows } from '../test-assert.ts';
 
 test('parseModelKind accepts the current model families and rejects unknown storage values', () => {
-  for (const kind of ['chat', 'embedding', 'image', 'audio'] as const) assertEquals(parseModelKind(kind), kind);
-  assertThrows(() => parseModelKind('video'), TypeError, 'Invalid model kind: "video"');
-  assertThrows(() => parseModelKind(null), TypeError, 'Invalid model kind: null');
+  for (const kind of ['chat', 'embedding', 'image', 'rerank', 'audio'] as const) assertEquals(parseModelKind(kind), kind);
+  assertThrows(() => parseModelKind('video'), Error, 'model kind is invalid: "video"');
+  assertThrows(() => parseModelKind(null), Error, 'model kind is invalid: null');
 });
 
 test('billing storage parsers accept current vocabulary and reject unknown values', () => {
   assertEquals(parseBillingMetric('input_tokens'), 'input_tokens');
   assertEquals(parseBillingMetric('input_audio_tokens'), 'input_audio_tokens');
   assertEquals(parseBillingMetric('input_audio_seconds'), 'input_audio_seconds');
+  assertEquals(parseBillingMetric('rerank_searches'), 'rerank_searches');
   assertThrows(() => parseBillingMetric('reasoning'), TypeError, 'billing metric is invalid: "reasoning"');
 });
 

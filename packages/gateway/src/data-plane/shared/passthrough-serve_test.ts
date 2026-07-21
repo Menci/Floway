@@ -130,7 +130,7 @@ test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a
   }
 });
 
-test('passthrough-serve: response header block-list preserves vendor headers and drops unsafe fields', async () => {
+test('passthrough-serve: response header blocklist preserves vendor metadata and drops unsafe headers', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerEmbeddingsUpstream(repo);
 

@@ -13,7 +13,8 @@
     "./gemini": { "import": "./src/gemini/index.ts", "types": "./src/gemini/index.ts" },
     "./embeddings": { "import": "./src/embeddings/index.ts", "types": "./src/embeddings/index.ts" },
     "./images": { "import": "./src/images/index.ts", "types": "./src/images/index.ts" },
-    "./audio": { "import": "./src/audio/index.ts", "types": "./src/audio/index.ts" }
+    "./audio": { "import": "./src/audio/index.ts", "types": "./src/audio/index.ts" },
+    "./rerank": { "import": "./src/rerank/index.ts", "types": "./src/rerank/index.ts" }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

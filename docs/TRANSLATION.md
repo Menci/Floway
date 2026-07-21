@@ -220,7 +220,18 @@ The same boundary runs for both `/v1/responses` (streaming) and
   carries an image, and derives `x-initiator` from the final canonical item
   (missing/falsy roles and `assistant` are agent turns; other role-bearing
   items are user turns)
-- on `/v1/responses` only: synchronizes mismatched stream output item IDs
+- restores a raw Copilot item ID only when the post-affinity request blob
+  carries the provider's own plaintext `{version, origin, id}` trailer;
+  foreign blobs and items without blobs pass through unchanged
+- allocates a stable type-correct random provider-facing ID as soon as each
+  streaming output item is added, rewrites its ID-bearing child and later
+  frames to that ID, and appends each frame's matching raw ID behind every available
+  reasoning, compaction, program, or agent-message blob. A source state store
+  with a write backing aliases this provider-facing ID; otherwise it passes
+  through. Verified shell-command child frames carry only `output_index` and
+  pass through unchanged. The compact value path applies the same rule to its
+  generated compaction item. Unknown Copilot output types fail closed before a
+  raw ID can reach the client
 
 ### Responses — Codex provider boundary chain
 
@@ -781,6 +792,44 @@ The mapping from `AliasRules` fields onto target-protocol slots:
 | `serviceTier` | `service_tier` | `speed: 'fast'` for `'fast'`, else `service_tier` | `service_tier` |
 
 Passthrough endpoints (`/v1/embeddings`, `/v1/images/*`,
-`/v1/audio/transcriptions`, `/v1/completions`) have no rule-application step; a passthrough alias
+`/v1/audio/transcriptions`, `/v1/completions`) and rerank have no
+rule-application step; a non-chat alias
 must be seeded with empty rules (enforced at write time by a zod
 refinement on the alias schema).
+
+## Rerank translation
+
+Rerank is non-streaming JSON but not a passthrough protocol: four strict
+source routes normalize into `CanonicalRerankRequest`, and each custom manual
+model selects one of six target wires.
+
+| public route | source protocol | target protocols |
+|---|---|---|
+| `/v1/rerank` | Cohere v1 | Cohere v1/v2, Jina v1, Voyage v1, DashScope compatible/native |
+| `/v2/rerank` | Cohere v2 | same set |
+| `/jina/v1/rerank` | Jina v1 | same set |
+| `/voyage/v1/rerank` | Voyage v1 | same set |
+
+The IR keeps the query, ordered source documents, top-N intent,
+return-documents intent, and the source protocol's representable optional
+controls. Jina text objects can become JSON text on string-only targets. Jina
+image queries or documents narrow the candidate pool to Jina and DashScope
+native targets, which preserve their multimodal objects; text-only dialects
+are never asked to reinterpret an image as text. A ranked result normalizes to
+`(index, relevanceScore)` plus optional document and embedding data.
+Cross-protocol output reconstructs returned documents from the original
+indexed source array, preventing a target-specific document wrapper from
+leaking onto the source wire.
+
+Same-dialect calls preserve opaque request fields while replacing only the
+model id, and forward the successful upstream response body unchanged. A
+cross-dialect success is parsed strictly and rendered in the source envelope.
+All non-2xx upstream responses keep their status, body, and forwardable
+headers unchanged.
+
+Cohere's `meta.billed_units.search_units` records `rerank_searches`, while any
+reported token total records `input_tokens`. The two counters are independent:
+when a response reports both, both metrics are retained and each uses its own
+configured per-search or per-token rate. A metric without a configured rate is
+stored with a null unit price, and a settled response with no metric still
+records its request count.

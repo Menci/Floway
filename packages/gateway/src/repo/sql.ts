@@ -1774,7 +1774,7 @@ const parseAnnouncedMetadata = (raw: string | null, name: string): AnnouncedMeta
 
 const toModelAliasRecord = (row: ModelAliasRow): ModelAliasRecord => ({
   name: row.name,
-  kind: parseModelKind(row.kind),
+  kind: parseModelKind(row.kind, `model_aliases.kind for ${row.name}`),
   selection: row.selection as AliasSelection,
   displayName: row.display_name,
   visibleInModelsList: row.visible_in_models_list !== 0,

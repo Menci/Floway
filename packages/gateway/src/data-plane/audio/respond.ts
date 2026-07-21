@@ -8,7 +8,18 @@ import { audioTranscriptionUsageMeasurement, requestOnlyUsageMeasurement } from 
 import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstream-response.ts';
 import { isAudioTranscriptionDoneEvent } from '@floway-dev/protocols/audio';
 import { eventFrame, parseSSEStream, sseCommentFrame } from '@floway-dev/protocols/common';
-import { toInternalDebugError } from '@floway-dev/provider';
+
+const measureAudioUsage = (value: unknown, sourceApi: string) => {
+  try {
+    return audioTranscriptionUsageMeasurement(value);
+  } catch (error) {
+    console.warn(
+      `audio-transcription: invalid usage in 2xx upstream response for ${sourceApi}; usage row will be request-only`,
+      error instanceof Error ? error.message : String(error),
+    );
+    return requestOnlyUsageMeasurement();
+  }
+};
 
 const respondNonStreaming = async ({ c, ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Promise<Response> => {
   let measurement = requestOnlyUsageMeasurement();
@@ -25,14 +36,7 @@ const respondNonStreaming = async ({ c, ctx, sourceApi, response, performance, i
       );
     }
     if (parsed !== undefined) {
-      try {
-        measurement = audioTranscriptionUsageMeasurement(parsed);
-      } catch (error) {
-        ctx.dump?.failed(error);
-        settleUsageMeasurement(ctx, performance, identity, requestOnlyUsageMeasurement(), true);
-        forwardUpstreamHeaders(c, response.headers);
-        return c.json({ error: toInternalDebugError(error) }, 502);
-      }
+      measurement = measureAudioUsage(parsed, sourceApi);
     }
   }
   ctx.dump?.success(identity, measurement.dumpTokenUsage);
@@ -66,7 +70,7 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
           ctx.dump?.frame(eventFrame(event));
           if (isAudioTranscriptionDoneEvent(event)) {
             terminalEventSeen = true;
-            measurement = audioTranscriptionUsageMeasurement(event);
+            measurement = measureAudioUsage(event, sourceApi);
             yield frame;
             return;
           }

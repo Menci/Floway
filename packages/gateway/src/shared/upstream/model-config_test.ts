@@ -106,7 +106,7 @@ test('modelsField accepts a valid kind and rejects an unknown one', () => {
   assertThrows(
     () => modelsField([{ upstreamModelId: 'm', kind: 'bogus', endpoints: { chatCompletions: {} } }], 'custom'),
     Error,
-    'Malformed custom models[0].kind: must be one of chat, embedding, image, audio',
+    'Malformed custom models[0].kind: must be one of chat, embedding, image, rerank, audio',
   );
 });
 

@@ -71,6 +71,25 @@ test('assertOllamaUpstreamRecord rejects a missing base URL', () => {
   }));
 });
 
+test('assertOllamaUpstreamRecord rejects rerank models', () => {
+  assertThrows(
+    () => assertOllamaUpstreamRecord({
+      ...baseRecord,
+      config: {
+        ...(baseRecord.config as Record<string, unknown>),
+        models: [{
+          upstreamModelId: 'reranker',
+          kind: 'rerank',
+          endpoints: { rerank: {} },
+          rerankTarget: { protocol: 'cohere-v2' },
+        }],
+      },
+    }),
+    Error,
+    'rerank models require a custom upstream',
+  );
+});
+
 test('pricingForOllamaModelKey returns table rates for known model ids', () => {
   const gptOss = pricingForOllamaModelKey('gpt-oss:120b');
   assertEquals(gptOss?.entries[0]?.rates.input_tokens, '0.00000015');

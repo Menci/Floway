@@ -13,7 +13,8 @@
 // Kind-gated sub-blocks:
 //   - `chat`      → Limits + Modalities + Reasoning.
 //   - `embedding` → Limits only.
-//   - `image` / `audio` → renders nothing (callers should not mount this).
+//   - `image` / `rerank` / `audio` → renders nothing (callers should not mount
+//     this).
 
 import { computed, ref, watch } from 'vue';
 

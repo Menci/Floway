@@ -39,6 +39,9 @@ const customFetchInternal = async (
   return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }));
 };
 
+export const customFetchRerank = (config: CustomUpstreamConfig, path: string, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
+  customFetchInternal(config, path, init, options);
+
 export const customFetchChatCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, resolveOverridable(config, '/chat/completions'), init, options);
 export const customFetchResponses = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

@@ -22,7 +22,14 @@ describe('ChatMetadataEditor', () => {
     const wrapper = mount(ChatMetadataEditor, {
       props: { modelValue: baseValue(), kind: 'audio', mode: 'manual' },
     });
-    expect(wrapper.text()).toBe('');
+    expect(wrapper.html().trim()).toBe('<!--v-if-->');
+  });
+
+  it('renders nothing when kind="rerank"', () => {
+    const wrapper = mount(ChatMetadataEditor, {
+      props: { modelValue: baseValue(), kind: 'rerank', mode: 'manual' },
+    });
+    expect(wrapper.html().trim()).toBe('<!--v-if-->');
   });
 
   it('kind="embedding" renders only the Limits section — no Modalities, no Reasoning', () => {

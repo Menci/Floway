@@ -1,5 +1,5 @@
-// Protocol-level model capability types, plus the kind-derivation intrinsic to
-// them. Provider projection and endpoint dispatch live outside this package.
+// Protocol-level model capability types and their intrinsic kind projection.
+// Provider projection and endpoint dispatch live in packages/gateway/src/data-plane/.
 
 import type { ModelKind } from './models.ts';
 
@@ -22,6 +22,7 @@ export interface ModelEndpoints {
   imagesGenerations?: {};
   imagesEdits?: {};
   audioTranscriptions?: {};
+  rerank?: {};
 }
 
 // Names a single endpoint within ModelEndpoints — used where one endpoint is
@@ -30,14 +31,16 @@ export type ModelEndpointKey = keyof ModelEndpoints;
 
 // Derive the high-level model kind from the supported endpoints. Each model
 // belongs to exactly one kind. `embeddings` implies embedding,
-// `audioTranscriptions` implies audio, `imagesGenerations`/`imagesEdits`
-// implies image, and every remaining endpoint belongs to chat.
+// `imagesGenerations`/`imagesEdits` implies image, `rerank` implies rerank,
+// `audioTranscriptions` implies audio, and the generation protocols imply
+// chat.
 // Mixed endpoint sets (e.g. a model tagged with both `embeddings` and
 // `chatCompletions`) are configuration errors; the first matching branch wins.
 // `kind` is a pure projection of `endpoints`; the dispatch layer never reads it.
 export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
-  if (endpoints.audioTranscriptions) return 'audio';
   if (endpoints.embeddings) return 'embedding';
   if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
+  if (endpoints.rerank) return 'rerank';
+  if (endpoints.audioTranscriptions) return 'audio';
   return 'chat';
 };

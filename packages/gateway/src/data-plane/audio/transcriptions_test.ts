@@ -213,29 +213,38 @@ test('/v1/audio/transcriptions preserves unknown future usage metrics as request
   assertEquals(usage.metrics, []);
 });
 
-test('/v1/audio/transcriptions rejects malformed declared usage after recording a failed request', async () => {
+test('/v1/audio/transcriptions preserves malformed declared usage and records request-only telemetry', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
-  await withMockedFetch(
-    () => Response.json(
-      { text: 'hello', usage: { type: 'duration', seconds: 'invalid' } },
-      { headers: { 'x-provider-trace': 'malformed-usage', 'set-cookie': 'upstream-session=secret' } },
-    ),
-    async () => {
-      const response = await requestApp('/v1/audio/transcriptions', {
-        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
-      });
-      assertEquals(response.status, 502);
-      assertEquals(response.headers.get('x-provider-trace'), 'malformed-usage');
-      assertEquals(response.headers.get('set-cookie'), null);
-    },
-  );
+  const upstreamBody = { text: 'hello', usage: { type: 'duration', seconds: 'invalid' } };
+  const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await withMockedFetch(
+      () => Response.json(
+        upstreamBody,
+        { headers: { 'x-provider-trace': 'malformed-usage', 'set-cookie': 'upstream-session=secret' } },
+      ),
+      async () => {
+        const response = await requestApp('/v1/audio/transcriptions', {
+          method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
+        });
+        assertEquals(response.status, 200);
+        assertEquals(await response.json(), upstreamBody);
+        assertEquals(response.headers.get('x-provider-trace'), 'malformed-usage');
+        assertEquals(response.headers.get('set-cookie'), null);
+      },
+    );
+    assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('invalid usage in 2xx upstream response')), true);
+  } finally {
+    warnSpy.mockRestore();
+  }
   await flushAsyncWork();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
   assertEquals(usage.metrics, []);
   const [performance] = await repo.performance.listAll();
-  assertEquals(performance.errorsNoOutput, 1);
+  assertEquals(performance.neutral, 1);
+  assertEquals(performance.errorsNoOutput, 0);
 });
 
 test('/v1/audio/transcriptions does not invent a content type for an untyped raw response', async () => {
@@ -348,6 +357,36 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
     { metric: 'input_tokens', quantity: '3' },
     { metric: 'output_tokens', quantity: '1' },
   ]);
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.neutral, 1);
+  assertEquals(performance.errorsNoOutput, 0);
+});
+
+test('/v1/audio/transcriptions preserves a terminal stream event with malformed usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    await withMockedFetch(
+      () => new Response(
+        'data: {"type":"transcript.text.done","text":"hello","usage":{"type":"duration","seconds":"invalid"}}\n\n',
+        { headers: { 'content-type': 'text/event-stream' } },
+      ),
+      async () => {
+        const response = await requestApp('/v1/audio/transcriptions', {
+          method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
+        });
+        assertEquals(response.status, 200);
+        assertEquals((await response.text()).includes('transcript.text.done'), true);
+      },
+    );
+    assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('invalid usage in 2xx upstream response')), true);
+  } finally {
+    warnSpy.mockRestore();
+  }
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.metrics, []);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.neutral, 1);
   assertEquals(performance.errorsNoOutput, 0);

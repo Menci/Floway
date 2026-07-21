@@ -228,6 +228,13 @@ describe('SqlPerformanceRepo operation vocabulary', () => {
     expect(row).toMatchObject({ operation: 'audio_transcription', requests: 1, neutral: 1 });
   });
 
+  it('persists rerank rows through the open operation schema', async () => {
+    const repo = new SqlRepo(await createSqliteTestDb()).performance;
+    await repo.recordNeutral(errSample({ operation: 'rerank' }));
+    const [row] = await repo.listAll();
+    expect(row).toMatchObject({ operation: 'rerank', requests: 1, neutral: 1 });
+  });
+
   it('rejects an unknown stored operation at hydration', async () => {
     const db = await createSqliteTestDb();
     await db.prepare(

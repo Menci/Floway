@@ -35,7 +35,8 @@ dependencies remain targeted at their predecessor branches and remain drafts.
 
 Floway is an LLM API gateway. It exposes OpenAI Completions, Anthropic
 Messages, OpenAI Responses, OpenAI Chat Completions, Embeddings, OpenAI
-Images, OpenAI Audio Transcriptions, and Google Gemini-compatible APIs over a unified upstream
+Images, OpenAI Audio Transcriptions, Cohere/Jina/Voyage-compatible Rerank,
+and Google Gemini-compatible APIs over a unified upstream
 model. Provider kinds are
 `copilot`, `custom`, `azure`, `codex` (ChatGPT subscription via the
 Codex CLI's OAuth client), `claude-code` (Claude.ai Pro/Max subscription
@@ -137,6 +138,8 @@ Chat `[DONE]` sentinel. Usage records always count the request. Token details
 split known audio tokens into `input_audio_tokens` and leave the remaining
 input on `input_tokens`; without details, the aggregate remains general input.
 Output maps to `output_tokens`, while duration maps to `input_audio_seconds`.
+Malformed usage never replaces or truncates a successful upstream response; it
+is logged and the request is recorded without a metric breakdown.
 Rates are canonical decimal strings per one token or second, and a model may
 price all metrics simultaneously. Missing measurements remain request-only,
 while measured metrics without configured rates remain unpriced.
@@ -157,7 +160,7 @@ Floway/
 │   ├── provider-claude-code/ # @floway-dev/provider-claude-code — Claude Code (Claude.ai subscription) provider
 │   ├── provider-codex/       # @floway-dev/provider-codex — ChatGPT Codex (subscription) provider
 │   ├── provider-copilot/     # @floway-dev/provider-copilot — GitHub Copilot provider
-│   ├── provider-custom/      # @floway-dev/provider-custom — generic OpenAI-compatible
+│   ├── provider-custom/      # @floway-dev/provider-custom — configurable multi-protocol HTTP provider
 │   ├── provider-ollama/      # @floway-dev/provider-ollama — Ollama (ollama.com or self-hosted)
 │   ├── proxy/                # @floway-dev/proxy — proxy URI parsing + per-protocol byte-stream dialers
 │   ├── test-utils/           # @floway-dev/test-utils — shared Vitest fixtures and stubs (test-only)

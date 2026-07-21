@@ -185,6 +185,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       const response = await ollamaFetchAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: rawModelId };
     },
+    callRerank: rejectUnsupported('callRerank'),
   };
 
   return {
