@@ -146,13 +146,15 @@ test('model pricing migrations materialize legacy semantics as base-unit metric 
       },
       {
         upstreamModelId: 'tiny-rate',
-        pricing: tokenPricing([{ rates: {
-          input_tokens: '0.00000000000000000000000001',
-          input_cache_read_tokens: '0.00000000000000000000000001',
-          input_cache_write_tokens: '0.00000000000000000000000001',
-          input_cache_write_1h_tokens: '0.00000000000000000000000001',
-          input_image_tokens: '0.00000000000000000000000001',
-        } }]),
+        pricing: tokenPricing([{
+          rates: {
+            input_tokens: '0.00000000000000000000000001',
+            input_cache_read_tokens: '0.00000000000000000000000001',
+            input_cache_write_tokens: '0.00000000000000000000000001',
+            input_cache_write_1h_tokens: '0.00000000000000000000000001',
+            input_image_tokens: '0.00000000000000000000000001',
+          },
+        }]),
       },
       {
         upstreamModelId: 'tier-adds-output',
