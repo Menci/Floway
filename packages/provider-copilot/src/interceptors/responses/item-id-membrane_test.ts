@@ -223,6 +223,7 @@ const uncarriedOutputItems = [
   ['ctc', { type: 'custom_tool_call', id: 'raw', call_id: 'call', name: 'tool', input: 'x' }],
   ['ws', { type: 'web_search_call', id: 'raw', status: 'completed', action: { type: 'search', queries: ['x'] } }],
   ['tsc', { type: 'tool_search_call', id: 'raw', arguments: {}, call_id: 'call', execution: 'server', status: 'completed' }],
+  ['tso', { type: 'tool_search_output', id: 'raw', tools: [], call_id: 'call', execution: 'server', status: 'completed' }],
   ['cmo', { type: 'program_output', id: 'raw', call_id: 'call', result: 'ok', status: 'completed' }],
   ['sh', { type: 'shell_call', id: 'raw', call_id: 'call', action: { commands: ['pwd'] }, status: 'completed' }],
   ['sho', { type: 'shell_call_output', id: 'raw', call_id: 'call', output: [{ stdout: '', stderr: '', outcome: { type: 'exit', exit_code: 0 } }], status: 'completed' }],
@@ -234,14 +235,17 @@ test.each(uncarriedOutputItems)('randomizes a Copilot %s item without exposing i
   const { result } = await runStream([
     eventFrame(outputItemEvent('added', 0, item)),
     eventFrame(outputItemEvent('done', 0, item)),
+    eventFrame({ type: 'response.completed', response: response([item]) }),
     doneFrame(),
   ]);
   const frames = await collect(result);
   const added = eventAt(frames, 'response.output_item.added');
   const done = eventAt(frames, 'response.output_item.done');
+  const completed = eventAt(frames, 'response.completed');
 
   expect(added.item.id).toMatch(new RegExp(`^${prefix}_[0-9a-f]{32}$`));
   expect(done.item.id).toBe(added.item.id);
+  expect(completed.response.output[0].id).toBe(added.item.id);
   expect(JSON.stringify(frames)).not.toContain('"raw"');
 });
 
