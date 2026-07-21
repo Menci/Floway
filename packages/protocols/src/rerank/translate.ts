@@ -296,6 +296,11 @@ const optionalEmbedding = (value: unknown, field: string): number[] | undefined 
   return value as number[];
 };
 
+const resultDocument = (value: unknown, field: string): RerankInput => {
+  if (typeof value === 'string' || isRecord(value)) return value;
+  throw new Error(`${field} must be a string or an object`);
+};
+
 const resultItem = (value: unknown, field: string): CanonicalRerankResult => {
   if (!isRecord(value)) throw new Error(`${field} must be an object`);
   if (typeof value.index !== 'number' || !Number.isInteger(value.index) || value.index < 0) throw new Error(`${field}.index must be a non-negative integer`);
@@ -304,7 +309,7 @@ const resultItem = (value: unknown, field: string): CanonicalRerankResult => {
   return {
     index: value.index,
     relevanceScore: value.relevance_score,
-    ...(value.document === undefined || value.document === null ? {} : { document: jinaStructuredInput(value.document, `${field}.document`, ['text', 'image']) }),
+    ...(value.document === undefined || value.document === null ? {} : { document: resultDocument(value.document, `${field}.document`) }),
     ...(embedding === undefined ? {} : { embedding }),
   };
 };
@@ -321,15 +326,6 @@ const requiredTotalTokensFrom = (value: unknown): number => {
   const totalTokens = value.total_tokens;
   if (totalTokens < 0) throw new Error('usage.total_tokens must not be negative');
   return totalTokens;
-};
-
-const requiredInputTokensFrom = (value: unknown): number => {
-  if (!isRecord(value) || typeof value.input_tokens !== 'number' || !Number.isFinite(value.input_tokens)) {
-    throw new Error('usage.input_tokens must be a finite number');
-  }
-  const inputTokens = value.input_tokens;
-  if (inputTokens < 0) throw new Error('usage.input_tokens must not be negative');
-  return inputTokens;
 };
 
 const optionalUsage = (
@@ -376,9 +372,8 @@ export const parseRerankUsage = (
   case 'jina-v1':
   case 'voyage-v1':
   case 'dashscope-compatible':
-    return optionalUsage(value, requiredTotalTokensFrom);
   case 'dashscope-native':
-    return optionalUsage(value, requiredInputTokensFrom);
+    return optionalUsage(value, requiredTotalTokensFrom);
   }
 };
 

@@ -857,10 +857,9 @@ cross-dialect success is parsed strictly and rendered in the source envelope.
 All non-2xx upstream responses keep their status, body, and forwardable
 headers unchanged.
 
-Cohere's `meta.billed_units.search_units` records the `input` dimension in
-`searches_1k`. Jina, Voyage, and DashScope token totals record the same
-dimension in `tokens_1m`; they are never converted into searches. When Cohere
-reports both, the configured input pricing unit selects the matching metric,
-with search units preferred for an unpriced model. A concrete metric whose unit
-does not match the configured price is retained with a null unit price. A
-settled response with no metric still records its request count.
+Cohere's `meta.billed_units.search_units` records `rerank_searches`, while any
+reported token total records `input_tokens`. The two counters are independent:
+when a response reports both, both metrics are retained and each uses its own
+configured per-search or per-token rate. A metric without a configured rate is
+stored with a null unit price, and a settled response with no metric still
+records its request count.

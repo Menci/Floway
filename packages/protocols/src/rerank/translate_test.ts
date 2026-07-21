@@ -248,7 +248,7 @@ describe('rerank response translation', () => {
       object: 'list', model: 'qwen', id: 'request', results: [{ index: 0, relevance_score: 0.6 }], usage: { total_tokens: 11 },
     }).results[0]).toEqual({ index: 0, relevanceScore: 0.6 });
     expect(parseRerankResponse('dashscope-native', {
-      request_id: 'request', output: { results: [{ index: 0, relevance_score: 0.5 }] }, usage: { input_tokens: 12 },
+      request_id: 'request', output: { results: [{ index: 0, relevance_score: 0.5 }] }, usage: { total_tokens: 12 },
     }).results[0]).toEqual({ index: 0, relevanceScore: 0.5 });
   });
 
@@ -262,8 +262,18 @@ describe('rerank response translation', () => {
     for (const [protocol, response] of responses) {
       expect(parseRerankUsage(protocol, response)).toEqual({});
       expect(parseRerankResponse(protocol, response).totalTokens).toBeUndefined();
-      expect(() => parseRerankUsage(protocol, { ...response, usage: {} })).toThrow(/usage\.(total_tokens|input_tokens) must be a finite number/);
+      expect(() => parseRerankUsage(protocol, { ...response, usage: {} })).toThrow('usage.total_tokens must be a finite number');
     }
+  });
+
+  test('accepts protocol-specific returned document objects without narrowing their fields', () => {
+    expect(parseRerankResponse('cohere-v1', {
+      results: [{ index: 0, relevance_score: 0.8, document: { title: 'A' } }],
+    }).results[0]?.document).toEqual({ title: 'A' });
+    expect(parseRerankResponse('dashscope-native', {
+      request_id: 'request',
+      output: { results: [{ index: 0, relevance_score: 0.7, document: { video: 'https://example.com/a.mp4' } }] },
+    }).results[0]?.document).toEqual({ video: 'https://example.com/a.mp4' });
   });
 
   test('renders source-specific result containers and reconstructs requested documents', () => {
