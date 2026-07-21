@@ -262,14 +262,13 @@ test('assertAzureUpstreamRecord round-trips model.pricing with full pricing fiel
         {
           upstreamModelId: 'gpt-prod',
           endpoints: { chatCompletions: {} },
-          pricing: { units: { input: 'tokens_1m', input_cache_read: 'tokens_1m', input_cache_write: 'tokens_1m', input_image: 'tokens_1m', output: 'tokens_1m', output_image: 'tokens_1m' }, entries: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }] },
+          pricing: { entries: [{ rates: { input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75', input_image_tokens: '8', output_tokens: '15', output_image_tokens: '30' } }] },
         },
       ],
     },
   });
   assertEquals(parsed.config.models[0].pricing, {
-    units: { input: 'tokens_1m', input_cache_read: 'tokens_1m', input_cache_write: 'tokens_1m', input_image: 'tokens_1m', output: 'tokens_1m', output_image: 'tokens_1m' },
-    entries: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }],
+    entries: [{ rates: { input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75', input_image_tokens: '8', output_tokens: '15', output_image_tokens: '30' } }],
   });
 });
 
@@ -297,7 +296,7 @@ test('assertAzureUpstreamRecord accepts model.pricing with only input set', () =
         {
           upstreamModelId: 'gpt-prod',
           endpoints: { chatCompletions: {} },
-          pricing: { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 2.5 } }] },
+          pricing: { entries: [{ rates: { input_tokens: '2.5' } }] },
         },
       ],
     },
@@ -315,13 +314,13 @@ test('assertAzureUpstreamRecord rejects model.pricing with negative input', () =
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              pricing: { units: { input: 'tokens_1m', output: 'tokens_1m' }, entries: [{ rates: { input: -1, output: 1 } }] },
+              pricing: { entries: [{ rates: { input_tokens: '-1', output_tokens: '1' } }] },
             },
           ],
         },
       }),
     Error,
-    'model pricing entry 0.rates.input must be a finite non-negative number',
+    'pricing.entries[0].rates.input_tokens must be non-negative',
   );
 });
 
@@ -336,12 +335,12 @@ test('assertAzureUpstreamRecord rejects model.pricing with non-number input_cach
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              pricing: { units: { input: 'tokens_1m', output: 'tokens_1m', input_cache_read: 'tokens_1m' }, entries: [{ rates: { input: 2, output: 8, input_cache_read: 'cheap' } }] },
+              pricing: { entries: [{ rates: { input_tokens: '2', output_tokens: '8', input_cache_read_tokens: 'cheap' } }] },
             },
           ],
         },
       }),
     Error,
-    'model pricing entry 0.rates.input_cache_read must be a finite non-negative number',
+    'pricing.entries[0].rates.input_cache_read_tokens must be a decimal string',
   );
 });

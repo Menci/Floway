@@ -2,28 +2,24 @@ import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
 import { migrationSqlByFilename } from './test-sqlite.ts';
-import { priceRequest, type ModelPricing, validateModelPricing } from '@floway-dev/protocols/common';
+import { divideDecimalString, priceRequest, type ModelPricing, validateModelPricing } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const sqlString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 
 const inputRates = (input: number, output?: number) => ({
-  input,
-  input_cache_read: input,
-  input_cache_write: input,
-  input_cache_write_1h: input,
-  input_image: input,
-  ...(output === undefined ? {} : { output, output_image: output }),
+  input_tokens: divideDecimalString(String(input), '1000000'),
+  input_cache_read_tokens: divideDecimalString(String(input), '1000000'),
+  input_cache_write_tokens: divideDecimalString(String(input), '1000000'),
+  input_cache_write_1h_tokens: divideDecimalString(String(input), '1000000'),
+  input_image_tokens: divideDecimalString(String(input), '1000000'),
+  ...(output === undefined ? {} : {
+    output_tokens: divideDecimalString(String(output), '1000000'),
+    output_image_tokens: divideDecimalString(String(output), '1000000'),
+  }),
 });
 
-const tokenPricing = (entries: ModelPricing['entries']): ModelPricing => {
-  const base = entries.find(entry => entry.selector === undefined);
-  if (!base) throw new Error('tokenPricing requires a Base entry');
-  return {
-    units: Object.fromEntries(Object.keys(base.rates).map(dimension => [dimension, 'tokens_1m'])) as ModelPricing['units'],
-    entries,
-  };
-};
+const tokenPricing = (entries: ModelPricing['entries']): ModelPricing => ({ entries });
 
 test('model pricing migrations materialize legacy semantics with explicit units', async () => {
   const SQL = await initSqlJs();
@@ -121,25 +117,25 @@ test('model pricing migrations materialize legacy semantics with explicit units'
         pricing: tokenPricing([
           {
             rates: {
-              input: 1,
-              input_cache_read: 0.1,
-              input_cache_write: 1.25,
-              input_cache_write_1h: 1.25,
-              input_image: 1,
-              output: 4,
-              output_image: 4,
+              input_tokens: '0.000001',
+              input_cache_read_tokens: '0.0000001',
+              input_cache_write_tokens: '0.00000125',
+              input_cache_write_1h_tokens: '0.00000125',
+              input_image_tokens: '0.000001',
+              output_tokens: '0.000004',
+              output_image_tokens: '0.000004',
             },
           },
           {
             selector: { serviceTier: 'fast' },
             rates: {
-              input: 2,
-              input_cache_read: 0.1,
-              input_cache_write: 3,
-              input_cache_write_1h: 3,
-              input_image: 2,
-              output: 4,
-              output_image: 4,
+              input_tokens: '0.000002',
+              input_cache_read_tokens: '0.0000001',
+              input_cache_write_tokens: '0.000003',
+              input_cache_write_1h_tokens: '0.000003',
+              input_image_tokens: '0.000002',
+              output_tokens: '0.000004',
+              output_image_tokens: '0.000004',
             },
           },
         ]),
@@ -168,7 +164,7 @@ test('model pricing migrations materialize legacy semantics with explicit units'
       { upstreamModelId: 'empty-rates' },
       {
         upstreamModelId: 'write-and-output-only',
-        pricing: tokenPricing([{ rates: { input_cache_write: 1.25, input_cache_write_1h: 1.25, output: 4, output_image: 4 } }]),
+        pricing: tokenPricing([{ rates: { input_cache_write_tokens: '0.00000125', input_cache_write_1h_tokens: '0.00000125', output_tokens: '0.000004', output_image_tokens: '0.000004' } }]),
       },
       {
         upstreamModelId: 'zero-input',
@@ -198,6 +194,6 @@ test('model pricing migrations materialize legacy semantics with explicit units'
     if (!model.pricing) continue;
     validateModelPricing(model.pricing);
     const base = model.pricing.entries.find(entry => entry.selector === undefined)!.rates;
-    assertEquals(priceRequest(model.pricing, { inputTokens: 1, serviceTier: 'unknown' }), { selector: {}, units: model.pricing.units, rates: base });
+    assertEquals(priceRequest(model.pricing, { inputTokens: 1, serviceTier: 'unknown' }), { selector: {}, rates: base });
   }
 });

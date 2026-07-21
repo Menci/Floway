@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { tokenCountsFromUsage } from '../../repo/usage-dimensions.ts';
+import { tokenCountsFromUsage } from '../../repo/usage-metrics.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';

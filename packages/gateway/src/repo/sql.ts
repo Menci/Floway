@@ -43,15 +43,15 @@ import type {
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
-import { usageDimensionRows } from './usage-dimensions.ts';
+import { usageMetricRows } from './usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { getFileProvider, type SqlDatabase, type SqlPreparedStatement, type SqlResult } from '@floway-dev/platform';
-import { canonicalPricingSelectorKey, parseBillingDimension, parseBillingUnit, parseModelKind, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
-import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamRecord } from '@floway-dev/provider';
+import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
+import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, PerformanceOperation, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
@@ -393,11 +393,10 @@ class SqlUsageRepo implements UsageRepo {
   async record(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
     const selector = canonicalPricingSelectorKey(record.pricingSelector);
-    const statements: SqlPreparedStatement[] = usageDimensionRows(record).map(row =>
+    const statements: SqlPreparedStatement[] = usageMetricRows(record).map(row =>
       this.db.prepare(
-        `INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, dimension, unit, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET quantity = quantity + excluded.quantity`,
-      ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.dimension, row.unit, row.quantity, row.unitPrice));
+        'INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.metric, row.quantity, row.unitPrice));
     statements.push(this.db.prepare(
       `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
@@ -408,19 +407,19 @@ class SqlUsageRepo implements UsageRepo {
   async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
     const where = opts.keyId ? 'key_id = ? AND hour >= ? AND hour < ?' : 'hour >= ? AND hour < ?';
     const binds = opts.keyId ? [opts.keyId, opts.start, opts.end] : [opts.start, opts.end];
-    const [{ results: dimensions }, { results: requests }] = await Promise.all([
-      this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, dimension, unit, quantity, unit_price FROM usage WHERE ${where}`).bind(...binds).all<UsageDimensionRow>(),
+    const [{ results: metrics }, { results: requests }] = await Promise.all([
+      this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price FROM usage WHERE ${where} ORDER BY rowid`).bind(...binds).all<UsageMetricRow>(),
       this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests WHERE ${where}`).bind(...binds).all<UsageRequestRow>(),
     ]);
-    return assembleUsageRecords(dimensions, requests);
+    return assembleUsageRecords(metrics, requests);
   }
 
   async listAll(): Promise<UsageRecord[]> {
-    const [{ results: dimensions }, { results: requests }] = await Promise.all([
-      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, pricing_selector, dimension, unit, quantity, unit_price FROM usage').all<UsageDimensionRow>(),
+    const [{ results: metrics }, { results: requests }] = await Promise.all([
+      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price FROM usage ORDER BY rowid').all<UsageMetricRow>(),
       this.db.prepare('SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests').all<UsageRequestRow>(),
     ]);
-    return assembleUsageRecords(dimensions, requests);
+    return assembleUsageRecords(metrics, requests);
   }
 
   async set(record: UsageRecord): Promise<void> {
@@ -429,9 +428,9 @@ class SqlUsageRepo implements UsageRepo {
     const statements: SqlPreparedStatement[] = [
       this.db.prepare("DELETE FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ?")
         .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector),
-      ...usageDimensionRows(record).map(row => this.db.prepare(
-        'INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, dimension, unit, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.dimension, row.unit, row.quantity, row.unitPrice)),
+      ...usageMetricRows(record).map(row => this.db.prepare(
+        'INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.metric, row.quantity, row.unitPrice)),
     ];
     statements.push(this.db.prepare(
       `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -445,38 +444,38 @@ class SqlUsageRepo implements UsageRepo {
   }
 }
 
-interface UsageDimensionRow {
+interface UsageMetricRow {
   key_id: string; model: string; upstream: string | null; model_key: string; hour: string;
-  pricing_selector: string; dimension: string; unit: string; quantity: number; unit_price: number | null;
+  pricing_selector: string; metric: string; quantity: string; unit_price: string | null;
 }
 interface UsageRequestRow {
   key_id: string; model: string; upstream: string | null; model_key: string; hour: string;
   pricing_selector: string; requests: number;
 }
 
-type UsageIdentityRow = Pick<UsageDimensionRow, 'key_id' | 'model' | 'upstream' | 'model_key' | 'hour' | 'pricing_selector'>;
+type UsageIdentityRow = Pick<UsageMetricRow, 'key_id' | 'model' | 'upstream' | 'model_key' | 'hour' | 'pricing_selector'>;
 const usageBucketKey = (row: UsageIdentityRow): string =>
   [row.key_id, row.model, row.upstream ?? '', row.model_key, row.hour, row.pricing_selector].join('\0');
 
-const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests: readonly UsageRequestRow[]): UsageRecord[] => {
+const assembleUsageRecords = (metrics: readonly UsageMetricRow[], requests: readonly UsageRequestRow[]): UsageRecord[] => {
   const byBucket = new Map<string, UsageRecord>();
   const ensureRecord = (row: UsageIdentityRow): UsageRecord => {
     const key = usageBucketKey(row);
     let record = byBucket.get(key);
     if (!record) {
-      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, pricingSelector: parsePricingSelectorKey(row.pricing_selector), requests: 0, dimensions: [] };
+      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, pricingSelector: parsePricingSelectorKey(row.pricing_selector), requests: 0, metrics: [] };
       byBucket.set(key, record);
     }
     return record;
   };
-  for (const row of dimensions) {
+  for (const row of metrics) {
     const record = ensureRecord(row);
-    record.dimensions.push({
-      dimension: parseBillingDimension(row.dimension, 'usage.dimension'),
-      unit: parseBillingUnit(row.unit, 'usage.unit'),
-      quantity: row.quantity,
-      unitPrice: row.unit_price,
-    });
+    const metric = parseBillingMetric(row.metric, 'usage.metric');
+    const quantity = parseNonNegativeDecimalString(row.quantity, `usage metric ${metric} quantity`);
+    const unitPrice = row.unit_price === null ? null : parseNonNegativeDecimalString(row.unit_price, `usage metric ${metric} unit price`);
+    const existing = record.metrics.find(candidate => candidate.metric === metric);
+    if (existing) existing.quantity = addDecimalStrings(existing.quantity, quantity);
+    else record.metrics.push({ metric, quantity, unitPrice });
   }
   for (const row of requests) ensureRecord(row).requests = row.requests;
   return [...byBucket.values()].sort((a, b) => a.hour.localeCompare(b.hour));

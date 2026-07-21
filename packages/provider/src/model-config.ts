@@ -1,6 +1,6 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { validateUpstreamPath } from './join.ts';
-import { BILLING_DIMENSIONS, BILLING_UNITS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, RERANK_PROTOCOLS, type BillingDimension, type BillingUnit, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceUnits, type PricingSelector, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceVector, type PricingSelector, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
 
@@ -113,20 +113,8 @@ export const flagOverridesField = (value: unknown, label: string): FlagOverrides
 export const pricingField = (value: unknown, label: string): ModelPricing | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
-  const unknownPricingKeys = Object.keys(record).filter(key => key !== 'units' && key !== 'entries');
+  const unknownPricingKeys = Object.keys(record).filter(key => key !== 'entries');
   if (unknownPricingKeys.length > 0) throw new Error(`Malformed ${label}: unknown fields: ${unknownPricingKeys.join(', ')}`);
-  if (!isRecord(record.units)) throw new Error(`Malformed ${label}.units: must be an object`);
-  const unknownUnitKeys = Object.keys(record.units).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
-  if (unknownUnitKeys.length > 0) throw new Error(`Malformed ${label}.units: unknown dimensions: ${unknownUnitKeys.join(', ')}`);
-  const units: PriceUnits = {};
-  for (const dimension of BILLING_DIMENSIONS) {
-    const unit = record.units[dimension];
-    if (unit === undefined) continue;
-    if (typeof unit !== 'string' || !BILLING_UNITS.includes(unit as BillingUnit)) {
-      throw new Error(`Malformed ${label}.units.${dimension}: unknown billing unit ${JSON.stringify(unit)}`);
-    }
-    units[dimension] = unit as BillingUnit;
-  }
   if (!Array.isArray(record.entries) || record.entries.length === 0) throw new Error(`Malformed ${label}.entries: must be a non-empty array`);
 
   const entries = record.entries.map((rawEntry, index) => {
@@ -141,15 +129,16 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
       throw new Error(`Malformed ${label}.entries[${index}].selector: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
     if (!isRecord(rawEntry.rates)) throw new Error(`Malformed ${label}.entries[${index}].rates: must be an object`);
-    const unknownRateKeys = Object.keys(rawEntry.rates).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
-    if (unknownRateKeys.length > 0) throw new Error(`Malformed ${label}.entries[${index}].rates: unknown dimensions: ${unknownRateKeys.join(', ')}`);
-    const rates: Partial<Record<BillingDimension, number>> = {};
-    for (const dimension of BILLING_DIMENSIONS) {
-      if (rawEntry.rates[dimension] !== undefined) rates[dimension] = rawEntry.rates[dimension] as number;
+    const unknownRateKeys = Object.keys(rawEntry.rates).filter(key => !BILLING_METRICS.includes(key as BillingMetric));
+    if (unknownRateKeys.length > 0) throw new Error(`Malformed ${label}.entries[${index}].rates: unknown metrics: ${unknownRateKeys.join(', ')}`);
+    const rates: PriceVector = {};
+    for (const metric of BILLING_METRICS) {
+      const rate = rawEntry.rates[metric];
+      if (rate !== undefined) rates[metric] = parseNonNegativeDecimalString(rate, `${label}.entries[${index}].rates.${metric}`);
     }
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates };
   });
-  const pricing = { units, entries };
+  const pricing = { entries };
   try {
     validateModelPricing(pricing);
   } catch (cause) {

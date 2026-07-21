@@ -35,7 +35,7 @@ export interface CompletionsUsage {
   // OpenAI's own text models do not populate it today, but vLLM, llama.cpp,
   // Fireworks, OpenRouter, and xAI Grok all emit `cached_tokens` here on
   // /v1/completions, and Azure mirrors the schema. Floway extracts it when
-  // present so billing dimensions match what the upstream actually reported.
+  // present so billing metrics match what the upstream actually reported.
   prompt_tokens_details?: { cached_tokens?: number };
 }
 

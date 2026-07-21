@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import type { UsageQuantities } from '../../repo/types.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody } from '../chat/shared/request-body.ts';
 import { enumerateModelCandidates } from '../providers/registry.ts';
@@ -12,7 +13,7 @@ import { buildUpstreamCallOptions, telemetryModelIdentity, upstreamPerformanceCo
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
-import type { RerankSourceProtocol, RerankTarget } from '@floway-dev/protocols/common';
+import { canonicalDecimalString, type RerankSourceProtocol, type RerankTarget } from '@floway-dev/protocols/common';
 import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankRequest, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { ModelCandidate, ProviderRerankCallResult, TelemetryModelIdentity } from '@floway-dev/provider';
@@ -67,24 +68,11 @@ const settleRerank = (
   usage: Pick<CanonicalRerankResponse, 'searchUnits' | 'totalTokens'> | undefined,
   failed: boolean,
 ): void => {
-  const pricingUnit = identity.pricing?.units.input;
-  let measurement: { quantity: number; unit: 'searches_1k' | 'tokens_1m' } | undefined;
-  if (usage?.searchUnits !== undefined && usage.totalTokens !== undefined) {
-    measurement = pricingUnit === 'tokens_1m'
-      ? { quantity: usage.totalTokens, unit: 'tokens_1m' }
-      : { quantity: usage.searchUnits, unit: 'searches_1k' };
-  } else if (usage?.searchUnits !== undefined) {
-    measurement = { quantity: usage.searchUnits, unit: 'searches_1k' };
-  } else if (usage?.totalTokens !== undefined) {
-    measurement = { quantity: usage.totalTokens, unit: 'tokens_1m' };
-  }
-  const quantities = measurement === undefined ? {} : { input: measurement.quantity };
-  const units = measurement === undefined ? {} : { input: measurement.unit };
+  const quantities: UsageQuantities = {};
+  if (usage?.searchUnits !== undefined) quantities.rerank_searches = canonicalDecimalString(String(usage.searchUnits));
+  if (usage?.totalTokens !== undefined) quantities.input_tokens = canonicalDecimalString(String(usage.totalTokens));
   const pricingFacts = usage?.totalTokens === undefined ? {} : { inputTokens: usage.totalTokens };
-  const measuredIdentity = measurement === undefined || pricingUnit === undefined || pricingUnit === measurement.unit
-    ? identity
-    : { ...identity, pricing: null };
-  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, measuredIdentity, quantities, units, pricingFacts).catch(error => {
+  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, pricingFacts).catch(error => {
     console.error('Failed to record rerank usage:', error);
   }));
   recordPerformance(ctx, performanceContext, failed, 0, performance.now());

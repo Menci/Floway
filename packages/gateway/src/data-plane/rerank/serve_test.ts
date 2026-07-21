@@ -44,7 +44,7 @@ test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', as
   await saveRerankUpstream(
     repo,
     { protocol: 'cohere-v2' },
-    { units: { input: 'searches_1k' }, entries: [{ rates: { input: 2 } }] },
+    { entries: [{ rates: { rerank_searches: '0.002' } }] },
   );
 
   let upstreamRequest: Request | undefined;
@@ -93,7 +93,10 @@ test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', as
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, [{ dimension: 'input', unit: 'searches_1k', quantity: 3, unitPrice: 2 }]);
+  assertEquals(usage[0].metrics, [
+    { metric: 'input_tokens', quantity: '20', unitPrice: null },
+    { metric: 'rerank_searches', quantity: '3', unitPrice: '0.002' },
+  ]);
   const performance = await repo.performance.listAll();
   assertEquals(performance[0]?.operation, 'rerank');
   assertEquals(performance[0]?.requests, 1);
@@ -120,7 +123,7 @@ test('/v2/rerank accepts null Cohere meta and records request-only usage', async
   await flushAsyncWork();
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, []);
+  assertEquals(usage[0].metrics, []);
 });
 
 test('/v2/rerank rejects malformed Cohere usage objects and still records the request', async () => {
@@ -143,7 +146,7 @@ test('/v2/rerank rejects malformed Cohere usage objects and still records the re
   await flushAsyncWork();
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, []);
+  assertEquals(usage[0].metrics, []);
 });
 
 test('/jina/v1/rerank preserves same-dialect extensions and records token usage', async () => {
@@ -151,7 +154,7 @@ test('/jina/v1/rerank preserves same-dialect extensions and records token usage'
   await saveRerankUpstream(
     repo,
     { protocol: 'jina-v1' },
-    { units: { input: 'tokens_1m' }, entries: [{ rates: { input: 0.5 } }] },
+    { entries: [{ rates: { input_tokens: '0.0000005' } }] },
   );
 
   let upstreamBody: unknown;
@@ -193,7 +196,7 @@ test('/jina/v1/rerank preserves same-dialect extensions and records token usage'
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 18, unitPrice: 0.5 }]);
+  assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '18', unitPrice: '0.0000005' }]);
 });
 
 test('/jina/v1/rerank accepts a same-dialect success without usage', async () => {
@@ -221,7 +224,7 @@ test('/jina/v1/rerank accepts a same-dialect success without usage', async () =>
   await flushAsyncWork();
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, []);
+  assertEquals(usage[0].metrics, []);
 });
 
 test('/jina/v1/rerank sends image inputs to DashScope native and accepts cross-protocol success without usage', async () => {
@@ -262,7 +265,7 @@ test('/jina/v1/rerank sends image inputs to DashScope native and accepts cross-p
   await flushAsyncWork();
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, []);
+  assertEquals(usage[0].metrics, []);
 });
 
 test('/voyage/v1/rerank translates a DashScope native response', async () => {
@@ -361,15 +364,15 @@ test('upstream rerank errors are forwarded and still record a request-only usage
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, []);
+  assertEquals(usage[0].metrics, []);
 });
 
-test('a concrete token metric survives incompatible per-search pricing without a false rate', async () => {
+test('a concrete token metric remains unpriced when only rerank searches have a rate', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(
     repo,
     { protocol: 'jina-v1' },
-    { units: { input: 'searches_1k' }, entries: [{ rates: { input: 2 } }] },
+    { entries: [{ rates: { rerank_searches: '0.002' } }] },
   );
 
   await withMockedFetch(
@@ -393,7 +396,7 @@ test('a concrete token metric survives incompatible per-search pricing without a
   await flushAsyncWork();
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 9, unitPrice: null }]);
+  assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '9', unitPrice: null }]);
 });
 
 test('target-incompatible source controls return 400 without dispatch', async () => {
@@ -476,7 +479,7 @@ test('valid usage is recorded before malformed result items fail envelope parsin
   await flushAsyncWork();
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 7, unitPrice: null }]);
+  assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '7', unitPrice: null }]);
 });
 
 test('usage parsed before a cross-protocol render failure is still recorded', async () => {
@@ -507,7 +510,7 @@ test('usage parsed before a cross-protocol render failure is still recorded', as
   await flushAsyncWork();
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].dimensions, [{ dimension: 'input', unit: 'searches_1k', quantity: 2, unitPrice: null }]);
+  assertEquals(usage[0].metrics, [{ metric: 'rerank_searches', quantity: '2', unitPrice: null }]);
 });
 
 test('there is no unversioned /rerank route', async () => {

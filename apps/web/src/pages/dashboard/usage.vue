@@ -6,7 +6,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi, type ApiClient } from '../../api/client.ts';
-import type { BillingDimension, BillingUnit } from '../../api/types.ts';
+import type { BillingMetric, DecimalString } from '../../api/types.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
 import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
@@ -23,8 +23,8 @@ interface DisplayUsageRecord {
   model: string;
   hour: string;
   requests: number;
-  dimensions: Array<{ dimension: BillingDimension; unit: BillingUnit; quantity: number }>;
-  cost: number | null;
+  metrics: Array<{ metric: BillingMetric; quantity: DecimalString }>;
+  cost: DecimalString | null;
 }
 
 interface UsageResponse {
@@ -46,8 +46,8 @@ interface UsageByUserResponse {
     model: string;
     hour: string;
     requests: number;
-    dimensions: Array<{ dimension: BillingDimension; unit: BillingUnit; quantity: number }>;
-    cost: number | null;
+    metrics: Array<{ metric: BillingMetric; quantity: DecimalString }>;
+    cost: DecimalString | null;
   }>;
   users: Array<{ id: number; username: string }>;
 }
@@ -75,7 +75,7 @@ const fetchUsageForView = async (
     ]);
     return {
       usage: usageRes.data
-        ? { records: usageRes.data.records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, dimensions: r.dimensions, cost: r.cost })), keys: usageRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })) }
+        ? { records: usageRes.data.records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, metrics: r.metrics, cost: r.cost })), keys: usageRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })) }
         : null,
       search: searchRes.data
         ? { records: searchRes.data.records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests })), keys: searchRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })), activeProvider: searchRes.data.activeProvider }
@@ -114,8 +114,8 @@ type Metric =
   | 'cacheCreation' | 'cacheHitRate';
 type Range = DashboardRange;
 
-const dim = (r: DisplayUsageRecord, dimension: BillingDimension): number =>
-  r.dimensions.find(row => row.dimension === dimension && row.unit === 'tokens_1m')?.quantity ?? 0;
+const metricQuantity = (r: DisplayUsageRecord, metric: BillingMetric): number =>
+  Number(r.metrics.find(row => row.metric === metric)?.quantity ?? '0');
 
 const api = useApi();
 const auth = useAuthStore();
@@ -183,18 +183,18 @@ const tokenSummary = computed(() => {
   let requests = 0, cost: number | null = null, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, inputImage = 0, outputImage = 0;
   for (const r of records) {
     requests += r.requests;
-    if (r.cost !== null) cost = (cost ?? 0) + r.cost;
-    input += dim(r, 'input');
-    output += dim(r, 'output');
-    cacheRead += dim(r, 'input_cache_read');
-    cacheCreation += dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h');
-    inputImage += dim(r, 'input_image');
-    outputImage += dim(r, 'output_image');
+    if (r.cost !== null) cost = (cost ?? 0) + Number(r.cost);
+    input += metricQuantity(r, 'input_tokens');
+    output += metricQuantity(r, 'output_tokens');
+    cacheRead += metricQuantity(r, 'input_cache_read_tokens');
+    cacheCreation += metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens');
+    inputImage += metricQuantity(r, 'input_image_tokens');
+    outputImage += metricQuantity(r, 'output_image_tokens');
   }
   return {
     requests, cost, cacheRead, cacheCreation,
     // Input and Output mix text and image token counts into one figure. The
-    // per-modality split only affects pricing (applied per dimension already),
+    // per-modality split only affects pricing (applied per metric already),
     // so we avoid extra image-only columns. Input is the inclusive prompt total
     // (text + image, uncached + cache read + cache write); prefill is that total
     // minus cache reads; output is text + image output.
@@ -236,13 +236,13 @@ const isPercentMetric = (metric: Metric) => TOKEN_CHART_METRICS[metric].kind ===
 const metricValue = (r: DisplayUsageRecord, metric: Metric): number | null => {
   switch (metric) {
   case 'requests': return r.requests;
-  case 'cost': return r.cost;
-  case 'total': return dim(r, 'input') + dim(r, 'output') + dim(r, 'input_cache_read') + dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h') + dim(r, 'input_image') + dim(r, 'output_image');
-  case 'input': return dim(r, 'input') + dim(r, 'input_cache_read') + dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h') + dim(r, 'input_image');
-  case 'output': return dim(r, 'output') + dim(r, 'output_image');
-  case 'prefill': return dim(r, 'input') + dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h') + dim(r, 'input_image');
-  case 'cached': return dim(r, 'input_cache_read');
-  case 'cacheCreation': return dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h');
+  case 'cost': return r.cost === null ? null : Number(r.cost);
+  case 'total': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'output_tokens') + metricQuantity(r, 'input_cache_read_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens') + metricQuantity(r, 'output_image_tokens');
+  case 'input': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'input_cache_read_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens');
+  case 'output': return metricQuantity(r, 'output_tokens') + metricQuantity(r, 'output_image_tokens');
+  case 'prefill': return metricQuantity(r, 'input_tokens') + metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens') + metricQuantity(r, 'input_image_tokens');
+  case 'cached': return metricQuantity(r, 'input_cache_read_tokens');
+  case 'cacheCreation': return metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens');
   case 'cachedRate':
   case 'cacheHitRate':
     return 0;
@@ -338,14 +338,14 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
     const bucketDetails = details.get(bucket)!;
     const detail = bucketDetails.get(group) ?? emptyDetail();
     detail.requests += r.requests;
-    detail.input += dim(r, 'input');
-    detail.output += dim(r, 'output');
-    detail.cacheRead += dim(r, 'input_cache_read');
-    detail.cacheCreation += dim(r, 'input_cache_write') + dim(r, 'input_cache_write_1h');
-    detail.inputImage += dim(r, 'input_image');
-    detail.outputImage += dim(r, 'output_image');
-    if (r.cost !== null) detail.cost = (detail.cost ?? 0) + r.cost;
-    if (r.dimensions.some(row => row.unit === 'tokens_1m')) detail.hasTokenUsage = true;
+    detail.input += metricQuantity(r, 'input_tokens');
+    detail.output += metricQuantity(r, 'output_tokens');
+    detail.cacheRead += metricQuantity(r, 'input_cache_read_tokens');
+    detail.cacheCreation += metricQuantity(r, 'input_cache_write_tokens') + metricQuantity(r, 'input_cache_write_1h_tokens');
+    detail.inputImage += metricQuantity(r, 'input_image_tokens');
+    detail.outputImage += metricQuantity(r, 'output_image_tokens');
+    if (r.cost !== null) detail.cost = (detail.cost ?? 0) + Number(r.cost);
+    if (r.metrics.some(row => row.metric.endsWith('_tokens'))) detail.hasTokenUsage = true;
     bucketDetails.set(group, detail);
     if (!isPercentMetric(metric)) {
       const bucketValues = values.get(bucket)!;
