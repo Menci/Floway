@@ -1,6 +1,6 @@
 import type { AliasSelection, AliasTarget } from './aliases.ts';
 import type { ModelEndpoints } from './capabilities.ts';
-import { parseNonNegativeDecimalString, type DecimalString } from './decimal.ts';
+import { divideDecimalString, parseNonNegativeDecimalString, type DecimalString } from './decimal.ts';
 import { billableServiceTier } from './usage.ts';
 
 // Disjoint billing metrics a single request can be charged on. Every count
@@ -365,8 +365,16 @@ export const modelPricing = (...entries: PricingEntry[]): ModelPricing => {
   return pricing;
 };
 export const basePricing = (rates: PriceVector): ModelPricing => modelPricing(pricingEntry(rates));
+
+export const perMillionTokenRates = (publishedRates: PriceVector): PriceVector => Object.fromEntries(
+  Object.entries(publishedRates).map(([metric, price]) => [metric, divideDecimalString(price, '1000000')]),
+) as PriceVector;
+
+export const tokenPricingEntry = (publishedRates: PriceVector, selector?: PricingSelector): PricingEntry =>
+  pricingEntry(perMillionTokenRates(publishedRates), selector);
+
 export const tokenModelPricing = modelPricing;
-export const tokenBasePricing = basePricing;
+export const tokenBasePricing = (publishedRates: PriceVector): ModelPricing => basePricing(perMillionTokenRates(publishedRates));
 
 const thresholdMatches = (coordinate: PricingThresholdCoordinate, fact: number): boolean =>
   coordinate.operator === 'gt' ? fact > coordinate.value : fact >= coordinate.value;

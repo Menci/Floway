@@ -6,6 +6,7 @@ import {
   canonicalizePricingSelector,
   collectModelPricingIssues,
   tokenModelPricing,
+  tokenPricingEntry,
   parseBillingMetric,
   parsePricingSelectorKey,
   priceRequest,
@@ -184,27 +185,27 @@ test('service-specific thresholds remain scoped while global thresholds apply to
 });
 
 test('shared pricing helpers canonicalize and eagerly validate catalogs', () => {
-  assertEquals(tokenBasePricing({ input_tokens: '1' }), { entries: [{ rates: { input_tokens: '1' } }] });
+  assertEquals(tokenBasePricing({ input_tokens: '1' }), { entries: [{ rates: { input_tokens: '0.000001' } }] });
   assertEquals(tokenModelPricing(
-    pricingEntry({ input_tokens: '1' }),
-    pricingEntry({ input_tokens: '2' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '1' }),
+    tokenPricingEntry({ input_tokens: '2' }, { serviceTier: 'priority' }),
   ), {
     entries: [
-      { rates: { input_tokens: '1' } },
-      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
+      { rates: { input_tokens: '0.000001' } },
+      { selector: { serviceTier: 'priority' }, rates: { input_tokens: '0.000002' } },
     ],
   });
   assertThrows(
     () => tokenModelPricing(
-      pricingEntry({ input_tokens: '1' }),
-      pricingEntry({ input_tokens: '2' }, { serviceTier: 'priority' }),
-      pricingEntry({ input_tokens: '3' }, { serviceTier: 'priority' }),
+      tokenPricingEntry({ input_tokens: '1' }),
+      tokenPricingEntry({ input_tokens: '2' }, { serviceTier: 'priority' }),
+      tokenPricingEntry({ input_tokens: '3' }, { serviceTier: 'priority' }),
     ),
     Error,
     'duplicate pricing entry selector',
   );
   assertThrows(
-    () => tokenModelPricing(pricingEntry({ input_tokens: '1' }, { serviceTier: 'priority' })),
+    () => tokenModelPricing(tokenPricingEntry({ input_tokens: '1' }, { serviceTier: 'priority' })),
     Error,
     'exactly one base entry',
   );
