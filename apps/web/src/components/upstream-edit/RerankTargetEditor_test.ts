@@ -5,6 +5,9 @@ import { nextTick } from 'vue';
 import RerankTargetEditor from './RerankTargetEditor.vue';
 import { Select } from '@floway-dev/ui';
 
+const pathInput = (wrapper: ReturnType<typeof mount>) =>
+  wrapper.findAll('label').find(label => label.text().includes('Path override'))!.get('input');
+
 describe('RerankTargetEditor', () => {
   it('persists protocol and model-specific path updates', async () => {
     const wrapper = mount(RerankTargetEditor, {
@@ -16,7 +19,7 @@ describe('RerankTargetEditor', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({ protocol: 'dashscope-native' });
 
     await wrapper.setProps({ modelValue: { protocol: 'dashscope-native' } });
-    await wrapper.get('input').setValue('/workspace/rerank');
+    await pathInput(wrapper).setValue('/workspace/rerank');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
       protocol: 'dashscope-native',
       path: '/workspace/rerank',
@@ -27,7 +30,7 @@ describe('RerankTargetEditor', () => {
     const wrapper = mount(RerankTargetEditor, {
       props: { modelValue: { protocol: 'dashscope-compatible' } },
     });
-    expect(wrapper.get('input').attributes('placeholder')).toBe('/compatible-api/v1/reranks');
+    expect(pathInput(wrapper).attributes('placeholder')).toBe('/compatible-api/v1/reranks');
     expect(wrapper.emitted('update:modelValue')).toBeUndefined();
   });
 });
