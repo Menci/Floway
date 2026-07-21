@@ -156,12 +156,19 @@ export const started = (state: ResponsesSequenceState, response: ResponsesResult
   ]);
 
 export const terminal = (state: ResponsesSequenceState, response: ResponsesResult) => {
-  if (response.status === 'in_progress') {
-    throw new Error('Cannot emit a terminal Responses event for in_progress');
+  let type: 'response.completed' | 'response.incomplete' | 'response.failed';
+  switch (response.status) {
+  case 'completed': type = 'response.completed'; break;
+  case 'incomplete': type = 'response.incomplete'; break;
+  case 'failed': type = 'response.failed'; break;
+  case 'queued':
+  case 'in_progress':
+  case 'cancelled':
+    throw new TypeError(`Cannot emit a terminal Responses event for status '${response.status}'`);
   }
   return seq(state, [
     {
-      type: response.status === 'incomplete' ? 'response.incomplete' : response.status === 'failed' ? 'response.failed' : 'response.completed',
+      type,
       response,
     },
   ]);

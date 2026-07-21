@@ -234,12 +234,10 @@ describe('StatefulResponsesStore', () => {
     expect(store.getPrivatePayload('item')).toEqual({ first: true });
     expect(store.outputItemSource('rs_upstream')).toEqual({ upstreamId: 'upstream-a', upstreamItemId: 'rs_upstream' });
 
-    store.addSyntheticItem('ws_gw_synthetic', { value: 2 });
-    expect(store.getPrivatePayload('ws_gw_synthetic')).toEqual({ value: 2 });
-    // A gateway-minted synthetic item is never attributed to the upstream, and
-    // neither is a temporary cross-upstream id.
-    expect(store.outputItemSource('ws_gw_synthetic')).toBeNull();
-    expect(store.outputItemSource('rs_tmp_0000000000000000000000')).toBeNull();
+    store.addSyntheticItem('ws_aabbccdd', { value: 2 });
+    expect(store.getPrivatePayload('ws_aabbccdd')).toEqual({ value: 2 });
+    // A gateway-minted synthetic item is never attributed to the upstream.
+    expect(store.outputItemSource('ws_aabbccdd')).toBeNull();
 
     store.beginAttempt(new Map(), { upstreamId: 'upstream-b', restoresItemIds: false });
     expect(store.getPrivatePayload('item')).toBeUndefined();
@@ -253,8 +251,8 @@ describe('StatefulResponsesStore', () => {
     const store = createNonResponsesSourceStore('key-a');
     expect(store.writesState).toBe(false);
     store.beginAttempt(new Map());
-    store.addSyntheticItem('ws_gw_1', { ir: 'search result' });
-    expect(store.getPrivatePayload('ws_gw_1')).toEqual({ ir: 'search result' });
+    store.addSyntheticItem('ws_aabbccdd', { ir: 'search result' });
+    expect(store.getPrivatePayload('ws_aabbccdd')).toEqual({ ir: 'search result' });
     expect(store.getItemById('anything')).toBeUndefined();
     expect(await store.loadSnapshot('resp_x')).toBeNull();
   });

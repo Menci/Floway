@@ -147,7 +147,7 @@ interface LeaseResponse {
   token: string;
   configuration: {
     apiKeyId: string;
-    claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null };
+    claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null; cleanupPeriodDays: number | null; optOutAiAttribution: boolean };
     codex: { model: string | null; reasoningEffort: string | null };
   };
   configurationRevision: number;
@@ -162,7 +162,7 @@ interface LeaseResponse {
 // (leaseProjection and restore both parse the stored JSON through the schema).
 const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   apiKeyId,
-  claudeCode: { model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true },
+  claudeCode: { model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true },
   codex: { model: null, reasoningEffort: null },
 });
 
@@ -198,6 +198,8 @@ test('POST first use selects the first key and enables both agents at revision 1
   assertEquals(body.configuration.apiKeyId, 'key_primary');
   assertEquals(body.configuration.claudeCode.modelDiscovery, true);
   assertEquals(body.configuration.claudeCode.model, null);
+  assertEquals(body.configuration.claudeCode.cleanupPeriodDays, null);
+  assertEquals(body.configuration.claudeCode.optOutAiAttribution, false);
   assertEquals(body.configurationRevision, 1);
   expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
   assertEquals(body.scripts.claude.sh, `/api/setup/${body.token}/claude.sh`);
@@ -488,11 +490,11 @@ test('GET re-reads the current configuration each request', async () => {
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {
   const h = harness();
   const now = Date.now();
-  const config = '{"apiKeyId":"key_primary","claudeCode":{"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}';
+  const config = '{"apiKeyId":"key_primary","claudeCode":{"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}';
 
   await h.repo.insertForUser({ userId: USER_ID, token: 'b'.repeat(43), configurationJson: config, now, expiresAt: now - 1 });
   await h.repo.insertForUser({ userId: 99, token: 'c'.repeat(43), configurationJson: config, now, expiresAt: now + 300_000 });
-  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"cleanupPeriodDays":null,"optOutAiAttribution":false,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
 
   const bodies = new Set<string>();
   for (const token of ['a'.repeat(43), 'b'.repeat(43), 'c'.repeat(43), 'd'.repeat(43)]) {

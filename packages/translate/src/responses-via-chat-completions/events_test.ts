@@ -70,7 +70,7 @@ test('translateChatCompletionsChunkToResponsesEvents preserves tool call deltas 
   assertEquals(completed?.response.output, [
     {
       type: 'function_call',
-      id: 'fc_0',
+      id: expect.stringMatching(/^fc_[0-9a-f]{32}$/),
       call_id: 'call_1',
       name: 'lookup',
       arguments: '{"q":"x"}',
@@ -110,7 +110,7 @@ test('translateChatCompletionsChunkToResponsesEvents replaces buffered scalar re
     },
     {
       type: 'message',
-      id: 'msg_1',
+      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
       role: 'assistant',
       content: [{ type: 'output_text', text: 'answer' }],
     },

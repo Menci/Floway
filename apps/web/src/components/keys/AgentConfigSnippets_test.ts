@@ -35,6 +35,8 @@ const configuration = (): AgentSetupConfiguration => ({
     defaultSonnetModel: 'claude-sonnet-4-5[1m]',
     defaultHaikuModel: 'claude-haiku-4-5',
     effortLevel: 'high',
+    cleanupPeriodDays: 365,
+    optOutAiAttribution: true,
     modelDiscovery: true,
   },
   codex: { model: 'gpt-5.6-sol', reasoningEffort: 'xhigh' },
@@ -50,12 +52,45 @@ describe('AgentConfigSnippets', () => {
     expect(wrapper.text()).toContain('Edit ~/.claude/settings.json and merge this JSON object');
     expect(wrapper.text()).toContain('Do not export these values as shell environment variables');
     expect(wrapper.find('select').exists()).toBe(false);
-    expect(json).toContain('"ANTHROPIC_AUTH_TOKEN": "floway-key"');
-    expect(json).toContain('"ANTHROPIC_MODEL": "claude-sonnet-4-5[1m]"');
-    expect(json).toContain('"ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5"');
-    expect(json).toContain('"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"');
-    expect(json).toContain('"effortLevel": "high"');
+    expect(JSON.parse(json)).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: window.location.origin,
+        ANTHROPIC_AUTH_TOKEN: 'floway-key',
+        ANTHROPIC_MODEL: 'claude-sonnet-4-5[1m]',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-4-8',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-5[1m]',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
+        CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1',
+      },
+      effortLevel: 'high',
+      cleanupPeriodDays: 365,
+      attribution: { commit: '', pr: '', sessionUrl: false },
+    });
     expect(json).not.toContain('export ');
+  });
+
+  it('omits optional Claude settings and env entries at their defaults', () => {
+    const defaults = configuration();
+    defaults.claudeCode = {
+      model: null,
+      defaultOpusModel: null,
+      defaultSonnetModel: null,
+      defaultHaikuModel: null,
+      effortLevel: null,
+      cleanupPeriodDays: null,
+      optOutAiAttribution: false,
+      modelDiscovery: false,
+    };
+    const wrapper = mount(AgentConfigSnippets, {
+      props: { agent: 'claude', apiKey: key('key-1', 'Primary', 'floway-key'), configuration: defaults },
+    });
+
+    expect(JSON.parse(wrapper.find('pre[data-language="json"]').text())).toEqual({
+      env: {
+        ANTHROPIC_BASE_URL: window.location.origin,
+        ANTHROPIC_AUTH_TOKEN: 'floway-key',
+      },
+    });
   });
 
   it('switches every credential snippet when the selected API key changes', async () => {

@@ -10,11 +10,13 @@
 // on every major browser, which is jarring inside the dashboard's dark
 // theme.
 import {
-  ComboboxAnchor, ComboboxContent, ComboboxEmpty, ComboboxGroup, ComboboxInput,
-  ComboboxItem, ComboboxItemIndicator, ComboboxPortal, ComboboxRoot, ComboboxTrigger,
-  ComboboxViewport, useFilter,
+  ComboboxAnchor, ComboboxEmpty, ComboboxGroup, ComboboxInput,
+  ComboboxItem, ComboboxItemIndicator, ComboboxRoot, ComboboxTrigger,
+  useFilter,
 } from 'reka-ui';
 import { computed, nextTick, ref, watch } from 'vue';
+
+import ListboxPopover from './internal/ListboxPopover.vue';
 
 interface Item {
   value: string;
@@ -158,45 +160,37 @@ const commitTyped = async () => {
       </div>
     </ComboboxAnchor>
 
-    <ComboboxPortal>
-      <ComboboxContent
-        position="popper"
-        :side-offset="4"
-        class="z-50 max-h-72 w-[--reka-combobox-trigger-width] overflow-hidden rounded-[10px] border border-white/[0.06] bg-surface-800 text-white shadow-xl"
-      >
-        <ComboboxViewport class="p-1">
-          <ComboboxEmpty v-if="orderedItems.length === 0 && !showCreateOption" class="px-2 py-1.5 text-xs text-gray-500">
-            {{ emptyText }}
-          </ComboboxEmpty>
-          <ComboboxGroup>
-            <ComboboxItem
-              v-if="showCreateOption"
-              :value="trimmedQuery"
-              class="relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-sm text-accent-cyan outline-none data-[highlighted]:bg-accent-cyan/10"
-              @select="commitTyped"
-            >
-              <span class="absolute left-2 flex size-3.5 items-center justify-center">
-                <i class="i-lucide-plus size-3.5" />
-              </span>
-              <span class="truncate">Use "<span class="font-mono">{{ trimmedQuery }}</span>"</span>
-            </ComboboxItem>
-            <ComboboxItem
-              v-for="item in orderedItems"
-              :key="item.value"
-              :value="item.value"
-              class="relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-sm text-white outline-none data-[highlighted]:bg-accent-cyan/10 data-[highlighted]:text-accent-cyan"
-            >
-              <span class="absolute left-2 flex size-3.5 items-center justify-center">
-                <ComboboxItemIndicator>
-                  <i class="i-lucide-check size-3.5 text-accent-cyan" />
-                </ComboboxItemIndicator>
-              </span>
-              <span class="truncate">{{ item.label }}</span>
-              <span v-if="item.label !== item.value" class="ml-auto pl-3 font-mono text-xs text-gray-500">{{ item.value }}</span>
-            </ComboboxItem>
-          </ComboboxGroup>
-        </ComboboxViewport>
-      </ComboboxContent>
-    </ComboboxPortal>
+    <ListboxPopover>
+      <ComboboxEmpty v-if="orderedItems.length === 0 && !showCreateOption" class="px-2 py-1.5 text-xs text-gray-500">
+        {{ emptyText }}
+      </ComboboxEmpty>
+      <ComboboxGroup>
+        <ComboboxItem
+          v-if="showCreateOption"
+          :value="trimmedQuery"
+          class="relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-sm text-accent-cyan outline-none data-[highlighted]:bg-accent-cyan/10"
+          @select="commitTyped"
+        >
+          <span class="absolute left-2 flex size-3.5 items-center justify-center">
+            <i class="i-lucide-plus size-3.5" />
+          </span>
+          <span class="truncate">Use "<span class="font-mono">{{ trimmedQuery }}</span>"</span>
+        </ComboboxItem>
+        <ComboboxItem
+          v-for="item in orderedItems"
+          :key="item.value"
+          :value="item.value"
+          class="relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-sm text-white outline-none data-[highlighted]:bg-accent-cyan/10 data-[highlighted]:text-accent-cyan"
+        >
+          <span class="absolute left-2 flex size-3.5 items-center justify-center">
+            <ComboboxItemIndicator>
+              <i class="i-lucide-check size-3.5 text-accent-cyan" />
+            </ComboboxItemIndicator>
+          </span>
+          <span class="truncate">{{ item.label }}</span>
+          <span v-if="item.label !== item.value" class="ml-auto pl-3 font-mono text-xs text-gray-500">{{ item.value }}</span>
+        </ComboboxItem>
+      </ComboboxGroup>
+    </ListboxPopover>
   </ComboboxRoot>
 </template>

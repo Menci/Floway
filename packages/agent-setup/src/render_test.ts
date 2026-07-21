@@ -16,6 +16,8 @@ const fullConfiguration: AgentSetupConfiguration = {
     defaultSonnetModel: 'claude-sonnet-4-5',
     defaultHaikuModel: null,
     effortLevel: 'high',
+    cleanupPeriodDays: 365,
+    optOutAiAttribution: true,
     modelDiscovery: true,
   },
   codex: {
@@ -34,7 +36,7 @@ describe('agentSetupConfigurationSchema', () => {
       apiKeyId: 'key-a',
       claudeCode: {
         model: null, defaultOpusModel: null, defaultSonnetModel: null,
-        defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
+        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
       },
       codex: { model: null, reasoningEffort: 'vendor-tier' },
     }).success).toBe(true);
@@ -53,6 +55,30 @@ describe('agentSetupConfigurationSchema', () => {
     expect(agentSetupConfigurationSchema.safeParse({
       ...fullConfiguration,
       claudeCode: { ...fullConfiguration.claudeCode, effortLevel: 'minimal' },
+    }).success).toBe(false);
+  });
+
+  test('accepts only the offered Claude cleanup periods or null', () => {
+    for (const cleanupPeriodDays of [180, 365, 99999, null] as const) {
+      expect(agentSetupConfigurationSchema.safeParse({
+        ...fullConfiguration,
+        claudeCode: { ...fullConfiguration.claudeCode, cleanupPeriodDays },
+      }).success).toBe(true);
+    }
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      claudeCode: { ...fullConfiguration.claudeCode, cleanupPeriodDays: 30 },
+    }).success).toBe(false);
+  });
+
+  test('requires the Claude attribution opt-out flag to be boolean', () => {
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      claudeCode: { ...fullConfiguration.claudeCode, optOutAiAttribution: false },
+    }).success).toBe(true);
+    expect(agentSetupConfigurationSchema.safeParse({
+      ...fullConfiguration,
+      claudeCode: { ...fullConfiguration.claudeCode, optOutAiAttribution: 'yes' },
     }).success).toBe(false);
   });
 
@@ -84,7 +110,7 @@ describe('defaultAgentSetupConfiguration', () => {
       apiKeyId: 'key-a',
       claudeCode: {
         model: null, defaultOpusModel: null, defaultSonnetModel: null,
-        defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
+        defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true,
       },
       codex: { model: null, reasoningEffort: null },
     });
@@ -113,6 +139,8 @@ describe('renderShellPrefix', () => {
       "SETUP_CLAUDE_DEFAULT_SONNET_MODEL='claude-sonnet-4-5'",
       "SETUP_CLAUDE_DEFAULT_HAIKU_MODEL=''",
       "SETUP_CLAUDE_EFFORT_LEVEL='high'",
+      "SETUP_CLAUDE_CLEANUP_PERIOD_DAYS='365'",
+      "SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION='1'",
       "SETUP_CLAUDE_MODEL_DISCOVERY='1'",
       '',
     ].join('\n'));
@@ -148,13 +176,15 @@ describe('renderShellPrefix', () => {
         apiKeyId: 'key-a',
         claudeCode: {
           model: null, defaultOpusModel: null, defaultSonnetModel: null,
-          defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
+          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
       },
     });
     expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
     expect(prefix).toContain("SETUP_CLAUDE_EFFORT_LEVEL=''");
+    expect(prefix).toContain("SETUP_CLAUDE_CLEANUP_PERIOD_DAYS=''");
+    expect(prefix).toContain("SETUP_CLAUDE_OPT_OUT_AI_ATTRIBUTION=''");
     expect(prefix).not.toContain('SETUP_CODEX_');
   });
 
@@ -215,14 +245,27 @@ describe('renderPowerShellPrefix', () => {
         apiKeyId: 'key-a',
         claudeCode: {
           model: null, defaultOpusModel: null, defaultSonnetModel: null,
-          defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
+          defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
       },
     });
     expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');
     expect(prefix).toContain('$SetupClaudeModel = $null');
+    expect(prefix).toContain('$SetupClaudeCleanupPeriodDays = $null');
+    expect(prefix).toContain('$SetupClaudeOptOutAiAttribution = $false');
     expect(prefix).not.toContain('$SetupCodex');
+  });
+
+  test('renders a selected Claude cleanup period as a PowerShell number', () => {
+    const prefix = renderPowerShellPrefix({
+      agent: 'claude',
+      apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
+      configuration: fullConfiguration,
+    });
+    expect(prefix).toContain('$SetupClaudeCleanupPeriodDays = 365');
+    expect(prefix).toContain('$SetupClaudeOptOutAiAttribution = $true');
   });
 });
 

@@ -4,6 +4,15 @@
 
 :root {
   color-scheme: dark;
+  /* Small-viewport height, used to cap dropdown popover heights. Falls back to
+     100vh where svh is unsupported. */
+  --svh: 100vh;
+}
+
+@supports (height: 100svh) {
+  :root {
+    --svh: 100svh;
+  }
 }
 
 html,
