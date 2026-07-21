@@ -11,7 +11,7 @@
 // hand. The backend stays authoritative — what `/v1/models` reports
 // is what the gateway computes there, not what this helper emits.
 
-import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ControlPlaneModel, PublicModelLimits } from '../../api/types.ts';
+import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ControlPlaneModel, ModelKind, PublicModelLimits } from '../../api/types.ts';
 
 const chatRules = (target: AliasTarget): ChatAliasRules => target.rules;
 
@@ -117,7 +117,7 @@ const intersectLimits = (limitsList: readonly PublicModelLimits[]): PublicModelL
 // returns `{}` so callers can still render a skeleton.
 export const computeAnnouncedMetadata = (
   targets: readonly AliasTarget[],
-  kind: 'chat' | 'embedding' | 'image' | 'rerank' | 'audio',
+  kind: ModelKind,
   models: readonly ControlPlaneModel[] | null | undefined,
 ): AnnouncedMetadata => {
   const realById = new Map((models ?? []).filter(m => m.aliasedFrom === undefined).map(m => [m.id, m] as const));
