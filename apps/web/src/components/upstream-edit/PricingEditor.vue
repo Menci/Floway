@@ -49,13 +49,14 @@ interface PricingField {
 
 const tokenPricingField = (metric: BillingMetric): PricingField => ({ metric, displayUnit: 'MTok', displayScale: '1000000' });
 const tokenPricingFields = (...metrics: BillingMetric[]): PricingField[] => metrics.map(tokenPricingField);
+const pricingField = (metric: BillingMetric): PricingField => {
+  if (metric === 'input_audio_seconds') return { metric, displayUnit: 'Second', displayScale: '1' };
+  if (metric === 'rerank_searches') return { metric, displayUnit: '1K searches', displayScale: '1000' };
+  return tokenPricingField(metric);
+};
 const PRICING_FIELD_BY_METRIC = Object.fromEntries(BILLING_METRICS.map(metric => [
   metric,
-  metric === 'input_audio_seconds'
-    ? { metric, displayUnit: 'Second', displayScale: '1' }
-    : metric === 'rerank_searches'
-    ? { metric, displayUnit: '1K searches', displayScale: '1000' }
-    : tokenPricingField(metric),
+  pricingField(metric),
 ])) as Record<BillingMetric, PricingField>;
 
 const PRICING_FIELDS_BY_KIND: Record<ModelKind, readonly PricingField[]> = {

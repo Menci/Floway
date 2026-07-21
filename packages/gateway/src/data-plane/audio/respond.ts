@@ -21,7 +21,7 @@ const measureAudioUsage = (value: unknown, sourceApi: string) => {
   }
 };
 
-const respondNonStreaming = async ({ c, ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Promise<Response> => {
+const respondNonStreaming = async ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Promise<Response> => {
   let measurement = requestOnlyUsageMeasurement();
   const contentType = response.headers.get('content-type')?.replace(/;.*$/u, '').trim().toLowerCase();
   const jsonMediaType = contentType === 'application/json' || contentType?.endsWith('+json') === true;
