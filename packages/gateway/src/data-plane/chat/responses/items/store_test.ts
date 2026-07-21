@@ -250,6 +250,19 @@ describe('StatefulResponsesStore', () => {
     expect(store.getPrivatePayload('ws_aabbccdd')).toBeUndefined();
   });
 
+  test.each([true, false])('store=%s rejects conflicting full input items with one producer id', async storeFlag => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const store = createResponsesHttpStore('key-a', storeFlag);
+    const id = 'msg_input_collision';
+
+    await expect(store.stageInputItems([
+      { type: 'message', id, role: 'user', content: 'first' },
+      { type: 'message', id, role: 'user', content: 'second' },
+    ])).rejects.toThrow(`Responses item id collision: ${id}`);
+    expect(await repo.responsesItems.lookupMany('key-a', [id])).toEqual([]);
+  });
+
   test('non-Responses-source store holds request-private tool state but persists and reads nothing', async () => {
     // Translated sources (Messages/Gemini/Chat) still run the server-tool shim,
     // whose per-attempt private-payload scratchpad lives on the store; the

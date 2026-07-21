@@ -703,12 +703,6 @@ test('text_delta events on a text block with citations still emit text deltas un
 });
 
 // ── Synthesized output items carry stable, child-consistent ids ──
-//
-// When a Responses client is routed to a Messages upstream, every synthesized
-// output item must expose an id so the source-serve persistence layer can mint
-// a stored id and record the item. The id on `output_item.added`/`.done` must
-// match the `item_id` on every child frame, and stay stable within the
-// response (index-derived, not a fresh gateway stored id).
 
 const itemIdOf = (events: ResponsesStreamEvent[], type: 'response.output_item.added' | 'response.output_item.done'): string => {
   const event = events.find(candidate => candidate.type === type) as (ResponsesOutputItemAddedEvent | ResponsesOutputItemDoneEvent) | undefined;

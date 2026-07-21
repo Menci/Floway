@@ -108,13 +108,8 @@ export const result = (input: {
   ...(input.serviceTier !== undefined ? { service_tier: input.serviceTier } : {}),
 });
 
-// Every output item carries its own `id` so that, when a Responses client is
-// routed to a non-Responses upstream, the synthesized stream looks like a
-// native Responses one: the id on `output_item.added`/`.done` matches the
-// `item_id` of every child frame, and the source-serve persistence layer can
-// mint a stored id and record the item. Ids are derived from the item's
-// output index (see the `msg_`/`fc_`/`ctc_`/`rs_` callers), so they are stable
-// within a response and do not parse as gateway stored ids.
+// A translated producer allocates one item ID when the lifecycle opens and
+// reuses it across added, child, done, and terminal frames.
 export const messageItem = (id: string, text: string): ResponsesOutputMessage => ({
   type: 'message',
   id,

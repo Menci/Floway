@@ -159,13 +159,6 @@ export const messagesViaResponsesItemsView = {
 
       const content: MessagesAssistantContentBlock[] = [];
       for (const block of message.content) {
-        // A `${enc}@${id}` carrier never originates from a native Anthropic
-        // Messages model — Anthropic only emits opaque signatures with no `@`.
-        // It exists only because our own messages-via-responses translation
-        // packed a Responses reasoning id into the signature, or the session
-        // previously passed through another gateway using the same interop
-        // layout. A foreign gateway's id is not one of our stored ids, so it
-        // does not resolve here and the block is forwarded untouched.
         const carrier = reasoningCarrier(block);
         if (carrier === null) {
           content.push(block);
@@ -191,9 +184,8 @@ export const messagesViaResponsesItemsView = {
 
 // A reasoning block echoed back by a Messages client carries the packed
 // `${encrypted_content}@${id}` value in `thinking.signature` or
-// `redacted_thinking.data`. Returns the unpacked id only when the carrier was
-// issued by this gateway; a native upstream signature (no `@`) has no
-// stored id to rewrite and is left untouched.
+// `redacted_thinking.data`. Native signatures without `@` expose no ID and are
+// left untouched.
 const reasoningCarrier = (block: MessagesAssistantContentBlock): { id: string; encryptedContent: string; thinking: string } | null => {
   const carrier = block.type === 'thinking' ? block.signature : block.type === 'redacted_thinking' ? block.data : undefined;
   if (carrier === undefined) return null;

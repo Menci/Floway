@@ -47,6 +47,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItems = new Map<string, StoredResponsesItem>();
   private readonly loadedByContentHash = new Map<string, StoredResponsesItem[]>();
   private readonly stagedInputItemIds: string[] = [];
+  private readonly newInputItemsById = new Map<string, StoredResponsesItem>();
   private readonly outputItemIds = new Map<number, string>();
   private readonly outputItemsById = new Map<string, StoredResponsesItem>();
   private previousSnapshotItemIds: string[] = [];
@@ -206,9 +207,34 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     if (id !== null) {
       const row = this.getItemById(id);
       if (row !== undefined) {
+        const currentTurn = this.newInputItemsById.get(id);
+        if (currentTurn !== undefined) {
+          assertSameStoredResponsesItem(currentTurn, {
+            id,
+            apiKeyId: this.apiKeyId,
+            payload: { item: structuredClone(item) },
+            contentHash: await hashResponsesItemContent(item),
+            createdAt: currentTurn.createdAt,
+          });
+        }
         this.stagedInputItemIds.push(row.id);
         return;
       }
+
+      const contentHash = await hashResponsesItemContent(item);
+      const createdAt = Date.now();
+      const created: StoredResponsesItem = {
+        id,
+        apiKeyId: this.apiKeyId,
+        payload: { item: structuredClone(item) },
+        contentHash,
+        createdAt,
+      };
+      this.stagedInputItemIds.push(id);
+      this.freshItemIds.add(id);
+      this.newInputItemsById.set(id, created);
+      this.rememberItem(created);
+      return;
     }
 
     const contentHash = await hashResponsesItemContent(item);
@@ -219,7 +245,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     }
 
     const row: StoredResponsesItem = {
-      id: id ?? createResponsesStorageKey(),
+      id: createResponsesStorageKey(),
       apiKeyId: this.apiKeyId,
       payload: { item: structuredClone(item) },
       contentHash,
