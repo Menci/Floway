@@ -223,6 +223,7 @@ const uncarriedOutputItems = [
   ['ctc', { type: 'custom_tool_call', id: 'raw', call_id: 'call', name: 'tool', input: 'x' }],
   ['ws', { type: 'web_search_call', id: 'raw', status: 'completed', action: { type: 'search', queries: ['x'] } }],
   ['tsc', { type: 'tool_search_call', id: 'raw', arguments: {}, call_id: 'call', execution: 'server', status: 'completed' }],
+  ['tso', { type: 'tool_search_output', id: 'raw', tools: [], call_id: 'call', execution: 'server', status: 'completed' }],
   ['cmo', { type: 'program_output', id: 'raw', call_id: 'call', result: 'ok', status: 'completed' }],
   ['sh', { type: 'shell_call', id: 'raw', call_id: 'call', action: { commands: ['pwd'] }, status: 'completed' }],
   ['sho', { type: 'shell_call_output', id: 'raw', call_id: 'call', output: [{ stdout: '', stderr: '', outcome: { type: 'exit', exit_code: 0 } }], status: 'completed' }],

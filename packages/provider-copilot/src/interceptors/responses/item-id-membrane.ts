@@ -17,6 +17,7 @@ const COPILOT_OUTPUT_ITEM_POLICIES = {
   custom_tool_call: { prefix: 'ctc', carrier: null },
   web_search_call: { prefix: 'ws', carrier: null },
   tool_search_call: { prefix: 'tsc', carrier: null },
+  tool_search_output: { prefix: 'tso', carrier: null },
   program: { prefix: 'cm', carrier: 'fingerprint' },
   program_output: { prefix: 'cmo', carrier: null },
   agent_message: { prefix: 'amsg', carrier: 'agent_content' },
