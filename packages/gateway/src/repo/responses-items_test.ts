@@ -79,6 +79,23 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     expect(await repo.responsesItems.lookupMany('key-a', [first.id])).toEqual([refreshed]);
   });
 
+  test('producer identity ignores nondeterministic affinity projection bytes', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await createRepo();
+    const first = storedItem('rs_reused', 'key-a', 'producer-hash', 1_000);
+    first.payload.item = { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'first-affinity-wrapper' };
+    const repeated = {
+      ...first,
+      payload: { item: { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'second-affinity-wrapper' } },
+      createdAt: 3_000,
+    };
+
+    await repo.responsesItems.insertMany([first]);
+    await repo.responsesItems.insertMany([repeated]);
+
+    expect(await repo.responsesItems.lookupMany('key-a', [first.id])).toEqual([{ ...first, createdAt: 3_000 }]);
+  });
+
   test.each([
     ['visible payload', (first: StoredResponsesItem): StoredResponsesItem => ({
       ...first,

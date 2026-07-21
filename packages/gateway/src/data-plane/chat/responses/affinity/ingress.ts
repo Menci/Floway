@@ -1,5 +1,5 @@
 import { type AffinityCodec, blobForExactCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
-import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem } from '@floway-dev/protocols/responses';
 
 interface ResponsesBlobLocation {
   readonly itemIndex: number;
@@ -86,6 +86,35 @@ const opaqueBlobLocations = async (
     }
   }
   return locations;
+};
+
+export const unwrapResponsesOutputAffinity = async (
+  item: ResponsesOutputItem,
+  codec: AffinityCodec,
+): Promise<ResponsesOutputItem> => {
+  const locations = await opaqueBlobLocations([item as unknown as ResponsesInputItem], codec);
+  const restored = structuredClone(item) as ResponsesOutputItem & Record<string, unknown>;
+  const nested = new Map<number, Extract<DecodedAffinityBlob, { kind: 'owned' }>>();
+  for (const location of locations) {
+    if (location.decoded.kind !== 'owned') continue;
+    if (location.contentIndex !== undefined) {
+      nested.set(location.contentIndex, location.decoded);
+    } else if (location.decoded.value === undefined) {
+      delete restored[location.slot];
+    } else {
+      restored[location.slot] = location.decoded.value;
+    }
+  }
+  if (restored.type === 'agent_message') {
+    restored.content = restored.content.flatMap((content, contentIndex) => {
+      const decoded = nested.get(contentIndex);
+      if (decoded === undefined) return [content];
+      return decoded.value === undefined
+        ? []
+        : [{ ...content, encrypted_content: decoded.value }];
+    });
+  }
+  return restored;
 };
 
 const isEmptyOriginlessReasoningCarrier = (

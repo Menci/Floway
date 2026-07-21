@@ -1,13 +1,13 @@
 import { expect, test } from 'vitest';
 
 import { wrapResponsesAffinityEgress } from './egress.ts';
-import { prepareResponsesAffinity } from './ingress.ts';
+import { prepareResponsesAffinity, unwrapResponsesOutputAffinity } from './ingress.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { AffinityCodec } from '../../shared/affinity/index.ts';
 import { hydrateResponsesPayload } from '../items/hydrate.ts';
 import { wrapResponsesClientOutput } from '../items/output.ts';
-import { createResponsesHttpStore } from '../items/store.ts';
+import { createResponsesHttpStore, createResponsesWsSession } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { stubModelCandidate } from '@floway-dev/test-utils';
@@ -56,6 +56,7 @@ test('affinity selects the route while item storage preserves the exact producer
   const client = wrapResponsesClientOutput(withAffinity, {
     store,
     responseId: 'resp_public',
+    producerItem: async item => await unwrapResponsesOutputAffinity(item, codec),
   });
 
   let clientResponse: ResponsesResult | undefined;
@@ -76,6 +77,63 @@ test('affinity selects the route while item storage preserves the exact producer
   expect(affinity.payloadForCandidate(candidateA).input).toEqual([programOutput]);
   expect(affinity.payloadForCandidate(candidateB).input).toEqual([programOutput]);
 });
+
+test.each(['HTTP store=true', 'WebSocket store=false'] as const)(
+  '%s accepts an identical affinity-bearing producer item across turns',
+  async mode => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const candidate = modelCandidate('upstream-a');
+    const codec = new AffinityCodec('22'.repeat(32));
+    const session = createResponsesWsSession();
+    const createStore = () => mode === 'HTTP store=true'
+      ? createResponsesHttpStore('key-a', true)
+      : session.createStore('key-a', false);
+    const item = { type: 'reasoning' as const, id: 'rs_reused', summary: [], encrypted_content: 'opaque' };
+
+    const runTurn = async (): Promise<typeof item> => {
+      const response: ResponsesResult = {
+        id: 'resp_upstream',
+        object: 'response',
+        model: 'model-a',
+        status: 'completed',
+        output: [item],
+        error: null,
+        incomplete_details: null,
+      };
+      const source = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+        yield eventFrame({ type: 'response.output_item.added', output_index: 0, item });
+        yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
+        yield eventFrame({ type: 'response.completed', response });
+      };
+      const withAffinity = wrapResponsesAffinityEgress(source(), {
+        codec,
+        affinity: { upstreamId: candidate.provider.upstream, modelId: candidate.model.id },
+      });
+      let output: typeof item | undefined;
+      for await (const frame of wrapResponsesClientOutput(withAffinity, {
+        store: createStore(),
+        responseId: 'resp_public',
+        producerItem: async candidateItem => await unwrapResponsesOutputAffinity(candidateItem, codec),
+      })) {
+        if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
+          output = frame.event.item as typeof item;
+        }
+      }
+      if (output === undefined) throw new Error('Expected reasoning output');
+      return output;
+    };
+
+    const first = await runTurn();
+    const second = await runTurn();
+    expect(second.id).toBe(first.id);
+    expect(second.encrypted_content).not.toBe(first.encrypted_content);
+
+    const reader = createStore();
+    await reader.loadInputItems([{ type: 'item_reference', id: item.id }], []);
+    expect(reader.getItemById(item.id)?.payload.item).toEqual(first);
+  },
+);
 
 test('agent-message natural and originless nested carriers round-trip without changing ids', async () => {
   const candidate = modelCandidate('upstream-a');

@@ -9,6 +9,9 @@ import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult
 // visible but cannot replace the durable item. The response snapshot commits
 // separately before a successful terminal frame. Failed/error terminals keep
 // completed item rows but never a snapshot.
+// Identity hashes use the producer item before affinity wrapping, so fresh
+// authenticated ciphertext does not turn exact producer reuse into a
+// collision; the first client-facing wire projection remains durable.
 //
 // Response envelope ids remain Floway-owned because one client response can
 // span several upstream calls behind the server-tool runtime. The caller mints
@@ -19,9 +22,10 @@ export const wrapResponsesClientOutput = async function* (
   args: {
     readonly store: StatefulResponsesStore;
     readonly responseId: string;
+    readonly producerItem: (item: ResponsesOutputItem) => Promise<ResponsesOutputItem>;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { store, responseId } = args;
+  const { store, responseId, producerItem } = args;
   const finalizedOutputIndexes = new Set<number>();
   let sawCompactionItem = false;
 
@@ -29,6 +33,10 @@ export const wrapResponsesClientOutput = async function* (
     if (finalizedOutputIndexes.has(outputIndex)) return;
     const id = responsesItemId(item);
     if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
+    const identityItem = await producerItem(item);
+    if (responsesItemId(identityItem) !== id) {
+      throw new Error(`Responses ${item.type} output id changed while restoring producer identity: ${id}`);
+    }
     const privatePayload = store.getPrivatePayload(id);
     const row: StoredResponsesItem = {
       id,
@@ -36,7 +44,7 @@ export const wrapResponsesClientOutput = async function* (
       payload: privatePayload === undefined
         ? { item: structuredClone(item) }
         : { item: structuredClone(item), private: privatePayload },
-      contentHash: await hashResponsesItemContent(item),
+      contentHash: await hashResponsesItemContent(identityItem),
       createdAt: Date.now(),
     };
     await store.persistOutputItem(row, outputIndex);

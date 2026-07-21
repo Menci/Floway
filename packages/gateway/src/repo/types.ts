@@ -362,6 +362,8 @@ export interface StoredResponsesItem {
   id: string;
   apiKeyId: string;
   payload: StoredResponsesItemPayload;
+  // Stable producer identity: output items hash their pre-affinity form;
+  // staged input items hash their exact visible body.
   contentHash: string;
   createdAt: number;
 }

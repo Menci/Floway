@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
 import { hashResponsesItemContent, responsesItemId } from './identity.ts';
-import { wrapResponsesClientOutput } from './output.ts';
+import { wrapResponsesClientOutput as wrapResponsesClientOutputImpl } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -15,6 +15,12 @@ const frames = async function* (response: ResponsesResult): AsyncIterable<Protoc
   yield eventFrame({ type: 'response.completed', response });
   yield doneFrame();
 };
+
+const wrapResponsesClientOutput = (
+  input: Parameters<typeof wrapResponsesClientOutputImpl>[0],
+  args: Omit<Parameters<typeof wrapResponsesClientOutputImpl>[1], 'producerItem'>,
+): ReturnType<typeof wrapResponsesClientOutputImpl> =>
+  wrapResponsesClientOutputImpl(input, { ...args, producerItem: async item => item });
 
 const completedReasoningItem: ResponsesOutputReasoning = Object.freeze({
   type: 'reasoning',

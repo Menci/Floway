@@ -152,6 +152,8 @@ Terminal-only items are stored as the fallback complete view. Full items and
 candidate-specific rewrite. When state is written, idless input items use
 internal storage keys only inside snapshots; stateless HTTP requests neither
 hash nor stage them. Reusing one API-key-scoped producer ID is idempotent
-only when the complete visible and private payload matches; a collision fails
-before the done frame is published. Affinity never reads, writes,
-authenticates, or validates item IDs.
+only when the pre-affinity producer item and private payload match; a collision
+fails before the done frame is published. The durable wire item remains the
+first client-facing projection because equivalent affinity wrappers use fresh
+authenticated ciphertext. Affinity never reads, writes, authenticates, or
+validates item IDs.
