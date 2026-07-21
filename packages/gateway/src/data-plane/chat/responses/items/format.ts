@@ -89,10 +89,6 @@ export const canonicalResponsesItemType = (itemType: string): string =>
 export const hashResponsesItemContent = async (item: unknown): Promise<string> =>
   await sha256Hex(JSON.stringify(sortJson(item)));
 
-export const createTemporaryResponsesItemId = (itemType: string): string => `${prefixForItemType(itemType)}_tmp_${randomBody()}`;
-
-export const isTemporaryResponsesItemId = (value: string): boolean => /_tmp_[A-Za-z0-9_-]{22}$/.test(value);
-
 // Gateway-owned response envelope id. A response from this gateway is not
 // a 1:1 wrapper for an upstream response — the server-tool runtime can
 // drive multiple upstream calls behind a single client-visible response —

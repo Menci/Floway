@@ -236,10 +236,8 @@ describe('StatefulResponsesStore', () => {
 
     store.addSyntheticItem('ws_aabbccdd', { value: 2 });
     expect(store.getPrivatePayload('ws_aabbccdd')).toEqual({ value: 2 });
-    // A gateway-minted synthetic item is never attributed to the upstream, and
-    // neither is a temporary cross-upstream id.
+    // A gateway-minted synthetic item is never attributed to the upstream.
     expect(store.outputItemSource('ws_aabbccdd')).toBeNull();
-    expect(store.outputItemSource('rs_tmp_0000000000000000000000')).toBeNull();
 
     store.beginAttempt(new Map(), { upstreamId: 'upstream-b', restoresItemIds: false });
     expect(store.getPrivatePayload('item')).toBeUndefined();
