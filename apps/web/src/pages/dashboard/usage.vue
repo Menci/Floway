@@ -359,8 +359,7 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
       if (value !== null) {
         const current = bucketValues.get(group);
         bucketValues.set(group, sumDecimalStrings(typeof current === 'string' ? current : '0', value));
-      }
-      else if (!bucketValues.has(group)) bucketValues.set(group, null);
+      } else if (!bucketValues.has(group)) bucketValues.set(group, null);
     }
   }
   if (isPercentMetric(metric)) {
