@@ -117,7 +117,7 @@ describe('PricingEditor', () => {
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
   });
 
-  it('shows Base dimensions outside the kind defaults and clones Base rates into new entries', async () => {
+  it('shows Base metrics outside the kind defaults and clones Base rates into new entries', async () => {
     const baseRates = { input_tokens: '1', input_image_tokens: '2', output_tokens: '3', output_image_tokens: '4' };
     const wrapper = mountEditor({ entries: [{ rates: baseRates }] }, { kind: 'chat' });
 
@@ -133,7 +133,7 @@ describe('PricingEditor', () => {
     }));
   });
 
-  it('keeps out-of-kind dimensions editable while a catalog has no Base', () => {
+  it('keeps out-of-kind metrics editable while a catalog has no Base', () => {
     const wrapper = mountEditor({
       entries: [{ selector: { serviceTier: 'priority' }, rates: { input_image_tokens: '2' } }],
     }, { kind: 'chat' });

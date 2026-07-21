@@ -22,7 +22,7 @@
 // cached context use less"), but none of the three API surfaces
 // (/v1/chat/completions, /api/chat, /v1/messages) currently exposes a cached-
 // token count to clients. Without an upstream signal there is nothing to
-// dimension a cache-read row against, so the rate sits unused. Leaving the
+// measure a cache-read metric against, so the rate sits unused. Leaving the
 // upstream's cache rate in the table keeps it ready for the day Ollama
 // surfaces cached_tokens — switching to billed cache reads then becomes a
 // pure ingestion-side change.

@@ -108,7 +108,7 @@ test('modelsField accepts a valid kind and rejects an unknown one', () => {
   );
 });
 
-test('modelsField accepts pricing with only a subset of dimensions set', () => {
+test('modelsField accepts pricing with only a subset of metrics set', () => {
   const models = modelsField(
     [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, pricing: { entries: [{ rates: { input_tokens: '2.5' } }] } }],
     'azure',
