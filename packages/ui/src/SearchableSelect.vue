@@ -28,10 +28,11 @@ const props = withDefaults(defineProps<{
   defaultLabel?: string;
 }>(), { size: 'md', defaultLabel: 'Default' });
 
-// reka matches an item to the model by value equality. A frozen object is the
-// Default row's value so it can never collide with a real string id; the public
-// model still speaks `string | null` and this sentinel lives only inside root.
-const DEFAULT_ROW: Record<string, never> = Object.freeze({});
+// reka matches an item to the model by value equality and types that value as a
+// string here. A NUL-prefixed string is the Default row's value: it can never
+// collide with a real option and stays entirely inside this component — the
+// public model still speaks `string | null`.
+const DEFAULT_VALUE = '\u0000default';
 
 const { contains } = useFilter({ sensitivity: 'base' });
 
@@ -42,8 +43,8 @@ const optionByValue = computed(() => new Map(props.options.map(option => [option
 const isKnown = (v: string | null): v is string => v !== null && optionByValue.value.has(v);
 
 const selectedLabel = computed(() => isKnown(value.value) ? optionByValue.value.get(value.value)!.label : props.defaultLabel);
-const rootValue = computed(() => isKnown(value.value) ? value.value : DEFAULT_ROW);
-const displayValue = (raw: unknown) => typeof raw === 'string' ? (optionByValue.value.get(raw)?.label ?? props.defaultLabel) : props.defaultLabel;
+const rootValue = computed(() => isKnown(value.value) ? value.value : DEFAULT_VALUE);
+const displayValue = (raw: string) => raw === DEFAULT_VALUE ? props.defaultLabel : (optionByValue.value.get(raw)?.label ?? props.defaultLabel);
 
 const filteredOptions = computed(() => query.value === ''
   ? props.options
@@ -54,8 +55,8 @@ const defaultVisible = computed(() => query.value === '' || contains(props.defau
 // input text on blur/select on its own, but a programmatic close needs this.
 watch(open, isOpen => { query.value = isOpen ? '' : selectedLabel.value; });
 
-const onSelect = (raw: string | number | boolean | Record<string, unknown> | null | undefined) => {
-  value.value = raw === DEFAULT_ROW || raw == null ? null : String(raw);
+const onSelect = (raw: string) => {
+  value.value = raw === DEFAULT_VALUE ? null : raw;
   open.value = false;
 };
 
@@ -75,7 +76,6 @@ const itemClass = 'relative flex cursor-pointer select-none items-center rounded
     :model-value="rootValue"
     v-model:open="open"
     :disabled="disabled"
-    :display-value="displayValue"
     @update:model-value="onSelect"
   >
     <ComboboxAnchor as-child>
@@ -83,6 +83,7 @@ const itemClass = 'relative flex cursor-pointer select-none items-center rounded
         <ComboboxInput
           :id="id"
           v-model="query"
+          :display-value="displayValue"
           :placeholder="placeholder"
           :disabled="disabled"
           :class="inputClass"
@@ -99,7 +100,7 @@ const itemClass = 'relative flex cursor-pointer select-none items-center rounded
       </ComboboxEmpty>
       <ComboboxGroup>
         <!-- Default row: UI font, so a model literally named "Default" stays distinct. -->
-        <ComboboxItem v-if="defaultVisible" :value="DEFAULT_ROW" :class="[itemClass, 'text-white']">
+        <ComboboxItem v-if="defaultVisible" :value="DEFAULT_VALUE" :class="[itemClass, 'text-white']">
           <span class="absolute left-2 flex size-3.5 items-center justify-center">
             <ComboboxItemIndicator>
               <i class="i-lucide-check size-3.5 text-accent-cyan" />
