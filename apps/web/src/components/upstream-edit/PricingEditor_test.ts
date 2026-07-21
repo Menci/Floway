@@ -1,10 +1,9 @@
-import { mount, type VueWrapper } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
 import PricingEditor from './PricingEditor.vue';
 import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
-import { Select } from '@floway-dev/ui';
 
 const tokenPricing = ({ entries }: Pick<ModelPricing, 'entries'>): ModelPricing => ({
   units: Object.fromEntries([...new Set(entries.flatMap(entry => Object.keys(entry.rates)))].map(dimension => [dimension, 'tokens_1m'])) as ModelPricing['units'],
@@ -51,20 +50,6 @@ describe('PricingEditor', () => {
     await wrapper.setProps({ modelValue: tokenPricing({ entries: [{ rates: { input: 2 } }] }) });
     await nextTick();
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
-  });
-
-  it('persists a billing unit independently from its rate', async () => {
-    const wrapper = mountEditor({ entries: [{ rates: { input: 0.6 } }] });
-
-    const unitSelect = wrapper.findComponent(Select) as unknown as VueWrapper;
-    unitSelect.vm.$emit('update:modelValue', 'minutes');
-    await nextTick();
-
-    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      units: { input: 'minutes' },
-      entries: [{ rates: { input: 0.6 } }],
-    });
-    expect(wrapper.text()).toContain('Input ($/Minute)');
   });
 
   it('clears a threshold value while preserving operator-only updates', async () => {

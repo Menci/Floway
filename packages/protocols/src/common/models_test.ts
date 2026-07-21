@@ -19,7 +19,7 @@ import { assertEquals, assertThrows } from '../test-assert.ts';
 
 test('billing storage parsers accept current vocabulary and reject unknown values', () => {
   assertEquals(parseBillingDimension('input'), 'input');
-  assertEquals(parseBillingUnit('minutes'), 'minutes');
+  assertEquals(parseBillingUnit('tokens_1m'), 'tokens_1m');
   assertThrows(() => parseBillingDimension('reasoning'), TypeError, 'billing dimension is invalid: "reasoning"');
   assertThrows(() => parseBillingUnit('requests'), TypeError, 'billing unit is invalid: "requests"');
 });

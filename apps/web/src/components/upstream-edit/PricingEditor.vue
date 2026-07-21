@@ -5,6 +5,7 @@ import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import {
   collectModelPricingIssues,
   BILLING_DIMENSIONS,
+  BILLING_UNITS,
   PRICING_AXES,
   canonicalPricingSelectorKey,
   type BillingDimension,
@@ -26,11 +27,10 @@ const props = defineProps<{
 const pricing = defineModel<ModelPricing | undefined>({ required: true });
 const pricingUnits = ref<ModelPricing['units']>({ ...(pricing.value?.units ?? {}) });
 
-const BILLING_UNIT_OPTIONS: { value: BillingUnit; label: string }[] = [
-  { value: 'tokens_1m', label: '1M tokens' },
-  { value: 'minutes', label: 'Minute' },
-  { value: 'searches_1k', label: '1K searches' },
-];
+const BILLING_UNIT_LABELS: Record<BillingUnit, string> = {
+  tokens_1m: '1M tokens',
+};
+const BILLING_UNIT_OPTIONS = BILLING_UNITS.map(value => ({ value, label: BILLING_UNIT_LABELS[value] }));
 
 const PRICING_LABELS: Record<BillingDimension, string> = {
   input: 'Input',
