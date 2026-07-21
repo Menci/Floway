@@ -172,8 +172,16 @@ SET config_json = json_set(
                             OR decimal_value > 1.7976931348623157e308
                             OR length(decimal_text) > 512
                             OR abs(source_exponent) > 400
+                            OR length(ltrim(digits, '0')) > 100
+                            OR max(0, length(digits) - decimal_position) > 400
+                            OR max(1, decimal_position) > 400
+                            OR (CASE
+                              WHEN decimal_position <= 0 THEN length(sign) + 2 - decimal_position + length(digits)
+                              WHEN decimal_position >= length(digits) THEN length(sign) + decimal_position
+                              ELSE length(sign) + length(digits) + 1
+                            END) > 512
                             THEN json('invalid legacy model price')
-                          WHEN decimal_value = 0 THEN '0'
+                          WHEN digits = '' THEN '0'
                           WHEN decimal_position <= 0 THEN sign || '0.' || printf('%0*d', -decimal_position, 0) || digits
                           WHEN decimal_position >= length(digits) THEN sign || digits || printf('%0*d', decimal_position - length(digits), 0)
                           ELSE sign || substr(digits, 1, decimal_position) || '.' || substr(digits, decimal_position + 1)
