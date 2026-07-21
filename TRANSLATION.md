@@ -262,10 +262,11 @@ The same boundary runs for both `/v1/responses` (streaming) and
 - allocates a stable type-correct random provider-facing ID as soon as each
   streaming output item is added, rewrites its child and later frames to that
   ID, and appends each frame's matching raw ID behind every available
-  reasoning, compaction, program, or agent-message blob. The state-writing
-  client-output membrane may still alias this ID. The compact value path
-  applies the same rule to its generated compaction item. Unknown Copilot
-  output types fail closed before a raw ID can reach the client
+  reasoning, compaction, program, or agent-message blob. A source state store
+  with a write backing aliases this provider-facing ID; otherwise it passes
+  through. The compact value path applies the same rule to its generated
+  compaction item. Unknown Copilot output types fail closed before a raw ID can
+  reach the client
 
 ### Responses — Codex provider boundary chain
 

@@ -184,6 +184,60 @@ test.each(uncarriedOutputItems)('randomizes a Copilot %s item without exposing i
   expect(JSON.stringify(frames)).not.toContain('"raw"');
 });
 
+test('preserves shell command events that carry no item id', async () => {
+  const addedItem: ResponsesOutputItem = {
+    type: 'shell_call',
+    id: 'sh_raw',
+    call_id: 'call_shell',
+    action: { commands: [] },
+    status: 'in_progress',
+  };
+  const doneItem: ResponsesOutputItem = {
+    ...addedItem,
+    action: { commands: ['ls -a ~/Desktop'] },
+    status: 'completed',
+  };
+  const commandEvents: ResponsesStreamEvent[] = [
+    { type: 'response.shell_call_command.added', output_index: 0, command_index: 0, command: '' },
+    { type: 'response.shell_call_command.delta', output_index: 0, command_index: 0, delta: 'ls -a ~/Desktop', obfuscation: 'padding' },
+    { type: 'response.shell_call_command.done', output_index: 0, command_index: 0, command: 'ls -a ~/Desktop' },
+  ];
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, addedItem)),
+    ...commandEvents.map(event => eventFrame(event)),
+    eventFrame(outputItemEvent('done', 0, doneItem)),
+  ]);
+  const frames = await collect(result);
+  const events = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
+  const added = eventAt(frames, 'response.output_item.added');
+  const done = eventAt(frames, 'response.output_item.done');
+
+  expect(added.item.id).toMatch(/^sh_[0-9a-f]{32}$/);
+  expect(done.item.id).toBe(added.item.id);
+  expect(events.slice(1, 4)).toEqual(commandEvents);
+});
+
+test('rewrites apply-patch diff item ids', async () => {
+  const item: ResponsesOutputItem = {
+    type: 'apply_patch_call',
+    id: 'apc_raw',
+    call_id: 'call_patch',
+    operation: { type: 'create_file', path: 'x', diff: '+x' },
+    status: 'completed',
+  };
+  const { result } = await runStream([
+    eventFrame(outputItemEvent('added', 0, item)),
+    eventFrame({ type: 'response.apply_patch_call_operation_diff.delta', item_id: 'apc_raw', output_index: 0, delta: '+x' }),
+    eventFrame({ type: 'response.apply_patch_call_operation_diff.done', item_id: 'apc_raw', output_index: 0, diff: '+x' }),
+    eventFrame(outputItemEvent('done', 0, item)),
+  ]);
+  const frames = await collect(result);
+  const added = eventAt(frames, 'response.output_item.added');
+
+  expect(eventAt(frames, 'response.apply_patch_call_operation_diff.delta').item_id).toBe(added.item.id);
+  expect(eventAt(frames, 'response.apply_patch_call_operation_diff.done').item_id).toBe(added.item.id);
+});
+
 test('carries program and nested agent-message ids in every available blob', async () => {
   const items: ResponsesOutputItem[] = [
     { type: 'program', id: 'cm_raw', call_id: 'call_program', code: 'return 1', fingerprint: 'program state' },

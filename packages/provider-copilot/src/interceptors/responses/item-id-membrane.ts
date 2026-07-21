@@ -188,6 +188,14 @@ const ITEM_ID_EVENT_TYPES = new Set<ResponsesStreamEvent['type']>([
   'response.function_call_arguments.done',
   'response.custom_tool_call_input.delta',
   'response.custom_tool_call_input.done',
+  'response.apply_patch_call_operation_diff.delta',
+  'response.apply_patch_call_operation_diff.done',
+]);
+
+const NO_ITEM_ID_EVENT_TYPES = new Set<ResponsesStreamEvent['type']>([
+  'response.shell_call_command.added',
+  'response.shell_call_command.delta',
+  'response.shell_call_command.done',
 ]);
 
 const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemState): ResponsesStreamEvent => {
@@ -218,6 +226,7 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
   }
 
   if (event.type === 'error' || event.type === 'ping') return event;
+  if (NO_ITEM_ID_EVENT_TYPES.has(event.type)) return event;
   if (!ITEM_ID_EVENT_TYPES.has(event.type)) {
     throw new TypeError(`Unsupported Copilot Responses stream event type '${event.type}'`);
   }

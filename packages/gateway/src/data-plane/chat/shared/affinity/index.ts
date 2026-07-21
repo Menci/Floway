@@ -3,10 +3,10 @@ import { isEqual } from 'es-toolkit';
 import { serverSecretBytes } from '../../../../shared/server-secret.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../gateway-ctx.ts';
 import type { RoutingDecision } from '../routing.ts';
-import type { AliasRules } from '@floway-dev/protocols/common';
+import { appendOpaqueTrailer, concatBytes, decodeOpaqueValue, encodeOpaqueValue, MAX_OPAQUE_TRAILER_BYTES, splitOpaqueTrailer, uint16be, type AliasRules, type OpaqueValueOrigin } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
-type AffinityOrigin = 'raw' | 'base64' | 'base64url';
+type AffinityOrigin = OpaqueValueOrigin;
 
 export interface AffinityTarget {
   upstreamId: string;
@@ -35,89 +35,8 @@ export interface PreparedAffinityPayload<T> {
 }
 
 const IV_BYTES = 12;
-const LENGTH_MARKER_BYTES = 2;
-const MAX_UINT16 = 0xffff;
 const textEncoder = new TextEncoder();
 const fatalTextDecoder = new TextDecoder('utf-8', { fatal: true });
-
-const bytesToBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return btoa(binary);
-};
-
-const base64ToBytes = (value: string): Uint8Array => {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
-};
-
-const bytesToBase64url = (bytes: Uint8Array): string =>
-  bytesToBase64(bytes).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
-
-const base64urlToBytes = (value: string): Uint8Array => {
-  const standard = value.replaceAll('-', '+').replaceAll('_', '/');
-  const padding = (4 - standard.length % 4) % 4;
-  return base64ToBytes(`${standard}${'='.repeat(padding)}`);
-};
-
-const decodeCanonicalBase64 = (value: string): Uint8Array | null => {
-  try {
-    const bytes = base64ToBytes(value);
-    return bytesToBase64(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
-};
-
-const decodeCanonicalBase64url = (value: string): Uint8Array | null => {
-  try {
-    const bytes = base64urlToBytes(value);
-    return bytesToBase64url(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
-};
-
-const rawStringToBytes = (value: string): Uint8Array => {
-  const bytes = new Uint8Array(value.length * 2);
-  for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    bytes[index * 2] = codeUnit >>> 8;
-    bytes[index * 2 + 1] = codeUnit & 0xff;
-  }
-  return bytes;
-};
-
-const rawStringFromBytes = (bytes: Uint8Array): string => {
-  if (bytes.length % 2 !== 0) throw new TypeError('Raw affinity value has an odd byte length');
-  let value = '';
-  for (let offset = 0; offset < bytes.length; offset += 2) {
-    value += String.fromCharCode((bytes[offset] << 8) | bytes[offset + 1]);
-  }
-  return value;
-};
-
-const decodeOriginal = (value: string): { bytes: Uint8Array; origin: AffinityOrigin } => {
-  if (value.length > 0) {
-    const base64 = decodeCanonicalBase64(value);
-    if (base64 !== null) return { bytes: base64, origin: 'base64' };
-    const base64url = decodeCanonicalBase64url(value);
-    if (base64url !== null) return { bytes: base64url, origin: 'base64url' };
-  }
-  return { bytes: rawStringToBytes(value), origin: 'raw' };
-};
-
-const encodeOriginal = (bytes: Uint8Array, origin: AffinityOrigin): string => {
-  switch (origin) {
-  case 'base64': return bytesToBase64(bytes);
-  case 'base64url': return bytesToBase64url(bytes);
-  case 'raw': return rawStringFromBytes(bytes);
-  }
-};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -158,22 +77,6 @@ const parseAffinityData = (value: unknown): AffinityData | null => {
   };
 };
 
-const concatBytes = (...parts: readonly Uint8Array[]): Uint8Array => {
-  const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
-  let offset = 0;
-  for (const part of parts) {
-    result.set(part, offset);
-    offset += part.length;
-  }
-  return result;
-};
-
-const uint16be = (length: number): Uint8Array =>
-  new Uint8Array([length >>> 8, length & 0xff]);
-
-const readTrailingUint16be = (bytes: Uint8Array): number =>
-  (bytes[bytes.length - 2] << 8) | bytes[bytes.length - 1];
-
 const ownedBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 
 const deriveAffinityKey = async (serverSecret: Uint8Array): Promise<CryptoKey> => {
@@ -200,7 +103,7 @@ const deriveAffinityKey = async (serverSecret: Uint8Array): Promise<CryptoKey> =
 
 const authenticatedCarrierData = (domain: string, original: Uint8Array): Uint8Array => {
   const domainBytes = textEncoder.encode(domain);
-  if (domainBytes.length > MAX_UINT16) throw new RangeError('Affinity carrier domain exceeds the 2-byte length marker');
+  if (domainBytes.length > MAX_OPAQUE_TRAILER_BYTES) throw new RangeError('Affinity carrier domain exceeds the 2-byte length marker');
   return concatBytes(uint16be(domainBytes.length), domainBytes, original);
 };
 
@@ -212,7 +115,7 @@ export class AffinityCodec {
   }
 
   async wrap(value: string | undefined, affinity: AffinityTarget, domain: string): Promise<string> {
-    const original = value === undefined ? undefined : decodeOriginal(value);
+    const original = value === undefined ? undefined : decodeOpaqueValue(value);
     const originalBytes = original?.bytes ?? new Uint8Array();
     const data: AffinityData = {
       version: 1,
@@ -226,21 +129,16 @@ export class AffinityCodec {
       textEncoder.encode(JSON.stringify(data)),
     ));
     const encrypted = concatBytes(iv, ciphertext);
-    if (encrypted.length > MAX_UINT16) throw new RangeError('Encrypted affinity data exceeds the 2-byte length marker');
-    const framed = concatBytes(originalBytes, encrypted, uint16be(encrypted.length));
-    return original?.origin === 'base64url' ? bytesToBase64url(framed) : bytesToBase64(framed);
+    if (encrypted.length > MAX_OPAQUE_TRAILER_BYTES) throw new RangeError('Encrypted affinity data exceeds the 2-byte length marker');
+    return appendOpaqueTrailer(original, encrypted);
   }
 
   async unwrap(value: string, domain: string): Promise<DecodedAffinityBlob> {
-    const framed = decodeCanonicalBase64(value) ?? decodeCanonicalBase64url(value);
-    if (framed === null || framed.length < LENGTH_MARKER_BYTES + IV_BYTES + 16) return { kind: 'foreign', value };
+    const framed = splitOpaqueTrailer(value, IV_BYTES + 16);
+    if (framed === null) return { kind: 'foreign', value };
 
-    const encryptedLength = readTrailingUint16be(framed);
-    const originalLength = framed.length - LENGTH_MARKER_BYTES - encryptedLength;
-    if (encryptedLength < IV_BYTES + 16 || originalLength < 0) return { kind: 'foreign', value };
-
-    const encrypted = framed.subarray(originalLength, framed.length - LENGTH_MARKER_BYTES);
-    const original = framed.subarray(0, originalLength);
+    const encrypted = framed.trailer;
+    const original = framed.original;
     const iv = encrypted.subarray(0, IV_BYTES);
     const ciphertext = encrypted.subarray(IV_BYTES);
     const key = await this.#key;
@@ -258,7 +156,7 @@ export class AffinityCodec {
           ? { kind: 'owned', ...data }
           : { kind: 'foreign', value };
       }
-      return { kind: 'owned', value: encodeOriginal(original, data.origin), ...data };
+      return { kind: 'owned', value: encodeOpaqueValue(original, data.origin), ...data };
     } catch {
       return { kind: 'foreign', value };
     }

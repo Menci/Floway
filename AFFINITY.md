@@ -134,9 +134,9 @@ this provider-private layer. The provider-facing item receives a fresh
 type-correct random ID at `output_item.added`, while the raw Copilot ID from
 each canonical blob-bearing frame travels only inside that frame's blob
 trailer. Verified Copilot output types without a blob also receive random IDs.
-The state-writing client-output membrane may still alias that provider-facing
-ID until persistence is simplified. An unknown output type fails the stream
-before its raw ID is yielded.
+When the source state store has a write backing, the client-output membrane
+aliases that provider-facing ID; without one, it passes through. An unknown
+output type fails the stream before its raw ID is yielded.
 
 Affinity egress subsequently appends its own authenticated outer layer. Two
 appends on the client-visible blob are therefore expected and remain
