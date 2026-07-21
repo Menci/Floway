@@ -7,7 +7,7 @@ import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, UsageRecord } from './types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from './usage-metrics.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
 // The usage repo threads the (service tier × input length) grid coordinate
 // through persistence. These cases run against both backends — the SQL repo
@@ -42,11 +42,13 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
       db.run(`INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES
         ('k', 'm', NULL, 'mk', '2026-01-01T00', NULL, 'input', 10, 1),
         ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 'input', 20, 2),
-        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 'input', 30, 3)`);
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 'input', 30, 3),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'tiny', 'input', 40, 1e-20)`);
       db.run(`INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES
         ('k', 'm', NULL, 'mk', '2026-01-01T00', NULL, 1),
         ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 2),
-        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 3)`);
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 3),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'tiny', 4)`);
     }
     db.run(sql);
   }
@@ -56,12 +58,29 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
     ['{}', 'input_tokens', '10', '0.000001'],
     ['{"serviceTier":"  "}', 'input_tokens', '20', '0.000002'],
     ['{"serviceTier":"pri\\"雪"}', 'input_tokens', '30', '0.000003'],
+    ['{"serviceTier":"tiny"}', 'input_tokens', '40', '0.00000000000000000000000001'],
   ]);
   assertEquals(requestRows, [
     ['{}', 1],
     ['{"serviceTier":"  "}', 2],
     ['{"serviceTier":"pri\\"雪"}', 3],
+    ['{"serviceTier":"tiny"}', 4],
   ]);
+});
+
+test('0061 rejects a malformed legacy usage price instead of converting it to zero', async () => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  for (const [filename, sql] of migrationSqlByFilename) {
+    if (filename === '0061_usage_billing_metrics.sql') {
+      db.run(`INSERT INTO usage (
+        key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price
+      ) VALUES ('k', 'm', NULL, 'mk', '2026-01-01T00', '{}', 'input', 1, 'not-a-price')`);
+      assertThrows(() => db.run(sql), Error, 'malformed JSON');
+      break;
+    }
+    db.run(sql);
+  }
 });
 
 for (const backend of backends) {
@@ -139,6 +158,13 @@ for (const backend of backends) {
       ],
     })), Error, 'Duplicate usage metric: input_tokens');
   });
+
+  test(`${backend.name} usage repo rejects noncanonical decimal rows`, async () => {
+    const repo = await backend.make();
+    await assertRejects(() => repo.usage.set(record({
+      metrics: [{ metric: 'input_tokens', quantity: '01.0', unitPrice: '0.0000020' }],
+    })), TypeError, 'quantity must be canonical');
+  });
 }
 
 test('SQL usage hydration rejects vocabulary unknown to the current application', async () => {
@@ -151,4 +177,17 @@ test('SQL usage hydration rejects vocabulary unknown to the current application'
     'reasoning', '1', null,
   ).run();
   await assertRejects(() => new SqlRepo(db).usage.listAll(), TypeError, 'usage.metric is invalid: "reasoning"');
+});
+
+test('SQL usage repo atomically rolls concurrent decimal writes into one metric row', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await Promise.all(Array.from({ length: 50 }, () => repo.usage.record(record({
+    metrics: [{ metric: 'input_tokens', quantity: '0.1', unitPrice: '0.000002' }],
+  }))));
+
+  const [stored] = await query(repo);
+  assertEquals(stored.metrics, [{ metric: 'input_tokens', quantity: '5', unitPrice: '0.000002' }]);
+  assertEquals(stored.requests, 50);
+  assertEquals(await db.prepare('SELECT COUNT(*) AS count FROM usage').first(), { count: 1 });
 });
