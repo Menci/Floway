@@ -156,21 +156,14 @@ const upstreamModelSchema = z.object({
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
 }).refine(
-  m => m.chat === undefined || (m.kind ?? kindForEndpoints(m.endpoints)) === 'chat',
+  m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
   { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },
 ).refine(
-  m => {
-    const rerankEndpointOnly = m.endpoints.rerank !== undefined && Object.keys(m.endpoints).length === 1;
-    if (m.endpoints.rerank !== undefined && !rerankEndpointOnly) return false;
-    return ((m.kind ?? kindForEndpoints(m.endpoints)) === 'rerank') === rerankEndpointOnly;
-  },
-  { message: "kind === 'rerank' requires endpoints to contain only rerank", path: ['endpoints'] },
+  m => kindForEndpoints(m.endpoints) !== 'rerank' || m.rerankTarget !== undefined,
+  { message: 'rerankTarget is required when endpoints select rerank', path: ['rerankTarget'] },
 ).refine(
-  m => (m.kind ?? kindForEndpoints(m.endpoints)) !== 'rerank' || m.rerankTarget !== undefined,
-  { message: "rerankTarget is required when kind === 'rerank'", path: ['rerankTarget'] },
-).refine(
-  m => m.rerankTarget === undefined || (m.kind ?? kindForEndpoints(m.endpoints)) === 'rerank',
-  { message: "rerankTarget is only allowed when kind === 'rerank'", path: ['rerankTarget'] },
+  m => m.rerankTarget === undefined || kindForEndpoints(m.endpoints) === 'rerank',
+  { message: 'rerankTarget is only allowed when endpoints select rerank', path: ['rerankTarget'] },
 );
 
 const customConfigSchema = z.object({

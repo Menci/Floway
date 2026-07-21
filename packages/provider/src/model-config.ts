@@ -246,9 +246,11 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
   return out;
 };
 
-// kind is a pure function of the routing endpoints, so an entry that omits it
-// (an import, or hand-edited JSON) derives one rather than failing. The editor
-// always writes an explicit kind, keeping it consistent with the endpoints.
+// An omitted kind derives from endpoints. Explicit legacy values remain
+// round-trippable even when they disagree; ProviderModel projection derives
+// the effective runtime kind from endpoints, matching the established
+// chat/image/embedding compatibility behavior. The editor writes them
+// consistently for newly authored rows.
 const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): ModelKind => {
   if (value === undefined) return kindForEndpoints(endpoints);
   if (typeof value !== 'string' || !(MODEL_KINDS as readonly string[]).includes(value)) {
@@ -274,20 +276,17 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const pricing = pricingField(value.pricing, `${label}.pricing`);
   const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
-  const rerankEndpointOnly = endpoints.rerank !== undefined && Object.keys(endpoints).length === 1;
-  if ((kind === 'rerank') !== rerankEndpointOnly) {
-    throw new Error(`Malformed ${label}: kind === 'rerank' requires endpoints to contain only rerank`);
-  }
+  const effectiveKind = kindForEndpoints(endpoints);
   const chat = chatField(value.chat, `${label}.chat`);
   const rerankTarget = rerankTargetField(value.rerankTarget, `${label}.rerankTarget`);
   if (chat !== undefined && kind !== 'chat') {
     throw new Error(`Malformed ${label}: chat field is only allowed when kind === 'chat'`);
   }
-  if (kind === 'rerank' && rerankTarget === undefined) {
-    throw new Error(`Malformed ${label}: rerankTarget is required when kind === 'rerank'`);
+  if (effectiveKind === 'rerank' && rerankTarget === undefined) {
+    throw new Error(`Malformed ${label}: rerankTarget is required when endpoints select rerank`);
   }
-  if (kind !== 'rerank' && rerankTarget !== undefined) {
-    throw new Error(`Malformed ${label}: rerankTarget is only allowed when kind === 'rerank'`);
+  if (effectiveKind !== 'rerank' && rerankTarget !== undefined) {
+    throw new Error(`Malformed ${label}: rerankTarget is only allowed when endpoints select rerank`);
   }
   return {
     kind,

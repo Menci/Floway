@@ -178,6 +178,21 @@ test('auto-fetched rerank models stay out of the routable provider catalog', asy
   assertEquals(models.map(model => model.id), ['chat-model']);
 });
 
+test('manual runtime kind follows rerank endpoints when stored kind is stale', async () => {
+  const instance = createCustomProvider(buildCustomUpstream({
+    modelsFetchEnabled: false,
+    models: [{
+      upstreamModelId: 'raw-reranker',
+      kind: 'chat',
+      endpoints: { rerank: {} },
+      rerankTarget: { protocol: 'cohere-v2' },
+    }],
+  }));
+  const [model] = await instance.instance.getProvidedModels(directFetcher);
+  assertEquals(model?.kind, 'rerank');
+  assertEquals(model?.rerankTarget, { protocol: 'cohere-v2' });
+});
+
 test('callRerank uses the model target protocol, raw model id, and canonical path', async () => {
   const instance = createCustomProvider(buildCustomUpstream({
     modelsFetchEnabled: false,

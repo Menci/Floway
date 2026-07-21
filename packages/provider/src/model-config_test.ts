@@ -234,7 +234,7 @@ describe('modelsField rerank targets', () => {
     expect(model.rerankTarget).toEqual({ protocol: 'dashscope-native', path: '/custom/rerank' });
   });
 
-  test('rejects targets on other model kinds and kind/endpoint mismatches', () => {
+  test('validates targets against the endpoint-derived runtime kind', () => {
     expect(() => modelsField([{
       upstreamModelId: 'chat',
       kind: 'chat',
@@ -246,6 +246,17 @@ describe('modelsField rerank targets', () => {
       kind: 'rerank',
       endpoints: { chatCompletions: {} },
       rerankTarget: { protocol: 'cohere-v2' },
-    }], 'p')).toThrow(/kind === 'rerank' requires endpoints to contain only rerank/);
+    }], 'p')).toThrow(/rerankTarget is only allowed/);
+  });
+
+  test('accepts an explicit chat kind when endpoints select rerank', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'reranker',
+      kind: 'chat',
+      endpoints: { rerank: {} },
+      rerankTarget: { protocol: 'cohere-v2' },
+    }], 'p');
+    expect(model.kind).toBe('chat');
+    expect(model.rerankTarget).toEqual({ protocol: 'cohere-v2' });
   });
 });

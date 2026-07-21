@@ -167,13 +167,13 @@ describe('upstreamModelSchema rerank', () => {
     expect(createUpstreamBody.safeParse(body).success).toBe(false);
   });
 
-  test('rejects explicit chat kind and mixed endpoint maps containing rerank', () => {
+  test('treats explicit kind conflicts like existing image endpoint conflicts', () => {
     const chat = customRerank();
     (chat.config.models[0] as Record<string, unknown>).kind = 'chat';
-    expect(createUpstreamBody.safeParse(chat).success).toBe(false);
+    expect(createUpstreamBody.safeParse(chat).success).toBe(true);
 
     const mixed = customRerank();
     (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, chatCompletions: {} };
-    expect(createUpstreamBody.safeParse(mixed).success).toBe(false);
+    expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
   });
 });
