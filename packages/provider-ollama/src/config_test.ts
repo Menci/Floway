@@ -73,25 +73,25 @@ test('assertOllamaUpstreamRecord rejects a missing base URL', () => {
 
 test('pricingForOllamaModelKey returns table rates for known model ids', () => {
   const gptOss = pricingForOllamaModelKey('gpt-oss:120b');
-  assertEquals(gptOss?.entries[0]?.rates.input, 0.15);
-  assertEquals(gptOss?.entries[0]?.rates.output, 0.6);
+  assertEquals(gptOss?.entries[0]?.rates.input_tokens, '0.00000015');
+  assertEquals(gptOss?.entries[0]?.rates.output_tokens, '0.0000006');
 });
 
 test('pricingForOllamaModelKey matches regex-keyed families', () => {
   // GLM 5 split: bare `glm-5` is cheaper than `glm-5.1` / `glm-5.2`.
-  assertEquals(pricingForOllamaModelKey('glm-5')?.entries[0]?.rates.input, 1.0);
-  assertEquals(pricingForOllamaModelKey('glm-5')?.entries[0]?.rates.output, 3.2);
-  assertEquals(pricingForOllamaModelKey('glm-5.1')?.entries[0]?.rates.input, 1.4);
-  assertEquals(pricingForOllamaModelKey('glm-5.2')?.entries[0]?.rates.output, 4.4);
+  assertEquals(pricingForOllamaModelKey('glm-5')?.entries[0]?.rates.input_tokens, '0.000001');
+  assertEquals(pricingForOllamaModelKey('glm-5')?.entries[0]?.rates.output_tokens, '0.0000032');
+  assertEquals(pricingForOllamaModelKey('glm-5.1')?.entries[0]?.rates.input_tokens, '0.0000014');
+  assertEquals(pricingForOllamaModelKey('glm-5.2')?.entries[0]?.rates.output_tokens, '0.0000044');
 
   // MiniMax split: m2 / m2.1 / m2.5 carry cache_read 0.03; m2.7 / m3 carry
   // cache_read 0.06. Input/output are identical across both branches.
-  assertEquals(pricingForOllamaModelKey('minimax-m2.1')?.entries[0]?.rates.input_cache_read, 0.03);
-  assertEquals(pricingForOllamaModelKey('minimax-m2.5')?.entries[0]?.rates.input_cache_read, 0.03);
-  assertEquals(pricingForOllamaModelKey('minimax-m2.7')?.entries[0]?.rates.input_cache_read, 0.06);
+  assertEquals(pricingForOllamaModelKey('minimax-m2.1')?.entries[0]?.rates.input_cache_read_tokens, '0.00000003');
+  assertEquals(pricingForOllamaModelKey('minimax-m2.5')?.entries[0]?.rates.input_cache_read_tokens, '0.00000003');
+  assertEquals(pricingForOllamaModelKey('minimax-m2.7')?.entries[0]?.rates.input_cache_read_tokens, '0.00000006');
   const m3 = pricingForOllamaModelKey('minimax-m3');
-  assertEquals(priceRequest(m3, { inputTokens: 512000 }).rates, { input: 0.3, input_cache_read: 0.06, output: 1.2 });
-  assertEquals(priceRequest(m3, { inputTokens: 512001 }).rates, { input: 0.6, input_cache_read: 0.12, output: 2.4 });
+  assertEquals(priceRequest(m3, { inputTokens: 512000 }).rates, { input_tokens: '0.0000003', input_cache_read_tokens: '0.00000006', output_tokens: '0.0000012' });
+  assertEquals(priceRequest(m3, { inputTokens: 512001 }).rates, { input_tokens: '0.0000006', input_cache_read_tokens: '0.00000012', output_tokens: '0.0000024' });
 });
 
 test('pricingForOllamaModelKey returns null for ids without a defensible reference', () => {

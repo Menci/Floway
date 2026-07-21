@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { tokenCountsFromUsage } from '../../repo/usage-metrics.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -177,7 +178,7 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
   assertEquals(forwarded.model, 'gpt-image-2');
   assertEquals(forwarded.prompt, 'a shiba in space');
   const usageRows = await repo.usage.listAll();
-  assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && row.tokens.input === 10 && row.tokens.output === 50), true);
+  assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && tokenCountsFromUsage(row).input === 10 && tokenCountsFromUsage(row).output === 50), true);
 });
 
 test('/v1/images/edits forwards a multipart request through an Azure model and records usage', async () => {
@@ -245,7 +246,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
   assertEquals(observedUrl?.endsWith('?api-version=preview'), true);
   assertEquals(observedForm?.get('model'), 'gpt-image-2');
   const usageRows = await repo.usage.listAll();
-  assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && row.tokens.input === 7 && row.tokens.output === 11), true);
+  assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && tokenCountsFromUsage(row).input === 7 && tokenCountsFromUsage(row).output === 11), true);
 });
 
 test('/v1/images/edits forwards JSON image references through a custom provider', async () => {

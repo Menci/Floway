@@ -91,10 +91,10 @@ export const respondMessages = async (
 };
 
 // Anthropic already reports disjoint token counts: input_tokens excludes the
-// cache figures. Map them straight onto the billing dimensions without
+// cache figures. Map them straight onto the billing metrics without
 // summing. When the upstream emits the `cache_creation` sub-object
 // (extended-cache-ttl-2025-04-11), split the per-TTL counts onto the 5m and
-// 1h dimensions; the flat `cache_creation_input_tokens` is the sum and is
+// 1h metrics; the flat `cache_creation_input_tokens` is the sum and is
 // only consulted when the sub-object is absent.
 //
 // Response usage carries two server-stamped tier fields: `speed` (fast mode)

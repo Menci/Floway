@@ -14,7 +14,7 @@ const model = (upstreamModelId: string, pricing: UpstreamModelConfig['pricing'])
 });
 
 test('ModelsPanel validates every manual row before it is selected', async () => {
-  const valid = model('valid', { entries: [{ rates: { input: 1 } }] });
+  const valid = model('valid', { entries: [{ rates: { input_tokens: '1' } }] });
   const invalid = model('invalid', { entries: [] });
   const wrapper = mount(ModelsPanel, {
     props: {
@@ -37,7 +37,7 @@ test('ModelsPanel validates every manual row before it is selected', async () =>
   await nextTick();
   expect(wrapper.emitted('update:invalid')?.at(-1)).toEqual([true]);
 
-  await wrapper.setProps({ modelValue: [valid, model('fixed', { entries: [{ rates: { input: 2 } }] })] });
+  await wrapper.setProps({ modelValue: [valid, model('fixed', { entries: [{ rates: { input_tokens: '2' } }] })] });
   await nextTick();
   expect(wrapper.emitted('update:invalid')?.at(-1)).toEqual([false]);
 });

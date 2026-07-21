@@ -4,6 +4,7 @@ import { test } from 'vitest';
 import { createMessagesStreamUsageState, respondMessages, tokenUsageFromMessagesFrame } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { tokenCountsFromUsage } from '../../../repo/usage-metrics.ts';
 import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -736,5 +737,5 @@ test('respondMessages records the last observed message_delta usage when the cli
 
   const rows = await repo.usage.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].tokens, { input: 20, output: 17 });
+  assertEquals(tokenCountsFromUsage(rows[0]), { input: 20, output: 17 });
 });

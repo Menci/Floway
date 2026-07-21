@@ -7,16 +7,16 @@
 // https://developers.openai.com/api/docs/pricing
 // .agents/skills/fetching-models-pricing/
 
-import { modelPricing, pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
+import { tokenModelPricing, tokenPricingEntry as pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
 
-const GPT_5_4_PRICING = modelPricing(
-  pricingEntry({ input: 2.5, input_cache_read: 0.25, output: 15 }),
-  pricingEntry({ input: 1.25, input_cache_read: 0.13, output: 7.5 }, { serviceTier: 'flex' }),
-  pricingEntry({ input: 5, input_cache_read: 0.5, output: 30 }, { serviceTier: 'priority' }),
+const GPT_5_4_PRICING = tokenModelPricing(
+  pricingEntry({ input_tokens: '2.5', input_cache_read_tokens: '0.25', output_tokens: '15' }),
+  pricingEntry({ input_tokens: '1.25', input_cache_read_tokens: '0.13', output_tokens: '7.5' }, { serviceTier: 'flex' }),
+  pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', output_tokens: '30' }, { serviceTier: 'priority' }),
   // OpenAI's whole-request long-context rate. No flex/priority combination is
   // published, so those selector misses resolve to the whole Base vector.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
-  pricingEntry({ input: 5, input_cache_read: 0.5, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', output_tokens: '22.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
 );
 
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
@@ -29,31 +29,31 @@ const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: Mo
   // https://github.com/openai/codex/blob/d2d00b6632dc991aa4471db0529773029cae5d68/codex-rs/models-manager/models.json
   // Cross-check only:
   // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
-  ['gpt-5.6-sol', modelPricing(
-    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
-    pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 60 }, { serviceTier: 'priority' }),
-    pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  ['gpt-5.6-sol', tokenModelPricing(
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }),
+    pricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '60' }, { serviceTier: 'priority' }),
+    pricingEntry({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '45' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.6-terra', modelPricing(
-    pricingEntry({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
-    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }, { serviceTier: 'priority' }),
-    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  ['gpt-5.6-terra', tokenModelPricing(
+    pricingEntry({ input_tokens: '2.5', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.125', output_tokens: '15' }),
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '30' }, { serviceTier: 'priority' }),
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', output_tokens: '22.5' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.6-luna', modelPricing(
-    pricingEntry({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
-    pricingEntry({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 12 }, { serviceTier: 'priority' }),
-    pricingEntry({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  ['gpt-5.6-luna', tokenModelPricing(
+    pricingEntry({ input_tokens: '1', input_cache_read_tokens: '0.1', input_cache_write_tokens: '1.25', output_tokens: '6' }),
+    pricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '12' }, { serviceTier: 'priority' }),
+    pricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2.5', output_tokens: '9' }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.5', modelPricing(
-    pricingEntry({ input: 5, input_cache_read: 0.5, output: 30 }),
-    pricingEntry({ input: 2.5, input_cache_read: 0.25, output: 15 }, { serviceTier: 'flex' }),
-    pricingEntry({ input: 12.5, input_cache_read: 1.25, output: 75 }, { serviceTier: 'priority' }),
+  ['gpt-5.5', tokenModelPricing(
+    pricingEntry({ input_tokens: '5', input_cache_read_tokens: '0.5', output_tokens: '30' }),
+    pricingEntry({ input_tokens: '2.5', input_cache_read_tokens: '0.25', output_tokens: '15' }, { serviceTier: 'flex' }),
+    pricingEntry({ input_tokens: '12.5', input_cache_read_tokens: '1.25', output_tokens: '75' }, { serviceTier: 'priority' }),
   )],
   ['gpt-5.4', GPT_5_4_PRICING],
-  ['gpt-5.4-mini', modelPricing(
-    pricingEntry({ input: 0.75, input_cache_read: 0.075, output: 4.5 }),
-    pricingEntry({ input: 0.375, input_cache_read: 0.0375, output: 2.25 }, { serviceTier: 'flex' }),
-    pricingEntry({ input: 1.5, input_cache_read: 0.15, output: 9 }, { serviceTier: 'priority' }),
+  ['gpt-5.4-mini', tokenModelPricing(
+    pricingEntry({ input_tokens: '0.75', input_cache_read_tokens: '0.075', output_tokens: '4.5' }),
+    pricingEntry({ input_tokens: '0.375', input_cache_read_tokens: '0.0375', output_tokens: '2.25' }, { serviceTier: 'flex' }),
+    pricingEntry({ input_tokens: '1.5', input_cache_read_tokens: '0.15', output_tokens: '9' }, { serviceTier: 'priority' }),
   )],
   // No public price surface; notional clone of gpt-5.4.
   ['codex-auto-review', GPT_5_4_PRICING],

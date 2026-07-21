@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
+import { tokenCountsFromUsage } from '../../repo/usage-metrics.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -88,8 +89,7 @@ test('/v1/completions non-streaming forwards body to upstream /v1/completions an
   await flushAsyncWork();
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.length, 1);
-  assertEquals(usageRows[0]?.tokens.input, 5);
-  assertEquals(usageRows[0]?.tokens.output, 1);
+  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 5, output: 1 });
 });
 
 test('/v1/completions streaming forces stream_options.include_usage upstream', async () => {
@@ -154,8 +154,7 @@ test('/v1/completions streaming strips usage chunk when client did not request i
   await flushAsyncWork();
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.length, 1);
-  assertEquals(usageRows[0]?.tokens.input, 4);
-  assertEquals(usageRows[0]?.tokens.output, 2);
+  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 4, output: 2 });
 });
 
 test('/v1/completions streaming forwards usage chunk when the client opted in', async () => {
@@ -301,8 +300,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0]?.model, 'davinci-002');
-  assertEquals(usage[0]?.tokens.input, 7);
-  assertEquals(usage[0]?.tokens.output, 2);
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 7, output: 2 });
 
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
@@ -345,8 +343,7 @@ test('/v1/completions streaming records usage row, performance neutral row (text
 
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
-  assertEquals(usage[0]?.tokens.input, 4);
-  assertEquals(usage[0]?.tokens.output, 2);
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 4, output: 2 });
 
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);

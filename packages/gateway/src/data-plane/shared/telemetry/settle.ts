@@ -1,5 +1,5 @@
 import { recordPerformance, type PerformanceTelemetryContext } from './performance.ts';
-import { hasTokenUsage, recordTokenUsage } from './usage.ts';
+import { recordTokenUsage } from './usage.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
 import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -19,8 +19,8 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 // binds the promise to the request's lifetime — Cloudflare Workers'
 // waitUntil binds it to the fetch handler (or, for the WS transport, to
 // a session-scoped waitUntil opened on 101), and Node keeps the process
-// event loop alive. Only usage rows with a billable dimension record;
-// empty figures early-out.
+// event loop alive. Every settled request increments its request bucket;
+// detailed metric rows are present only when the upstream meters them.
 export const settle = (
   ctx: GatewayCtx,
   telemetry: PerformanceTelemetryContext | undefined,
@@ -29,10 +29,8 @@ export const settle = (
   failed: boolean,
   requestFinishedAt: number = performance.now(),
 ): void => {
-  if (usage && hasTokenUsage(usage)) {
-    ctx.backgroundScheduler(recordTokenUsage(ctx.apiKeyId, identity, usage).catch(error => {
-      console.error('Failed to record token usage:', error);
-    }));
-  }
+  ctx.backgroundScheduler(recordTokenUsage(ctx.apiKeyId, identity, usage).catch(error => {
+    console.error('Failed to record usage:', error);
+  }));
   recordPerformance(ctx, telemetry, failed, usage?.output ?? 0, requestFinishedAt);
 };

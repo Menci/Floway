@@ -333,7 +333,7 @@ test('createAzureProvider attaches pricing field from model config', async () =>
             upstreamModelId: 'gpt-prod',
             publicModelId: 'gpt-public',
             endpoints: { chatCompletions: {} },
-            pricing: { entries: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25 } }] },
+            pricing: { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25' } }] },
           },
           {
             upstreamModelId: 'gpt-small',
@@ -344,7 +344,7 @@ test('createAzureProvider attaches pricing field from model config', async () =>
     }),
   );
   const models = await instance.instance.getProvidedModels(directFetcher);
-  assertEquals(models[0].pricing, { entries: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25 } }] });
+  assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25' } }] });
   assertEquals(models[1].pricing, undefined);
 });
 

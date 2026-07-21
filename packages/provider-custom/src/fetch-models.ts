@@ -11,7 +11,7 @@
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
-import { BILLING_DIMENSIONS, canonicalizePricingSelector, type ModelKind, type ModelPricing, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export interface CustomRawModel {
@@ -66,16 +66,17 @@ const parsePricing = (value: unknown): ModelPricing | undefined => {
   // block, never the enclosing model or the rest of the catalog.
   if (!isRecord(value) || !Array.isArray(value.entries)) return undefined;
   try {
+    if (Object.keys(value).some(key => key !== 'entries')) throw new TypeError('Malformed pricing block');
     const entries: ModelPricing['entries'][number][] = [];
     for (const rawEntry of value.entries) {
       if (!isRecord(rawEntry) || !isRecord(rawEntry.rates)) throw new TypeError('Malformed pricing entry');
+      if (Object.keys(rawEntry).some(key => key !== 'selector' && key !== 'rates')) throw new TypeError('Malformed pricing entry');
+      if (Object.keys(rawEntry.rates).some(key => !BILLING_METRICS.includes(key as BillingMetric))) throw new TypeError('Malformed pricing rates');
       const rates: PriceVector = {};
-      for (const dimension of BILLING_DIMENSIONS) {
-        const rawRate = rawEntry.rates[dimension];
+      for (const metric of BILLING_METRICS) {
+        const rawRate = rawEntry.rates[metric];
         if (rawRate === undefined) continue;
-        const rate = optionalNumberField(rawRate);
-        if (rate === undefined) throw new TypeError(`Malformed pricing rate: ${dimension}`);
-        rates[dimension] = rate;
+        rates[metric] = parseNonNegativeDecimalString(rawRate, `pricing rate ${metric}`);
       }
       if (Object.keys(rates).length === 0) throw new TypeError('Pricing entry has no recognized rates');
       if (rawEntry.selector !== undefined && !isRecord(rawEntry.selector)) throw new TypeError('Malformed pricing selector');
