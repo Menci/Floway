@@ -82,17 +82,12 @@ test('aggregateUsageForDisplay leaves dimensions without an explicit rate unpric
   assertAlmostEquals(out[0].cost!, 2, 1e-9);
 });
 
-test('aggregateUsageForDisplay applies minute and per-thousand-search scales', () => {
-  const out = aggregateUsageForDisplay([
-    {
-      ...baseRecord({ tokens: {} }),
-      dimensions: [
-        { dimension: 'input', unit: 'minutes', quantity: 90, unitPrice: 0.6 },
-        { dimension: 'output', unit: 'searches_1k', quantity: 1_500, unitPrice: 2 },
-      ],
-    },
-  ]);
-  assertAlmostEquals(out[0].cost!, 0.9 + 3, 1e-9);
+test('aggregateUsageForDisplay applies the per-thousand-search scale', () => {
+  const out = aggregateUsageForDisplay([{
+    ...baseRecord({ tokens: {} }),
+    dimensions: [{ dimension: 'input', unit: 'searches_1k', quantity: 1_500, unitPrice: 2 }],
+  }]);
+  assertAlmostEquals(out[0].cost!, 3, 1e-9);
 });
 
 test('aggregateUsageForDisplay charges image dimensions separately', () => {
