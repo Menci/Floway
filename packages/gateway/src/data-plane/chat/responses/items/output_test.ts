@@ -500,6 +500,34 @@ test('client output refuses to persist an id-less upstream item', async () => {
   await expect(collect()).rejects.toThrow('Responses message output has no producer id');
 });
 
+test('terminal-only fallback preflights every item before writing any row', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const first = { type: 'reasoning' as const, id: 'rs_terminal_batch', summary: [{ type: 'summary_text' as const, text: 'first' }] };
+  const conflicting = { ...first, summary: [{ type: 'summary_text' as const, text: 'second' }] };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [first, conflicting],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.completed', response });
+  })();
+  const collect = async () => {
+    for await (const _frame of wrapResponsesClientOutput(input, {
+      store,
+      responseId: 'resp_public',
+    })) { /* drain */ }
+  };
+
+  await expect(collect()).rejects.toThrow(`Responses item id collision: ${first.id}`);
+  expect(await repo.responsesItems.lookupMany('key-a', [first.id])).toEqual([]);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});
+
 test('store=false also rejects an id-less finalized item', async () => {
   initRepo(new InMemoryRepo());
   const store = createResponsesHttpStore('key-a', false);

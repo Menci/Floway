@@ -1,7 +1,7 @@
 import { isEqual } from 'es-toolkit';
 
 import { hashResponsesIdentity, responsesItemId } from './identity.ts';
-import type { StatefulResponsesStore } from './store.ts';
+import type { ResponsesOutputWrite, StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -38,8 +38,7 @@ export const wrapResponsesClientOutput = async function* (
   const finalizedOutputIndexes = new Set<number>();
   let sawCompactionItem = false;
 
-  const persistFinalizedItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<void> => {
-    if (finalizedOutputIndexes.has(outputIndex)) return;
+  const finalizedItem = async (item: ResponsesOutputItem, outputIndex: number) => {
     const id = responsesItemId(item);
     if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
     const identity = await producerIdentity(item);
@@ -58,7 +57,12 @@ export const wrapResponsesClientOutput = async function* (
       contentHash: await hashResponsesIdentity(identity.stableIdentity),
       createdAt: Date.now(),
     };
-    await store.persistOutputItem(row, outputIndex);
+    return { row, outputIndex };
+  };
+
+  const persistFinalizedItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<void> => {
+    if (finalizedOutputIndexes.has(outputIndex)) return;
+    await store.persistOutputItem((await finalizedItem(item, outputIndex)).row, outputIndex);
     finalizedOutputIndexes.add(outputIndex);
   };
 
@@ -87,10 +91,13 @@ export const wrapResponsesClientOutput = async function* (
     }
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+      const pending: ResponsesOutputWrite[] = [];
       for (const [outputIndex, item] of event.response.output.entries()) {
         if (isCompactionItemType(item.type)) sawCompactionItem = true;
-        await persistFinalizedItem(item, outputIndex);
+        if (!finalizedOutputIndexes.has(outputIndex)) pending.push(await finalizedItem(item, outputIndex));
       }
+      await store.persistOutputItems(pending);
+      for (const { outputIndex } of pending) finalizedOutputIndexes.add(outputIndex);
       if (store.writesState) {
         await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
       }

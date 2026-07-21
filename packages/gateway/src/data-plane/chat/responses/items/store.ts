@@ -33,6 +33,11 @@ export interface ResponsesInputIdentity {
   readonly stableIdentity: unknown;
 }
 
+export interface ResponsesOutputWrite {
+  readonly row: StoredResponsesItem;
+  readonly outputIndex: number;
+}
+
 const storedInputRow = async (args: {
   readonly id: string;
   readonly apiKeyId: string;
@@ -60,6 +65,7 @@ export interface StatefulResponsesStore {
   getItemById(id: string): StoredResponsesItem | undefined;
   stageInputItems(items: readonly ResponsesInputIdentity[]): Promise<void>;
   persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void>;
+  persistOutputItems(items: readonly ResponsesOutputWrite[]): Promise<void>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
   // scratchpad from hydrated items; interceptors can add server-only state
@@ -153,28 +159,46 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void> {
-    if (this.outputItemIds.has(outputIndex)) return;
-    const cloned = cloneStoredResponsesItem(row);
-    const sameTurn = this.outputItemsById.get(cloned.id);
-    if (sameTurn !== undefined) assertSameStoredResponsesItem(cloned, sameTurn);
-    const transientInput = this.newInputItemsById.get(cloned.id);
-    if (transientInput !== undefined) assertSameStoredResponsesItem(cloned, transientInput);
-    const stagedOrLoaded = this.loadedItems.get(cloned.id);
-    if (stagedOrLoaded !== undefined) assertSameStoredResponsesItem(cloned, stagedOrLoaded);
+    await this.persistOutputItems([{ row, outputIndex }]);
+  }
+
+  async persistOutputItems(items: readonly ResponsesOutputWrite[]): Promise<void> {
+    const observedOutputIndexes = new Set(this.outputItemIds.keys());
+    const pending = items.flatMap(({ row, outputIndex }) => {
+      if (observedOutputIndexes.has(outputIndex)) return [];
+      observedOutputIndexes.add(outputIndex);
+      return [{ row: cloneStoredResponsesItem(row), outputIndex }];
+    });
+    const identities = new Map(this.outputItemsById);
+    for (const { row } of pending) {
+      const sameTurn = identities.get(row.id);
+      if (sameTurn !== undefined) assertSameStoredResponsesItem(row, sameTurn);
+      const transientInput = this.newInputItemsById.get(row.id);
+      if (transientInput !== undefined) assertSameStoredResponsesItem(row, transientInput);
+      const stagedOrLoaded = this.loadedItems.get(row.id);
+      if (stagedOrLoaded !== undefined) assertSameStoredResponsesItem(row, stagedOrLoaded);
+      identities.set(row.id, row);
+    }
     for (const read of this.options.reads) {
       const existing = await read.lookupItems({
         apiKeyId: this.apiKeyId,
-        ids: [cloned.id],
+        ids: pending.map(item => item.row.id),
         contentHashes: [],
       });
-      for (const actual of existing) assertSameStoredResponsesItem(cloned, actual);
+      for (const actual of existing) {
+        const expected = identities.get(actual.id);
+        if (expected === undefined) throw new Error(`Responses backing returned an unrequested item: ${actual.id}`);
+        assertSameStoredResponsesItem(expected, actual);
+      }
     }
-    this.outputItemsById.set(cloned.id, cloned);
-    if (!this.writesState) return;
-    await this.commitItems([cloned]);
-    this.outputItemIds.set(outputIndex, cloned.id);
-    this.freshItemIds.add(cloned.id);
-    this.rememberItem(cloned);
+    if (this.writesState) await this.commitItems(pending.map(item => item.row));
+    for (const { row, outputIndex } of pending) {
+      this.outputItemsById.set(row.id, row);
+      if (!this.writesState) continue;
+      this.outputItemIds.set(outputIndex, row.id);
+      this.freshItemIds.add(row.id);
+      this.rememberItem(row);
+    }
   }
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
