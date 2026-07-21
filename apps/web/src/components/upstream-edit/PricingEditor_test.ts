@@ -92,6 +92,41 @@ describe('PricingEditor', () => {
       entries: [{ rates: { input: 4 } }],
     });
   });
+
+  it('requires every search-priced entry to be cleared before enabling token pricing', async () => {
+    const wrapper = mount(PricingEditor, {
+      props: {
+        modelValue: {
+          units: { input: 'searches_1k' },
+          entries: [
+            { rates: { input: 4 } },
+            { selector: { serviceTier: 'priority' }, rates: { input: 8 } },
+          ],
+        },
+        editable: true,
+        kind: 'rerank',
+      },
+    });
+    const input = (label: string) => wrapper.findAll('label').find(candidate => candidate.text().includes(label))!.get('input');
+
+    expect(input('Input ($/MTok)').attributes('disabled')).toBeDefined();
+    await input('Input ($/1K searches)').setValue('');
+    expect(input('Input ($/MTok)').attributes('disabled')).toBeDefined();
+
+    await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
+    await input('Input ($/1K searches)').setValue('');
+    expect(input('Input ($/MTok)').attributes('disabled')).toBeUndefined();
+
+    await input('Input ($/MTok)').setValue('2');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: { input: 'tokens_1m' },
+      entries: [
+        { rates: {} },
+        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      ],
+    });
+  });
+
   it('clears a threshold value while preserving operator-only updates', async () => {
     const wrapper = mountEditor({
       entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }],
