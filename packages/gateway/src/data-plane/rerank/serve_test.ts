@@ -85,7 +85,7 @@ test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', as
   assertEquals(await upstreamRequest.clone().json(), {
     model: 'raw-reranker',
     query: 'query',
-    documents: ['{"title":"one","text":"first"}', '{"title":"two","text":"second"}'],
+    documents: ['first', 'second'],
     top_n: 1,
   });
 
