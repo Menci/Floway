@@ -235,14 +235,17 @@ test.each(uncarriedOutputItems)('randomizes a Copilot %s item without exposing i
   const { result } = await runStream([
     eventFrame(outputItemEvent('added', 0, item)),
     eventFrame(outputItemEvent('done', 0, item)),
+    eventFrame({ type: 'response.completed', response: response([item]) }),
     doneFrame(),
   ]);
   const frames = await collect(result);
   const added = eventAt(frames, 'response.output_item.added');
   const done = eventAt(frames, 'response.output_item.done');
+  const completed = eventAt(frames, 'response.completed');
 
   expect(added.item.id).toMatch(new RegExp(`^${prefix}_[0-9a-f]{32}$`));
   expect(done.item.id).toBe(added.item.id);
+  expect(completed.response.output[0].id).toBe(added.item.id);
   expect(JSON.stringify(frames)).not.toContain('"raw"');
 });
 
