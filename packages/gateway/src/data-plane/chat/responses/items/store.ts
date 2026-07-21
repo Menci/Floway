@@ -192,12 +192,11 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   private async loadItems(query: { ids: readonly string[]; contentHashes: readonly string[] }): Promise<void> {
-    let ids = query.ids.filter(id => !this.loadedItems.has(id));
+    const ids = query.ids.filter(id => !this.loadedItems.has(id));
     for (const backing of this.options.reads) {
       if (ids.length === 0 && query.contentHashes.length === 0) return;
       const results = await backing.lookupItems({ apiKeyId: this.apiKeyId, ids, contentHashes: query.contentHashes });
       for (const item of results) this.rememberItem(item);
-      ids = ids.filter(id => !this.loadedItems.has(id));
     }
   }
 
@@ -281,13 +280,18 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   private rememberItem(row: StoredResponsesItem): void {
     const cloned = cloneStoredResponsesItem(row);
+    const existing = this.loadedItems.get(cloned.id);
+    if (existing !== undefined) {
+      assertSameStoredResponsesItem(cloned, existing);
+      if (existing.createdAt >= cloned.createdAt) return;
+    }
     this.loadedItems.set(cloned.id, cloned);
     const byHash = this.loadedByContentHash.get(cloned.contentHash) ?? [];
-    if (!byHash.some(existing => existing.id === cloned.id)) {
-      byHash.push(cloned);
-      byHash.sort(compareResponsesItemsByFreshness);
-      this.loadedByContentHash.set(cloned.contentHash, byHash);
-    }
+    const existingByHash = byHash.findIndex(candidate => candidate.id === cloned.id);
+    if (existingByHash === -1) byHash.push(cloned);
+    else byHash[existingByHash] = cloned;
+    byHash.sort(compareResponsesItemsByFreshness);
+    this.loadedByContentHash.set(cloned.contentHash, byHash);
   }
 
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {

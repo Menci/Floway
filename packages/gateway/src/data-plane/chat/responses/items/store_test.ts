@@ -247,6 +247,34 @@ describe('StatefulResponsesStore', () => {
     expect(reader.getItemById(firstItem.id)?.payload.item).toEqual(firstItem);
   });
 
+  test('WebSocket rejects conflicting local and durable identity while loading input', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const session = createResponsesWsSession();
+    const id = 'msg_cross_backing_collision';
+    const localItem = { type: 'message' as const, id, role: 'assistant' as const, content: 'local' };
+    const durableItem = { ...localItem, content: 'durable' };
+    const local = session.createStore('key-a', false);
+    await local.persistOutputItem({
+      id,
+      apiKeyId: 'key-a',
+      payload: { item: localItem },
+      contentHash: await hashResponsesItemContent(localItem),
+      createdAt: 1_000,
+    }, 0);
+    await repo.responsesItems.insertMany([{
+      id,
+      apiKeyId: 'key-a',
+      payload: { item: durableItem },
+      contentHash: await hashResponsesItemContent(durableItem),
+      createdAt: 2_000,
+    }]);
+
+    const nextTurn = session.createStore('key-a', true);
+    await expect(nextTurn.loadInputItems([{ type: 'item_reference', id }], []))
+      .rejects.toThrow(`Responses item id collision: ${id}`);
+  });
+
   test('per-attempt private payloads reset on each beginAttempt', () => {
     const store = createResponsesHttpStore('key-a', true);
     store.beginAttempt(new Map([['item', { first: true }]]));
