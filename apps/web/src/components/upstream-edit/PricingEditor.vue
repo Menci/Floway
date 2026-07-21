@@ -48,10 +48,10 @@ const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
   image: ['input', 'input_image', 'output', 'output_image'],
 };
 
-const NEW_RATE_BILLING_UNIT: Record<ModelKind, BillingUnit> = {
-  chat: 'tokens_1m',
-  embedding: 'tokens_1m',
-  image: 'tokens_1m',
+const NEW_RATE_BILLING_UNIT: Record<ModelKind, (dimension: BillingDimension) => BillingUnit | undefined> = {
+  chat: () => 'tokens_1m',
+  embedding: () => 'tokens_1m',
+  image: () => 'tokens_1m',
 };
 
 interface PricingThresholdDraft {
@@ -153,7 +153,10 @@ const rateFieldName = (dimension: BillingDimension): string => PRICING_LABELS[di
 
 const billingUnitLabel = (dimension: BillingDimension): string => {
   const unit = pricingUnits.value[dimension];
-  return unit === undefined ? 'unit required' : BILLING_UNIT_LABELS[unit];
+  if (unit !== undefined) return BILLING_UNIT_LABELS[unit];
+  if (pricingEntryDrafts.value.some(draft => draft.rates[dimension] !== undefined)) return 'unit required';
+  const newRateUnit = NEW_RATE_BILLING_UNIT[props.kind](dimension);
+  return newRateUnit === undefined ? 'select unit' : BILLING_UNIT_LABELS[newRateUnit];
 };
 
 const pricingValidationErrors = computed<readonly string[]>(() => {
@@ -290,8 +293,11 @@ const toggleThresholdOperator = (index: number, axisId: string) => {
 
 const updatePricingRate = (index: number, dimension: BillingDimension, raw: string | number | null | undefined) => {
   const value = parseOptionalNumber(raw);
-  if (value !== undefined && pricingEntryDrafts.value[index]!.rates[dimension] === undefined && pricingUnits.value[dimension] === undefined) {
-    pricingUnits.value = { ...pricingUnits.value, [dimension]: NEW_RATE_BILLING_UNIT[props.kind] };
+  if (pricingEntryDrafts.value[index] === undefined) throw new RangeError(`Pricing entry index is out of range: ${index}`);
+  const isNewPricingDimension = pricingEntryDrafts.value.every(draft => draft.rates[dimension] === undefined);
+  const newRateUnit = NEW_RATE_BILLING_UNIT[props.kind](dimension);
+  if (value !== undefined && isNewPricingDimension && pricingUnits.value[dimension] === undefined && newRateUnit !== undefined) {
+    pricingUnits.value = { ...pricingUnits.value, [dimension]: newRateUnit };
   }
   writePricingEntries(pricingEntryDrafts.value.map((draft, entryIndex) => {
     if (entryIndex !== index) return draft;

@@ -80,6 +80,32 @@ describe('PricingEditor', () => {
     });
   });
 
+  it('does not assign a unit when a pricing dimension already exists in another entry', async () => {
+    const wrapper = mount(PricingEditor, {
+      props: {
+        modelValue: {
+          units: {},
+          entries: [
+            { rates: { input: 1 } },
+            { selector: { serviceTier: 'priority' }, rates: {} },
+          ],
+        },
+        editable: true,
+        kind: 'chat',
+      },
+    });
+
+    await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
+    await pricingInput(wrapper, 'unpriced').setValue('2');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: {},
+      entries: [
+        { rates: { input: 1 } },
+        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      ],
+    });
+  });
+
   it('clears a threshold value while preserving operator-only updates', async () => {
     const wrapper = mountEditor({
       entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }],
