@@ -2,8 +2,8 @@ import { isEqual } from 'es-toolkit';
 
 import { hashResponsesItemContent, responsesItemId } from './identity.ts';
 import type { StatefulResponsesStore } from './store.ts';
-import type { ResponsesOutputIdentity } from '../affinity/ingress.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
+import type { ResponsesOutputIdentity } from '../affinity/ingress.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
