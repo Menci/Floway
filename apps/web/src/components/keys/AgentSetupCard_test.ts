@@ -5,7 +5,7 @@ import { nextTick, ref, type Ref } from 'vue';
 import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';
 import type { AgentSetupConfiguration } from '../../composables/useAgentSetup.ts';
-import { Combobox, Select, Switch } from '@floway-dev/ui';
+import { Combobox, SearchableSelect, Select, Switch } from '@floway-dev/ui';
 
 // The card owns one useAgentSetup instance; the tests drive the card through a
 // hand-built stand-in whose refs they mutate per case. useApi is mocked so the
@@ -86,13 +86,21 @@ const mountCard = (props: Partial<InstanceType<typeof AgentSetupCard>['$props']>
 
 // Select is a generic SFC whose type args don't flow through findComponent's
 // overloads, so the wrapper is read through a small structural probe (the same
-// idiom the alias-target-row tests use for casting Select wrappers).
+// idiom the alias-target-row tests use for casting Select wrappers). The model
+// pickers are SearchableSelect (nullable model, model-only options); the effort
+// and cleanup pickers stay on Select.
 interface SelectProbe {
   props(): { options: { value: string; label: string }[]; modelValue: string; disabled: boolean };
   vm: { $emit: (event: string, ...args: unknown[]) => void };
 }
+interface SearchProbe {
+  props(): { options: { value: string; label: string }[]; modelValue: string | null; disabled: boolean };
+  vm: { $emit: (event: string, ...args: unknown[]) => void };
+}
 const selectIn = (w: ReturnType<typeof mountCard>, testid: string): SelectProbe =>
   w.get(`[data-testid="${testid}"]`).findComponent(Select) as unknown as SelectProbe;
+const searchSelectIn = (w: ReturnType<typeof mountCard>, testid: string): SearchProbe =>
+  w.get(`[data-testid="${testid}"]`).findComponent(SearchableSelect) as unknown as SearchProbe;
 const selectAgent = async (w: ReturnType<typeof mountCard>, label: 'Claude Code' | 'Codex') => {
   const button = w.findAll('nav[aria-label="Agent"] button').find(item => item.text() === label);
   if (!button) throw new Error(`Missing ${label} agent item`);
@@ -145,7 +153,7 @@ describe('AgentSetupCard', () => {
     await modeTabs[1]!.trigger('click');
     await selectAgent(w, 'Codex');
 
-    selectIn(w, 'codex-model').vm.$emit('update:modelValue', 'gpt-5');
+    searchSelectIn(w, 'codex-model').vm.$emit('update:modelValue', 'gpt-5');
     w.get('[data-testid="codex-effort"]').findComponent(Combobox).vm.$emit('update:modelValue', 'xhigh');
     await nextTick();
 
@@ -157,7 +165,7 @@ describe('AgentSetupCard', () => {
   it('associates visible labels with representative Select and Combobox controls', async () => {
     const w = mountCard();
     const claudeModelField = w.get('[data-testid="claude-model"]');
-    expect(claudeModelField.get('label').attributes('for')).toBe(claudeModelField.get('button[role="combobox"]').attributes('id'));
+    expect(claudeModelField.get('label').attributes('for')).toBe(claudeModelField.get('input').attributes('id'));
     await selectAgent(w, 'Codex');
     const codexEffortField = w.get('[data-testid="codex-effort"]');
     expect(codexEffortField.get('label').attributes('for')).toBe(codexEffortField.get('input').attributes('id'));
@@ -207,28 +215,32 @@ describe('AgentSetupCard', () => {
 
   it('retains every addressable chat model, native-first per family, and skips non-chat models', async () => {
     const w = mountCard();
-    const claude = selectIn(w, 'claude-model').props().options;
-    // A leading "no override" option, then the Claude family ahead of the rest;
-    // the embedding model is dropped. The 1M-context Claude id carries the [1m]
-    // suffix in its persisted value while the label stays the raw id.
-    expect(claude[0]!.label).toBe('Default');
-    expect(claude.slice(1).map(o => o.value)).toEqual(['claude-fable-4-6', 'claude-opus-4-8', 'claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
+    const claude = searchSelectIn(w, 'claude-model').props().options;
+    // The Claude family sorts ahead of the rest; the embedding model is dropped.
+    // The 1M-context Claude id carries the [1m] suffix in its persisted value
+    // while the label stays the raw id. The Default row is the picker's own and
+    // is not part of the options list.
+    expect(claude.map(o => o.value)).toEqual(['claude-fable-4-6', 'claude-opus-4-8', 'claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
+    expect(claude.map(o => o.label)).toEqual(['claude-fable-4-6', 'claude-opus-4-8', 'claude-sonnet-4-5', 'claude-haiku-4-5', 'gpt-5']);
 
-    const opus = selectIn(w, 'claude-opus').props().options;
-    expect(opus.slice(1).map(o => o.value)).toEqual(['claude-opus-4-8', 'claude-fable-4-6', 'claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
+    const opus = searchSelectIn(w, 'claude-opus').props().options;
+    expect(opus.map(o => o.value)).toEqual(['claude-opus-4-8', 'claude-fable-4-6', 'claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
 
     await selectAgent(w, 'Codex');
-    const codex = selectIn(w, 'codex-model').props().options;
-    expect(codex[0]!.label).toBe('Default');
-    expect(codex.slice(1).map(o => o.value)).toEqual(['gpt-5', 'claude-fable-4-6', 'claude-opus-4-8', 'claude-sonnet-4-5', 'claude-haiku-4-5']);
+    const codex = searchSelectIn(w, 'codex-model').props().options;
+    expect(codex.map(o => o.value)).toEqual(['gpt-5', 'claude-fable-4-6', 'claude-opus-4-8', 'claude-sonnet-4-5', 'claude-haiku-4-5']);
   });
 
-  it('keeps a persisted model that left the catalog selectable instead of dropping it', async () => {
+  it('keeps a persisted-but-delisted model in the draft while dropping it from the option list', async () => {
     setupStub = makeSetup({ config: { ...defaultConfig(), codex: { model: 'gpt-5-retired', reasoningEffort: null } } });
     const w = mountCard();
     await selectAgent(w, 'Codex');
-    const codex = selectIn(w, 'codex-model').props().options;
-    expect(codex.some(o => o.value === 'gpt-5-retired')).toBe(true);
+    const codex = searchSelectIn(w, 'codex-model');
+    // The option list carries only catalog models; a delisted id is no longer a
+    // row, so the picker shows Default while the draft keeps the stored value
+    // until the operator changes it.
+    expect(codex.props().options.some(o => o.value === 'gpt-5-retired')).toBe(false);
+    expect(codex.props().modelValue).toBe('gpt-5-retired');
   });
 
   it('exposes the Claude reasoning-effort enum with an optional sentinel', () => {
@@ -287,20 +299,18 @@ describe('AgentSetupCard', () => {
     expect(setupStub.draft.value!.codex.reasoningEffort).toBeNull();
   });
 
-  it('binds an unset Claude model select to the sentinel and writes null back through it', async () => {
+  it('binds an unset Claude model to null and writes selections back through it', async () => {
     const w = mountCard();
-    const claude = selectIn(w, 'claude-model');
-    // The "no override" option carries a non-empty sentinel value (Reka Select
-    // rejects the empty string), so an unset draft binds to that sentinel.
-    const sentinel = claude.props().options[0]!.value;
-    expect(sentinel).not.toBe('');
-    expect(claude.props().modelValue).toBe(sentinel);
+    const claude = searchSelectIn(w, 'claude-model');
+    // An unset draft is the null Default; the picker renders its own Default row
+    // rather than carrying a sentinel option.
+    expect(claude.props().modelValue).toBeNull();
 
     claude.vm.$emit('update:modelValue', 'claude-sonnet-4-5[1m]');
     await nextTick();
     expect(setupStub.draft.value!.claudeCode.model).toBe('claude-sonnet-4-5[1m]');
 
-    claude.vm.$emit('update:modelValue', sentinel);
+    claude.vm.$emit('update:modelValue', null);
     await nextTick();
     expect(setupStub.draft.value!.claudeCode.model).toBeNull();
   });
@@ -386,7 +396,7 @@ describe('AgentSetupCard', () => {
 
   it('keeps keyless form edits local and applies them when a key is selected', async () => {
     const w = mountCard({ selectedKey: null });
-    const localModel = selectIn(w, 'claude-model');
+    const localModel = searchSelectIn(w, 'claude-model');
     localModel.vm.$emit('update:modelValue', 'claude-opus-4-8');
     await nextTick();
     expect(localModel.props().modelValue).toBe('claude-opus-4-8');
@@ -405,7 +415,7 @@ describe('AgentSetupCard', () => {
     setupStub = makeSetup({ config: restored });
 
     const w = mountCard({ selectedKey: null });
-    selectIn(w, 'claude-model').vm.$emit('update:modelValue', 'claude-sonnet-4-5[1m]');
+    searchSelectIn(w, 'claude-model').vm.$emit('update:modelValue', 'claude-sonnet-4-5[1m]');
     await nextTick();
     await w.setProps({ selectedKey: defaultKeys[0] });
     await nextTick();
