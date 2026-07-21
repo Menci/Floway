@@ -5213,7 +5213,6 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
   const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
   assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
 
-  // Message-child events carry the id minted when the output item opened.
   for (const f of result.downstreamFrames) {
     if (f.type !== 'event') continue;
     const ev = f.event as { item_id?: string };
@@ -5313,7 +5312,6 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
     true,
   );
 
-  // Child events keep the upstream id verbatim.
   const deltaFrame = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.output_text.delta');
   assert(deltaFrame?.type === 'event');

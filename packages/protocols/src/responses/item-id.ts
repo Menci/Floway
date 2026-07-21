@@ -1,6 +1,5 @@
-// These are the Responses item types Floway itself can create. Native
-// Responses providers keep ownership of every id they return; this table is
-// intentionally not a catalog of every upstream item type.
+// These are only the Responses item types Floway itself can create, not a
+// catalog or validator for provider-returned item IDs.
 // OpenAI's wire examples use msg_/rs_/ws_/ctc_ for their corresponding item
 // lifecycles and fc_/cmp_ for function and compaction items.
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L57042-L59599
