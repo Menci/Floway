@@ -19,7 +19,7 @@ import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../repo/types.ts';
-import { tokenUsageDimensions } from '../../repo/usage-dimensions.ts';
+import { tokenUsageMetrics } from '../../repo/usage-metrics.ts';
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -195,7 +195,7 @@ const USAGE_1: UsageRecord = {
   hour: '2026-01-01T10',
   pricingSelector: { serviceTier: 'fast' },
   requests: 5,
-  dimensions: tokenUsageDimensions({ input: 1000, output: 500, input_cache_read: 120, input_cache_write: 80 }, null),
+  metrics: tokenUsageMetrics({ input: 1000, output: 500, input_cache_read: 120, input_cache_write: 80 }, null),
 };
 
 const USAGE_2: UsageRecord = {
@@ -206,7 +206,7 @@ const USAGE_2: UsageRecord = {
   hour: '2026-01-01T11',
   pricingSelector: {},
   requests: 3,
-  dimensions: tokenUsageDimensions({ input: 2000, output: 800, input_cache_read: 200, input_cache_write: 50 }, null),
+  metrics: tokenUsageMetrics({ input: 2000, output: 800, input_cache_read: 200, input_cache_write: 50 }, null),
 };
 
 const SEARCH_USAGE_1: SearchUsageRecord = {
@@ -331,7 +331,7 @@ test('import validates generic pricing selectors', async () => {
   assertEquals(String(fractional.body.error).includes('positive safe integer'), true);
 });
 
-test('export emits the v12 envelope with users and upstreams', async () => {
+test('export emits the v13 envelope with users and upstreams', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
 
@@ -685,48 +685,44 @@ test('codex import rejects unknown keys in state', async () => {
   assertEquals(result.body.error.includes('unexpected key'), true);
 });
 
-test('import rejects negative historical unit prices with a dimension-specific error', async () => {
+test('import rejects negative historical unit prices with a metric-specific error', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', latestImportData({
     usage: [{
       ...USAGE_2,
-      dimensions: [{ dimension: 'input', unit: 'tokens_1m', quantity: 2_000, unitPrice: -0.01 }],
+      metrics: [{ metric: 'input_tokens', quantity: '2000', unitPrice: '-0.01' }],
     }],
   }));
 
   assertEquals(result.status, 400);
-  assertEquals(result.body.error, 'invalid usage at index 0: dimension unitPrice must be a finite non-negative number or null');
+  assertEquals(result.body.error, 'invalid usage at index 0: metric unitPrice must be non-negative: "-0.01"');
 });
 
-test('v12 import validates usage dimension rows', async () => {
+test('v13 import validates usage metric rows', async () => {
   const { app } = setup();
-  const missingDimensions = await doImport(app, 'replace', latestImportData({
-    usage: [{ ...USAGE_2, dimensions: undefined }],
+  const missingMetrics = await doImport(app, 'replace', latestImportData({
+    usage: [{ ...USAGE_2, metrics: undefined }],
   }));
-  const unknownDimension = await doImport(app, 'replace', latestImportData({
-    usage: [{ ...USAGE_2, dimensions: [{ dimension: 'imput', unit: 'tokens_1m', quantity: 1, unitPrice: null }] }],
-  }));
-  const unknownUnit = await doImport(app, 'replace', latestImportData({
-    usage: [{ ...USAGE_2, dimensions: [{ dimension: 'input', unit: 'requests_1k', quantity: 1, unitPrice: null }] }],
+  const unknownMetric = await doImport(app, 'replace', latestImportData({
+    usage: [{ ...USAGE_2, metrics: [{ metric: 'imput', quantity: '1', unitPrice: null }] }],
   }));
   const invalidQuantity = await doImport(app, 'replace', latestImportData({
-    usage: [{ ...USAGE_2, dimensions: [{ dimension: 'input', unit: 'tokens_1m', quantity: -1, unitPrice: null }] }],
+    usage: [{ ...USAGE_2, metrics: [{ metric: 'input_tokens', quantity: -1, unitPrice: null }] }],
   }));
-  const duplicateDimensionUnit = await doImport(app, 'replace', latestImportData({
+  const duplicateMetric = await doImport(app, 'replace', latestImportData({
     usage: [{
       ...USAGE_2,
-      dimensions: [
-        { dimension: 'input', unit: 'tokens_1m', quantity: 1, unitPrice: null },
-        { dimension: 'input', unit: 'tokens_1m', quantity: 2, unitPrice: null },
+      metrics: [
+        { metric: 'input_tokens', quantity: '1', unitPrice: null },
+        { metric: 'input_tokens', quantity: '2', unitPrice: null },
       ],
     }],
   }));
 
-  assertEquals(missingDimensions.body.error, 'invalid usage at index 0: dimensions must be an array');
-  assertEquals(unknownDimension.body.error, 'invalid usage at index 0: unknown usage dimension: "imput"');
-  assertEquals(unknownUnit.body.error, 'invalid usage at index 0: unknown billing unit: "requests_1k"');
-  assertEquals(invalidQuantity.body.error, 'invalid usage at index 0: dimension quantity must be a finite non-negative number');
-  assertEquals(duplicateDimensionUnit.body.error, 'invalid usage at index 0: duplicate usage dimension and unit: input, tokens_1m');
+  assertEquals(missingMetrics.body.error, 'invalid usage at index 0: metrics must be an array');
+  assertEquals(unknownMetric.body.error, 'invalid usage at index 0: unknown usage metric: "imput"');
+  assertEquals(invalidQuantity.body.error, 'invalid usage at index 0: metric quantity must be a decimal string: -1');
+  assertEquals(duplicateMetric.body.error, 'invalid usage at index 0: duplicate usage metric: input_tokens');
 });
 
 test('import rejects invalid records before clearing existing data', async () => {
@@ -935,7 +931,7 @@ test('import rejects legacy enabled_fixes payloads before mutating', async () =>
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });
 
-test('import rejects missing latest-v12 arrays before clearing existing data', async () => {
+test('import rejects missing latest-v13 arrays before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   await repo.upstreams.save(CUSTOM_UPSTREAM);
@@ -965,7 +961,7 @@ test('import validates mode and data before mutating', async () => {
   const missingData = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'replace', version: 12 }),
+    body: JSON.stringify({ mode: 'replace', version: 13 }),
   });
   const missingUpstreams = await doImport(app, 'merge', {}, 12);
   const emptyMerge = await doImport(app, 'merge', latestImportData(), 12);
@@ -1120,7 +1116,7 @@ test('import replace wipes proxy_upstream_backoffs alongside the proxies it cool
   assertEquals(await repo.proxyBackoffs.listAll(), []);
 });
 
-test('v12 export/import round-trips users and per-key user_id', async () => {
+test('v13 export/import round-trips users and per-key user_id', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
@@ -1142,7 +1138,7 @@ test('v12 export/import round-trips users and per-key user_id', async () => {
   assertEquals(restoredKey?.userId, USER_BOB.id);
 });
 
-test('v12 import rejects api_keys whose user_id does not appear in the payload', async () => {
+test('v13 import rejects api_keys whose user_id does not appear in the payload', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
 
@@ -1160,7 +1156,7 @@ test('v12 import rejects api_keys whose user_id does not appear in the payload',
   assertEquals(result.body.error, 'invalid apiKeys at index 0: user_id 99 does not match any user in the payload');
 });
 
-test('v12 import rejects malformed users (bad username, bad password_hash)', async () => {
+test('v13 import rejects malformed users (bad username, bad password_hash)', async () => {
   const { app } = setup();
 
   const badUsername = await doImport(app, 'replace', {
@@ -1235,7 +1231,7 @@ test('replace-mode import clears sessions before writing users', async () => {
   assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
 });
 
-test('v12 import rejects users[i].upstreamIds === undefined', async () => {
+test('v13 import rejects users[i].upstreamIds === undefined', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     users: [SEED_ADMIN, { ...USER_BOB, upstreamIds: undefined }],
@@ -1250,7 +1246,7 @@ test('v12 import rejects users[i].upstreamIds === undefined', async () => {
   expect(result.body.error).toMatch(/upstreamIds/);
 });
 
-test('v12 import rejects users[i].deletedAt of non-string non-null type', async () => {
+test('v13 import rejects users[i].deletedAt of non-string non-null type', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     users: [SEED_ADMIN, { ...USER_BOB, deletedAt: 42 }],
@@ -1265,7 +1261,7 @@ test('v12 import rejects users[i].deletedAt of non-string non-null type', async 
   expect(result.body.error).toMatch(/deletedAt/);
 });
 
-test('v12 replace import refuses payload missing user 1', async () => {
+test('v13 replace import refuses payload missing user 1', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     users: [USER_BOB],
@@ -1280,7 +1276,7 @@ test('v12 replace import refuses payload missing user 1', async () => {
   expect(result.body.error).toMatch(/user 1/);
 });
 
-test('a full v12 export re-imports verbatim — the export→import round trip is closed', async () => {
+test('a full v13 export re-imports verbatim — the export→import round trip is closed', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
@@ -1436,7 +1432,7 @@ test('replace-mode import surfaces a purgeAll failure', async () => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      mode: 'replace', version: 12, data: latestImportData({
+      mode: 'replace', version: 13, data: latestImportData({
         apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
       }),
     }),
@@ -1454,7 +1450,7 @@ test('merge-mode retention transition surfaces a purgeAll failure', async () => 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      mode: 'merge', version: 12, data: latestImportData({
+      mode: 'merge', version: 13, data: latestImportData({
         apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
       }),
     }),

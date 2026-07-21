@@ -4,7 +4,7 @@ import type { GatewayCtx } from './gateway-ctx.ts';
 import { SourceStreamState } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { tokenCountsFromUsage } from '../../../repo/usage-dimensions.ts';
+import { tokenCountsFromUsage } from '../../../repo/usage-metrics.ts';
 import { recordPerformance } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -196,7 +196,7 @@ test('settle records the request without dimensions when usage is null', async (
   const rows = await harness.repo.usage.listAll();
   assertEquals(rows.length, 1);
   assertEquals(rows[0].requests, 1);
-  assertEquals(rows[0].dimensions, []);
+  assertEquals(rows[0].metrics, []);
 });
 
 test('settle records the request when usage carries no billable dimension', async () => {
@@ -206,7 +206,7 @@ test('settle records the request when usage carries no billable dimension', asyn
   const rows = await harness.repo.usage.listAll();
   assertEquals(rows.length, 1);
   assertEquals(rows[0].requests, 1);
-  assertEquals(rows[0].dimensions, []);
+  assertEquals(rows[0].metrics, []);
 });
 
 // TPOT reflects the token stream, not the D1 write that follows it.

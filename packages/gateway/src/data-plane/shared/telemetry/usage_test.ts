@@ -81,7 +81,7 @@ test('Zero is a valid count, not a missing signal', () => {
   );
 });
 
-test('recordUsage persists caller-supplied quantities and units with resolved prices', async () => {
+test('recordUsage persists caller-supplied metrics with resolved prices', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
 
@@ -91,15 +91,14 @@ test('recordUsage persists caller-supplied quantities and units with resolved pr
       model: 'metered-model',
       upstream: 'upstream-a',
       modelKey: 'metered-model',
-      pricing: basePricing({ input: 'tokens_1m' }, { input: 0.6 }),
+      pricing: basePricing({ input_tokens: '0.6' }),
     },
-    { input: 90 },
-    { input: 'tokens_1m' },
+    { input_tokens: '90' },
     {},
   );
 
   const rows = await repo.usage.listAll();
   assertEquals(rows.length, 1);
   assertEquals(rows[0].requests, 1);
-  assertEquals(rows[0].dimensions, [{ dimension: 'input', unit: 'tokens_1m', quantity: 90, unitPrice: 0.6 }]);
+  assertEquals(rows[0].metrics, [{ metric: 'input_tokens', quantity: '90', unitPrice: '0.6' }]);
 });

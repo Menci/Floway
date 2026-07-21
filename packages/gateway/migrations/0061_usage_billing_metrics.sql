@@ -31,7 +31,11 @@ SELECT
     WHEN 'output_image' THEN 'output_image_tokens'
   END,
   CAST(tokens AS TEXT),
-  CASE WHEN unit_price IS NULL THEN NULL ELSE printf('%.17g', unit_price / 1000000.0) END
+  CASE
+    WHEN unit_price IS NULL THEN NULL
+    WHEN unit_price = 0 THEN '0'
+    ELSE rtrim(rtrim(printf('%.12f', unit_price / 1000000.0), '0'), '.')
+  END
 FROM usage;
 
 DROP TABLE usage;
@@ -70,7 +74,10 @@ SET config_json = json_set(
                           WHEN 'output' THEN 'output_tokens'
                           WHEN 'output_image' THEN 'output_image_tokens'
                         END,
-                        printf('%.17g', CAST(rate.value AS REAL) / 1000000.0)
+                        CASE
+                          WHEN CAST(rate.value AS REAL) = 0 THEN '0'
+                          ELSE rtrim(rtrim(printf('%.12f', CAST(rate.value AS REAL) / 1000000.0), '0'), '.')
+                        END
                       )
                       FROM json_each(json_extract(entry.value, '$.rates')) AS rate
                     ))
