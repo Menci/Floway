@@ -7,8 +7,8 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Affinity wraps routing metadata first. The client-output membrane then stores
-// each complete producer-owned item verbatim and owns only the response
-// envelope id shared by the downstream stream and snapshot.
+// each complete client-facing projection under its producer-owned item id and
+// owns the response envelope id shared by the downstream stream and snapshot.
 export const wrapNativeResponsesClientOutput = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   ctx: GatewayCtx,
