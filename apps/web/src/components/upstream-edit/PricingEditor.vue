@@ -48,6 +48,12 @@ const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
   image: ['input', 'input_image', 'output', 'output_image'],
 };
 
+const NEW_RATE_BILLING_UNIT: Record<ModelKind, BillingUnit> = {
+  chat: 'tokens_1m',
+  embedding: 'tokens_1m',
+  image: 'tokens_1m',
+};
+
 interface PricingThresholdDraft {
   operator: PricingThresholdOperator;
   value?: number;
@@ -145,8 +151,10 @@ const formatList = (values: readonly string[]): string => {
 
 const rateFieldName = (dimension: BillingDimension): string => PRICING_LABELS[dimension];
 
-const billingUnitLabel = (dimension: BillingDimension): string =>
-  BILLING_UNIT_OPTIONS.find(option => option.value === (pricingUnits.value[dimension] ?? 'tokens_1m'))!.label;
+const billingUnitLabel = (dimension: BillingDimension): string => {
+  const unit = pricingUnits.value[dimension];
+  return unit === undefined ? 'unit required' : BILLING_UNIT_LABELS[unit];
+};
 
 const pricingValidationErrors = computed<readonly string[]>(() => {
   const errors = new Set<string>();
@@ -156,6 +164,7 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
   const emptyRateIssues = pricingIssues.value.filter(issue => issue.code === 'empty-rates');
   const invalidSelectorIssues = pricingIssues.value.filter(issue => issue.code === 'invalid-selector');
   const rateDimensionIssues = pricingIssues.value.filter(issue => issue.code === 'rate-dimensions');
+  const unitDimensionIssue = pricingIssues.value.find(issue => issue.code === 'unit-dimensions');
   const baseIssue = pricingIssues.value.find(issue => issue.code === 'base-count');
   const duplicateIssues = pricingIssues.value.filter(
     (issue): issue is Extract<ModelPricingIssue, { code: 'duplicate-selector' }> =>
@@ -196,6 +205,15 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
     });
     errors.add(`All pricing entries must set the same rate fields: ${differences.join('; ')}.`);
   }
+  if (unitDimensionIssue?.code === 'unit-dimensions') {
+    const missing = unitDimensionIssue.missingDimensions.map(rateFieldName);
+    const added = unitDimensionIssue.addedDimensions.map(rateFieldName);
+    const differences = [
+      ...(missing.length > 0 ? [`missing ${formatList(missing)}`] : []),
+      ...(added.length > 0 ? [`unexpected ${formatList(added)}`] : []),
+    ];
+    errors.add(`Pricing units must match Base rate fields: ${differences.join('; ')}.`);
+  }
 
   for (const issue of pricingIssues.value) {
     if (issue.code === 'invalid-rate') {
@@ -206,6 +224,10 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
       errors.add(`Conflicting pricing threshold operators: entries ${formatList(entries)} disagree at ${axis.label} ${issue.value}.`);
     } else if (issue.code === 'empty-catalog') {
       errors.add(issue.error.message);
+    } else if (issue.code === 'empty-units' && emptyRateIssues.length === 0 && unitDimensionIssue === undefined) {
+      errors.add(issue.error.message);
+    } else if (issue.code === 'invalid-unit') {
+      errors.add(`Pricing unit is invalid: ${rateFieldName(issue.dimension)}.`);
     }
   }
   return [...errors];
@@ -225,7 +247,8 @@ const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
   const pricedDimensions = new Set(drafts.flatMap(draft => Object.keys(draft.rates)));
   const units: ModelPricing['units'] = {};
   for (const dimension of BILLING_DIMENSIONS) {
-    if (pricedDimensions.has(dimension)) units[dimension] = pricingUnits.value[dimension] ?? 'tokens_1m';
+    const unit = pricingUnits.value[dimension];
+    if (pricedDimensions.has(dimension) && unit !== undefined) units[dimension] = unit;
   }
   pricingUnits.value = units;
   pricing.value = { units, entries };
@@ -267,6 +290,9 @@ const toggleThresholdOperator = (index: number, axisId: string) => {
 
 const updatePricingRate = (index: number, dimension: BillingDimension, raw: string | number | null | undefined) => {
   const value = parseOptionalNumber(raw);
+  if (value !== undefined && pricingEntryDrafts.value[index]?.rates[dimension] === undefined && pricingUnits.value[dimension] === undefined) {
+    pricingUnits.value = { ...pricingUnits.value, [dimension]: NEW_RATE_BILLING_UNIT[props.kind] };
+  }
   writePricingEntries(pricingEntryDrafts.value.map((draft, entryIndex) => {
     if (entryIndex !== index) return draft;
     const rates = { ...draft.rates };
@@ -313,8 +339,9 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
       <label v-for="dimension in visiblePricingDimensions.filter(dimension => basePricingEntry?.rates[dimension] !== undefined)" :key="dimension" class="block space-y-1.5">
         <span class="block text-xs font-medium text-gray-500">{{ rateFieldName(dimension) }} unit</span>
         <Select
-          :model-value="pricingUnits[dimension] ?? 'tokens_1m'"
+          :model-value="pricingUnits[dimension]"
           :options="BILLING_UNIT_OPTIONS"
+          placeholder="Select unit"
           :disabled="!editable"
           @update:model-value="value => updatePricingUnit(dimension, value as BillingUnit)"
         />

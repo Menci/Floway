@@ -52,6 +52,34 @@ describe('PricingEditor', () => {
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
   });
 
+  it('assigns the model-kind unit only when creating a rate', async () => {
+    const wrapper = mountEditor({ entries: [{ rates: {} }] });
+    await pricingInput(wrapper, 'unpriced').setValue('2');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: { input: 'tokens_1m' },
+      entries: [{ rates: { input: 2 } }],
+    });
+  });
+
+  it('keeps a missing unit invalid when editing an existing rate', async () => {
+    const wrapper = mount(PricingEditor, {
+      props: {
+        modelValue: { units: {}, entries: [{ rates: { input: 1 } }] },
+        editable: true,
+        kind: 'chat',
+      },
+    });
+
+    expect(wrapper.text()).toContain('Input ($/unit required)');
+    expect(wrapper.get('[aria-label="Pricing validation errors"]').text()).toContain('Pricing units must match Base rate fields: missing Input.');
+
+    await pricingInput(wrapper, 'unpriced').setValue('2');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      units: {},
+      entries: [{ rates: { input: 2 } }],
+    });
+  });
+
   it('clears a threshold value while preserving operator-only updates', async () => {
     const wrapper = mountEditor({
       entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }],
