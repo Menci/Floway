@@ -3,6 +3,7 @@ import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isEqual } from 'es-toolkit';
 
 // Complete producer-owned items become reusable at their first done frame, so
 // each row commits before that frame is yielded. Later done frames remain
@@ -41,9 +42,11 @@ export const wrapResponsesClientOutput = async function* (
     const row: StoredResponsesItem = {
       id,
       apiKeyId: store.apiKeyId,
-      payload: privatePayload === undefined
-        ? { item: structuredClone(item) }
-        : { item: structuredClone(item), private: privatePayload },
+      payload: {
+        item: structuredClone(item),
+        ...(!isEqual(identityItem, item) ? { producer: structuredClone(identityItem) } : {}),
+        ...(privatePayload !== undefined ? { private: privatePayload } : {}),
+      },
       contentHash: await hashResponsesItemContent(identityItem),
       createdAt: Date.now(),
     };

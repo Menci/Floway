@@ -370,6 +370,10 @@ export interface StoredResponsesItem {
 
 export interface StoredResponsesItemPayload {
   item: unknown;
+  // Stable pre-affinity form, present only when the client-facing wire item
+  // differs. Identity checks compare this value instead of randomized
+  // authenticated affinity ciphertext.
+  producer?: unknown;
   // Ancillary state stashed alongside the public `item` body but never sent on
   // the wire: a server-only slot to preserve data a stateless client strips
   // from the echoed item (e.g. the real `web_search_call` results) so a later

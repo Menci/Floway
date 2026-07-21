@@ -83,10 +83,17 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     initFileProvider(new MemoryFileProvider());
     const repo = await createRepo();
     const first = storedItem('rs_reused', 'key-a', 'producer-hash', 1_000);
-    first.payload.item = { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'first-affinity-wrapper' };
+    const producer = { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'opaque' };
+    first.payload = {
+      item: { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'first-affinity-wrapper' },
+      producer,
+    };
     const repeated = {
       ...first,
-      payload: { item: { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'second-affinity-wrapper' } },
+      payload: {
+        item: { type: 'reasoning', id: first.id, summary: [], encrypted_content: 'second-affinity-wrapper' },
+        producer,
+      },
       createdAt: 3_000,
     };
 
