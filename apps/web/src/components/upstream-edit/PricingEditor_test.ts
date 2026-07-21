@@ -63,7 +63,7 @@ describe('PricingEditor', () => {
 
   it.each([
     ['minutes', 'Minute'],
-    ['tokens_1m', '1M tokens'],
+    ['tokens_1m', 'MTok'],
   ] as const)('persists the fixed audio input %s field', async (unit, label) => {
     const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'audio' });
     const input = wrapper.findAll('label').find(candidate => candidate.text().includes(`Input ($/${label})`))!.get('input');
@@ -76,7 +76,7 @@ describe('PricingEditor', () => {
 
   it('defaults new audio output pricing to tokens', async () => {
     const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'audio' });
-    const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/1M tokens)'))!.get('input');
+    const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/MTok)'))!.get('input');
     await output.setValue('4');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
       units: { output: 'tokens_1m' },
@@ -148,8 +148,8 @@ describe('PricingEditor', () => {
     const baseRates = { input: 1, input_image: 2, output: 3, output_image: 4 };
     const wrapper = mountEditor({ entries: [{ rates: baseRates }] }, { kind: 'chat' });
 
-    expect(wrapper.text()).toContain('Image Input ($/1M tokens)');
-    expect(wrapper.text()).toContain('Image Output ($/1M tokens)');
+    expect(wrapper.text()).toContain('Image Input ($/MTok)');
+    expect(wrapper.text()).toContain('Image Output ($/MTok)');
     await wrapper.findAll('button').find(button => button.text().includes('Add Entry'))!.trigger('click');
 
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual(tokenPricing({
@@ -164,7 +164,7 @@ describe('PricingEditor', () => {
     const wrapper = mountEditor({
       entries: [{ selector: { serviceTier: 'priority' }, rates: { input_image: 2 } }],
     }, { kind: 'chat' });
-    expect(wrapper.text()).toContain('Image Input ($/1M tokens)');
+    expect(wrapper.text()).toContain('Image Input ($/MTok)');
   });
 
   it('toggles the compact threshold operator before a value is entered', async () => {
@@ -208,7 +208,7 @@ describe('PricingEditor', () => {
     expect(wrapper.text()).toContain('All pricing entries must set the same rate fields: entry 2 ("priority") is missing Output.');
 
     await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
-    const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/1M tokens)'))!.get('input');
+    const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/MTok)'))!.get('input');
     await output.setValue('8');
 
     expect(wrapper.text()).not.toContain('All pricing entries must set the same rate fields:');
