@@ -110,7 +110,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async stageInputItems(items: readonly ResponsesInputItem[]): Promise<void> {
-    if (!this.writesState) return;
     for (const item of items) await this.stageInputItem(item);
   }
 

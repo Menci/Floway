@@ -26,9 +26,9 @@ export const wrapResponsesClientOutput = async function* (
   let sawCompactionItem = false;
 
   const persistFinalizedItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<void> => {
+    if (finalizedOutputIndexes.has(outputIndex)) return;
     const id = responsesItemId(item);
     if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
-    if (finalizedOutputIndexes.has(outputIndex)) return;
     const privatePayload = store.getPrivatePayload(id);
     const row: StoredResponsesItem = {
       id,

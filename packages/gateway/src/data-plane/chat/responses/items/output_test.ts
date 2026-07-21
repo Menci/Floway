@@ -253,6 +253,20 @@ test('output identity cannot conflict with a staged input from the same turn', a
   expect(await repo.responsesItems.lookupMany('key-a', [id])).toEqual([]);
 });
 
+test('store=false also validates output identity against current input', async () => {
+  initRepo(new InMemoryRepo());
+  const store = createResponsesHttpStore('key-a', false);
+  const id = 'msg_store_false_input_collision';
+  await store.stageInputItems([{ type: 'message', id, role: 'user', content: 'input' }]);
+  const output = { type: 'message' as const, id, role: 'assistant' as const, content: [{ type: 'output_text' as const, text: 'output' }] };
+  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
+  })();
+  const iterator = wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })[Symbol.asyncIterator]();
+
+  await expect(iterator.next()).rejects.toThrow(`Responses item id collision: ${id}`);
+});
+
 test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' };
@@ -574,6 +588,46 @@ test('client output forwards repeated done drift while retaining the first done 
   expect((await repo.responsesItems.lookupMany('key-a', [publicItems[0].id]))[0].payload.item).toMatchObject({
     summary: [{ type: 'summary_text', text: 'old' }],
   });
+});
+
+test('later done and terminal views may omit id after first-done durability', async () => {
+  const { repo, store } = memoryOutputHarness();
+  const first = {
+    type: 'message' as const,
+    id: 'msg_first_done',
+    role: 'assistant' as const,
+    content: [{ type: 'output_text' as const, text: 'first' }],
+  };
+  const later = {
+    type: 'message' as const,
+    role: 'assistant' as const,
+    content: [{ type: 'output_text' as const, text: 'later' }],
+  };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [later],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: later });
+    yield eventFrame({ type: 'response.completed', response });
+  })();
+  const events: ResponsesStreamEvent[] = [];
+  for await (const frame of wrapResponsesClientOutput(input, {
+    store,
+    responseId: 'resp_public',
+  })) if (frame.type === 'event') events.push(frame.event);
+
+  const doneItems = events.flatMap(event => event.type === 'response.output_item.done' ? [event.item] : []);
+  expect(doneItems).toEqual([first, later]);
+  const terminal = events.at(-1);
+  expect(terminal?.type === 'response.completed' && terminal.response.output).toEqual([later]);
+  expect((await repo.responsesItems.lookupMany('key-a', [first.id]))[0].payload.item).toEqual(first);
 });
 
 test('snapshot output IDs follow output_index rather than done arrival order', async () => {
