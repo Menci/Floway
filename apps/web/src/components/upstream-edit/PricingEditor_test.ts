@@ -66,11 +66,13 @@ describe('PricingEditor', () => {
     await input('Audio Input ($/Minute)').setValue('0.6');
     await input('Output ($/MTok)').setValue('4');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
-      entries: [{ rates: {
-        input_audio_tokens: '0.0000006',
-        input_audio_seconds: '0.01',
-        output_tokens: '0.000004',
-      } }],
+      entries: [{
+        rates: {
+          input_audio_tokens: '0.0000006',
+          input_audio_seconds: '0.01',
+          output_tokens: '0.000004',
+        },
+      }],
     });
   });
 
