@@ -1101,6 +1101,9 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           generatedFileKey: payload.file?.key ?? null,
         }));
         writes.push(...chunk);
+        if (responsesInsertChunks(writes).length > RESPONSES_INSERT_MAX_CHUNKS) {
+          await this.finishPayloadWrites(writes, new Error(`Responses state write exceeds ${RESPONSES_INSERT_MAX_CHUNKS} D1 insert statements`));
+        }
         await this.stagePayloadFiles(prepared.map(value => value.prepared), now + RESPONSES_PAYLOAD_STAGE_GRACE_MS);
         for (const value of prepared) await writePreparedStoredResponsesPayload(value.prepared);
       }
@@ -1110,9 +1113,6 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
 
     const statements: SqlPreparedStatement[] = [];
     const insertChunks = responsesInsertChunks(writes);
-    if (insertChunks.length > RESPONSES_INSERT_MAX_CHUNKS) {
-      await this.finishPayloadWrites(writes, new Error(`Responses state write exceeds ${RESPONSES_INSERT_MAX_CHUNKS} D1 insert statements`));
-    }
     for (const chunk of insertChunks) {
       const incomingJson = JSON.stringify(chunk.map(responsesInsertValue));
       statements.push(this.db
