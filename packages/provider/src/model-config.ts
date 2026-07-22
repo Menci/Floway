@@ -66,8 +66,8 @@ const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpoint
 // served by that endpoint; the empty value object is a placeholder reserved
 // for future per-endpoint sub-capabilities. `allowEmpty` is set for the
 // upstream-level fallback map (an upstream may serve only kind-derived
-// embedding/image/audio models or manual rerank models and declare no chat
-// endpoint).
+// embedding/image/transcription models or manual rerank models and declare no
+// chat endpoint).
 export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const endpoints: ModelEndpoints = {};

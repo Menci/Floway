@@ -35,14 +35,14 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   return partial;
 };
 
-// A published embedding/image/audio kind maps directly to its endpoint; chat
-// takes the upstream default. Rerank rows are removed before this helper
+// A published embedding/image/transcription kind maps directly to its endpoint;
+// chat takes the upstream default. Rerank rows are removed before this helper
 // because a kind alone cannot select their target wire. Unknown kinds use the
 // id heuristic, then fall back to the configured endpoints.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
   if (model.kind === 'embedding') return { embeddings: {} };
   if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
-  if (model.kind === 'audio') return { audioTranscriptions: {} };
+  if (model.kind === 'transcription') return { audioTranscriptions: {} };
   if (model.kind === 'chat') return configured;
   return inferEndpointsFromModelId(model.id) ?? configured;
 };

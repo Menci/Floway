@@ -253,7 +253,7 @@ test('Custom provider callAudioTranscriptions preserves multipart entries and ho
       endpoints: {},
       pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
       modelsFetch: { enabled: false },
-      models: [{ upstreamModelId: 'whisper-upstream', kind: 'audio', endpoints: { audioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'whisper-upstream', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
     },
   });
   let forwarded: { url: string; form: FormData } | undefined;

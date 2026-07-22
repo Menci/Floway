@@ -453,7 +453,7 @@ test('createAzureProvider callAudioTranscriptions selects the deployment in the 
     config: {
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'azkey',
-      models: [{ upstreamModelId: 'transcribe-deployment', kind: 'audio', endpoints: { audioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'transcribe-deployment', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
     },
   });
   let observedUrl: string | undefined;
@@ -487,7 +487,7 @@ test('createAzureProvider callAudioTranscriptions reduces a Foundry endpoint to 
     config: {
       endpoint: 'https://example.services.ai.azure.com/api/projects/prod',
       apiKey: 'azkey',
-      models: [{ upstreamModelId: 'gpt-4o-transcribe', kind: 'audio', endpoints: { audioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'gpt-4o-transcribe', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
     },
   });
   let observedUrl: string | undefined;

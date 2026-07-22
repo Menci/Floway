@@ -153,7 +153,7 @@ const fetchedCount = ref(0);
 const endpointsForKind = (kind: CustomRawModel['kind']): ModelEndpoints => {
   if (kind === 'embedding') return { embeddings: {} };
   if (kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
-  if (kind === 'audio') return { audioTranscriptions: {} };
+  if (kind === 'transcription') return { audioTranscriptions: {} };
   if (kind === 'rerank') return {};
   return Object.keys(customDraft.value.endpoints).length > 0
     ? { ...customDraft.value.endpoints }

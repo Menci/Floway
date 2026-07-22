@@ -37,7 +37,7 @@ const kindOptions = computed<{ value: ModelKind; label: string }[]>(() => [
   { value: 'chat', label: 'Chat' },
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
-  { value: 'audio', label: 'Audio' },
+  { value: 'transcription', label: 'Transcription' },
   ...(props.allowRerank ? [{ value: 'rerank' as const, label: 'Rerank' }] : []),
 ]);
 

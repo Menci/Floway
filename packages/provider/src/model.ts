@@ -154,7 +154,7 @@ export interface PerformanceTelemetryContext {
 //   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
 //   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
 //   `kind === 'rerank'`    ⇔ `endpoints === { rerank: {} }`
-//   `kind === 'audio'`     ⇔ `endpoints === { audioTranscriptions: {} }`
+//   `kind === 'transcription'` ⇔ `endpoints === { audioTranscriptions: {} }`
 //   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
 interface ModelMetadata {
   id: string;

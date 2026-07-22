@@ -195,15 +195,15 @@ describe('chatField', () => {
 });
 
 describe('modelsField metadata integration', () => {
-  test('derives audio kind from the transcription endpoint', () => {
+  test('derives transcription kind from the audio transcription endpoint', () => {
     const [model] = modelsField([{
       upstreamModelId: 'transcriber',
       endpoints: { audioTranscriptions: {} },
     }], 'p');
-    expect(model.kind).toBe('audio');
+    expect(model.kind).toBe('transcription');
   });
 
-  test('keeps an explicit stored kind round-trippable when audio endpoints disagree', () => {
+  test('keeps an explicit stored kind round-trippable when transcription endpoints disagree', () => {
     const [model] = modelsField([{
       upstreamModelId: 'transcriber',
       kind: 'chat',

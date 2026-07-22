@@ -125,12 +125,12 @@ test('manual known models inherit built-in pricing when no override is configure
   });
 });
 
-test('manual audio models call Ollama OpenAI-compatible transcriptions without auto-advertising audio', async () => {
+test('manual transcription models call Ollama without auto-advertising the endpoint', async () => {
   const instance = createOllamaProvider(buildRecord({
     config: {
       baseUrl: 'https://ollama.com',
       apiKey: 'ollama_test',
-      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'audio', endpoints: { audioTranscriptions: {} } }],
+      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
     },
   }));
   let transcription: Request | undefined;
@@ -146,7 +146,7 @@ test('manual audio models call Ollama OpenAI-compatible transcriptions without a
     },
     async () => {
       const models = await instance.instance.getProvidedModels(directFetcher);
-      assertEquals(models.map(model => model.kind), ['audio']);
+      assertEquals(models.map(model => model.kind), ['transcription']);
       await instance.instance.callAudioTranscriptions(models[0], {
         entries: [
           { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },

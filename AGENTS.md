@@ -128,9 +128,10 @@ Audio transcription is a buffered OpenAI-compatible multipart passthrough.
 The full body is parsed before routing because `model` may follow `file`; an
 ordered semantic form preserves duplicate text fields and uploaded file
 bytes/name/type while each candidate replaces only the upstream model id.
-Models use kind `audio` and declare `audioTranscriptions`. Custom catalogs may
-publish that kind, fall back to standard transcription model-id inference, or
-use an operator-authored row. Azure and Ollama audio rows are operator-authored.
+Models use kind `transcription` and declare `audioTranscriptions`. Custom
+catalogs may publish that kind, fall back to standard transcription model-id
+inference, or use an operator-authored row. Azure and Ollama transcription rows
+are operator-authored.
 All three providers implement the call. Azure selects the configured deployment
 in its dated operation URL and omits the multipart `model`; the same route
 serves Whisper and GPT transcription deployments. Successful bodies remain raw

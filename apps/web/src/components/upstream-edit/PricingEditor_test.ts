@@ -60,7 +60,7 @@ describe('PricingEditor', () => {
   });
 
   it('persists general input, audio token, duration, and output metrics independently', async () => {
-    const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'audio' });
+    const wrapper = mountEditor({ entries: [{ rates: {} }] }, { kind: 'transcription' });
     const input = (label: string) => wrapper.findAll('label').find(candidate => candidate.text().includes(label))!.get('input');
     await input('Input ($/MTok)').setValue('2');
     await input('Audio Input ($/MTok)').setValue('0.6');

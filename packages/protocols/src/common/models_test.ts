@@ -18,7 +18,7 @@ import {
 import { assertEquals, assertThrows } from '../test-assert.ts';
 
 test('parseModelKind accepts the current model families and rejects unknown storage values', () => {
-  for (const kind of ['chat', 'embedding', 'image', 'rerank', 'audio'] as const) assertEquals(parseModelKind(kind), kind);
+  for (const kind of ['chat', 'embedding', 'image', 'rerank', 'transcription'] as const) assertEquals(parseModelKind(kind), kind);
   assertThrows(() => parseModelKind('video'), Error, 'model kind is invalid: "video"');
   assertThrows(() => parseModelKind(null), Error, 'model kind is invalid: null');
 });

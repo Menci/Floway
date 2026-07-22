@@ -18,9 +18,9 @@ describe('ChatMetadataEditor', () => {
     expect(w.html().trim()).toBe('<!--v-if-->');
   });
 
-  it('renders nothing when kind="audio"', () => {
+  it('renders nothing when kind="transcription"', () => {
     const wrapper = mount(ChatMetadataEditor, {
-      props: { modelValue: baseValue(), kind: 'audio', mode: 'manual' },
+      props: { modelValue: baseValue(), kind: 'transcription', mode: 'manual' },
     });
     expect(wrapper.html().trim()).toBe('<!--v-if-->');
   });

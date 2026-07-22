@@ -79,16 +79,16 @@ describe('ModelEditor', () => {
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ flagOverrides: {} });
   });
 
-  it('clears chat metadata when switching a chat model to audio', async () => {
-    const selected = row('audio', 'gpt-4o-transcribe', '1', undefined);
+  it('clears chat metadata when switching a chat model to transcription', async () => {
+    const selected = row('transcription', 'gpt-4o-transcribe', '1', undefined);
     selected.config.chat = { modalities: { input: ['text'], output: ['text'] } };
     const wrapper = mountEditor(selected);
 
-    const kindSelect = wrapper.findAll('select').find(select => select.text().includes('Audio'))!;
-    await kindSelect.setValue('audio');
+    const kindSelect = wrapper.findAll('select').find(select => select.text().includes('Transcription'))!;
+    await kindSelect.setValue('transcription');
 
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({
-      kind: 'audio',
+      kind: 'transcription',
       endpoints: { audioTranscriptions: {} },
       chat: undefined,
       rerankTarget: undefined,

@@ -110,8 +110,8 @@ Inputs:
   unrestricted; empty list = no providers visible). The cap is the
   intersection of per-user and per-api-key allow-lists; unknown ids raise
   a configuration error rather than silently narrowing.
-- `kind` — `chat` / `embedding` / `image` / `rerank` / `audio`, determined by
-  the inbound
+- `kind` — `chat` / `embedding` / `image` / `rerank` / `transcription`,
+  determined by the inbound
   endpoint, not by the inbound payload. `/v1/completions` reuses the
   `chat` kind and narrows further via its endpoint-key predicate
   (`endpoints.completions !== undefined`).
@@ -231,7 +231,7 @@ reads it in each attempt's terminal wire call, right before destructuring
 `data-plane/model-aliases/apply-rules.ts`. Passthrough seams thread
 alias-origin candidates through the same iteration but never observe
 non-empty rules (non-chat alias kinds — `embedding`, `image`, `rerank`,
-`audio` — carry
+`transcription` — carry
 `{}` by schema; the apply-rules call is a no-op).
 
 By construction alias names never re-enter the alias layer: the target

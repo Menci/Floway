@@ -420,7 +420,7 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
 //
 // Add a value here only when we actually route that endpoint family — do
 // not pre-declare for future capabilities.
-export const MODEL_KINDS = ['chat', 'embedding', 'image', 'rerank', 'audio'] as const;
+export const MODEL_KINDS = ['chat', 'embedding', 'image', 'rerank', 'transcription'] as const;
 export type ModelKind = typeof MODEL_KINDS[number];
 
 export const parseModelKind = (value: unknown, label = 'model kind'): ModelKind => {

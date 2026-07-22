@@ -20,7 +20,7 @@ describe('upstreamModelSchema chat', () => {
   test('accepts an audio transcription model', () => {
     const body = structuredClone(baseAzure);
     const model = body.config.models[0] as Record<string, unknown>;
-    model.kind = 'audio';
+    model.kind = 'transcription';
     model.endpoints = { audioTranscriptions: {} };
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
