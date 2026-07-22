@@ -3,8 +3,8 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
-import { prepareStoredResponsesPayload } from './responses-payload.ts';
 import { sweepResponsesState } from './responses-maintenance.ts';
+import { prepareStoredResponsesPayload } from './responses-payload.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, StoredResponsesItem } from './types.ts';
