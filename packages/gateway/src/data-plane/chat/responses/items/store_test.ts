@@ -270,6 +270,20 @@ describe('StatefulResponsesStore', () => {
   test('large durable snapshot reads stay within the persistence query budget', async () => {
     const base = await createSqliteTestDb();
     const seedRepo = new SqlRepo(base);
+    await seedRepo.apiKeys.save({
+      id: 'key-a',
+      userId: 1,
+      name: 'State key',
+      key: 'raw-state-key',
+      serverSecret: '11'.repeat(32),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      upstreamIds: null,
+      deletedAt: null,
+      dumpRetentionSeconds: null,
+      responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS,
+      responsesStateEpoch: TEST_RESPONSES_STATE_EPOCH,
+      responsesStateVisibleAfter: 0,
+    });
     const refreshedAt = Date.now();
     const items = Array.from({ length: 1_413 }, (_, index) => {
       const item = { type: 'message', id: `msg_${index}`, role: 'assistant', content: [] };
@@ -321,19 +335,20 @@ describe('StatefulResponsesStore', () => {
     expect(queries).toBeLessThanOrEqual(20);
 
     const nearExpiry = Date.now() - TEST_RESPONSES_RETENTION_SECONDS * 1000 + 60 * 60 * 1000;
-    await base.prepare('UPDATE responses_state_items SET refreshed_at = ?, expires_at = ?')
-      .bind(nearExpiry, nearExpiry + TEST_RESPONSES_RETENTION_SECONDS * 1000)
+    await base.prepare('UPDATE responses_state_items SET refreshed_at = ?')
+      .bind(nearExpiry)
       .run();
-    await base.prepare('UPDATE responses_state_snapshots SET refreshed_at = ?, expires_at = ?')
-      .bind(nearExpiry, nearExpiry + TEST_RESPONSES_RETENTION_SECONDS * 1000)
+    await base.prepare('UPDATE responses_state_snapshots SET refreshed_at = ?')
+      .bind(nearExpiry)
       .run();
     queries = 0;
     expect(await createResponsesHttpStore(testResponsesStatePolicy('key-a'), true).loadSnapshot('resp_large')).not.toBeNull();
     expect(queries).toBeLessThanOrEqual(35);
 
-    const newItems = items.map((item, index) => ({ ...item, id: `msg_new_${index}`, payloadHash: `new-payload-${index}` }));
+    const writeAt = Date.now();
+    const newItems = items.map((item, index) => ({ ...item, id: `msg_new_${index}`, payloadHash: `new-payload-${index}`, refreshedAt: writeAt }));
     queries = 0;
-    await new SqlRepo(countedDb).responsesItems.insertMany(newItems, Date.now());
+    await new SqlRepo(countedDb).responsesItems.insertMany(newItems, writeAt - TEST_RESPONSES_RETENTION_SECONDS * 1000);
     expect(queries).toBeLessThanOrEqual(25);
   });
 });

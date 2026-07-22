@@ -27,7 +27,7 @@ import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
-const serializedApiKey = ({ responsesStateEpoch: _epoch, ...key }: ApiKey) => key;
+const serializedApiKey = ({ responsesStateEpoch: _epoch, responsesStateVisibleAfter: _visibleAfter, ...key }: ApiKey) => key;
 
 const KEY_A: ApiKey = {
   id: 'key-a',

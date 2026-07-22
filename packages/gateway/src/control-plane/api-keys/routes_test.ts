@@ -348,7 +348,7 @@ test('Stateful Responses retention defaults off and grows without changing its s
   assertEquals(stored.responsesStateEpoch, apiKey.responsesStateEpoch);
 });
 
-test('shortening or disabling Stateful Responses retention rotates its private state epoch', async () => {
+test('shortening Stateful Responses retention advances its floor while disabling rotates its epoch', async () => {
   const { repo, apiKey } = await setupAppTest();
   const thirtyDays = 30 * 24 * 60 * 60;
   const sevenDays = 7 * 24 * 60 * 60;
@@ -358,14 +358,15 @@ test('shortening or disabling Stateful Responses retention rotates its private s
   let stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
   assertEquals(stored.responsesRetentionSeconds, sevenDays);
-  if (stored.responsesStateEpoch === apiKey.responsesStateEpoch) throw new Error('retention shrink did not rotate state epoch');
-  const shrunkenEpoch = stored.responsesStateEpoch;
+  assertEquals(stored.responsesStateEpoch, apiKey.responsesStateEpoch);
+  if (stored.responsesStateVisibleAfter <= 0) throw new Error('retention shrink did not advance the visibility floor');
 
   assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: 0 }, apiKey.key)).status, 200);
   stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
   assertEquals(stored.responsesRetentionSeconds, 0);
-  if (stored.responsesStateEpoch === shrunkenEpoch) throw new Error('retention disable did not rotate state epoch');
+  if (stored.responsesStateEpoch === apiKey.responsesStateEpoch) throw new Error('retention disable did not rotate state epoch');
+  assertEquals(stored.responsesStateVisibleAfter, 0);
 });
 
 test('rejects invalid Stateful Responses retention values', async () => {
@@ -437,7 +438,7 @@ test('PATCH /api/keys/:id disables dumps even when retention changed after owner
 
   assertEquals(response.status, 200);
   assertEquals(stubs.purgedAll, [apiKey.id]);
-  assertEquals(stubs.closedChannels, [{ keyId: apiKey.id, reason: 'updateKey retention disable' }]);
+  assertEquals(stubs.closedChannels, [{ keyId: apiKey.id, reason: 'dump retention disabled' }]);
   assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, null);
 });
 

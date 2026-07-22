@@ -660,10 +660,11 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       if (stored === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${items[index].id}`);
       if (stored.payloadHash !== items[index].payloadHash) throw new Error(`Responses item id collision: ${stored.id}`);
       const apiKey = await this.apiKeys.getById(stored.apiKeyId);
-      if (apiKey === null
-        || apiKey.responsesRetentionSeconds === 0
+      if (apiKey !== null && (
+        apiKey.responsesRetentionSeconds === 0
         || apiKey.responsesStateEpoch !== stored.stateEpoch
-        || stored.refreshedAt < responsesStateCutoff(refreshedAt, apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter)) {
+        || stored.refreshedAt < responsesStateCutoff(refreshedAt, apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter)
+      )) {
         throw new Error(`Responses item disappeared or changed before lifetime refresh: ${stored.id}`);
       }
       if (refreshedAt >= stored.refreshedAt) {
