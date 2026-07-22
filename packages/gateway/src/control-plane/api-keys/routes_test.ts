@@ -16,6 +16,8 @@ const ownerPatch = (id: string, body: unknown, rawKey: string) =>
 const assertPrivateStateAbsent = (value: Record<string, unknown>): void => {
   assertEquals(Object.hasOwn(value, 'responsesStateEpoch'), false);
   assertEquals(Object.hasOwn(value, 'responses_state_epoch'), false);
+  assertEquals(Object.hasOwn(value, 'responsesStateVisibleAfter'), false);
+  assertEquals(Object.hasOwn(value, 'responses_state_visible_after'), false);
 };
 
 test('GET /api/keys never exposes the server-side server secret', async () => {
