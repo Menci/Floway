@@ -2,7 +2,7 @@ import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from './dump/registry.ts';
 import { installDumpStubs } from './dump/test-fixtures.ts';
-import { runScheduledMaintenance } from './scheduled.ts';
+import { runScheduledDumpMaintenance, runScheduledMaintenance } from './scheduled.ts';
 import { setupAppTest } from './test-helpers.ts';
 import { initFileProvider, initImageCacheStore, MemoryFileProvider } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -65,7 +65,7 @@ test('runScheduledMaintenance keeps subsequent sweeps running when one top-level
   assertEquals(stubs.purgedExpired.some(c => c.keyId === keyA.id), true);
 });
 
-test('runScheduledMaintenance keeps spilled payloads when item-row deletion fails', async () => {
+test('state-maintenance failure keeps spilled payloads while dump maintenance remains independent', async () => {
   const { repo } = await setupAppTest();
   const files = new MemoryFileProvider();
   const imageSweep = vi.fn(async () => {});
@@ -91,6 +91,25 @@ test('runScheduledMaintenance keeps spilled payloads when item-row deletion fail
 
   assertEquals(await files.get(key), new Uint8Array([1]));
   assertEquals(imageSweep.mock.calls.length, 0);
-  assertEquals(dumps.purgedAll.length, 0);
+  assertEquals(dumps.purgedAll.length, 1);
   assertEquals(dumps.purgedExpired.length, 0);
+});
+
+test('dump maintenance processes at most twenty keys per invocation', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  for (let index = 0; index < 24; index += 1) {
+    await repo.apiKeys.save({
+      ...apiKey,
+      id: `${apiKey.id}_${index}`,
+      key: `${apiKey.key}_${index}`,
+      serverSecret: (index + 1).toString(16).padStart(64, '0'),
+      dumpRetentionSeconds: 3600,
+    });
+  }
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await runScheduledDumpMaintenance();
+
+  assertEquals(dumps.purgedExpired.length, 20);
 });

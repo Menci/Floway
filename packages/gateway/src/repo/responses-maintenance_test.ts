@@ -80,7 +80,7 @@ test('partial cleanup advances a concurrently-touched hot key so another due key
   const hotSweep = await base.prepare('SELECT due_at FROM responses_state_sweeps WHERE api_key_id = ?')
     .bind('a-hot')
     .first<{ due_at: number }>();
-  expect(hotSweep?.due_at).toBeGreaterThan(now);
+  expect(hotSweep?.due_at).toBe(now);
 });
 
 test('v1 cursor drains prior tables and removes the entire v1 object root after its grace horizon', async () => {

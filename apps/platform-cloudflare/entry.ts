@@ -5,7 +5,8 @@ import {
   app,
   initBackgroundSchedulerResolver,
   initRepo,
-  runScheduledMaintenance,
+  runScheduledDumpMaintenance,
+  runScheduledStateMaintenance,
   SqlRepo,
 } from '@floway-dev/gateway';
 
@@ -22,9 +23,11 @@ export default {
     initRepo(new SqlRepo(db));
     return app.fetch(req, env, ctx);
   },
-  scheduled(_controller: unknown, env: CloudflareEnv, ctx: ExecutionContext) {
+  scheduled(controller: { cron: string }, env: CloudflareEnv, ctx: ExecutionContext) {
     const { db } = bootstrapCloudflarePlatform(env);
     initRepo(new SqlRepo(db));
-    ctx.waitUntil(runScheduledMaintenance());
+    ctx.waitUntil(controller.cron === '47 * * * *'
+      ? runScheduledDumpMaintenance()
+      : runScheduledStateMaintenance());
   },
 };

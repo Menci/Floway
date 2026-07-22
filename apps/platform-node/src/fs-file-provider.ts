@@ -1,6 +1,6 @@
 import type { Dirent } from 'node:fs';
 import { mkdirSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, opendir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import type { FileProvider } from '@floway-dev/platform';
@@ -52,7 +52,7 @@ export class FsFileProvider implements FileProvider {
 
   async deletePrefixPage(prefix: string, limit: number): Promise<{ deleted: number; complete: boolean }> {
     if (prefix === '') throw new Error('FsFileProvider.deletePrefixPage: refusing empty prefix');
-    const keys = (await this.listKeys(prefix)).slice(0, limit);
+    const keys = await this.listKeysPage(prefix, limit);
     await this.deleteKeys(keys);
     return { deleted: keys.length, complete: keys.length < limit };
   }
@@ -84,6 +84,28 @@ export class FsFileProvider implements FileProvider {
       const fullPath = join(entry.parentPath, entry.name);
       keys.push(relative(this.root, fullPath).split(sep).join('/'));
     }
+    return keys;
+  }
+
+  private async listKeysPage(prefix: string, limit: number): Promise<string[]> {
+    const keys: string[] = [];
+    const walk = async (dirPath: string): Promise<void> => {
+      let dir;
+      try {
+        dir = await opendir(dirPath);
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT' || code === 'ENOTDIR') return;
+        throw e;
+      }
+      for await (const entry of dir) {
+        if (keys.length >= limit) break;
+        const path = join(dirPath, entry.name);
+        if (entry.isDirectory()) await walk(path);
+        else if (entry.isFile()) keys.push(relative(this.root, path).split(sep).join('/'));
+      }
+    };
+    await walk(this.pathFor(prefix));
     return keys;
   }
 

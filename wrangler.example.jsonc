@@ -34,7 +34,7 @@
   // resolve modules at cold start without the Node compat flag.
   "compatibility_flags": ["nodejs_compat"],
   "triggers": {
-    "crons": ["17 * * * *"]
+    "crons": ["17 * * * *", "47 * * * *"]
   },
   "assets": {
     "directory": "apps/web/dist",
