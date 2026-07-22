@@ -13,7 +13,7 @@ interface StatefulResponsesItemLookup {
 interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]>;
   insertItems(items: readonly StoredResponsesItem[]): Promise<void>;
-  refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void>;
+  refreshItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void>;
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
 }
@@ -265,7 +265,7 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
     await this.getRepo().responsesItems.insertMany(items);
   }
 
-  async refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+  async refreshItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void> {
     await this.getRepo().responsesItems.refreshMany(items, createdAt);
   }
 
@@ -306,13 +306,12 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     }
   }
 
-  async refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+  async refreshItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void> {
     const existing = items.map(item => this.items.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const missingIndex = existing.findIndex(item => item === undefined);
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
     }
-    for (const [index, item] of existing.entries()) assertSameStoredResponsesItem(items[index], item!);
     for (const item of existing) item!.createdAt = Math.max(item!.createdAt, createdAt);
   }
 

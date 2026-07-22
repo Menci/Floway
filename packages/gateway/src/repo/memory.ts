@@ -609,13 +609,12 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+  async refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void> {
     const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const missingIndex = existing.findIndex(item => item === undefined);
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
     }
-    for (const [index, item] of existing.entries()) assertSameStoredResponsesItem(items[index], item!);
     for (const item of existing) item!.createdAt = Math.max(item!.createdAt, createdAt);
   }
 

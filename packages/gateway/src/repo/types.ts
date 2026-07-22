@@ -379,7 +379,7 @@ export interface ResponsesItemsRepo {
   lookupMany(apiKeyId: string, ids: readonly string[]): Promise<StoredResponsesItem[]>;
   lookupManyByContentHash(apiKeyId: string, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
   insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
-  refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void>;
+  refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void>;
   deleteOlderThan(createdBefore: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
