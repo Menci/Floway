@@ -1,7 +1,8 @@
 // Data transfer routes — export/import operator-managed database data as JSON.
 //
-// Ephemeral stored Responses state is omitted from exports and cleared on
-// replace imports; clients can regenerate it through normal Responses use.
+// Ephemeral stored Responses state is omitted from exports. Replace imports
+// assign fresh key epochs, making retired state immediately unreachable while
+// bounded maintenance reclaims its rows and payload objects after expiry.
 //
 // The export contains all persisted authentication material, including raw API
 // keys and server secrets, user password hashes, provider tokens, and
