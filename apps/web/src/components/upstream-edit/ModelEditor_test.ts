@@ -37,6 +37,11 @@ const mountEditor = (selected: Row) => mount(ModelEditor, {
       EndpointsField: true,
       ChatMetadataEditor: true,
       FlagOverridesEditor: true,
+      Select: {
+        props: ['modelValue', 'options'],
+        emits: ['update:modelValue'],
+        template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
+      },
     },
   },
 });
@@ -72,6 +77,22 @@ describe('ModelEditor', () => {
     await wrapper.find('button[role="switch"]').trigger('click');
 
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ flagOverrides: {} });
+  });
+
+  it('clears chat metadata when switching a chat model to transcription', async () => {
+    const selected = row('transcription', 'gpt-4o-transcribe', '1', undefined);
+    selected.config.chat = { modalities: { input: ['text'], output: ['text'] } };
+    const wrapper = mountEditor(selected);
+
+    const kindSelect = wrapper.findAll('select').find(select => select.text().includes('Transcription'))!;
+    await kindSelect.setValue('transcription');
+
+    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({
+      kind: 'transcription',
+      endpoints: { audioTranscriptions: {} },
+      chat: undefined,
+      rerankTarget: undefined,
+    });
   });
 
   it('persists an explicit Cohere v2 target when switching into rerank', async () => {

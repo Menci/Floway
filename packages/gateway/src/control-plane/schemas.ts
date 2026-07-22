@@ -54,6 +54,7 @@ const modelEndpointsSchema = z.object({
   embeddings: z.object({}).optional(),
   imagesGenerations: z.object({}).optional(),
   imagesEdits: z.object({}).optional(),
+  audioTranscriptions: z.object({}).optional(),
   rerank: z.object({}).optional(),
 });
 
@@ -73,6 +74,8 @@ const pricingMetricShape = {
   input_cache_write_1h_tokens: priceSchema.optional(),
   input_image_tokens: priceSchema.optional(),
   output_image_tokens: priceSchema.optional(),
+  input_audio_tokens: priceSchema.optional(),
+  input_audio_seconds: priceSchema.optional(),
   rerank_searches: priceSchema.optional(),
 };
 
@@ -637,7 +640,7 @@ const aliasBodyCore = z.object(aliasBaseShape);
 
 // superRefine cross-validates each target's `rules` against the alias-level
 // kind. Chat: parse through `chatAliasRulesSchema` and surface the inner
-// issue verbatim. Embedding / image / rerank: the slot must be `{}` until a future
+// issue verbatim. Non-chat kinds require `{}` until a future
 // schema lands. `announced_metadata.chat` is bound to the same invariant:
 // a chat block on a non-chat alias would land on the InternalModel row and
 // leak an incoherent `chat: {...}` sidecar onto `/v1/models` for a row
@@ -690,7 +693,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(14, { error: 'version must be 14 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(15, { error: 'version must be 15 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

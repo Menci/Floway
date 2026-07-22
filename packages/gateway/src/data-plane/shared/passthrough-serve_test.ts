@@ -1,5 +1,5 @@
 // Behavioral coverage for the shared passthrough serve scaffold used by
-// /v1/embeddings and /v1/images/{generations,edits}. Each test exercises a
+// /v1/embeddings, /v1/images/{generations,edits}, and audio transcription. Each test exercises a
 // full client request through the in-memory app rather than constructing a
 // synthetic hono Context so the integration with model resolution,
 // upstream HTTP, and background scheduling stays honest.

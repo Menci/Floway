@@ -9,7 +9,8 @@ then routes each model through the API shape the client already speaks.
 - Use GitHub Copilot, ChatGPT subscriptions, Claude.ai subscriptions, Azure
   OpenAI, custom OpenAI- or Anthropic-compatible providers, and Ollama from one
   deployment.
-- Serve OpenAI, Anthropic, Gemini-compatible, and rerank APIs with
+- Serve OpenAI, Anthropic, Gemini-compatible, audio transcription, and rerank
+  APIs with
   cross-protocol translation where needed.
 - Manage upstreams, routing order, model aliases, API keys, and web search from
   a dashboard.
@@ -49,6 +50,7 @@ uploaded files persist in the `floway-data` volume.
 | OpenAI Responses | `POST /v1/responses`, `POST /v1/responses/compact`, WebSocket `GET /v1/responses` |
 | OpenAI Embeddings | `POST /v1/embeddings` |
 | OpenAI Images | `POST /v1/images/generations`, `POST /v1/images/edits` |
+| OpenAI Audio Transcriptions | `POST /v1/audio/transcriptions` |
 | OpenAI Models | `GET /v1/models` |
 | Anthropic Messages | `POST /v1/messages`, `POST /v1/messages/count_tokens` |
 | Google Gemini | `POST /v1beta/models/...` |
@@ -60,6 +62,10 @@ uploaded files persist in the `floway-data` volume.
 Rerank models are manual Custom models. Each model selects its outbound Cohere,
 Jina, Voyage, DashScope-compatible, or DashScope-native protocol and may
 override that protocol's canonical path; there is no upstream-wide rerank path.
+
+Audio transcription is a buffered multipart passthrough for Custom, Azure, and
+Ollama-compatible upstreams. JSON, text, subtitle, and transcription SSE
+responses retain their upstream wire shape.
 
 ### Upstreams
 

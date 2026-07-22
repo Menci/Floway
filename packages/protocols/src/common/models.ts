@@ -21,10 +21,10 @@ import { billableServiceTier } from './usage.ts';
 // 1-hour bucket Anthropic surfaces under
 // `cache_creation.ephemeral_1h_input_tokens` (extended-cache-ttl-2025-04-11).
 // They are disjoint subsets of `cache_creation_input_tokens`.
-export type BillingMetric = 'input_tokens' | 'input_cache_read_tokens' | 'input_cache_write_tokens' | 'input_cache_write_1h_tokens' | 'input_image_tokens' | 'output_tokens' | 'output_image_tokens' | 'rerank_searches';
+export type BillingMetric = 'input_tokens' | 'input_cache_read_tokens' | 'input_cache_write_tokens' | 'input_cache_write_1h_tokens' | 'input_image_tokens' | 'input_audio_tokens' | 'input_audio_seconds' | 'output_tokens' | 'output_image_tokens' | 'rerank_searches';
 
 // Iteration form of BillingMetric; the type union is the source of truth.
-export const BILLING_METRICS: readonly BillingMetric[] = ['input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'input_image_tokens', 'output_tokens', 'output_image_tokens', 'rerank_searches'];
+export const BILLING_METRICS: readonly BillingMetric[] = ['input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'input_image_tokens', 'input_audio_tokens', 'input_audio_seconds', 'output_tokens', 'output_image_tokens', 'rerank_searches'];
 
 export const parseBillingMetric = (value: unknown, label = 'billing metric'): BillingMetric => {
   if (typeof value === 'string' && (BILLING_METRICS as readonly string[]).includes(value)) return value as BillingMetric;
@@ -33,7 +33,7 @@ export const parseBillingMetric = (value: unknown, label = 'billing metric'): Bi
 
 // The input-side token metrics. Their disjoint sum is a request's total prompt
 // size, which projects the request onto the declared inputTokens thresholds.
-export const INPUT_TOKEN_METRICS: readonly BillingMetric[] = ['input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'input_image_tokens'];
+export const INPUT_TOKEN_METRICS: readonly BillingMetric[] = ['input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'input_image_tokens', 'input_audio_tokens'];
 
 // USD per one base metric unit for one pricing entry.
 export type PriceVector = Partial<Record<BillingMetric, DecimalString>>;
@@ -420,7 +420,7 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
 //
 // Add a value here only when we actually route that endpoint family — do
 // not pre-declare for future capabilities.
-export const MODEL_KINDS = ['chat', 'embedding', 'image', 'rerank'] as const;
+export const MODEL_KINDS = ['chat', 'embedding', 'image', 'rerank', 'transcription'] as const;
 export type ModelKind = typeof MODEL_KINDS[number];
 
 export const parseModelKind = (value: unknown, label = 'model kind'): ModelKind => {
@@ -518,7 +518,8 @@ export interface PublicModel {
   // upstream catalog into the public-facing shape: the three chat endpoints
   // (chatCompletions / messages / responses) appear together because the
   // gateway translates between them, while `completions`, `embeddings`,
-  // `imagesGenerations`, `imagesEdits`, and `rerank` only appear when the upstream
+  // `imagesGenerations`, `imagesEdits`, `rerank`, and `audioTranscriptions`
+  // only appear when the upstream
   // natively serves them. Alias entries surface the UNION of every
   // currently-available target's endpoint map — at request time the
   // resolver narrows the pool to targets that serve the inbound endpoint,

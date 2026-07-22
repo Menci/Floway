@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
+import type { ModelKind } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
@@ -77,7 +78,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           object?: string;
           type?: string;
           display_name?: string;
-          kind?: 'chat' | 'embedding' | 'image';
+          kind?: ModelKind;
           limits?: Record<string, number>;
           capabilities?: unknown;
           provider?: unknown;

@@ -221,6 +221,13 @@ describe('SqlPerformanceRepo upsertSummary set-mode guard', () => {
 });
 
 describe('SqlPerformanceRepo operation vocabulary', () => {
+  it('persists audio transcription rows through the open operation schema', async () => {
+    const repo = new SqlRepo(await createSqliteTestDb()).performance;
+    await repo.recordNeutral(errSample({ operation: 'audio_transcription' }));
+    const [row] = await repo.listAll();
+    expect(row).toMatchObject({ operation: 'audio_transcription', requests: 1, neutral: 1 });
+  });
+
   it('persists rerank rows through the open operation schema', async () => {
     const repo = new SqlRepo(await createSqliteTestDb()).performance;
     await repo.recordNeutral(errSample({ operation: 'rerank' }));

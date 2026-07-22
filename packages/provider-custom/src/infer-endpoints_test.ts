@@ -5,6 +5,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 
 const EMBEDDINGS = { embeddings: {} };
 const IMAGES = { imagesGenerations: {}, imagesEdits: {} };
+const AUDIO = { audioTranscriptions: {} };
 
 test('inferEndpointsFromModelId returns embeddings for known OpenAI / Voyage / Cohere / Mistral families', () => {
   for (const id of [
@@ -78,5 +79,17 @@ test('inferEndpointsFromModelId returns null for non-OpenAI image families and g
     'gpt-4o-image-experimental',
   ]) {
     assertEquals(inferEndpointsFromModelId(id), null);
+  }
+});
+
+test('inferEndpointsFromModelId returns audio transcription for standard transcribe and whisper families', () => {
+  for (const id of [
+    'gpt-4o-transcribe',
+    'gpt-4o-mini-transcribe-2025-12-15',
+    'gpt-4o-transcribe-diarize',
+    'whisper-1',
+    'openai/whisper-large-v3',
+  ]) {
+    assertEquals(inferEndpointsFromModelId(id), AUDIO);
   }
 });

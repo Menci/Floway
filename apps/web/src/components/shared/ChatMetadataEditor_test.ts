@@ -18,6 +18,13 @@ describe('ChatMetadataEditor', () => {
     expect(w.html().trim()).toBe('<!--v-if-->');
   });
 
+  it('renders nothing when kind="transcription"', () => {
+    const wrapper = mount(ChatMetadataEditor, {
+      props: { modelValue: baseValue(), kind: 'transcription', mode: 'manual' },
+    });
+    expect(wrapper.html().trim()).toBe('<!--v-if-->');
+  });
+
   it('renders nothing when kind="rerank"', () => {
     const wrapper = mount(ChatMetadataEditor, {
       props: { modelValue: baseValue(), kind: 'rerank', mode: 'manual' },

@@ -459,9 +459,10 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 //
 // Endpoint-level narrowing — picking the chat target protocol from
 // `model.endpoints`, or checking the specific `imagesEdits` /
-// `imagesGenerations` / `completions` endpoint key — is the caller's job.
+// `imagesGenerations` / `audioTranscriptions` / `completions` endpoint key — is the caller's job.
 // This function stays endpoint-blind so the same path serves chat,
-// embeddings, image generation/edits, rerank, and legacy completions.
+// embeddings, image generation/edits, rerank, audio transcription, and legacy
+// completions.
 //
 // The alias walk is a natural top-of-chain check: by construction an
 // alias's target id is a real model id, so the shadow pattern (an alias

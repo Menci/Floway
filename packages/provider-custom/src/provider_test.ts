@@ -193,6 +193,19 @@ test('manual runtime kind follows rerank endpoints when stored kind is stale', a
   assertEquals(model?.rerankTarget, { protocol: 'cohere-v2' });
 });
 
+test('manual runtime kind follows transcription endpoints when stored kind is stale', async () => {
+  const instance = createCustomProvider(buildCustomUpstream({
+    modelsFetchEnabled: false,
+    models: [{
+      upstreamModelId: 'raw-transcriber',
+      kind: 'chat',
+      endpoints: { audioTranscriptions: {} },
+    }],
+  }));
+  const [model] = await instance.instance.getProvidedModels(directFetcher);
+  assertEquals(model?.kind, 'transcription');
+});
+
 test('callRerank uses the model target protocol, raw model id, and canonical path', async () => {
   const instance = createCustomProvider(buildCustomUpstream({
     modelsFetchEnabled: false,

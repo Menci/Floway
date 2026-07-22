@@ -1,7 +1,7 @@
 // Ollama provider. Builds a ProviderModel catalog from /api/tags + /api/show
 // (see fetch-models.ts) and routes inference through Ollama's OpenAI-/
 // Anthropic-compat shims at /v1/chat/completions, /v1/responses, /v1/messages,
-// /v1/completions, /v1/embeddings — the same paths the cloud (ollama.com) and
+// /v1/completions, /v1/embeddings, /v1/audio/transcriptions — the same paths the cloud (ollama.com) and
 // self-hosted Ollama daemons share. Authentication is a single optional
 // bearer token.
 //
@@ -15,6 +15,11 @@
 // per-endpoint capabilities, so they do not change routing. They surface to
 // the dashboard via the model's `chat` field for display purposes only.
 //
+// Audio has no dedicated /api/show capability. The transcription route is
+// therefore available only to manual config.models[] entries declaring the
+// semantic endpoint; ordinary catalog rows stay chat/embedding.
+// https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/middleware/openai.go#L682-L789
+//
 // Manual config.models[] entries override auto-fetched models with the same
 // upstreamModelId, mirroring the custom provider's pinning behavior.
 
@@ -22,13 +27,13 @@ import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
-import { ollamaFetchChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
+import { ollamaFetchAudioTranscriptions, ollamaFetchChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { publicModelId, resolveEffectiveFlags, serializeOpenAIAudioTranscriptionRequest, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
 // returns and the same value the gateway must send back on every inference call.
@@ -174,6 +179,12 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     // routes one here. /v1/images/* is not exposed by the upstream binary.
     callImagesGenerations: rejectUnsupported('callImagesGenerations'),
     callImagesEdits: rejectUnsupported('callImagesEdits'),
+    callAudioTranscriptions: async (model, request, signal, opts) => {
+      const rawModelId = rawModelIdOf(model);
+      const body = serializeOpenAIAudioTranscriptionRequest(request, rawModelId);
+      const response = await ollamaFetchAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      return { response, modelKey: rawModelId };
+    },
     callRerank: rejectUnsupported('callRerank'),
   };
 

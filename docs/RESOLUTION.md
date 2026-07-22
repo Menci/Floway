@@ -110,7 +110,8 @@ Inputs:
   unrestricted; empty list = no providers visible). The cap is the
   intersection of per-user and per-api-key allow-lists; unknown ids raise
   a configuration error rather than silently narrowing.
-- `kind` — `chat` / `embedding` / `image` / `rerank`, determined by the inbound
+- `kind` — `chat` / `embedding` / `image` / `rerank` / `transcription`,
+  determined by the inbound
   endpoint, not by the inbound payload. `/v1/completions` reuses the
   `chat` kind and narrows further via its endpoint-key predicate
   (`endpoints.completions !== undefined`).
@@ -229,7 +230,8 @@ reads it in each attempt's terminal wire call, right before destructuring
 `applyRulesToUpstream{ChatCompletions,Responses,Messages}` in
 `data-plane/model-aliases/apply-rules.ts`. Passthrough seams thread
 alias-origin candidates through the same iteration but never observe
-non-empty rules (non-chat alias kinds — `embedding`, `image`, `rerank` — carry
+non-empty rules (non-chat alias kinds — `embedding`, `image`, `rerank`,
+`transcription` — carry
 `{}` by schema; the apply-rules call is a no-op).
 
 By construction alias names never re-enter the alias layer: the target
@@ -325,7 +327,7 @@ concern; it is never carried on the candidate or threaded as an explicit
 argument.
 
 Single-target endpoints (`/v1/embeddings`, `/v1/images/*`, `/v1/completions`,
-and the four rerank ingress routes)
+`/v1/audio/transcriptions`, and the four rerank ingress routes)
 follow the same rule with a single-key predicate
 (`endpoints[endpointKey] !== undefined`) instead of a multi-target
 preference list. The kind-filter at resolution time guarantees a
@@ -334,6 +336,12 @@ versa; the endpoint-key check at attempt time then narrows within the kind.
 Rerank additionally requires the selected provider model to carry an explicit
 `rerankTarget`; the target protocol and optional path are model metadata, not
 an upstream-level default.
+
+Audio transcription filters on `audioTranscriptions`; its multipart body is
+buffered and normalized before candidate iteration, then rebuilt with the
+selected provider model id for each attempt. The successful upstream media
+type selects raw JSON/text/subtitle forwarding or transcription SSE handling;
+the route never translates through a chat protocol.
 
 ## Pricing and Cost
 
@@ -358,6 +366,12 @@ text-only. Explicit modality metrics such as `input_image_tokens` are used only
 when the upstream reports a disjoint counter. The dashboard displays token
 rates as dollars per million tokens, but that scale exists only at the UI
 boundary; model metadata and usage snapshots always store the per-token rate.
+Measured usage is authoritative over pricing configuration. Each observed
+metric looks up only its matching rate: `input_audio_seconds` is never converted
+to tokens, and token metrics are never inferred from duration. A metric without
+a configured rate remains present with `unit_price: null`, while the request is
+still counted. A model may price seconds, audio tokens, general input tokens,
+and output tokens simultaneously.
 
 ```text
 ModelPricing

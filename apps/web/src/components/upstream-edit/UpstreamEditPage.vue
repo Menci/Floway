@@ -153,6 +153,7 @@ const fetchedCount = ref(0);
 const endpointsForKind = (kind: CustomRawModel['kind']): ModelEndpoints => {
   if (kind === 'embedding') return { embeddings: {} };
   if (kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
+  if (kind === 'transcription') return { audioTranscriptions: {} };
   if (kind === 'rerank') return {};
   return Object.keys(customDraft.value.endpoints).length > 0
     ? { ...customDraft.value.endpoints }
@@ -388,7 +389,17 @@ const save = async ({ openEdit = false }: { openEdit?: boolean } = {}) => {
   }
 };
 
-const cancel = async () => {
+// Create discards a draft — bounce to the settings list is the only
+// sensible destination. Edit lands here from a Settings row click, a
+// deep link, or the auto-promote after save; step back to wherever the
+// operator was, and fall back to the settings list only when there is
+// no in-app history (fresh tab, direct URL) — `window.history.state.back`
+// is the flag Vue Router sets on every managed navigation.
+const leave = async () => {
+  if (!isCreate.value && window.history.state?.back) {
+    router.back();
+    return;
+  }
   await router.push('/dashboard/settings');
 };
 
@@ -508,7 +519,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         <span v-else class="font-semibold text-white">{{ draft.name || 'Upstream' }}</span>
       </nav>
       <div class="ml-auto flex items-center gap-2">
-        <Button variant="secondary" :disabled="saving" @click="cancel">Cancel</Button>
+        <Button variant="secondary" :disabled="saving" @click="leave">{{ isCreate ? 'Cancel' : 'Back' }}</Button>
         <Button :loading="saving" @click="() => save()">Save changes</Button>
       </div>
     </header>

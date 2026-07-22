@@ -4,7 +4,8 @@
 // matching endpoint and the upstream response is passed through back to
 // the client. Embeddings and images run the `json` branch (single-shot
 // body, OpenAI-shape `usage` block); /v1/completions runs the `sse` branch
-// (frame-level transformFrame closure + settleUsage). Usage and
+// (frame-level transformFrame closure + settleUsage). Endpoint-owned response
+// strategies handle specialized media-type state machines. Usage and
 // request-performance writes are scheduled through the runtime's
 // background scheduler so transient repo failures cannot turn a
 // successful 200 from upstream into a 502.
@@ -27,12 +28,13 @@ import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse
 import { enumerateModelCandidates } from '../providers/registry.ts';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { PerformanceOperation, InternalModel, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
+import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // `json` (embeddings, images): single-shot body, `extractBilling` reads
 // usage / metadata off the parsed root. `sse` (/v1/completions): frame
 // stream, `transformFrame` mutates or drops frames (return null), then
-// `settleUsage` reports billing once the stream ends.
+// `settleUsage` reports billing once the stream ends. `strategy` delegates
+// response handling after candidate selection to the owning endpoint.
 type PassthroughResponseHandling =
   | {
     readonly format: 'json';
@@ -42,7 +44,20 @@ type PassthroughResponseHandling =
     readonly format: 'sse';
     readonly transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null;
     readonly settleUsage: () => TokenUsage | null;
+  }
+  | {
+    readonly format: 'strategy';
+    readonly respond: (context: PassthroughResponseStrategyContext) => Promise<Response>;
   };
+
+export interface PassthroughResponseStrategyContext {
+  readonly c: AuthedContext;
+  readonly ctx: GatewayCtx;
+  readonly sourceApi: PassthroughServeApiName;
+  readonly response: Response;
+  readonly performance: PerformanceTelemetryContext;
+  readonly identity: TelemetryModelIdentity;
+}
 
 interface PassthroughServeContext {
   readonly c: AuthedContext;
@@ -138,6 +153,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       }),
     );
     const { response, performance: performanceContext, identity } = result;
+
+    if (responseHandling.format === 'strategy') {
+      return await responseHandling.respond({ c, ctx, sourceApi, response, performance: performanceContext, identity });
+    }
 
     if (!response.ok) {
       // Exhausted — forward the last upstream response verbatim so clients

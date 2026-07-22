@@ -154,6 +154,14 @@ for (const backend of backends) {
     assertEquals(row.metrics, [{ metric: 'input_tokens', quantity: '90.5', unitPrice: '0.0000006' }]);
   });
 
+  test(`${backend.name} usage repo preserves audio duration seconds`, async () => {
+    const repo = await backend.make();
+    await repo.usage.record(record({
+      metrics: [{ metric: 'input_audio_seconds', quantity: '90.5', unitPrice: '0.01' }],
+    }));
+    const [row] = await query(repo);
+    assertEquals(row.metrics, [{ metric: 'input_audio_seconds', quantity: '90.5', unitPrice: '0.01' }]);
+  });
   test(`${backend.name} usage repo preserves an explicitly measured zero`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({ metrics: tokenUsageMetrics({ input: 0 }, { input_tokens: '0.000002' }) }));
