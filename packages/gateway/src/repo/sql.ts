@@ -1013,25 +1013,12 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const writes: PreparedResponsesRefreshWrite[] = [];
     try {
       for (const item of pending) {
-        const descriptor = previous.get(scopedResponsesKey(item.apiKeyId, item.id))!;
-        const previousFileKey = storedResponsesPayloadFileKey(item.id, descriptor.payloadJson);
-        const moveFile = previousFileKey !== null && !previousFileKey.startsWith(targetFilePrefix);
-        const payload = moveFile
-          ? await serializeStoredResponsesPayload(
-              item.id,
-              item.apiKeyId,
-              createdAt,
-              await parseStoredResponsesPayload(item.id, descriptor.payloadJson),
-            )
-          : descriptor.payloadJson;
-        writes.push({
-          kind: 'refresh',
+        writes.push(await this.prepareRefreshWrite(
           item,
-          payload,
-          generatedFileKey: moveFile ? storedResponsesPayloadFileKey(item.id, payload) : null,
-          previousPayloadJson: descriptor.payloadJson,
-          previousFileKey,
-        });
+          previous.get(scopedResponsesKey(item.apiKeyId, item.id))!,
+          createdAt,
+          targetFilePrefix,
+        ));
       }
     } catch (error) {
       await this.finishPayloadWrites(writes, error);
@@ -1076,6 +1063,47 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       return descriptor.createdAt < createdAt ? [write.item] : [];
     });
     if (staleItems.length > 0) await this.refreshMany(staleItems, createdAt);
+  }
+
+  private async prepareRefreshWrite(
+    item: Pick<StoredResponsesItem, 'id' | 'apiKeyId'>,
+    initialDescriptor: ResponsesItemDescriptor,
+    createdAt: number,
+    targetFilePrefix: string,
+  ): Promise<PreparedResponsesRefreshWrite> {
+    const key = scopedResponsesKey(item.apiKeyId, item.id);
+    let descriptor = initialDescriptor;
+    for (;;) {
+      const previousFileKey = storedResponsesPayloadFileKey(item.id, descriptor.payloadJson);
+      if (previousFileKey === null || previousFileKey.startsWith(targetFilePrefix)) {
+        return {
+          kind: 'refresh',
+          item,
+          payload: descriptor.payloadJson,
+          generatedFileKey: null,
+          previousPayloadJson: descriptor.payloadJson,
+          previousFileKey,
+        };
+      }
+
+      try {
+        const storedPayload = await parseStoredResponsesPayload(item.id, descriptor.payloadJson);
+        const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, storedPayload);
+        return {
+          kind: 'refresh',
+          item,
+          payload,
+          generatedFileKey: storedResponsesPayloadFileKey(item.id, payload),
+          previousPayloadJson: descriptor.payloadJson,
+          previousFileKey,
+        };
+      } catch (error) {
+        const current = (await this.lookupDescriptors([item])).get(key);
+        if (current === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${item.id}`);
+        if (current.payloadJson === descriptor.payloadJson) throw error;
+        descriptor = current;
+      }
+    }
   }
 
   private async lookupDescriptors(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[]): Promise<Map<string, ResponsesItemDescriptor>> {
