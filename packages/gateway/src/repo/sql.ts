@@ -209,6 +209,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const hasName = patch.name !== undefined;
     const hasKey = patch.key !== undefined;
+    const hasLastUsedAt = patch.lastUsedAt !== undefined;
     const hasUpstreamIds = patch.upstreamIds !== undefined;
     const hasDumpRetention = patch.dumpRetentionSeconds !== undefined;
     const hasResponsesRetention = patch.responsesRetentionSeconds !== undefined;
@@ -217,6 +218,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         `UPDATE api_keys
          SET name = CASE WHEN ? THEN ? ELSE name END,
              key = CASE WHEN ? THEN ? ELSE key END,
+             last_used_at = CASE WHEN ? THEN ? ELSE last_used_at END,
              upstream_ids = CASE WHEN ? THEN ? ELSE upstream_ids END,
              dump_retention_seconds = CASE WHEN ? THEN ? ELSE dump_retention_seconds END,
              responses_state_epoch = CASE
@@ -230,6 +232,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .bind(
         hasName, patch.name ?? null,
         hasKey, patch.key ?? null,
+        hasLastUsedAt, patch.lastUsedAt ?? null,
         hasUpstreamIds, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
         hasDumpRetention, patch.dumpRetentionSeconds ?? null,
         hasResponsesRetention, patch.responsesRetentionSeconds ?? null,

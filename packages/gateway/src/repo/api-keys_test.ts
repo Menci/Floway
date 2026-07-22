@@ -82,9 +82,10 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     const disabled = await repo.apiKeys.getById('key_dump');
     if (disabled === null) throw new Error('key disappeared after retention update');
 
-    await repo.apiKeys.update('key_dump', { name: 'Renamed' });
+    await repo.apiKeys.update('key_dump', { name: 'Renamed', lastUsedAt: '2026-07-23T00:00:00.000Z' });
     const renamed = await repo.apiKeys.getById('key_dump');
     assertEquals(renamed?.name, 'Renamed');
+    assertEquals(renamed?.lastUsedAt, '2026-07-23T00:00:00.000Z');
     assertEquals(renamed?.responsesRetentionSeconds, 0);
     assertEquals(renamed?.responsesStateEpoch, disabled.responsesStateEpoch);
   });

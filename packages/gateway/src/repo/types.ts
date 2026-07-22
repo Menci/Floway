@@ -168,7 +168,7 @@ export interface ApiKeyRepo {
 
 export type ApiKeyUpdate = Partial<Pick<
   ApiKey,
-  'name' | 'key' | 'upstreamIds' | 'dumpRetentionSeconds' | 'responsesRetentionSeconds'
+  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'responsesRetentionSeconds'
 >>;
 
 export interface UsersRepo {
