@@ -76,7 +76,7 @@ test.each([
 
   assert(descriptor.key.startsWith('responses-items/v1/expires/'));
   assert(!descriptor.key.includes(id));
-  assert(/^responses-items\/v1\/expires\/\d{4}\/\d{2}\/\d{2}\/\d{2}\/[0-9a-f]{16}\/[0-9a-f]{64}\/[0-9a-f]{64}-[A-Za-z0-9_-]{22}\.gz$/.test(descriptor.key));
+  assert(/^responses-items\/v1\/expires\/\d{4}\/\d{2}\/\d{2}\/\d{2}\/[0-9a-f]{64}\/[0-9a-f]{32}\/[0-9a-f]{64}\/[0-9a-f]{64}-[A-Za-z0-9_-]{22}\.gz$/.test(descriptor.key));
   assertEquals((await parseStoredResponsesPayload(id, serialized)).item, {
     type: 'message',
     id,

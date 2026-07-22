@@ -110,6 +110,7 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     ['private payload', (first: StoredResponsesItem): StoredResponsesItem => ({
       ...first,
       payload: { ...first.payload, private: { replay: 'different' } },
+      payloadHash: 'different-private-payload-hash',
     })],
   ] as const)('rejects a producer-id collision with different %s', async (_kind, collide) => {
     initFileProvider(new MemoryFileProvider());
@@ -151,15 +152,14 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     });
   });
 
-  test('rejects a lifetime refresh after its item disappeared', async () => {
+  test('a key-only lifetime refresh is a no-op after its item expired', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await createRepo();
     const item = storedItem('msg_missing', 'key-a', 'missing', 1_000);
     await repo.responsesItems.insertMany([item], 0);
     await repo.responsesItems.deleteExpiredHour(expiresAt(1_000), expiresAt(2_000), 100);
 
-    await expect(repo.responsesItems.refreshMany([item], 3_000, expiresAt(3_000)))
-      .rejects.toThrow('Responses item disappeared before lifetime refresh: msg_missing');
+    await expect(repo.responsesItems.refreshMany([item], 3_000, expiresAt(3_000))).resolves.toBeUndefined();
   });
 
   test('snapshot upsert refreshes its timestamp and item graph', async () => {
@@ -225,8 +225,8 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
     batch: async statements => {
       if (deleteBeforeBatch) {
         deleteBeforeBatch = false;
-        await base.prepare('DELETE FROM responses_items WHERE id = ? AND api_key_id = ?')
-          .bind('msg_race', 'key-a')
+        await base.prepare('DELETE FROM responses_state_items WHERE id = ? AND api_key_id = ? AND state_epoch = ?')
+          .bind('msg_race', 'key-a', TEST_RESPONSES_STATE_EPOCH)
           .run();
       }
       const results = [];
@@ -245,8 +245,7 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
     [item],
     1_000 + 2 * 60 * 60 * 1000,
     expiresAt(1_000 + 2 * 60 * 60 * 1000),
-  ))
-    .rejects.toThrow('Responses item disappeared before lifetime refresh: msg_race');
+  )).rejects.toThrow('Responses item disappeared before lifetime refresh: msg_race');
 
   expect(await files.listKeys('responses-items/')).toEqual([]);
   expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [item.id])).toEqual([]);
@@ -366,9 +365,14 @@ test('SQL lookup rereads a spill moved by a concurrent refresh', async () => {
     await nestedRefresh;
   };
 
-  await expect(repo.responsesItems.lookupMany(item.apiKeyId, TEST_RESPONSES_STATE_EPOCH, [item.id])).resolves.toEqual([
-    { ...item, refreshedAt: refreshedRefreshedAt },
-  ]);
+  const [persisted] = await repo.responsesItems.lookupMany(item.apiKeyId, TEST_RESPONSES_STATE_EPOCH, [item.id]);
+  expect(persisted).toMatchObject({
+    id: item.id,
+    payload: item.payload,
+    refreshedAt: refreshedRefreshedAt,
+    expiresAt: expiresAt(refreshedRefreshedAt),
+  });
+  expect(persisted.payloadFileKey).not.toBe(item.payloadFileKey);
   await nestedRefresh;
   expect(await files.listKeys('responses-items/')).toHaveLength(1);
 });
@@ -406,7 +410,7 @@ test('SQL Responses item writes stay within D1 bind limits and use bounded state
   await repo.responsesItems.insertMany(items, 0);
   await repo.responsesItems.refreshMany(items, 2_000, expiresAt(2_000));
 
-  expect(batchSizes).toEqual([12, 10]);
+  expect(batchSizes).toEqual([22, 3]);
   expect(maxBindCount).toBeLessThanOrEqual(100);
   expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, items.map(item => item.id))).toHaveLength(items.length);
 });
@@ -480,7 +484,10 @@ test('SQL exact duplicate refreshes its spill lifetime without leaving the old f
   expect(refreshedFiles).toHaveLength(1);
   expect(refreshedFiles).not.toEqual(originalFiles);
   expect((await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [original.id]))[0]).toMatchObject({
-    ...original,
+    id: original.id,
+    payload: original.payload,
+    contentHash: original.contentHash,
+    payloadHash: original.payloadHash,
     refreshedAt,
     expiresAt: expiresAt(refreshedAt),
   });

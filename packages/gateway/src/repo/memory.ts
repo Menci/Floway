@@ -627,14 +627,11 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     expiresAt: number,
   ): Promise<void> {
     const existing = items.map(item => this.store.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id)));
-    const missingIndex = existing.findIndex(item => item === undefined);
-    if (missingIndex !== -1) {
-      throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
-    }
     for (const item of existing) {
-      if (refreshedAt >= item!.refreshedAt) {
-        item!.refreshedAt = refreshedAt;
-        item!.expiresAt = expiresAt;
+      if (item === undefined) continue;
+      if (refreshedAt >= item.refreshedAt) {
+        item.refreshedAt = refreshedAt;
+        item.expiresAt = expiresAt;
       }
     }
   }

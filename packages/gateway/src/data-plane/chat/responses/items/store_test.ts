@@ -72,7 +72,7 @@ describe('StatefulResponsesStore', () => {
     expect(snapshot?.itemIds).toHaveLength(2);
     const [storedOutput] = await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [output.id]);
     expect(storedOutput.payload.item).toEqual(output);
-    expect(storedOutput.expiresAt).toBe(snapshot?.expiresAt);
+    expect(storedOutput.expiresAt).toBeGreaterThanOrEqual(snapshot!.expiresAt);
   });
 
   test('replace snapshots persist only their output state', async () => {

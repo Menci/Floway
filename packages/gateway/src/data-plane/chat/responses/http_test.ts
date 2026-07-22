@@ -5,7 +5,7 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
-import { TEST_RESPONSES_STATE_EPOCH } from '../../../test-helpers/responses-state.ts';
+import { TEST_RESPONSES_RETENTION_SECONDS, TEST_RESPONSES_STATE_EPOCH } from '../../../test-helpers/responses-state.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -85,12 +85,12 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   ...overrides,
 });
 
-const makeApp = (): Hono<{ Variables: AuthVars }> => {
+const makeApp = (responsesRetentionSeconds = 0): Hono<{ Variables: AuthVars }> => {
   const app = new Hono<{ Variables: AuthVars }>();
   // Stamp the authenticated key onto every request so the http entry sees the
   // same value the real auth middleware would set.
   app.use('*', async (c, next) => {
-    c.set('apiKey', buildApiKey());
+    c.set('apiKey', buildApiKey({ responsesRetentionSeconds }));
     c.set('user', buildUser());
     await next();
   });
@@ -359,7 +359,7 @@ test('POST /v1/responses returns 502 when a non-streaming output item cannot be 
   try {
     queueCompletedResponse();
 
-    const response = await makeApp().request('/v1/responses', {
+    const response = await makeApp(TEST_RESPONSES_RETENTION_SECONDS).request('/v1/responses', {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({ model: 'test-model', input: 'hello' }),
@@ -379,7 +379,7 @@ test('POST /v1/responses terminates an SSE stream with error when an output item
   try {
     queueCompletedResponse();
 
-    const response = await makeApp().request('/v1/responses', {
+    const response = await makeApp(TEST_RESPONSES_RETENTION_SECONDS).request('/v1/responses', {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
@@ -404,7 +404,7 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
   try {
     queueCompletedResponse();
 
-    const response = await makeApp().request('/v1/responses', {
+    const response = await makeApp(TEST_RESPONSES_RETENTION_SECONDS).request('/v1/responses', {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({ model: 'test-model', input: 'hello' }),
