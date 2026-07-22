@@ -1467,6 +1467,32 @@ test('merge import reactivation rotates a soft-deleted key state epoch', async (
   if (restored.responsesStateEpoch === deleted.responsesStateEpoch) throw new Error('reactivation preserved the deleted state epoch');
 });
 
+test('merge import retries against a concurrent Responses disable instead of restoring stale private state', async () => {
+  const { app, repo } = setup();
+  const original = { ...KEY_A, responsesRetentionSeconds: 30 * 86400 };
+  await repo.apiKeys.save(original);
+  const saveIfUnchanged = repo.apiKeys.saveIfResponsesStateUnchanged.bind(repo.apiKeys);
+  let raced = false;
+  vi.spyOn(repo.apiKeys, 'saveIfResponsesStateUnchanged').mockImplementation(async (...args) => {
+    if (!raced) {
+      raced = true;
+      await repo.apiKeys.update(KEY_A.id, { responsesRetentionSeconds: 0 });
+    }
+    return await saveIfUnchanged(...args);
+  });
+
+  const result = await doImport(app, 'merge', latestImportData({
+    apiKeys: [serializedApiKey({ ...original, responsesRetentionSeconds: 7 * 86400 })],
+  }));
+
+  assertEquals(result.status, 200);
+  const imported = await repo.apiKeys.getById(KEY_A.id);
+  assertExists(imported);
+  assertEquals(imported.responsesRetentionSeconds, 7 * 86400);
+  if (imported.responsesStateEpoch === original.responsesStateEpoch) throw new Error('merge import restored the pre-disable epoch');
+  assertEquals(imported.responsesStateVisibleAfter, 0);
+});
+
 test('replace-mode import surfaces a purgeAll failure', async () => {
   // Replace mode promises data isolation: a reused key id in the imported
   // payload cannot inherit the previous owner's captures. A swallowed

@@ -51,6 +51,14 @@ test('MemoryFileProvider deletes exact keys without treating them as prefixes', 
   assertEquals(await provider.get('drop/ab'), new Uint8Array([2]));
 });
 
+test('MemoryFileProvider bounds prefix deletion to one page', async () => {
+  const provider = new MemoryFileProvider();
+  for (let index = 0; index < 3; index += 1) await provider.put(`drop/${index}`, new Uint8Array([index]));
+
+  assertEquals(await provider.deletePrefixPage('drop/', 2), { deleted: 2, complete: false });
+  assertEquals(await provider.deletePrefixPage('drop/', 2), { deleted: 1, complete: true });
+});
+
 test('MemoryFileProvider lists every key that starts with the given prefix', async () => {
   const provider = new MemoryFileProvider();
   await provider.put('a/1', new Uint8Array([1]));

@@ -408,6 +408,30 @@ test('SQL Responses item writes stay within D1 bind limits and use bounded state
   expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, items.map(item => item.id))).toHaveLength(items.length);
 });
 
+test('SQL refresh probes exact item identities instead of scanning the key retention range', async () => {
+  const db = await createSqliteTestDb();
+  const { results } = await db
+    .prepare(
+      `EXPLAIN QUERY PLAN
+       WITH expected AS (
+         SELECT json_extract(value, '$.id') AS id, json_extract(value, '$.payloadHash') AS payload_hash
+         FROM json_each(?)
+       )
+       SELECT stored.rowid
+       FROM expected
+       CROSS JOIN responses_state_items AS stored INDEXED BY idx_responses_state_items_id_scope
+       WHERE stored.id = expected.id
+         AND stored.api_key_id = ?
+         AND stored.state_epoch = ?
+         AND stored.payload_hash = expected.payload_hash`,
+    )
+    .bind('[{"id":"msg_x","payloadHash":"hash"}]', 'key-a', TEST_RESPONSES_STATE_EPOCH)
+    .all<{ detail: string }>();
+  const detail = results.map(row => row.detail).join('\n');
+  expect(detail).toContain('idx_responses_state_items_id_scope');
+  expect(detail).not.toContain('idx_responses_state_items_key_refresh');
+});
+
 test('SQL rejects a persistence graph that would exceed its D1 query budget', async () => {
   initFileProvider(new MemoryFileProvider());
   const repo = new SqlRepo(await createSqliteTestDb());

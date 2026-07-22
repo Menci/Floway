@@ -7,7 +7,7 @@ import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
 
-test('current-state janitor deletes one bounded key batch per tick', async () => {
+test('current-state janitor stops at its bounded global key budget', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   initFileProvider(new MemoryFileProvider());
@@ -25,11 +25,62 @@ test('current-state janitor deletes one bounded key batch per tick', async () =>
 
   await sweepResponsesState(now);
 
-  expect(deleteSnapshots).toHaveBeenCalledTimes(1);
+  expect(deleteSnapshots).toHaveBeenCalledTimes(3);
   expect(await repo.responsesSnapshots.lookup('key-a', '11'.repeat(16), 'resp_999')).not.toBeNull();
 
   for (let index = 0; index < 9; index += 1) await sweepResponsesState(now + (index + 1) * 60 * 1000);
   expect(await repo.responsesSnapshots.lookup('key-a', '11'.repeat(16), 'resp_999')).toBeNull();
+});
+
+test('partial cleanup advances a concurrently-touched hot key so another due key runs', async () => {
+  const base = await createSqliteTestDb();
+  const repo = new SqlRepo(base);
+  initRepo(repo);
+  initFileProvider(new MemoryFileProvider());
+  const now = Date.UTC(2026, 6, 22, 12);
+  const key = (id: string, secret: string) => ({
+    id,
+    userId: 1,
+    name: id,
+    key: `raw-${id}`,
+    serverSecret: secret,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+    dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
+    responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
+  });
+  await repo.apiKeys.save(key('a-hot', '33'.repeat(32)));
+  await repo.apiKeys.save(key('b-small', '44'.repeat(32)));
+  const item = (apiKeyId: string, id: string) => ({
+    id,
+    apiKeyId,
+    stateEpoch: '22'.repeat(16),
+    payload: { item: { type: 'message', id, content: [] } },
+    contentHash: `content-${id}`,
+    payloadHash: `payload-${id}`,
+    payloadFileKey: null,
+    refreshedAt: now,
+  });
+  await repo.responsesItems.insertMany(Array.from({ length: 150 }, (_, index) => item('a-hot', `msg_hot_${index}`)), 0);
+  await repo.responsesItems.insertMany([item('b-small', 'msg_small')], 0);
+  const deleteReclaimable = repo.responsesItems.deleteReclaimable.bind(repo.responsesItems);
+  vi.spyOn(repo.responsesItems, 'deleteReclaimable').mockImplementationOnce(async (...args) => {
+    const deleted = await deleteReclaimable(...args);
+    await repo.responsesItems.insertMany([item('a-hot', 'msg_concurrent')], 0);
+    return deleted;
+  });
+
+  await sweepResponsesState(now);
+
+  expect(await repo.responsesItems.lookupMany('b-small', '22'.repeat(16), ['msg_small'])).toEqual([]);
+  expect(await repo.responsesItems.lookupMany('a-hot', '22'.repeat(16), ['msg_hot_149'])).toHaveLength(1);
+  const hotSweep = await base.prepare('SELECT due_at FROM responses_state_sweeps WHERE api_key_id = ?')
+    .bind('a-hot')
+    .first<{ due_at: number }>();
+  expect(hotSweep?.due_at).toBeGreaterThan(now);
 });
 
 test('v1 cursor drains prior tables and removes the entire v1 object root after its grace horizon', async () => {
@@ -80,4 +131,26 @@ test('v1 cleanup stays live until the old writer grace horizon', async () => {
   await sweepResponsesState(now + 60 * 60 * 1000);
   expect(await repo.responsesMaintenance.getV1NextExpiryHour()).toBeNull();
   expect(await files.get(orphan)).toBeNull();
+});
+
+test('v1 root cleanup deletes at most one file-provider page per tick', async () => {
+  const base = await createSqliteTestDb();
+  const repo = new SqlRepo(base);
+  initRepo(repo);
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const now = Date.UTC(2026, 6, 1, 12);
+  await repo.responsesMaintenance.setV1NextExpiryHour(now);
+  await base.prepare('UPDATE responses_state_maintenance SET v1_cleanup_after = 0').run();
+  for (let index = 0; index < 1_001; index += 1) {
+    await files.put(`responses-items/v1/expires/orphans/${index}.gz`, new Uint8Array([1]));
+  }
+
+  await sweepResponsesState(now + 60 * 60 * 1000);
+  expect(await repo.responsesMaintenance.getV1NextExpiryHour()).not.toBeNull();
+  expect(await files.listKeys('responses-items/v1/')).toHaveLength(1);
+
+  await sweepResponsesState(now + 60 * 60 * 1000);
+  expect(await repo.responsesMaintenance.getV1NextExpiryHour()).toBeNull();
+  expect(await files.listKeys('responses-items/v1/')).toEqual([]);
 });

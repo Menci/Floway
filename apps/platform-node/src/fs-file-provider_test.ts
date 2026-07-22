@@ -69,6 +69,15 @@ test('deleteKeys removes exact files and ignores missing keys', () => withTempRo
   assertEquals(await provider.get('cleanup/ab.bin'), new Uint8Array([2]));
 }));
 
+test('deletePrefixPage bounds each filesystem deletion pass', () => withTempRoot(async root => {
+  const provider = new FsFileProvider(root);
+  for (let index = 0; index < 3; index += 1) await provider.put(`drop/${index}.bin`, new Uint8Array([index]));
+
+  assertEquals(await provider.deletePrefixPage('drop', 2), { deleted: 2, complete: false });
+  assertEquals((await provider.listKeys('drop')).length, 1);
+  assertEquals((await provider.deletePrefixPage('drop', 2)).deleted, 1);
+}));
+
 test('put creates intermediate directories', () => withTempRoot(async root => {
   const provider = new FsFileProvider(root);
   await provider.put('deeply/nested/path/file.bin', new Uint8Array([42]));

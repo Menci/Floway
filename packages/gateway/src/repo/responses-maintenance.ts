@@ -5,6 +5,7 @@ import { getFileProvider } from '@floway-dev/platform';
 const HOUR_MS = 60 * 60 * 1000;
 const DELETE_BATCH_SIZE = 100;
 const STATE_KEYS_PER_TICK = 3;
+const STATE_KEYS_PER_V1_TICK = 2;
 const V1_MUTATIONS_PER_TICK = 10;
 const V1_FILE_DELETE_BATCH_SIZE = 1_000;
 const STATE_SWEEP_RETRY_MS = 60 * 1000;
@@ -12,14 +13,14 @@ const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
 const PAYLOAD_GC_BATCH_SIZE = 1_000;
 
 export const sweepResponsesState = async (now: number): Promise<void> => {
-  await sweepV1State(Math.floor(now / HOUR_MS) * HOUR_MS, now);
-  await sweepCurrentState(now);
+  const v1Active = await sweepV1State(Math.floor(now / HOUR_MS) * HOUR_MS, now);
+  await sweepCurrentState(now, v1Active ? STATE_KEYS_PER_V1_TICK : STATE_KEYS_PER_TICK);
   await sweepPayloadGarbage(now);
 };
 
-const sweepCurrentState = async (now: number): Promise<void> => {
+const sweepCurrentState = async (now: number, keyBudget: number): Promise<void> => {
   const repo = getRepo();
-  for (let index = 0; index < STATE_KEYS_PER_TICK; index += 1) {
+  for (let index = 0; index < keyBudget; index += 1) {
     const token = crypto.randomUUID();
     const claim = await repo.responsesMaintenance.claimStateSweep(token, now, now - CLAIM_TIMEOUT_MS);
     if (claim === null) return;
@@ -58,10 +59,10 @@ const sweepPayloadGarbage = async (now: number): Promise<void> => {
   }
 };
 
-const sweepV1State = async (currentHour: number, now: number): Promise<void> => {
+const sweepV1State = async (currentHour: number, now: number): Promise<boolean> => {
   const repo = getRepo();
   const initialExpiryHour = await repo.responsesMaintenance.getV1NextExpiryHour();
-  if (initialExpiryHour === null) return;
+  if (initialExpiryHour === null) return false;
   let expiryHour: number = initialExpiryHour;
   let mutations = 0;
 
@@ -74,7 +75,7 @@ const sweepV1State = async (currentHour: number, now: number): Promise<void> => 
     );
     mutations += 1;
     if (deletedSnapshots === DELETE_BATCH_SIZE) continue;
-    if (mutations >= V1_MUTATIONS_PER_TICK) return;
+    if (mutations >= V1_MUTATIONS_PER_TICK) return true;
 
     const deletedItems = await repo.responsesMaintenance.deleteV1ItemsExpiredHour(
       expiryHour,
@@ -83,16 +84,17 @@ const sweepV1State = async (currentHour: number, now: number): Promise<void> => 
     );
     mutations += 1;
     if (deletedItems === DELETE_BATCH_SIZE) continue;
-    if (mutations >= V1_MUTATIONS_PER_TICK) return;
+    if (mutations >= V1_MUTATIONS_PER_TICK) return true;
 
-    if (!await deleteV1ResponsesItemPayloadExpiryBucketPage(expiryHour, V1_FILE_DELETE_BATCH_SIZE)) return;
+    if (!await deleteV1ResponsesItemPayloadExpiryBucketPage(expiryHour, V1_FILE_DELETE_BATCH_SIZE)) return true;
     await repo.responsesMaintenance.setV1NextExpiryHour(hourEnd);
     mutations += 1;
     expiryHour = hourEnd;
   }
 
   if (expiryHour >= currentHour && await repo.responsesMaintenance.isV1CleanupReady(now)) {
-    if (!await deleteV1ResponsesItemPayloadRootPage(V1_FILE_DELETE_BATCH_SIZE)) return;
+    if (!await deleteV1ResponsesItemPayloadRootPage(V1_FILE_DELETE_BATCH_SIZE)) return true;
     await repo.responsesMaintenance.completeV1Cleanup();
   }
+  return true;
 };
