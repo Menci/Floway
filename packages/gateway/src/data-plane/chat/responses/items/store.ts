@@ -45,7 +45,7 @@ export interface StatefulResponsesStore {
 
 export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItems = new Map<string, StoredResponsesItem>();
-  private readonly loadedByContentHash = new Map<string, StoredResponsesItem[]>();
+  private readonly loadedByContentHash = new Map<string, StoredResponsesItem>();
   private readonly stagedInputItemIds: string[] = [];
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
@@ -209,7 +209,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     }
 
     const contentHash = await hashResponsesItemContent(item);
-    const existing = this.loadedByContentHash.get(contentHash)?.[0];
+    const existing = this.loadedByContentHash.get(contentHash);
     if (existing !== undefined) {
       this.stagedInputItemIds.push(existing.id);
       return;
@@ -232,12 +232,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const existing = this.loadedItems.get(cloned.id);
     if (existing !== undefined && existing.createdAt >= cloned.createdAt) return;
     this.loadedItems.set(cloned.id, cloned);
-    const byHash = this.loadedByContentHash.get(cloned.contentHash) ?? [];
-    const existingByHash = byHash.findIndex(candidate => candidate.id === cloned.id);
-    if (existingByHash === -1) byHash.push(cloned);
-    else byHash[existingByHash] = cloned;
-    byHash.sort(compareResponsesItemsByFreshness);
-    this.loadedByContentHash.set(cloned.contentHash, byHash);
+    const byHash = this.loadedByContentHash.get(cloned.contentHash);
+    if (byHash === undefined || compareResponsesItemsByFreshness(cloned, byHash) < 0) {
+      this.loadedByContentHash.set(cloned.contentHash, cloned);
+    }
   }
 
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {

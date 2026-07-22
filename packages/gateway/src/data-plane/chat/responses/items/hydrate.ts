@@ -5,7 +5,7 @@ import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/
 
 interface HydratedItem {
   readonly item: ResponsesInputItem;
-  readonly privatePayload?: unknown;
+  readonly privatePayload?: { readonly id: string; readonly value: unknown };
 }
 
 const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore): HydratedItem => {
@@ -18,7 +18,9 @@ const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore): H
   }
   return {
     item: stored.payload.item as ResponsesInputItem,
-    ...(stored.payload.private !== undefined ? { privatePayload: stored.payload.private } : {}),
+    ...(stored.payload.private !== undefined
+      ? { privatePayload: { id: stored.id, value: stored.payload.private } }
+      : {}),
   };
 };
 
@@ -34,8 +36,9 @@ export const hydrateResponsesPayload = (
   const hydrated = payload.input.map(item => hydrateItem(item, store));
   const privatePayloads = new Map<string, unknown>();
   for (const entry of hydrated) {
-    const id = responsesItemId(entry.item);
-    if (id !== null && entry.privatePayload !== undefined) privatePayloads.set(id, entry.privatePayload);
+    if (entry.privatePayload !== undefined) {
+      privatePayloads.set(entry.privatePayload.id, entry.privatePayload.value);
+    }
   }
   return {
     payload: { ...payload, input: hydrated.map(entry => entry.item) },
