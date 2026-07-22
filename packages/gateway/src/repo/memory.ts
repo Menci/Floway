@@ -8,7 +8,7 @@ import {
   compareResponsesItemsByFreshness,
   persistedResponsesKey,
 } from './responses-clone.ts';
-import { generateResponsesStateEpoch, withResponsesRetention } from './responses-retention.ts';
+import { generateResponsesStateEpoch, responsesStateCutoff, withResponsesRetention } from './responses-retention.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -34,6 +34,7 @@ import type {
   Repo,
   ResponsesItemsRepo,
   ResponsesMaintenanceRepo,
+  ResponsesStateSweepClaim,
   ResponsesSnapshotsRepo,
   SearchConfig,
   SearchConfigRepo,
@@ -225,6 +226,7 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
       deletedAt: new Date().toISOString(),
       responsesRetentionSeconds: 0,
       responsesStateEpoch,
+      responsesStateVisibleAfter: 0,
     };
     return true;
   }
@@ -240,6 +242,7 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
           deletedAt: now,
           responsesRetentionSeconds: 0,
           responsesStateEpoch: generateResponsesStateEpoch(),
+          responsesStateVisibleAfter: 0,
         };
         count += 1;
       }
@@ -586,6 +589,8 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
 class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   private store = new Map<string, StoredResponsesItem>();
 
+  constructor(private apiKeys: ApiKeyRepo) {}
+
   lookupMany(apiKeyId: string, stateEpoch: string, ids: readonly string[]): Promise<StoredResponsesItem[]> {
     const rows: StoredResponsesItem[] = [];
     const seen = new Set<string>();
@@ -598,8 +603,8 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve(rows);
   }
 
-  async lookupActiveMany(apiKeyId: string, stateEpoch: string, ids: readonly string[], now: number): Promise<StoredResponsesItem[]> {
-    return (await this.lookupMany(apiKeyId, stateEpoch, ids)).filter(row => row.expiresAt > now);
+  async lookupActiveMany(apiKeyId: string, stateEpoch: string, ids: readonly string[], refreshedAfter: number): Promise<StoredResponsesItem[]> {
+    return (await this.lookupMany(apiKeyId, stateEpoch, ids)).filter(row => row.refreshedAt >= refreshedAfter);
   }
 
   lookupManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
@@ -614,16 +619,16 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
   }
 
-  async lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], now: number): Promise<StoredResponsesItem[]> {
-    return (await this.lookupManyByContentHash(apiKeyId, stateEpoch, hashes)).filter(row => row.expiresAt > now);
+  async lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], refreshedAfter: number): Promise<StoredResponsesItem[]> {
+    return (await this.lookupManyByContentHash(apiKeyId, stateEpoch, hashes)).filter(row => row.refreshedAt >= refreshedAfter);
   }
 
-  async insertMany(items: readonly StoredResponsesItem[], now: number): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[], replaceBefore: number): Promise<void> {
     const pending = new Map<string, StoredResponsesItem>();
     for (const item of items) {
       const key = persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
-      if (existing !== undefined && existing.expiresAt > now) assertSameStoredResponsesItem(item, existing);
+      if (existing !== undefined && existing.refreshedAt >= replaceBefore) assertSameStoredResponsesItem(item, existing);
       else pending.set(key, item);
     }
     for (const [key, item] of pending) this.store.set(key, cloneStoredResponsesItem(item));
@@ -631,7 +636,6 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       const stored = this.store.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!;
       if (item.refreshedAt >= stored.refreshedAt) {
         stored.refreshedAt = item.refreshedAt;
-        stored.expiresAt = item.expiresAt;
       }
     }
   }
@@ -639,48 +643,66 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   async refreshMany(
     items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash'>[],
     refreshedAt: number,
-    expiresAt: number,
   ): Promise<void> {
     const existing = items.map(item => this.store.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id)));
     for (let index = 0; index < existing.length; index += 1) {
       const stored = existing[index];
       if (stored === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${items[index].id}`);
       if (stored.payloadHash !== items[index].payloadHash) throw new Error(`Responses item id collision: ${stored.id}`);
+      const apiKey = await this.apiKeys.getById(stored.apiKeyId);
+      if (apiKey === null
+        || apiKey.responsesRetentionSeconds === 0
+        || apiKey.responsesStateEpoch !== stored.stateEpoch
+        || stored.refreshedAt < responsesStateCutoff(refreshedAt, apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter)) {
+        throw new Error(`Responses item disappeared or changed before lifetime refresh: ${stored.id}`);
+      }
       if (refreshedAt >= stored.refreshedAt) {
         stored.refreshedAt = refreshedAt;
-        stored.expiresAt = expiresAt;
       }
     }
   }
 
-  deleteExpired(now: number, limit: number): Promise<number> {
+  async deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number> {
+    const apiKey = await this.apiKeys.getById(apiKeyId);
+    const cutoff = apiKey === null || apiKey.responsesRetentionSeconds === 0
+      ? Number.MAX_SAFE_INTEGER
+      : responsesStateCutoff(now, apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter);
     let changes = 0;
     for (const [key, row] of this.store) {
       if (changes >= limit) break;
-      if (row.expiresAt > now) continue;
+      if (row.apiKeyId !== apiKeyId) continue;
+      if (apiKey !== null && apiKey.responsesRetentionSeconds > 0 && row.stateEpoch === apiKey.responsesStateEpoch && row.refreshedAt >= cutoff) continue;
       this.store.delete(key);
       changes += 1;
     }
-    return Promise.resolve(changes);
+    return changes;
   }
 
-  deleteAll(): Promise<void> {
-    this.store.clear();
-    return Promise.resolve();
+  apiKeyIds(): string[] {
+    return [...new Set([...this.store.values()].map(row => row.apiKeyId))];
+  }
+
+  oldestRefresh(apiKeyId: string, stateEpoch: string): number | null {
+    const values = [...this.store.values()]
+      .filter(row => row.apiKeyId === apiKeyId && row.stateEpoch === stateEpoch)
+      .map(row => row.refreshedAt);
+    return values.length === 0 ? null : Math.min(...values);
   }
 }
 
 class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   private store = new Map<string, StoredResponsesSnapshot>();
 
+  constructor(private apiKeys: ApiKeyRepo) {}
+
   lookup(apiKeyId: string, stateEpoch: string, id: string): Promise<StoredResponsesSnapshot | null> {
     const snapshot = this.store.get(persistedResponsesKey(apiKeyId, stateEpoch, id));
     return Promise.resolve(snapshot ? cloneStoredResponsesSnapshot(snapshot) : null);
   }
 
-  async lookupActive(apiKeyId: string, stateEpoch: string, id: string, now: number): Promise<StoredResponsesSnapshot | null> {
+  async lookupActive(apiKeyId: string, stateEpoch: string, id: string, refreshedAfter: number): Promise<StoredResponsesSnapshot | null> {
     const snapshot = await this.lookup(apiKeyId, stateEpoch, id);
-    return snapshot !== null && snapshot.expiresAt > now ? snapshot : null;
+    return snapshot !== null && snapshot.refreshedAt >= refreshedAfter ? snapshot : null;
   }
 
   insert(snapshot: StoredResponsesSnapshot): Promise<void> {
@@ -692,24 +714,63 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     return Promise.resolve();
   }
 
-  deleteExpired(now: number, limit: number): Promise<number> {
+  async deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number> {
+    const apiKey = await this.apiKeys.getById(apiKeyId);
+    const cutoff = apiKey === null || apiKey.responsesRetentionSeconds === 0
+      ? Number.MAX_SAFE_INTEGER
+      : responsesStateCutoff(now, apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter);
     let changes = 0;
     for (const [key, snapshot] of this.store) {
       if (changes >= limit) break;
-      if (snapshot.expiresAt > now) continue;
+      if (snapshot.apiKeyId !== apiKeyId) continue;
+      if (apiKey !== null && apiKey.responsesRetentionSeconds > 0 && snapshot.stateEpoch === apiKey.responsesStateEpoch && snapshot.refreshedAt >= cutoff) continue;
       this.store.delete(key);
       changes += 1;
     }
-    return Promise.resolve(changes);
+    return changes;
   }
 
-  deleteAll(): Promise<void> {
-    this.store.clear();
-    return Promise.resolve();
+  apiKeyIds(): string[] {
+    return [...new Set([...this.store.values()].map(row => row.apiKeyId))];
+  }
+
+  oldestRefresh(apiKeyId: string, stateEpoch: string): number | null {
+    const values = [...this.store.values()]
+      .filter(row => row.apiKeyId === apiKeyId && row.stateEpoch === stateEpoch)
+      .map(row => row.refreshedAt);
+    return values.length === 0 ? null : Math.min(...values);
   }
 }
 
 class MemoryResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
+  constructor(
+    private apiKeys: ApiKeyRepo,
+    private items: MemoryResponsesItemsRepo,
+    private snapshots: MemoryResponsesSnapshotsRepo,
+  ) {}
+
+  async claimStateSweep(_token: string, _now: number, _staleClaimBefore: number): Promise<ResponsesStateSweepClaim | null> {
+    const apiKeyId = [...new Set([...this.items.apiKeyIds(), ...this.snapshots.apiKeyIds()])][0];
+    if (apiKeyId === undefined) return null;
+    const apiKey = await this.apiKeys.getById(apiKeyId);
+    return {
+      apiKeyId,
+      revision: 0,
+      stateEpoch: apiKey !== null && apiKey.responsesRetentionSeconds > 0 ? apiKey.responsesStateEpoch : null,
+      retentionSeconds: apiKey?.responsesRetentionSeconds ?? 0,
+    };
+  }
+
+  findOldestStateRefresh(apiKeyId: string, stateEpoch: string): Promise<number | null> {
+    const values = [this.items.oldestRefresh(apiKeyId, stateEpoch), this.snapshots.oldestRefresh(apiKeyId, stateEpoch)]
+      .filter(value => value !== null);
+    return Promise.resolve(values.length === 0 ? null : Math.min(...values));
+  }
+
+  completeStateSweep(_token: string, _revision: number, _nextDueAt: number | null): Promise<void> {
+    return Promise.resolve();
+  }
+
   claimPayloadFiles(_token: string, _now: number, _staleClaimBefore: number, _limit: number): Promise<string[]> {
     return Promise.resolve([]);
   }
@@ -718,27 +779,27 @@ class MemoryResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
     return Promise.resolve(0);
   }
 
-  getLegacyNextExpiryHour(): Promise<null> {
+  getV1NextExpiryHour(): Promise<null> {
     return Promise.resolve(null);
   }
 
-  setLegacyNextExpiryHour(_hourStart: number): Promise<void> {
+  setV1NextExpiryHour(_hourStart: number): Promise<void> {
     return Promise.resolve();
   }
 
-  deleteLegacyItemsExpiredHour(_hourStart: number, _hourEnd: number, _limit: number): Promise<number> {
+  deleteV1ItemsExpiredHour(_hourStart: number, _hourEnd: number, _limit: number): Promise<number> {
     return Promise.resolve(0);
   }
 
-  deleteLegacySnapshotsExpiredHour(_hourStart: number, _hourEnd: number, _limit: number): Promise<number> {
+  deleteV1SnapshotsExpiredHour(_hourStart: number, _hourEnd: number, _limit: number): Promise<number> {
     return Promise.resolve(0);
   }
 
-  isLegacyCleanupReady(_now: number): Promise<boolean> {
+  isV1CleanupReady(_now: number): Promise<boolean> {
     return Promise.resolve(false);
   }
 
-  completeLegacyCleanup(): Promise<void> {
+  completeV1Cleanup(): Promise<void> {
     return Promise.resolve();
   }
 }
@@ -1085,9 +1146,11 @@ export class InMemoryRepo implements Repo {
     this.proxies = new MemoryProxyRepo(this.upstreams);
     this.proxyBackoffs = new MemoryProxyBackoffRepo();
     this.modelAliases = new MemoryModelAliasesRepo();
-    this.responsesItems = new MemoryResponsesItemsRepo();
-    this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
-    this.responsesMaintenance = new MemoryResponsesMaintenanceRepo();
+    const responsesItems = new MemoryResponsesItemsRepo(this.apiKeys);
+    const responsesSnapshots = new MemoryResponsesSnapshotsRepo(this.apiKeys);
+    this.responsesItems = responsesItems;
+    this.responsesSnapshots = responsesSnapshots;
+    this.responsesMaintenance = new MemoryResponsesMaintenanceRepo(this.apiKeys, responsesItems, responsesSnapshots);
     this.agentSetup = new MemoryAgentSetupRepo();
   }
 }

@@ -402,7 +402,7 @@ export interface ResponsesItemsRepo {
     items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash'>[],
     refreshedAt: number,
   ): Promise<void>;
-  deleteOutsideRetention(apiKeyId: string, stateEpoch: string | null, refreshedBefore: number, limit: number): Promise<number>;
+  deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number>;
 }
 
 export interface StoredResponsesSnapshot {
@@ -417,7 +417,7 @@ export interface ResponsesSnapshotsRepo {
   lookup(apiKeyId: string, stateEpoch: string, id: string): Promise<StoredResponsesSnapshot | null>;
   lookupActive(apiKeyId: string, stateEpoch: string, id: string, refreshedAfter: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  deleteOutsideRetention(apiKeyId: string, stateEpoch: string | null, refreshedBefore: number, limit: number): Promise<number>;
+  deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number>;
 }
 
 export interface ResponsesStateSweepClaim {
