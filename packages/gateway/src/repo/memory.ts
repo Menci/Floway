@@ -207,6 +207,15 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     else this.keys.push({ ...key });
   }
 
+  async saveIfResponsesStateUnchanged(key: ApiKey, expectedEpoch: string, expectedVisibleAfter: number): Promise<boolean> {
+    const i = this.keys.findIndex(existing => existing.id === key.id
+      && existing.responsesStateEpoch === expectedEpoch
+      && existing.responsesStateVisibleAfter === expectedVisibleAfter);
+    if (i < 0) return false;
+    this.keys[i] = { ...key };
+    return true;
+  }
+
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
     if (i < 0) return null;
@@ -638,8 +647,17 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     for (const item of items) {
       const key = persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
-      if (existing !== undefined && existing.refreshedAt >= replaceBefore) assertSameStoredResponsesItem(item, existing);
-      else pending.set(key, item);
+      const apiKey = await this.apiKeys.getById(item.apiKeyId);
+      const activeUnderCurrentPolicy = existing !== undefined
+        && apiKey !== null
+        && apiKey.responsesRetentionSeconds > 0
+        && apiKey.responsesStateEpoch === existing.stateEpoch
+        && existing.refreshedAt >= responsesStateCutoff(Date.now(), apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter);
+      if (existing !== undefined && (existing.refreshedAt >= replaceBefore || activeUnderCurrentPolicy)) {
+        assertSameStoredResponsesItem(item, existing);
+      } else {
+        pending.set(key, item);
+      }
     }
     for (const [key, item] of pending) this.store.set(key, cloneStoredResponsesItem(item));
     for (const item of items) {
@@ -778,7 +796,7 @@ class MemoryResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
     return Promise.resolve(values.length === 0 ? null : Math.min(...values));
   }
 
-  completeStateSweep(_token: string, _revision: number, _nextDueAt: number | null): Promise<void> {
+  completeStateSweep(_token: string, _revision: number, _nextDueAt: number | null, _advanceDueAt: boolean): Promise<void> {
     return Promise.resolve();
   }
 

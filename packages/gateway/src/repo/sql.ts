@@ -216,6 +216,36 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .run();
   }
 
+  async saveIfResponsesStateUnchanged(key: ApiKey, expectedEpoch: string, expectedVisibleAfter: number): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        `UPDATE api_keys SET
+           user_id = ?, name = ?, key = ?, server_secret = ?, last_used_at = ?,
+           upstream_ids = ?, deleted_at = ?, dump_retention_seconds = ?,
+           responses_retention_seconds = ?, responses_state_epoch = ?,
+           responses_state_visible_after = ?
+         WHERE id = ? AND responses_state_epoch = ? AND responses_state_visible_after = ?`,
+      )
+      .bind(
+        key.userId,
+        key.name,
+        key.key,
+        key.serverSecret,
+        key.lastUsedAt ?? null,
+        serializeUpstreamIds(key.upstreamIds),
+        key.deletedAt,
+        key.dumpRetentionSeconds,
+        key.responsesRetentionSeconds,
+        parseResponsesStateEpoch(key.responsesStateEpoch, `ApiKey.responsesStateEpoch for id=${key.id}`),
+        parseResponsesStateVisibleAfter(key.responsesStateVisibleAfter, `ApiKey.responsesStateVisibleAfter for id=${key.id}`),
+        key.id,
+        expectedEpoch,
+        expectedVisibleAfter,
+      )
+      .run();
+    return (result.meta.changes ?? 0) === 1;
+  }
+
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const hasName = patch.name !== undefined;
     const hasKey = patch.key !== undefined;
@@ -1260,11 +1290,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
              WHERE rowid IN (
                SELECT stored.rowid
                FROM expected
-               JOIN responses_state_items AS stored
-                 ON stored.id = expected.id
-                AND stored.api_key_id = ?
-                AND stored.state_epoch = ?
-                AND stored.payload_hash = expected.payload_hash
+               CROSS JOIN responses_state_items AS stored INDEXED BY idx_responses_state_items_id_scope
                JOIN api_keys
                  ON api_keys.id = stored.api_key_id
                 AND api_keys.deleted_at IS NULL
@@ -1274,10 +1300,14 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
                   ? - api_keys.responses_retention_seconds * 1000,
                   api_keys.responses_state_visible_after
                 )
+               WHERE stored.id = expected.id
+                 AND stored.api_key_id = ?
+                 AND stored.state_epoch = ?
+                 AND stored.payload_hash = expected.payload_hash
                )
              RETURNING id`,
           )
-          .bind(expectedJson, refreshedAt, apiKeyId, stateEpoch, refreshedAt)
+          .bind(expectedJson, refreshedAt, refreshedAt, apiKeyId, stateEpoch)
           .all<{ id: string }>();
         const refreshedIds = new Set(results.map(row => row.id));
         const missing = chunk.find(item => !refreshedIds.has(item.id));
@@ -1435,30 +1465,60 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number> {
-    const result = await this.db
+    const policy = await this.db
+      .prepare('SELECT responses_state_epoch, responses_retention_seconds FROM api_keys WHERE id = ? AND deleted_at IS NULL')
+      .bind(apiKeyId)
+      .first<{ responses_state_epoch: string; responses_retention_seconds: number }>();
+    if (policy === null || policy.responses_retention_seconds === 0) {
+      const result = await this.db
+        .prepare(
+          `DELETE FROM responses_state_items
+           WHERE rowid IN (
+             SELECT rowid FROM responses_state_items INDEXED BY idx_responses_state_items_key_refresh
+             WHERE api_key_id = ? ORDER BY refreshed_at, rowid LIMIT ?
+           )`,
+        )
+        .bind(apiKeyId, limit)
+        .run();
+      return result.meta.changes ?? 0;
+    }
+
+    const retired = await this.db
+      .prepare(
+        `DELETE FROM responses_state_items
+         WHERE rowid IN (
+           SELECT rowid FROM responses_state_items INDEXED BY idx_responses_state_items_scope_refresh
+           WHERE api_key_id = ? AND (state_epoch < ? OR state_epoch > ?)
+           ORDER BY state_epoch, refreshed_at, rowid LIMIT ?
+         )`,
+      )
+      .bind(apiKeyId, policy.responses_state_epoch, policy.responses_state_epoch, limit)
+      .run();
+    const retiredChanges = retired.meta.changes ?? 0;
+    if (retiredChanges >= limit) return retiredChanges;
+
+    const current = await this.db
       .prepare(
         `DELETE FROM responses_state_items
          WHERE rowid IN (
            SELECT stored.rowid
-           FROM responses_state_items AS stored
-           LEFT JOIN api_keys ON api_keys.id = stored.api_key_id AND api_keys.deleted_at IS NULL
-           WHERE stored.api_key_id = ?
-             AND (
-               api_keys.id IS NULL
-               OR api_keys.responses_retention_seconds = 0
-               OR stored.state_epoch != api_keys.responses_state_epoch
-               OR stored.refreshed_at < MAX(
-                 ? - api_keys.responses_retention_seconds * 1000,
-                 api_keys.responses_state_visible_after
-               )
+           FROM api_keys
+           CROSS JOIN responses_state_items AS stored INDEXED BY idx_responses_state_items_scope_refresh
+           WHERE api_keys.id = ?
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.responses_retention_seconds > 0
+             AND stored.api_key_id = api_keys.id
+             AND stored.state_epoch = api_keys.responses_state_epoch
+             AND stored.refreshed_at < MAX(
+               ? - api_keys.responses_retention_seconds * 1000,
+               api_keys.responses_state_visible_after
              )
-           ORDER BY stored.refreshed_at, stored.rowid
-           LIMIT ?
+           ORDER BY stored.refreshed_at, stored.rowid LIMIT ?
          )`,
       )
-      .bind(apiKeyId, now, limit)
+      .bind(apiKeyId, now, limit - retiredChanges)
       .run();
-    return result.meta.changes ?? 0;
+    return retiredChanges + (current.meta.changes ?? 0);
   }
 
 }
@@ -1520,30 +1580,60 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   }
 
   async deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number> {
-    const result = await this.db
+    const policy = await this.db
+      .prepare('SELECT responses_state_epoch, responses_retention_seconds FROM api_keys WHERE id = ? AND deleted_at IS NULL')
+      .bind(apiKeyId)
+      .first<{ responses_state_epoch: string; responses_retention_seconds: number }>();
+    if (policy === null || policy.responses_retention_seconds === 0) {
+      const result = await this.db
+        .prepare(
+          `DELETE FROM responses_state_snapshots
+           WHERE rowid IN (
+             SELECT rowid FROM responses_state_snapshots INDEXED BY idx_responses_state_snapshots_key_refresh
+             WHERE api_key_id = ? ORDER BY refreshed_at, rowid LIMIT ?
+           )`,
+        )
+        .bind(apiKeyId, limit)
+        .run();
+      return result.meta.changes ?? 0;
+    }
+
+    const retired = await this.db
+      .prepare(
+        `DELETE FROM responses_state_snapshots
+         WHERE rowid IN (
+           SELECT rowid FROM responses_state_snapshots INDEXED BY idx_responses_state_snapshots_scope_refresh
+           WHERE api_key_id = ? AND (state_epoch < ? OR state_epoch > ?)
+           ORDER BY state_epoch, refreshed_at, rowid LIMIT ?
+         )`,
+      )
+      .bind(apiKeyId, policy.responses_state_epoch, policy.responses_state_epoch, limit)
+      .run();
+    const retiredChanges = retired.meta.changes ?? 0;
+    if (retiredChanges >= limit) return retiredChanges;
+
+    const current = await this.db
       .prepare(
         `DELETE FROM responses_state_snapshots
          WHERE rowid IN (
            SELECT stored.rowid
-           FROM responses_state_snapshots AS stored
-           LEFT JOIN api_keys ON api_keys.id = stored.api_key_id AND api_keys.deleted_at IS NULL
-           WHERE stored.api_key_id = ?
-             AND (
-               api_keys.id IS NULL
-               OR api_keys.responses_retention_seconds = 0
-               OR stored.state_epoch != api_keys.responses_state_epoch
-               OR stored.refreshed_at < MAX(
-                 ? - api_keys.responses_retention_seconds * 1000,
-                 api_keys.responses_state_visible_after
-               )
+           FROM api_keys
+           CROSS JOIN responses_state_snapshots AS stored INDEXED BY idx_responses_state_snapshots_scope_refresh
+           WHERE api_keys.id = ?
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.responses_retention_seconds > 0
+             AND stored.api_key_id = api_keys.id
+             AND stored.state_epoch = api_keys.responses_state_epoch
+             AND stored.refreshed_at < MAX(
+               ? - api_keys.responses_retention_seconds * 1000,
+               api_keys.responses_state_visible_after
              )
-           ORDER BY stored.refreshed_at, stored.rowid
-           LIMIT ?
+           ORDER BY stored.refreshed_at, stored.rowid LIMIT ?
          )`,
       )
-      .bind(apiKeyId, now, limit)
+      .bind(apiKeyId, now, limit - retiredChanges)
       .run();
-    return result.meta.changes ?? 0;
+    return retiredChanges + (current.meta.changes ?? 0);
   }
 
 }
@@ -1584,23 +1674,27 @@ class SqlResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
   }
 
   async findOldestStateRefresh(apiKeyId: string, stateEpoch: string): Promise<number | null> {
-    const row = await this.db
-      .prepare(
-        `SELECT MIN(refreshed_at) AS refreshed_at
-         FROM (
-           SELECT refreshed_at FROM responses_state_items
-           WHERE api_key_id = ? AND state_epoch = ?
-           UNION ALL
-           SELECT refreshed_at FROM responses_state_snapshots
-           WHERE api_key_id = ? AND state_epoch = ?
-         )`,
-      )
-      .bind(apiKeyId, stateEpoch, apiKeyId, stateEpoch)
-      .first<{ refreshed_at: number | null }>();
-    return row?.refreshed_at ?? null;
+    const [item, snapshot] = await Promise.all([
+      this.db
+        .prepare(
+          `SELECT refreshed_at FROM responses_state_items INDEXED BY idx_responses_state_items_scope_refresh
+           WHERE api_key_id = ? AND state_epoch = ? ORDER BY refreshed_at LIMIT 1`,
+        )
+        .bind(apiKeyId, stateEpoch)
+        .first<{ refreshed_at: number }>(),
+      this.db
+        .prepare(
+          `SELECT refreshed_at FROM responses_state_snapshots INDEXED BY idx_responses_state_snapshots_scope_refresh
+           WHERE api_key_id = ? AND state_epoch = ? ORDER BY refreshed_at LIMIT 1`,
+        )
+        .bind(apiKeyId, stateEpoch)
+        .first<{ refreshed_at: number }>(),
+    ]);
+    const values = [item?.refreshed_at, snapshot?.refreshed_at].filter(value => value !== undefined);
+    return values.length === 0 ? null : Math.min(...values);
   }
 
-  async completeStateSweep(token: string, revision: number, nextDueAt: number | null): Promise<void> {
+  async completeStateSweep(token: string, revision: number, nextDueAt: number | null, advanceDueAt: boolean): Promise<void> {
     if (nextDueAt === null) {
       await this.db
         .prepare('DELETE FROM responses_state_sweeps WHERE claim_token = ? AND revision = ?')
@@ -1610,12 +1704,16 @@ class SqlResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
     await this.db
       .prepare(
         `UPDATE responses_state_sweeps
-         SET due_at = CASE WHEN revision = ? AND ? IS NOT NULL THEN ? ELSE due_at END,
+         SET due_at = CASE
+               WHEN ? AND ? IS NOT NULL THEN MAX(due_at, ?)
+               WHEN revision = ? AND ? IS NOT NULL THEN ?
+               ELSE due_at
+             END,
              claim_token = NULL,
              claimed_at = NULL
          WHERE claim_token = ?`,
       )
-      .bind(revision, nextDueAt, nextDueAt, token)
+      .bind(advanceDueAt, nextDueAt, nextDueAt, revision, nextDueAt, nextDueAt, token)
       .run();
   }
 

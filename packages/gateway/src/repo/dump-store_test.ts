@@ -278,6 +278,11 @@ class TmpDirFileProvider implements FileProvider {
   async deleteKeys(keys: readonly string[]): Promise<void> {
     await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
   }
+  async deletePrefixPage(prefix: string, limit: number): Promise<{ deleted: number; complete: boolean }> {
+    const keys = (await this.listKeys(prefix)).slice(0, limit);
+    await this.deleteKeys(keys);
+    return { deleted: keys.length, complete: keys.length < limit };
+  }
   async deletePrefix(prefix: string): Promise<void> {
     if (prefix === '') throw new Error('refusing empty prefix');
     await rm(this.pathFor(prefix), { recursive: true, force: true });

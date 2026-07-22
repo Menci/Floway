@@ -51,6 +51,7 @@ interface SerializedProxy {
 }
 
 type SerializedApiKey = Omit<ApiKey, 'responsesStateEpoch' | 'responsesStateVisibleAfter'>;
+const API_KEY_STATE_CAS_RETRIES = 5;
 
 interface ExportPayload {
   version: 16;
@@ -840,29 +841,45 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     });
   }
   for (const key of apiKeys) {
-    // Merge mode mirrors `updateKey`'s purge transition when retention is
-    // flipped off or shrunk; replace mode already purged everything above.
-    const previous = mode === 'merge' ? preImportKeysById.get(key.id) : undefined;
-    const reactivating = previous?.deletedAt !== null && key.deletedAt === null;
-    const withEpoch: ApiKey = {
-      ...key,
-      ...(previous === undefined || reactivating ? {} : { responsesRetentionSeconds: previous.responsesRetentionSeconds }),
-      responsesStateEpoch: previous === undefined || reactivating
-        ? generateResponsesStateEpoch()
-        : previous.responsesStateEpoch,
-      responsesStateVisibleAfter: previous === undefined || reactivating
-        ? 0
-        : previous.responsesStateVisibleAfter,
-    };
-    const next = previous === undefined || reactivating
-      ? withEpoch
-      : withResponsesRetention(withEpoch, key.responsesRetentionSeconds);
-    await repo.apiKeys.save(next);
-    if (mode === 'merge' && previous !== undefined && previous.dumpRetentionSeconds !== key.dumpRetentionSeconds) {
-      if (key.dumpRetentionSeconds === null && previous.dumpRetentionSeconds !== null) {
+    // Dump transitions below perform physical purge work. Responses state is
+    // independent: merge preserves its private namespace and applies the
+    // epoch/floor transition, while replace/reactivation starts a new one and
+    // leaves bounded maintenance to reclaim retired rows.
+    let previous = mode === 'merge' ? preImportKeysById.get(key.id) : undefined;
+    let saved = false;
+    for (let attempt = 0; attempt < API_KEY_STATE_CAS_RETRIES; attempt += 1) {
+      const reactivating = previous?.deletedAt !== null && key.deletedAt === null;
+      const withPrivateState: ApiKey = {
+        ...key,
+        ...(previous === undefined || reactivating ? {} : { responsesRetentionSeconds: previous.responsesRetentionSeconds }),
+        responsesStateEpoch: previous === undefined || reactivating
+          ? generateResponsesStateEpoch()
+          : previous.responsesStateEpoch,
+        responsesStateVisibleAfter: previous === undefined || reactivating
+          ? 0
+          : previous.responsesStateVisibleAfter,
+      };
+      const next = previous === undefined || reactivating
+        ? withPrivateState
+        : withResponsesRetention(withPrivateState, key.responsesRetentionSeconds);
+      if (previous === undefined) {
+        await repo.apiKeys.save(next);
+        saved = true;
+        break;
+      }
+      if (await repo.apiKeys.saveIfResponsesStateUnchanged(next, previous.responsesStateEpoch, previous.responsesStateVisibleAfter)) {
+        saved = true;
+        break;
+      }
+      previous = (await repo.apiKeys.listIncludingDeleted()).find(existing => existing.id === key.id);
+    }
+    if (!saved) throw new Error(`API key state kept changing during import: ${key.id}`);
+
+    if (mode === 'merge' && previous !== undefined) {
+      if (key.dumpRetentionSeconds === null) {
         await getDumpStore().purgeAll(key.id);
         await notifyDisabledBestEffort(key.id, 'merge-mode retention disable');
-      } else if (previous.dumpRetentionSeconds !== null && key.dumpRetentionSeconds !== null && key.dumpRetentionSeconds < previous.dumpRetentionSeconds) {
+      } else {
         await getDumpStore().purgeExpired(key.id, key.dumpRetentionSeconds);
       }
     }

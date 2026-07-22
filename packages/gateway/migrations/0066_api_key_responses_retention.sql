@@ -87,9 +87,11 @@ CREATE TABLE responses_state_snapshots (
 CREATE UNIQUE INDEX idx_responses_state_items_id_scope ON responses_state_items (id, api_key_id, state_epoch);
 CREATE INDEX idx_responses_state_items_content_hash ON responses_state_items (api_key_id, state_epoch, content_hash, refreshed_at DESC);
 CREATE INDEX idx_responses_state_items_key_refresh ON responses_state_items (api_key_id, refreshed_at);
+CREATE INDEX idx_responses_state_items_scope_refresh ON responses_state_items (api_key_id, state_epoch, refreshed_at);
 CREATE UNIQUE INDEX idx_responses_state_items_payload_file ON responses_state_items (payload_file_key) WHERE payload_file_key IS NOT NULL;
 CREATE UNIQUE INDEX idx_responses_state_snapshots_id_scope ON responses_state_snapshots (id, api_key_id, state_epoch);
 CREATE INDEX idx_responses_state_snapshots_key_refresh ON responses_state_snapshots (api_key_id, refreshed_at);
+CREATE INDEX idx_responses_state_snapshots_scope_refresh ON responses_state_snapshots (api_key_id, state_epoch, refreshed_at);
 
 CREATE TABLE responses_state_payload_gc (
   file_key TEXT PRIMARY KEY,

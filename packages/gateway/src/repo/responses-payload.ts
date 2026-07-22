@@ -193,12 +193,12 @@ const base64ToBytes = (base64: string): Uint8Array => {
   return bytes;
 };
 
-export const deleteV1ResponsesItemPayloadExpiryBucket = async (hourStart: number): Promise<void> => {
-  await getFileProvider().deletePrefix(expiryBucketPrefix(V1_RESPONSES_ITEMS_FILE_ROOT, hourStart));
+export const deleteV1ResponsesItemPayloadExpiryBucketPage = async (hourStart: number, limit: number): Promise<boolean> => {
+  return (await getFileProvider().deletePrefixPage(expiryBucketPrefix(V1_RESPONSES_ITEMS_FILE_ROOT, hourStart), limit)).complete;
 };
 
-export const deleteAllV1ResponsesItemPayloadFiles = async (): Promise<void> => {
-  await getFileProvider().deletePrefix(V1_RESPONSES_ITEMS_FILE_ROOT);
+export const deleteV1ResponsesItemPayloadRootPage = async (limit: number): Promise<boolean> => {
+  return (await getFileProvider().deletePrefixPage(V1_RESPONSES_ITEMS_FILE_ROOT, limit)).complete;
 };
 
 const expiryBucketPrefix = (root: string, hourTimestamp: number): string => {

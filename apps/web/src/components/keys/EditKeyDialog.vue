@@ -91,7 +91,8 @@ const responsesRetentionWarning = computed<string | null>(() => {
   if (props.mode === 'create') return null;
   const next = responsesRetention.value;
   if (typeof next !== 'number' || next >= props.apiKey.responses_retention_seconds) return null;
-  return 'Saving a shorter retention immediately resets existing Stateful Responses chains for this key.';
+  if (next === 0) return 'Saving will immediately reset all durable Stateful Responses chains for this key.';
+  return 'Saving will make state older than the new window unavailable; chains that depend on it will stop resolving.';
 });
 
 const save = async () => {

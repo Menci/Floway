@@ -50,6 +50,13 @@ export class FsFileProvider implements FileProvider {
     await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
   }
 
+  async deletePrefixPage(prefix: string, limit: number): Promise<{ deleted: number; complete: boolean }> {
+    if (prefix === '') throw new Error('FsFileProvider.deletePrefixPage: refusing empty prefix');
+    const keys = (await this.listKeys(prefix)).slice(0, limit);
+    await this.deleteKeys(keys);
+    return { deleted: keys.length, complete: keys.length < limit };
+  }
+
   async deletePrefix(prefix: string): Promise<void> {
     // Refuse to delete the entire root: a stray empty-string prefix would
     // otherwise wipe every spilled payload across tenants. Callers wanting a

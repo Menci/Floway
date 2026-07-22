@@ -1,10 +1,12 @@
 import { getRepo } from './index.ts';
-import { deleteAllV1ResponsesItemPayloadFiles, deleteV1ResponsesItemPayloadExpiryBucket } from './responses-payload.ts';
+import { deleteV1ResponsesItemPayloadExpiryBucketPage, deleteV1ResponsesItemPayloadRootPage } from './responses-payload.ts';
 import { getFileProvider } from '@floway-dev/platform';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DELETE_BATCH_SIZE = 100;
+const STATE_KEYS_PER_TICK = 3;
 const V1_MUTATIONS_PER_TICK = 10;
+const V1_FILE_DELETE_BATCH_SIZE = 1_000;
 const STATE_SWEEP_RETRY_MS = 60 * 1000;
 const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
 const PAYLOAD_GC_BATCH_SIZE = 1_000;
@@ -17,24 +19,26 @@ export const sweepResponsesState = async (now: number): Promise<void> => {
 
 const sweepCurrentState = async (now: number): Promise<void> => {
   const repo = getRepo();
-  const token = crypto.randomUUID();
-  const claim = await repo.responsesMaintenance.claimStateSweep(token, now, now - CLAIM_TIMEOUT_MS);
-  if (claim === null) return;
+  for (let index = 0; index < STATE_KEYS_PER_TICK; index += 1) {
+    const token = crypto.randomUUID();
+    const claim = await repo.responsesMaintenance.claimStateSweep(token, now, now - CLAIM_TIMEOUT_MS);
+    if (claim === null) return;
 
-  const deletedSnapshots = await repo.responsesSnapshots.deleteReclaimable(claim.apiKeyId, now, DELETE_BATCH_SIZE);
-  const deletedItems = await repo.responsesItems.deleteReclaimable(claim.apiKeyId, now, DELETE_BATCH_SIZE);
-  if (deletedSnapshots === DELETE_BATCH_SIZE || deletedItems === DELETE_BATCH_SIZE) {
-    await repo.responsesMaintenance.completeStateSweep(token, claim.revision, now + STATE_SWEEP_RETRY_MS);
-    return;
+    const deletedSnapshots = await repo.responsesSnapshots.deleteReclaimable(claim.apiKeyId, now, DELETE_BATCH_SIZE);
+    const deletedItems = await repo.responsesItems.deleteReclaimable(claim.apiKeyId, now, DELETE_BATCH_SIZE);
+    if (deletedSnapshots === DELETE_BATCH_SIZE || deletedItems === DELETE_BATCH_SIZE) {
+      await repo.responsesMaintenance.completeStateSweep(token, claim.revision, now + STATE_SWEEP_RETRY_MS, true);
+      continue;
+    }
+
+    const oldest = claim.stateEpoch === null
+      ? null
+      : await repo.responsesMaintenance.findOldestStateRefresh(claim.apiKeyId, claim.stateEpoch);
+    const nextDueAt = oldest === null || claim.retentionSeconds === 0
+      ? null
+      : oldest + claim.retentionSeconds * 1000 + 1;
+    await repo.responsesMaintenance.completeStateSweep(token, claim.revision, nextDueAt, false);
   }
-
-  const oldest = claim.stateEpoch === null
-    ? null
-    : await repo.responsesMaintenance.findOldestStateRefresh(claim.apiKeyId, claim.stateEpoch);
-  const nextDueAt = oldest === null || claim.retentionSeconds === 0
-    ? null
-    : oldest + claim.retentionSeconds * 1000 + 1;
-  await repo.responsesMaintenance.completeStateSweep(token, claim.revision, nextDueAt);
 };
 
 const sweepPayloadGarbage = async (now: number): Promise<void> => {
@@ -81,14 +85,14 @@ const sweepV1State = async (currentHour: number, now: number): Promise<void> => 
     if (deletedItems === DELETE_BATCH_SIZE) continue;
     if (mutations >= V1_MUTATIONS_PER_TICK) return;
 
-    await deleteV1ResponsesItemPayloadExpiryBucket(expiryHour);
+    if (!await deleteV1ResponsesItemPayloadExpiryBucketPage(expiryHour, V1_FILE_DELETE_BATCH_SIZE)) return;
     await repo.responsesMaintenance.setV1NextExpiryHour(hourEnd);
     mutations += 1;
     expiryHour = hourEnd;
   }
 
   if (expiryHour >= currentHour && await repo.responsesMaintenance.isV1CleanupReady(now)) {
-    await deleteAllV1ResponsesItemPayloadFiles();
+    if (!await deleteV1ResponsesItemPayloadRootPage(V1_FILE_DELETE_BATCH_SIZE)) return;
     await repo.responsesMaintenance.completeV1Cleanup();
   }
 };
