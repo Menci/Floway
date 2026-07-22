@@ -175,6 +175,54 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
   );
 });
 
+test('Codex User-Agents receive the Codex catalog from root model-list paths', async () => {
+  const { apiKey } = await setupAppTest();
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
+        return jsonResponse(copilotModels([{
+          id: 'gpt-5.4',
+          display_name: 'GPT-5.4',
+          supported_endpoints: ['/v1/chat/completions'],
+          maxContextWindowTokens: 272_000,
+        }]));
+      }
+      if (url.hostname === 'raw.githubusercontent.com') return new Response(null, { status: 404 });
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      for (const [path, userAgent] of [
+        ['/models', 'codex-tui/0.0.1-unified.catalog'],
+        ['/v1/models', 'codex_cli_rs/0.0.1-unified.catalog'],
+      ] as const) {
+        const codexResponse = await requestApp(path, {
+          headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent },
+        });
+        assertEquals(codexResponse.status, 200);
+        const codexCatalog = await codexResponse.json() as {
+          object?: unknown;
+          data?: unknown;
+          models: Array<{ slug: string }>;
+        };
+        assertEquals(codexCatalog.object, undefined);
+        assertEquals(codexCatalog.data, undefined);
+        assertEquals(codexCatalog.models.map(model => model.slug), ['gpt-5.4']);
+      }
+    },
+  );
+});
+
 test('/models returns the same superset payload as /v1/models', async () => {
   const { apiKey, repo } = await setupAppTest();
   // Image-kind projection requires a non-Copilot id like gpt-image-* (matched

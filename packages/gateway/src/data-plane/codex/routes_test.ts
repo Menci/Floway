@@ -25,8 +25,11 @@ const copilotFetch = (models: Array<{ id: string; maxContextWindowTokens?: numbe
     if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
       return jsonResponse(copilotModels(models));
     }
+    if (url.hostname === 'raw.githubusercontent.com') return new Response(null, { status: 404 });
     throw new Error(`Unhandled fetch ${request.url}`);
   };
+
+const CODEX_USER_AGENT = 'codex_cli_rs/0.0.1-unified.catalog';
 
 interface CodexModelsResponse {
   models: Array<{
@@ -95,7 +98,7 @@ describe('Codex model-provider routes', () => {
       copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
       async () => {
         const response = await buildCodexApp().request('/azure-api.codex/models', {
-          headers: { authorization: `Bearer ${apiKey.key}` },
+          headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
         });
         expect(response.status).toBe(200);
         return await response.json() as CodexModelsResponse;
@@ -115,7 +118,7 @@ describe('Codex model-provider routes', () => {
       copilotFetch([{ id: 'gpt-5.4', maxContextWindowTokens: 272000 }]),
       async () => {
         const response = await buildCodexApp().request('/azure-api.codex/models', {
-          headers: { authorization: `Bearer ${apiKey.key}` },
+          headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
         });
         expect(response.status).toBe(200);
         return await response.json() as CodexModelsResponse;
@@ -132,7 +135,7 @@ describe('Codex model-provider routes', () => {
     const body = await withMockedFetch(
       copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
       async () => await (await buildCodexApp().request('/azure-api.codex/models', {
-        headers: { authorization: `Bearer ${apiKey.key}` },
+        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
       })).json() as CodexModelsResponse,
     );
 
@@ -144,7 +147,7 @@ describe('Codex model-provider routes', () => {
     const body = await withMockedFetch(
       copilotFetch([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]),
       async () => await (await buildCodexApp().request('/azure-api.codex/models', {
-        headers: { authorization: `Bearer ${apiKey.key}` },
+        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CODEX_USER_AGENT },
       })).json() as CodexModelsResponse,
     );
 
