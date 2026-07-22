@@ -21,6 +21,8 @@ test('runScheduledMaintenance continues sweeping the next key when one key throw
     id: `${keyA.id}_sibling`,
     key: `${keyA.key}_sibling`,
     dumpRetentionSeconds: 1800,
+    responsesRetentionSeconds: 0,
+    responsesStateEpoch: '11'.repeat(16),
   };
   await repo.apiKeys.save(keyB);
 
