@@ -642,3 +642,41 @@ test('migration 0065 invalidates all prior Responses state and installs the exac
     db.close();
   }
 });
+
+test('migration 0066 cuts over to empty retention tables without dropping populated prior state', async () => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0066_api_key_responses_retention.sql') break;
+      db.run(sql);
+    }
+    db.run(
+      `INSERT INTO api_keys
+        (id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['key-retention', 1, 'Retention', 'raw-retention', '11'.repeat(32), '2026-01-01T00:00:00Z', null, null, null, null],
+    );
+    db.run(
+      `INSERT INTO responses_items
+        (id, api_key_id, payload_json, content_hash, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['msg_populated', 'key-retention', '{}', 'hash', 1_000],
+    );
+
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0066_api_key_responses_retention.sql');
+    if (migration === undefined) throw new Error('missing migration 0066_api_key_responses_retention.sql');
+    db.run(migration[1]);
+
+    expect(db.exec('SELECT id FROM responses_items')[0].values).toEqual([['msg_populated']]);
+    expect(db.exec('SELECT * FROM responses_state_items')[0]?.values ?? []).toEqual([]);
+    expect(db.exec('SELECT * FROM responses_state_snapshots')[0]?.values ?? []).toEqual([]);
+    const [retention, epoch] = db.exec(
+      "SELECT responses_retention_seconds, responses_state_epoch FROM api_keys WHERE id = 'key-retention'",
+    )[0].values[0] as [number, string];
+    expect(retention).toBe(0);
+    expect(epoch).toMatch(/^[0-9a-f]{32}$/u);
+  } finally {
+    db.close();
+  }
+});

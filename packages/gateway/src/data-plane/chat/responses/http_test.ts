@@ -5,7 +5,7 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
-import { TEST_RESPONSES_RETENTION_SECONDS, TEST_RESPONSES_STATE_EPOCH } from '../../../test-helpers/responses-state.ts';
+import { testResponsesStateLifetime, TEST_RESPONSES_RETENTION_SECONDS, TEST_RESPONSES_STATE_EPOCH } from '../../../test-helpers/responses-state.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -452,7 +452,27 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
-  installRepo();
+  const repo = installRepo();
+  const item = { type: 'message', id: 'msg_saved', role: 'assistant', content: [] };
+  const payload = { item };
+  await repo.responsesItems.insertMany([{
+    id: item.id,
+    apiKeyId: API_KEY_ID,
+    stateEpoch: TEST_RESPONSES_STATE_EPOCH,
+    payload,
+    contentHash: 'saved-content-hash',
+    payloadHash: 'saved-payload-hash',
+    payloadFileKey: null,
+    ...testResponsesStateLifetime(Date.now()),
+  }], Date.now());
+  await repo.responsesSnapshots.insert({
+    id: 'resp_missing',
+    apiKeyId: API_KEY_ID,
+    stateEpoch: TEST_RESPONSES_STATE_EPOCH,
+    itemIds: [item.id],
+    ...testResponsesStateLifetime(Date.now()),
+  });
+  const lookup = vi.spyOn(repo.responsesSnapshots, 'lookupActive');
 
   // No candidates need to be queued — the entry rejects before routing runs.
   const response = await makeApp().request('/v1/responses', {
@@ -471,6 +491,7 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'previous_response_id');
   assertEquals(body.error.code, 'previous_response_not_found');
+  assertEquals(lookup.mock.calls.length, 0);
 });
 
 const queueCodexAutoReviewCandidate = (

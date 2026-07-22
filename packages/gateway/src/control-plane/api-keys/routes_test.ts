@@ -3,6 +3,7 @@ import { test, vi } from 'vitest';
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
+import { RESPONSES_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const ownerPatch = (id: string, body: unknown, rawKey: string) =>
@@ -317,6 +318,54 @@ test('PATCH /api/keys/:id rejects zero and negative dump_retention_seconds', asy
   const { apiKey } = await setupAppTest();
   assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: 0 }, apiKey.key)).status, 400);
   assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: -1 }, apiKey.key)).status, 400);
+});
+
+test('Stateful Responses retention defaults off and grows without changing its state epoch', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const listed = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(listed.status, 200);
+  assertEquals(((await listed.json()) as Array<{ responses_retention_seconds: number }>)[0].responses_retention_seconds, 0);
+
+  const sevenDays = 7 * 24 * 60 * 60;
+  const thirtyDays = 30 * 24 * 60 * 60;
+  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: sevenDays }, apiKey.key)).status, 200);
+  let stored = await repo.apiKeys.getById(apiKey.id);
+  assertExists(stored);
+  assertEquals(stored.responsesRetentionSeconds, sevenDays);
+  assertEquals(stored.responsesStateEpoch, apiKey.responsesStateEpoch);
+
+  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: thirtyDays }, apiKey.key)).status, 200);
+  stored = await repo.apiKeys.getById(apiKey.id);
+  assertExists(stored);
+  assertEquals(stored.responsesRetentionSeconds, thirtyDays);
+  assertEquals(stored.responsesStateEpoch, apiKey.responsesStateEpoch);
+});
+
+test('shortening or disabling Stateful Responses retention rotates its private state epoch', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const thirtyDays = 30 * 24 * 60 * 60;
+  const sevenDays = 7 * 24 * 60 * 60;
+  await repo.apiKeys.save({ ...apiKey, responsesRetentionSeconds: thirtyDays });
+
+  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: sevenDays }, apiKey.key)).status, 200);
+  let stored = await repo.apiKeys.getById(apiKey.id);
+  assertExists(stored);
+  assertEquals(stored.responsesRetentionSeconds, sevenDays);
+  if (stored.responsesStateEpoch === apiKey.responsesStateEpoch) throw new Error('retention shrink did not rotate state epoch');
+  const shrunkenEpoch = stored.responsesStateEpoch;
+
+  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: 0 }, apiKey.key)).status, 200);
+  stored = await repo.apiKeys.getById(apiKey.id);
+  assertExists(stored);
+  assertEquals(stored.responsesRetentionSeconds, 0);
+  if (stored.responsesStateEpoch === shrunkenEpoch) throw new Error('retention disable did not rotate state epoch');
+});
+
+test('rejects invalid Stateful Responses retention values', async () => {
+  const { apiKey } = await setupAppTest();
+  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: -1 }, apiKey.key)).status, 400);
+  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: 1.5 }, apiKey.key)).status, 400);
+  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: RESPONSES_RETENTION_MAX_SECONDS + 1 }, apiKey.key)).status, 400);
 });
 
 test('DELETE /api/keys/:id soft-deletes the key', async () => {

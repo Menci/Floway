@@ -4,7 +4,10 @@ import { hashResponsesItemContent } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { SqlRepo } from '../../../../repo/sql.ts';
+import { createSqliteTestDb } from '../../../../repo/test-sqlite.ts';
 import { testResponsesStateLifetime, testResponsesStatePolicy, TEST_RESPONSES_RETENTION_SECONDS, TEST_RESPONSES_STATE_EPOCH } from '../../../../test-helpers/responses-state.ts';
+import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 
 const storedRow = async (id: string, item: unknown, refreshedAt: number) => {
   const payload = { item };
@@ -21,6 +24,27 @@ const storedRow = async (id: string, item: unknown, refreshedAt: number) => {
 };
 
 describe('StatefulResponsesStore', () => {
+  test('retention off performs no durable lookup or persistence queries', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const itemLookup = vi.spyOn(repo.responsesItems, 'lookupActiveMany');
+    const hashLookup = vi.spyOn(repo.responsesItems, 'lookupActiveManyByContentHash');
+    const snapshotLookup = vi.spyOn(repo.responsesSnapshots, 'lookupActive');
+    const insert = vi.spyOn(repo.responsesItems, 'insertMany');
+    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a', 0), true);
+
+    const reference = { type: 'item_reference' as const, id: 'msg_missing' };
+    await store.loadInputItems([reference], [reference]);
+    expect(store.getItemById(reference.id)).toBeUndefined();
+    expect(await store.loadSnapshot('resp_missing')).toBeNull();
+    await store.stageInputItems([{ type: 'message', role: 'user', content: 'not persisted' }]);
+
+    expect(itemLookup).not.toHaveBeenCalled();
+    expect(hashLookup).not.toHaveBeenCalled();
+    expect(snapshotLookup).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   test('HTTP store=false performs no state writes', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
@@ -161,6 +185,24 @@ describe('StatefulResponsesStore', () => {
     expect(await session.createStore(testResponsesStatePolicy('key-a'), false).loadSnapshot('resp_local')).not.toBeNull();
   });
 
+  test('WebSocket local state remains available with durable retention off', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const itemLookup = vi.spyOn(repo.responsesItems, 'lookupActiveMany');
+    const snapshotLookup = vi.spyOn(repo.responsesSnapshots, 'lookupActive');
+    const insert = vi.spyOn(repo.responsesItems, 'insertMany');
+    const session = createResponsesWsSession();
+    const policy = testResponsesStatePolicy('key-a', 0);
+    const first = session.createStore(policy, true);
+    await first.stageInputItems([{ type: 'message', role: 'user', content: 'local' }]);
+    await first.commitSnapshot('resp_local_off', 'append', []);
+
+    expect(await session.createStore(policy, false).loadSnapshot('resp_local_off')).not.toBeNull();
+    expect(itemLookup).not.toHaveBeenCalled();
+    expect(snapshotLookup).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   test('WebSocket store=true promotes every item referenced by a prior local snapshot', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
@@ -205,5 +247,59 @@ describe('StatefulResponsesStore', () => {
     expect(store.getPrivatePayload('ws_aabbccdd')).toEqual({ ir: 'search result' });
     expect(store.getItemById('anything')).toBeUndefined();
     expect(await store.loadSnapshot('resp_x')).toBeNull();
+  });
+
+  test('large durable snapshot reads stay within the persistence query budget', async () => {
+    const base = await createSqliteTestDb();
+    const seedRepo = new SqlRepo(base);
+    const refreshedAt = Date.now();
+    const items = Array.from({ length: 1_413 }, (_, index) => {
+      const item = { type: 'message', id: `msg_${index}`, role: 'assistant', content: [] };
+      const payload = { item };
+      return {
+        id: item.id,
+        apiKeyId: 'key-a',
+        stateEpoch: TEST_RESPONSES_STATE_EPOCH,
+        payload,
+        contentHash: `content-${index}`,
+        payloadHash: `payload-${index}`,
+        payloadFileKey: null,
+        ...testResponsesStateLifetime(refreshedAt),
+      };
+    });
+    await seedRepo.responsesItems.insertMany(items, refreshedAt);
+    await seedRepo.responsesSnapshots.insert({
+      id: 'resp_large',
+      apiKeyId: 'key-a',
+      stateEpoch: TEST_RESPONSES_STATE_EPOCH,
+      itemIds: items.map(item => item.id),
+      ...testResponsesStateLifetime(refreshedAt),
+    });
+
+    let queries = 0;
+    const countedStatement = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
+      bind: (...values) => countedStatement(statement.bind(...values)),
+      first: async <T>() => {
+        queries += 1;
+        return await statement.first<T>();
+      },
+      all: async <T>() => {
+        queries += 1;
+        return await statement.all<T>();
+      },
+      run: async () => {
+        queries += 1;
+        return await statement.run();
+      },
+    });
+    const countedDb: SqlDatabase = {
+      prepare: query => countedStatement(base.prepare(query)),
+      exec: sql => base.exec(sql),
+    };
+    initRepo(new SqlRepo(countedDb));
+
+    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
+    expect(await store.loadSnapshot('resp_large')).not.toBeNull();
+    expect(queries).toBeLessThanOrEqual(20);
   });
 });
