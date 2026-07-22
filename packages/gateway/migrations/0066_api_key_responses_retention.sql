@@ -60,14 +60,12 @@ CREATE TABLE responses_state_items (
   payload_hash TEXT NOT NULL,
   payload_file_key TEXT,
   refreshed_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
   CHECK (length(id) > 0),
   CHECK (length(api_key_id) > 0),
   CHECK (length(state_epoch) = 32 AND state_epoch NOT GLOB '*[^0-9a-f]*'),
   CHECK (length(payload_json) > 0),
   CHECK (length(content_hash) > 0),
-  CHECK (length(payload_hash) > 0),
-  CHECK (expires_at > refreshed_at)
+  CHECK (length(payload_hash) > 0)
 );
 
 CREATE TABLE responses_state_snapshots (
@@ -76,20 +74,18 @@ CREATE TABLE responses_state_snapshots (
   state_epoch TEXT NOT NULL,
   item_ids_json TEXT NOT NULL,
   refreshed_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
   CHECK (length(id) > 0),
   CHECK (length(api_key_id) > 0),
   CHECK (length(state_epoch) = 32 AND state_epoch NOT GLOB '*[^0-9a-f]*'),
-  CHECK (length(item_ids_json) > 0),
-  CHECK (expires_at > refreshed_at)
+  CHECK (length(item_ids_json) > 0)
 );
 
 CREATE UNIQUE INDEX idx_responses_state_items_id_scope ON responses_state_items (id, api_key_id, state_epoch);
 CREATE INDEX idx_responses_state_items_content_hash ON responses_state_items (api_key_id, state_epoch, content_hash, refreshed_at DESC);
-CREATE INDEX idx_responses_state_items_expiry ON responses_state_items (expires_at);
+CREATE INDEX idx_responses_state_items_key_refresh ON responses_state_items (api_key_id, refreshed_at);
 CREATE UNIQUE INDEX idx_responses_state_items_payload_file ON responses_state_items (payload_file_key) WHERE payload_file_key IS NOT NULL;
 CREATE UNIQUE INDEX idx_responses_state_snapshots_id_scope ON responses_state_snapshots (id, api_key_id, state_epoch);
-CREATE INDEX idx_responses_state_snapshots_expiry ON responses_state_snapshots (expires_at);
+CREATE INDEX idx_responses_state_snapshots_key_refresh ON responses_state_snapshots (api_key_id, refreshed_at);
 
 CREATE TABLE responses_state_payload_gc (
   file_key TEXT PRIMARY KEY,
@@ -146,14 +142,87 @@ BEGIN
   VALUES (OLD.payload_file_key, 0);
 END;
 
-CREATE TABLE responses_state_maintenance (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  legacy_next_expiry_hour INTEGER NOT NULL,
-  legacy_cleanup_after INTEGER NOT NULL,
-  legacy_complete INTEGER NOT NULL DEFAULT 0 CHECK (legacy_complete IN (0, 1))
+CREATE TABLE responses_state_sweeps (
+  api_key_id TEXT PRIMARY KEY,
+  due_at INTEGER NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 0,
+  claim_token TEXT,
+  claimed_at INTEGER,
+  CHECK ((claim_token IS NULL) = (claimed_at IS NULL))
 );
 
-INSERT INTO responses_state_maintenance (id, legacy_next_expiry_hour, legacy_cleanup_after)
+CREATE INDEX idx_responses_state_sweeps_due ON responses_state_sweeps (due_at, api_key_id);
+
+CREATE TRIGGER responses_state_snapshots_schedule_insert
+AFTER INSERT ON responses_state_snapshots
+BEGIN
+  INSERT INTO responses_state_sweeps (api_key_id, due_at)
+  VALUES (
+    NEW.api_key_id,
+    COALESCE((
+      SELECT CASE
+        WHEN responses_retention_seconds > 0 AND responses_state_epoch = NEW.state_epoch
+          THEN NEW.refreshed_at + responses_retention_seconds * 1000
+        ELSE 0
+      END
+      FROM api_keys WHERE id = NEW.api_key_id
+    ), 0)
+  )
+  ON CONFLICT (api_key_id) DO UPDATE SET
+    due_at = MIN(responses_state_sweeps.due_at, excluded.due_at),
+    revision = responses_state_sweeps.revision + 1;
+END;
+
+CREATE TRIGGER responses_state_snapshots_schedule_update
+AFTER UPDATE OF refreshed_at, state_epoch ON responses_state_snapshots
+BEGIN
+  INSERT INTO responses_state_sweeps (api_key_id, due_at)
+  VALUES (
+    NEW.api_key_id,
+    COALESCE((
+      SELECT CASE
+        WHEN responses_retention_seconds > 0 AND responses_state_epoch = NEW.state_epoch
+          THEN NEW.refreshed_at + responses_retention_seconds * 1000
+        ELSE 0
+      END
+      FROM api_keys WHERE id = NEW.api_key_id
+    ), 0)
+  )
+  ON CONFLICT (api_key_id) DO UPDATE SET
+    due_at = MIN(responses_state_sweeps.due_at, excluded.due_at),
+    revision = responses_state_sweeps.revision + 1;
+END;
+
+CREATE TRIGGER api_keys_schedule_responses_state_update
+AFTER UPDATE OF responses_retention_seconds, responses_state_epoch ON api_keys
+WHEN OLD.responses_retention_seconds IS NOT NEW.responses_retention_seconds
+  OR OLD.responses_state_epoch IS NOT NEW.responses_state_epoch
+BEGIN
+  INSERT INTO responses_state_sweeps (api_key_id, due_at)
+  VALUES (NEW.id, 0)
+  ON CONFLICT (api_key_id) DO UPDATE SET
+    due_at = 0,
+    revision = responses_state_sweeps.revision + 1;
+END;
+
+CREATE TRIGGER api_keys_schedule_responses_state_delete
+AFTER DELETE ON api_keys
+BEGIN
+  INSERT INTO responses_state_sweeps (api_key_id, due_at)
+  VALUES (OLD.id, 0)
+  ON CONFLICT (api_key_id) DO UPDATE SET
+    due_at = 0,
+    revision = responses_state_sweeps.revision + 1;
+END;
+
+CREATE TABLE responses_state_maintenance (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  v1_next_expiry_hour INTEGER NOT NULL,
+  v1_cleanup_after INTEGER NOT NULL,
+  v1_complete INTEGER NOT NULL DEFAULT 0 CHECK (v1_complete IN (0, 1))
+);
+
+INSERT INTO responses_state_maintenance (id, v1_next_expiry_hour, v1_cleanup_after)
 VALUES (
   1,
   CAST(strftime('%s', '2026-06-01 00:00:00') AS INTEGER) * 1000,
