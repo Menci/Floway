@@ -38,6 +38,8 @@ const KEY_A: ApiKey = {
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
+  responsesStateEpoch: '11'.repeat(16),
 };
 
 const KEY_B: ApiKey = {
@@ -50,6 +52,8 @@ const KEY_B: ApiKey = {
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
+  responsesStateEpoch: '11'.repeat(16),
 };
 
 const SEED_ADMIN: User = {
