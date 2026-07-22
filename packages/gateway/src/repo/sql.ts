@@ -932,7 +932,29 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     // clone together. Keep D1 reads parallel, then hydrate serially so one
     // lookup cannot multiply that working set beyond Workers' memory limit.
     // https://developers.cloudflare.com/workers/platform/limits/#memory
-    return await mapSequentially(perChunk.flat(), toStoredResponsesItem);
+    const hydrated = await mapSequentially(perChunk.flat(), async row => await this.hydrateCurrentItem(row));
+    const wanted = new Set(unique);
+    return hydrated.flatMap(item =>
+      item !== null && (column === 'id' ? wanted.has(item.id) : wanted.has(item.contentHash))
+        ? [item]
+        : []);
+  }
+
+  private async hydrateCurrentItem(initialRow: ResponsesItemRow): Promise<StoredResponsesItem | null> {
+    let row = initialRow;
+    for (;;) {
+      try {
+        return await toStoredResponsesItem(row);
+      } catch (error) {
+        const current = await this.db
+          .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE id = ? AND api_key_id = ?`)
+          .bind(row.id, row.api_key_id)
+          .first<ResponsesItemRow>();
+        if (current === null) return null;
+        if (current.payload_json === row.payload_json) throw error;
+        row = current;
+      }
+    }
   }
 
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {

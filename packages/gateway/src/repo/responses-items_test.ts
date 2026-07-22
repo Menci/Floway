@@ -329,6 +329,29 @@ test('SQL refresh rereads a spill moved by a concurrent refresh', async () => {
   expect(await files.listKeys('responses-items/')).toHaveLength(1);
 });
 
+test('SQL lookup rereads a spill moved by a concurrent refresh', async () => {
+  const files = new GetHookFileProvider();
+  initFileProvider(files);
+  const repo = new SqlRepo(await createSqliteTestDb());
+  const item = spilledItem('msg_lookup_reader_race', 'key-a', 1_000);
+  await repo.responsesItems.insertMany([item]);
+  const [originalKey] = await files.listKeys('responses-items/');
+  const refreshedCreatedAt = 1_000 + 2 * 60 * 60 * 1000;
+  let nestedRefresh: Promise<void> | undefined;
+  files.beforeGet = async key => {
+    if (key !== originalKey || nestedRefresh !== undefined) return;
+    files.beforeGet = undefined;
+    nestedRefresh = repo.responsesItems.refreshMany([item], refreshedCreatedAt);
+    await nestedRefresh;
+  };
+
+  await expect(repo.responsesItems.lookupMany(item.apiKeyId, [item.id])).resolves.toEqual([
+    { ...item, createdAt: refreshedCreatedAt },
+  ]);
+  await nestedRefresh;
+  expect(await files.listKeys('responses-items/')).toHaveLength(1);
+});
+
 test('SQL Responses item writes stay within D1 bind limits and use bounded statement counts', async () => {
   initFileProvider(new MemoryFileProvider());
   const base = await createSqliteTestDb();
