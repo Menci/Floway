@@ -24,6 +24,9 @@ export interface ApiKey {
   // Rotating this private namespace makes writes from pre-disable requests
   // permanently invisible without changing the API key or affinity secret.
   responsesStateEpoch: string;
+  // A shrink permanently excludes earlier rows even if retention grows again
+  // before bounded physical cleanup reaches them.
+  responsesStateVisibleAfter: number;
 }
 
 export interface User {

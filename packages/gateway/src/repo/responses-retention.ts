@@ -8,23 +8,37 @@ export const generateResponsesStateEpoch = (): string => {
   return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
 };
 
-export const responsesStateLifetime = (
-  refreshedAt: number,
+export const responsesStateCutoff = (
+  activeAt: number,
   retentionSeconds: number,
-): { refreshedAt: number; expiresAt: number } => {
+  visibleAfter: number,
+): number => {
   if (!Number.isSafeInteger(retentionSeconds) || retentionSeconds < RESPONSES_RETENTION_MIN_SECONDS || retentionSeconds > RESPONSES_RETENTION_MAX_SECONDS) {
     throw new RangeError(`Responses retention must be an integer from ${RESPONSES_RETENTION_MIN_SECONDS} to ${RESPONSES_RETENTION_MAX_SECONDS} seconds`);
   }
-  return { refreshedAt, expiresAt: refreshedAt + retentionSeconds * 1000 };
+  if (!Number.isSafeInteger(visibleAfter) || visibleAfter < 0) throw new RangeError('Responses state visibility floor must be a non-negative safe integer');
+  return Math.max(activeAt - retentionSeconds * 1000, visibleAfter);
 };
 
-export const withResponsesRetention = (apiKey: ApiKey, responsesRetentionSeconds: number): ApiKey => {
+export const withResponsesRetention = (apiKey: ApiKey, responsesRetentionSeconds: number, changedAt: number = Date.now()): ApiKey => {
   if (responsesRetentionSeconds === apiKey.responsesRetentionSeconds) return apiKey;
+  if (responsesRetentionSeconds !== 0
+    && (!Number.isSafeInteger(responsesRetentionSeconds)
+      || responsesRetentionSeconds < RESPONSES_RETENTION_MIN_SECONDS
+      || responsesRetentionSeconds > RESPONSES_RETENTION_MAX_SECONDS)) {
+    throw new RangeError(`Responses retention must be 0 or an integer from ${RESPONSES_RETENTION_MIN_SECONDS} to ${RESPONSES_RETENTION_MAX_SECONDS} seconds`);
+  }
+  const disabling = responsesRetentionSeconds === 0 && apiKey.responsesRetentionSeconds > 0;
+  const shrinking = responsesRetentionSeconds > 0
+    && apiKey.responsesRetentionSeconds > 0
+    && responsesRetentionSeconds < apiKey.responsesRetentionSeconds;
   return {
     ...apiKey,
     responsesRetentionSeconds,
-    ...(responsesRetentionSeconds < apiKey.responsesRetentionSeconds
-      ? { responsesStateEpoch: generateResponsesStateEpoch() }
-      : {}),
+    ...(disabling
+      ? { responsesStateEpoch: generateResponsesStateEpoch(), responsesStateVisibleAfter: 0 }
+      : shrinking
+        ? { responsesStateVisibleAfter: Math.max(apiKey.responsesStateVisibleAfter, changedAt - responsesRetentionSeconds * 1000) }
+        : {}),
   };
 };
