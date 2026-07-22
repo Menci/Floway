@@ -32,11 +32,19 @@ const options: Array<{ value: SelectedPreset; label: string }> = [
 const selected = shallowRef<SelectedPreset>('off');
 const custom = shallowRef('');
 const fieldId = useId();
+const labelId = `${fieldId}-label`;
 const selectId = `${fieldId}-preset`;
 const descriptionId = `${fieldId}-description`;
 const customId = `${fieldId}-custom`;
 const errorId = `${fieldId}-error`;
 let lastEmitted: RetentionFieldValue | undefined;
+
+const durationExamples = computed(() => [
+  { value: 30 * 60, label: '30m' },
+  { value: 2 * 60 * 60, label: '2h' },
+  { value: 3 * 24 * 60 * 60, label: '3d' },
+  { value: 30 * 24 * 60 * 60, label: '30d' },
+].filter(example => example.value >= (props.minimumSeconds ?? 1)).slice(0, 2));
 
 const formatCustomDuration = (seconds: number): string => {
   if (seconds % 86400 === 0) return `${seconds / 86400}d`;
@@ -105,12 +113,13 @@ const customInvalid = computed(() => {
 
 <template>
   <div class="space-y-2">
-    <label :for="selectId" class="block text-xs font-medium text-gray-500">{{ label }}</label>
+    <label :id="labelId" :for="selectId" class="block text-xs font-medium text-gray-500">{{ label }}</label>
     <p :id="descriptionId" class="text-xs text-gray-600">{{ description }}</p>
     <Select
       :id="selectId"
       :model-value="selected"
       :options="options"
+      :aria-labelledby="labelId"
       :aria-describedby="descriptionId"
       @update:model-value="updateSelected"
     />
@@ -118,14 +127,14 @@ const customInvalid = computed(() => {
       v-if="selected === 'custom'"
       :id="customId"
       :model-value="custom"
-      placeholder="e.g. 30m, 2h, 3d, 1800"
+      :placeholder="`e.g. ${durationExamples.map(example => example.label).join(', ')}, ${minimumSeconds ?? 1800}`"
       :aria-label="`${label} custom duration`"
       :aria-describedby="customInvalid ? `${descriptionId} ${errorId}` : descriptionId"
       :aria-invalid="customInvalid"
       @update:model-value="updateCustom"
     />
     <p v-if="customInvalid" :id="errorId" class="text-xs text-accent-rose">
-      Enter an integer number of seconds or a duration such as 30m, 2h, or 3d<span v-if="minimumSeconds">, at least {{ formatCustomDuration(minimumSeconds) }}</span>.
+      Enter an integer number of seconds or a duration such as {{ durationExamples.map(example => example.label).join(' or ') }}<span v-if="minimumSeconds">, at least {{ formatCustomDuration(minimumSeconds) }}</span>.
     </p>
     <slot />
   </div>

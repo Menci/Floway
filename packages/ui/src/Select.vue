@@ -15,6 +15,8 @@ const value = defineModel<T>();
 const props = withDefaults(defineProps<{
   options: O[];
   id?: string;
+  ariaLabelledby?: string;
+  ariaDescribedby?: string;
   placeholder?: string;
   disabled?: boolean;
   size?: 'sm' | 'md';
@@ -52,7 +54,12 @@ const onUpdate = (raw: string | number | undefined) => {
     <!-- Hidden filter: reka regresses a combobox that renders no filter element. -->
     <ListboxFilter class="hidden" />
     <ComboboxAnchor as-child>
-      <ComboboxTrigger :id="id" :class="triggerClass">
+      <ComboboxTrigger
+        :id="id"
+        :aria-labelledby="ariaLabelledby"
+        :aria-describedby="ariaDescribedby"
+        :class="triggerClass"
+      >
         <span :class="selectedLabel === undefined && 'text-gray-600'">{{ selectedLabel ?? placeholder }}</span>
         <span class="ml-2 text-gray-300">
           <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25">

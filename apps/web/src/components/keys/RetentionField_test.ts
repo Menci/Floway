@@ -4,12 +4,12 @@ import { nextTick } from 'vue';
 
 import RetentionField from './RetentionField.vue';
 
-const mountField = (modelValue: number | null | 'invalid') => mount(RetentionField, {
+const mountField = (modelValue: number | null | 'invalid', offValue: 0 | null = 0) => mount(RetentionField, {
   props: {
     modelValue,
     label: 'State retention',
     description: 'Description',
-    offValue: 0,
+    offValue,
     offLabel: 'Off',
     presets: [
       { seconds: 7 * 86400, label: '7 days' },
@@ -51,6 +51,36 @@ describe('RetentionField', () => {
 
     await select.setValue('off');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toBe(0);
+
+    const nullOff = mountField(7 * 86400, null);
+    await nullOff.get('select').setValue('off');
+    expect(nullOff.emitted('update:modelValue')?.at(-1)?.[0]).toBeNull();
+  });
+
+  it('puts the field label and description on the real Select trigger', () => {
+    const wrapper = mount(RetentionField, {
+      props: {
+        modelValue: 0,
+        label: 'State retention',
+        description: 'Description',
+        offValue: 0,
+        offLabel: 'Off',
+        presets: [{ seconds: 7 * 86400, label: '7 days' }],
+      },
+    });
+    const trigger = wrapper.get('button');
+    const label = wrapper.get('label');
+    const description = wrapper.get('p');
+    expect(trigger.attributes('aria-labelledby')).toBe(label.attributes('id'));
+    expect(trigger.attributes('aria-describedby')).toBe(description.attributes('id'));
+  });
+
+  it('only suggests custom durations accepted by the configured minimum', async () => {
+    const wrapper = mountField(0);
+    await wrapper.setProps({ minimumSeconds: 3600 });
+    await wrapper.get('select').setValue('custom');
+    expect(wrapper.get('input').attributes('placeholder')).not.toContain('30m');
+    expect(wrapper.text()).not.toContain('30m');
   });
 
   it('renders an external custom value using the shortest exact unit', async () => {
