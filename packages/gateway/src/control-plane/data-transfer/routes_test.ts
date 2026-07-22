@@ -42,6 +42,7 @@ const KEY_A: ApiKey = {
   dumpRetentionSeconds: null,
   responsesRetentionSeconds: 0,
   responsesStateEpoch: '11'.repeat(16),
+  responsesStateVisibleAfter: 0,
 };
 
 const KEY_B: ApiKey = {
@@ -56,6 +57,7 @@ const KEY_B: ApiKey = {
   dumpRetentionSeconds: null,
   responsesRetentionSeconds: 0,
   responsesStateEpoch: '11'.repeat(16),
+  responsesStateVisibleAfter: 0,
 };
 
 const SEED_ADMIN: User = {

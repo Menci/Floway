@@ -61,6 +61,7 @@ test('API key users only see their own key in /api/keys', async () => {
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
 
   const response = await requestApp('/api/keys', {
@@ -113,6 +114,7 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
   await repo.usage.set({
     keyId: apiKey.id,
@@ -164,6 +166,7 @@ test('/api/token-usage in self-by-key mode includes per-key metadata for the act
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
   await repo.usage.set({
     keyId: 'key_actor_secondary',

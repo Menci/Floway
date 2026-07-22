@@ -16,6 +16,7 @@ const seedSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryRepo
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
 
   await repo.searchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'search', hour: '2026-03-15T10', requests: 2 });

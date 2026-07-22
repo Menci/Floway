@@ -1142,7 +1142,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       if (responsesInsertChunks(writes).length > RESPONSES_INSERT_MAX_CHUNKS) {
         throw new Error(`Responses state write exceeds ${RESPONSES_INSERT_MAX_CHUNKS} D1 insert statements`);
       }
-      await this.stagePayloadFiles(preparedGroup.map(value => value.prepared), now + RESPONSES_PAYLOAD_STAGE_GRACE_MS);
+      await this.stagePayloadFiles(preparedGroup.map(value => value.prepared), Date.now() + RESPONSES_PAYLOAD_STAGE_GRACE_MS);
       for (const value of preparedGroup) await writePreparedStoredResponsesPayload(value.prepared);
       preparedGroup = [];
       preparedGroupBytes = 0;

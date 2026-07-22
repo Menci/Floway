@@ -136,6 +136,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     dumpRetentionSeconds: body.dump_retention_seconds ?? null,
     responsesRetentionSeconds: body.responses_retention_seconds ?? 0,
     responsesStateEpoch: generateResponsesStateEpoch(),
+    responsesStateVisibleAfter: 0,
   } satisfies Omit<ApiKey, 'key'>;
 
   const key = await writeKeyForRequest(template.id, body, async rawKey => {

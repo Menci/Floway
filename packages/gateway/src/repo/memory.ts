@@ -340,6 +340,11 @@ class MemoryUsageRepo implements UsageRepo {
     return Promise.resolve();
   }
 
+  deleteAll(): Promise<void> {
+    this.store.clear();
+    return Promise.resolve();
+  }
+
 }
 
 class MemorySearchUsageRepo implements SearchUsageRepo {
@@ -385,6 +390,11 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
       const validRecord = { ...record, provider };
       this.store.set(this.key(validRecord), validRecord);
     });
+  }
+
+  deleteAll(): Promise<void> {
+    this.store.clear();
+    return Promise.resolve();
   }
 
 }

@@ -65,6 +65,7 @@ test('/api/performance/overview scopes to actor\'s keys in self-by-key mode', as
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
 
   const sample = {
@@ -133,6 +134,7 @@ test('/api/performance/overview all-by-user view aggregates over every key', asy
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
 
   const sample = {
@@ -177,6 +179,7 @@ test('/api/performance/overview keeps API-key data self-scoped in all-by-user vi
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
 
   const sample = {
@@ -242,6 +245,7 @@ test('/api/performance/overview all-by-user userRows split rows per user', async
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
 
   const sample = {
@@ -288,6 +292,7 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
 
   const sample = {
@@ -519,6 +524,7 @@ test('/api/performance/overview self-by-key surfaces soft-deleted keys metadata 
     dumpRetentionSeconds: null,
     responsesRetentionSeconds: 0,
     responsesStateEpoch: '11'.repeat(16),
+    responsesStateVisibleAfter: 0,
   });
 
   const response = await requestApp(

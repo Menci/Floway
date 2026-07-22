@@ -50,7 +50,7 @@ interface SerializedProxy {
   dial_timeout_seconds: number | null;
 }
 
-type SerializedApiKey = Omit<ApiKey, 'responsesStateEpoch'>;
+type SerializedApiKey = Omit<ApiKey, 'responsesStateEpoch' | 'responsesStateVisibleAfter'>;
 
 interface ExportPayload {
   version: 16;
@@ -685,7 +685,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     exportedAt: new Date().toISOString(),
     data: {
       users,
-      apiKeys: apiKeys.map(({ responsesStateEpoch: _epoch, ...key }) => key),
+      apiKeys: apiKeys.map(({ responsesStateEpoch: _epoch, responsesStateVisibleAfter: _visibleAfter, ...key }) => key),
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(p => ({ id: p.id, name: p.name, url: p.url, dial_timeout_seconds: p.dialTimeoutSeconds })),
       usage,
@@ -850,6 +850,9 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       responsesStateEpoch: previous === undefined || reactivating
         ? generateResponsesStateEpoch()
         : previous.responsesStateEpoch,
+      responsesStateVisibleAfter: previous === undefined || reactivating
+        ? 0
+        : previous.responsesStateVisibleAfter,
     };
     const next = previous === undefined || reactivating
       ? withEpoch
