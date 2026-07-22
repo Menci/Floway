@@ -2,12 +2,12 @@
 import { computed, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 
+import RetentionField, { type RetentionFieldValue } from './RetentionField.vue';
 import { type KeySource, KEY_SOURCE_OPTIONS } from './keySource.ts';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ApiKey } from '../../api/types.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 import { useAuthStore } from '../../stores/auth.ts';
-import RetentionField, { type RetentionFieldValue } from './RetentionField.vue';
 import UpstreamPicker, { type UpstreamPickerValue } from '../upstreams/UpstreamPicker.vue';
 import { Button, Dialog, Input, Select } from '@floway-dev/ui';
 
