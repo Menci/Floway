@@ -438,8 +438,8 @@ test('store=false forwards an id-less finalized item without persistence work', 
 
   const events: ResponsesStreamEvent[] = [];
   for await (const frame of wrapResponsesClientOutput(input(), {
-      store,
-      responseId: 'resp_public',
+    store,
+    responseId: 'resp_public',
   })) if (frame.type === 'event') events.push(frame.event);
 
   expect(events.map(event => event.type)).toEqual([
