@@ -448,7 +448,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
   assertEquals(observedForm?.get('prompt'), 'replace sky');
 });
 
-test('createAzureProvider callAudioTranscriptions selects a classic deployment in the URL', async () => {
+test('createAzureProvider callAudioTranscriptions selects the deployment in the URL', async () => {
   const record = azureRecord({
     config: {
       endpoint: 'https://example.openai.azure.com',
