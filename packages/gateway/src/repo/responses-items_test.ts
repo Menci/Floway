@@ -1,8 +1,10 @@
 import initSqlJs from 'sql.js';
 import { describe, expect, test, vi } from 'vitest';
 
+import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
-import { responsesItemPayloadExpiryBucketPrefix, serializeStoredResponsesPayload } from './responses-payload.ts';
+import { prepareStoredResponsesPayload } from './responses-payload.ts';
+import { sweepResponsesState } from './responses-maintenance.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, StoredResponsesItem } from './types.ts';
@@ -46,6 +48,9 @@ const spilledItem = (id: string, apiKeyId: string, refreshedAt: number): StoredR
 const expiresAt = (refreshedAt: number): number =>
   refreshedAt + TEST_RESPONSES_RETENTION_SECONDS * 1000;
 
+const payloadJson = async (item: StoredResponsesItem): Promise<string> =>
+  (await prepareStoredResponsesPayload(item.id, item.apiKeyId, item.stateEpoch, item.payload)).payloadJson;
+
 const sqlDatabaseWithBatch = (
   base: SqlDatabase,
   runBatch: (statements: SqlPreparedStatement[]) => Promise<Awaited<ReturnType<NonNullable<SqlDatabase['batch']>>>>,
@@ -76,22 +81,13 @@ const sqlDatabaseWithAllHook = (
 });
 
 class DeleteHookFileProvider extends MemoryFileProvider {
-  beforeDelete: ((key: string) => Promise<void>) | undefined;
+  beforeDelete: ((keys: readonly string[]) => Promise<void>) | undefined;
 
-  override async deletePrefix(prefix: string): Promise<void> {
+  override async deleteKeys(keys: readonly string[]): Promise<void> {
     const beforeDelete = this.beforeDelete;
     this.beforeDelete = undefined;
-    await beforeDelete?.(prefix);
-    await super.deletePrefix(prefix);
-  }
-}
-
-class GetHookFileProvider extends MemoryFileProvider {
-  beforeGet: ((key: string) => Promise<void>) | undefined;
-
-  override async get(key: string): Promise<Uint8Array | null> {
-    await this.beforeGet?.(key);
-    return await super.get(key);
+    await beforeDelete?.(keys);
+    await super.deleteKeys(keys);
   }
 }
 
@@ -177,8 +173,8 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', stateEpoch: TEST_RESPONSES_STATE_EPOCH, itemIds: [old.id], ...testResponsesStateLifetime(1_000) });
     await repo.responsesSnapshots.insert({ id: 'resp_fresh', apiKeyId: 'key-a', stateEpoch: TEST_RESPONSES_STATE_EPOCH, itemIds: [fresh.id], ...testResponsesStateLifetime(3_000) });
 
-    expect(await repo.responsesItems.deleteExpiredHour(expiresAt(1_000), expiresAt(2_000), 100)).toBe(1);
-    expect(await repo.responsesSnapshots.deleteExpiredHour(expiresAt(1_000), expiresAt(2_000), 100)).toBe(1);
+    expect(await repo.responsesItems.deleteExpired(expiresAt(2_000), 100)).toBe(1);
+    expect(await repo.responsesSnapshots.deleteExpired(expiresAt(2_000), 100)).toBe(1);
     expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [old.id, fresh.id])).toEqual([fresh]);
     expect(await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_old')).toBeNull();
     expect(await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_fresh')).toEqual({
@@ -191,7 +187,7 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const repo = await createRepo();
     const item = storedItem('msg_missing', 'key-a', 'missing', 1_000);
     await repo.responsesItems.insertMany([item], 0);
-    await repo.responsesItems.deleteExpiredHour(expiresAt(1_000), expiresAt(2_000), 100);
+    await repo.responsesItems.deleteExpired(expiresAt(1_000), 100);
 
     await expect(repo.responsesItems.refreshMany([item], 3_000, expiresAt(3_000)))
       .rejects.toThrow('Responses item disappeared');
@@ -220,7 +216,7 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     expect((await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [item.id]))[0].refreshedAt).toBe(3_000);
   });
 
-  test('refreshes spilled payload expiry without retaining the previous file', async () => {
+  test('refreshes spilled payload lifetime without touching file storage', async () => {
     const files = new MemoryFileProvider();
     initFileProvider(files);
     const repo = await createRepo();
@@ -228,17 +224,20 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     await repo.responsesItems.insertMany([item], 0);
     const before = await files.listKeys('responses-items/');
     const put = vi.spyOn(files, 'put');
+    const get = vi.spyOn(files, 'get');
+    const deleteKeys = vi.spyOn(files, 'deleteKeys');
     await repo.responsesItems.refreshMany([item], 1_000 + 10 * 60 * 1000, expiresAt(1_000 + 10 * 60 * 1000));
-    if (_name === 'sql') expect(put).not.toHaveBeenCalled();
     await repo.responsesItems.refreshMany([item], 1_000 + 2 * 60 * 60 * 1000, expiresAt(1_000 + 2 * 60 * 60 * 1000));
     const after = await files.listKeys('responses-items/');
     await repo.responsesItems.refreshMany([item], 1_000 + 60 * 60 * 1000, expiresAt(1_000 + 60 * 60 * 1000));
     const afterOlderRefresh = await files.listKeys('responses-items/');
 
+    expect(put).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(deleteKeys).not.toHaveBeenCalled();
     if (_name === 'sql') {
       expect(before).toHaveLength(1);
-      expect(after).toHaveLength(1);
-      expect(after[0]).not.toBe(before[0]);
+      expect(after).toEqual(before);
       expect(afterOlderRefresh).toEqual(after);
     } else {
       expect(before).toEqual([]);
@@ -278,7 +277,7 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
   expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [item.id])).toEqual([]);
 });
 
-test('SQL stale refresh accepts a newer concurrent spill descriptor', async () => {
+test('SQL stale refresh preserves a newer concurrent lifetime', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const base = await createSqliteTestDb();
@@ -310,7 +309,7 @@ test('SQL stale refresh accepts a newer concurrent spill descriptor', async () =
   expect(await files.listKeys('responses-items/')).toHaveLength(1);
 });
 
-test('SQL newer refresh retries after an older concurrent spill wins CAS', async () => {
+test('SQL newer refresh wins after an older concurrent lifetime update', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const base = await createSqliteTestDb();
@@ -339,64 +338,6 @@ test('SQL newer refresh retries after an older concurrent spill wins CAS', async
   const [persisted] = await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [item.id]);
   expect(persisted.refreshedAt).toBe(newerRefreshedAt);
   expect(persisted.payload).toEqual(item.payload);
-  expect(await files.listKeys('responses-items/')).toHaveLength(1);
-});
-
-test('SQL refresh rereads a spill moved by a concurrent refresh', async () => {
-  const files = new GetHookFileProvider();
-  initFileProvider(files);
-  const repo = new SqlRepo(await createSqliteTestDb());
-  const item = spilledItem('msg_refresh_reader_race', 'key-a', 1_000);
-  await repo.responsesItems.insertMany([item], 0);
-  const [originalKey] = await files.listKeys('responses-items/');
-  const firstRefreshedAt = 1_000 + 2 * 60 * 60 * 1000;
-  const secondRefreshedAt = 1_000 + 4 * 60 * 60 * 1000;
-  let nestedRefresh: Promise<void> | undefined;
-  files.beforeGet = async key => {
-    if (key !== originalKey || nestedRefresh !== undefined) return;
-    files.beforeGet = undefined;
-    nestedRefresh = repo.responsesItems.refreshMany([item], secondRefreshedAt, expiresAt(secondRefreshedAt));
-    await nestedRefresh;
-  };
-
-  await expect(repo.responsesItems.refreshMany([item], firstRefreshedAt, expiresAt(firstRefreshedAt))).resolves.toBeUndefined();
-  await nestedRefresh;
-
-  const [persisted] = await repo.responsesItems.lookupMany(item.apiKeyId, TEST_RESPONSES_STATE_EPOCH, [item.id]);
-  expect(persisted.refreshedAt).toBe(secondRefreshedAt);
-  expect(persisted.payload).toEqual(item.payload);
-  const survivingFiles = await files.listKeys('responses-items/');
-  expect(survivingFiles).toHaveLength(1);
-  expect(survivingFiles[0].startsWith(
-    responsesItemPayloadExpiryBucketPrefix(secondRefreshedAt + TEST_RESPONSES_RETENTION_SECONDS * 1000),
-  )).toBe(true);
-});
-
-test('SQL lookup rereads a spill moved by a concurrent refresh', async () => {
-  const files = new GetHookFileProvider();
-  initFileProvider(files);
-  const repo = new SqlRepo(await createSqliteTestDb());
-  const item = spilledItem('msg_lookup_reader_race', 'key-a', 1_000);
-  await repo.responsesItems.insertMany([item], 0);
-  const [originalKey] = await files.listKeys('responses-items/');
-  const refreshedRefreshedAt = 1_000 + 2 * 60 * 60 * 1000;
-  let nestedRefresh: Promise<void> | undefined;
-  files.beforeGet = async key => {
-    if (key !== originalKey || nestedRefresh !== undefined) return;
-    files.beforeGet = undefined;
-    nestedRefresh = repo.responsesItems.refreshMany([item], refreshedRefreshedAt, expiresAt(refreshedRefreshedAt));
-    await nestedRefresh;
-  };
-
-  const [persisted] = await repo.responsesItems.lookupMany(item.apiKeyId, TEST_RESPONSES_STATE_EPOCH, [item.id]);
-  expect(persisted).toMatchObject({
-    id: item.id,
-    payload: item.payload,
-    refreshedAt: refreshedRefreshedAt,
-    expiresAt: expiresAt(refreshedRefreshedAt),
-  });
-  expect(persisted.payloadFileKey).not.toBe(item.payloadFileKey);
-  await nestedRefresh;
   expect(await files.listKeys('responses-items/')).toHaveLength(1);
 });
 
@@ -468,7 +409,7 @@ test('SQL insert cleans generated spills when its batch fails', async () => {
   expect(await files.listKeys('responses-items/')).toEqual([]);
 });
 
-test('SQL refresh cleans replacement spills and keeps originals when its batch fails', async () => {
+test('SQL refresh failure leaves stable payload files untouched', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const base = await createSqliteTestDb();
@@ -490,7 +431,7 @@ test('SQL refresh cleans replacement spills and keeps originals when its batch f
   expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
 });
 
-test('SQL exact duplicate refreshes its spill lifetime without leaving the old file', async () => {
+test('SQL exact duplicate refreshes its spill lifetime without rewriting the file', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const repo = new SqlRepo(await createSqliteTestDb());
@@ -503,10 +444,9 @@ test('SQL exact duplicate refreshes its spill lifetime without leaving the old f
   const refreshedAt = 1_000 + 2 * 60 * 60 * 1000;
   await repo.responsesItems.insertMany([{ ...original, refreshedAt, expiresAt: expiresAt(refreshedAt) }], 0);
 
-  expect(put).toHaveBeenCalledTimes(1);
+  expect(put).not.toHaveBeenCalled();
   const refreshedFiles = await files.listKeys('responses-items/');
-  expect(refreshedFiles).toHaveLength(1);
-  expect(refreshedFiles).not.toEqual(originalFiles);
+  expect(refreshedFiles).toEqual(originalFiles);
   expect((await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [original.id]))[0]).toMatchObject({
     id: original.id,
     payload: original.payload,
@@ -517,10 +457,11 @@ test('SQL exact duplicate refreshes its spill lifetime without leaving the old f
   });
 });
 
-test('SQL expired spill replacement updates payload identity and removes the old file', async () => {
+test('SQL expired spill replacement queues and reclaims the old file', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const repo = new SqlRepo(await createSqliteTestDb());
+  initRepo(repo);
   const expired = spilledItem('msg_expired_spill', 'key-a', 1_000);
   await repo.responsesItems.insertMany([expired], 0);
   expect(await files.listKeys('responses-items/')).toHaveLength(1);
@@ -530,6 +471,8 @@ test('SQL expired spill replacement updates payload identity and removes the old
 
   await repo.responsesItems.insertMany([replacement], expired.expiresAt);
 
+  expect(await files.listKeys('responses-items/')).toHaveLength(1);
+  await sweepResponsesState(expired.expiresAt);
   expect(await files.listKeys('responses-items/')).toEqual([]);
   expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [expired.id])).toEqual([replacement]);
 });
@@ -538,13 +481,7 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const base = await createSqliteTestDb();
-  const inlinePayload = await serializeStoredResponsesPayload(
-    'msg_insert_race',
-    'key-a',
-    TEST_RESPONSES_STATE_EPOCH,
-    expiresAt(1_000),
-    { item: { type: 'message', id: 'msg_insert_race', role: 'assistant', content: [] } },
-  );
+  const inlinePayload = await payloadJson(storedItem('msg_insert_race', 'key-a', 'race', 1_000));
   let injectConflict = true;
   const db: SqlDatabase = {
     prepare: query => base.prepare(query),
@@ -582,7 +519,7 @@ test('SQL rejects a different concurrent winner and cleans the losing spill', as
   const base = await createSqliteTestDb();
   const contender = spilledItem('msg_concurrent_collision', 'key-a', 2_000);
   const winner = storedItem(contender.id, contender.apiKeyId, 'winner-hash', 1_000);
-  const winnerPayload = await serializeStoredResponsesPayload(winner.id, winner.apiKeyId, TEST_RESPONSES_STATE_EPOCH, winner.expiresAt, winner.payload);
+  const winnerPayload = await payloadJson(winner);
   let injected = false;
   const db = sqlDatabaseWithBatch(base, async statements => {
     if (!injected) {
@@ -610,14 +547,14 @@ test('SQL conflict cleanup cannot delete a later winner\'s independently owned s
   initFileProvider(files);
   const base = await createSqliteTestDb();
   const item = spilledItem('msg_insert_owner_race', 'key-a', 1_000);
-  const winnerPayload = await serializeStoredResponsesPayload(
-    item.id,
-    item.apiKeyId,
-    item.stateEpoch,
-    item.expiresAt,
-    item.payload,
-  );
-  const winnerFileKey = (JSON.parse(winnerPayload) as { key: string }).key;
+  const winnerPrepared = await prepareStoredResponsesPayload(item.id, item.apiKeyId, item.stateEpoch, item.payload);
+  if (winnerPrepared.file === null) throw new Error('expected spilled winner');
+  const winnerPayload = winnerPrepared.payloadJson;
+  const winnerFileKey = winnerPrepared.file.key;
+  await files.put(winnerFileKey, winnerPrepared.file.body);
+  await base.prepare('INSERT INTO responses_state_payload_gc (file_key, eligible_at) VALUES (?, ?)')
+    .bind(winnerFileKey, item.expiresAt)
+    .run();
   const insertWinner = base.prepare(
     `INSERT INTO responses_state_items
       (id, api_key_id, state_epoch, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at, expires_at)
@@ -634,8 +571,8 @@ test('SQL conflict cleanup cannot delete a later winner\'s independently owned s
       .run();
     return results;
   });
-  files.beforeDelete = async loserFileKey => {
-    expect(loserFileKey).not.toBe(winnerFileKey);
+  files.beforeDelete = async loserFileKeys => {
+    expect(loserFileKeys).not.toContain(winnerFileKey);
     await insertWinner
       .bind(item.id, item.apiKeyId, item.stateEpoch, winnerPayload, item.contentHash, item.payloadHash, winnerFileKey, item.refreshedAt, item.expiresAt)
       .run();

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { deleteResponsesItemPayloadExpiryBucket, parseStoredResponsesPayload, serializeStoredResponsesPayload } from './responses-payload.ts';
+import { parseStoredResponsesPayload, prepareStoredResponsesPayload, writePreparedStoredResponsesPayload } from './responses-payload.ts';
 import { TEST_RESPONSES_STATE_EPOCH } from '../test-helpers/responses-state.ts';
 import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -16,10 +16,20 @@ const incompressibleString = (approxBytes: number): string => {
   return hex.slice(0, approxBytes);
 };
 
+const serializePayload = async (
+  id: string,
+  apiKeyId: string,
+  payload: Parameters<typeof prepareStoredResponsesPayload>[3],
+): Promise<string> => {
+  const prepared = await prepareStoredResponsesPayload(id, apiKeyId, TEST_RESPONSES_STATE_EPOCH, payload);
+  await writePreparedStoredResponsesPayload(prepared);
+  return prepared.payloadJson;
+};
+
 test('the reserved private payload field round-trips through both inline and file storage', async () => {
   initFileProvider(new MemoryFileProvider());
 
-  const inline = await serializeStoredResponsesPayload('msg_inline', 'key-test', TEST_RESPONSES_STATE_EPOCH, 0, {
+  const inline = await serializePayload('msg_inline', 'key-test', {
     item: { type: 'web_search_call', id: 'ws_x' },
     private: { results: [{ url: 'https://example.test', title: 'kept' }] },
   });
@@ -30,7 +40,7 @@ test('the reserved private payload field round-trips through both inline and fil
 
   // A payload past the inline limit spills its body to the file provider; the
   // private slot must survive that path too.
-  const spilled = await serializeStoredResponsesPayload('msg_spilled', 'key-test', TEST_RESPONSES_STATE_EPOCH, 0, {
+  const spilled = await serializePayload('msg_spilled', 'key-test', {
     item: { type: 'message', id: 'msg_big', content: incompressibleString(96 * 1024) },
     private: { results: 'preserved' },
   });
@@ -41,19 +51,17 @@ test('the reserved private payload field round-trips through both inline and fil
 test('identical spilled payload writes get distinct owned keys that retain the content hash', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
-  const createdAt = Date.UTC(2026, 4, 28, 12);
-
   const content = incompressibleString(96 * 1024);
-  const first = await serializeStoredResponsesPayload('msg_same_id', 'key_a', TEST_RESPONSES_STATE_EPOCH, createdAt, {
+  const first = await serializePayload('msg_same_id', 'key_a', {
     item: { type: 'message', id: 'msg_big', content },
   });
-  const second = await serializeStoredResponsesPayload('msg_same_id', 'key_a', TEST_RESPONSES_STATE_EPOCH, createdAt, {
+  const second = await serializePayload('msg_same_id', 'key_a', {
     item: { type: 'message', id: 'msg_big', content },
   });
   const firstDescriptor = JSON.parse(first) as { key: string; sha256: string };
   const secondDescriptor = JSON.parse(second) as { key: string; sha256: string };
 
-  assertEquals((await files.listKeys('responses-items/v2/expires/')).length, 2);
+  assertEquals((await files.listKeys('responses-items/v2/objects/')).length, 2);
   assert(firstDescriptor.key !== secondDescriptor.key);
   assert(firstDescriptor.key.includes(firstDescriptor.sha256));
   assert(secondDescriptor.key.includes(secondDescriptor.sha256));
@@ -69,14 +77,14 @@ test.each([
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const content = incompressibleString(96 * 1024);
-  const serialized = await serializeStoredResponsesPayload(id, 'key_a', TEST_RESPONSES_STATE_EPOCH, 0, {
+  const serialized = await serializePayload(id, 'key_a', {
     item: { type: 'message', id, content },
   });
   const descriptor = JSON.parse(serialized) as { key: string };
 
-  assert(descriptor.key.startsWith('responses-items/v2/expires/'));
+  assert(descriptor.key.startsWith('responses-items/v2/objects/'));
   assert(!descriptor.key.includes(id));
-  assert(/^responses-items\/v2\/expires\/\d{4}\/\d{2}\/\d{2}\/\d{2}\/[0-9a-f]{64}\/[0-9a-f]{32}\/[0-9a-f]{64}\/[0-9a-f]{64}-[A-Za-z0-9_-]{22}\.gz$/.test(descriptor.key));
+  assert(/^responses-items\/v2\/objects\/[0-9a-f]{64}\/[0-9a-f]{32}\/[0-9a-f]{64}\/[0-9a-f]{64}-[A-Za-z0-9_-]{22}\.gz$/.test(descriptor.key));
   assertEquals((await parseStoredResponsesPayload(id, serialized)).item, {
     type: 'message',
     id,
@@ -87,7 +95,7 @@ test.each([
 test('inline payload round-trips through gzip+base64 and the descriptor advertises the encoding', async () => {
   initFileProvider(new MemoryFileProvider());
 
-  const serialized = await serializeStoredResponsesPayload('msg_round', 'key-test', TEST_RESPONSES_STATE_EPOCH, 0, {
+  const serialized = await serializePayload('msg_round', 'key-test', {
     item: { type: 'message', id: 'msg_round', content: 'hello world' },
   });
   const descriptor = JSON.parse(serialized) as Record<string, unknown>;
@@ -106,7 +114,7 @@ test('spilled payload file body is gzip-compressed and the descriptor records th
   initFileProvider(files);
 
   const original = incompressibleString(96 * 1024);
-  const serialized = await serializeStoredResponsesPayload('msg_file_gz', 'key_a', TEST_RESPONSES_STATE_EPOCH, 0, {
+  const serialized = await serializePayload('msg_file_gz', 'key_a', {
     item: { type: 'message', id: 'msg_file_gz', content: original },
   });
   const descriptor = JSON.parse(serialized) as Record<string, unknown>;
@@ -129,7 +137,7 @@ test('a tampered file body fails its hash check', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
 
-  const serialized = await serializeStoredResponsesPayload('msg_tampered', 'key_a', TEST_RESPONSES_STATE_EPOCH, 0, {
+  const serialized = await serializePayload('msg_tampered', 'key_a', {
     item: { type: 'message', id: 'msg_tampered', content: incompressibleString(96 * 1024) },
   });
   const descriptor = JSON.parse(serialized) as { key: string; byteLength: number };
@@ -143,15 +151,15 @@ test('a tampered file body fails its hash check', async () => {
   await assertRejects(() => parseStoredResponsesPayload('msg_tampered', serialized), Error, 'hash mismatch');
 });
 
-test('deletes exactly the expiry-hour bucket drained by the D1 janitor', async () => {
+test('preparing a spilled payload does not publish it before the caller stages the key', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
+  const prepared = await prepareStoredResponsesPayload('msg_staged', 'key_a', TEST_RESPONSES_STATE_EPOCH, {
+    item: { type: 'message', id: 'msg_staged', content: incompressibleString(96 * 1024) },
+  });
+  assert(prepared.file !== null);
+  assertEquals(await files.get(prepared.file.key), null);
 
-  await files.put('responses-items/v2/expires/2026/06/27/10/scope/c.json', new Uint8Array([3]));
-  await files.put('responses-items/v2/expires/2026/06/27/11/scope/d.json', new Uint8Array([4]));
-
-  await deleteResponsesItemPayloadExpiryBucket(Date.UTC(2026, 5, 27, 10));
-
-  assertEquals(await files.get('responses-items/v2/expires/2026/06/27/10/scope/c.json'), null);
-  assertEquals([...(await files.get('responses-items/v2/expires/2026/06/27/11/scope/d.json'))!], [4]);
+  await writePreparedStoredResponsesPayload(prepared);
+  assert((await files.get(prepared.file.key)) !== null);
 });
