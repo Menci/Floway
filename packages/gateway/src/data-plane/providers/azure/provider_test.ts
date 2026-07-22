@@ -477,12 +477,12 @@ test('createAzureProvider callAudioTranscriptions selects a classic deployment i
       assertEquals(result.modelKey, 'transcribe-deployment');
     },
   );
-  assertEquals(observedUrl, 'https://example.openai.azure.com/openai/deployments/transcribe-deployment/audio/transcriptions?api-version=2024-10-21');
+  assertEquals(observedUrl, 'https://example.openai.azure.com/openai/deployments/transcribe-deployment/audio/transcriptions?api-version=2025-04-01-preview');
   assertEquals(observedForm?.get('model'), null);
   assertEquals(observedForm?.get('response_format'), 'vtt');
 });
 
-test('createAzureProvider callAudioTranscriptions selects a Foundry model in the multipart body', async () => {
+test('createAzureProvider callAudioTranscriptions reduces a Foundry endpoint to the deployment route', async () => {
   const record = azureRecord({
     config: {
       endpoint: 'https://example.services.ai.azure.com/api/projects/prod',
@@ -509,6 +509,6 @@ test('createAzureProvider callAudioTranscriptions selects a Foundry model in the
       }, undefined, noopUpstreamCallOptions());
     },
   );
-  assertEquals(observedUrl, 'https://example.services.ai.azure.com/api/projects/prod/openai/v1/audio/transcriptions?api-version=preview');
-  assertEquals(observedForm?.get('model'), 'gpt-4o-transcribe');
+  assertEquals(observedUrl, 'https://example.services.ai.azure.com/openai/deployments/gpt-4o-transcribe/audio/transcriptions?api-version=2025-04-01-preview');
+  assertEquals(observedForm?.get('model'), null);
 });

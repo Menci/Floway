@@ -100,12 +100,12 @@ test('image transports append the Azure preview api-version', async () => {
   assertEquals(seenUrl, 'https://example.openai.azure.com/openai/v1/images/generations?api-version=preview');
 });
 
-test('audio transcription selects the resource deployment or Foundry v1 surface', async () => {
+test('audio transcription selects the deployment on every admitted endpoint shape', async () => {
   const endpoints = [
-    ['https://example.openai.azure.com/', 'https://example.openai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2024-10-21'],
-    ['https://example.openai.azure.com/openai/v1/', 'https://example.openai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2024-10-21'],
-    ['https://example.services.ai.azure.com/', 'https://example.services.ai.azure.com/openai/v1/audio/transcriptions?api-version=preview'],
-    ['https://example.services.ai.azure.com/api/projects/prod/', 'https://example.services.ai.azure.com/api/projects/prod/openai/v1/audio/transcriptions?api-version=preview'],
+    ['https://example.openai.azure.com/', 'https://example.openai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2025-04-01-preview'],
+    ['https://example.openai.azure.com/openai/v1/', 'https://example.openai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2025-04-01-preview'],
+    ['https://example.services.ai.azure.com/', 'https://example.services.ai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2025-04-01-preview'],
+    ['https://example.services.ai.azure.com/api/projects/prod/', 'https://example.services.ai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2025-04-01-preview'],
   ] as const;
 
   for (const [endpoint, expected] of endpoints) {

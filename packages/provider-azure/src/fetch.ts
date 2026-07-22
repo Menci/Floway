@@ -77,15 +77,12 @@ const azureFetchInternal = async (
   return await azureFetchUrl(config, surface, parsed.href, init, options);
 };
 
-export const usesAzureDeploymentScopedAudioTranscriptions = (config: AzureUpstreamConfig): boolean =>
-  new URL(config.endpoint).hostname.endsWith('.openai.azure.com');
-
 const azureDeploymentScopedAudioTranscriptionUrl = (config: AzureUpstreamConfig, deployment: string): string => {
   const url = new URL(config.endpoint);
   url.pathname = `/openai/deployments/${encodeURIComponent(deployment)}/audio/transcriptions`;
   url.search = '';
   url.hash = '';
-  url.searchParams.set('api-version', '2024-10-21');
+  url.searchParams.set('api-version', '2025-04-01-preview');
   return url.href;
 };
 
@@ -106,16 +103,14 @@ export const azureFetchImagesGenerations = (config: AzureUpstreamConfig, init: R
   azureFetchInternal(config, 'openai', '/images/generations', init, options, 'api-version=preview');
 export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/images/edits', init, options, 'api-version=preview');
-// Classic Azure OpenAI resources select a deployment in the GA URL and omit
-// `model` from the multipart body. Foundry service/project endpoints use the
-// v1-preview model-in-body surface instead.
-// https://github.com/Azure/azure-rest-api-specs/blob/69fd7074df3358b7e2880a354c540f036fc4d863/specification/cognitiveservices/data-plane/AzureOpenAI/inference/stable/2024-10-21/inference.json#L383-L414
-// https://github.com/Azure/azure-rest-api-specs/blob/69fd7074df3358b7e2880a354c540f036fc4d863/specification/cognitiveservices/data-plane/AzureOpenAI/inference/stable/2024-10-21/inference.json#L3334-L3362
-// https://github.com/MicrosoftDocs/azure-ai-docs/blob/910fdabff565be2b5011d866efccf5d2053cd426/articles/foundry/openai/includes/api-versions/new-inference-preview.md#L95-L140
+// Azure selects the transcription deployment in the operation path, so the
+// multipart body must omit `model`. The 2025-04 preview route covers both
+// Whisper and GPT transcription deployments; all configured endpoint shapes
+// reduce to their resource host before this operation-specific path is set.
+// https://github.com/Azure/azure-rest-api-specs/blob/b0a48bcbffead733affe03944ef09f5e8d12f8c8/specification/cognitiveservices/OpenAI.Inference/models/audio/audio_transcription.tsp#L119-L126
+// https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
 export const azureFetchAudioTranscriptions = (config: AzureUpstreamConfig, deployment: string, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  usesAzureDeploymentScopedAudioTranscriptions(config)
-    ? azureFetchUrl(config, 'openai', azureDeploymentScopedAudioTranscriptionUrl(config, deployment), init, options)
-    : azureFetchInternal(config, 'openai', '/audio/transcriptions', init, options, 'api-version=preview');
+  azureFetchUrl(config, 'openai', azureDeploymentScopedAudioTranscriptionUrl(config, deployment), init, options);
 export const azureFetchMessages = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages', init, options);
 export const azureFetchMessagesCountTokens = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
