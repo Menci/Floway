@@ -1088,18 +1088,23 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async refreshMany(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>[],
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>[],
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void> {
     const unique = [...new Map(items.map(item => [persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id), item])).values()];
-    const previous = await this.lookupDescriptors(unique);
-    for (const item of unique) {
+    const inline = unique.filter(item => item.payloadFileKey === null);
+    await this.refreshInlineItems(inline, refreshedAt, expiresAt);
+
+    const spilled = unique.filter(item => item.payloadFileKey !== null);
+    if (spilled.length === 0) return;
+    const previous = await this.lookupDescriptors(spilled);
+    for (const item of spilled) {
       const key = persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id);
       const descriptor = previous.get(key);
       if (descriptor === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${item.id}`);
     }
-    const pending = unique.filter(item => previous.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!.refreshedAt < refreshedAt);
+    const pending = spilled.filter(item => previous.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!.refreshedAt < refreshedAt);
     if (pending.length === 0) return;
     const targetFilePrefix = responsesItemPayloadExpiryBucketPrefix(expiresAt);
     const writes: PreparedResponsesRefreshWrite[] = [];
@@ -1165,6 +1170,31 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       return descriptor.refreshedAt < refreshedAt ? [write.item] : [];
     });
     if (staleItems.length > 0) await this.refreshMany(staleItems, refreshedAt, expiresAt);
+  }
+
+  private async refreshInlineItems(
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>[],
+    refreshedAt: number,
+    expiresAt: number,
+  ): Promise<void> {
+    const byScope = Map.groupBy(items, item => `${item.apiKeyId}\0${item.stateEpoch}`);
+    const statements: SqlPreparedStatement[] = [];
+    for (const group of byScope.values()) {
+      const { apiKeyId, stateEpoch } = group[0];
+      for (let index = 0; index < group.length; index += RESPONSES_IN_QUERY_CHUNK_SIZE) {
+        const chunk = group.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
+        const placeholders = chunk.map(() => '?').join(', ');
+        statements.push(this.db
+          .prepare(
+            `UPDATE responses_state_items
+             SET refreshed_at = ?, expires_at = ?
+             WHERE api_key_id = ? AND state_epoch = ? AND refreshed_at < ?
+               AND id IN (${placeholders})`,
+          )
+          .bind(refreshedAt, expiresAt, apiKeyId, stateEpoch, refreshedAt, ...chunk.map(item => item.id)));
+      }
+    }
+    await runStatements(this.db, statements);
   }
 
   private async prepareRefreshWrite(
@@ -1358,6 +1388,7 @@ const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredRespo
   payload: await parseStoredResponsesPayload(row.id, row.payload_json),
   contentHash: row.content_hash,
   payloadHash: row.payload_hash,
+  payloadFileKey: row.payload_file_key,
   refreshedAt: row.refreshed_at,
   expiresAt: row.expires_at,
 });

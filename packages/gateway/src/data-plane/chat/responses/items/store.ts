@@ -14,8 +14,14 @@ interface StatefulResponsesItemLookup {
 }
 
 interface StatefulResponsesBacking {
+  readonly isDurable: boolean;
   lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]>;
   insertItems(items: readonly StoredResponsesItem[]): Promise<void>;
+  refreshItems(
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>[],
+    refreshedAt: number,
+    expiresAt: number,
+  ): Promise<void>;
   lookupSnapshot(query: Pick<StatefulResponsesItemLookup, 'apiKeyId' | 'stateEpoch' | 'activeAt'>, id: string): Promise<StoredResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
 }
@@ -78,11 +84,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       if (!snapshot.itemIds.every(itemId => this.loadedItems.has(itemId))) continue;
       if (this.options.writes.length > 0) {
         const items = snapshot.itemIds.map(itemId => this.loadedItems.get(itemId)!);
-        await this.commitItems(items);
-        const lifetime = this.lifetime(Date.now());
-        const refreshedSnapshot = { ...snapshot, stateEpoch: this.options.stateEpoch, ...lifetime };
-        await Promise.all(this.options.writes.map(async write => await write.insertSnapshot(refreshedSnapshot)));
-        Object.assign(snapshot, refreshedSnapshot);
+        await this.refreshLoadedSnapshot(backing, snapshot, items);
+        for (const item of items) this.committedItemIds.add(item.id);
       }
       this.previousSnapshotItemIds = [...snapshot.itemIds];
       return cloneStoredResponsesSnapshot(snapshot);
@@ -134,6 +137,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       payload,
       contentHash: await hashResponsesItemContent(item),
       payloadHash: await hashResponsesItemContent(payload),
+      payloadFileKey: null,
       ...this.lifetime(Date.now()),
     };
     await this.commitItems([row]);
@@ -220,6 +224,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         payload,
         contentHash: await hashResponsesItemContent(item),
         payloadHash: await hashResponsesItemContent(payload),
+        payloadFileKey: null,
         ...this.lifetime(Date.now()),
       };
       this.stagedInputItemIds.push(id);
@@ -242,6 +247,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       payload,
       contentHash,
       payloadHash: await hashResponsesItemContent(payload),
+      payloadFileKey: null,
       ...this.lifetime(Date.now()),
     };
     this.stagedInputItemIds.push(row.id);
@@ -281,6 +287,61 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     }
   }
 
+  private async refreshLoadedSnapshot(
+    source: StatefulResponsesBacking,
+    snapshot: StoredResponsesSnapshot,
+    items: StoredResponsesItem[],
+  ): Promise<void> {
+    const durable = this.options.writes.find(backing => backing.isDurable);
+    const now = Date.now();
+    const lifetime = this.lifetime(now);
+    if (durable === undefined) {
+      const currentItems = items.map(item => ({ ...item, stateEpoch: this.options.stateEpoch, ...lifetime }));
+      for (const write of this.options.writes) {
+        if (write === source) await write.refreshItems(currentItems, lifetime.refreshedAt, lifetime.expiresAt);
+        else await write.insertItems(currentItems);
+      }
+      for (const item of currentItems) this.rememberItem(item);
+      const refreshedSnapshot = { ...snapshot, stateEpoch: this.options.stateEpoch, ...lifetime };
+      await Promise.all(this.options.writes.map(async write => await write.insertSnapshot(refreshedSnapshot)));
+      Object.assign(snapshot, refreshedSnapshot);
+      return;
+    }
+
+    const sourceIsDurable = source === durable;
+    const dueItems = sourceIsDurable ? items.filter(item => this.shouldRefresh(item.expiresAt)) : items;
+    for (const write of this.options.writes) {
+      if (write === durable) {
+        if (sourceIsDurable) {
+          if (dueItems.length > 0) await write.refreshItems(dueItems, lifetime.refreshedAt, lifetime.expiresAt);
+        } else {
+          await write.insertItems(dueItems.map(item => ({ ...item, stateEpoch: this.options.stateEpoch, ...lifetime })));
+        }
+      } else if (write !== source) {
+        await write.insertItems(items);
+      }
+    }
+    if (dueItems.length === 0) return;
+    for (const item of dueItems) {
+      Object.assign(item, { stateEpoch: this.options.stateEpoch, ...lifetime });
+      this.rememberItem(item);
+    }
+    const refreshedSnapshot: StoredResponsesSnapshot = {
+      ...snapshot,
+      stateEpoch: this.options.stateEpoch,
+      refreshedAt: Math.min(...items.map(item => item.refreshedAt)),
+      expiresAt: Math.min(...items.map(item => item.expiresAt)),
+    };
+    await Promise.all(this.options.writes.map(async write => await write.insertSnapshot(refreshedSnapshot)));
+    Object.assign(snapshot, refreshedSnapshot);
+  }
+
+  private shouldRefresh(expiresAt: number): boolean {
+    if (this.options.retentionSeconds === null) return false;
+    const refreshWindowMs = Math.min(24 * 60 * 60 * 1000, this.options.retentionSeconds * 1000 / 2);
+    return expiresAt <= this.activeAt + refreshWindowMs;
+  }
+
   private lifetime(refreshedAt: number): Pick<StoredResponsesItem, 'refreshedAt' | 'expiresAt'> {
     return this.options.retentionSeconds === null
       ? { refreshedAt, expiresAt: Number.MAX_SAFE_INTEGER }
@@ -289,6 +350,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 }
 
 export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
+  readonly isDurable = true;
+
   constructor(private readonly getRepo: () => Repo) {}
 
   async lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]> {
@@ -305,6 +368,14 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
     await this.getRepo().responsesItems.insertMany(items, Date.now());
   }
 
+  async refreshItems(
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>[],
+    refreshedAt: number,
+    expiresAt: number,
+  ): Promise<void> {
+    await this.getRepo().responsesItems.refreshMany(items, refreshedAt, expiresAt);
+  }
+
   async lookupSnapshot(query: Pick<StatefulResponsesItemLookup, 'apiKeyId' | 'stateEpoch' | 'activeAt'>, id: string): Promise<StoredResponsesSnapshot | null> {
     return await this.getRepo().responsesSnapshots.lookupActive(query.apiKeyId, query.stateEpoch, id, query.activeAt);
   }
@@ -315,6 +386,8 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
 }
 
 export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking {
+  readonly isDurable = false;
+
   private readonly items = new Map<string, StoredResponsesItem>();
   private readonly snapshots = new Map<string, StoredResponsesSnapshot>();
 
@@ -341,6 +414,21 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
       if (item.refreshedAt >= stored.refreshedAt) {
         stored.refreshedAt = item.refreshedAt;
         stored.expiresAt = item.expiresAt;
+      }
+    }
+  }
+
+  async refreshItems(
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[],
+    refreshedAt: number,
+    expiresAt: number,
+  ): Promise<void> {
+    for (const item of items) {
+      const stored = this.items.get(scopedResponsesKey(item.apiKeyId, item.id));
+      if (stored === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${item.id}`);
+      if (refreshedAt >= stored.refreshedAt) {
+        stored.refreshedAt = refreshedAt;
+        stored.expiresAt = expiresAt;
       }
     }
   }
