@@ -90,6 +90,18 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(renamed?.responsesRetentionSeconds, 0);
     assertEquals(renamed?.responsesStateEpoch, disabled.responsesStateEpoch);
   });
+
+  test(`[${backend}] assigning the same positive retention does not advance its visibility floor`, async () => {
+    const repo = await makeRepo();
+    await repo.apiKeys.save(baseKey({
+      responsesRetentionSeconds: 7 * 86400,
+      responsesStateVisibleAfter: 123,
+    }));
+
+    const unchanged = await repo.apiKeys.update('key_dump', { responsesRetentionSeconds: 7 * 86400 });
+
+    assertEquals(unchanged?.responsesStateVisibleAfter, 123);
+  });
 }
 
 test('migration 0057 backfills distinct server secrets and enforces their canonical form', async () => {

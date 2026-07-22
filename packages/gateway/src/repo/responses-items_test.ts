@@ -804,6 +804,68 @@ test('SQL disable rotates the epoch and a late old-epoch write is queued for bou
   }
 });
 
+test.each([
+  ['items', 'enable'] as const,
+  ['items', 'rotate'] as const,
+  ['snapshots', 'enable'] as const,
+  ['snapshots', 'rotate'] as const,
+])('SQL %s reclamation rechecks policy when a key changes during an %s race', async (target, transition) => {
+  const now = Date.UTC(2026, 6, 22, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  try {
+    initFileProvider(new MemoryFileProvider());
+    const base = await createSqliteTestDb();
+    const baseRepo = new SqlRepo(base);
+    const initial = {
+      ...testApiKey('key-a'),
+      responsesRetentionSeconds: transition === 'enable' ? 0 : 7 * 86400,
+    };
+    await baseRepo.apiKeys.save(initial);
+    let inject = true;
+    const db: SqlDatabase = {
+      prepare: query => {
+        const wrap = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
+          bind: (...values) => wrap(statement.bind(...values)),
+          first: async <T>() => {
+            const result = await statement.first<T>();
+            if (inject && query.includes('SELECT responses_state_epoch, responses_retention_seconds FROM api_keys')) {
+              inject = false;
+              if (transition === 'rotate') await baseRepo.apiKeys.update(initial.id, { responsesRetentionSeconds: 0 });
+              const enabled = await baseRepo.apiKeys.update(initial.id, { responsesRetentionSeconds: 7 * 86400 });
+              if (enabled === null) throw new Error('key disappeared during policy race');
+              const current = { ...storedItem('msg_current', initial.id, 'current', now), stateEpoch: enabled.responsesStateEpoch };
+              if (target === 'items') await baseRepo.responsesItems.insertMany([current], now - 7 * 86400_000);
+              else await baseRepo.responsesSnapshots.insert({ id: 'resp_current', apiKeyId: initial.id, stateEpoch: enabled.responsesStateEpoch, itemIds: [current.id], refreshedAt: now });
+            }
+            return result;
+          },
+          all: <T>() => statement.all<T>(),
+          run: () => statement.run(),
+        });
+        return wrap(base.prepare(query));
+      },
+      exec: sql => base.exec(sql),
+    };
+    const repo = new SqlRepo(db);
+
+    const deleted = target === 'items'
+      ? await repo.responsesItems.deleteReclaimable(initial.id, now, 100)
+      : await repo.responsesSnapshots.deleteReclaimable(initial.id, now, 100);
+
+    expect(deleted).toBe(0);
+    const enabled = await baseRepo.apiKeys.getById(initial.id);
+    if (enabled === null) throw new Error('enabled key missing after race');
+    if (target === 'items') {
+      expect(await baseRepo.responsesItems.lookupMany(initial.id, enabled.responsesStateEpoch, ['msg_current'])).toHaveLength(1);
+    } else {
+      expect(await baseRepo.responsesSnapshots.lookup(initial.id, enabled.responsesStateEpoch, 'resp_current')).not.toBeNull();
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('migration 0065 invalidates all prior Responses state and installs the exact-item schema', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
