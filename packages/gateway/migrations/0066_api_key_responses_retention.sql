@@ -13,7 +13,9 @@ CREATE TABLE api_keys_new (
   responses_retention_seconds INTEGER NOT NULL DEFAULT 0
     CHECK (responses_retention_seconds = 0 OR responses_retention_seconds BETWEEN 3600 AND 315360000),
   responses_state_epoch TEXT NOT NULL
-    CHECK (length(responses_state_epoch) = 32 AND responses_state_epoch NOT GLOB '*[^0-9a-f]*')
+    CHECK (length(responses_state_epoch) = 32 AND responses_state_epoch NOT GLOB '*[^0-9a-f]*'),
+  responses_state_visible_after INTEGER NOT NULL DEFAULT 0
+    CHECK (responses_state_visible_after >= 0)
 );
 
 INSERT INTO api_keys_new (
@@ -28,7 +30,8 @@ INSERT INTO api_keys_new (
   dump_retention_seconds,
   server_secret,
   responses_retention_seconds,
-  responses_state_epoch
+  responses_state_epoch,
+  responses_state_visible_after
 )
 SELECT
   id,
@@ -42,7 +45,8 @@ SELECT
   dump_retention_seconds,
   server_secret,
   0,
-  lower(hex(randomblob(16)))
+  lower(hex(randomblob(16))),
+  0
 FROM api_keys;
 
 DROP TABLE api_keys;
@@ -162,7 +166,10 @@ BEGIN
     COALESCE((
       SELECT CASE
         WHEN responses_retention_seconds > 0 AND responses_state_epoch = NEW.state_epoch
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000
+          THEN CASE
+            WHEN NEW.refreshed_at < responses_state_visible_after THEN 0
+            ELSE NEW.refreshed_at + responses_retention_seconds * 1000 + 1
+          END
         ELSE 0
       END
       FROM api_keys WHERE id = NEW.api_key_id
@@ -182,7 +189,10 @@ BEGIN
     COALESCE((
       SELECT CASE
         WHEN responses_retention_seconds > 0 AND responses_state_epoch = NEW.state_epoch
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000
+          THEN CASE
+            WHEN NEW.refreshed_at < responses_state_visible_after THEN 0
+            ELSE NEW.refreshed_at + responses_retention_seconds * 1000 + 1
+          END
         ELSE 0
       END
       FROM api_keys WHERE id = NEW.api_key_id
