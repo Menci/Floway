@@ -379,6 +379,16 @@ test('SQL Responses item writes stay within D1 bind limits and use bounded state
   expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, items.map(item => item.id))).toHaveLength(items.length);
 });
 
+test('SQL rejects a persistence graph that would exceed its D1 query budget', async () => {
+  initFileProvider(new MemoryFileProvider());
+  const repo = new SqlRepo(await createSqliteTestDb());
+  const items = Array.from({ length: 2_001 }, (_, index) =>
+    storedItem(`msg_over_budget_${index}`, 'key-a', `hash-${index}`, 1_000));
+
+  await expect(repo.responsesItems.insertMany(items, 0))
+    .rejects.toThrow('Responses state write exceeds 2000 items');
+});
+
 test('SQL insert cleans earlier spills when a later payload cannot be serialized', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
@@ -407,6 +417,56 @@ test('SQL insert cleans generated spills when its batch fails', async () => {
     .rejects.toBe(batchFailure);
 
   expect(await files.listKeys('responses-items/')).toEqual([]);
+});
+
+test('SQL payload GC reclaims a staged object left before item adoption', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const repo = new SqlRepo(base);
+  initRepo(repo);
+  const item = spilledItem('msg_crash_orphan', 'key-a', 1_000);
+  const prepared = await prepareStoredResponsesPayload(item.id, item.apiKeyId, item.stateEpoch, item.payload);
+  if (prepared.file === null) throw new Error('expected spilled payload');
+  await base.prepare('INSERT INTO responses_state_payload_gc (file_key, eligible_at) VALUES (?, 0)')
+    .bind(prepared.file.key)
+    .run();
+  await files.put(prepared.file.key, prepared.file.body);
+
+  await sweepResponsesState(Date.now());
+
+  expect(await files.get(prepared.file.key)).toBeNull();
+  expect((await base.prepare('SELECT COUNT(*) AS count FROM responses_state_payload_gc').first<{ count: number }>())?.count).toBe(0);
+});
+
+test('SQL rejects payload adoption after GC has claimed its staging row', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const repo = new SqlRepo(base);
+  const item = spilledItem('msg_late_adoption', 'key-a', 1_000);
+  const prepared = await prepareStoredResponsesPayload(item.id, item.apiKeyId, item.stateEpoch, item.payload);
+  if (prepared.file === null) throw new Error('expected spilled payload');
+  await base.prepare('INSERT INTO responses_state_payload_gc (file_key, eligible_at) VALUES (?, 0)')
+    .bind(prepared.file.key)
+    .run();
+  expect(await repo.responsesMaintenance.claimPayloadFiles('claim', 1, 0, 100)).toEqual([prepared.file.key]);
+  await files.put(prepared.file.key, prepared.file.body);
+
+  await expect(base.prepare(
+    `INSERT INTO responses_state_items (${['id', 'api_key_id', 'state_epoch', 'payload_json', 'content_hash', 'payload_hash', 'payload_file_key', 'refreshed_at', 'expires_at'].join(', ')})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    item.id,
+    item.apiKeyId,
+    item.stateEpoch,
+    prepared.payloadJson,
+    item.contentHash,
+    item.payloadHash,
+    prepared.file.key,
+    item.refreshedAt,
+    item.expiresAt,
+  ).run()).rejects.toThrow('Responses payload file was not staged');
 });
 
 test('SQL refresh failure leaves stable payload files untouched', async () => {
