@@ -195,6 +195,7 @@ describe('createCodexProvider', () => {
     'callEmbeddings',
     'callImagesGenerations',
     'callImagesEdits',
+    'callAudioTranscriptions',
     'callChatCompletions',
     'callMessagesCountTokens',
     'callMessages',

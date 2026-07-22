@@ -21,6 +21,7 @@ export interface ModelEndpoints {
   embeddings?: {};
   imagesGenerations?: {};
   imagesEdits?: {};
+  audioTranscriptions?: {};
   rerank?: {};
 }
 
@@ -31,7 +32,8 @@ export type ModelEndpointKey = keyof ModelEndpoints;
 // Derive the high-level model kind from the supported endpoints. Each model
 // belongs to exactly one kind. `embeddings` implies embedding,
 // `imagesGenerations`/`imagesEdits` implies image, `rerank` implies rerank,
-// and the generation protocols imply chat.
+// `audioTranscriptions` implies transcription, and the generation protocols
+// imply chat.
 // Mixed endpoint sets (e.g. a model tagged with both `embeddings` and
 // `chatCompletions`) are configuration errors; the first matching branch wins.
 // `kind` is a pure projection of `endpoints`; the dispatch layer never reads it.
@@ -39,5 +41,6 @@ export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
   if (endpoints.embeddings) return 'embedding';
   if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
   if (endpoints.rerank) return 'rerank';
+  if (endpoints.audioTranscriptions) return 'transcription';
   return 'chat';
 };

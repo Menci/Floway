@@ -9,6 +9,10 @@ test('kindForEndpoints returns image when either images endpoint is present', ()
   assertEquals(kindForEndpoints({ imagesGenerations: {}, imagesEdits: {} }), 'image');
 });
 
+test('kindForEndpoints returns transcription for audio transcription', () => {
+  assertEquals(kindForEndpoints({ audioTranscriptions: {} }), 'transcription');
+});
+
 test('kindForEndpoints returns embedding for embeddings and chat for chat-protocol endpoints', () => {
   assertEquals(kindForEndpoints({ embeddings: {} }), 'embedding');
   assertEquals(kindForEndpoints({ chatCompletions: {} }), 'chat');

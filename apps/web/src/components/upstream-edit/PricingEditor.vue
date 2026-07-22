@@ -36,6 +36,8 @@ const PRICING_LABELS: Record<BillingMetric, string> = {
   input_image_tokens: 'Image Input',
   output_tokens: 'Output',
   output_image_tokens: 'Image Output',
+  input_audio_tokens: 'Audio Input',
+  input_audio_seconds: 'Audio Input',
   rerank_searches: 'Searches',
 };
 
@@ -47,17 +49,21 @@ interface PricingField {
 
 const tokenPricingField = (metric: BillingMetric): PricingField => ({ metric, displayUnit: 'MTok', displayScale: '1000000' });
 const tokenPricingFields = (...metrics: BillingMetric[]): PricingField[] => metrics.map(tokenPricingField);
+const pricingField = (metric: BillingMetric): PricingField => {
+  if (metric === 'input_audio_seconds') return { metric, displayUnit: 'Second', displayScale: '1' };
+  if (metric === 'rerank_searches') return { metric, displayUnit: '1K searches', displayScale: '1000' };
+  return tokenPricingField(metric);
+};
 const PRICING_FIELD_BY_METRIC = Object.fromEntries(BILLING_METRICS.map(metric => [
   metric,
-  metric === 'rerank_searches'
-    ? { metric, displayUnit: '1K searches', displayScale: '1000' }
-    : tokenPricingField(metric),
+  pricingField(metric),
 ])) as Record<BillingMetric, PricingField>;
 
 const PRICING_FIELDS_BY_KIND: Record<ModelKind, readonly PricingField[]> = {
   chat: tokenPricingFields('input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'output_tokens'),
   embedding: tokenPricingFields('input_tokens'),
   image: tokenPricingFields('input_tokens', 'input_image_tokens', 'output_tokens', 'output_image_tokens'),
+  transcription: [tokenPricingField('input_tokens'), tokenPricingField('input_audio_tokens'), PRICING_FIELD_BY_METRIC.input_audio_seconds, tokenPricingField('output_tokens')],
   rerank: [tokenPricingField('input_tokens'), PRICING_FIELD_BY_METRIC.rerank_searches],
 };
 

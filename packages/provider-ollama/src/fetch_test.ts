@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { assertOllamaUpstreamRecord } from './config.ts';
 import {
   ollamaFetchChatCompletions,
+  ollamaFetchAudioTranscriptions,
   ollamaFetchEmbeddings,
   ollamaFetchMessages,
   ollamaFetchResponses,
@@ -48,6 +49,7 @@ test('typed transports hit the fixed Ollama endpoint paths', async () => {
       await ollamaFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await ollamaFetchAudioTranscriptions(config, { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchTags(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await ollamaFetchShow(config, { method: 'POST', body: '{"name":"gpt-oss:120b"}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
@@ -59,6 +61,7 @@ test('typed transports hit the fixed Ollama endpoint paths', async () => {
     'https://ollama.com/v1/responses/compact',
     'https://ollama.com/v1/messages',
     'https://ollama.com/v1/embeddings',
+    'https://ollama.com/v1/audio/transcriptions',
     'https://ollama.com/api/tags',
     'https://ollama.com/api/show',
   ]);

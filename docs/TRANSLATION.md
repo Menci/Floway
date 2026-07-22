@@ -792,7 +792,8 @@ The mapping from `AliasRules` fields onto target-protocol slots:
 | `serviceTier` | `service_tier` | `speed: 'fast'` for `'fast'`, else `service_tier` | `service_tier` |
 
 Passthrough endpoints (`/v1/embeddings`, `/v1/images/*`,
-`/v1/completions`) and rerank have no rule-application step; a non-chat alias
+`/v1/audio/transcriptions`, `/v1/completions`) and rerank have no
+rule-application step; a non-chat alias
 must be seeded with empty rules (enforced at write time by a zod
 refinement on the alias schema).
 

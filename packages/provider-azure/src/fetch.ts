@@ -34,15 +34,13 @@ const azureAnthropicBaseUrl = (endpoint: string): string => {
   return trimTrailingSlash(url.href);
 };
 
-const azureFetchInternal = async (
+const azureFetchUrl = async (
   config: AzureUpstreamConfig,
   surface: 'openai' | 'anthropic',
-  path: string,
+  url: string,
   init: RequestInit,
   options: UpstreamFetchOptions,
-  query?: string,
 ): Promise<Response> => {
-  const baseUrl = surface === 'openai' ? azureOpenAiV1BaseUrl(config.endpoint) : azureAnthropicBaseUrl(config.endpoint);
   const headers = new Headers(init.headers);
   if (surface === 'anthropic') {
     headers.set('x-api-key', config.apiKey);
@@ -56,15 +54,36 @@ const azureFetchInternal = async (
   if (options.extraHeaders) {
     for (const [key, value] of options.extraHeaders) headers.set(key, value);
   }
+  return await options.wrapUpstreamCall(() => options.fetcher(url, { ...init, headers }));
+};
+
+const azureFetchInternal = async (
+  config: AzureUpstreamConfig,
+  surface: 'openai' | 'anthropic',
+  path: string,
+  init: RequestInit,
+  options: UpstreamFetchOptions,
+  query?: string,
+): Promise<Response> => {
+  const baseUrl = surface === 'openai' ? azureOpenAiV1BaseUrl(config.endpoint) : azureAnthropicBaseUrl(config.endpoint);
   const url = joinBaseAndPath(baseUrl, path);
   if (!query) {
-    return await options.wrapUpstreamCall(() => options.fetcher(url, { ...init, headers }));
+    return await azureFetchUrl(config, surface, url, init, options);
   }
   // Append per-endpoint query through URL.searchParams so a future path
   // that itself carries a query suffix does not produce `path?a?b`.
   const parsed = new URL(url);
   for (const [key, value] of new URLSearchParams(query).entries()) parsed.searchParams.append(key, value);
-  return await options.wrapUpstreamCall(() => options.fetcher(parsed.href, { ...init, headers }));
+  return await azureFetchUrl(config, surface, parsed.href, init, options);
+};
+
+const azureDeploymentScopedAudioTranscriptionUrl = (config: AzureUpstreamConfig, deployment: string): string => {
+  const url = new URL(config.endpoint);
+  url.pathname = `/openai/deployments/${encodeURIComponent(deployment)}/audio/transcriptions`;
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('api-version', '2025-04-01-preview');
+  return url.href;
 };
 
 export const azureFetchChatCompletions = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
@@ -84,6 +103,14 @@ export const azureFetchImagesGenerations = (config: AzureUpstreamConfig, init: R
   azureFetchInternal(config, 'openai', '/images/generations', init, options, 'api-version=preview');
 export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/images/edits', init, options, 'api-version=preview');
+// Azure selects the transcription deployment in the operation path, so the
+// multipart body must omit `model`. The 2025-04 preview route covers both
+// Whisper and GPT transcription deployments; all configured endpoint shapes
+// reduce to their resource host before this operation-specific path is set.
+// https://github.com/Azure/azure-rest-api-specs/blob/b0a48bcbffead733affe03944ef09f5e8d12f8c8/specification/cognitiveservices/OpenAI.Inference/models/audio/audio_transcription.tsp#L119-L126
+// https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
+export const azureFetchAudioTranscriptions = (config: AzureUpstreamConfig, deployment: string, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
+  azureFetchUrl(config, 'openai', azureDeploymentScopedAudioTranscriptionUrl(config, deployment), init, options);
 export const azureFetchMessages = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages', init, options);
 export const azureFetchMessagesCountTokens = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

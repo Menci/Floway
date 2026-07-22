@@ -21,6 +21,7 @@ const KIND_LABELS: Record<ModelAlias['kind'], string> = {
   chat: 'Chat',
   embedding: 'Embedding',
   image: 'Image',
+  transcription: 'Transcription',
   rerank: 'Rerank',
 };
 

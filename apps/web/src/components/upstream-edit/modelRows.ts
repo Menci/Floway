@@ -21,6 +21,7 @@ const IMAGE_ENDPOINT_KEYS: ModelEndpointKey[] = ['imagesGenerations', 'imagesEdi
 // chat model keeps its protocol choices across an accidental round-trip.
 export const defaultEndpointsForKind = (kind: ModelKind, current: ModelEndpoints | undefined): ModelEndpoints => {
   if (kind === 'embedding') return { embeddings: {} };
+  if (kind === 'transcription') return { audioTranscriptions: {} };
   if (kind === 'rerank') return { rerank: {} };
   const keys = kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS;
   const kept: ModelEndpoints = {};

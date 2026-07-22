@@ -91,6 +91,8 @@ test('modelsField derives kind from endpoints when omitted', () => {
   assertEquals(embedding.kind, 'embedding');
   const [image] = modelsField([{ upstreamModelId: 'i', endpoints: { imagesGenerations: {}, imagesEdits: {} } }], 'custom');
   assertEquals(image.kind, 'image');
+  const [audio] = modelsField([{ upstreamModelId: 'a', endpoints: { audioTranscriptions: {} } }], 'custom');
+  assertEquals(audio.kind, 'transcription');
   const [chat] = modelsField([{ upstreamModelId: 'c', endpoints: { responses: {} } }], 'custom');
   assertEquals(chat.kind, 'chat');
 });
@@ -104,7 +106,7 @@ test('modelsField accepts a valid kind and rejects an unknown one', () => {
   assertThrows(
     () => modelsField([{ upstreamModelId: 'm', kind: 'bogus', endpoints: { chatCompletions: {} } }], 'custom'),
     Error,
-    'Malformed custom models[0].kind: must be one of chat, embedding, image, rerank',
+    'Malformed custom models[0].kind: must be one of chat, embedding, image, rerank, transcription',
   );
 });
 

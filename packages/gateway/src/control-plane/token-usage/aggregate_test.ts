@@ -33,6 +33,8 @@ const displayTokens = (record: ReturnType<typeof aggregateUsageForDisplay>[numbe
       input_image_tokens: 'input_image',
       output_tokens: 'output',
       output_image_tokens: 'output_image',
+      input_audio_tokens: undefined,
+      input_audio_seconds: undefined,
       rerank_searches: undefined,
     }[row.metric];
     return key ? [[key, Number(row.quantity)]] : [];
@@ -92,6 +94,14 @@ test('aggregateUsageForDisplay leaves metrics without an explicit rate unpriced'
   ]);
   // Only input has a rate: 500_000 * $4 = $2. Cache reads remain unpriced.
   assertEquals(out[0].cost, '2');
+});
+
+test('aggregateUsageForDisplay prices audio duration per second', () => {
+  const out = aggregateUsageForDisplay([{
+    ...baseRecord({ tokens: {} }),
+    metrics: [{ metric: 'input_audio_seconds', quantity: '90', unitPrice: '0.01' }],
+  }]);
+  assertEquals(out[0].cost, '0.9');
 });
 
 test('aggregateUsageForDisplay prices rerank searches per base unit', () => {

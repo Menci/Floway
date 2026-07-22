@@ -1,6 +1,7 @@
 import type { Hono } from 'hono';
 
 import { mountAlphaSearchRoutes } from './alpha-search/routes.ts';
+import { audioTranscriptions } from './audio/transcriptions.ts';
 import { mountChatRoutes } from './chat/routes.ts';
 import { mountCodexRoutes } from './codex/routes.ts';
 import { completions } from './completions/serve.ts';
@@ -28,6 +29,7 @@ export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
   app.post('/images/generations', imagesGenerations);
   app.post('/v1/images/edits', imagesEdits);
   app.post('/images/edits', imagesEdits);
+  app.post('/v1/audio/transcriptions', audioTranscriptions);
   app.post('/v1/rerank', rerank('cohere-v1'));
   app.post('/v2/rerank', rerank('cohere-v2'));
   app.post('/jina/v1/rerank', rerank('jina-v1'));

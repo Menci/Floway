@@ -35,7 +35,8 @@ dependencies remain targeted at their predecessor branches and remain drafts.
 
 Floway is an LLM API gateway. It exposes OpenAI Completions, Anthropic
 Messages, OpenAI Responses, OpenAI Chat Completions, Embeddings, OpenAI
-Images, Cohere/Jina/Voyage-compatible Rerank, and Google Gemini-compatible APIs over a unified upstream
+Images, OpenAI Audio Transcriptions, Cohere/Jina/Voyage-compatible Rerank,
+and Google Gemini-compatible APIs over a unified upstream
 model. Provider kinds are
 `copilot`, `custom`, `azure`, `codex` (ChatGPT subscription via the
 Codex CLI's OAuth client), `claude-code` (Claude.ai Pro/Max subscription
@@ -122,6 +123,31 @@ SQL. The `@floway-dev/platform` package owns the abstract runtime
 contracts (`FileProvider`, `ImageProcessor`, `ExternalResourceFetcher`,
 `SqlDatabase`, `BackgroundScheduler`, `EnvGetter`, `SocketDial`); each
 `apps/platform-*` app supplies the concrete impls and its own entry.
+
+Audio transcription is a buffered OpenAI-compatible multipart passthrough.
+The full body is parsed before routing because `model` may follow `file`; an
+ordered semantic form preserves duplicate text fields and uploaded file
+bytes/name/type while each candidate replaces only the upstream model id.
+Models use kind `transcription` and declare `audioTranscriptions`. Custom
+catalogs may publish that kind, fall back to standard transcription model-id
+inference, or use an operator-authored row. Azure and Ollama transcription rows
+are operator-authored.
+All three providers implement the call. Azure selects the configured deployment
+in its dated operation URL and omits the multipart `model`; the same route
+serves Whisper and GPT transcription deployments. Successful bodies remain raw
+across JSON, verbose JSON, text, SRT, and VTT. Streaming responses
+reuse the shared SSE writer and terminate on `transcript.text.done` without a
+Chat `[DONE]` sentinel. Usage records always count the request. Token details
+split known audio tokens into `input_audio_tokens` and leave the remaining
+input on `input_tokens`; without details, the aggregate remains general input.
+Output maps to `output_tokens`, while duration maps to `input_audio_seconds`.
+Malformed usage never replaces or truncates a successful upstream response; it
+is logged and the request is recorded without a metric breakdown.
+Rates are canonical decimal strings per one token or second, and a model may
+price all metrics simultaneously. Missing measurements remain request-only,
+while measured metrics without configured rates remain unpriced.
+
+## Workspace Layout
 
 ```text
 Floway/

@@ -118,15 +118,16 @@ const onAnnouncedChange = (next: AnnouncedMetadata | undefined) => {
   announcedOverride.value = next ?? {};
 };
 
-// Non-chat generation metadata has no meaning for image or rerank aliases.
+// Non-chat generation metadata has no meaning for image, rerank, or
+// transcription aliases.
 // Embedding retains limits but drops the chat-only block.
 watch(kind, k => {
   if (announcedOverride.value === null) return;
-  if (k === 'image' || k === 'rerank') {
+  if (k === 'image' || k === 'rerank' || k === 'transcription') {
     announcedOverride.value = null;
     return;
   }
-  if (k === 'embedding' && announcedOverride.value.chat !== undefined) {
+  if (k !== 'chat' && announcedOverride.value.chat !== undefined) {
     const { chat: _drop, ...rest } = announcedOverride.value;
     announcedOverride.value = rest;
   }
@@ -214,6 +215,7 @@ const KIND_OPTIONS: { value: ModelKind; label: string }[] = [
   { value: 'chat', label: 'Chat' },
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
+  { value: 'transcription', label: 'Transcription' },
   { value: 'rerank', label: 'Rerank' },
 ];
 </script>

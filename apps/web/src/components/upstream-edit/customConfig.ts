@@ -9,6 +9,7 @@ export const PATH_KEYS = [
   '/alpha/search',
   '/images/generations',
   '/images/edits',
+  '/audio/transcriptions',
 ] as const;
 export type PathKey = typeof PATH_KEYS[number];
 
@@ -21,6 +22,7 @@ export const emptyPathOverrides = (): Record<PathKey, string> => ({
   '/alpha/search': '',
   '/images/generations': '',
   '/images/edits': '',
+  '/audio/transcriptions': '',
 });
 
 export const seedPathOverrides = (saved: Record<string, string> | undefined): Record<PathKey, string> => {

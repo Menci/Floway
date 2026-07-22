@@ -23,6 +23,7 @@ const endpoints: EndpointRow[] = [
   { method: 'POST', path: '/v1/embeddings', name: 'OpenAI Embeddings', docs: 'https://platform.openai.com/docs/api-reference/embeddings/create' },
   { method: 'POST', path: '/v1/images/generations', name: 'OpenAI Image Generations', docs: 'https://platform.openai.com/docs/api-reference/images/create' },
   { method: 'POST', path: '/v1/images/edits', name: 'OpenAI Image Edits', docs: 'https://platform.openai.com/docs/api-reference/images/createEdit' },
+  { method: 'POST', path: '/v1/audio/transcriptions', name: 'OpenAI Audio Transcriptions', docs: 'https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create' },
   { method: 'POST', path: '/v1/rerank', name: 'Cohere Rerank v1', docs: 'https://docs.cohere.com/reference/rerank' },
   { method: 'POST', path: '/v2/rerank', name: 'Cohere Rerank v2', docs: 'https://docs.cohere.com/v2/reference/rerank' },
   { method: 'POST', path: '/jina/v1/rerank', name: 'Jina Rerank', docs: 'https://api.jina.ai/openapi.json' },

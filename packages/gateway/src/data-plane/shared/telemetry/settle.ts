@@ -1,5 +1,5 @@
 import { recordPerformance, type PerformanceTelemetryContext } from './performance.ts';
-import { recordTokenUsage } from './usage.ts';
+import { recordTokenUsage, recordUsage, type UsageMeasurement } from './usage.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
 import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -33,4 +33,24 @@ export const settle = (
     console.error('Failed to record usage:', error);
   }));
   recordPerformance(ctx, telemetry, failed, usage?.output ?? 0, requestFinishedAt);
+};
+
+export const settleUsageMeasurement = (
+  ctx: GatewayCtx,
+  telemetry: PerformanceTelemetryContext | undefined,
+  identity: TelemetryModelIdentity,
+  measurement: UsageMeasurement,
+  failed: boolean,
+  requestFinishedAt: number = performance.now(),
+): void => {
+  const outputTokens = Number(measurement.quantities.output_tokens ?? '0');
+  ctx.backgroundScheduler(recordUsage(
+    ctx.apiKeyId,
+    identity,
+    measurement.quantities,
+    measurement.pricingFacts,
+  ).catch(error => {
+    console.error('Failed to record usage:', error);
+  }));
+  recordPerformance(ctx, telemetry, failed, outputTokens, requestFinishedAt);
 };

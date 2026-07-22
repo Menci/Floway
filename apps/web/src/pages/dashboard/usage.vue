@@ -183,7 +183,7 @@ const tokenSummary = computed(() => {
   const records = (data.value?.records ?? []).filter(r => !hiddenKeys.value.has(r.keyId) && !hiddenModels.value.has(r.model));
   let requests = 0;
   let cost: DecimalString | null = null;
-  let input: DecimalString = '0', output: DecimalString = '0', cacheRead: DecimalString = '0', cacheCreation: DecimalString = '0', inputImage: DecimalString = '0', outputImage: DecimalString = '0';
+  let input: DecimalString = '0', output: DecimalString = '0', cacheRead: DecimalString = '0', cacheCreation: DecimalString = '0', inputImage: DecimalString = '0', inputAudio: DecimalString = '0', outputImage: DecimalString = '0';
   for (const r of records) {
     requests += r.requests;
     if (r.cost !== null) cost = sumDecimalStrings(cost ?? '0', r.cost);
@@ -192,19 +192,20 @@ const tokenSummary = computed(() => {
     cacheRead = sumDecimalStrings(cacheRead, metricQuantity(r, 'input_cache_read_tokens'));
     cacheCreation = sumDecimalStrings(cacheCreation, metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'));
     inputImage = sumDecimalStrings(inputImage, metricQuantity(r, 'input_image_tokens'));
+    inputAudio = sumDecimalStrings(inputAudio, metricQuantity(r, 'input_audio_tokens'));
     outputImage = sumDecimalStrings(outputImage, metricQuantity(r, 'output_image_tokens'));
   }
   return {
     requests, cost, cacheRead, cacheCreation,
-    // Input and Output mix text and image token counts into one figure. The
+    // Input and Output mix text, image, and audio token counts into one figure. The
     // per-modality split only affects pricing (applied per metric already),
-    // so we avoid extra image-only columns. Input is the inclusive prompt total
-    // (text + image, uncached + cache read + cache write); prefill is that total
-    // minus cache reads; output is text + image output.
-    input: sumDecimalStrings(input, cacheRead, cacheCreation, inputImage),
+    // so we avoid extra modality-only columns. Input is the inclusive prompt total
+    // (text + image + audio, uncached + cache read + cache write); prefill is that
+    // total minus cache reads; output is text + image output.
+    input: sumDecimalStrings(input, cacheRead, cacheCreation, inputImage, inputAudio),
     output: sumDecimalStrings(output, outputImage),
-    total: sumDecimalStrings(input, output, cacheRead, cacheCreation, inputImage, outputImage),
-    prefill: sumDecimalStrings(input, cacheCreation, inputImage),
+    total: sumDecimalStrings(input, output, cacheRead, cacheCreation, inputImage, inputAudio, outputImage),
+    prefill: sumDecimalStrings(input, cacheCreation, inputImage, inputAudio),
   };
 });
 
@@ -240,10 +241,10 @@ const metricValue = (r: DisplayUsageRecord, metric: Metric): DecimalString | nul
   switch (metric) {
   case 'requests': return String(r.requests);
   case 'cost': return r.cost;
-  case 'total': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'output_tokens'), metricQuantity(r, 'input_cache_read_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'), metricQuantity(r, 'output_image_tokens'));
-  case 'input': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'input_cache_read_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'));
+  case 'total': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'output_tokens'), metricQuantity(r, 'input_cache_read_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'), metricQuantity(r, 'input_audio_tokens'), metricQuantity(r, 'output_image_tokens'));
+  case 'input': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'input_cache_read_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'), metricQuantity(r, 'input_audio_tokens'));
   case 'output': return sumDecimalStrings(metricQuantity(r, 'output_tokens'), metricQuantity(r, 'output_image_tokens'));
-  case 'prefill': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'));
+  case 'prefill': return sumDecimalStrings(metricQuantity(r, 'input_tokens'), metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'), metricQuantity(r, 'input_image_tokens'), metricQuantity(r, 'input_audio_tokens'));
   case 'cached': return metricQuantity(r, 'input_cache_read_tokens');
   case 'cacheCreation': return sumDecimalStrings(metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'));
   case 'cachedRate':
@@ -266,6 +267,7 @@ interface TokenDetail {
   cacheRead: DecimalString;
   cacheCreation: DecimalString;
   inputImage: DecimalString;
+  inputAudio: DecimalString;
   outputImage: DecimalString;
   cost: DecimalString | null;
   hasTokenUsage: boolean;
@@ -318,13 +320,13 @@ const tokenDetailMetricValue = (detail: TokenDetail, metric: Metric): number | n
     return total !== '0' ? (decimalStringToChartNumber(detail.cacheRead) / decimalStringToChartNumber(total)) * 100 : null;
   }
   if (metric === 'cachedRate') {
-    const prompt = sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage);
+    const prompt = sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage, detail.inputAudio);
     return prompt !== '0' ? (decimalStringToChartNumber(detail.cacheRead) / decimalStringToChartNumber(prompt)) * 100 : null;
   }
   return null;
 };
 
-const emptyDetail = (): TokenDetail => ({ requests: 0, input: '0', output: '0', cacheRead: '0', cacheCreation: '0', inputImage: '0', outputImage: '0', cost: null, hasTokenUsage: false });
+const emptyDetail = (): TokenDetail => ({ requests: 0, input: '0', output: '0', cacheRead: '0', cacheCreation: '0', inputImage: '0', inputAudio: '0', outputImage: '0', cost: null, hasTokenUsage: false });
 
 const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey: 'keyId' | 'model', metric: Metric) => {
   const { keys: bucketKeys, labels } = buckets.value;
@@ -346,6 +348,7 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
     detail.cacheRead = sumDecimalStrings(detail.cacheRead, metricQuantity(r, 'input_cache_read_tokens'));
     detail.cacheCreation = sumDecimalStrings(detail.cacheCreation, metricQuantity(r, 'input_cache_write_tokens'), metricQuantity(r, 'input_cache_write_1h_tokens'));
     detail.inputImage = sumDecimalStrings(detail.inputImage, metricQuantity(r, 'input_image_tokens'));
+    detail.inputAudio = sumDecimalStrings(detail.inputAudio, metricQuantity(r, 'input_audio_tokens'));
     detail.outputImage = sumDecimalStrings(detail.outputImage, metricQuantity(r, 'output_image_tokens'));
     if (r.cost !== null) detail.cost = sumDecimalStrings(detail.cost ?? '0', r.cost);
     if (r.metrics.some(row => row.metric.endsWith('_tokens'))) detail.hasTokenUsage = true;
@@ -383,10 +386,10 @@ const tooltipHeader = (labelWidth: number) =>
 
 const tooltipRow = (label: string, labelWidth: number, detail: TokenDetail) => {
   const cached = detail.cacheRead;
-  const prompt = sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage);
+  const prompt = sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage, detail.inputAudio);
   const output = sumDecimalStrings(detail.output, detail.outputImage);
   const total = sumDecimalStrings(prompt, output);
-  const prefill = sumDecimalStrings(detail.input, detail.cacheCreation, detail.inputImage);
+  const prefill = sumDecimalStrings(detail.input, detail.cacheCreation, detail.inputImage, detail.inputAudio);
   const cost = formatUsd(detail.cost);
   const tokenCount = (value: DecimalString) => detail.hasTokenUsage ? formatTokenCount(decimalStringToChartNumber(value)) : '—';
   return `${label.padEnd(labelWidth + 1)}${String(detail.requests).padStart(5)}  ${cost.padStart(9)}  ${tokenCount(total).padStart(7)}  ${tokenCount(cached).padStart(7)}  ${formatInputRate(cached, prompt).padStart(8)}  ${tokenCount(prefill).padStart(7)}  ${tokenCount(output).padStart(7)}  ${formatHitRate(detail.cacheRead, detail.cacheCreation).padStart(7)}`;

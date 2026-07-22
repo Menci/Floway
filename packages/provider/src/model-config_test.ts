@@ -194,7 +194,25 @@ describe('chatField', () => {
   });
 });
 
-describe('modelsField chat integration', () => {
+describe('modelsField metadata integration', () => {
+  test('derives transcription kind from the audio transcription endpoint', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'transcriber',
+      endpoints: { audioTranscriptions: {} },
+    }], 'p');
+    expect(model.kind).toBe('transcription');
+  });
+
+  test('keeps an explicit stored kind round-trippable when transcription endpoints disagree', () => {
+    const [model] = modelsField([{
+      upstreamModelId: 'transcriber',
+      kind: 'chat',
+      endpoints: { audioTranscriptions: {} },
+    }], 'p');
+    expect(model.kind).toBe('chat');
+    expect(model.endpoints).toEqual({ audioTranscriptions: {} });
+  });
+
   test('rejects chat on non-chat kind', () => {
     expect(() => modelsField([{
       upstreamModelId: 'm',
