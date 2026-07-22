@@ -40,7 +40,7 @@ const spilledItem = (id: string, apiKeyId: string, refreshedAt: number): StoredR
   return {
     ...storedItem(id, apiKeyId, `${id}-hash`, refreshedAt),
     payload,
-    payloadHash: JSON.stringify(payload),
+    payloadHash: `${id}-payload-hash`,
     payloadFileKey: 'spilled',
   };
 };

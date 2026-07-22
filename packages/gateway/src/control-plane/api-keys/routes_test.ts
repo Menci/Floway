@@ -437,7 +437,7 @@ test('PATCH /api/keys/:id disables dumps even when retention changed after owner
 
   assertEquals(response.status, 200);
   assertEquals(stubs.purgedAll, [apiKey.id]);
-  assertEquals(stubs.closed, [{ keyId: apiKey.id, reason: 'updateKey retention disable' }]);
+  assertEquals(stubs.closedChannels, [{ keyId: apiKey.id, reason: 'updateKey retention disable' }]);
   assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, null);
 });
 
