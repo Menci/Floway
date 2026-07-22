@@ -201,12 +201,6 @@ export const deleteAllLegacyResponsesItemPayloadFiles = async (): Promise<void> 
   await getFileProvider().deletePrefix(LEGACY_RESPONSES_ITEMS_FILE_ROOT);
 };
 
-// Drop every spilled payload file. Paired with a `deleteAll` over the
-// responses_state_items rows so a full replace/clear does not orphan R2 objects.
-export const deleteAllResponsesItemPayloadFiles = async (): Promise<void> => {
-  await getFileProvider().deletePrefix(RESPONSES_ITEMS_FILE_ROOT);
-};
-
 const expiryBucketPrefix = (root: string, hourTimestamp: number): string => {
   const date = new Date(hourTimestamp);
   const yyyy = String(date.getUTCFullYear()).padStart(4, '0');

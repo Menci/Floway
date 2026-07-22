@@ -337,10 +337,6 @@ class MemoryUsageRepo implements UsageRepo {
     return Promise.resolve();
   }
 
-  deleteAll(): Promise<void> {
-    this.store.clear();
-    return Promise.resolve();
-  }
 }
 
 class MemorySearchUsageRepo implements SearchUsageRepo {
@@ -388,10 +384,6 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
     });
   }
 
-  deleteAll(): Promise<void> {
-    this.store.clear();
-    return Promise.resolve();
-  }
 }
 
 type StoredPerformanceRow = Omit<PerformanceTelemetryRecord, 'buckets'> & { bucketMap: Map<string, PerformanceBucketRow> };

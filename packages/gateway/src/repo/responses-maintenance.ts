@@ -6,7 +6,7 @@ const HOUR_MS = 60 * 60 * 1000;
 const DELETE_BATCH_SIZE = 100;
 const CURRENT_ROW_MUTATIONS_PER_TICK = 8;
 const LEGACY_MUTATIONS_PER_TICK = 10;
-const PAYLOAD_GC_BATCH_SIZE = 100;
+const PAYLOAD_GC_BATCH_SIZE = 1_000;
 const PAYLOAD_GC_CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
 
 export const sweepResponsesState = async (now: number): Promise<void> => {

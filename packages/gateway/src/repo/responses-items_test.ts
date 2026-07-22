@@ -382,11 +382,46 @@ test('SQL Responses item writes stay within D1 bind limits and use bounded state
 test('SQL rejects a persistence graph that would exceed its D1 query budget', async () => {
   initFileProvider(new MemoryFileProvider());
   const repo = new SqlRepo(await createSqliteTestDb());
-  const items = Array.from({ length: 2_001 }, (_, index) =>
+  const items = Array.from({ length: 1_501 }, (_, index) =>
     storedItem(`msg_over_budget_${index}`, 'key-a', `hash-${index}`, 1_000));
 
   await expect(repo.responsesItems.insertMany(items, 0))
-    .rejects.toThrow('Responses state write exceeds 2000 items');
+    .rejects.toThrow('Responses state write exceeds 1500 items');
+});
+
+test('SQL real spilled writes stay within the reserved D1 and R2 budgets', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const put = vi.spyOn(files, 'put');
+  const base = await createSqliteTestDb();
+  let queries = 0;
+  const wrap = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
+    bind: (...values) => wrap(statement.bind(...values)),
+    first: async <T>() => {
+      queries += 1;
+      return await statement.first<T>();
+    },
+    all: async <T>() => {
+      queries += 1;
+      return await statement.all<T>();
+    },
+    run: async () => {
+      queries += 1;
+      return await statement.run();
+    },
+  });
+  const repo = new SqlRepo({ prepare: query => wrap(base.prepare(query)), exec: sql => base.exec(sql) });
+  const items = Array.from({ length: 20 }, (_, index) => spilledItem(`msg_spill_budget_${index}`, 'key-a', 1_000));
+
+  await repo.responsesItems.insertMany(items, 0);
+
+  expect(queries).toBeLessThanOrEqual(5);
+  expect(put).toHaveBeenCalledTimes(items.length);
+  queries = 0;
+  put.mockClear();
+  await repo.responsesItems.refreshMany(items, 2_000, expiresAt(2_000));
+  expect(queries).toBe(1);
+  expect(put).not.toHaveBeenCalled();
 });
 
 test('SQL insert cleans earlier spills when a later payload cannot be serialized', async () => {

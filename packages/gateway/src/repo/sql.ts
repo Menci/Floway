@@ -2,7 +2,7 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { assertSameStoredResponsesItem, persistedResponsesKey } from './responses-clone.ts';
-import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, prepareStoredResponsesPayload, writePreparedStoredResponsesPayload, type PreparedStoredResponsesPayload } from './responses-payload.ts';
+import { parseStoredResponsesPayload, prepareStoredResponsesPayload, writePreparedStoredResponsesPayload, type PreparedStoredResponsesPayload } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -913,8 +913,18 @@ const RESPONSES_IN_QUERY_CHUNK_SIZE = 90;
 const RESPONSES_DESCRIPTOR_CHUNK_SIZE = 500;
 const RESPONSES_INSERT_CHUNK_SIZE = 100;
 const RESPONSES_INSERT_CHUNK_BYTES = 512 * 1024;
-const RESPONSES_INSERT_MAX_CHUNKS = 20;
+// Fifteen insert/staging statements leave room under D1's 50-query free-plan
+// invocation limit for descriptor reads, snapshot commit, and request-level DB
+// work. Spill count stays below Workers' 1,000 internal-service subrequests;
+// preparation retains at most 8 MiB of compressed bodies against the 128 MiB
+// Worker memory limit.
+// https://developers.cloudflare.com/d1/platform/limits/#limits
+// https://developers.cloudflare.com/workers/platform/limits/#account-plan-limits
+const RESPONSES_INSERT_MAX_CHUNKS = 15;
 const RESPONSES_INSERT_MAX_ITEMS = RESPONSES_INSERT_CHUNK_SIZE * RESPONSES_INSERT_MAX_CHUNKS;
+const RESPONSES_PAYLOAD_PREPARE_CHUNK_BYTES = 8 * 1024 * 1024;
+const RESPONSES_PAYLOAD_MAX_STAGE_CHUNKS = 15;
+const RESPONSES_PAYLOAD_MAX_FILES = 900;
 const RESPONSES_JSON_UPDATE_CHUNK_SIZE = 100;
 const RESPONSES_PAYLOAD_STAGE_GRACE_MS = 60 * 60 * 1000;
 const responsesEncoder = new TextEncoder();
@@ -1091,25 +1101,49 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       return descriptor === undefined || descriptor.expiresAt <= now;
     });
     const writes: PreparedResponsesInsertWrite[] = [];
-    try {
-      for (let index = 0; index < pending.length; index += RESPONSES_INSERT_CHUNK_SIZE) {
-        const prepared = await mapSequentially(
-          pending.slice(index, index + RESPONSES_INSERT_CHUNK_SIZE),
-          async item => ({ item, prepared: await prepareStoredResponsesPayload(item.id, item.apiKeyId, item.stateEpoch, item.payload) }),
-        );
-        const chunk = prepared.map(({ item, prepared: payload }): PreparedResponsesInsertWrite => ({
-          item,
-          payload: payload.payloadJson,
-          payloadFileKey: payload.file?.key ?? null,
-          generatedFileKey: payload.file?.key ?? null,
-        }));
-        writes.push(...chunk);
-        if (responsesInsertChunks(writes).length > RESPONSES_INSERT_MAX_CHUNKS) {
-          await this.finishPayloadWrites(writes, new Error(`Responses state write exceeds ${RESPONSES_INSERT_MAX_CHUNKS} D1 insert statements`));
-        }
-        await this.stagePayloadFiles(prepared.map(value => value.prepared), now + RESPONSES_PAYLOAD_STAGE_GRACE_MS);
-        for (const value of prepared) await writePreparedStoredResponsesPayload(value.prepared);
+    let preparedGroup: Array<{ item: StoredResponsesItem; prepared: PreparedStoredResponsesPayload }> = [];
+    let preparedGroupBytes = 0;
+    let stagedChunks = 0;
+    let stagedFiles = 0;
+    const flushPrepared = async (): Promise<void> => {
+      if (preparedGroup.length === 0) return;
+      stagedChunks += 1;
+      stagedFiles += preparedGroup.filter(value => value.prepared.file !== null).length;
+      if (stagedChunks > RESPONSES_PAYLOAD_MAX_STAGE_CHUNKS) {
+        throw new Error(`Responses state write exceeds ${RESPONSES_PAYLOAD_MAX_STAGE_CHUNKS} payload staging statements`);
       }
+      if (stagedFiles > RESPONSES_PAYLOAD_MAX_FILES) {
+        throw new Error(`Responses state write exceeds ${RESPONSES_PAYLOAD_MAX_FILES} payload files`);
+      }
+      const chunk = preparedGroup.map(({ item, prepared: payload }): PreparedResponsesInsertWrite => ({
+        item,
+        payload: payload.payloadJson,
+        payloadFileKey: payload.file?.key ?? null,
+        generatedFileKey: payload.file?.key ?? null,
+      }));
+      writes.push(...chunk);
+      if (responsesInsertChunks(writes).length > RESPONSES_INSERT_MAX_CHUNKS) {
+        throw new Error(`Responses state write exceeds ${RESPONSES_INSERT_MAX_CHUNKS} D1 insert statements`);
+      }
+      await this.stagePayloadFiles(preparedGroup.map(value => value.prepared), now + RESPONSES_PAYLOAD_STAGE_GRACE_MS);
+      for (const value of preparedGroup) await writePreparedStoredResponsesPayload(value.prepared);
+      preparedGroup = [];
+      preparedGroupBytes = 0;
+    };
+    try {
+      for (const item of pending) {
+        const prepared = await prepareStoredResponsesPayload(item.id, item.apiKeyId, item.stateEpoch, item.payload);
+        const retainedBytes = prepared.file?.body.byteLength ?? responsesEncoder.encode(prepared.payloadJson).byteLength;
+        if (preparedGroup.length > 0 && (
+          preparedGroup.length >= RESPONSES_INSERT_CHUNK_SIZE
+          || preparedGroupBytes + retainedBytes > RESPONSES_PAYLOAD_PREPARE_CHUNK_BYTES
+        )) {
+          await flushPrepared();
+        }
+        preparedGroup.push({ item, prepared });
+        preparedGroupBytes += retainedBytes;
+      }
+      await flushPrepared();
     } catch (error) {
       await this.finishPayloadWrites(writes, error);
     }
@@ -1198,11 +1232,14 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
              UPDATE responses_state_items
              SET expires_at = CASE WHEN refreshed_at < ? THEN ? ELSE expires_at END,
                  refreshed_at = MAX(refreshed_at, ?)
-             WHERE api_key_id = ? AND state_epoch = ?
-               AND EXISTS (
-                 SELECT 1 FROM expected
-                 WHERE expected.id = responses_state_items.id
-                   AND expected.payload_hash = responses_state_items.payload_hash
+             WHERE rowid IN (
+               SELECT stored.rowid
+               FROM expected
+               JOIN responses_state_items AS stored
+                 ON stored.id = expected.id
+                AND stored.api_key_id = ?
+                AND stored.state_epoch = ?
+                AND stored.payload_hash = expected.payload_hash
                )
              RETURNING id`,
           )
@@ -1274,7 +1311,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   private async acknowledgeStagedPayloadFiles(keys: readonly string[]): Promise<void> {
     if (keys.length === 0) return;
     await this.db
-      .prepare('DELETE FROM responses_state_payload_gc WHERE file_key IN (SELECT value FROM json_each(?))')
+      .prepare('DELETE FROM responses_state_payload_gc WHERE claim_token IS NULL AND file_key IN (SELECT value FROM json_each(?))')
       .bind(JSON.stringify(keys))
       .run();
   }
@@ -1340,11 +1377,6 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     return result.meta.changes ?? 0;
   }
 
-  async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM responses_state_items').run();
-    await deleteAllResponsesItemPayloadFiles();
-    await this.db.prepare('DELETE FROM responses_state_payload_gc').run();
-  }
 }
 
 interface ResponsesItemRow {
@@ -1425,9 +1457,6 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     return result.meta.changes ?? 0;
   }
 
-  async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM responses_state_snapshots').run();
-  }
 }
 
 class SqlResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {

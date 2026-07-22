@@ -402,7 +402,6 @@ export interface ResponsesItemsRepo {
     expiresAt: number,
   ): Promise<void>;
   deleteExpired(now: number, limit: number): Promise<number>;
-  deleteAll(): Promise<void>;
 }
 
 export interface StoredResponsesSnapshot {
@@ -419,7 +418,6 @@ export interface ResponsesSnapshotsRepo {
   lookupActive(apiKeyId: string, stateEpoch: string, id: string, now: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
   deleteExpired(now: number, limit: number): Promise<number>;
-  deleteAll(): Promise<void>;
 }
 
 export interface ResponsesMaintenanceRepo {
