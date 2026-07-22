@@ -201,19 +201,12 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   });
   if (updated === null) throw new Error(`API key disappeared during update: ${id}`);
 
-  // Retention transitions:
-  //   positive → null: drop every stored record and cut every live subscriber.
-  //   null → positive: no purge; the new window only governs future captures.
-  //   positive → smaller positive: enforce the shorter window immediately by
-  //     sweeping anything already past the new cutoff.
-  //   positive → larger positive: nothing to purge; older records still fit.
   if (body.dump_retention_seconds !== undefined) {
-    const previous = owned.dumpRetentionSeconds;
     const next = body.dump_retention_seconds;
-    if (next === null && previous !== null) {
+    if (next === null) {
       await getDumpStore().purgeAll(id);
       await notifyDisabledBestEffort(id, 'updateKey retention disable');
-    } else if (previous !== null && next !== null && next < previous) {
+    } else {
       await getDumpStore().purgeExpired(id, next);
     }
   }

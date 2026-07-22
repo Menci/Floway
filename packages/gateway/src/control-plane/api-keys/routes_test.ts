@@ -424,6 +424,23 @@ test('PATCH /api/keys/:id positive→null retention purges + closes the channel'
   assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), true);
 });
 
+test('PATCH /api/keys/:id disables dumps even when retention changed after ownership lookup', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const update = repo.apiKeys.update.bind(repo.apiKeys);
+  vi.spyOn(repo.apiKeys, 'update').mockImplementationOnce(async (id, patch) => {
+    await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+    return await update(id, patch);
+  });
+
+  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
+
+  assertEquals(response.status, 200);
+  assertEquals(stubs.purgedAll, [apiKey.id]);
+  assertEquals(stubs.closed, [{ keyId: apiKey.id, reason: 'updateKey retention disable' }]);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, null);
+});
+
 test('PATCH /api/keys/:id positive→null succeeds when the broker close hook throws', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
