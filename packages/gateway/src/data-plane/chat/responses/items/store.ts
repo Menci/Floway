@@ -123,15 +123,17 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
     if (!this.writesState) return id;
     const privatePayload = this.getPrivatePayload(id);
+    const payload: StoredResponsesItem['payload'] = {
+      item,
+      ...(privatePayload !== undefined ? { private: privatePayload } : {}),
+    };
     const row: StoredResponsesItem = {
       id,
       apiKeyId: this.apiKeyId,
       stateEpoch: this.options.stateEpoch,
-      payload: {
-        item,
-        ...(privatePayload !== undefined ? { private: privatePayload } : {}),
-      },
+      payload,
       contentHash: await hashResponsesItemContent(item),
+      payloadHash: await hashResponsesItemContent(payload),
       ...this.lifetime(Date.now()),
     };
     await this.commitItems([row]);
@@ -210,12 +212,14 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         return;
       }
 
+      const payload: StoredResponsesItem['payload'] = { item };
       const created: StoredResponsesItem = {
         id,
         apiKeyId: this.apiKeyId,
         stateEpoch: this.options.stateEpoch,
-        payload: { item },
+        payload,
         contentHash: await hashResponsesItemContent(item),
+        payloadHash: await hashResponsesItemContent(payload),
         ...this.lifetime(Date.now()),
       };
       this.stagedInputItemIds.push(id);
@@ -230,12 +234,14 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return;
     }
 
+    const payload: StoredResponsesItem['payload'] = { item };
     const row: StoredResponsesItem = {
       id: createResponsesStorageKey(),
       apiKeyId: this.apiKeyId,
       stateEpoch: this.options.stateEpoch,
-      payload: { item },
+      payload,
       contentHash,
+      payloadHash: await hashResponsesItemContent(payload),
       ...this.lifetime(Date.now()),
     };
     this.stagedInputItemIds.push(row.id);

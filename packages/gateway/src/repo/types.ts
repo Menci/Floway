@@ -369,6 +369,7 @@ export interface StoredResponsesItem {
   stateEpoch: string;
   payload: StoredResponsesItemPayload;
   contentHash: string;
+  payloadHash: string;
   refreshedAt: number;
   expiresAt: number;
 }

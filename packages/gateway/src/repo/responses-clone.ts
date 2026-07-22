@@ -31,6 +31,7 @@ export const assertSameStoredResponsesItem = (
     expected.id !== actual.id
     || expected.apiKeyId !== actual.apiKeyId
     || expected.contentHash !== actual.contentHash
+    || expected.payloadHash !== actual.payloadHash
     || !isEqual(expected.payload, actual.payload)
   ) {
     throw new Error(`Responses item id collision: ${expected.id}`);

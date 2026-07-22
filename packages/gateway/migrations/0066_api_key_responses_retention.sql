@@ -60,6 +60,8 @@ CREATE TABLE responses_items (
   state_epoch TEXT NOT NULL,
   payload_json TEXT NOT NULL,
   content_hash TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  payload_file_key TEXT,
   refreshed_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   CHECK (length(id) > 0),
@@ -67,6 +69,7 @@ CREATE TABLE responses_items (
   CHECK (length(state_epoch) = 32 AND state_epoch NOT GLOB '*[^0-9a-f]*'),
   CHECK (length(payload_json) > 0),
   CHECK (length(content_hash) > 0),
+  CHECK (length(payload_hash) > 0),
   CHECK (expires_at > refreshed_at)
 );
 
