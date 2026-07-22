@@ -452,8 +452,8 @@ test('store=false forwards an id-less finalized item without persistence work', 
 
 test('client output forwards terminal item drift while retaining the first done snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
-  const doneItem = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
-  const terminalItem = { ...doneItem, summary: [{ type: 'summary_text' as const, text: 'new' }] };
+  const doneItem = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'done-blob' };
+  const terminalItem = { ...doneItem, encrypted_content: 'terminal-blob' };
   const response: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -479,15 +479,12 @@ test('client output forwards terminal item drift while retaining the first done 
   };
 
   await collect();
-  expect(terminal?.output[0]).toMatchObject({
-    summary: [{ type: 'summary_text', text: 'new' }],
-  });
+  expect(terminal?.output[0]).toMatchObject({ encrypted_content: 'terminal-blob' });
   const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_public');
   expect(snapshot).not.toBeNull();
   if (snapshot === null) throw new Error('Expected persisted snapshot');
-  expect((await repo.responsesItems.lookupMany('key-a', snapshot.itemIds))[0].payload.item).toMatchObject({
-    summary: [{ type: 'summary_text', text: 'old' }],
-  });
+  expect((await repo.responsesItems.lookupMany('key-a', snapshot.itemIds))[0].payload.item)
+    .toMatchObject({ encrypted_content: 'done-blob' });
 });
 
 test('client output forwards repeated done drift while retaining the first done snapshot', async () => {
