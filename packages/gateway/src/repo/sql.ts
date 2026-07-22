@@ -234,8 +234,8 @@ class SqlApiKeyRepo implements ApiKeyRepo {
              dump_retention_seconds = CASE WHEN ? THEN ? ELSE dump_retention_seconds END,
              responses_state_visible_after = CASE
                WHEN ? AND ? = 0 AND responses_retention_seconds > 0 THEN 0
-               WHEN ? AND ? > 0 AND responses_retention_seconds > 0 AND ? < responses_retention_seconds
-                 THEN MAX(responses_state_visible_after, ? - ? * 1000)
+               WHEN ? AND ? > 0 AND responses_retention_seconds > 0
+                 THEN MAX(responses_state_visible_after, ? - MIN(?, responses_retention_seconds) * 1000)
                ELSE responses_state_visible_after
              END,
              responses_state_epoch = CASE
@@ -253,7 +253,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         hasUpstreamIds, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
         hasDumpRetention, patch.dumpRetentionSeconds ?? null,
         hasResponsesRetention, patch.responsesRetentionSeconds ?? null,
-        hasResponsesRetention, patch.responsesRetentionSeconds ?? null, patch.responsesRetentionSeconds ?? null,
+        hasResponsesRetention, patch.responsesRetentionSeconds ?? null,
         retentionChangedAt, patch.responsesRetentionSeconds ?? null,
         hasResponsesRetention, patch.responsesRetentionSeconds ?? null,
         hasResponsesRetention, patch.responsesRetentionSeconds ?? null,

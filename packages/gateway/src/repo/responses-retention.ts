@@ -29,16 +29,17 @@ export const withResponsesRetention = (apiKey: ApiKey, responsesRetentionSeconds
     throw new RangeError(`Responses retention must be 0 or an integer from ${RESPONSES_RETENTION_MIN_SECONDS} to ${RESPONSES_RETENTION_MAX_SECONDS} seconds`);
   }
   const disabling = responsesRetentionSeconds === 0 && apiKey.responsesRetentionSeconds > 0;
-  const shrinking = responsesRetentionSeconds > 0
-    && apiKey.responsesRetentionSeconds > 0
-    && responsesRetentionSeconds < apiKey.responsesRetentionSeconds;
+  const changingPositiveWindow = responsesRetentionSeconds > 0 && apiKey.responsesRetentionSeconds > 0;
   return {
     ...apiKey,
     responsesRetentionSeconds,
     ...(disabling
       ? { responsesStateEpoch: generateResponsesStateEpoch(), responsesStateVisibleAfter: 0 }
-      : shrinking
-        ? { responsesStateVisibleAfter: Math.max(apiKey.responsesStateVisibleAfter, changedAt - responsesRetentionSeconds * 1000) }
+      : changingPositiveWindow
+        ? { responsesStateVisibleAfter: Math.max(
+            apiKey.responsesStateVisibleAfter,
+            changedAt - Math.min(apiKey.responsesRetentionSeconds, responsesRetentionSeconds) * 1000,
+          ) }
         : {}),
   };
 };

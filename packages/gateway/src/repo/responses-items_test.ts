@@ -713,6 +713,73 @@ test('SQL conflict cleanup cannot delete a later winner\'s independently owned s
   expect((await repo.responsesItems.lookupMany(item.apiKeyId, TEST_RESPONSES_STATE_EPOCH, [item.id]))[0].payload).toEqual(item.payload);
 });
 
+test('SQL retention shrink preserves only the new window and growth cannot resurrect excluded rows', async () => {
+  const now = Date.UTC(2026, 6, 22, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  try {
+    const files = new MemoryFileProvider();
+    initFileProvider(files);
+    const repo = new SqlRepo(await createSqliteTestDb());
+    initRepo(repo);
+    const key = testApiKey('key-a');
+    await repo.apiKeys.save(key);
+    const sixDays = storedItem('msg_6d', key.id, 'six-days', now - 6 * 86400_000);
+    const eightDays = storedItem('msg_8d', key.id, 'eight-days', now - 8 * 86400_000);
+    await repo.responsesItems.insertMany([sixDays, eightDays], now - 30 * 86400_000);
+    await repo.responsesSnapshots.insert({ id: 'resp_6d', apiKeyId: key.id, stateEpoch: key.responsesStateEpoch, itemIds: [sixDays.id], refreshedAt: sixDays.refreshedAt });
+    await repo.responsesSnapshots.insert({ id: 'resp_8d', apiKeyId: key.id, stateEpoch: key.responsesStateEpoch, itemIds: [eightDays.id], refreshedAt: eightDays.refreshedAt });
+
+    const shrunken = await repo.apiKeys.update(key.id, { responsesRetentionSeconds: 7 * 86400 });
+    if (shrunken === null) throw new Error('key disappeared during shrink');
+    expect(shrunken.responsesStateEpoch).toBe(key.responsesStateEpoch);
+    const cutoff = shrunken.responsesStateVisibleAfter;
+    expect(await repo.responsesItems.lookupActiveMany(key.id, key.responsesStateEpoch, [sixDays.id, eightDays.id], cutoff)).toEqual([sixDays]);
+    expect(await repo.responsesSnapshots.lookupActive(key.id, key.responsesStateEpoch, 'resp_8d', cutoff)).toBeNull();
+    await expect(repo.responsesItems.refreshMany([eightDays], now))
+      .rejects.toThrow('Responses item disappeared or changed before lifetime refresh');
+
+    const grown = await repo.apiKeys.update(key.id, { responsesRetentionSeconds: 30 * 86400 });
+    if (grown === null) throw new Error('key disappeared during growth');
+    expect(grown.responsesStateVisibleAfter).toBe(cutoff);
+    expect(await repo.responsesItems.lookupActiveMany(key.id, key.responsesStateEpoch, [sixDays.id, eightDays.id], grown.responsesStateVisibleAfter)).toEqual([sixDays]);
+
+    await sweepResponsesState(now);
+    expect(await repo.responsesItems.lookupMany(key.id, key.responsesStateEpoch, [sixDays.id, eightDays.id])).toEqual([sixDays]);
+    expect(await repo.responsesSnapshots.lookup(key.id, key.responsesStateEpoch, 'resp_6d')).not.toBeNull();
+    expect(await repo.responsesSnapshots.lookup(key.id, key.responsesStateEpoch, 'resp_8d')).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('SQL disable rotates the epoch and a late old-epoch write is queued for bounded reclamation', async () => {
+  const now = Date.UTC(2026, 6, 22, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  try {
+    initFileProvider(new MemoryFileProvider());
+    const repo = new SqlRepo(await createSqliteTestDb());
+    initRepo(repo);
+    const key = testApiKey('key-a');
+    await repo.apiKeys.save(key);
+    const disabled = await repo.apiKeys.update(key.id, { responsesRetentionSeconds: 0 });
+    if (disabled === null) throw new Error('key disappeared during disable');
+    expect(disabled.responsesStateEpoch).not.toBe(key.responsesStateEpoch);
+
+    const late = storedItem('msg_late', key.id, 'late', now);
+    await repo.responsesItems.insertMany([late], now - 30 * 86400_000);
+    await repo.responsesSnapshots.insert({ id: 'resp_late', apiKeyId: key.id, stateEpoch: key.responsesStateEpoch, itemIds: [late.id], refreshedAt: now });
+    expect(await repo.responsesItems.lookupMany(key.id, disabled.responsesStateEpoch, [late.id])).toEqual([]);
+
+    await sweepResponsesState(now);
+    expect(await repo.responsesItems.lookupMany(key.id, key.responsesStateEpoch, [late.id])).toEqual([]);
+    expect(await repo.responsesSnapshots.lookup(key.id, key.responsesStateEpoch, 'resp_late')).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('migration 0065 invalidates all prior Responses state and installs the exact-item schema', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
