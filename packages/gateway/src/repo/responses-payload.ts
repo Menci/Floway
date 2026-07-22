@@ -26,7 +26,7 @@ const INLINE_PAYLOAD_LIMIT_BYTES = 64 * 1024;
 const HOUR_MS = 60 * 60 * 1000;
 
 const RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v2/objects/';
-const LEGACY_RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v1/expires/';
+const V1_RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v1/expires/';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -193,12 +193,12 @@ const base64ToBytes = (base64: string): Uint8Array => {
   return bytes;
 };
 
-export const deleteLegacyResponsesItemPayloadExpiryBucket = async (hourStart: number): Promise<void> => {
-  await getFileProvider().deletePrefix(expiryBucketPrefix(LEGACY_RESPONSES_ITEMS_FILE_ROOT, hourStart));
+export const deleteV1ResponsesItemPayloadExpiryBucket = async (hourStart: number): Promise<void> => {
+  await getFileProvider().deletePrefix(expiryBucketPrefix(V1_RESPONSES_ITEMS_FILE_ROOT, hourStart));
 };
 
-export const deleteAllLegacyResponsesItemPayloadFiles = async (): Promise<void> => {
-  await getFileProvider().deletePrefix(LEGACY_RESPONSES_ITEMS_FILE_ROOT);
+export const deleteAllV1ResponsesItemPayloadFiles = async (): Promise<void> => {
+  await getFileProvider().deletePrefix(V1_RESPONSES_ITEMS_FILE_ROOT);
 };
 
 const expiryBucketPrefix = (root: string, hourTimestamp: number): string => {
