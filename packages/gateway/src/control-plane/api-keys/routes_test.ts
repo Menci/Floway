@@ -13,6 +13,11 @@ const ownerPatch = (id: string, body: unknown, rawKey: string) =>
     body: JSON.stringify(body),
   });
 
+const assertPrivateStateAbsent = (value: Record<string, unknown>): void => {
+  assertEquals(Object.hasOwn(value, 'responsesStateEpoch'), false);
+  assertEquals(Object.hasOwn(value, 'responses_state_epoch'), false);
+};
+
 test('GET /api/keys never exposes the server-side server secret', async () => {
   const { apiKey } = await setupAppTest();
   const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
@@ -21,6 +26,7 @@ test('GET /api/keys never exposes the server-side server secret', async () => {
   assertEquals(body.length, 1);
   assertEquals(Object.hasOwn(body[0]!, 'serverSecret'), false);
   assertEquals(Object.hasOwn(body[0]!, 'server_secret'), false);
+  assertPrivateStateAbsent(body[0]!);
 });
 
 test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async () => {
@@ -31,6 +37,7 @@ test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async ()
   const response = await ownerPatch(apiKey.id, { upstream_ids: ['up_y', 'up_x'] }, apiKey.key);
   assertEquals(response.status, 200);
   const body = await response.json();
+  assertPrivateStateAbsent(body);
   assertEquals(body.upstream_ids, ['up_y', 'up_x']);
 
   const stored = await repo.apiKeys.getById(apiKey.id);
