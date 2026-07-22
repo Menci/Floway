@@ -3,6 +3,7 @@ import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { assertSameStoredResponsesItem, scopedResponsesKey } from './responses-clone.ts';
 import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPONSES_STATE_TTL_MS, responsesItemPayloadExpiryBucketPrefix, serializeStoredResponsesPayload, storedResponsesPayloadFileKey } from './responses-payload.ts';
+import { generateResponsesStateEpoch } from './responses-retention.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -79,9 +80,11 @@ interface ApiKeyRow {
   upstream_ids: string | null;
   deleted_at: string | null;
   dump_retention_seconds: number | null;
+  responses_retention_seconds: number;
+  responses_state_epoch: string;
 }
 
-const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds';
+const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds, responses_retention_seconds, responses_state_epoch';
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
@@ -111,7 +114,14 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
   deletedAt: row.deleted_at,
   dumpRetentionSeconds: row.dump_retention_seconds,
+  responsesRetentionSeconds: row.responses_retention_seconds,
+  responsesStateEpoch: parseResponsesStateEpoch(row.responses_state_epoch, `api_keys.responses_state_epoch for id=${row.id}`),
 });
+
+const parseResponsesStateEpoch = (value: string, location: string): string => {
+  if (!/^[0-9a-f]{32}$/u.test(value)) throw new Error(`Invalid ${location}`);
+  return value;
+};
 
 class SqlApiKeyRepo implements ApiKeyRepo {
   constructor(private db: SqlDatabase) {}
@@ -165,7 +175,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async save(key: ApiKey): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            user_id = excluded.user_id,
            name = excluded.name,
@@ -174,7 +184,9 @@ class SqlApiKeyRepo implements ApiKeyRepo {
            last_used_at = excluded.last_used_at,
            upstream_ids = excluded.upstream_ids,
            deleted_at = excluded.deleted_at,
-           dump_retention_seconds = excluded.dump_retention_seconds`,
+           dump_retention_seconds = excluded.dump_retention_seconds,
+           responses_retention_seconds = excluded.responses_retention_seconds,
+           responses_state_epoch = excluded.responses_state_epoch`,
       )
       .bind(
         key.id,
@@ -187,6 +199,8 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         serializeUpstreamIds(key.upstreamIds),
         key.deletedAt,
         key.dumpRetentionSeconds,
+        key.responsesRetentionSeconds,
+        parseResponsesStateEpoch(key.responsesStateEpoch, `ApiKey.responsesStateEpoch for id=${key.id}`),
       )
       .run();
   }

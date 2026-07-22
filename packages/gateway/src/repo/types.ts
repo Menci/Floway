@@ -19,6 +19,11 @@ export interface ApiKey {
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
   dumpRetentionSeconds: number | null;
+  // 0 = durable Stateful Responses disabled; positive integer = sliding TTL.
+  responsesRetentionSeconds: number;
+  // Rotating this private namespace makes writes from pre-disable requests
+  // permanently invisible without changing the API key or affinity secret.
+  responsesStateEpoch: string;
 }
 
 export interface User {

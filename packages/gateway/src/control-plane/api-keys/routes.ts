@@ -3,6 +3,7 @@ import { type AuthedContext, userFromContext, userUpstreamIdsFromContext } from 
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
+import { generateResponsesStateEpoch } from '../../repo/responses-retention.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '../../shared/api-key-tokens.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
@@ -18,6 +19,7 @@ const apiKeyToJson = (key: ApiKey) => ({
   last_used_at: key.lastUsedAt ?? null,
   upstream_ids: key.upstreamIds,
   dump_retention_seconds: key.dumpRetentionSeconds,
+  responses_retention_seconds: key.responsesRetentionSeconds,
 });
 
 const normalizeCustomKey = (value: unknown): string | Response => {
@@ -128,6 +130,8 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     upstreamIds: body.upstream_ids ?? null,
     deletedAt: null,
     dumpRetentionSeconds: body.dump_retention_seconds ?? null,
+    responsesRetentionSeconds: body.responses_retention_seconds ?? 0,
+    responsesStateEpoch: generateResponsesStateEpoch(),
   } satisfies Omit<ApiKey, 'key'>;
 
   const key = await writeKeyForRequest(template, body);
@@ -165,8 +169,8 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   const id = c.req.param('id')!;
   const body = c.req.valid('json');
 
-  if (body.name === undefined && body.upstream_ids === undefined && body.dump_retention_seconds === undefined) {
-    return c.json({ error: 'Provide a new name, upstream selection, or dump retention to update.' }, 400);
+  if (body.name === undefined && body.upstream_ids === undefined && body.dump_retention_seconds === undefined && body.responses_retention_seconds === undefined) {
+    return c.json({ error: 'Provide a new name, upstream selection, dump retention, or Stateful Responses retention to update.' }, 400);
   }
 
   const owned = await ownedKeyOr404(c, id);
@@ -182,6 +186,14 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.upstream_ids !== undefined ? { upstreamIds: body.upstream_ids } : {}),
     ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
+    ...(body.responses_retention_seconds !== undefined
+      ? {
+          responsesRetentionSeconds: body.responses_retention_seconds,
+          ...(body.responses_retention_seconds === 0 && owned.responsesRetentionSeconds !== 0
+            ? { responsesStateEpoch: generateResponsesStateEpoch() }
+            : {}),
+        }
+      : {}),
   };
   await getRepo().apiKeys.save(updated);
 

@@ -346,6 +346,7 @@ export interface ApiKey {
   last_used_at: string | null;
   upstream_ids: string[] | null;
   dump_retention_seconds: number | null;
+  responses_retention_seconds: number;
 }
 
 export interface ControlPlaneModel extends PublicModel {
