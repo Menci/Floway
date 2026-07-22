@@ -1,7 +1,5 @@
-// Protocol-level model capability types, plus the kind-derivation that is
-// intrinsic to them. Runtime computation that consumes these (registry
-// projection, request routing, image-endpoint dispatch) lives in
-// packages/gateway/src/data-plane/.
+// Protocol-level model capability types and their intrinsic kind projection.
+// Provider projection and endpoint dispatch live in packages/gateway/src/data-plane/.
 
 import type { ModelKind } from './models.ts';
 
@@ -23,6 +21,7 @@ export interface ModelEndpoints {
   embeddings?: {};
   imagesGenerations?: {};
   imagesEdits?: {};
+  rerank?: {};
 }
 
 // Names a single endpoint within ModelEndpoints — used where one endpoint is
@@ -31,12 +30,14 @@ export type ModelEndpointKey = keyof ModelEndpoints;
 
 // Derive the high-level model kind from the supported endpoints. Each model
 // belongs to exactly one kind. `embeddings` implies embedding,
-// `imagesGenerations`/`imagesEdits` implies image, everything else is chat.
+// `imagesGenerations`/`imagesEdits` implies image, `rerank` implies rerank,
+// and the generation protocols imply chat.
 // Mixed endpoint sets (e.g. a model tagged with both `embeddings` and
 // `chatCompletions`) are configuration errors; the first matching branch wins.
 // `kind` is a pure projection of `endpoints`; the dispatch layer never reads it.
 export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
   if (endpoints.embeddings) return 'embedding';
   if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
+  if (endpoints.rerank) return 'rerank';
   return 'chat';
 };

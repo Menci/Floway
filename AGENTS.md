@@ -35,7 +35,7 @@ dependencies remain targeted at their predecessor branches and remain drafts.
 
 Floway is an LLM API gateway. It exposes OpenAI Completions, Anthropic
 Messages, OpenAI Responses, OpenAI Chat Completions, Embeddings, OpenAI
-Images, and Google Gemini-compatible APIs over a unified upstream
+Images, Cohere/Jina/Voyage-compatible Rerank, and Google Gemini-compatible APIs over a unified upstream
 model. Provider kinds are
 `copilot`, `custom`, `azure`, `codex` (ChatGPT subscription via the
 Codex CLI's OAuth client), `claude-code` (Claude.ai Pro/Max subscription
@@ -137,7 +137,7 @@ Floway/
 │   ├── provider-claude-code/ # @floway-dev/provider-claude-code — Claude Code (Claude.ai subscription) provider
 │   ├── provider-codex/       # @floway-dev/provider-codex — ChatGPT Codex (subscription) provider
 │   ├── provider-copilot/     # @floway-dev/provider-copilot — GitHub Copilot provider
-│   ├── provider-custom/      # @floway-dev/provider-custom — generic OpenAI-compatible
+│   ├── provider-custom/      # @floway-dev/provider-custom — configurable multi-protocol HTTP provider
 │   ├── provider-ollama/      # @floway-dev/provider-ollama — Ollama (ollama.com or self-hosted)
 │   ├── proxy/                # @floway-dev/proxy — proxy URI parsing + per-protocol byte-stream dialers
 │   ├── test-utils/           # @floway-dev/test-utils — shared Vitest fixtures and stubs (test-only)

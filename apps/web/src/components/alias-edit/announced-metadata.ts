@@ -117,7 +117,7 @@ const intersectLimits = (limitsList: readonly PublicModelLimits[]): PublicModelL
 // returns `{}` so callers can still render a skeleton.
 export const computeAnnouncedMetadata = (
   targets: readonly AliasTarget[],
-  kind: 'chat' | 'embedding' | 'image',
+  kind: 'chat' | 'embedding' | 'image' | 'rerank',
   models: readonly ControlPlaneModel[] | null | undefined,
 ): AnnouncedMetadata => {
   const realById = new Map((models ?? []).filter(m => m.aliasedFrom === undefined).map(m => [m.id, m] as const));

@@ -18,6 +18,7 @@ import { assertEquals, assertThrows } from '../test-assert.ts';
 
 test('billing storage parsers accept current vocabulary and reject unknown values', () => {
   assertEquals(parseBillingMetric('input_tokens'), 'input_tokens');
+  assertEquals(parseBillingMetric('rerank_searches'), 'rerank_searches');
   assertThrows(() => parseBillingMetric('reasoning'), TypeError, 'billing metric is invalid: "reasoning"');
 });
 

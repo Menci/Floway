@@ -16,13 +16,14 @@ import type {
   ModelPricing,
   PublicModel,
   PublicModelLimits,
+  RerankTarget,
 } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
-export type { BillingMetric, DecimalString, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+export type { BillingMetric, DecimalString, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing, RerankTarget };
 export type { UpstreamModelConfig };
 export type { AddressableForm, ModelPrefixConfig };
 export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };

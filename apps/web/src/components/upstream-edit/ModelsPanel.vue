@@ -29,10 +29,12 @@ const props = withDefaults(defineProps<{
   readOnly?: boolean;
   // All rows are persisted: no auto rows, no mode pills.
   allManual?: boolean;
+  allowRerank?: boolean;
 }>(), {
   autoModels: () => [],
   readOnly: false,
   allManual: false,
+  allowRerank: false,
 });
 
 const rows = ref<Row[]>([]);
@@ -41,10 +43,18 @@ const selectedUiId = ref<string | null>(null);
 // and must keep shadowing it). Pure-manual rows have no such constraint.
 const lockedUpstreamId = reactive(new Set<string>());
 
+const parseManualModels = (value: unknown): UpstreamModelConfig[] => {
+  const models = modelsField(value, 'dashboard');
+  if (!props.allowRerank && models.some(model => model.kind === 'rerank')) {
+    throw new Error('Rerank models require a custom upstream');
+  }
+  return models;
+};
+
 const anyInvalid = computed(() => {
   const models = rows.value.filter(row => row.kind === 'manual').map(row => row.config);
   try {
-    modelsField(models, 'dashboard');
+    parseManualModels(models);
     return false;
   } catch {
     return true;
@@ -211,7 +221,7 @@ const switchEditorMode = (next: 'ui' | 'json') => {
   // parse error so unsaved text is preserved.
   try {
     const parsed = JSON.parse(jsonText.value);
-    manualModels.value = modelsField(parsed, 'dashboard');
+    manualModels.value = parseManualModels(parsed);
     jsonError.value = null;
     editorMode.value = 'ui';
   } catch (e) {
@@ -305,6 +315,7 @@ watch(manualModels, () => {
         :is-upstream-id-locked="selectedRow !== null && lockedUpstreamId.has(selectedRow.uiId)"
         :has-auto-counterpart="selectedRow !== null && hasAutoCounterpart(selectedRow)"
         :mode-switchable="!readOnly && !allManual"
+        :allow-rerank="allowRerank"
         @patch-config="patchConfig"
         @set-mode="next => selectedRow && setMode(selectedRow.uiId, next)"
         @remove="selectedRow && removeRow(selectedRow.uiId)"

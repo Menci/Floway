@@ -90,7 +90,7 @@ export const listModelProviders = async (
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { providerData, enabledFlags, flagOverrides, endpoints, ...metadata } = providerModel;
+  const { providerData, enabledFlags, flagOverrides, rerankTarget, endpoints, ...metadata } = providerModel;
   return {
     ...metadata,
     endpoints: { ...endpoints },
@@ -461,7 +461,7 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 // `model.endpoints`, or checking the specific `imagesEdits` /
 // `imagesGenerations` / `completions` endpoint key — is the caller's job.
 // This function stays endpoint-blind so the same path serves chat,
-// embeddings, image generation/edits, and legacy completions.
+// embeddings, image generation/edits, rerank, and legacy completions.
 //
 // The alias walk is a natural top-of-chain check: by construction an
 // alias's target id is a real model id, so the shadow pattern (an alias

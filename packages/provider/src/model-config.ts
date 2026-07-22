@@ -1,6 +1,6 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { kindForEndpoints } from '@floway-dev/protocols/common';
+import { validateUpstreamPath } from './join.ts';
+import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceVector, type PricingSelector, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
 
@@ -23,6 +23,7 @@ export interface UpstreamModelConfig {
   limits?: UpstreamModelLimits;
   pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
+  rerankTarget?: RerankTarget;
   // Floway-internal (camelCase, not surfaced on PublicModel).
   upstreamModelId: string;
   publicModelId?: string;
@@ -58,14 +59,14 @@ export const optionalStringField = (value: unknown, label: string): string | und
 };
 
 const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpointKey>([
-  'completions', 'chatCompletions', 'responses', 'messages', 'embeddings', 'imagesGenerations', 'imagesEdits',
+  'completions', 'chatCompletions', 'responses', 'messages', 'embeddings', 'imagesGenerations', 'imagesEdits', 'rerank',
 ]);
 
 // The structured per-model capability map. A present key declares the model is
 // served by that endpoint; the empty value object is a placeholder reserved
 // for future per-endpoint sub-capabilities. `allowEmpty` is set for the
 // upstream-level fallback map (an upstream may serve only kind-derived
-// embedding/image models and declare no chat endpoint).
+// embedding/image models or manual rerank models and declare no chat endpoint).
 export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const endpoints: ModelEndpoints = {};
@@ -146,7 +147,7 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
   return pricing;
 };
 
-const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image']);
+const RERANK_PROTOCOL_SET: ReadonlySet<RerankProtocol> = new Set(RERANK_PROTOCOLS);
 
 const MODALITY_VALUES: ReadonlySet<Modality> = new Set<Modality>(['text', 'image']);
 
@@ -245,15 +246,29 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
   return out;
 };
 
-// kind is a pure function of the routing endpoints, so an entry that omits it
-// (an import, or hand-edited JSON) derives one rather than failing. The editor
-// always writes an explicit kind, keeping it consistent with the endpoints.
+// An omitted kind derives from endpoints. Explicit legacy values remain
+// round-trippable even when they disagree; ProviderModel projection derives
+// the effective runtime kind from endpoints, matching the established
+// chat/image/embedding compatibility behavior. The editor writes them
+// consistently for newly authored rows.
 const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): ModelKind => {
   if (value === undefined) return kindForEndpoints(endpoints);
-  if (typeof value !== 'string' || !MODEL_KINDS.has(value as ModelKind)) {
-    throw new Error(`Malformed ${label}: must be one of chat, embedding, image`);
+  if (typeof value !== 'string' || !(MODEL_KINDS as readonly string[]).includes(value)) {
+    throw new Error(`Malformed ${label}: must be one of chat, embedding, image, rerank`);
   }
   return value as ModelKind;
+};
+
+const rerankTargetField = (value: unknown, label: string): RerankTarget | undefined => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
+  if (typeof value.protocol !== 'string' || !RERANK_PROTOCOL_SET.has(value.protocol as RerankProtocol)) {
+    throw new Error(`Malformed ${label}.protocol: unsupported rerank protocol ${JSON.stringify(value.protocol)}`);
+  }
+  if (value.path === undefined) return { protocol: value.protocol as RerankProtocol };
+  const path = validateUpstreamPath(value.path, `${label}.path`);
+  if (!path.ok) throw new Error(path.error);
+  return { protocol: value.protocol as RerankProtocol, path: path.value };
 };
 
 const modelField = (value: unknown, label: string): UpstreamModelConfig => {
@@ -261,9 +276,17 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const pricing = pricingField(value.pricing, `${label}.pricing`);
   const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
+  const effectiveKind = kindForEndpoints(endpoints);
   const chat = chatField(value.chat, `${label}.chat`);
+  const rerankTarget = rerankTargetField(value.rerankTarget, `${label}.rerankTarget`);
   if (chat !== undefined && kind !== 'chat') {
     throw new Error(`Malformed ${label}: chat field is only allowed when kind === 'chat'`);
+  }
+  if (effectiveKind === 'rerank' && rerankTarget === undefined) {
+    throw new Error(`Malformed ${label}: rerankTarget is required when endpoints select rerank`);
+  }
+  if (effectiveKind !== 'rerank' && rerankTarget !== undefined) {
+    throw new Error(`Malformed ${label}: rerankTarget is only allowed when endpoints select rerank`);
   }
   return {
     kind,
@@ -272,6 +295,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
     ...(value.limits !== undefined ? { limits: limitsField(value.limits, `${label}.limits`) } : {}),
     ...(pricing ? { pricing } : {}),
     ...(chat ? { chat } : {}),
+    ...(rerankTarget ? { rerankTarget } : {}),
     upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
     ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
     ...(value.flagOverrides !== undefined ? { flagOverrides: flagOverridesField(value.flagOverrides, `${label}.flagOverrides`) } : {}),

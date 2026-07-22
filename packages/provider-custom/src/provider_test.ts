@@ -2,9 +2,10 @@ import { test } from 'vitest';
 
 import { createCustomProvider } from './provider.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
+import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { assertEquals, assertExists, assertRejects, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   modelsFetchEnabled?: boolean;
@@ -166,4 +167,94 @@ test('a manual model without explicit pricing inherits pricing from its shadowed
       assertEquals(models[0]?.pricing, inheritedPricing);
     },
   );
+});
+
+test('auto-fetched rerank models stay out of the routable provider catalog', async () => {
+  const instance = createCustomProvider(buildCustomUpstream());
+  const models = await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'auto-reranker', kind: 'rerank' }, { id: 'chat-model', kind: 'chat' }] }),
+    async () => await instance.instance.getProvidedModels(directFetcher),
+  );
+  assertEquals(models.map(model => model.id), ['chat-model']);
+});
+
+test('manual runtime kind follows rerank endpoints when stored kind is stale', async () => {
+  const instance = createCustomProvider(buildCustomUpstream({
+    modelsFetchEnabled: false,
+    models: [{
+      upstreamModelId: 'raw-reranker',
+      kind: 'chat',
+      endpoints: { rerank: {} },
+      rerankTarget: { protocol: 'cohere-v2' },
+    }],
+  }));
+  const [model] = await instance.instance.getProvidedModels(directFetcher);
+  assertEquals(model?.kind, 'rerank');
+  assertEquals(model?.rerankTarget, { protocol: 'cohere-v2' });
+});
+
+test('callRerank uses the model target protocol, raw model id, and canonical path', async () => {
+  const instance = createCustomProvider(buildCustomUpstream({
+    modelsFetchEnabled: false,
+    models: [{
+      upstreamModelId: 'raw-reranker',
+      publicModelId: 'public-reranker',
+      kind: 'rerank',
+      endpoints: { rerank: {} },
+      rerankTarget: { protocol: 'cohere-v2' },
+    }],
+  }));
+  const [model] = await instance.instance.getProvidedModels(directFetcher);
+  assertExists(model);
+  let requestUrl: string | undefined;
+  let requestBody: unknown;
+  await withMockedFetch(
+    async request => {
+      requestUrl = request.url;
+      requestBody = await request.json();
+      return jsonResponse({ results: [] });
+    },
+    async () => {
+      const result = await instance.instance.callRerank(
+        model,
+        parseRerankRequest('cohere-v1', { model: 'public-reranker', query: 'query', documents: ['one'], top_n: 1 }).request,
+        undefined,
+        { fetcher: directFetcher, waitUntil: () => {}, headers: new Headers(), wrapUpstreamCall: identityWrapUpstreamCall },
+      );
+      assertEquals(result.target, { protocol: 'cohere-v2' });
+      assertEquals(result.modelKey, 'raw-reranker');
+    },
+  );
+  assertEquals(requestUrl, 'https://custom.example.com/v2/rerank');
+  assertEquals(requestBody, { model: 'raw-reranker', query: 'query', documents: ['one'], top_n: 1 });
+});
+
+test('callRerank honors the per-model path without adding an upstream path override', async () => {
+  const instance = createCustomProvider(buildCustomUpstream({
+    modelsFetchEnabled: false,
+    models: [{
+      upstreamModelId: 'raw-reranker',
+      kind: 'rerank',
+      endpoints: { rerank: {} },
+      rerankTarget: { protocol: 'dashscope-native', path: '/workspace/rerank' },
+    }],
+  }));
+  const [model] = await instance.instance.getProvidedModels(directFetcher);
+  assertExists(model);
+  let requestUrl: string | undefined;
+  await withMockedFetch(
+    request => {
+      requestUrl = request.url;
+      return jsonResponse({ output: { results: [] } });
+    },
+    async () => {
+      await instance.instance.callRerank(
+        model,
+        parseRerankRequest('jina-v1', { model: 'raw-reranker', query: 'query', documents: ['one'] }).request,
+        undefined,
+        { fetcher: directFetcher, waitUntil: () => {}, headers: new Headers(), wrapUpstreamCall: identityWrapUpstreamCall },
+      );
+    },
+  );
+  assertEquals(requestUrl, 'https://custom.example.com/workspace/rerank');
 });

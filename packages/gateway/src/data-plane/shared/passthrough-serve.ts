@@ -19,6 +19,7 @@ import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import { recordFailedRequest } from './telemetry/performance.ts';
 import { settle } from './telemetry/settle.ts';
+import { forwardUpstreamHeaders, forwardUpstreamResponse } from './upstream-response.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
@@ -27,37 +28,6 @@ import { enumerateModelCandidates } from '../providers/registry.ts';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { PerformanceOperation, InternalModel, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
-
-// Headers we forward verbatim from a successful upstream response, plus
-// content-type with an application/json fallback when the upstream omitted
-// it. The set is intentionally narrow and matches the passthrough contract
-// OpenAI clients (and the OpenAI Node SDK retry policy) expect to see —
-// correlation, organisation/model metadata, quota signals, retry-after.
-const FORWARDED_RESPONSE_HEADER_PREFIXES = ['openai-', 'x-ratelimit-'] as const;
-const FORWARDED_RESPONSE_HEADERS = new Set(['x-request-id', 'retry-after', 'cf-ray']);
-
-const isForwardedResponseHeader = (name: string): boolean => {
-  const lower = name.toLowerCase();
-  return FORWARDED_RESPONSE_HEADERS.has(lower) || FORWARDED_RESPONSE_HEADER_PREFIXES.some(prefix => lower.startsWith(prefix));
-};
-
-const forwardUpstreamResponse = (resp: Response): Response => {
-  const headers = new Headers({ 'content-type': resp.headers.get('content-type') ?? 'application/json' });
-  for (const [name, value] of resp.headers.entries()) {
-    if (name.toLowerCase() === 'content-type') continue;
-    if (isForwardedResponseHeader(name)) headers.set(name, value);
-  }
-  return new Response(resp.body, { status: resp.status, headers });
-};
-
-// Stage forwardable upstream headers onto the Hono context so the streaming
-// SSE response Hono builds emits them. `streamSSE`'s internal `c.newResponse`
-// honors anything set via `c.header()` before it runs.
-const stageForwardedResponseHeaders = (c: Context, resp: Response): void => {
-  for (const [name, value] of resp.headers.entries()) {
-    if (isForwardedResponseHeader(name)) c.header(name, value);
-  }
-};
 
 // `json` (embeddings, images): single-shot body, `extractBilling` reads
 // usage / metadata off the parsed root. `sse` (/v1/completions): frame
@@ -204,10 +174,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       recordFailedRequest(ctx, performanceContext);
       // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
       // on the synthesized 502 so this rare edge case is still traceable.
-      stageForwardedResponseHeaders(c, response);
+      forwardUpstreamHeaders(c, response.headers);
       return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
     }
-    stageForwardedResponseHeaders(c, response);
+    forwardUpstreamHeaders(c, response.headers);
     return streamSSE(c, async stream => {
       let completion: StreamCompletion = 'error';
       let streamError: unknown;

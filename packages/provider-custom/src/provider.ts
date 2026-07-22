@@ -1,11 +1,12 @@
 import { assertCustomUpstreamRecord, type CustomUpstreamConfig } from './config.ts';
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
-import { customFetchAlphaSearch, customFetchChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
+import { customFetchAlphaSearch, customFetchChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchRerank, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
+import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
 import { serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -34,12 +35,10 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   return partial;
 };
 
-// A published kind of 'embedding'/'image' (Tier 1) maps directly to its
-// endpoints; a published 'chat' takes the upstream's configured endpoints
-// verbatim. With no/unrecognized published kind, the id heuristic (Tier 2) runs
-// and falls back to the configured endpoints when it does not match. The
-// configured set may be empty, leaving the model listed but unroutable until
-// the operator declares an endpoint. `kind` is derived back from the endpoints.
+// A published embedding/image kind maps directly to its endpoint; chat takes
+// the upstream default. Rerank rows are removed before this helper because a
+// kind alone cannot select their target wire. Unknown kinds use the id
+// heuristic, then fall back to the configured endpoints.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
   if (model.kind === 'embedding') return { embeddings: {} };
   if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
@@ -55,6 +54,10 @@ const finalizeCustomModels = (
   const models: ProviderModel[] = [];
   for (const rawModel of response.data) {
     if (!rawModel.id) continue;
+    // A catalog kind alone cannot choose between the six incompatible rerank
+    // wires. The auto row remains visible in the dashboard's fetch result, but
+    // only a manual row with rerankTarget enters the routable provider catalog.
+    if (rawModel.kind === 'rerank') continue;
     const endpoints = autoModelEndpoints(rawModel, configuredEndpoints);
     models.push({
       ...customRawToProviderModel(rawModel),
@@ -87,6 +90,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       endpoints,
       providerData: model.upstreamModelId,
       enabledFlags,
+      ...(model.rerankTarget ? { rerankTarget: model.rerankTarget } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     if (model.pricing) internal.pricing = model.pricing;
@@ -184,6 +188,19 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       const body = await serializeOpenAIImagesEditsRequest(request, rawModelId);
       const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: rawModelId };
+    },
+    callRerank: async (model, request, signal, opts) => {
+      const target = model.rerankTarget;
+      if (target === undefined) throw new Error(`Rerank model ${model.id} has no outbound target`);
+      const rawModelId = rawModelIdOf(model);
+      const body = serializeRerankRequest(target.protocol, rawModelId, request);
+      const response = await customFetchRerank(
+        config,
+        target.path ?? DEFAULT_RERANK_PATHS[target.protocol],
+        { method: 'POST', body: JSON.stringify(body), signal },
+        { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      );
+      return { response, modelKey: rawModelId, target };
     },
   };
 

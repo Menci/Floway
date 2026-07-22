@@ -110,7 +110,7 @@ Inputs:
   unrestricted; empty list = no providers visible). The cap is the
   intersection of per-user and per-api-key allow-lists; unknown ids raise
   a configuration error rather than silently narrowing.
-- `kind` — `chat` / `embedding` / `image`, determined by the inbound
+- `kind` — `chat` / `embedding` / `image` / `rerank`, determined by the inbound
   endpoint, not by the inbound payload. `/v1/completions` reuses the
   `chat` kind and narrows further via its endpoint-key predicate
   (`endpoints.completions !== undefined`).
@@ -229,7 +229,7 @@ reads it in each attempt's terminal wire call, right before destructuring
 `applyRulesToUpstream{ChatCompletions,Responses,Messages}` in
 `data-plane/model-aliases/apply-rules.ts`. Passthrough seams thread
 alias-origin candidates through the same iteration but never observe
-non-empty rules (passthrough alias kinds — `embedding`, `image` — carry
+non-empty rules (non-chat alias kinds — `embedding`, `image`, `rerank` — carry
 `{}` by schema; the apply-rules call is a no-op).
 
 By construction alias names never re-enter the alias layer: the target
@@ -324,13 +324,16 @@ The `targetApi` decision is therefore exclusively an attempt-time
 concern; it is never carried on the candidate or threaded as an explicit
 argument.
 
-Passthrough endpoints (`/v1/embeddings`, `/v1/images/*`, `/v1/completions`)
+Single-target endpoints (`/v1/embeddings`, `/v1/images/*`, `/v1/completions`,
+and the four rerank ingress routes)
 follow the same rule with a single-key predicate
 (`endpoints[endpointKey] !== undefined`) instead of a multi-target
 preference list. The kind-filter at resolution time guarantees a
 chat-kind candidate is never offered to a passthrough endpoint and vice
-versa; the endpoint-key check at attempt time then narrows within the
-kind.
+versa; the endpoint-key check at attempt time then narrows within the kind.
+Rerank additionally requires the selected provider model to carry an explicit
+`rerankTarget`; the target protocol and optional path are model metadata, not
+an upstream-level default.
 
 ## Pricing and Cost
 

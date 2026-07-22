@@ -1,7 +1,7 @@
 import type { FlagId, FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
@@ -112,17 +112,25 @@ export interface TelemetryModelIdentity {
 }
 
 // `chat`, `text_completion`, and `embeddings` are the OTel `gen_ai.operation.name`
-// well-known values we route; `image_generation` and `image_edit` are Floway
-// extensions covering the concrete non-chat endpoints OTel does not name. Extend
+// well-known values we route; `image_generation`, `image_edit`, and `rerank`
+// are Floway extensions covering concrete endpoints OTel does not name. Extend
 // only when a new route lands — no wildcard string.
 // OTel canonical set:
 // https://github.com/open-telemetry/semantic-conventions/blob/v1.37.0/docs/gen-ai/gen-ai-spans.md#gen_aioperationname
-export type PerformanceOperation =
-  | 'chat'
-  | 'text_completion'
-  | 'embeddings'
-  | 'image_generation'
-  | 'image_edit';
+export const PERFORMANCE_OPERATIONS = [
+  'chat',
+  'text_completion',
+  'embeddings',
+  'image_generation',
+  'image_edit',
+  'rerank',
+] as const;
+export type PerformanceOperation = typeof PERFORMANCE_OPERATIONS[number];
+
+export const parsePerformanceOperation = (value: unknown): PerformanceOperation => {
+  if (typeof value === 'string' && (PERFORMANCE_OPERATIONS as readonly string[]).includes(value)) return value as PerformanceOperation;
+  throw new TypeError(`Invalid performance operation: ${JSON.stringify(value)}`);
+};
 
 export interface PerformanceTelemetryContext {
   keyId: string;
@@ -143,6 +151,7 @@ export interface PerformanceTelemetryContext {
 // at the producer boundary:
 //   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
 //   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
+//   `kind === 'rerank'`    ⇔ `endpoints === { rerank: {} }`
 //   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
 interface ModelMetadata {
   id: string;
@@ -209,6 +218,7 @@ export interface InternalAliasedFrom {
 // the surrounding `InternalModel` map is assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
   providerData?: unknown;
+  rerankTarget?: RerankTarget;
   enabledFlags: ReadonlySet<FlagId>;
   // Provider's per-model flag call as a sparse override — each entry
   // states the provider's opinion for that flag on this specific

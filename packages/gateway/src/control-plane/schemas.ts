@@ -19,7 +19,7 @@ import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
-import { parseNonNegativeDecimalString } from '@floway-dev/protocols/common';
+import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -54,6 +54,7 @@ const modelEndpointsSchema = z.object({
   embeddings: z.object({}).optional(),
   imagesGenerations: z.object({}).optional(),
   imagesEdits: z.object({}).optional(),
+  rerank: z.object({}).optional(),
 });
 
 const priceSchema = z.string().transform((value, ctx) => {
@@ -72,6 +73,7 @@ const pricingMetricShape = {
   input_cache_write_1h_tokens: priceSchema.optional(),
   input_image_tokens: priceSchema.optional(),
   output_image_tokens: priceSchema.optional(),
+  rerank_searches: priceSchema.optional(),
 };
 
 // Modality arrays: both input and output require at least one entry and
@@ -137,8 +139,12 @@ const limitsSchema = z.object({
 const upstreamModelSchema = z.object({
   upstreamModelId: z.string().min(1),
   publicModelId: z.string().optional(),
-  kind: z.enum(['chat', 'embedding', 'image']).optional(),
+  kind: z.enum(MODEL_KINDS).optional(),
   endpoints: modelEndpointsSchema,
+  rerankTarget: z.object({
+    protocol: z.enum(RERANK_PROTOCOLS),
+    path: z.string().optional(),
+  }).strict().optional(),
   display_name: z.string().optional(),
   pricing: z.object({
     entries: z.array(z.object({
@@ -152,6 +158,12 @@ const upstreamModelSchema = z.object({
 }).refine(
   m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
   { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },
+).refine(
+  m => kindForEndpoints(m.endpoints) !== 'rerank' || m.rerankTarget !== undefined,
+  { message: 'rerankTarget is required when endpoints select rerank', path: ['rerankTarget'] },
+).refine(
+  m => m.rerankTarget === undefined || kindForEndpoints(m.endpoints) === 'rerank',
+  { message: 'rerankTarget is only allowed when endpoints select rerank', path: ['rerankTarget'] },
 );
 
 const customConfigSchema = z.object({
@@ -176,6 +188,9 @@ const azureConfigSchema = z.object({
   endpoint: z.string().min(1),
   apiKey: z.string().optional(),
   models: z.array(upstreamModelSchema).min(1, 'models must be a non-empty array'),
+}).refine(config => config.models.every(model => model.kind !== 'rerank'), {
+  message: 'rerank models require a custom upstream',
+  path: ['models'],
 });
 
 const ollamaConfigSchema = z.object({
@@ -184,6 +199,9 @@ const ollamaConfigSchema = z.object({
   // daemon. PATCH passes `null` to explicitly clear it.
   apiKey: z.string().nullable().optional(),
   models: z.array(upstreamModelSchema).optional(),
+}).refine(config => config.models?.every(model => model.kind !== 'rerank') !== false, {
+  message: 'rerank models require a custom upstream',
+  path: ['models'],
 });
 
 // --- auth ---
@@ -606,7 +624,7 @@ const announcedMetadataSchema = z.object({
 
 const aliasBaseShape = {
   name: z.string().min(1),
-  kind: z.enum(['chat', 'embedding', 'image']),
+  kind: z.enum(MODEL_KINDS),
   selection: z.enum(['random', 'first-available']),
   display_name: z.string().min(1).nullable(),
   visible_in_models_list: z.boolean(),
@@ -619,7 +637,7 @@ const aliasBodyCore = z.object(aliasBaseShape);
 
 // superRefine cross-validates each target's `rules` against the alias-level
 // kind. Chat: parse through `chatAliasRulesSchema` and surface the inner
-// issue verbatim. Embedding / image: the slot must be `{}` until a future
+// issue verbatim. Embedding / image / rerank: the slot must be `{}` until a future
 // schema lands. `announced_metadata.chat` is bound to the same invariant:
 // a chat block on a non-chat alias would land on the InternalModel row and
 // leak an incoherent `chat: {...}` sidecar onto `/v1/models` for a row
@@ -672,7 +690,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(13, { error: 'version must be 13 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(14, { error: 'version must be 14 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

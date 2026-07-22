@@ -93,7 +93,7 @@ const parsePricing = (value: unknown): ModelPricing | undefined => {
 };
 
 const parseKind = (value: unknown): ModelKind | undefined => {
-  if (value === 'chat' || value === 'embedding' || value === 'image') return value;
+  if (value === 'chat' || value === 'embedding' || value === 'image' || value === 'rerank') return value;
   return undefined;
 };
 

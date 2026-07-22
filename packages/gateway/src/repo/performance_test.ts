@@ -219,3 +219,23 @@ describe('SqlPerformanceRepo upsertSummary set-mode guard', () => {
     await expect(repo.set(incomplete)).rejects.toThrow(/missing count column ttft_ms_sum/);
   });
 });
+
+describe('SqlPerformanceRepo operation vocabulary', () => {
+  it('persists rerank rows through the open operation schema', async () => {
+    const repo = new SqlRepo(await createSqliteTestDb()).performance;
+    await repo.recordNeutral(errSample({ operation: 'rerank' }));
+    const [row] = await repo.listAll();
+    expect(row).toMatchObject({ operation: 'rerank', requests: 1, neutral: 1 });
+  });
+
+  it('rejects an unknown stored operation at hydration', async () => {
+    const db = await createSqliteTestDb();
+    await db.prepare(
+      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind('2026-06-30T09', 'key_a', 'model', 'upstream', 'future-operation', 'hkg').run();
+
+    const repo = new SqlRepo(db).performance;
+    await expect(repo.listAll()).rejects.toThrow('Invalid performance operation: "future-operation"');
+  });
+});

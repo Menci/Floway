@@ -9,8 +9,8 @@ then routes each model through the API shape the client already speaks.
 - Use GitHub Copilot, ChatGPT subscriptions, Claude.ai subscriptions, Azure
   OpenAI, custom OpenAI- or Anthropic-compatible providers, and Ollama from one
   deployment.
-- Serve OpenAI, Anthropic, and Gemini-compatible APIs with cross-protocol
-  translation where needed.
+- Serve OpenAI, Anthropic, Gemini-compatible, and rerank APIs with
+  cross-protocol translation where needed.
 - Manage upstreams, routing order, model aliases, API keys, and web search from
   a dashboard.
 - Generate one-command Claude Code and Codex configurations from an API key.
@@ -52,6 +52,14 @@ uploaded files persist in the `floway-data` volume.
 | OpenAI Models | `GET /v1/models` |
 | Anthropic Messages | `POST /v1/messages`, `POST /v1/messages/count_tokens` |
 | Google Gemini | `POST /v1beta/models/...` |
+| Cohere Rerank v1 | `POST /v1/rerank` |
+| Cohere Rerank v2 | `POST /v2/rerank` |
+| Jina Rerank | `POST /jina/v1/rerank` |
+| Voyage Rerank | `POST /voyage/v1/rerank` |
+
+Rerank models are manual Custom models. Each model selects its outbound Cohere,
+Jina, Voyage, DashScope-compatible, or DashScope-native protocol and may
+override that protocol's canonical path; there is no upstream-wide rerank path.
 
 ### Upstreams
 

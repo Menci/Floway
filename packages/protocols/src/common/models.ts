@@ -21,10 +21,10 @@ import { billableServiceTier } from './usage.ts';
 // 1-hour bucket Anthropic surfaces under
 // `cache_creation.ephemeral_1h_input_tokens` (extended-cache-ttl-2025-04-11).
 // They are disjoint subsets of `cache_creation_input_tokens`.
-export type BillingMetric = 'input_tokens' | 'input_cache_read_tokens' | 'input_cache_write_tokens' | 'input_cache_write_1h_tokens' | 'input_image_tokens' | 'output_tokens' | 'output_image_tokens';
+export type BillingMetric = 'input_tokens' | 'input_cache_read_tokens' | 'input_cache_write_tokens' | 'input_cache_write_1h_tokens' | 'input_image_tokens' | 'output_tokens' | 'output_image_tokens' | 'rerank_searches';
 
 // Iteration form of BillingMetric; the type union is the source of truth.
-export const BILLING_METRICS: readonly BillingMetric[] = ['input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'input_image_tokens', 'output_tokens', 'output_image_tokens'];
+export const BILLING_METRICS: readonly BillingMetric[] = ['input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'input_image_tokens', 'output_tokens', 'output_image_tokens', 'rerank_searches'];
 
 export const parseBillingMetric = (value: unknown, label = 'billing metric'): BillingMetric => {
   if (typeof value === 'string' && (BILLING_METRICS as readonly string[]).includes(value)) return value as BillingMetric;
@@ -420,7 +420,34 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
 //
 // Add a value here only when we actually route that endpoint family — do
 // not pre-declare for future capabilities.
-export type ModelKind = 'chat' | 'embedding' | 'image';
+export const MODEL_KINDS = ['chat', 'embedding', 'image', 'rerank'] as const;
+export type ModelKind = typeof MODEL_KINDS[number];
+
+export const parseModelKind = (value: unknown, label = 'model kind'): ModelKind => {
+  if (typeof value === 'string' && (MODEL_KINDS as readonly string[]).includes(value)) return value as ModelKind;
+  throw new Error(`${label} is invalid: ${JSON.stringify(value)}`);
+};
+
+export const RERANK_PROTOCOLS = [
+  'cohere-v1',
+  'cohere-v2',
+  'jina-v1',
+  'voyage-v1',
+  'dashscope-compatible',
+  'dashscope-native',
+] as const;
+
+export type RerankProtocol = typeof RERANK_PROTOCOLS[number];
+export type RerankSourceProtocol = Exclude<RerankProtocol, 'dashscope-compatible' | 'dashscope-native'>;
+
+// Rerank has no vendor-neutral upstream URL. The operator chooses the wire
+// dialect on each model and may replace that dialect's canonical path for a
+// compatible server. Keeping this off the upstream prevents one model's
+// protocol choice from leaking onto every other model at the same base URL.
+export interface RerankTarget {
+  protocol: RerankProtocol;
+  path?: string;
+}
 
 export type Modality = 'text' | 'image';
 
@@ -491,7 +518,7 @@ export interface PublicModel {
   // upstream catalog into the public-facing shape: the three chat endpoints
   // (chatCompletions / messages / responses) appear together because the
   // gateway translates between them, while `completions`, `embeddings`,
-  // `imagesGenerations`, and `imagesEdits` only appear when the upstream
+  // `imagesGenerations`, `imagesEdits`, and `rerank` only appear when the upstream
   // natively serves them. Alias entries surface the UNION of every
   // currently-available target's endpoint map — at request time the
   // resolver narrows the pool to targets that serve the inbound endpoint,

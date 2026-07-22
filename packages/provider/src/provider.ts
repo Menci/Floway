@@ -4,11 +4,12 @@ import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
 import type { CompletionsPayload } from '@floway-dev/protocols/completions';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Action tag threaded through the Responses pipeline. `generate` is a normal
@@ -36,6 +37,10 @@ export interface Provider {
 export interface ProviderCallResult {
   response: Response;
   modelKey: string;
+}
+
+export interface ProviderRerankCallResult extends ProviderCallResult {
+  target: RerankTarget;
 }
 
 // Streaming endpoints (Messages / Responses / ChatCompletions) return decoded
@@ -132,6 +137,7 @@ export interface ProviderInstance {
   callEmbeddings(model: ProviderModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callImagesGenerations(model: ProviderModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callImagesEdits(model: ProviderModel, request: ImagesEditsRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  callRerank(model: ProviderModel, request: CanonicalRerankRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderRerankCallResult>;
 }
 
 // Static, module-shaped surface each provider package exports. The gateway

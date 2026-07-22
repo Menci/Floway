@@ -78,6 +78,7 @@ export const stubProvider = (overrides: Partial<ProviderInstance> = {}): Provide
   callEmbeddings: overrides.callEmbeddings ?? (() => Promise.reject(new Error('stubProvider.callEmbeddings was called'))),
   callImagesGenerations: overrides.callImagesGenerations ?? (() => Promise.reject(new Error('stubProvider.callImagesGenerations was called'))),
   callImagesEdits: overrides.callImagesEdits ?? (() => Promise.reject(new Error('stubProvider.callImagesEdits was called'))),
+  callRerank: overrides.callRerank ?? (() => Promise.reject(new Error('stubProvider.callRerank was called'))),
 });
 
 // Stitches together a candidate whose `model.providerModels` map carries an

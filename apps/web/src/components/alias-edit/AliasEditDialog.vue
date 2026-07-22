@@ -29,7 +29,7 @@ const modelsStore = useRawModelsStore();
 const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'));
 
 // Switching kind discards rule state — a chat-only rule must not survive a
-// switch into embedding/image.
+// switch into any non-chat kind.
 const emptyRulesFor = (k: ModelKind): AliasTarget['rules'] => (k === 'chat' ? {} : {} as Record<string, never>);
 
 const blankTarget = (k: ModelKind): AliasTarget => ({ target_model_id: '', rules: emptyRulesFor(k) });
@@ -88,7 +88,7 @@ const computedAnnouncedMetadata = computed<AnnouncedMetadata>(() =>
 
 const overrideEnabled = computed<boolean>(() => announcedOverride.value !== null);
 
-const showAnnouncedSection = computed(() => kind.value !== 'image');
+const showAnnouncedSection = computed(() => kind.value === 'chat' || kind.value === 'embedding');
 
 const announcedSectionExpanded = ref(false);
 const toggleAnnouncedSection = () => { announcedSectionExpanded.value = !announcedSectionExpanded.value; };
@@ -118,12 +118,11 @@ const onAnnouncedChange = (next: AnnouncedMetadata | undefined) => {
   announcedOverride.value = next ?? {};
 };
 
-// Switching alias kind discards a chat-only override since the
-// schema would reject it on save (e.g. embedding aliases can not
-// carry a `chat` block).
+// Non-chat generation metadata has no meaning for image or rerank aliases.
+// Embedding retains limits but drops the chat-only block.
 watch(kind, k => {
   if (announcedOverride.value === null) return;
-  if (k === 'image') {
+  if (k === 'image' || k === 'rerank') {
     announcedOverride.value = null;
     return;
   }
@@ -215,6 +214,7 @@ const KIND_OPTIONS: { value: ModelKind; label: string }[] = [
   { value: 'chat', label: 'Chat' },
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
+  { value: 'rerank', label: 'Rerank' },
 ];
 </script>
 

@@ -50,9 +50,9 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { getFileProvider, type SqlDatabase, type SqlPreparedStatement, type SqlResult } from '@floway-dev/platform';
-import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type ModelKind } from '@floway-dev/protocols/common';
-import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, PerformanceOperation, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix } from '@floway-dev/provider';
+import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
+import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamRecord } from '@floway-dev/provider';
+import { normalizeModelPrefix, parsePerformanceOperation } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -596,7 +596,7 @@ const performanceDimensionsFromRow = (row: PerformanceDimensionRow): Performance
   keyId: row.key_id,
   model: row.model,
   upstream: row.upstream,
-  operation: row.operation as PerformanceOperation,
+  operation: parsePerformanceOperation(row.operation),
   runtimeLocation: row.runtime_location,
 });
 
@@ -1845,7 +1845,7 @@ const parseAnnouncedMetadata = (raw: string | null, name: string): AnnouncedMeta
 
 const toModelAliasRecord = (row: ModelAliasRow): ModelAliasRecord => ({
   name: row.name,
-  kind: row.kind as ModelKind,
+  kind: parseModelKind(row.kind, `model_aliases.kind for ${row.name}`),
   selection: row.selection as AliasSelection,
   displayName: row.display_name,
   visibleInModelsList: row.visible_in_models_list !== 0,

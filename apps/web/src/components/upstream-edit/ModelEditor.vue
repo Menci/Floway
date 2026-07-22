@@ -5,6 +5,7 @@ import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
 import PricingEditor from './PricingEditor.vue';
+import RerankTargetEditor from './RerankTargetEditor.vue';
 import type { AnnouncedMetadata, ModelKind, UpstreamModelConfig } from '../../api/types.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
@@ -23,6 +24,7 @@ const props = defineProps<{
   // Controls visibility of the "Switch to Auto / Manual" toggle in the header.
   hasAutoCounterpart: boolean;
   modeSwitchable: boolean;
+  allowRerank: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -31,11 +33,12 @@ const emit = defineEmits<{
   remove: [];
 }>();
 
-const kindOptions: { value: ModelKind; label: string }[] = [
+const kindOptions = computed<{ value: ModelKind; label: string }[]>(() => [
   { value: 'chat', label: 'Chat' },
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
-];
+  ...(props.allowRerank ? [{ value: 'rerank' as const, label: 'Rerank' }] : []),
+]);
 
 const config = computed<UpstreamModelConfig | null>(() => props.row?.config ?? null);
 const editable = computed(() => props.row?.kind === 'manual');
@@ -49,7 +52,12 @@ const patch = (next: Partial<UpstreamModelConfig>) => {
 
 const setKind = (k: ModelKind) => {
   if (!editable.value || !config.value) return;
-  patch({ kind: k, endpoints: defaultEndpointsForKind(k, config.value.endpoints) });
+  patch({
+    kind: k,
+    endpoints: defaultEndpointsForKind(k, config.value.endpoints),
+    chat: k === 'chat' ? config.value.chat : undefined,
+    rerankTarget: k === 'rerank' ? config.value.rerankTarget ?? { protocol: 'cohere-v2' } : undefined,
+  });
 };
 
 watch(() => [props.row?.uiId, props.row?.kind] as const, () => {
@@ -175,7 +183,7 @@ const onChatMetadataChange = (next: AnnouncedMetadata | undefined) => {
           </div>
         </section>
 
-        <section v-if="rowKind !== 'embedding'">
+        <section v-if="rowKind === 'chat' || rowKind === 'image'">
           <div class="mb-3 flex items-baseline gap-3">
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Supported Endpoints</h3>
             <span class="text-[11px] text-gray-500">protocols this model responds to</span>
@@ -188,8 +196,15 @@ const onChatMetadataChange = (next: AnnouncedMetadata | undefined) => {
           />
         </section>
 
+        <RerankTargetEditor
+          v-if="rowKind === 'rerank' && config.rerankTarget"
+          :model-value="config.rerankTarget"
+          :disabled="!editable"
+          @update:model-value="value => patch({ rerankTarget: value })"
+        />
+
         <ChatMetadataEditor
-          v-if="rowKind !== 'image'"
+          v-if="rowKind === 'chat' || rowKind === 'embedding'"
           :model-value="chatMetadataValue"
           :kind="rowKind"
           :mode="editable ? 'manual' : 'auto'"

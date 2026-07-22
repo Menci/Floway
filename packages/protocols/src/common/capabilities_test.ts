@@ -15,3 +15,7 @@ test('kindForEndpoints returns embedding for embeddings and chat for chat-protoc
   assertEquals(kindForEndpoints({ messages: {} }), 'chat');
   assertEquals(kindForEndpoints({ completions: {} }), 'chat');
 });
+
+test('kindForEndpoints returns rerank for the semantic rerank endpoint', () => {
+  assertEquals(kindForEndpoints({ rerank: {} }), 'rerank');
+});

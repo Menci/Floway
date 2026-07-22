@@ -31,8 +31,7 @@ import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, type PricingSelector } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
-import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
@@ -50,7 +49,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 13;
+  version: 14;
   exportedAt: string;
   data: {
     users: User[];
@@ -65,7 +64,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 13;
+const EXPORT_VERSION = 14;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -78,9 +77,6 @@ const isLegacyUpstreamIdentity = (value: string): boolean => LEGACY_UPSTREAM_PRE
 const isNonNegativeSafeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
 const isPerformanceMetric = (value: unknown): value is PerformanceMetric => typeof value === 'string' && PERFORMANCE_METRICS.has(value as PerformanceMetric);
-
-const PERFORMANCE_OPERATIONS = new Set<PerformanceOperation>(['chat', 'text_completion', 'embeddings', 'image_generation', 'image_edit']);
-const isPerformanceOperation = (value: unknown): value is PerformanceOperation => typeof value === 'string' && PERFORMANCE_OPERATIONS.has(value as PerformanceOperation);
 
 const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
 
@@ -516,6 +512,12 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
     if (!record || typeof record !== 'object') return { type: 'invalid', index: i, error: 'record is not an object' };
 
     const item = record as Record<string, unknown>;
+    let operation: ReturnType<typeof parsePerformanceOperation>;
+    try {
+      operation = parsePerformanceOperation(item.operation);
+    } catch {
+      return { type: 'invalid', index: i, error: 'record fields are missing or malformed' };
+    }
     if (
       typeof item.hour !== 'string' ||
       !SEARCH_USAGE_HOUR_PATTERN.test(item.hour) ||
@@ -526,7 +528,6 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       typeof item.upstream !== 'string' ||
       item.upstream.length === 0 ||
       isLegacyUpstreamIdentity(item.upstream) ||
-      !isPerformanceOperation(item.operation) ||
       typeof item.runtimeLocation !== 'string' ||
       item.runtimeLocation.length === 0 ||
       !isNonNegativeSafeInteger(item.requests) ||
@@ -615,7 +616,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       keyId: item.keyId,
       model: item.model,
       upstream: item.upstream,
-      operation: item.operation as PerformanceOperation,
+      operation,
       runtimeLocation: item.runtimeLocation,
       requests,
       ttftSamplesOk,

@@ -23,6 +23,10 @@ const endpoints: EndpointRow[] = [
   { method: 'POST', path: '/v1/embeddings', name: 'OpenAI Embeddings', docs: 'https://platform.openai.com/docs/api-reference/embeddings/create' },
   { method: 'POST', path: '/v1/images/generations', name: 'OpenAI Image Generations', docs: 'https://platform.openai.com/docs/api-reference/images/create' },
   { method: 'POST', path: '/v1/images/edits', name: 'OpenAI Image Edits', docs: 'https://platform.openai.com/docs/api-reference/images/createEdit' },
+  { method: 'POST', path: '/v1/rerank', name: 'Cohere Rerank v1', docs: 'https://docs.cohere.com/reference/rerank' },
+  { method: 'POST', path: '/v2/rerank', name: 'Cohere Rerank v2', docs: 'https://docs.cohere.com/v2/reference/rerank' },
+  { method: 'POST', path: '/jina/v1/rerank', name: 'Jina Rerank', docs: 'https://api.jina.ai/openapi.json' },
+  { method: 'POST', path: '/voyage/v1/rerank', name: 'Voyage Rerank', docs: 'https://docs.voyageai.com/reference/reranker-api' },
   { method: 'GET', path: '/v1/models', name: 'OpenAI Models', docs: 'https://platform.openai.com/docs/api-reference/models/list' },
   { method: 'POST', path: '/v1beta/models/{model}:{action}', name: 'Google Gemini', docs: 'https://ai.google.dev/api/generate-content' },
 ];

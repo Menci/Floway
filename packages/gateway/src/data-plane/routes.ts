@@ -8,6 +8,7 @@ import { embeddings } from './embeddings/serve.ts';
 import { imagesEdits, imagesGenerations } from './images/serve.ts';
 import { serveGeminiModelInfo, serveGeminiModels } from './models/gemini.ts';
 import { models } from './models/serve.ts';
+import { rerank } from './rerank/serve.ts';
 import type { AuthVars } from '../middleware/auth.ts';
 
 export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
@@ -27,4 +28,8 @@ export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
   app.post('/images/generations', imagesGenerations);
   app.post('/v1/images/edits', imagesEdits);
   app.post('/images/edits', imagesEdits);
+  app.post('/v1/rerank', rerank('cohere-v1'));
+  app.post('/v2/rerank', rerank('cohere-v2'));
+  app.post('/jina/v1/rerank', rerank('jina-v1'));
+  app.post('/voyage/v1/rerank', rerank('voyage-v1'));
 };

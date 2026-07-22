@@ -6,7 +6,7 @@ import { SqlRepo } from './sql.ts';
 import type { UpstreamRepo } from './types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
 const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id' | 'kind' | 'createdAt' | 'sortOrder'>): UpstreamRecord => ({
   name: overrides.id,
@@ -648,6 +648,31 @@ test('migration 0044 rewrites pathOverrides keys to the OpenAI-canonical /path/f
       `SELECT json_extract(config_json, '$.pathOverrides') AS overrides FROM upstreams WHERE id = 'up_azure'`,
     );
     assertEquals(JSON.parse(azure[0].overrides), { chat_completions: '/should/stay' });
+  } finally {
+    db.close();
+  }
+});
+
+test('migration 0062 opens model alias kind while preserving existing aliases', async () => {
+  const db = await createMigratedSqlJsDatabase();
+  try {
+    for (const filename of [...migrationSqlByFilename.keys()].filter(filename => filename >= '0010_unified_upstreams.sql' && filename < '0063_model_alias_kind.sql').toSorted()) {
+      applySqlJsFile(db, filename);
+    }
+
+    applySqlJsFile(db, '0063_model_alias_kind.sql');
+    db.run(`INSERT INTO model_aliases (name, kind, selection, visible_in_models_list, targets, sort_order, created_at, updated_at)
+            VALUES ('rerank-alias', 'rerank', 'first-available', 1, '[]', 1, '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z')`);
+
+    assertEquals(sqlJsRows<{ name: string; kind: string }>(db, 'SELECT name, kind FROM model_aliases ORDER BY sort_order, created_at'), [
+      { name: 'codex-auto-review', kind: 'chat' },
+      { name: 'rerank-alias', kind: 'rerank' },
+    ]);
+    assertThrows(
+      () => db.run(`INSERT INTO model_aliases (name, kind, selection, visible_in_models_list, targets, sort_order, created_at, updated_at)
+                    VALUES ('empty-kind', '', 'first-available', 1, '[]', 2, '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z')`),
+      Error,
+    );
   } finally {
     db.close();
   }

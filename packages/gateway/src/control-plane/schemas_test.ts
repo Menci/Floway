@@ -123,3 +123,57 @@ describe('upstreamModelSchema chat', () => {
     expect(createUpstreamBody.safeParse(body).success).toBe(false);
   });
 });
+
+describe('upstreamModelSchema rerank', () => {
+  const customRerank = () => ({
+    kind: 'custom' as const,
+    name: 'rerank',
+    config: {
+      baseUrl: 'https://rerank.example.com',
+      authStyle: 'bearer' as const,
+      apiKey: 'key',
+      endpoints: {},
+      models: [{
+        upstreamModelId: 'reranker',
+        kind: 'rerank' as const,
+        endpoints: { rerank: {} },
+        rerankTarget: { protocol: 'cohere-v2' as const },
+      }],
+    },
+  });
+
+  test('accepts an explicit target on a custom model', () => {
+    expect(createUpstreamBody.safeParse(customRerank()).success).toBe(true);
+  });
+
+  test('derives rerank from its sole endpoint before validating the target', () => {
+    const body = customRerank();
+    delete (body.config.models[0] as Partial<typeof body.config.models[0]>).kind;
+    expect(createUpstreamBody.safeParse(body).success).toBe(true);
+  });
+
+  test('rejects a rerank model without its target', () => {
+    const body = customRerank();
+    delete (body.config.models[0] as Partial<typeof body.config.models[0]>).rerankTarget;
+    expect(createUpstreamBody.safeParse(body).success).toBe(false);
+  });
+
+  test('rejects rerank models on Azure', () => {
+    const body = structuredClone(baseAzure);
+    const model = body.config.models[0] as Record<string, unknown>;
+    model.kind = 'rerank';
+    model.endpoints = { rerank: {} };
+    model.rerankTarget = { protocol: 'cohere-v2' };
+    expect(createUpstreamBody.safeParse(body).success).toBe(false);
+  });
+
+  test('treats explicit kind conflicts like existing image endpoint conflicts', () => {
+    const chat = customRerank();
+    (chat.config.models[0] as Record<string, unknown>).kind = 'chat';
+    expect(createUpstreamBody.safeParse(chat).success).toBe(true);
+
+    const mixed = customRerank();
+    (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, chatCompletions: {} };
+    expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
+  });
+});
