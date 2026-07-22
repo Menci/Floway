@@ -14,6 +14,3 @@ export const responsesStateLifetime = (
   }
   return { refreshedAt, expiresAt: refreshedAt + retentionSeconds * 1000 };
 };
-
-export const responsesStateActiveAfter = (now: number, retentionSeconds: number): number =>
-  responsesStateLifetime(now, retentionSeconds).refreshedAt - retentionSeconds * 1000;

@@ -23,9 +23,6 @@ type StoredResponsesPayloadJson =
 // cap pushes large tool outputs out to the file provider where per-byte
 // storage is dramatically cheaper than D1.
 const INLINE_PAYLOAD_LIMIT_BYTES = 64 * 1024;
-// Shared refreshable horizon for item/snapshot deletion and spilled-file
-// expiry buckets. Snapshot commits refresh every referenced item's timestamp.
-export const RESPONSES_STATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
 // Root under which every stored-payload file lives, regardless of expiry hour.
@@ -38,7 +35,8 @@ const decoder = new TextDecoder();
 export const serializeStoredResponsesPayload = async (
   id: string,
   apiKeyId: string,
-  createdAt: number,
+  stateEpoch: string,
+  expiresAt: number,
   payload: StoredResponsesItemPayload,
 ): Promise<string> => {
   const rawBytes = encoder.encode(JSON.stringify(payload));
@@ -58,16 +56,15 @@ export const serializeStoredResponsesPayload = async (
   // sha256/byteLength describe the file's actual bytes (gzipped) so file
   // integrity verification stays a plain hash-of-body check.
   const sha256 = await sha256Hex(gzippedBytes);
-  const expiresAt = createdAt + RESPONSES_STATE_TTL_MS;
-  const apiKeyHashPrefix = (await sha256Hex(encoder.encode(apiKeyId))).slice(0, 16);
+  const apiKeyHash = await sha256Hex(encoder.encode(apiKeyId));
   // Producer IDs are opaque and may contain separators or unbounded text, so
   // only their API-key-scoped digest is allowed into the object path.
-  const itemScopeHash = await sha256Hex(encoder.encode(`${apiKeyId}\0${id}`));
+  const itemScopeHash = await sha256Hex(encoder.encode(`${apiKeyId}\0${stateEpoch}\0${id}`));
   // The digest keeps integrity/content identity visible, while the nonce gives
   // each pre-SQL write exclusive cleanup ownership. A losing concurrent write
   // can then delete its object without racing a later winner that stored the
   // same item bytes under the same expiry bucket.
-  const key = `${responsesItemPayloadExpiryBucketPrefix(expiresAt)}${apiKeyHashPrefix}/${itemScopeHash}/${sha256}-${randomFileNonce()}.gz`;
+  const key = `${responsesItemPayloadExpiryBucketPrefix(expiresAt)}${apiKeyHash}/${stateEpoch}/${itemScopeHash}/${sha256}-${randomFileNonce()}.gz`;
   await getFileProvider().put(key, gzippedBytes);
   return JSON.stringify({
     version: 1,

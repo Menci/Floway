@@ -366,9 +366,11 @@ export interface ModelAliasesRepo {
 export interface StoredResponsesItem {
   id: string;
   apiKeyId: string;
+  stateEpoch: string;
   payload: StoredResponsesItemPayload;
   contentHash: string;
-  createdAt: number;
+  refreshedAt: number;
+  expiresAt: number;
 }
 
 export interface StoredResponsesItemPayload {
@@ -381,25 +383,36 @@ export interface StoredResponsesItemPayload {
 }
 
 export interface ResponsesItemsRepo {
-  lookupMany(apiKeyId: string, ids: readonly string[]): Promise<StoredResponsesItem[]>;
-  lookupManyByContentHash(apiKeyId: string, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
-  insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
-  refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void>;
-  deleteOlderThan(createdBefore: number): Promise<number>;
+  lookupMany(apiKeyId: string, stateEpoch: string, ids: readonly string[]): Promise<StoredResponsesItem[]>;
+  lookupActiveMany(apiKeyId: string, stateEpoch: string, ids: readonly string[], now: number): Promise<StoredResponsesItem[]>;
+  lookupManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
+  lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], now: number): Promise<StoredResponsesItem[]>;
+  insertMany(items: readonly StoredResponsesItem[], now: number): Promise<void>;
+  refreshMany(
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>[],
+    refreshedAt: number,
+    expiresAt: number,
+  ): Promise<void>;
+  deleteInactive(apiKeyId: string, stateEpoch: string, now: number): Promise<number>;
+  deleteByApiKey(apiKeyId: string): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
 export interface StoredResponsesSnapshot {
   id: string;
   apiKeyId: string;
+  stateEpoch: string;
   itemIds: string[];
-  createdAt: number;
+  refreshedAt: number;
+  expiresAt: number;
 }
 
 export interface ResponsesSnapshotsRepo {
-  lookup(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
+  lookup(apiKeyId: string, stateEpoch: string, id: string): Promise<StoredResponsesSnapshot | null>;
+  lookupActive(apiKeyId: string, stateEpoch: string, id: string, now: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  deleteOlderThan(createdBefore: number): Promise<number>;
+  deleteInactive(apiKeyId: string, stateEpoch: string, now: number): Promise<number>;
+  deleteByApiKey(apiKeyId: string): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
