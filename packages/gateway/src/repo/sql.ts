@@ -1475,10 +1475,16 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           `DELETE FROM responses_state_items
            WHERE rowid IN (
              SELECT rowid FROM responses_state_items INDEXED BY idx_responses_state_items_key_refresh
-             WHERE api_key_id = ? ORDER BY refreshed_at, rowid LIMIT ?
+             WHERE api_key_id = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM api_keys
+                 WHERE api_keys.id = ? AND api_keys.deleted_at IS NULL
+                   AND api_keys.responses_retention_seconds > 0
+               )
+             ORDER BY refreshed_at, rowid LIMIT ?
            )`,
         )
-        .bind(apiKeyId, limit)
+        .bind(apiKeyId, apiKeyId, limit)
         .run();
       return result.meta.changes ?? 0;
     }
@@ -1487,12 +1493,18 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       .prepare(
         `DELETE FROM responses_state_items
          WHERE rowid IN (
-           SELECT rowid FROM responses_state_items INDEXED BY idx_responses_state_items_scope_refresh
-           WHERE api_key_id = ? AND (state_epoch < ? OR state_epoch > ?)
-           ORDER BY state_epoch, refreshed_at, rowid LIMIT ?
+           SELECT stored.rowid
+           FROM api_keys
+           CROSS JOIN responses_state_items AS stored INDEXED BY idx_responses_state_items_scope_refresh
+           WHERE api_keys.id = ?
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.responses_retention_seconds > 0
+             AND stored.api_key_id = api_keys.id
+             AND (stored.state_epoch < api_keys.responses_state_epoch OR stored.state_epoch > api_keys.responses_state_epoch)
+           ORDER BY stored.state_epoch, stored.refreshed_at, stored.rowid LIMIT ?
          )`,
       )
-      .bind(apiKeyId, policy.responses_state_epoch, policy.responses_state_epoch, limit)
+      .bind(apiKeyId, limit)
       .run();
     const retiredChanges = retired.meta.changes ?? 0;
     if (retiredChanges >= limit) return retiredChanges;
@@ -1590,10 +1602,16 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
           `DELETE FROM responses_state_snapshots
            WHERE rowid IN (
              SELECT rowid FROM responses_state_snapshots INDEXED BY idx_responses_state_snapshots_key_refresh
-             WHERE api_key_id = ? ORDER BY refreshed_at, rowid LIMIT ?
+             WHERE api_key_id = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM api_keys
+                 WHERE api_keys.id = ? AND api_keys.deleted_at IS NULL
+                   AND api_keys.responses_retention_seconds > 0
+               )
+             ORDER BY refreshed_at, rowid LIMIT ?
            )`,
         )
-        .bind(apiKeyId, limit)
+        .bind(apiKeyId, apiKeyId, limit)
         .run();
       return result.meta.changes ?? 0;
     }
@@ -1602,12 +1620,18 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       .prepare(
         `DELETE FROM responses_state_snapshots
          WHERE rowid IN (
-           SELECT rowid FROM responses_state_snapshots INDEXED BY idx_responses_state_snapshots_scope_refresh
-           WHERE api_key_id = ? AND (state_epoch < ? OR state_epoch > ?)
-           ORDER BY state_epoch, refreshed_at, rowid LIMIT ?
+           SELECT stored.rowid
+           FROM api_keys
+           CROSS JOIN responses_state_snapshots AS stored INDEXED BY idx_responses_state_snapshots_scope_refresh
+           WHERE api_keys.id = ?
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.responses_retention_seconds > 0
+             AND stored.api_key_id = api_keys.id
+             AND (stored.state_epoch < api_keys.responses_state_epoch OR stored.state_epoch > api_keys.responses_state_epoch)
+           ORDER BY stored.state_epoch, stored.refreshed_at, stored.rowid LIMIT ?
          )`,
       )
-      .bind(apiKeyId, policy.responses_state_epoch, policy.responses_state_epoch, limit)
+      .bind(apiKeyId, limit)
       .run();
     const retiredChanges = retired.meta.changes ?? 0;
     if (retiredChanges >= limit) return retiredChanges;
