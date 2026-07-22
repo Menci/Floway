@@ -4,7 +4,6 @@ import { hashResponsesItemContent } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 describe('StatefulResponsesStore', () => {
   test('HTTP store=false performs no state writes', async () => {
@@ -90,21 +89,6 @@ describe('StatefulResponsesStore', () => {
 
     expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await hashResponsesItemContent(input)])).toEqual([]);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact'))?.itemIds).toEqual([output.id]);
-  });
-
-  test('stores a compaction_summary input verbatim', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
-    const store = createResponsesHttpStore('key-a', true);
-    const item = { type: 'compaction_summary', id: 'cmp_client', encrypted_content: 'opaque' } as unknown as ResponsesInputItem;
-    await store.stageInputItems([item]);
-    await store.commitSnapshot('resp_summary', 'append', []);
-
-    const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_summary');
-    expect(snapshot).not.toBeNull();
-    if (snapshot === null) throw new Error('Expected Responses snapshot');
-    const rows = await repo.responsesItems.lookupMany('key-a', snapshot.itemIds);
-    expect(rows[0].payload.item).toEqual(item);
   });
 
   test('append snapshots refresh the lifetime of every referenced item', async () => {

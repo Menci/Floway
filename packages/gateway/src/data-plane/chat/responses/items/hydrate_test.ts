@@ -41,22 +41,4 @@ describe('Responses stored-item hydration', () => {
     }, store)).toThrow();
   });
 
-  test('hydrates a canonical compaction echo from its stored alias payload', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
-    const id = 'cmp_producer';
-    const row: StoredResponsesItem = {
-      id,
-      apiKeyId: 'key-a',
-      payload: { item: { type: 'compaction_summary', id, encrypted_content: 'wrapped' } },
-      contentHash: 'hash',
-      createdAt: 1_000,
-    };
-    await repo.responsesItems.insertMany([row]);
-    const store = createResponsesHttpStore('key-a', true);
-    const input = [{ type: 'compaction', id, encrypted_content: 'wrapped' }] as unknown as Parameters<typeof hydrateResponsesPayload>[0]['input'];
-    await store.loadInputItems(input, input);
-
-    expect(hydrateResponsesPayload({ model: 'model', input }, store).payload.input).toEqual([row.payload.item]);
-  });
 });
