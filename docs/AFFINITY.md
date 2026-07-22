@@ -161,7 +161,10 @@ retention. Zero creates no durable backing, so `item_reference` and
 enables a sliding TTL; request-level `store: false` may read that durable state
 but writes none. WebSocket local state is independent and survives a durable
 setting of zero for the life of that connection. A private per-key epoch makes
-pre-disable in-flight writes invisible after retention is shortened or turned
-off. Item lifetime refresh changes only D1 timestamps. Spilled payload objects
-keep immutable nonce-owned keys and are reclaimed asynchronously through a
-crash-safe, exact-key GC queue when their item row is replaced or expires.
+pre-disable in-flight writes invisible after retention is turned off. Positive
+retention changes keep the epoch: reads apply the current rolling cutoff plus a
+monotonic floor, so shortening preserves exactly the rows inside the new window
+and later growth cannot resurrect excluded history. Item lifetime refresh
+changes only D1 timestamps. Spilled payload objects keep immutable nonce-owned
+keys and are reclaimed asynchronously through a crash-safe, exact-key GC queue
+when their item row is replaced or leaves retention.

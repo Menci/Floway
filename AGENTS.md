@@ -246,18 +246,24 @@ setting. A completed output item becomes reusable at its first
 `response.output_item.done`, so its row commits before that event is published;
 the response snapshot commits at the successful terminal event. Repository
 writes treat exact item/private-payload reuse as idempotent and reject a
-different unexpired row under the same key/epoch/ID scope. Lifetime refresh is
-key-only and debounced near expiry; increasing retention applies when an item
-is next refreshed, while shortening retention rotates the epoch and starts a
-new durable namespace. Enabled durations are at least one hour. Cleanup
-deletes expired rows through their indexed timestamp in bounded batches, so a
-late write cannot fall behind an advanced cursor. Large payloads use immutable,
-nonce-owned file keys: D1 stages a key before publication, item adoption removes
-that staging record transactionally, and row replacement/deletion queues exact
-keys for claimed batch deletion. Refresh never reads, copies, or deletes file
-objects. A separate bounded legacy cursor drains the superseded Responses
-tables and v1 hourly spill buckets; after the old 30-day writer horizon, it
-removes any remaining v1 orphan root before marking the cleanup complete.
+different visible row under the same key/epoch/ID scope. Rows store only
+`refreshed_at`; each durable read applies the API key's current rolling cutoff
+and monotonic visibility floor. Shortening retention keeps the epoch and
+advances that floor, so only rows outside the new window disappear and later
+growth cannot resurrect them based on janitor timing. Disabling retention
+rotates the epoch to isolate in-flight writes. Lifetime refresh is key-only and
+debounced near the cutoff. Enabled durations are at least one hour.
+
+Cleanup uses `(api_key_id, refreshed_at)` indexes and a claimed due-key queue.
+Each tick range-deletes one bounded item/snapshot batch against the current key
+policy, then fairly requeues a partially drained key. Large payloads use
+immutable, nonce-owned file keys: D1 stages a key before publication, item
+adoption removes that staging record transactionally, and row
+replacement/deletion queues exact keys for claimed batch deletion. Refresh
+never reads, copies, or deletes file objects. A separate bounded v1 cursor
+drains the superseded Responses tables and hourly spill buckets; after the old
+30-day writer horizon, it removes any remaining v1 orphan root before marking
+that cleanup complete.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in
