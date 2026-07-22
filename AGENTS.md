@@ -250,10 +250,14 @@ different unexpired row under the same key/epoch/ID scope. Lifetime refresh is
 key-only and debounced near expiry; increasing retention applies when an item
 is next refreshed, while shortening retention rotates the epoch and starts a
 new durable namespace. Enabled durations are at least one hour. Cleanup
-advances durable expiry-hour cursors in bounded autocommit batches, then deletes
-the drained versioned R2 hour prefix. A separate bounded legacy cursor drains
-the superseded Responses tables and v1 spill root without a migration-time
-full-table drop.
+deletes expired rows through their indexed timestamp in bounded batches, so a
+late write cannot fall behind an advanced cursor. Large payloads use immutable,
+nonce-owned file keys: D1 stages a key before publication, item adoption removes
+that staging record transactionally, and row replacement/deletion queues exact
+keys for claimed batch deletion. Refresh never reads, copies, or deletes file
+objects. A separate bounded legacy cursor drains the superseded Responses
+tables and v1 hourly spill buckets; after the old 30-day writer horizon, it
+removes any remaining v1 orphan root before marking the cleanup complete.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in
