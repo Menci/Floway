@@ -2,7 +2,7 @@ import initSqlJs from 'sql.js';
 import { describe, expect, test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { serializeStoredResponsesPayload } from './responses-payload.ts';
+import { RESPONSES_STATE_TTL_MS, responsesItemPayloadExpiryBucketPrefix, serializeStoredResponsesPayload } from './responses-payload.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, StoredResponsesItem } from './types.ts';
@@ -326,7 +326,11 @@ test('SQL refresh rereads a spill moved by a concurrent refresh', async () => {
   const [persisted] = await repo.responsesItems.lookupMany(item.apiKeyId, [item.id]);
   expect(persisted.createdAt).toBe(secondCreatedAt);
   expect(persisted.payload).toEqual(item.payload);
-  expect(await files.listKeys('responses-items/')).toHaveLength(1);
+  const survivingFiles = await files.listKeys('responses-items/');
+  expect(survivingFiles).toHaveLength(1);
+  expect(survivingFiles[0].startsWith(
+    responsesItemPayloadExpiryBucketPrefix(secondCreatedAt + RESPONSES_STATE_TTL_MS),
+  )).toBe(true);
 });
 
 test('SQL lookup rereads a spill moved by a concurrent refresh', async () => {

@@ -1097,7 +1097,11 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     let descriptor = initialDescriptor;
     for (;;) {
       const previousFileKey = storedResponsesPayloadFileKey(item.id, descriptor.payloadJson);
-      if (previousFileKey === null || previousFileKey.startsWith(targetFilePrefix)) {
+      if (
+        descriptor.createdAt >= createdAt
+        || previousFileKey === null
+        || previousFileKey.startsWith(targetFilePrefix)
+      ) {
         return {
           kind: 'refresh',
           item,
