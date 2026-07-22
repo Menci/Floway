@@ -1,5 +1,5 @@
 import { type AffinityCodec, blobForExactCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
-import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 interface ResponsesBlobLocation {
   readonly itemIndex: number;
@@ -51,7 +51,7 @@ const routingEvidenceFrom = (
 };
 
 const opaqueBlobLocations = async (
-  items: readonly (ResponsesInputItem | ResponsesOutputItem)[],
+  items: readonly ResponsesInputItem[],
   codec: AffinityCodec,
 ): Promise<ResponsesBlobLocation[]> => {
   const locations: ResponsesBlobLocation[] = [];
@@ -86,40 +86,6 @@ const opaqueBlobLocations = async (
     }
   }
   return locations;
-};
-
-export const responsesItemIdentity = async <TItem extends ResponsesInputItem | ResponsesOutputItem>(
-  item: TItem,
-  codec: AffinityCodec,
-): Promise<{ readonly producerItem: TItem; readonly stableIdentity: unknown }> => {
-  const locations = await opaqueBlobLocations([item], codec);
-  const restored = structuredClone(item) as TItem & Record<string, unknown>;
-  const nested = new Map<number, Extract<DecodedAffinityBlob, { kind: 'owned' }>>();
-  const affinity: Array<{ slot: string; target: AffinityTarget }> = [];
-  for (const location of locations) {
-    if (location.decoded.kind !== 'owned') continue;
-    affinity.push({ slot: location.slot, target: location.decoded.affinity });
-    if (location.contentIndex !== undefined) {
-      nested.set(location.contentIndex, location.decoded);
-    } else if (location.decoded.value === undefined) {
-      delete restored[location.slot];
-    } else {
-      restored[location.slot] = location.decoded.value;
-    }
-  }
-  if (restored.type === 'agent_message') {
-    restored.content = restored.content.flatMap((content, contentIndex) => {
-      const decoded = nested.get(contentIndex);
-      if (decoded === undefined) return [content];
-      return decoded.value === undefined
-        ? []
-        : [{ ...content, encrypted_content: decoded.value }];
-    });
-  }
-  return {
-    producerItem: restored,
-    stableIdentity: affinity.length === 0 ? restored : { item: restored, affinity },
-  };
 };
 
 const isEmptyOriginlessReasoningCarrier = (

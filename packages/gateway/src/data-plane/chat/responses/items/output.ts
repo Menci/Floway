@@ -1,26 +1,14 @@
-import { isEqual } from 'es-toolkit';
-
-import { hashResponsesIdentity, responsesItemId } from './identity.ts';
-import type { ResponsesOutputWrite, StatefulResponsesStore } from './store.ts';
+import { hashResponsesItemContent, responsesItemId } from './identity.ts';
+import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-
-interface ResponsesOutputIdentity {
-  readonly producerItem: ResponsesOutputItem;
-  readonly stableIdentity: unknown;
-}
 
 // Complete output items become reusable at their first done frame, so each row
 // commits before that frame is yielded. Later done frames remain
 // visible but cannot replace the durable item. The response snapshot commits
 // separately before a successful terminal frame. Failed/error terminals keep
 // completed item rows but never a snapshot.
-// Identity hashes use the producer item and owned-carrier affinity targets
-// before encryption, so fresh authenticated ciphertext does not turn exact
-// reuse into a collision and owned carriers from different routes cannot alias
-// the same producer id. The first client-facing wire projection remains
-// durable.
 //
 // Response envelope ids remain Floway-owned because one client response can
 // span several upstream calls behind the server-tool runtime. The caller mints
@@ -31,39 +19,34 @@ export const wrapResponsesClientOutput = async function* (
   args: {
     readonly store: StatefulResponsesStore;
     readonly responseId: string;
-    readonly producerIdentity: (item: ResponsesOutputItem) => Promise<ResponsesOutputIdentity>;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { store, responseId, producerIdentity } = args;
-  const finalizedOutputIndexes = new Set<number>();
+  const { store, responseId } = args;
+  const finalizedOutputIds = new Map<number, string>();
   let sawCompactionItem = false;
 
   const finalizedRow = async (item: ResponsesOutputItem): Promise<StoredResponsesItem> => {
     const id = responsesItemId(item);
     if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
-    const identity = await producerIdentity(item);
-    if (responsesItemId(identity.producerItem) !== id) {
-      throw new Error(`Responses ${item.type} output id changed while restoring producer identity: ${id}`);
-    }
     const privatePayload = store.getPrivatePayload(id);
     const row: StoredResponsesItem = {
       id,
       apiKeyId: store.apiKeyId,
       payload: {
         item: structuredClone(item),
-        ...(!isEqual(identity.stableIdentity, item) ? { identity: structuredClone(identity.stableIdentity) } : {}),
         ...(privatePayload !== undefined ? { private: privatePayload } : {}),
       },
-      contentHash: await hashResponsesIdentity(identity.stableIdentity),
+      contentHash: await hashResponsesItemContent(item),
       createdAt: Date.now(),
     };
     return row;
   };
 
   const persistFinalizedItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<void> => {
-    if (finalizedOutputIndexes.has(outputIndex)) return;
-    await store.persistOutputItem(await finalizedRow(item), outputIndex);
-    finalizedOutputIndexes.add(outputIndex);
+    if (finalizedOutputIds.has(outputIndex)) return;
+    const row = await finalizedRow(item);
+    await store.persistOutputItem(row);
+    finalizedOutputIds.set(outputIndex, row.id);
   };
 
   const clientEnvelope = (response: ResponsesResult): ResponsesResult => ({
@@ -84,22 +67,24 @@ export const wrapResponsesClientOutput = async function* (
     }
 
     if (event.type === 'response.output_item.done') {
-      if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
-      await persistFinalizedItem(event.item, event.output_index);
+      if (store.writesState) {
+        if (event.item.type === 'compaction') sawCompactionItem = true;
+        await persistFinalizedItem(event.item, event.output_index);
+      }
       yield frame;
       continue;
     }
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
-      const pending: ResponsesOutputWrite[] = [];
-      for (const [outputIndex, item] of event.response.output.entries()) {
-        if (isCompactionItemType(item.type)) sawCompactionItem = true;
-        if (!finalizedOutputIndexes.has(outputIndex)) pending.push({ row: await finalizedRow(item), outputIndex });
-      }
-      await store.persistOutputItems(pending);
-      for (const { outputIndex } of pending) finalizedOutputIndexes.add(outputIndex);
       if (store.writesState) {
-        await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
+        const orderedOutputIds = event.response.output.map((_item, outputIndex) => {
+          const id = finalizedOutputIds.get(outputIndex);
+          if (id === undefined) {
+            throw new TypeError(`Responses terminal output_index ${outputIndex} arrived before output_item.done`);
+          }
+          return id;
+        });
+        await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append', orderedOutputIds);
       }
       yield eventFrame({ ...event, response: clientEnvelope(event.response) });
       return;
@@ -117,12 +102,6 @@ export const wrapResponsesClientOutput = async function* (
     yield frame;
   }
 };
-
-// `compaction` and `compaction_summary` are the same wire variant — Codex's
-// protocol declares the latter as a serde alias for the former.
-// https://github.com/openai/codex/blob/9e552e9d15ba52bed7077d5357f3e18e330f8f38/codex-rs/protocol/src/models.rs#L1135-L1148
-const isCompactionItemType = (type: string): boolean =>
-  type === 'compaction' || type === 'compaction_summary';
 
 // A non-streaming compact result enters the same durability membrane as a live
 // stream. Every complete item gets an added/done pair before the terminal

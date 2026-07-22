@@ -210,16 +210,14 @@ protocol owns its `affinity/ingress.ts` and `affinity/egress.ts`. Wire behavior
 lives in `docs/AFFINITY.md`, and candidate ordering lives in `docs/RESOLUTION.md`.
 
 Native Responses persistence is independent from affinity. It stores the first
-client-facing projection under each producer-owned, API-key-scoped item ID,
-plus stable producer/affinity identity and snapshots, for 30 days without
-rewriting item IDs. A completed output item becomes reusable at its first
+complete client-facing item under each producer-owned, API-key-scoped item ID,
+plus response snapshots, for 30 days without rewriting item IDs. A completed
+output item becomes reusable at its first
 `response.output_item.done`, so its row commits before that event is published;
-the response snapshot commits at the successful terminal event. Producer IDs
-are immutable within one API-key scope: exact producer item, affinity target,
-and private payload reuse refreshes lifetime, while a collision fails before
-the done frame. The first client-facing affinity projection stays durable;
-later equivalent projections may use different authenticated ciphertext. HTTP
-`store: false` writes no state, while WebSocket `store: false` is session-local.
+the response snapshot commits at the successful terminal event. Repository
+writes treat exact item/private-payload reuse as idempotent and reject a
+different row under the same API-key-scoped ID. HTTP `store: false` bypasses
+item persistence, while WebSocket `store: false` is session-local.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in

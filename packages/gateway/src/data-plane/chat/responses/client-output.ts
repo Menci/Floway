@@ -1,5 +1,4 @@
 import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
-import { responsesItemIdentity } from './affinity/ingress.ts';
 import { wrapResponsesClientOutput } from './items/output.ts';
 import { createResponsesResponseId } from './response-id.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -22,6 +21,5 @@ export const wrapNativeResponsesClientOutput = (
   return wrapResponsesClientOutput(withAffinity, {
     store: chatCtx.store,
     responseId: createResponsesResponseId(),
-    producerIdentity: async item => await responsesItemIdentity(item, chatCtx.affinity.codec),
   });
 };

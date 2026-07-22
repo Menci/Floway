@@ -362,18 +362,12 @@ export interface StoredResponsesItem {
   id: string;
   apiKeyId: string;
   payload: StoredResponsesItemPayload;
-  // Stable identity: output and staged input items hash their producer form
-  // plus affinity target; plain inputs reduce to their exact visible body.
   contentHash: string;
   createdAt: number;
 }
 
 export interface StoredResponsesItemPayload {
   item: unknown;
-  // Stable producer item plus affinity target metadata, present only when the
-  // client-facing wire item contains randomized authenticated affinity
-  // ciphertext.
-  identity?: unknown;
   // Ancillary state stashed alongside the public `item` body but never sent on
   // the wire: a server-only slot to preserve data a stateless client strips
   // from the echoed item (e.g. the real `web_search_call` results) so a later

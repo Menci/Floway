@@ -3,8 +3,8 @@ export const responsesItemId = (item: object): string | null => {
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
-export const hashResponsesIdentity = async (identity: unknown): Promise<string> =>
-  await sha256Hex(JSON.stringify(sortJson(identity)));
+export const hashResponsesItemContent = async (item: unknown): Promise<string> =>
+  await sha256Hex(JSON.stringify(sortJson(item)));
 
 export const createResponsesStorageKey = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(16));

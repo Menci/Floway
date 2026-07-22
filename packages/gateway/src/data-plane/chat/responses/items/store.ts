@@ -1,6 +1,4 @@
-import { isEqual } from 'es-toolkit';
-
-import { createResponsesStorageKey, hashResponsesIdentity, responsesItemId } from './identity.ts';
+import { createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { assertSameStoredResponsesItem, cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
@@ -28,45 +26,15 @@ interface LayeredStatefulResponsesStoreOptions {
 
 type ResponsesSnapshotMode = 'append' | 'replace';
 
-export interface ResponsesInputIdentity {
-  readonly item: ResponsesInputItem;
-  readonly stableIdentity: unknown;
-}
-
-export interface ResponsesOutputWrite {
-  readonly row: StoredResponsesItem;
-  readonly outputIndex: number;
-}
-
-const storedInputRow = async (args: {
-  readonly id: string;
-  readonly apiKeyId: string;
-  readonly input: ResponsesInputIdentity;
-  readonly createdAt: number;
-  readonly contentHash?: string;
-}): Promise<StoredResponsesItem> => ({
-  id: args.id,
-  apiKeyId: args.apiKeyId,
-  payload: {
-    item: structuredClone(args.input.item),
-    ...(!isEqual(args.input.stableIdentity, args.input.item)
-      ? { identity: structuredClone(args.input.stableIdentity) }
-      : {}),
-  },
-  contentHash: args.contentHash ?? await hashResponsesIdentity(args.input.stableIdentity),
-  createdAt: args.createdAt,
-});
-
 export interface StatefulResponsesStore {
   readonly apiKeyId: string;
   readonly writesState: boolean;
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
-  loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputIdentity[]): Promise<void>;
+  loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
-  stageInputItems(items: readonly ResponsesInputIdentity[]): Promise<void>;
-  persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void>;
-  persistOutputItems(items: readonly ResponsesOutputWrite[]): Promise<void>;
-  commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
+  stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
+  persistOutputItem(row: StoredResponsesItem): Promise<void>;
+  commitSnapshot(responseId: string, mode: ResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
   // scratchpad from hydrated items; interceptors can add server-only state
   // during the turn and output capture persists it with the exact wire item.
@@ -79,9 +47,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItems = new Map<string, StoredResponsesItem>();
   private readonly loadedByContentHash = new Map<string, StoredResponsesItem[]>();
   private readonly stagedInputItemIds: string[] = [];
-  private readonly newInputItemsById = new Map<string, StoredResponsesItem>();
-  private readonly outputItemIds = new Map<number, string>();
-  private readonly outputItemsById = new Map<string, StoredResponsesItem>();
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly freshItemIds = new Set<string>();
@@ -125,7 +90,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   async loadInputItems(
     sourceItems: readonly ResponsesInputItem[],
-    inputItemsToStage: readonly ResponsesInputIdentity[],
+    inputItemsToStage: readonly ResponsesInputItem[],
   ): Promise<void> {
     const ids = new Set<string>();
     for (const item of sourceItems) {
@@ -133,10 +98,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       if (id !== null) ids.add(id);
     }
     const contentHashes = new Set<string>();
-    for (const { item, stableIdentity } of this.writesState ? inputItemsToStage : []) {
+    for (const item of this.writesState ? inputItemsToStage : []) {
       if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
       if (responsesItemId(item) !== null) continue;
-      contentHashes.add(await hashResponsesIdentity(stableIdentity));
+      contentHashes.add(await hashResponsesItemContent(item));
     }
     await this.loadItems({ ids: [...ids], contentHashes: [...contentHashes] });
   }
@@ -146,67 +111,21 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     return row === undefined ? undefined : cloneStoredResponsesItem(row);
   }
 
-  async stageInputItems(items: readonly ResponsesInputIdentity[]): Promise<void> {
-    if (!this.writesState) {
-      for (const { item, stableIdentity } of items) {
-        await this.validateTransientInputItem(item, stableIdentity);
-      }
-      return;
-    }
-    for (const { item, stableIdentity } of items) {
-      await this.stageInputItem(item, stableIdentity);
-    }
+  async stageInputItems(items: readonly ResponsesInputItem[]): Promise<void> {
+    if (!this.writesState) return;
+    for (const item of items) await this.stageInputItem(item);
   }
 
-  async persistOutputItem(row: StoredResponsesItem, outputIndex: number): Promise<void> {
-    await this.persistOutputItems([{ row, outputIndex }]);
+  async persistOutputItem(row: StoredResponsesItem): Promise<void> {
+    if (!this.writesState) return;
+    const cloned = cloneStoredResponsesItem(row);
+    await this.commitItems([cloned]);
+    this.freshItemIds.add(cloned.id);
+    this.rememberItem(cloned);
   }
 
-  async persistOutputItems(items: readonly ResponsesOutputWrite[]): Promise<void> {
-    const observedOutputIndexes = new Set(this.outputItemIds.keys());
-    const pending = items.flatMap(({ row, outputIndex }) => {
-      if (observedOutputIndexes.has(outputIndex)) return [];
-      observedOutputIndexes.add(outputIndex);
-      return [{ row: cloneStoredResponsesItem(row), outputIndex }];
-    });
-    if (pending.length === 0) return;
-    const identities = new Map(this.outputItemsById);
-    for (const { row } of pending) {
-      const sameTurn = identities.get(row.id);
-      if (sameTurn !== undefined) assertSameStoredResponsesItem(row, sameTurn);
-      const transientInput = this.newInputItemsById.get(row.id);
-      if (transientInput !== undefined) assertSameStoredResponsesItem(row, transientInput);
-      const stagedOrLoaded = this.loadedItems.get(row.id);
-      if (stagedOrLoaded !== undefined) assertSameStoredResponsesItem(row, stagedOrLoaded);
-      identities.set(row.id, row);
-    }
-    for (const read of this.options.reads) {
-      const existing = await read.lookupItems({
-        apiKeyId: this.apiKeyId,
-        ids: pending.map(item => item.row.id),
-        contentHashes: [],
-      });
-      for (const actual of existing) {
-        const expected = identities.get(actual.id);
-        if (expected === undefined) throw new Error(`Responses backing returned an unrequested item: ${actual.id}`);
-        assertSameStoredResponsesItem(expected, actual);
-      }
-    }
-    if (this.writesState) await this.commitItems(pending.map(item => item.row));
-    for (const { row, outputIndex } of pending) {
-      this.outputItemsById.set(row.id, row);
-      if (!this.writesState) continue;
-      this.outputItemIds.set(outputIndex, row.id);
-      this.freshItemIds.add(row.id);
-      this.rememberItem(row);
-    }
-  }
-
-  async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
+  async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void> {
     if (this.options.writes.length === 0) return;
-    const outputItemIds = [...this.outputItemIds.entries()]
-      .toSorted(([left], [right]) => left - right)
-      .map(([, id]) => id);
     const itemIds = mode === 'replace'
       ? outputItemIds
       : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...outputItemIds];
@@ -250,15 +169,16 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   private async loadItems(query: { ids: readonly string[]; contentHashes: readonly string[] }): Promise<void> {
-    const ids = query.ids.filter(id => !this.loadedItems.has(id));
+    let ids = query.ids.filter(id => !this.loadedItems.has(id));
     for (const backing of this.options.reads) {
       if (ids.length === 0 && query.contentHashes.length === 0) return;
       const results = await backing.lookupItems({ apiKeyId: this.apiKeyId, ids, contentHashes: query.contentHashes });
       for (const item of results) this.rememberItem(item);
+      ids = ids.filter(id => !this.loadedItems.has(id));
     }
   }
 
-  private async stageInputItem(item: ResponsesInputItem, stableIdentity: unknown): Promise<void> {
+  private async stageInputItem(item: ResponsesInputItem): Promise<void> {
     if (item.type === 'compaction_trigger') return;
     if (item.type === 'item_reference') {
       const row = this.getItemById(item.id);
@@ -271,74 +191,46 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     if (id !== null) {
       const row = this.getItemById(id);
       if (row !== undefined) {
-        const currentTurn = this.newInputItemsById.get(id);
-        if (currentTurn !== undefined) {
-          assertSameStoredResponsesItem(currentTurn, await storedInputRow({
-            id,
-            apiKeyId: this.apiKeyId,
-            input: { item, stableIdentity },
-            createdAt: currentTurn.createdAt,
-          }));
-        }
         this.stagedInputItemIds.push(row.id);
         return;
       }
 
-      const createdAt = Date.now();
-      const created = await storedInputRow({
+      const created: StoredResponsesItem = {
         id,
         apiKeyId: this.apiKeyId,
-        input: { item, stableIdentity },
-        createdAt,
-      });
+        payload: { item: structuredClone(item) },
+        contentHash: await hashResponsesItemContent(item),
+        createdAt: Date.now(),
+      };
       this.stagedInputItemIds.push(id);
       this.freshItemIds.add(id);
-      this.newInputItemsById.set(id, created);
       this.rememberItem(created);
       return;
     }
 
-    const contentHash = await hashResponsesIdentity(stableIdentity);
+    const contentHash = await hashResponsesItemContent(item);
     const existing = this.loadedByContentHash.get(contentHash)?.[0];
     if (existing !== undefined) {
       this.stagedInputItemIds.push(existing.id);
       return;
     }
 
-    const row = await storedInputRow({
+    const row: StoredResponsesItem = {
       id: createResponsesStorageKey(),
       apiKeyId: this.apiKeyId,
-      input: { item, stableIdentity },
+      payload: { item: structuredClone(item) },
       contentHash,
       createdAt: Date.now(),
-    });
+    };
     this.stagedInputItemIds.push(row.id);
     this.freshItemIds.add(row.id);
     this.rememberItem(row);
   }
 
-  private async validateTransientInputItem(item: ResponsesInputItem, stableIdentity: unknown): Promise<void> {
-    if (item.type === 'item_reference' || item.type === 'compaction_trigger') return;
-    const id = responsesItemId(item);
-    if (id === null || this.loadedItems.has(id)) return;
-    const current = this.newInputItemsById.get(id);
-    const candidate = await storedInputRow({
-      id,
-      apiKeyId: this.apiKeyId,
-      input: { item, stableIdentity },
-      createdAt: current?.createdAt ?? Date.now(),
-    });
-    if (current === undefined) this.newInputItemsById.set(id, candidate);
-    else assertSameStoredResponsesItem(candidate, current);
-  }
-
   private rememberItem(row: StoredResponsesItem): void {
     const cloned = cloneStoredResponsesItem(row);
     const existing = this.loadedItems.get(cloned.id);
-    if (existing !== undefined) {
-      assertSameStoredResponsesItem(cloned, existing);
-      if (existing.createdAt >= cloned.createdAt) return;
-    }
+    if (existing !== undefined && existing.createdAt >= cloned.createdAt) return;
     this.loadedItems.set(cloned.id, cloned);
     const byHash = this.loadedByContentHash.get(cloned.contentHash) ?? [];
     const existingByHash = byHash.findIndex(candidate => candidate.id === cloned.id);
@@ -351,18 +243,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {
     const pending = rows.filter(row => !this.committedItemIds.has(row.id));
     if (pending.length === 0) return;
-    for (const write of this.options.writes) {
-      const existing = await write.lookupItems({
-        apiKeyId: this.apiKeyId,
-        ids: pending.map(item => item.id),
-        contentHashes: [],
-      });
-      const byId = new Map(existing.map(item => [item.id, item]));
-      for (const item of pending) {
-        const actual = byId.get(item.id);
-        if (actual !== undefined) assertSameStoredResponsesItem(item, actual);
-      }
-    }
     for (const write of this.options.writes) await write.insertItems(pending);
     for (const row of pending) this.committedItemIds.add(row.id);
   }

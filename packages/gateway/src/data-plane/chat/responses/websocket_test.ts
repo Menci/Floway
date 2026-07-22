@@ -1,7 +1,7 @@
 import type { ExecutionContext } from 'hono';
 import { test, vi } from 'vitest';
 
-import { hashResponsesIdentity } from './items/identity.ts';
+import { hashResponsesItemContent } from './items/identity.ts';
 import { isResponsesResponseId } from './response-id.ts';
 import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
@@ -769,7 +769,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       assert(/^msg_[0-9a-f]{32}$/.test(firstOutput.item.id), 'expected a Copilot-normalized message id');
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id]), []);
       assertEquals(
-        await repo.responsesItems.lookupManyByContentHash(apiKey.id, [await hashResponsesIdentity({ type: 'message', role: 'user', content: 'first question' })]),
+        await repo.responsesItems.lookupManyByContentHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })]),
         [],
       );
 

@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
-import { hashResponsesIdentity, responsesItemId } from './identity.ts';
-import { wrapResponsesClientOutput as wrapResponsesClientOutputImpl } from './output.ts';
+import { responsesItemId } from './identity.ts';
+import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -15,15 +15,6 @@ const frames = async function* (response: ResponsesResult): AsyncIterable<Protoc
   yield eventFrame({ type: 'response.completed', response });
   yield doneFrame();
 };
-
-const wrapResponsesClientOutput = (
-  input: Parameters<typeof wrapResponsesClientOutputImpl>[0],
-  args: Omit<Parameters<typeof wrapResponsesClientOutputImpl>[1], 'producerIdentity'>,
-): ReturnType<typeof wrapResponsesClientOutputImpl> =>
-  wrapResponsesClientOutputImpl(input, {
-    ...args,
-    producerIdentity: async item => ({ producerItem: item, stableIdentity: item }),
-  });
 
 const completedReasoningItem: ResponsesOutputReasoning = Object.freeze({
   type: 'reasoning',
@@ -146,26 +137,6 @@ test('client output does not publish output_item.done when persistence fails', a
   await expect(iterator.next()).rejects.toBe(persistenceError);
 });
 
-test('client output rejects an item-id collision before publishing output_item.done', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const first: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_collision', summary: [{ type: 'summary_text', text: 'first' }] };
-  const conflicting: ResponsesOutputReasoning = { type: 'reasoning', id: first.id, summary: [{ type: 'summary_text', text: 'second' }] };
-  await repo.responsesItems.insertMany([{
-    id: first.id,
-    apiKeyId: 'key-a',
-    payload: { item: first },
-    contentHash: await hashResponsesIdentity(first),
-    createdAt: 1_000,
-  }]);
-  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: conflicting });
-  })();
-  const iterator = wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })[Symbol.asyncIterator]();
-
-  await expect(iterator.next()).rejects.toThrow(`Responses item id collision: ${first.id}`);
-  expect((await repo.responsesItems.lookupMany('key-a', [first.id]))[0].payload.item).toEqual(first);
-});
-
 test('store=false passes the producer item id through without persistence', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
@@ -193,93 +164,6 @@ test('store=false passes the producer item id through without persistence', asyn
   const added = events.find(event => event.type === 'response.output_item.added');
   expect(added?.type === 'response.output_item.added' && added.item.id).toBe('rs_upstream');
   expect(await repo.responsesItems.lookupMany('key-a', ['rs_upstream'])).toEqual([]);
-});
-
-test('store=false validates readable durable identity without writing state', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const stored: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_durable', summary: [{ type: 'summary_text', text: 'stored' }] };
-  await repo.responsesItems.insertMany([{
-    id: stored.id,
-    apiKeyId: 'key-a',
-    payload: { item: stored },
-    contentHash: await hashResponsesIdentity(stored),
-    createdAt: 1_000,
-  }]);
-  const exactStore = createResponsesHttpStore('key-a', false);
-  const exactInput = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: stored });
-  })();
-  const exact: ProtocolFrame<ResponsesStreamEvent>[] = [];
-  for await (const frame of wrapResponsesClientOutput(exactInput, {
-    store: exactStore,
-    responseId: 'resp_exact',
-  })) exact.push(frame);
-  expect(exact).toEqual([eventFrame({ type: 'response.output_item.done', output_index: 0, item: stored })]);
-
-  const conflicting = { ...stored, summary: [{ type: 'summary_text' as const, text: 'different' }] };
-  const conflictStore = createResponsesHttpStore('key-a', false);
-  const conflictInput = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: conflicting });
-  })();
-  const collect = async () => {
-    for await (const _frame of wrapResponsesClientOutput(conflictInput, {
-      store: conflictStore,
-      responseId: 'resp_conflict',
-    })) { /* drain */ }
-  };
-
-  await expect(collect()).rejects.toThrow(`Responses item id collision: ${stored.id}`);
-  expect((await repo.responsesItems.lookupMany('key-a', [stored.id]))[0].payload.item).toEqual(stored);
-});
-
-test('store=false rejects conflicting reuse within one output stream', async () => {
-  initRepo(new InMemoryRepo());
-  const store = createResponsesHttpStore('key-a', false);
-  const first: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_same_turn', summary: [{ type: 'summary_text', text: 'first' }] };
-  const second: ResponsesOutputReasoning = { type: 'reasoning', id: first.id, summary: [{ type: 'summary_text', text: 'second' }] };
-  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 1, item: second });
-  })();
-  const iterator = wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })[Symbol.asyncIterator]();
-
-  expect((await iterator.next()).value).toEqual(eventFrame({ type: 'response.output_item.done', output_index: 0, item: first }));
-  await expect(iterator.next()).rejects.toThrow(`Responses item id collision: ${first.id}`);
-});
-
-test('output identity cannot conflict with a staged input from the same turn', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const id = 'msg_input_output_collision';
-  await store.stageInputItems([{
-    item: { type: 'message', id, role: 'user', content: 'input' },
-    stableIdentity: { type: 'message', id, role: 'user', content: 'input' },
-  }]);
-  const output = { type: 'message' as const, id, role: 'assistant' as const, content: [{ type: 'output_text' as const, text: 'output' }] };
-  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
-  })();
-  const iterator = wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })[Symbol.asyncIterator]();
-
-  await expect(iterator.next()).rejects.toThrow(`Responses item id collision: ${id}`);
-  expect(await repo.responsesItems.lookupMany('key-a', [id])).toEqual([]);
-});
-
-test('store=false also validates output identity against current input', async () => {
-  initRepo(new InMemoryRepo());
-  const store = createResponsesHttpStore('key-a', false);
-  const id = 'msg_store_false_input_collision';
-  await store.stageInputItems([{
-    item: { type: 'message', id, role: 'user', content: 'input' },
-    stableIdentity: { type: 'message', id, role: 'user', content: 'input' },
-  }]);
-  const output = { type: 'message' as const, id, role: 'assistant' as const, content: [{ type: 'output_text' as const, text: 'output' }] };
-  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
-  })();
-  const iterator = wrapResponsesClientOutput(input, { store, responseId: 'resp_public' })[Symbol.asyncIterator]();
-
-  await expect(iterator.next()).rejects.toThrow(`Responses item id collision: ${id}`);
 });
 
 test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
@@ -500,16 +384,15 @@ test('client output refuses to persist an id-less upstream item', async () => {
   await expect(collect()).rejects.toThrow('Responses message output has no producer id');
 });
 
-test('terminal-only fallback preflights every item before writing any row', async () => {
+test('stateful output rejects a terminal item that never emitted output_item.done', async () => {
   const { repo, store } = memoryOutputHarness();
-  const first = { type: 'reasoning' as const, id: 'rs_terminal_batch', summary: [{ type: 'summary_text' as const, text: 'first' }] };
-  const conflicting = { ...first, summary: [{ type: 'summary_text' as const, text: 'second' }] };
+  const item = { type: 'reasoning' as const, id: 'rs_terminal_only', summary: [] };
   const response: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
     model: 'model',
     status: 'completed',
-    output: [first, conflicting],
+    output: [item],
     error: null,
     incomplete_details: null,
   };
@@ -523,12 +406,12 @@ test('terminal-only fallback preflights every item before writing any row', asyn
     })) { /* drain */ }
   };
 
-  await expect(collect()).rejects.toThrow(`Responses item id collision: ${first.id}`);
-  expect(await repo.responsesItems.lookupMany('key-a', [first.id])).toEqual([]);
+  await expect(collect()).rejects.toThrow('terminal output_index 0 arrived before output_item.done');
+  expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toEqual([]);
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
 });
 
-test('store=false also rejects an id-less finalized item', async () => {
+test('store=false forwards an id-less finalized item without persistence work', async () => {
   initRepo(new InMemoryRepo());
   const store = createResponsesHttpStore('key-a', false);
   const item = {
@@ -553,14 +436,18 @@ test('store=false also rejects an id-less finalized item', async () => {
     yield eventFrame({ type: 'response.completed', response });
   };
 
-  const collect = async () => {
-    for await (const _frame of wrapResponsesClientOutput(input(), {
+  const events: ResponsesStreamEvent[] = [];
+  for await (const frame of wrapResponsesClientOutput(input(), {
       store,
       responseId: 'resp_public',
-    })) { /* drain */ }
-  };
+  })) if (frame.type === 'event') events.push(frame.event);
 
-  await expect(collect()).rejects.toThrow('Responses message output has no producer id');
+  expect(events.map(event => event.type)).toEqual([
+    'response.output_item.added',
+    'response.output_text.delta',
+    'response.output_item.done',
+    'response.completed',
+  ]);
 });
 
 test('client output forwards terminal item drift while retaining the first done snapshot', async () => {
@@ -701,83 +588,4 @@ test('snapshot output IDs follow output_index rather than done arrival order', a
   expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toEqual(
     terminal.output.map(item => item.id),
   );
-});
-
-test('finalized item validation accepts the compaction_summary alias', async () => {
-  const { store } = memoryOutputHarness();
-  const summary = { type: 'compaction_summary', id: 'cmp_upstream', encrypted_content: 'opaque' } as unknown as ResponsesResult['output'][number];
-  const canonical = { ...summary, type: 'compaction' } as unknown as ResponsesResult['output'][number];
-  const response: ResponsesResult = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [canonical],
-    error: null,
-    incomplete_details: null,
-  };
-  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: summary });
-    yield eventFrame({ type: 'response.completed', response });
-  };
-  const events: ResponsesStreamEvent[] = [];
-  for await (const frame of wrapResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })) if (frame.type === 'event') events.push(frame.event);
-
-  expect(events.at(-1)?.type).toBe('response.completed');
-});
-
-test('terminal-only compaction replaces prior snapshot history', async () => {
-  const { repo, store } = memoryOutputHarness();
-  await store.stageInputItems([{
-    item: { type: 'message', role: 'user', content: 'old history' },
-    stableIdentity: { type: 'message', role: 'user', content: 'old history' },
-  }]);
-  const compaction = { type: 'compaction' as const, id: 'cmp_terminal', encrypted_content: 'opaque' };
-  const response: ResponsesResult = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [compaction],
-    error: null,
-    incomplete_details: null,
-  };
-  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.completed', response });
-  })();
-
-  for await (const _frame of wrapResponsesClientOutput(input, {
-    store,
-    responseId: 'resp_compacted',
-  })) { /* drain */ }
-
-  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compacted'))?.itemIds).toEqual(['cmp_terminal']);
-});
-
-test('terminal-only incomplete output is durable before its snapshot is published', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const item = { type: 'message' as const, id: 'msg_incomplete', role: 'assistant' as const, status: 'incomplete', content: [] };
-  const response: ResponsesResult = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'incomplete',
-    output: [item],
-    error: null,
-    incomplete_details: { reason: 'max_output_tokens' },
-  };
-  const input = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-    yield eventFrame({ type: 'response.incomplete', response });
-  })();
-
-  for await (const _frame of wrapResponsesClientOutput(input, {
-    store,
-    responseId: 'resp_incomplete',
-  })) { /* drain */ }
-
-  expect((await repo.responsesItems.lookupMany('key-a', [item.id]))[0].payload.item).toEqual(item);
-  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_incomplete'))?.itemIds).toEqual([item.id]);
 });

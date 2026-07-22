@@ -1,13 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { hashResponsesIdentity } from './identity.ts';
+import { hashResponsesItemContent } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
-
-const identified = (items: readonly ResponsesInputItem[]) =>
-  items.map(item => ({ item, stableIdentity: item }));
 
 describe('StatefulResponsesStore', () => {
   test('HTTP store=false performs no state writes', async () => {
@@ -16,8 +13,8 @@ describe('StatefulResponsesStore', () => {
     const store = createResponsesHttpStore('key-a', false);
     expect(store.writesState).toBe(false);
 
-    await store.stageInputItems(identified([{ type: 'message', role: 'user', content: 'hello' }]));
-    await store.commitSnapshot('resp_none', 'append');
+    await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
+    await store.commitSnapshot('resp_none', 'append', []);
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_none')).toBeNull();
   });
 
@@ -26,7 +23,7 @@ describe('StatefulResponsesStore', () => {
     const digest = vi.spyOn(crypto.subtle, 'digest');
     const store = createResponsesHttpStore('key-a', false);
 
-    await store.stageInputItems(identified([{ type: 'message', role: 'user', content: 'hello' }]));
+    await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
 
     expect(digest).not.toHaveBeenCalled();
     digest.mockRestore();
@@ -43,8 +40,8 @@ describe('StatefulResponsesStore', () => {
       contentHash: 'output-hash',
       createdAt: 1_000,
     };
-    await writer.persistOutputItem(output, 0);
-    await writer.commitSnapshot('resp_saved', 'append');
+    await writer.persistOutputItem(output);
+    await writer.commitSnapshot('resp_saved', 'append', [output.id]);
 
     // A store=false turn writes nothing but must still resolve a
     // previous_response_id and echoed item ids against durable state.
@@ -58,7 +55,7 @@ describe('StatefulResponsesStore', () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', undefined);
-    await store.stageInputItems(identified([{ type: 'message', role: 'user', content: 'hello' }]));
+    await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     const output = {
       id: 'msg_public',
       apiKeyId: 'key-a',
@@ -66,8 +63,8 @@ describe('StatefulResponsesStore', () => {
       contentHash: 'output-hash',
       createdAt: 1_000,
     };
-    await store.persistOutputItem(output, 0);
-    await store.commitSnapshot('resp_saved', 'append');
+    await store.persistOutputItem(output);
+    await store.commitSnapshot('resp_saved', 'append', [output.id]);
 
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_saved');
     expect(snapshot?.itemIds).toHaveLength(2);
@@ -80,7 +77,7 @@ describe('StatefulResponsesStore', () => {
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', true);
     const input = { type: 'message' as const, role: 'user' as const, content: 'discarded history' };
-    await store.stageInputItems(identified([input]));
+    await store.stageInputItems([input]);
     const output = {
       id: 'cmp_public',
       apiKeyId: 'key-a',
@@ -88,10 +85,10 @@ describe('StatefulResponsesStore', () => {
       contentHash: 'output-hash',
       createdAt: 1_000,
     };
-    await store.persistOutputItem(output, 0);
-    await store.commitSnapshot('resp_compact', 'replace');
+    await store.persistOutputItem(output);
+    await store.commitSnapshot('resp_compact', 'replace', [output.id]);
 
-    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await hashResponsesIdentity(input)])).toEqual([]);
+    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await hashResponsesItemContent(input)])).toEqual([]);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact'))?.itemIds).toEqual([output.id]);
   });
 
@@ -100,8 +97,8 @@ describe('StatefulResponsesStore', () => {
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', true);
     const item = { type: 'compaction_summary', id: 'cmp_client', encrypted_content: 'opaque' } as unknown as ResponsesInputItem;
-    await store.stageInputItems(identified([item]));
-    await store.commitSnapshot('resp_summary', 'append');
+    await store.stageInputItems([item]);
+    await store.commitSnapshot('resp_summary', 'append', []);
 
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_summary');
     expect(snapshot).not.toBeNull();
@@ -128,7 +125,7 @@ describe('StatefulResponsesStore', () => {
     await repo.responsesSnapshots.deleteOlderThan(2);
     expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toHaveLength(1);
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_old')).not.toBeNull();
-    await store.commitSnapshot('resp_new', 'append');
+    await store.commitSnapshot('resp_new', 'append', []);
 
     const [refreshed] = await repo.responsesItems.lookupMany('key-a', [item.id]);
     expect(refreshed.createdAt).toBeGreaterThan(1);
@@ -147,20 +144,20 @@ describe('StatefulResponsesStore', () => {
       id: directInput.id,
       apiKeyId: 'key-a',
       payload: { item: directInput },
-      contentHash: await hashResponsesIdentity(directInput),
+      contentHash: await hashResponsesItemContent(directInput),
       createdAt: 1,
     };
     const hashedRow = {
       id: 'msg_hashed',
       apiKeyId: 'key-a',
       payload: { item: hashedInput },
-      contentHash: await hashResponsesIdentity(hashedInput),
+      contentHash: await hashResponsesItemContent(hashedInput),
       createdAt: 1,
     };
     await repo.responsesItems.insertMany([directRow, hashedRow]);
-    await store.loadInputItems([directInput, hashedInput], identified([directInput, hashedInput]));
-    await store.stageInputItems(identified([directInput, hashedInput]));
-    await store.commitSnapshot('resp_reused', 'append');
+    await store.loadInputItems([directInput, hashedInput], [directInput, hashedInput]);
+    await store.stageInputItems([directInput, hashedInput]);
+    await store.commitSnapshot('resp_reused', 'append', []);
 
     const refreshed = await repo.responsesItems.lookupMany('key-a', [directRow.id, hashedRow.id]);
     expect(refreshed.every(row => row.createdAt > 1)).toBe(true);
@@ -177,13 +174,13 @@ describe('StatefulResponsesStore', () => {
       id: 'msg_future',
       apiKeyId: 'key-a',
       payload: { item: input },
-      contentHash: await hashResponsesIdentity(input),
+      contentHash: await hashResponsesItemContent(input),
       createdAt: futureCreatedAt,
     };
     await repo.responsesItems.insertMany([row]);
-    await store.loadInputItems([input], identified([input]));
-    await store.stageInputItems(identified([input]));
-    await store.commitSnapshot('resp_future', 'append');
+    await store.loadInputItems([input], [input]);
+    await store.stageInputItems([input]);
+    await store.commitSnapshot('resp_future', 'append', []);
 
     expect((await repo.responsesItems.lookupMany('key-a', [row.id]))[0].createdAt).toBe(futureCreatedAt);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_future'))?.createdAt).toBe(futureCreatedAt);
@@ -195,8 +192,8 @@ describe('StatefulResponsesStore', () => {
     const session = createResponsesWsSession();
     const first = session.createStore('key-a', false);
     expect(first.writesState).toBe(true);
-    await first.stageInputItems(identified([{ type: 'message', role: 'user', content: 'hello' }]));
-    await first.commitSnapshot('resp_local', 'append');
+    await first.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
+    await first.commitSnapshot('resp_local', 'append', []);
 
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_local')).toBeNull();
     expect(await session.createStore('key-a', false).loadSnapshot('resp_local')).not.toBeNull();
@@ -207,76 +204,18 @@ describe('StatefulResponsesStore', () => {
     initRepo(repo);
     const session = createResponsesWsSession();
     const local = session.createStore('key-a', false);
-    await local.stageInputItems(identified([{ type: 'message', role: 'user', content: 'local' }]));
-    await local.commitSnapshot('resp_local', 'append');
+    await local.stageInputItems([{ type: 'message', role: 'user', content: 'local' }]);
+    await local.commitSnapshot('resp_local', 'append', []);
 
     const durable = session.createStore('key-a', true);
     expect(await durable.loadSnapshot('resp_local')).not.toBeNull();
-    await durable.stageInputItems(identified([{ type: 'message', role: 'user', content: 'durable' }]));
-    await durable.commitSnapshot('resp_durable', 'append');
+    await durable.stageInputItems([{ type: 'message', role: 'user', content: 'durable' }]);
+    await durable.commitSnapshot('resp_durable', 'append', []);
 
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_durable');
     expect(snapshot).not.toBeNull();
     if (snapshot === null) throw new Error('Expected durable snapshot');
     expect(await repo.responsesItems.lookupMany('key-a', snapshot.itemIds)).toHaveLength(snapshot.itemIds.length);
-  });
-
-  test('WebSocket local collision aborts before partially writing durable state', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
-    const session = createResponsesWsSession();
-    const firstItem = { type: 'reasoning' as const, id: 'rs_collision', summary: [{ type: 'summary_text' as const, text: 'first' }] };
-    const secondItem = { type: 'reasoning' as const, id: firstItem.id, summary: [{ type: 'summary_text' as const, text: 'second' }] };
-    const local = session.createStore('key-a', false);
-    await local.persistOutputItem({
-      id: firstItem.id,
-      apiKeyId: 'key-a',
-      payload: { item: firstItem },
-      contentHash: await hashResponsesIdentity(firstItem),
-      createdAt: 1_000,
-    }, 0);
-
-    const durable = session.createStore('key-a', true);
-    await expect(durable.persistOutputItem({
-      id: secondItem.id,
-      apiKeyId: 'key-a',
-      payload: { item: secondItem },
-      contentHash: await hashResponsesIdentity(secondItem),
-      createdAt: 2_000,
-    }, 0)).rejects.toThrow(`Responses item id collision: ${firstItem.id}`);
-
-    expect(await repo.responsesItems.lookupMany('key-a', [firstItem.id])).toEqual([]);
-    const reader = session.createStore('key-a', false);
-    await reader.loadInputItems([{ type: 'item_reference', id: firstItem.id }], []);
-    expect(reader.getItemById(firstItem.id)?.payload.item).toEqual(firstItem);
-  });
-
-  test('WebSocket rejects conflicting local and durable identity while loading input', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
-    const session = createResponsesWsSession();
-    const id = 'msg_cross_backing_collision';
-    const localItem = { type: 'message' as const, id, role: 'assistant' as const, content: 'local' };
-    const durableItem = { ...localItem, content: 'durable' };
-    const local = session.createStore('key-a', false);
-    await local.persistOutputItem({
-      id,
-      apiKeyId: 'key-a',
-      payload: { item: localItem },
-      contentHash: await hashResponsesIdentity(localItem),
-      createdAt: 1_000,
-    }, 0);
-    await repo.responsesItems.insertMany([{
-      id,
-      apiKeyId: 'key-a',
-      payload: { item: durableItem },
-      contentHash: await hashResponsesIdentity(durableItem),
-      createdAt: 2_000,
-    }]);
-
-    const nextTurn = session.createStore('key-a', true);
-    await expect(nextTurn.loadInputItems([{ type: 'item_reference', id }], []))
-      .rejects.toThrow(`Responses item id collision: ${id}`);
   });
 
   test('per-attempt private payloads reset on each beginAttempt', () => {
@@ -291,19 +230,6 @@ describe('StatefulResponsesStore', () => {
     store.beginAttempt(new Map());
     expect(store.getPrivatePayload('item')).toBeUndefined();
     expect(store.getPrivatePayload('ws_aabbccdd')).toBeUndefined();
-  });
-
-  test.each([true, false])('store=%s rejects conflicting full input items with one producer id', async storeFlag => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
-    const store = createResponsesHttpStore('key-a', storeFlag);
-    const id = 'msg_input_collision';
-
-    await expect(store.stageInputItems(identified([
-      { type: 'message', id, role: 'user', content: 'first' },
-      { type: 'message', id, role: 'user', content: 'second' },
-    ]))).rejects.toThrow(`Responses item id collision: ${id}`);
-    expect(await repo.responsesItems.lookupMany('key-a', [id])).toEqual([]);
   });
 
   test('non-Responses-source store holds request-private tool state but persists and reads nothing', async () => {

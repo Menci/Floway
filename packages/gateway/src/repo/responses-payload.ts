@@ -143,7 +143,6 @@ const parseDescriptor = (id: string, raw: string): StoredResponsesPayloadJson =>
 const assertPayloadObject = (id: string, value: unknown): StoredResponsesItemPayload => {
   if (!isRecord(value) || !Object.hasOwn(value, 'item')) throw new Error(`Invalid stored Responses payload for id=${id}`);
   const payload: StoredResponsesItemPayload = { item: value.item };
-  if (Object.hasOwn(value, 'identity')) payload.identity = value.identity;
   if (Object.hasOwn(value, 'private')) payload.private = value.private;
   return payload;
 };

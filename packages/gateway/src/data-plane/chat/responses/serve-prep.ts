@@ -1,4 +1,4 @@
-import { prepareResponsesAffinity, responsesItemIdentity } from './affinity/ingress.ts';
+import { prepareResponsesAffinity } from './affinity/ingress.ts';
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import { hydrateResponsesPayload } from './items/hydrate.ts';
@@ -91,11 +91,7 @@ export const prepareResponsesServePlan = async (args: {
     runtimeLocation: ctx.runtimeLocation,
   });
   const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
-  const identifiedInputs = await Promise.all(payload.input.map(async item => ({
-    item,
-    stableIdentity: (await responsesItemIdentity(item, ctx.affinity.codec)).stableIdentity,
-  })));
-  await store.loadInputItems(prepared.input, identifiedInputs);
+  await store.loadInputItems(prepared.input, payload.input);
   let hydrated: ReturnType<typeof hydrateResponsesPayload>;
   try {
     hydrated = hydrateResponsesPayload(prepared, store);
@@ -112,7 +108,7 @@ export const prepareResponsesServePlan = async (args: {
   // up the new user items in addition to the prior snapshot history.
   // Runs after the affinity walk so any `item_reference` in user-supplied
   // input has its target row loaded.
-  await store.stageInputItems(identifiedInputs);
+  await store.stageInputItems(payload.input);
 
   if (decision.candidates.length === 0) {
     return {

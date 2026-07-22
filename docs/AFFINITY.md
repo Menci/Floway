@@ -147,13 +147,9 @@ through unchanged. Neither layer buffers visible stream deltas.
 Responses persistence is a separate membrane. It stores the first complete
 client-facing item verbatim under its producer-owned ID; a later done or
 terminal frame remains wire-visible but does not replace that durable item.
-Terminal-only items are stored as the fallback complete view. Full items and
-`item_reference`s hydrate by arbitrary exact ID with no format validation or
-candidate-specific rewrite. When state is written, idless input items use
-internal storage keys only inside snapshots; stateless HTTP requests neither
-hash nor stage them. Reusing one API-key-scoped producer ID is idempotent
-only when the pre-affinity producer item, affinity target, and private payload
-match; a collision fails before the done frame is published. The durable wire
-item remains the first client-facing projection because equivalent affinity
-wrappers use fresh authenticated ciphertext. Affinity never reads, writes,
-authenticates, or validates item IDs.
+Full items and `item_reference`s hydrate by arbitrary exact ID with no format
+validation or candidate-specific rewrite. When state is written, idless input
+items use internal storage keys only inside snapshots; stateless HTTP requests
+neither hash nor stage them. The persistence backing accepts exact item/private
+payload reuse and rejects a different row under the same API-key-scoped ID.
+Affinity never reads, writes, authenticates, or validates item IDs.

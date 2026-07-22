@@ -24,7 +24,7 @@ describe('Responses stored-item hydration', () => {
     await repo.responsesItems.insertMany([row]);
     const store = createResponsesHttpStore('key-a', true);
     const payload = { model: 'model', input: [{ type: 'item_reference' as const, id: row.id }] };
-    await store.loadInputItems(payload.input, payload.input.map(item => ({ item, stableIdentity: item })));
+    await store.loadInputItems(payload.input, payload.input);
 
     const hydrated = hydrateResponsesPayload(payload, store);
 
@@ -55,7 +55,7 @@ describe('Responses stored-item hydration', () => {
     await repo.responsesItems.insertMany([row]);
     const store = createResponsesHttpStore('key-a', true);
     const input = [{ type: 'compaction', id, encrypted_content: 'wrapped' }] as unknown as Parameters<typeof hydrateResponsesPayload>[0]['input'];
-    await store.loadInputItems(input, input.map(item => ({ item, stableIdentity: item })));
+    await store.loadInputItems(input, input);
 
     expect(hydrateResponsesPayload({ model: 'model', input }, store).payload.input).toEqual([row.payload.item]);
   });

@@ -553,7 +553,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     ],
     tools: [{ type: 'web_search' }],
   });
-  await store.loadInputItems(sourcePayload.input, sourcePayload.input.map(item => ({ item, stableIdentity: item })));
+  await store.loadInputItems(sourcePayload.input, sourcePayload.input);
   const hydrated = hydrateResponsesPayload(sourcePayload, store);
   const affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
   const result = await responsesAttempt.generate({
