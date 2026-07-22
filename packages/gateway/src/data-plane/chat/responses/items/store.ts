@@ -127,7 +127,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void> {
     if (this.options.writes.length === 0) return;
     const itemIds = mode === 'replace'
-      ? outputItemIds
+      ? [...outputItemIds]
       : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...outputItemIds];
     if (itemIds.length === 0) return;
     const uniqueRows = [...new Set(itemIds)].map(id => {
