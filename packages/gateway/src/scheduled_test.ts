@@ -95,7 +95,7 @@ test('state-maintenance failure keeps spilled payloads while dump maintenance re
   assertEquals(dumps.purgedExpired.length, 0);
 });
 
-test('dump maintenance processes at most twenty keys per invocation', async () => {
+test('dump maintenance processes at most fifteen keys per invocation', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   for (let index = 0; index < 24; index += 1) {
@@ -111,5 +111,5 @@ test('dump maintenance processes at most twenty keys per invocation', async () =
 
   await runScheduledDumpMaintenance();
 
-  assertEquals(dumps.purgedExpired.length, 20);
+  assertEquals(dumps.purgedExpired.length, 15);
 });

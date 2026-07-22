@@ -153,6 +153,7 @@ export interface PerformanceTelemetryRecord extends PerformanceDimensions {
 
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
+  listMaintenancePage(slot: number, limit: number): Promise<ApiKey[]>;
   // Includes soft-deleted rows so the user_id behind a historical key stays
   // resolvable after the owner rotates or deletes it.
   listIncludingDeleted(): Promise<ApiKey[]>;
@@ -163,7 +164,7 @@ export interface ApiKeyRepo {
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
   save(key: ApiKey): Promise<void>;
-  saveIfResponsesStateUnchanged(key: ApiKey, expectedEpoch: string, expectedVisibleAfter: number): Promise<boolean>;
+  saveIfResponsesStateUnchanged(key: ApiKey, expectedRetentionSeconds: number, expectedEpoch: string, expectedVisibleAfter: number): Promise<boolean>;
   update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null>;
   softDelete(id: string, responsesStateEpoch: string): Promise<boolean>;
   softDeleteByUserId(userId: number): Promise<number>;

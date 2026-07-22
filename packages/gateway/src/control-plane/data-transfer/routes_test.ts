@@ -1493,6 +1493,28 @@ test('merge import retries against a concurrent Responses disable instead of res
   assertEquals(imported.responsesStateVisibleAfter, 0);
 });
 
+test('merge import recomputes disable isolation after a concurrent Responses enable', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save(KEY_A);
+  const saveIfUnchanged = repo.apiKeys.saveIfResponsesStateUnchanged.bind(repo.apiKeys);
+  let raced = false;
+  vi.spyOn(repo.apiKeys, 'saveIfResponsesStateUnchanged').mockImplementation(async (...args) => {
+    if (!raced) {
+      raced = true;
+      await repo.apiKeys.update(KEY_A.id, { responsesRetentionSeconds: 7 * 86400 });
+    }
+    return await saveIfUnchanged(...args);
+  });
+
+  const result = await doImport(app, 'merge', latestImportData({ apiKeys: [serializedApiKey(KEY_A)] }));
+
+  assertEquals(result.status, 200);
+  const imported = await repo.apiKeys.getById(KEY_A.id);
+  assertExists(imported);
+  assertEquals(imported.responsesRetentionSeconds, 0);
+  if (imported.responsesStateEpoch === KEY_A.responsesStateEpoch) throw new Error('merge import disabled the concurrent epoch without rotating it');
+});
+
 test('replace-mode import surfaces a purgeAll failure', async () => {
   // Replace mode promises data isolation: a reused key id in the imported
   // payload cannot inherit the previous owner's captures. A swallowed

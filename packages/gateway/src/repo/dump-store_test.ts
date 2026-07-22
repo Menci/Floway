@@ -245,6 +245,27 @@ test('FileDumpStore.purgeAll wipes every row and every file under the key prefix
   assertEquals((await files.listKeys('dumps/v1/key_x/')).length, 0);
 });
 
+test('FileDumpStore scheduled purge deletes at most one bounded row batch', async () => {
+  const db = await openDb();
+  const files = new MemoryFileProvider();
+  const store = new FileDumpStore(db, files);
+  const insert = db.prepare(
+    `INSERT INTO dump_records
+      (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
+     VALUES (?, ?, ?, NULL, '{}', '[]', NULL, NULL, NULL)`,
+  );
+  for (let index = 0; index < 501; index += 1) {
+    await insert.bind('key_x', `dump_${index.toString().padStart(4, '0')}`, index).run();
+  }
+
+  await store.purgeMaintenanceBatch('key_x', null, 1_000);
+
+  const count = await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE key_id = ?')
+    .bind('key_x')
+    .first<{ count: number }>();
+  assertEquals(count?.count, 1);
+});
+
 test('FileDumpStore.purgeExpired against a never-written key resolves without throwing', async () => {
   const db = await openDb();
   const files = new MemoryFileProvider();

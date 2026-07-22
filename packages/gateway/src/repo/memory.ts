@@ -179,6 +179,13 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return Promise.resolve(this.keys.filter(k => k.deletedAt === null).map(k => ({ ...k })));
   }
 
+  listMaintenancePage(slot: number, limit: number): Promise<ApiKey[]> {
+    const keys = this.keys.filter(key => key.deletedAt === null).toSorted((a, b) => a.id.localeCompare(b.id));
+    if (keys.length === 0) return Promise.resolve([]);
+    const start = (slot * limit) % keys.length;
+    return Promise.resolve(Array.from({ length: Math.min(keys.length, limit) }, (_, offset) => ({ ...keys[(start + offset) % keys.length] })));
+  }
+
   listIncludingDeleted(): Promise<ApiKey[]> {
     return Promise.resolve(this.keys.map(k => ({ ...k })));
   }
@@ -207,8 +214,9 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     else this.keys.push({ ...key });
   }
 
-  async saveIfResponsesStateUnchanged(key: ApiKey, expectedEpoch: string, expectedVisibleAfter: number): Promise<boolean> {
+  async saveIfResponsesStateUnchanged(key: ApiKey, expectedRetentionSeconds: number, expectedEpoch: string, expectedVisibleAfter: number): Promise<boolean> {
     const i = this.keys.findIndex(existing => existing.id === key.id
+      && existing.responsesRetentionSeconds === expectedRetentionSeconds
       && existing.responsesStateEpoch === expectedEpoch
       && existing.responsesStateVisibleAfter === expectedVisibleAfter);
     if (i < 0) return false;

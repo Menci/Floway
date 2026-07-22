@@ -867,7 +867,12 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
         saved = true;
         break;
       }
-      if (await repo.apiKeys.saveIfResponsesStateUnchanged(next, previous.responsesStateEpoch, previous.responsesStateVisibleAfter)) {
+      if (await repo.apiKeys.saveIfResponsesStateUnchanged(
+        next,
+        previous.responsesRetentionSeconds,
+        previous.responsesStateEpoch,
+        previous.responsesStateVisibleAfter,
+      )) {
         saved = true;
         break;
       }

@@ -263,7 +263,11 @@ replacement/deletion queues exact keys for claimed batch deletion. Refresh
 never reads, copies, or deletes file objects. A separate bounded v1 cursor
 drains the superseded Responses tables and hourly spill buckets; after the old
 30-day writer horizon, it removes any remaining v1 orphan root before marking
-that cleanup complete.
+that cleanup complete. Cloudflare runs this state/image work at minute 17 and
+dump cleanup at minute 47 in separate cron invocations. Dump maintenance
+rotates through at most fifteen keys and removes at most 500 rows plus bounded
+exact/prefix file pages per key, so neither cron inherits an unbounded D1 or R2
+workload from the other.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in

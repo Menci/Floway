@@ -101,6 +101,10 @@ export const installDumpStubs = (
       purgedExpired.push({ keyId, retentionSeconds });
       if (throws.purgeExpired) throw throws.purgeExpired;
     },
+    async purgeMaintenanceBatch(keyId, retentionSeconds) {
+      if (retentionSeconds === null) await this.purgeAll(keyId);
+      else await this.purgeExpired(keyId, retentionSeconds);
+    },
   };
 
   const broker: DumpBroker = {

@@ -19,6 +19,8 @@ import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 
 const ROOT = 'dumps/v1';
 const HOUR_MS = 60 * 60 * 1000;
+const MAINTENANCE_ROW_BATCH_SIZE = 500;
+const MAINTENANCE_FILE_BATCH_SIZE = 1_000;
 
 interface BodyDescriptor {
   key: string;
@@ -269,5 +271,40 @@ export class FileDumpStore implements DumpStore {
     }
 
     await this.db.prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?').bind(keyId, cutoff).run();
+  }
+
+  async purgeMaintenanceBatch(keyId: string, retentionSeconds: number | null, now: number): Promise<void> {
+    const cutoff = retentionSeconds === null ? Number.MAX_SAFE_INTEGER : now - retentionSeconds * 1000;
+    const { results } = await this.db
+      .prepare(
+        `SELECT id, created_at, request_body_descriptor, response_body_descriptor
+         FROM dump_records
+         WHERE key_id = ? AND created_at < ?
+         ORDER BY created_at, id
+         LIMIT ?`,
+      )
+      .bind(keyId, cutoff, MAINTENANCE_ROW_BATCH_SIZE)
+      .all<Pick<DumpRow, 'request_body_descriptor' | 'response_body_descriptor'> & { id: string; created_at: number }>();
+    if (results.length === 0) {
+      if (retentionSeconds === null) await this.files.deletePrefixPage(keyPrefix(keyId), MAINTENANCE_FILE_BATCH_SIZE);
+      return;
+    }
+
+    const fileKeys = results.flatMap(row => [row.request_body_descriptor, row.response_body_descriptor]
+      .flatMap(raw => raw === null ? [] : [(JSON.parse(raw) as BodyDescriptor).key]));
+    await this.files.deleteKeys(fileKeys);
+    await this.db
+      .prepare('DELETE FROM dump_records WHERE key_id = ? AND id IN (SELECT value FROM json_each(?))')
+      .bind(keyId, JSON.stringify(results.map(row => row.id)))
+      .run();
+
+    const bucket = hourBucket(results[0].created_at);
+    const bucketStart = hourBucketToMs(bucket)!;
+    if (bucketStart + HOUR_MS > cutoff) return;
+    const remaining = await this.db
+      .prepare('SELECT 1 AS present FROM dump_records WHERE key_id = ? AND created_at >= ? AND created_at < ? LIMIT 1')
+      .bind(keyId, bucketStart, bucketStart + HOUR_MS)
+      .first<{ present: number }>();
+    if (remaining === null) await this.files.deletePrefixPage(bucketPrefix(keyId, bucket), MAINTENANCE_FILE_BATCH_SIZE);
   }
 }
