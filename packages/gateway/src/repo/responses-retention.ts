@@ -36,10 +36,12 @@ export const withResponsesRetention = (apiKey: ApiKey, responsesRetentionSeconds
     ...(disabling
       ? { responsesStateEpoch: generateResponsesStateEpoch(), responsesStateVisibleAfter: 0 }
       : changingPositiveWindow
-        ? { responsesStateVisibleAfter: Math.max(
-            apiKey.responsesStateVisibleAfter,
-            changedAt - Math.min(apiKey.responsesRetentionSeconds, responsesRetentionSeconds) * 1000,
-          ) }
+        ? {
+            responsesStateVisibleAfter: Math.max(
+              apiKey.responsesStateVisibleAfter,
+              changedAt - Math.min(apiKey.responsesRetentionSeconds, responsesRetentionSeconds) * 1000,
+            ),
+          }
         : {}),
   };
 };
