@@ -2,7 +2,7 @@ import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, userFromContext, userUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { generateResponsesStateEpoch, withResponsesRetention } from '../../repo/responses-retention.ts';
+import { generateResponsesStateEpoch } from '../../repo/responses-retention.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '../../shared/api-key-tokens.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
@@ -43,13 +43,14 @@ const isRawKeyUniqueConstraint = (error: unknown): boolean =>
 const findAnyByRawKey = async (rawKey: string): Promise<ApiKey | null> =>
   (await getRepo().apiKeys.listIncludingDeleted()).find(key => key.key === rawKey) ?? null;
 
-const saveGeneratedKey = async (template: Omit<ApiKey, 'key'>): Promise<ApiKey | Response> => {
+const allocateGeneratedKey = async (
+  persist: (rawKey: string) => Promise<ApiKey>,
+): Promise<ApiKey | Response> => {
   for (let i = 0; i < GENERATED_KEY_RETRIES; i++) {
-    const key: ApiKey = { ...template, key: generateApiKeyToken() };
-    if (await findAnyByRawKey(key.key)) continue;
+    const rawKey = generateApiKeyToken();
+    if (await findAnyByRawKey(rawKey)) continue;
     try {
-      await getRepo().apiKeys.save(key);
-      return key;
+      return await persist(rawKey);
     } catch (error) {
       if (isRawKeyUniqueConstraint(error)) continue;
       throw error;
@@ -58,13 +59,15 @@ const saveGeneratedKey = async (template: Omit<ApiKey, 'key'>): Promise<ApiKey |
   return Response.json({ error: 'Could not allocate a unique API key; retry the request.' }, { status: 500 });
 };
 
-const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Promise<ApiKey | Response> => {
+const useCustomKey = async (
+  ownerId: string,
+  rawKey: string,
+  persist: (rawKey: string) => Promise<ApiKey>,
+): Promise<ApiKey | Response> => {
   const existing = await findAnyByRawKey(rawKey);
-  if (existing && existing.id !== template.id) return duplicateKeyResponse();
-  const key: ApiKey = { ...template, key: rawKey };
+  if (existing && existing.id !== ownerId) return duplicateKeyResponse();
   try {
-    await getRepo().apiKeys.save(key);
-    return key;
+    return await persist(rawKey);
   } catch (error) {
     if (isRawKeyUniqueConstraint(error)) return duplicateKeyResponse();
     throw error;
@@ -74,8 +77,9 @@ const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Pro
 // Reject custom_key on a non-custom source so a caller cannot smuggle a
 // bring-your-own key past the picker they explicitly opted out of.
 const writeKeyForRequest = async (
-  template: Omit<ApiKey, 'key'>,
+  ownerId: string,
   body: { key_source?: KeySource; custom_key?: string },
+  persist: (rawKey: string) => Promise<ApiKey>,
 ): Promise<ApiKey | Response> => {
   const source = body.key_source ?? 'generate';
   if (source !== 'custom' && body.custom_key !== undefined) {
@@ -84,9 +88,9 @@ const writeKeyForRequest = async (
   if (source === 'custom') {
     const customKey = normalizeCustomKey(body.custom_key);
     if (customKey instanceof Response) return customKey;
-    return await saveCustomKey(template, customKey);
+    return await useCustomKey(ownerId, customKey, persist);
   }
-  return await saveGeneratedKey(template);
+  return await allocateGeneratedKey(persist);
 };
 
 const validateUpstreamIdsAgainstUserCap = async (
@@ -134,7 +138,11 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     responsesStateEpoch: generateResponsesStateEpoch(),
   } satisfies Omit<ApiKey, 'key'>;
 
-  const key = await writeKeyForRequest(template, body);
+  const key = await writeKeyForRequest(template.id, body, async rawKey => {
+    const created = { ...template, key: rawKey };
+    await getRepo().apiKeys.save(created);
+    return created;
+  });
   if (key instanceof Response) return key;
   return c.json(apiKeyToJson(key), 201);
 };
@@ -160,7 +168,11 @@ export const rotateKey = async (c: CtxWithJson<typeof rotateKeyBody>) => {
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
 
-  const updated = await writeKeyForRequest(owned, c.req.valid('json'));
+  const updated = await writeKeyForRequest(owned.id, c.req.valid('json'), async rawKey => {
+    const persisted = await getRepo().apiKeys.update(id, { key: rawKey });
+    if (persisted === null) throw new Error(`API key disappeared during rotation: ${id}`);
+    return persisted;
+  });
   if (updated instanceof Response) return updated;
   return c.json(apiKeyToJson(updated));
 };
@@ -181,16 +193,13 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     if (err) return c.json({ error: err }, 400);
   }
 
-  const fieldsUpdated: ApiKey = {
-    ...owned,
+  const updated = await getRepo().apiKeys.update(id, {
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.upstream_ids !== undefined ? { upstreamIds: body.upstream_ids } : {}),
     ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
-  };
-  const updated = body.responses_retention_seconds === undefined
-    ? fieldsUpdated
-    : withResponsesRetention(fieldsUpdated, body.responses_retention_seconds);
-  await getRepo().apiKeys.save(updated);
+    ...(body.responses_retention_seconds !== undefined ? { responsesRetentionSeconds: body.responses_retention_seconds } : {}),
+  });
+  if (updated === null) throw new Error(`API key disappeared during update: ${id}`);
 
   // Retention transitions:
   //   positive → null: drop every stored record and cut every live subscriber.

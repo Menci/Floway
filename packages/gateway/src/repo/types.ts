@@ -160,10 +160,16 @@ export interface ApiKeyRepo {
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
   save(key: ApiKey): Promise<void>;
+  update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null>;
   softDelete(id: string, responsesStateEpoch: string): Promise<boolean>;
   softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
+
+export type ApiKeyUpdate = Partial<Pick<
+  ApiKey,
+  'name' | 'key' | 'upstreamIds' | 'dumpRetentionSeconds' | 'responsesRetentionSeconds'
+>>;
 
 export interface UsersRepo {
   list(): Promise<User[]>;

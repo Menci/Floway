@@ -8,10 +8,11 @@ import {
   compareResponsesItemsByFreshness,
   persistedResponsesKey,
 } from './responses-clone.ts';
-import { generateResponsesStateEpoch } from './responses-retention.ts';
+import { generateResponsesStateEpoch, withResponsesRetention } from './responses-retention.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
+  ApiKeyUpdate,
   AgentSetupMutation,
   AgentSetupRecord,
   AgentSetupRenewal,
@@ -203,6 +204,16 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     const i = this.keys.findIndex(k => k.id === key.id);
     if (i >= 0) this.keys[i] = { ...key };
     else this.keys.push({ ...key });
+  }
+
+  async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
+    const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
+    if (i < 0) return null;
+    const fieldsUpdated = { ...this.keys[i], ...patch };
+    this.keys[i] = patch.responsesRetentionSeconds === undefined
+      ? fieldsUpdated
+      : withResponsesRetention(fieldsUpdated, patch.responsesRetentionSeconds);
+    return { ...this.keys[i] };
   }
 
   async softDelete(id: string, responsesStateEpoch: string): Promise<boolean> {
