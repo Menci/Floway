@@ -453,7 +453,7 @@ test('SQL rejects payload adoption after GC has claimed its staging row', async 
   expect(await repo.responsesMaintenance.claimPayloadFiles('claim', 1, 0, 100)).toEqual([prepared.file.key]);
   await files.put(prepared.file.key, prepared.file.body);
 
-  await expect(base.prepare(
+  await expect(async () => await base.prepare(
     `INSERT INTO responses_state_items (${['id', 'api_key_id', 'state_epoch', 'payload_json', 'content_hash', 'payload_hash', 'payload_file_key', 'refreshed_at', 'expires_at'].join(', ')})
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
