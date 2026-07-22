@@ -3,7 +3,8 @@ import { type AuthedContext, userFromContext, userUpstreamIdsFromContext } from 
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
-import { generateResponsesStateEpoch } from '../../repo/responses-retention.ts';
+import { purgeResponsesState } from '../../repo/responses-maintenance.ts';
+import { generateResponsesStateEpoch, withResponsesRetention } from '../../repo/responses-retention.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '../../shared/api-key-tokens.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
@@ -147,6 +148,7 @@ export const deleteKey = async (c: AuthedContext) => {
   // retriable, still-owned key rather than a half-deleted row whose dump
   // records are orphaned beyond the operator's reach.
   await getDumpStore().purgeAll(id);
+  await purgeResponsesState(id);
   // Cut any live SSE subscribers so the dashboard sees a clean disconnect.
   // Broker availability shouldn't block the soft-delete — clients reconcile
   // on the next keys refetch regardless.
@@ -181,21 +183,18 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     if (err) return c.json({ error: err }, 400);
   }
 
-  const updated: ApiKey = {
+  const fieldsUpdated: ApiKey = {
     ...owned,
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.upstream_ids !== undefined ? { upstreamIds: body.upstream_ids } : {}),
     ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
-    ...(body.responses_retention_seconds !== undefined
-      ? {
-          responsesRetentionSeconds: body.responses_retention_seconds,
-          ...(body.responses_retention_seconds === 0 && owned.responsesRetentionSeconds !== 0
-            ? { responsesStateEpoch: generateResponsesStateEpoch() }
-            : {}),
-        }
-      : {}),
   };
+  const updated = body.responses_retention_seconds === undefined
+    ? fieldsUpdated
+    : withResponsesRetention(fieldsUpdated, body.responses_retention_seconds);
   await getRepo().apiKeys.save(updated);
+
+  if (updated.responsesStateEpoch !== owned.responsesStateEpoch) await purgeResponsesState(id);
 
   // Retention transitions:
   //   positive → null: drop every stored record and cut every live subscriber.

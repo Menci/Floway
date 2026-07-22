@@ -14,3 +14,15 @@ export const responsesStateLifetime = (
   }
   return { refreshedAt, expiresAt: refreshedAt + retentionSeconds * 1000 };
 };
+
+export const withResponsesRetention = (apiKey: ApiKey, responsesRetentionSeconds: number): ApiKey => {
+  if (responsesRetentionSeconds === apiKey.responsesRetentionSeconds) return apiKey;
+  return {
+    ...apiKey,
+    responsesRetentionSeconds,
+    ...(responsesRetentionSeconds < apiKey.responsesRetentionSeconds
+      ? { responsesStateEpoch: generateResponsesStateEpoch() }
+      : {}),
+  };
+};
+import type { ApiKey } from './types.ts';
