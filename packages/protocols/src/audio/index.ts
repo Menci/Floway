@@ -28,6 +28,7 @@ export interface AudioTranscriptionDurationUsage {
 export type AudioTranscriptionUsage = AudioTranscriptionTokenUsage | AudioTranscriptionDurationUsage;
 
 export interface AudioTranscriptionResponse {
+  duration?: number;
   usage?: AudioTranscriptionUsage;
   [key: string]: unknown;
 }

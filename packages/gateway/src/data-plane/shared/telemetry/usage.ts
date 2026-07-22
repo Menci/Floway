@@ -115,12 +115,27 @@ export const tokenUsageMeasurement = (usage: TokenUsage | null): UsageMeasuremen
 // OpenAI transcription responses discriminate usage by `type`. Token-based
 // models split input_token_details into text and audio metrics; without that
 // optional split, the aggregate stays on the general input metric. Duration-
-// based models expose seconds. Unknown breakdowns record the request only,
-// while malformed fields under a known discriminator remain observable.
+// based usage exposes seconds, while Whisper verbose JSON reports the same
+// quantity as a top-level `duration`. Unknown breakdowns record the request
+// only, while malformed fields under a known discriminator remain observable.
 // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L36378-L36562
+const audioDurationMeasurement = (seconds: unknown, label: string): UsageMeasurement => {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) {
+    throw new Error(`Audio transcription ${label} must be a finite non-negative number`);
+  }
+  return {
+    quantities: { input_audio_seconds: canonicalDecimalString(String(seconds)) },
+    pricingFacts: {},
+    dumpTokenUsage: null,
+  };
+};
+
 export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurement => {
   if (!body || typeof body !== 'object') return requestOnlyUsageMeasurement();
-  if (!Object.hasOwn(body, 'usage')) return requestOnlyUsageMeasurement();
+  if (!Object.hasOwn(body, 'usage')) {
+    if (!Object.hasOwn(body, 'duration')) return requestOnlyUsageMeasurement();
+    return audioDurationMeasurement((body as { duration: unknown }).duration, 'duration');
+  }
   const usage = (body as { usage: unknown }).usage;
   if (!usage || typeof usage !== 'object' || Array.isArray(usage)) {
     throw new Error('Audio transcription usage must be an object');
@@ -128,14 +143,7 @@ export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurem
   const metric = usage as { type?: unknown; seconds?: unknown; input_tokens?: unknown; input_token_details?: unknown; output_tokens?: unknown; total_tokens?: unknown };
 
   if (metric.type === 'duration') {
-    if (typeof metric.seconds !== 'number' || !Number.isFinite(metric.seconds) || metric.seconds < 0) {
-      throw new Error('Audio transcription duration usage.seconds must be a finite non-negative number');
-    }
-    return {
-      quantities: { input_audio_seconds: canonicalDecimalString(String(metric.seconds)) },
-      pricingFacts: {},
-      dumpTokenUsage: null,
-    };
+    return audioDurationMeasurement(metric.seconds, 'duration usage.seconds');
   }
 
   if (metric.type !== 'tokens') return requestOnlyUsageMeasurement();

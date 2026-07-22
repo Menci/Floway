@@ -137,6 +137,18 @@ test('audio transcription usage preserves duration seconds as a base-unit metric
   });
 });
 
+test('audio transcription usage reads Whisper verbose JSON duration', () => {
+  assertEquals(audioTranscriptionUsageMeasurement({
+    task: 'transcribe',
+    duration: 91.8,
+    text: 'hello',
+  }), {
+    quantities: { input_audio_seconds: '91.8' },
+    pricingFacts: {},
+    dumpTokenUsage: null,
+  });
+});
+
 test('audio transcription usage maps text and audio input token details to disjoint metrics', () => {
   assertEquals(audioTranscriptionUsageMeasurement({
     usage: {
@@ -173,7 +185,6 @@ test('audio transcription usage accepts partial details and leaves unclassified 
 
 test('audio transcription usage without a recognized metric is request-only', () => {
   for (const body of [
-    { duration: 10 },
     { usage: { seconds: 10 } },
     { usage: { type: 'future_metric', samples: 10 } },
   ]) {
@@ -185,6 +196,7 @@ test('audio transcription usage without a recognized metric is request-only', ()
 
 test('audio transcription usage rejects malformed declared metrics', () => {
   for (const [body, message] of [
+    [{ duration: '10' }, 'duration must be'],
     [{ usage: null }, 'usage must be an object'],
     [{ usage: 'tokens' }, 'usage must be an object'],
     [{ usage: { type: 'duration' } }, 'duration usage.seconds'],
