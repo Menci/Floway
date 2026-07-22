@@ -478,7 +478,7 @@ test('/api/performance/overview all-by-user attributes soft-deleted keys to thei
     tpotUs: 500,
     success: true,
   });
-  await repo.apiKeys.softDelete(apiKey.id);
+  await repo.apiKeys.softDelete(apiKey.id, '22'.repeat(16));
 
   const response = await requestApp(
     '/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user',
@@ -504,7 +504,7 @@ test('/api/performance/overview self-by-key surfaces soft-deleted keys metadata 
     tpotUs: 500,
     success: true,
   });
-  await repo.apiKeys.softDelete(apiKey.id);
+  await repo.apiKeys.softDelete(apiKey.id, '22'.repeat(16));
   // The acting api key was the one that was soft-deleted; build a fresh
   // active key under the same user so the request authenticates.
   await repo.apiKeys.save({

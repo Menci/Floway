@@ -247,8 +247,13 @@ setting. A completed output item becomes reusable at its first
 the response snapshot commits at the successful terminal event. Repository
 writes treat exact item/private-payload reuse as idempotent and reject a
 different unexpired row under the same key/epoch/ID scope. Lifetime refresh is
-key-only and debounced near expiry. Cleanup advances a durable expiry-hour
-cursor in bounded autocommit batches, then deletes the drained R2 hour prefix.
+key-only and debounced near expiry; increasing retention applies when an item
+is next refreshed, while shortening retention rotates the epoch and starts a
+new durable namespace. Enabled durations are at least one hour. Cleanup
+advances durable expiry-hour cursors in bounded autocommit batches, then deletes
+the drained versioned R2 hour prefix. A separate bounded legacy cursor drains
+the superseded Responses tables and v1 spill root without a migration-time
+full-table drop.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in

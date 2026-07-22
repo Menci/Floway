@@ -153,7 +153,9 @@ describe('StatefulResponsesStore', () => {
 
     const refreshed = await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [directRow.id, hashedRow.id]);
     expect(refreshed.every(row => row.refreshedAt > nearExpiry)).toBe(true);
-    expect((await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_reused'))?.itemIds).toEqual([directRow.id, hashedRow.id]);
+    const snapshot = await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_reused');
+    expect(snapshot?.itemIds).toEqual([directRow.id, hashedRow.id]);
+    expect(snapshot?.expiresAt).toBe(Math.min(...refreshed.map(row => row.expiresAt)));
   });
 
   test('snapshot lifetime follows a newer backing item timestamp', async () => {
@@ -220,6 +222,22 @@ describe('StatefulResponsesStore', () => {
     expect(snapshot).not.toBeNull();
     if (snapshot === null) throw new Error('Expected durable snapshot');
     expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, snapshot.itemIds)).toHaveLength(snapshot.itemIds.length);
+  });
+
+  test('a durable snapshot used on WebSocket remains local after durable retention is disabled', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const policy = testResponsesStatePolicy('key-a');
+    const durableWriter = createResponsesHttpStore(policy, true);
+    const output = { type: 'message' as const, id: 'msg_durable', role: 'assistant' as const, content: [] };
+    await durableWriter.persistOutputItem(output);
+    await durableWriter.commitSnapshot('resp_durable_source', 'append', [output.id]);
+
+    const session = createResponsesWsSession();
+    expect(await session.createStore(policy, true).loadSnapshot('resp_durable_source')).not.toBeNull();
+    const disabledPolicy = { ...policy, stateEpoch: '22'.repeat(16), retentionSeconds: 0 };
+
+    expect(await session.createStore(disabledPolicy, true).loadSnapshot('resp_durable_source')).not.toBeNull();
   });
 
   test('per-attempt private payloads reset on each beginAttempt', () => {
@@ -301,5 +319,31 @@ describe('StatefulResponsesStore', () => {
     const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
     expect(await store.loadSnapshot('resp_large')).not.toBeNull();
     expect(queries).toBeLessThanOrEqual(20);
+
+    const nearExpiry = Date.now() - TEST_RESPONSES_RETENTION_SECONDS * 1000 + 60 * 60 * 1000;
+    await base.prepare('UPDATE responses_state_items SET refreshed_at = ?, expires_at = ?')
+      .bind(nearExpiry, nearExpiry + TEST_RESPONSES_RETENTION_SECONDS * 1000)
+      .run();
+    await base.prepare('UPDATE responses_state_snapshots SET refreshed_at = ?, expires_at = ?')
+      .bind(nearExpiry, nearExpiry + TEST_RESPONSES_RETENTION_SECONDS * 1000)
+      .run();
+    queries = 0;
+    expect(await createResponsesHttpStore(testResponsesStatePolicy('key-a'), true).loadSnapshot('resp_large')).not.toBeNull();
+    expect(queries).toBeLessThanOrEqual(35);
+
+    await base.prepare("UPDATE responses_state_items SET refreshed_at = ?, expires_at = ?, payload_file_key = 'synthetic-spill'")
+      .bind(nearExpiry, nearExpiry + TEST_RESPONSES_RETENTION_SECONDS * 1000)
+      .run();
+    await base.prepare('UPDATE responses_state_snapshots SET refreshed_at = ?, expires_at = ?')
+      .bind(nearExpiry, nearExpiry + TEST_RESPONSES_RETENTION_SECONDS * 1000)
+      .run();
+    queries = 0;
+    expect(await createResponsesHttpStore(testResponsesStatePolicy('key-a'), true).loadSnapshot('resp_large')).not.toBeNull();
+    expect(queries).toBeLessThanOrEqual(40);
+
+    const newItems = items.map((item, index) => ({ ...item, id: `msg_new_${index}`, payloadHash: `new-payload-${index}` }));
+    queries = 0;
+    await new SqlRepo(countedDb).responsesItems.insertMany(newItems, Date.now());
+    expect(queries).toBeLessThanOrEqual(25);
   });
 });

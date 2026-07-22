@@ -8,6 +8,7 @@ import {
   compareResponsesItemsByFreshness,
   persistedResponsesKey,
 } from './responses-clone.ts';
+import { generateResponsesStateEpoch } from './responses-retention.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -204,10 +205,15 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     else this.keys.push({ ...key });
   }
 
-  async softDelete(id: string): Promise<boolean> {
+  async softDelete(id: string, responsesStateEpoch: string): Promise<boolean> {
     const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
     if (i < 0) return false;
-    this.keys[i] = { ...this.keys[i], deletedAt: new Date().toISOString() };
+    this.keys[i] = {
+      ...this.keys[i],
+      deletedAt: new Date().toISOString(),
+      responsesRetentionSeconds: 0,
+      responsesStateEpoch,
+    };
     return true;
   }
 
@@ -217,7 +223,12 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     for (let i = 0; i < this.keys.length; i++) {
       const k = this.keys[i];
       if (k.userId === userId && k.deletedAt === null) {
-        this.keys[i] = { ...k, deletedAt: now };
+        this.keys[i] = {
+          ...k,
+          deletedAt: now,
+          responsesRetentionSeconds: 0,
+          responsesStateEpoch: generateResponsesStateEpoch(),
+        };
         count += 1;
       }
     }
@@ -622,16 +633,18 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async refreshMany(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>[],
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash'>[],
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void> {
     const existing = items.map(item => this.store.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id)));
-    for (const item of existing) {
-      if (item === undefined) continue;
-      if (refreshedAt >= item.refreshedAt) {
-        item.refreshedAt = refreshedAt;
-        item.expiresAt = expiresAt;
+    for (let index = 0; index < existing.length; index += 1) {
+      const stored = existing[index];
+      if (stored === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${items[index].id}`);
+      if (stored.payloadHash !== items[index].payloadHash) throw new Error(`Responses item id collision: ${stored.id}`);
+      if (refreshedAt >= stored.refreshedAt) {
+        stored.refreshedAt = refreshedAt;
+        stored.expiresAt = expiresAt;
       }
     }
   }
@@ -702,6 +715,26 @@ class MemoryResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
   setNextExpiryHour(hourStart: number): Promise<void> {
     this.nextExpiryHour = hourStart;
     return Promise.resolve();
+  }
+
+  getLegacyNextExpiryHour(): Promise<null> {
+    return Promise.resolve(null);
+  }
+
+  setLegacyNextExpiryHour(_hourStart: number): Promise<void> {
+    return Promise.resolve();
+  }
+
+  deleteLegacyItemsExpiredHour(_hourStart: number, _hourEnd: number, _limit: number): Promise<number> {
+    return Promise.resolve(0);
+  }
+
+  deleteLegacySnapshotsExpiredHour(_hourStart: number, _hourEnd: number, _limit: number): Promise<number> {
+    return Promise.resolve(0);
+  }
+
+  completeLegacyCleanupIfEmpty(): Promise<boolean> {
+    return Promise.resolve(true);
   }
 }
 

@@ -11,7 +11,7 @@ CREATE TABLE api_keys_new (
   server_secret TEXT NOT NULL
     CHECK (length(server_secret) = 64 AND server_secret NOT GLOB '*[^0-9a-f]*'),
   responses_retention_seconds INTEGER NOT NULL DEFAULT 0
-    CHECK (responses_retention_seconds BETWEEN 0 AND 315360000),
+    CHECK (responses_retention_seconds = 0 OR responses_retention_seconds BETWEEN 3600 AND 315360000),
   responses_state_epoch TEXT NOT NULL
     CHECK (length(responses_state_epoch) = 32 AND responses_state_epoch NOT GLOB '*[^0-9a-f]*')
 );
@@ -92,11 +92,20 @@ CREATE INDEX idx_responses_state_snapshots_expiry ON responses_state_snapshots (
 
 CREATE TABLE responses_state_maintenance (
   id INTEGER PRIMARY KEY CHECK (id = 1),
-  next_expiry_hour INTEGER NOT NULL
+  next_expiry_hour INTEGER NOT NULL,
+  legacy_next_expiry_hour INTEGER NOT NULL,
+  legacy_complete INTEGER NOT NULL DEFAULT 0 CHECK (legacy_complete IN (0, 1))
 );
 
-INSERT INTO responses_state_maintenance (id, next_expiry_hour)
+INSERT INTO responses_state_maintenance (id, next_expiry_hour, legacy_next_expiry_hour)
 VALUES (
   1,
-  CAST(strftime('%s', strftime('%Y-%m-%d %H:00:00', 'now', '-30 days')) AS INTEGER) * 1000
+  CAST(strftime('%s', strftime('%Y-%m-%d %H:00:00', 'now')) AS INTEGER) * 1000,
+  (
+    MIN(
+      CAST(strftime('%s', strftime('%Y-%m-%d %H:00:00', 'now')) AS INTEGER) * 1000,
+      COALESCE((SELECT MIN(created_at) + 2592000000 FROM responses_items), 9223372036854775807),
+      COALESCE((SELECT MIN(created_at) + 2592000000 FROM responses_snapshots), 9223372036854775807)
+    ) / 3600000
+  ) * 3600000
 );

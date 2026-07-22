@@ -1,5 +1,6 @@
 import type { ApiKey } from './types.ts';
 
+export const RESPONSES_RETENTION_MIN_SECONDS = 60 * 60;
 export const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
 
 export const generateResponsesStateEpoch = (): string => {
@@ -11,8 +12,8 @@ export const responsesStateLifetime = (
   refreshedAt: number,
   retentionSeconds: number,
 ): { refreshedAt: number; expiresAt: number } => {
-  if (!Number.isSafeInteger(retentionSeconds) || retentionSeconds < 1 || retentionSeconds > RESPONSES_RETENTION_MAX_SECONDS) {
-    throw new RangeError(`Responses retention must be an integer from 1 to ${RESPONSES_RETENTION_MAX_SECONDS} seconds`);
+  if (!Number.isSafeInteger(retentionSeconds) || retentionSeconds < RESPONSES_RETENTION_MIN_SECONDS || retentionSeconds > RESPONSES_RETENTION_MAX_SECONDS) {
+    throw new RangeError(`Responses retention must be an integer from ${RESPONSES_RETENTION_MIN_SECONDS} to ${RESPONSES_RETENTION_MAX_SECONDS} seconds`);
   }
   return { refreshedAt, expiresAt: refreshedAt + retentionSeconds * 1000 };
 };

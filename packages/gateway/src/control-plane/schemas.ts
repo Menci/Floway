@@ -18,7 +18,7 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
-import { RESPONSES_RETENTION_MAX_SECONDS } from '../repo/responses-retention.ts';
+import { RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../repo/responses-retention.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
@@ -268,7 +268,10 @@ export const changeOwnPasswordBody = z.object({
 export const DUMP_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
 const dumpRetentionSecondsSchema = z.number().int().positive().max(DUMP_RETENTION_MAX_SECONDS).nullable();
 export { RESPONSES_RETENTION_MAX_SECONDS } from '../repo/responses-retention.ts';
-const responsesRetentionSecondsSchema = z.number().int().min(0).max(RESPONSES_RETENTION_MAX_SECONDS);
+const responsesRetentionSecondsSchema = z.number().int().min(0).max(RESPONSES_RETENTION_MAX_SECONDS)
+  .refine(value => value === 0 || value >= RESPONSES_RETENTION_MIN_SECONDS, {
+    message: `Stateful Responses retention must be 0 or at least ${RESPONSES_RETENTION_MIN_SECONDS} seconds`,
+  });
 
 // `key_source` picks how the raw key on this create/rotate request is
 // produced: 'generate' means the gateway mints an sk-...T3BlbkFJ... token

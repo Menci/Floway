@@ -205,17 +205,26 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .run();
   }
 
-  async softDelete(id: string): Promise<boolean> {
+  async softDelete(id: string, responsesStateEpoch: string): Promise<boolean> {
     const result = await this.db
-      .prepare('UPDATE api_keys SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
-      .bind(new Date().toISOString(), id)
+      .prepare(
+        `UPDATE api_keys
+         SET deleted_at = ?, responses_retention_seconds = 0, responses_state_epoch = ?
+         WHERE id = ? AND deleted_at IS NULL`,
+      )
+      .bind(new Date().toISOString(), responsesStateEpoch, id)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
 
   async softDeleteByUserId(userId: number): Promise<number> {
     const result = await this.db
-      .prepare('UPDATE api_keys SET deleted_at = ? WHERE user_id = ? AND deleted_at IS NULL')
+      .prepare(
+        `UPDATE api_keys
+         SET deleted_at = ?, responses_retention_seconds = 0,
+             responses_state_epoch = lower(hex(randomblob(16)))
+         WHERE user_id = ? AND deleted_at IS NULL`,
+      )
       .bind(new Date().toISOString(), userId)
       .run();
     return result.meta.changes ?? 0;
@@ -858,13 +867,16 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
 
 const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, state_epoch, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at, expires_at';
 // D1 permits 100 bound parameters per query. Descriptor reads reserve one
-// bind each for api_key_id/state_epoch; inserts use nine binds per item plus
-// the shared expiry conflict gate; refresh CASE updates use six per item plus
-// five shared lifetime/scope binds.
+// bind each for api_key_id/state_epoch; insert rows travel through one JSON
+// table bind per bounded chunk; refresh CASE updates use six per item plus five
+// shared lifetime/scope binds.
 // https://developers.cloudflare.com/d1/platform/limits/#limits
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 90;
-const RESPONSES_INSERT_CHUNK_SIZE = 11;
-const RESPONSES_REFRESH_CHUNK_SIZE = 15;
+const RESPONSES_DESCRIPTOR_CHUNK_SIZE = 500;
+const RESPONSES_INSERT_CHUNK_SIZE = 100;
+const RESPONSES_INSERT_CHUNK_BYTES = 512 * 1024;
+const RESPONSES_JSON_UPDATE_CHUNK_SIZE = 100;
+const responsesEncoder = new TextEncoder();
 
 interface ResponsesItemDescriptor {
   id: string;
@@ -900,12 +912,42 @@ interface PreparedResponsesInsertWrite extends PreparedResponsesPayloadWriteBase
   kind: 'insert';
 }
 
-interface PreparedResponsesRefreshWrite extends PreparedResponsesPayloadWriteBase<Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>> {
+interface PreparedResponsesRefreshWrite extends PreparedResponsesPayloadWriteBase<Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash' | 'payloadFileKey'>> {
   kind: 'refresh';
   previousPayloadJson: string;
 }
 
 type PreparedResponsesPayloadWrite = PreparedResponsesInsertWrite | PreparedResponsesRefreshWrite;
+
+const responsesInsertValue = ({ item, payload }: PreparedResponsesInsertWrite) => ({
+  id: item.id,
+  apiKeyId: item.apiKeyId,
+  stateEpoch: item.stateEpoch,
+  payload,
+  contentHash: item.contentHash,
+  payloadHash: item.payloadHash,
+  payloadFileKey: storedResponsesPayloadFileKey(item.id, payload),
+  refreshedAt: item.refreshedAt,
+  expiresAt: item.expiresAt,
+});
+
+const responsesInsertChunks = (writes: readonly PreparedResponsesInsertWrite[]): PreparedResponsesInsertWrite[][] => {
+  const chunks: PreparedResponsesInsertWrite[][] = [];
+  let chunk: PreparedResponsesInsertWrite[] = [];
+  let bytes = 2;
+  for (const write of writes) {
+    const writeBytes = responsesEncoder.encode(JSON.stringify(responsesInsertValue(write))).byteLength + 1;
+    if (chunk.length > 0 && (chunk.length >= RESPONSES_INSERT_CHUNK_SIZE || bytes + writeBytes > RESPONSES_INSERT_CHUNK_BYTES)) {
+      chunks.push(chunk);
+      chunk = [];
+      bytes = 2;
+    }
+    chunk.push(write);
+    bytes += writeBytes;
+  }
+  if (chunk.length > 0) chunks.push(chunk);
+  return chunks;
+};
 
 const uniqueResponsesItems = (items: readonly StoredResponsesItem[]): StoredResponsesItem[] => {
   const unique = new Map<string, StoredResponsesItem>();
@@ -1041,30 +1083,38 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
 
     const statements: SqlPreparedStatement[] = [];
-    for (let index = 0; index < writes.length; index += RESPONSES_INSERT_CHUNK_SIZE) {
-      const chunk = writes.slice(index, index + RESPONSES_INSERT_CHUNK_SIZE);
-      const values = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+    for (const chunk of responsesInsertChunks(writes)) {
+      const incomingJson = JSON.stringify(chunk.map(responsesInsertValue));
       statements.push(this.db
         .prepare(
-          `INSERT INTO responses_state_items (${RESPONSES_ITEM_COLUMNS}) VALUES ${values}
+          `WITH incoming AS (
+             SELECT
+               json_extract(value, '$.id') AS id,
+               json_extract(value, '$.apiKeyId') AS api_key_id,
+               json_extract(value, '$.stateEpoch') AS state_epoch,
+               json_extract(value, '$.payload') AS payload_json,
+               json_extract(value, '$.contentHash') AS content_hash,
+               json_extract(value, '$.payloadHash') AS payload_hash,
+               json_extract(value, '$.payloadFileKey') AS payload_file_key,
+               json_extract(value, '$.refreshedAt') AS refreshed_at,
+               json_extract(value, '$.expiresAt') AS expires_at
+             FROM json_each(?)
+           )
+           INSERT INTO responses_state_items (${RESPONSES_ITEM_COLUMNS})
+           SELECT id, api_key_id, state_epoch, payload_json, content_hash, payload_hash,
+                  payload_file_key, refreshed_at, expires_at
+           FROM incoming
+           WHERE true
            ON CONFLICT (id, api_key_id, state_epoch) DO UPDATE SET
              payload_json = excluded.payload_json,
              content_hash = excluded.content_hash,
+             payload_hash = excluded.payload_hash,
+             payload_file_key = excluded.payload_file_key,
              refreshed_at = excluded.refreshed_at,
              expires_at = excluded.expires_at
            WHERE responses_state_items.expires_at <= ?`,
         )
-        .bind(...chunk.flatMap(({ item, payload }) => [
-          item.id,
-          item.apiKeyId,
-          item.stateEpoch,
-          payload,
-          item.contentHash,
-          item.payloadHash,
-          storedResponsesPayloadFileKey(item.id, payload),
-          item.refreshedAt,
-          item.expiresAt,
-        ]), now));
+        .bind(incomingJson, now));
     }
     try {
       await runStatements(this.db, statements);
@@ -1093,7 +1143,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async refreshMany(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>[],
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash' | 'payloadFileKey'>[],
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void> {
@@ -1108,6 +1158,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       const key = persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id);
       const descriptor = previous.get(key);
       if (descriptor === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${item.id}`);
+      if (descriptor.payloadHash !== item.payloadHash) throw new Error(`Responses item id collision: ${item.id}`);
     }
     const pending = spilled.filter(item => previous.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!.refreshedAt < refreshedAt);
     if (pending.length === 0) return;
@@ -1134,76 +1185,123 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       group.push(write);
       writesByScope.set(scopeKey, group);
     }
-    const statements: SqlPreparedStatement[] = [];
-    for (const group of writesByScope.values()) {
-      const { apiKeyId, stateEpoch } = group[0].item;
-      for (let index = 0; index < group.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
-        const chunk = group.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
-        const cases = chunk.map(() => 'WHEN ? THEN ?').join(' ');
-        const fileCases = chunk.map(() => 'WHEN ? THEN ?').join(' ');
-        const conditions = chunk.map(() => '(id = ? AND payload_json = ?)').join(' OR ');
-        statements.push(this.db
-          .prepare(
-            `UPDATE responses_state_items
-             SET payload_json = CASE id ${cases} ELSE payload_json END,
-                 payload_file_key = CASE id ${fileCases} ELSE payload_file_key END,
+    const refreshedIds = new Set<string>();
+    try {
+      for (const group of writesByScope.values()) {
+        const { apiKeyId, stateEpoch } = group[0].item;
+        for (let index = 0; index < group.length; index += RESPONSES_JSON_UPDATE_CHUNK_SIZE) {
+          const chunk = group.slice(index, index + RESPONSES_JSON_UPDATE_CHUNK_SIZE);
+          const incomingJson = JSON.stringify(chunk.map(write => ({
+            id: write.item.id,
+            payloadHash: write.item.payloadHash,
+            previousPayload: write.previousPayloadJson,
+            payload: write.payload,
+            payloadFileKey: write.payloadFileKey,
+          })));
+          const { results } = await this.db
+            .prepare(
+              `WITH incoming AS (
+               SELECT
+                 json_extract(value, '$.id') AS id,
+                 json_extract(value, '$.payloadHash') AS payload_hash,
+                 json_extract(value, '$.previousPayload') AS previous_payload,
+                 json_extract(value, '$.payload') AS payload,
+                 json_extract(value, '$.payloadFileKey') AS payload_file_key
+               FROM json_each(?)
+             )
+             UPDATE responses_state_items
+             SET payload_json = (SELECT payload FROM incoming WHERE incoming.id = responses_state_items.id),
+                 payload_file_key = (SELECT payload_file_key FROM incoming WHERE incoming.id = responses_state_items.id),
                  expires_at = CASE WHEN refreshed_at < ? THEN ? ELSE expires_at END,
                  refreshed_at = MAX(refreshed_at, ?)
-             WHERE api_key_id = ? AND state_epoch = ? AND (${conditions})`,
-          )
-          .bind(
-            ...chunk.flatMap(({ item, payload }) => [item.id, payload]),
-            ...chunk.flatMap(({ item, payloadFileKey }) => [item.id, payloadFileKey]),
-            refreshedAt,
-            expiresAt,
-            refreshedAt,
-            apiKeyId,
-            stateEpoch,
-            ...chunk.flatMap(({ item, previousPayloadJson }) => [item.id, previousPayloadJson]),
-          ));
+             WHERE api_key_id = ? AND state_epoch = ?
+               AND EXISTS (
+                 SELECT 1 FROM incoming
+                 WHERE incoming.id = responses_state_items.id
+                   AND incoming.payload_hash = responses_state_items.payload_hash
+                   AND incoming.previous_payload = responses_state_items.payload_json
+               )
+             RETURNING id`,
+            )
+            .bind(incomingJson, refreshedAt, expiresAt, refreshedAt, apiKeyId, stateEpoch)
+            .all<{ id: string }>();
+          for (const row of results) refreshedIds.add(row.id);
+        }
       }
-    }
-    try {
-      await runStatements(this.db, statements);
     } catch (error) {
       await this.finishPayloadWrites(writes, error);
     }
-    const persisted = await this.finishPayloadWrites(writes, null);
-    const staleItems = writes.flatMap(write => {
-      const descriptor = persisted.get(persistedResponsesKey(write.item.apiKeyId, write.item.stateEpoch, write.item.id));
-      if (descriptor === undefined) throw new Error(`Responses item disappeared after lifetime refresh: ${write.item.id}`);
-      return descriptor.refreshedAt < refreshedAt ? [write.item] : [];
+
+    const cleanupErrors: unknown[] = [];
+    for (const write of writes) {
+      const won = refreshedIds.has(write.item.id);
+      const obsolete = won ? write.previousFileKey : write.generatedFileKey;
+      if (obsolete === null || (won && obsolete === write.payloadFileKey)) continue;
+      try {
+        await getFileProvider().deletePrefix(obsolete);
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    if (cleanupErrors.length > 0) throw new AggregateError(cleanupErrors, 'Responses payload cleanup failed after lifetime refresh');
+
+    const missingWrites = writes.filter(write => !refreshedIds.has(write.item.id));
+    if (missingWrites.length === 0) return;
+    const current = await this.lookupDescriptors(missingWrites.map(write => write.item));
+    const retry: Array<Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash' | 'payloadFileKey'>> = [];
+    const unresolved = missingWrites.find(write => {
+      const descriptor = current.get(persistedResponsesKey(write.item.apiKeyId, write.item.stateEpoch, write.item.id));
+      if (descriptor === undefined || descriptor.payloadHash !== write.item.payloadHash) return true;
+      if (descriptor.refreshedAt < refreshedAt) {
+        retry.push({ ...write.item, payloadFileKey: descriptor.payloadFileKey });
+      }
+      return false;
     });
-    if (staleItems.length > 0) await this.refreshMany(staleItems, refreshedAt, expiresAt);
+    if (unresolved !== undefined) throw new Error(`Responses item disappeared or changed before lifetime refresh: ${unresolved.item.id}`);
+    if (retry.length > 0) await this.refreshMany(retry, refreshedAt, expiresAt);
   }
 
   private async refreshInlineItems(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>[],
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash'>[],
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void> {
     const byScope = Map.groupBy(items, item => `${item.apiKeyId}\0${item.stateEpoch}`);
-    const statements: SqlPreparedStatement[] = [];
     for (const group of byScope.values()) {
       const { apiKeyId, stateEpoch } = group[0];
-      for (let index = 0; index < group.length; index += RESPONSES_IN_QUERY_CHUNK_SIZE) {
-        const chunk = group.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
-        const placeholders = chunk.map(() => '?').join(', ');
-        statements.push(this.db
+      for (let index = 0; index < group.length; index += RESPONSES_JSON_UPDATE_CHUNK_SIZE) {
+        const chunk = group.slice(index, index + RESPONSES_JSON_UPDATE_CHUNK_SIZE);
+        const expectedJson = JSON.stringify(chunk.map(item => ({ id: item.id, payloadHash: item.payloadHash })));
+        const { results } = await this.db
           .prepare(
-            `UPDATE responses_state_items
-             SET refreshed_at = ?, expires_at = ?
-             WHERE api_key_id = ? AND state_epoch = ? AND refreshed_at < ?
-               AND id IN (${placeholders})`,
+            `WITH expected AS (
+               SELECT
+                 json_extract(value, '$.id') AS id,
+                 json_extract(value, '$.payloadHash') AS payload_hash
+               FROM json_each(?)
+             )
+             UPDATE responses_state_items
+             SET expires_at = CASE WHEN refreshed_at < ? THEN ? ELSE expires_at END,
+                 refreshed_at = MAX(refreshed_at, ?)
+             WHERE api_key_id = ? AND state_epoch = ?
+               AND EXISTS (
+                 SELECT 1 FROM expected
+                 WHERE expected.id = responses_state_items.id
+                   AND expected.payload_hash = responses_state_items.payload_hash
+               )
+             RETURNING id`,
           )
-          .bind(refreshedAt, expiresAt, apiKeyId, stateEpoch, refreshedAt, ...chunk.map(item => item.id)));
+          .bind(expectedJson, refreshedAt, expiresAt, refreshedAt, apiKeyId, stateEpoch)
+          .all<{ id: string }>();
+        const refreshedIds = new Set(results.map(row => row.id));
+        const missing = chunk.find(item => !refreshedIds.has(item.id));
+        if (missing !== undefined) throw new Error(`Responses item disappeared or changed before lifetime refresh: ${missing.id}`);
       }
     }
-    await runStatements(this.db, statements);
   }
 
   private async prepareRefreshWrite(
-    item: Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>,
+    item: Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash' | 'payloadFileKey'>,
     initialDescriptor: ResponsesItemDescriptor,
     refreshedAt: number,
     expiresAt: number,
@@ -1262,12 +1360,17 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const queries: Promise<SqlResult<ResponsesItemDescriptorRow>>[] = [];
     for (const { apiKeyId, stateEpoch, ids: idSet } of idsByScope.values()) {
       const ids = [...idSet];
-      for (let index = 0; index < ids.length; index += RESPONSES_IN_QUERY_CHUNK_SIZE) {
-        const chunk = ids.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
-        const placeholders = chunk.map(() => '?').join(', ');
+      for (let index = 0; index < ids.length; index += RESPONSES_DESCRIPTOR_CHUNK_SIZE) {
+        const chunk = ids.slice(index, index + RESPONSES_DESCRIPTOR_CHUNK_SIZE);
         queries.push(this.db
-          .prepare(`SELECT id, api_key_id, state_epoch, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at, expires_at FROM responses_state_items WHERE api_key_id = ? AND state_epoch = ? AND id IN (${placeholders})`)
-          .bind(apiKeyId, stateEpoch, ...chunk)
+          .prepare(
+            `SELECT id, api_key_id, state_epoch, payload_json, content_hash,
+                    payload_hash, payload_file_key, refreshed_at, expires_at
+             FROM responses_state_items
+             WHERE api_key_id = ? AND state_epoch = ?
+               AND id IN (SELECT value FROM json_each(?))`,
+          )
+          .bind(apiKeyId, stateEpoch, JSON.stringify(chunk))
           .all<ResponsesItemDescriptorRow>());
       }
     }
@@ -1470,6 +1573,69 @@ class SqlResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
       .bind(hourStart)
       .run();
     if ((result.meta.changes ?? 0) !== 1) throw new Error('responses_state_maintenance singleton row missing');
+  }
+
+  async getLegacyNextExpiryHour(): Promise<number | null> {
+    const row = await this.db
+      .prepare('SELECT legacy_next_expiry_hour, legacy_complete FROM responses_state_maintenance WHERE id = 1')
+      .first<{ legacy_next_expiry_hour: number; legacy_complete: number }>();
+    if (row === null) throw new Error('responses_state_maintenance singleton row missing');
+    return row.legacy_complete === 1 ? null : row.legacy_next_expiry_hour;
+  }
+
+  async setLegacyNextExpiryHour(hourStart: number): Promise<void> {
+    const result = await this.db
+      .prepare('UPDATE responses_state_maintenance SET legacy_next_expiry_hour = ? WHERE id = 1')
+      .bind(hourStart)
+      .run();
+    if ((result.meta.changes ?? 0) !== 1) throw new Error('responses_state_maintenance singleton row missing');
+  }
+
+  async deleteLegacyItemsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number> {
+    const retentionMs = 30 * 24 * 60 * 60 * 1000;
+    const result = await this.db
+      .prepare(
+        `DELETE FROM responses_items
+         WHERE rowid IN (
+           SELECT rowid FROM responses_items
+           WHERE created_at >= ? AND created_at < ?
+           ORDER BY created_at, rowid
+           LIMIT ?
+         )`,
+      )
+      .bind(hourStart - retentionMs, hourEnd - retentionMs, limit)
+      .run();
+    return result.meta.changes ?? 0;
+  }
+
+  async deleteLegacySnapshotsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number> {
+    const retentionMs = 30 * 24 * 60 * 60 * 1000;
+    const result = await this.db
+      .prepare(
+        `DELETE FROM responses_snapshots
+         WHERE rowid IN (
+           SELECT rowid FROM responses_snapshots
+           WHERE created_at >= ? AND created_at < ?
+           ORDER BY created_at, rowid
+           LIMIT ?
+         )`,
+      )
+      .bind(hourStart - retentionMs, hourEnd - retentionMs, limit)
+      .run();
+    return result.meta.changes ?? 0;
+  }
+
+  async completeLegacyCleanupIfEmpty(): Promise<boolean> {
+    const row = await this.db
+      .prepare(
+        `SELECT
+           EXISTS(SELECT 1 FROM responses_items LIMIT 1) AS has_items,
+           EXISTS(SELECT 1 FROM responses_snapshots LIMIT 1) AS has_snapshots`,
+      )
+      .first<{ has_items: number; has_snapshots: number }>();
+    if (row === null || row.has_items === 1 || row.has_snapshots === 1) return false;
+    await this.db.prepare('UPDATE responses_state_maintenance SET legacy_complete = 1 WHERE id = 1').run();
+    return true;
   }
 }
 

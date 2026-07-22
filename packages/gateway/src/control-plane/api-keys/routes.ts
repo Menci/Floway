@@ -151,7 +151,7 @@ export const deleteKey = async (c: AuthedContext) => {
   // Broker availability shouldn't block the soft-delete — clients reconcile
   // on the next keys refetch regardless.
   await notifyDisabledBestEffort(id, 'deleteKey');
-  await getRepo().apiKeys.softDelete(id);
+  await getRepo().apiKeys.softDelete(id, generateResponsesStateEpoch());
   return c.json({ ok: true });
 };
 

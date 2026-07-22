@@ -18,7 +18,7 @@ interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]>;
   insertItems(items: readonly StoredResponsesItem[]): Promise<void>;
   refreshItems(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>[],
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash' | 'payloadFileKey'>[],
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void>;
@@ -156,9 +156,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       if (row === undefined) throw new Error(`Responses snapshot item disappeared before commit: ${id}`);
       return row;
     });
-    await this.commitItems(uniqueRows);
-    const snapshotRefreshedAt = Math.min(...uniqueRows.map(row => row.refreshedAt));
-    const snapshotExpiresAt = Math.min(...uniqueRows.map(row => row.expiresAt));
+    const committedRows = await this.commitItems(uniqueRows);
+    const snapshotRefreshedAt = Math.min(...committedRows.map(row => row.refreshedAt));
+    const snapshotExpiresAt = Math.min(...committedRows.map(row => row.expiresAt));
     const snapshot: StoredResponsesSnapshot = {
       id: responseId,
       apiKeyId: this.apiKeyId,
@@ -265,7 +265,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     }
   }
 
-  private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {
+  private async commitItems(rows: readonly StoredResponsesItem[]): Promise<StoredResponsesItem[]> {
     const lifetime = this.lifetime(Date.now());
     const currentRows = rows.map(row => ({
       ...row,
@@ -279,12 +279,14 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       assertSameStoredResponsesItem(row, committed);
       return [];
     });
-    if (pending.length === 0) return;
-    for (const write of this.options.writes) await write.insertItems(pending);
-    for (const row of pending) {
-      this.committedItemIds.add(row.id);
-      this.rememberItem(row);
+    if (pending.length > 0) {
+      for (const write of this.options.writes) await write.insertItems(pending);
+      for (const row of pending) {
+        this.committedItemIds.add(row.id);
+        this.rememberItem(row);
+      }
     }
+    return rows.map(row => this.loadedItems.get(row.id) ?? row);
   }
 
   private async refreshLoadedSnapshot(
@@ -320,6 +322,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       } else if (write !== source) {
         await write.insertItems(items);
       }
+    }
+    for (const write of this.options.writes) {
+      if (!write.isDurable && write !== source) await write.insertSnapshot(snapshot);
     }
     if (dueItems.length === 0) return;
     for (const item of dueItems) {
@@ -369,7 +374,7 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
   }
 
   async refreshItems(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>[],
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash' | 'payloadFileKey'>[],
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void> {
@@ -419,13 +424,14 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
   }
 
   async refreshItems(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[],
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'payloadHash'>[],
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void> {
     for (const item of items) {
       const stored = this.items.get(scopedResponsesKey(item.apiKeyId, item.id));
       if (stored === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${item.id}`);
+      if (stored.payloadHash !== item.payloadHash) throw new Error(`Responses item id collision: ${item.id}`);
       if (refreshedAt >= stored.refreshedAt) {
         stored.refreshedAt = refreshedAt;
         stored.expiresAt = expiresAt;

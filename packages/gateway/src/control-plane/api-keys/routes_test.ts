@@ -364,6 +364,7 @@ test('shortening or disabling Stateful Responses retention rotates its private s
 test('rejects invalid Stateful Responses retention values', async () => {
   const { apiKey } = await setupAppTest();
   assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: -1 }, apiKey.key)).status, 400);
+  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: 1 }, apiKey.key)).status, 400);
   assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: 1.5 }, apiKey.key)).status, 400);
   assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: RESPONSES_RETENTION_MAX_SECONDS + 1 }, apiKey.key)).status, 400);
 });
@@ -384,6 +385,8 @@ test('DELETE /api/keys/:id soft-deletes the key', async () => {
   const deleted = allKeys.find(k => k.id === apiKey.id);
   assertExists(deleted);
   assertEquals(typeof deleted.deletedAt, 'string');
+  assertEquals(deleted.responsesRetentionSeconds, 0);
+  if (deleted.responsesStateEpoch === apiKey.responsesStateEpoch) throw new Error('soft delete did not rotate state epoch');
 });
 
 test('DELETE /api/keys/:id succeeds when the broker close hook throws — broker outage must not block soft-delete', async () => {

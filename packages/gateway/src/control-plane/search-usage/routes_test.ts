@@ -156,7 +156,7 @@ test('/api/search-usage all-by-user attributes soft-deleted keys to their origin
   // must still resolve the row to apiKey.userId — not the synthetic userId 0
   // it falls back to when the key→user lookup misses.
   await repo.searchUsage.set({ provider: 'tavily', keyId: apiKey.id, action: 'search', hour: '2026-03-15T10', requests: 7 });
-  await repo.apiKeys.softDelete(apiKey.id);
+  await repo.apiKeys.softDelete(apiKey.id, '22'.repeat(16));
 
   const response = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user', {
     headers: { 'x-floway-session': adminSession },

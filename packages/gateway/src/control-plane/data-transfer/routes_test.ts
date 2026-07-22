@@ -24,7 +24,7 @@ import { testResponsesStateLifetime, TEST_RESPONSES_STATE_EPOCH } from '../../te
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const serializedApiKey = ({ responsesStateEpoch: _epoch, ...key }: ApiKey) => key;
@@ -1445,6 +1445,24 @@ test('merge-mode retention transition tolerates dump-broker failure', async () =
   }));
   assertEquals(result.status, 200);
   assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
+});
+
+test('merge import reactivation rotates a soft-deleted key state epoch', async () => {
+  const { app, repo } = setup();
+  const deleted = {
+    ...KEY_A,
+    deletedAt: '2026-01-03T00:00:00.000Z',
+    responsesRetentionSeconds: 7 * 24 * 60 * 60,
+  };
+  await repo.apiKeys.save(deleted);
+  const result = await doImport(app, 'merge', latestImportData({
+    apiKeys: [serializedApiKey({ ...deleted, deletedAt: null })],
+  }));
+
+  assertEquals(result.status, 200);
+  const restored = await repo.apiKeys.getById(KEY_A.id);
+  assertExists(restored);
+  if (restored.responsesStateEpoch === deleted.responsesStateEpoch) throw new Error('reactivation preserved the deleted state epoch');
 });
 
 test('replace-mode import surfaces a purgeAll failure', async () => {

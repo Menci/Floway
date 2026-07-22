@@ -183,7 +183,7 @@ const save = async () => {
         off-label="Off (do not capture)"
         :presets="dumpRetentionPresets"
       >
-        <p v-if="retentionWarning" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+        <p v-if="retentionWarning" role="status" aria-live="polite" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
           {{ retentionWarning }}
         </p>
         <p v-if="props.mode === 'edit' && retentionEnabled" class="text-xs text-gray-500">
@@ -200,8 +200,9 @@ const save = async () => {
         :off-value="0"
         off-label="Off (no durable state)"
         :presets="responsesRetentionPresets"
+        :minimum-seconds="3600"
       >
-        <p v-if="responsesRetentionWarning" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+        <p v-if="responsesRetentionWarning" role="status" aria-live="polite" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
           {{ responsesRetentionWarning }}
         </p>
       </RetentionField>

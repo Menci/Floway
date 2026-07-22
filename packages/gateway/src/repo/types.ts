@@ -160,7 +160,7 @@ export interface ApiKeyRepo {
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
   save(key: ApiKey): Promise<void>;
-  softDelete(id: string): Promise<boolean>;
+  softDelete(id: string, responsesStateEpoch: string): Promise<boolean>;
   softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
@@ -391,7 +391,7 @@ export interface ResponsesItemsRepo {
   lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], now: number): Promise<StoredResponsesItem[]>;
   insertMany(items: readonly StoredResponsesItem[], now: number): Promise<void>;
   refreshMany(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>[],
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash' | 'payloadFileKey'>[],
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void>;
@@ -419,6 +419,11 @@ export interface ResponsesSnapshotsRepo {
 export interface ResponsesMaintenanceRepo {
   getNextExpiryHour(): Promise<number>;
   setNextExpiryHour(hourStart: number): Promise<void>;
+  getLegacyNextExpiryHour(): Promise<number | null>;
+  setLegacyNextExpiryHour(hourStart: number): Promise<void>;
+  deleteLegacyItemsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
+  deleteLegacySnapshotsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
+  completeLegacyCleanupIfEmpty(): Promise<boolean>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants

@@ -27,7 +27,8 @@ const HOUR_MS = 60 * 60 * 1000;
 
 // Root under which every stored-payload file lives, regardless of expiry hour.
 // The replace path deletes this whole tree alongside the D1 rows it clears.
-const RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v1/expires/';
+const RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v2/expires/';
+const LEGACY_RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v1/expires/';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -188,6 +189,10 @@ export const deleteResponsesItemPayloadExpiryBucket = async (hourStart: number):
   await getFileProvider().deletePrefix(responsesItemPayloadExpiryBucketPrefix(hourStart));
 };
 
+export const deleteLegacyResponsesItemPayloadExpiryBucket = async (hourStart: number): Promise<void> => {
+  await getFileProvider().deletePrefix(expiryBucketPrefix(LEGACY_RESPONSES_ITEMS_FILE_ROOT, hourStart));
+};
+
 // Drop every spilled payload file. Paired with a `deleteAll` over the
 // responses_state_items rows so a full replace/clear does not orphan R2 objects.
 export const deleteAllResponsesItemPayloadFiles = async (): Promise<void> => {
@@ -195,12 +200,16 @@ export const deleteAllResponsesItemPayloadFiles = async (): Promise<void> => {
 };
 
 export const responsesItemPayloadExpiryBucketPrefix = (hourTimestamp: number): string => {
+  return expiryBucketPrefix(RESPONSES_ITEMS_FILE_ROOT, hourTimestamp);
+};
+
+const expiryBucketPrefix = (root: string, hourTimestamp: number): string => {
   const date = new Date(hourTimestamp);
   const yyyy = String(date.getUTCFullYear()).padStart(4, '0');
   const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(date.getUTCDate()).padStart(2, '0');
   const hh = String(date.getUTCHours()).padStart(2, '0');
-  return `${RESPONSES_ITEMS_FILE_ROOT}${yyyy}/${mm}/${dd}/${hh}/`;
+  return `${root}${yyyy}/${mm}/${dd}/${hh}/`;
 };
 
 export const startOfUtcHour = (timestamp: number): number => Math.floor(timestamp / HOUR_MS) * HOUR_MS;

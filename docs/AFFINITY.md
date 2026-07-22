@@ -151,7 +151,8 @@ Full items and `item_reference`s hydrate by arbitrary exact ID with no format
 validation or candidate-specific rewrite. When state is written, idless input
 items use internal storage keys only inside snapshots; stateless HTTP requests
 neither hash nor stage them. The persistence backing accepts exact item/private
-payload reuse and rejects a different row under the same API-key-scoped ID.
+payload reuse and rejects a different unexpired row under the same
+API-key/epoch/ID scope.
 Affinity never reads, writes, authenticates, or validates item IDs.
 
 Durable persistence is controlled by the API key's Stateful Responses

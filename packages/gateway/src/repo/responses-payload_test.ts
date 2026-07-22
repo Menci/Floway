@@ -53,7 +53,7 @@ test('identical spilled payload writes get distinct owned keys that retain the c
   const firstDescriptor = JSON.parse(first) as { key: string; sha256: string };
   const secondDescriptor = JSON.parse(second) as { key: string; sha256: string };
 
-  assertEquals((await files.listKeys('responses-items/v1/expires/')).length, 2);
+  assertEquals((await files.listKeys('responses-items/v2/expires/')).length, 2);
   assert(firstDescriptor.key !== secondDescriptor.key);
   assert(firstDescriptor.key.includes(firstDescriptor.sha256));
   assert(secondDescriptor.key.includes(secondDescriptor.sha256));
@@ -74,7 +74,7 @@ test.each([
   });
   const descriptor = JSON.parse(serialized) as { key: string };
 
-  assert(descriptor.key.startsWith('responses-items/v1/expires/'));
+  assert(descriptor.key.startsWith('responses-items/v2/expires/'));
   assert(!descriptor.key.includes(id));
   assert(/^responses-items\/v1\/expires\/\d{4}\/\d{2}\/\d{2}\/\d{2}\/[0-9a-f]{64}\/[0-9a-f]{32}\/[0-9a-f]{64}\/[0-9a-f]{64}-[A-Za-z0-9_-]{22}\.gz$/.test(descriptor.key));
   assertEquals((await parseStoredResponsesPayload(id, serialized)).item, {
@@ -147,11 +147,11 @@ test('deletes exactly the expiry-hour bucket drained by the D1 janitor', async (
   const files = new MemoryFileProvider();
   initFileProvider(files);
 
-  await files.put('responses-items/v1/expires/2026/06/27/10/scope/c.json', new Uint8Array([3]));
-  await files.put('responses-items/v1/expires/2026/06/27/11/scope/d.json', new Uint8Array([4]));
+  await files.put('responses-items/v2/expires/2026/06/27/10/scope/c.json', new Uint8Array([3]));
+  await files.put('responses-items/v2/expires/2026/06/27/11/scope/d.json', new Uint8Array([4]));
 
   await deleteResponsesItemPayloadExpiryBucket(Date.UTC(2026, 5, 27, 10));
 
-  assertEquals(await files.get('responses-items/v1/expires/2026/06/27/10/scope/c.json'), null);
-  assertEquals([...(await files.get('responses-items/v1/expires/2026/06/27/11/scope/d.json'))!], [4]);
+  assertEquals(await files.get('responses-items/v2/expires/2026/06/27/10/scope/c.json'), null);
+  assertEquals([...(await files.get('responses-items/v2/expires/2026/06/27/11/scope/d.json'))!], [4]);
 });

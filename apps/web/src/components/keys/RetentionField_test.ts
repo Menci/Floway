@@ -46,6 +46,8 @@ describe('RetentionField', () => {
 
     await wrapper.get('input').setValue('not-a-duration');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toBe('invalid');
+    expect(wrapper.get('input').attributes('aria-invalid')).toBe('true');
+    expect(wrapper.text()).toContain('Enter an integer number of seconds');
 
     await select.setValue('off');
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toBe(0);
@@ -58,5 +60,17 @@ describe('RetentionField', () => {
 
     expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('custom');
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('14d');
+  });
+
+  it('preserves each raw custom keystroke through a real parent v-model loop', async () => {
+    const wrapper = mountField(0);
+    await wrapper.get('select').setValue('custom');
+    for (const draft of ['4', '45', '45d']) {
+      await wrapper.get('input').setValue(draft);
+      await wrapper.setProps({ modelValue: wrapper.emitted('update:modelValue')?.at(-1)?.[0] as number | 'invalid' });
+      await nextTick();
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe(draft);
+    }
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toBe(45 * 86400);
   });
 });

@@ -20,7 +20,7 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import { generateResponsesStateEpoch, RESPONSES_RETENTION_MAX_SECONDS, withResponsesRetention } from '../../repo/responses-retention.ts';
+import { generateResponsesStateEpoch, RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS, withResponsesRetention } from '../../repo/responses-retention.ts';
 import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, UsageMetricRecord, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -263,8 +263,8 @@ const parseImportedDumpRetention = (value: unknown): number | null => {
 };
 
 const parseImportedResponsesRetention = (value: unknown): number => {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > RESPONSES_RETENTION_MAX_SECONDS) {
-    throw new Error(`responsesRetentionSeconds must be an integer from 0 to ${RESPONSES_RETENTION_MAX_SECONDS}`);
+  if (typeof value !== 'number' || !Number.isInteger(value) || (value !== 0 && value < RESPONSES_RETENTION_MIN_SECONDS) || value > RESPONSES_RETENTION_MAX_SECONDS) {
+    throw new Error(`responsesRetentionSeconds must be 0 or an integer from ${RESPONSES_RETENTION_MIN_SECONDS} to ${RESPONSES_RETENTION_MAX_SECONDS}`);
   }
   return value;
 };
@@ -844,12 +844,15 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // Merge mode mirrors `updateKey`'s purge transition when retention is
     // flipped off or shrunk; replace mode already purged everything above.
     const previous = mode === 'merge' ? preImportKeysById.get(key.id) : undefined;
+    const reactivating = previous?.deletedAt !== null && key.deletedAt === null;
     const withEpoch: ApiKey = {
       ...key,
-      ...(previous === undefined ? {} : { responsesRetentionSeconds: previous.responsesRetentionSeconds }),
-      responsesStateEpoch: previous?.responsesStateEpoch ?? generateResponsesStateEpoch(),
+      ...(previous === undefined || reactivating ? {} : { responsesRetentionSeconds: previous.responsesRetentionSeconds }),
+      responsesStateEpoch: previous === undefined || reactivating
+        ? generateResponsesStateEpoch()
+        : previous.responsesStateEpoch,
     };
-    const next = previous === undefined
+    const next = previous === undefined || reactivating
       ? withEpoch
       : withResponsesRetention(withEpoch, key.responsesRetentionSeconds);
     await repo.apiKeys.save(next);
