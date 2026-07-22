@@ -7,7 +7,7 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -150,16 +150,13 @@ const makeCandidate = (overrides: {
   };
 };
 
-const completedEvent = (id = 'resp_test'): ResponsesStreamEvent => ({
-  type: 'response.completed',
-  sequence_number: 0,
-  response: makeResponsesResult(id),
-});
+const completedEvents = (id = 'resp_test'): ResponsesStreamEvent[] =>
+  responsesResultToEvents(makeResponsesResult(id)).map(frame => frame.event);
 
 const queueCompletedResponse = (id = 'resp_test') => {
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
     action: 'generate', ok: true,
-    events: makeProviderEvents([completedEvent(id)]),
+    events: makeProviderEvents(completedEvents(id)),
     modelKey: 'test-model-key',
     headers: new Headers(),
   }));
@@ -226,7 +223,7 @@ test('POST /v1/responses makes a done reasoning item reusable before terminal', 
     return {
       action: 'generate',
       ok: true,
-      events: makeProviderEvents([completedEvent('resp_second')]),
+      events: makeProviderEvents(completedEvents('resp_second')),
       modelKey: 'test-model-key',
       headers: new Headers(),
     };
@@ -287,7 +284,7 @@ test('POST /v1/responses canonicalizes and promotes an implicit system message',
     return {
       action: 'generate',
       ok: true,
-      events: makeProviderEvents([completedEvent()]),
+      events: makeProviderEvents(completedEvents()),
       modelKey: 'test-model-key',
       headers: new Headers(),
     };
@@ -488,7 +485,7 @@ test('POST /v1/responses routes a codex-auto-review request through the seeded a
     observedBodies.push(body as Omit<CanonicalResponsesPayload, 'model'>);
     return {
       action: 'generate', ok: true,
-      events: makeProviderEvents([completedEvent()]),
+      events: makeProviderEvents(completedEvents()),
       modelKey: 'test-model-key',
       headers: new Headers(),
     };
