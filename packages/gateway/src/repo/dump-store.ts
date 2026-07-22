@@ -15,12 +15,15 @@ import type {
 import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
-// The hour bucket lets the cron sweep `deletePrefix` whole expired hours.
+// The hour segment keeps operator inspection chronological; maintenance owns
+// exact file keys through its staged GC instead of scanning the prefix.
 
 const ROOT = 'dumps/v1';
 const HOUR_MS = 60 * 60 * 1000;
 const MAINTENANCE_ROW_BATCH_SIZE = 500;
 const MAINTENANCE_FILE_BATCH_SIZE = 1_000;
+const FILE_STAGE_GRACE_MS = 60 * 60 * 1000;
+const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
 
 interface BodyDescriptor {
   key: string;
@@ -132,45 +135,69 @@ export class FileDumpStore implements DumpStore {
 
   async put(keyId: string, record: DumpWriteRecord): Promise<void> {
     const bucket = hourBucket(record.meta.completedAt);
-    const bucketStart = hourBucketToMs(bucket)!;
-    await this.db
-      .prepare('INSERT OR IGNORE INTO dump_maintenance_buckets (key_id, hour_start) VALUES (?, ?)')
-      .bind(keyId, bucketStart)
-      .run();
-    const requestDescriptor = record.request.body.decodedByteLength === 0
+    const requestFileKey = record.request.body.decodedByteLength === 0 ? null : bodyPath(keyId, bucket, record.meta.id, 'req');
+    const responseFileKey = record.response.body.type === 'bytes' && record.response.body.body.byteLength === 0
       ? null
-      : await putPreparedBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), record.request.body);
-
-    let responseDescriptor: BodyDescriptor | null = null;
-    if (record.response.body.type === 'bytes') {
-      if (record.response.body.body.byteLength > 0) {
-        responseDescriptor = await putRawBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), record.response.body.body, 'bytes');
-      }
-    } else if (record.response.body.type === 'stream') {
-      responseDescriptor = await putRawBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), new TextEncoder().encode(JSON.stringify(record.response.body.events)), 'events');
+      : record.response.body.type === 'none' ? null : bodyPath(keyId, bucket, record.meta.id, 'resp');
+    const stagedKeys = [requestFileKey, responseFileKey].filter(key => key !== null);
+    if (stagedKeys.length > 0) {
+      await this.db
+        .prepare(
+          `INSERT INTO dump_file_gc (file_key, eligible_at)
+           SELECT value, ? FROM json_each(?)`,
+        )
+        .bind(Date.now() + FILE_STAGE_GRACE_MS, JSON.stringify(stagedKeys))
+        .run();
     }
+    try {
+      const requestDescriptor = record.request.body.decodedByteLength === 0
+        ? null
+        : await putPreparedBody(this.files, requestFileKey!, record.request.body);
 
-    // Strip the in-memory `upstream` field; the ref is rebuilt from the join
-    // at read time so renames and deletes are honored on historical rows.
-    const { upstream: _upstream, ...metaToStore } = record.meta;
+      let responseDescriptor: BodyDescriptor | null = null;
+      if (record.response.body.type === 'bytes') {
+        if (record.response.body.body.byteLength > 0) {
+          responseDescriptor = await putRawBody(this.files, responseFileKey!, record.response.body.body, 'bytes');
+        }
+      } else if (record.response.body.type === 'stream') {
+        responseDescriptor = await putRawBody(this.files, responseFileKey!, new TextEncoder().encode(JSON.stringify(record.response.body.events)), 'events');
+      }
 
-    // Files before row — a partial failure leaves orphan files the sweep
-    // collects, never an orphan row whose detail fetch would 404.
-    await this.db.prepare(
-      `INSERT INTO dump_records
-       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      keyId,
-      record.meta.id,
-      record.meta.completedAt,
-      record.meta.upstream?.id ?? null,
-      JSON.stringify(metaToStore),
-      JSON.stringify(record.request.headers),
-      record.response.body.type === 'none' ? null : JSON.stringify(record.response.headers),
-      requestDescriptor === null ? null : JSON.stringify(requestDescriptor),
-      responseDescriptor === null ? null : JSON.stringify(responseDescriptor),
-    ).run();
+      // Strip the in-memory `upstream` field; the ref is rebuilt from the join
+      // at read time so renames and deletes are honored on historical rows.
+      const { upstream: _upstream, ...metaToStore } = record.meta;
+
+      // Files before row — a partial failure leaves staged files the exact-key
+      // GC can collect, never an orphan row whose detail fetch would 404.
+      await this.db.prepare(
+        `INSERT INTO dump_records
+         (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        keyId,
+        record.meta.id,
+        record.meta.completedAt,
+        record.meta.upstream?.id ?? null,
+        JSON.stringify(metaToStore),
+        JSON.stringify(record.request.headers),
+        record.response.body.type === 'none' ? null : JSON.stringify(record.response.headers),
+        requestDescriptor === null ? null : JSON.stringify(requestDescriptor),
+        responseDescriptor === null ? null : JSON.stringify(responseDescriptor),
+      ).run();
+    } catch (error) {
+      try {
+        await this.files.deleteKeys(stagedKeys);
+        if (stagedKeys.length > 0) {
+          await this.db
+            .prepare('DELETE FROM dump_file_gc WHERE claim_token IS NULL AND file_key IN (SELECT value FROM json_each(?))')
+            .bind(JSON.stringify(stagedKeys))
+            .run();
+        }
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'Dump write and staged-file cleanup failed');
+      }
+      throw error;
+    }
   }
 
   async list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]> {
@@ -278,57 +305,125 @@ export class FileDumpStore implements DumpStore {
     await this.db.prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?').bind(keyId, cutoff).run();
   }
 
+  async backfillMaintenanceBatch(): Promise<boolean> {
+    const backfill = await this.db
+      .prepare('SELECT next_rowid, complete FROM dump_maintenance_backfill WHERE id = 1')
+      .first<{ next_rowid: number; complete: number }>();
+    if (backfill === null) throw new Error('dump_maintenance_backfill singleton row missing');
+    if (backfill.complete === 0) {
+      const { results } = await this.db
+        .prepare('SELECT rowid, key_id FROM dump_records WHERE rowid > ? ORDER BY rowid LIMIT ?')
+        .bind(backfill.next_rowid, MAINTENANCE_ROW_BATCH_SIZE)
+        .all<{ rowid: number; key_id: string }>();
+      if (results.length > 0) {
+        await this.db
+          .prepare(
+            `INSERT INTO dump_maintenance_keys (key_id, due_at)
+             SELECT DISTINCT json_extract(value, '$.keyId'), 0 FROM json_each(?)
+             ON CONFLICT (key_id) DO UPDATE SET
+               due_at = 0,
+               revision = dump_maintenance_keys.revision + 1`,
+          )
+          .bind(JSON.stringify(results.map(row => ({ keyId: row.key_id }))))
+          .run();
+        await this.db
+          .prepare('UPDATE dump_maintenance_backfill SET next_rowid = ? WHERE id = 1')
+          .bind(results.at(-1)!.rowid)
+          .run();
+        return true;
+      }
+      await this.db.prepare('UPDATE dump_maintenance_backfill SET complete = 1 WHERE id = 1').run();
+    }
+    return false;
+  }
+
   async purgeNextMaintenanceBatch(now: number): Promise<boolean> {
-    const bucket = await this.db
+    const gcToken = crypto.randomUUID();
+    const { results: gcRows } = await this.db
       .prepare(
-        `SELECT queued.key_id, queued.hour_start
-         FROM dump_maintenance_buckets AS queued
-         LEFT JOIN api_keys ON api_keys.id = queued.key_id AND api_keys.deleted_at IS NULL
-         WHERE api_keys.id IS NULL
-            OR api_keys.dump_retention_seconds IS NULL
-            OR queued.hour_start + ? <= ? - api_keys.dump_retention_seconds * 1000
-         ORDER BY queued.hour_start, queued.key_id
-         LIMIT 1`,
+        `UPDATE dump_file_gc
+         SET claim_token = ?, claimed_at = ?
+         WHERE file_key IN (
+           SELECT file_key FROM dump_file_gc
+           WHERE eligible_at <= ? AND (claim_token IS NULL OR claimed_at <= ?)
+           ORDER BY eligible_at, file_key LIMIT ?
+         )
+         RETURNING file_key`,
       )
-      .bind(HOUR_MS, now)
-      .first<{ key_id: string; hour_start: number }>();
-    if (bucket === null) return false;
-    const bucketEnd = bucket.hour_start + HOUR_MS;
-    const { results } = await this.db
-      .prepare(
-        `SELECT id, created_at, request_body_descriptor, response_body_descriptor
-         FROM dump_records
-         WHERE key_id = ? AND created_at >= ? AND created_at < ?
-         ORDER BY created_at, id
-         LIMIT ?`,
-      )
-      .bind(bucket.key_id, bucket.hour_start, bucketEnd, MAINTENANCE_ROW_BATCH_SIZE)
-      .all<Pick<DumpRow, 'request_body_descriptor' | 'response_body_descriptor'> & { id: string; created_at: number }>();
-    const fileKeys = results.flatMap(row => [row.request_body_descriptor, row.response_body_descriptor]
-      .flatMap(raw => raw === null ? [] : [(JSON.parse(raw) as BodyDescriptor).key]));
-    await this.files.deleteKeys(fileKeys);
-    if (results.length > 0) {
-      await this.db
-        .prepare('DELETE FROM dump_records WHERE key_id = ? AND id IN (SELECT value FROM json_each(?))')
-        .bind(bucket.key_id, JSON.stringify(results.map(row => row.id)))
-        .run();
+      .bind(gcToken, now, now, now - CLAIM_TIMEOUT_MS, MAINTENANCE_FILE_BATCH_SIZE)
+      .all<{ file_key: string }>();
+    if (gcRows.length > 0) {
+      await this.files.deleteKeys(gcRows.map(row => row.file_key));
+      await this.db.prepare('DELETE FROM dump_file_gc WHERE claim_token = ?').bind(gcToken).run();
     }
 
-    const remaining = await this.db
-      .prepare('SELECT 1 AS present FROM dump_records WHERE key_id = ? AND created_at >= ? AND created_at < ? LIMIT 1')
-      .bind(bucket.key_id, bucket.hour_start, bucketEnd)
-      .first<{ present: number }>();
-    if (remaining !== null) return true;
-    const page = await this.files.deletePrefixPage(
-      bucketPrefix(bucket.key_id, hourBucket(bucket.hour_start)),
-      MAINTENANCE_FILE_BATCH_SIZE,
-    );
-    if (page.complete) {
+    const token = crypto.randomUUID();
+    const { results: claims } = await this.db
+      .prepare(
+        `UPDATE dump_maintenance_keys
+         SET claim_token = ?, claimed_at = ?
+         WHERE key_id = (
+           SELECT key_id FROM dump_maintenance_keys
+           WHERE due_at <= ? AND (claim_token IS NULL OR claimed_at <= ?)
+           ORDER BY due_at, key_id LIMIT 1
+         )
+         RETURNING key_id, revision`,
+      )
+      .bind(token, now, now, now - CLAIM_TIMEOUT_MS)
+      .all<{ key_id: string; revision: number }>();
+    const claim = claims[0];
+    if (claim === undefined) return gcRows.length > 0;
+    const policy = await this.db
+      .prepare('SELECT dump_retention_seconds FROM api_keys WHERE id = ? AND deleted_at IS NULL')
+      .bind(claim.key_id)
+      .first<{ dump_retention_seconds: number | null }>();
+    const retentionSeconds = policy?.dump_retention_seconds ?? null;
+    const cutoff = retentionSeconds === null ? Number.MAX_SAFE_INTEGER : now - retentionSeconds * 1000;
+    const { results: rows } = await this.db
+      .prepare(
+        `SELECT id FROM dump_records
+         WHERE key_id = ? AND created_at < ?
+         ORDER BY created_at, id LIMIT ?`,
+      )
+      .bind(claim.key_id, cutoff, MAINTENANCE_ROW_BATCH_SIZE)
+      .all<{ id: string }>();
+    if (rows.length > 0) {
       await this.db
-        .prepare('DELETE FROM dump_maintenance_buckets WHERE key_id = ? AND hour_start = ?')
-        .bind(bucket.key_id, bucket.hour_start)
+        .prepare('DELETE FROM dump_records WHERE key_id = ? AND id IN (SELECT value FROM json_each(?))')
+        .bind(claim.key_id, JSON.stringify(rows.map(row => row.id)))
         .run();
     }
+    const partial = rows.length === MAINTENANCE_ROW_BATCH_SIZE;
+    const oldest = partial
+      ? null
+      : await this.db
+          .prepare('SELECT created_at FROM dump_records WHERE key_id = ? ORDER BY created_at LIMIT 1')
+          .bind(claim.key_id)
+          .first<{ created_at: number }>();
+    const nextDueAt = partial
+      ? now
+      : oldest === null ? null
+        : retentionSeconds === null ? 0 : oldest.created_at + retentionSeconds * 1000 + 1;
+    if (nextDueAt === null) {
+      await this.db
+        .prepare('DELETE FROM dump_maintenance_keys WHERE claim_token = ? AND revision = ?')
+        .bind(token, claim.revision)
+        .run();
+    }
+    await this.db
+      .prepare(
+        `UPDATE dump_maintenance_keys
+         SET due_at = CASE
+               WHEN ? THEN MAX(due_at, ?)
+               WHEN revision = ? AND ? IS NOT NULL THEN ?
+               ELSE due_at
+             END,
+             claim_token = NULL,
+             claimed_at = NULL
+         WHERE claim_token = ?`,
+      )
+      .bind(partial ? 1 : 0, now, claim.revision, nextDueAt, nextDueAt, token)
+      .run();
     return true;
   }
 }

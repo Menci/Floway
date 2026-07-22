@@ -32,6 +32,7 @@ export interface DumpStore {
   // Drop records older than `retentionSeconds` for this key. Idempotent.
   purgeExpired(keyId: string, retentionSeconds: number): Promise<void>;
 
-  // Reclaims at most one due hour bucket. Returns false when no bucket is due.
+  // Cron-only bounded migration and reclamation units.
+  backfillMaintenanceBatch(): Promise<boolean>;
   purgeNextMaintenanceBatch(now: number): Promise<boolean>;
 }

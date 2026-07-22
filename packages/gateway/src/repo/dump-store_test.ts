@@ -42,12 +42,46 @@ const openDb = async (): Promise<SqlDatabase> => {
   sqlite.exec(UPSTREAMS_STUB_SQL);
   sqlite.exec(await readFile(MIGRATION_PATH, 'utf8'));
   sqlite.exec(`
-    CREATE TABLE dump_maintenance_buckets (
-      key_id TEXT NOT NULL,
-      hour_start INTEGER NOT NULL,
-      PRIMARY KEY (key_id, hour_start)
+    CREATE TABLE dump_maintenance_keys (
+      key_id TEXT PRIMARY KEY,
+      due_at INTEGER NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0,
+      claim_token TEXT,
+      claimed_at INTEGER
     );
-    CREATE INDEX idx_dump_maintenance_buckets_hour ON dump_maintenance_buckets (hour_start, key_id);
+    CREATE TABLE dump_file_gc (
+      file_key TEXT PRIMARY KEY,
+      eligible_at INTEGER NOT NULL,
+      claim_token TEXT,
+      claimed_at INTEGER
+    );
+    CREATE TABLE dump_maintenance_backfill (
+      id INTEGER PRIMARY KEY,
+      next_rowid INTEGER NOT NULL DEFAULT 0,
+      complete INTEGER NOT NULL DEFAULT 1
+    );
+    INSERT INTO dump_maintenance_backfill (id) VALUES (1);
+    CREATE TRIGGER dump_records_validate_files BEFORE INSERT ON dump_records BEGIN
+      SELECT CASE WHEN NEW.request_body_descriptor IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM dump_file_gc WHERE file_key = json_extract(NEW.request_body_descriptor, '$.key') AND claim_token IS NULL
+      ) THEN RAISE(ABORT, 'Dump request body file was not staged') END;
+      SELECT CASE WHEN NEW.response_body_descriptor IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM dump_file_gc WHERE file_key = json_extract(NEW.response_body_descriptor, '$.key') AND claim_token IS NULL
+      ) THEN RAISE(ABORT, 'Dump response body file was not staged') END;
+    END;
+    CREATE TRIGGER dump_records_adopt_files AFTER INSERT ON dump_records BEGIN
+      DELETE FROM dump_file_gc WHERE claim_token IS NULL AND file_key IN (
+        json_extract(NEW.request_body_descriptor, '$.key'), json_extract(NEW.response_body_descriptor, '$.key')
+      );
+      INSERT INTO dump_maintenance_keys (key_id, due_at) VALUES (NEW.key_id, 0)
+      ON CONFLICT (key_id) DO UPDATE SET due_at = 0, revision = dump_maintenance_keys.revision + 1;
+    END;
+    CREATE TRIGGER dump_records_retire_files AFTER DELETE ON dump_records BEGIN
+      INSERT OR IGNORE INTO dump_file_gc (file_key, eligible_at)
+      SELECT json_extract(OLD.request_body_descriptor, '$.key'), 0 WHERE OLD.request_body_descriptor IS NOT NULL;
+      INSERT OR IGNORE INTO dump_file_gc (file_key, eligible_at)
+      SELECT json_extract(OLD.response_body_descriptor, '$.key'), 0 WHERE OLD.response_body_descriptor IS NOT NULL;
+    END;
   `);
   return {
     prepare(query): SqlPreparedStatement {
@@ -270,7 +304,6 @@ test('FileDumpStore scheduled purge deletes at most one bounded row batch', asyn
   for (let index = 0; index < 501; index += 1) {
     await insert.bind('key_x', `dump_${index.toString().padStart(4, '0')}`, index).run();
   }
-  await db.prepare('INSERT INTO dump_maintenance_buckets (key_id, hour_start) VALUES (?, 0)').bind('key_x').run();
 
   await store.purgeNextMaintenanceBatch(1_000);
 
@@ -286,7 +319,7 @@ test('FileDumpStore scheduled purge reclaims an orphan-only queued bucket', asyn
   const store = new FileDumpStore(db, files);
   const key = 'dumps/v1/key_x/1970010100/orphan.req.gz';
   await files.put(key, new Uint8Array([1]));
-  await db.prepare('INSERT INTO dump_maintenance_buckets (key_id, hour_start) VALUES (?, 0)').bind('key_x').run();
+  await db.prepare('INSERT INTO dump_file_gc (file_key, eligible_at) VALUES (?, 0)').bind(key).run();
 
   assertEquals(await store.purgeNextMaintenanceBatch(2 * 3600_000), true);
 

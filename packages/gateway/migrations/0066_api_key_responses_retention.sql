@@ -227,21 +227,109 @@ BEGIN
     revision = responses_state_sweeps.revision + 1;
 END;
 
-DROP INDEX idx_dump_records_key_created;
-CREATE INDEX idx_dump_records_key_created ON dump_records (key_id, created_at DESC, id DESC);
-
-CREATE TABLE dump_maintenance_buckets (
-  key_id TEXT NOT NULL,
-  hour_start INTEGER NOT NULL,
-  PRIMARY KEY (key_id, hour_start)
+CREATE TABLE dump_maintenance_keys (
+  key_id TEXT PRIMARY KEY,
+  due_at INTEGER NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 0,
+  claim_token TEXT,
+  claimed_at INTEGER,
+  CHECK ((claim_token IS NULL) = (claimed_at IS NULL))
 );
 
-CREATE INDEX idx_dump_maintenance_buckets_hour ON dump_maintenance_buckets (hour_start, key_id);
+CREATE INDEX idx_dump_maintenance_keys_due ON dump_maintenance_keys (due_at, key_id);
 
-INSERT INTO dump_maintenance_buckets (key_id, hour_start)
-SELECT key_id, (created_at / 3600000) * 3600000
-FROM dump_records
-GROUP BY key_id, (created_at / 3600000) * 3600000;
+CREATE TABLE dump_file_gc (
+  file_key TEXT PRIMARY KEY,
+  eligible_at INTEGER NOT NULL,
+  claim_token TEXT,
+  claimed_at INTEGER,
+  CHECK ((claim_token IS NULL) = (claimed_at IS NULL))
+);
+
+CREATE INDEX idx_dump_file_gc_eligible ON dump_file_gc (eligible_at, file_key);
+
+CREATE TABLE dump_maintenance_backfill (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  next_rowid INTEGER NOT NULL DEFAULT 0,
+  complete INTEGER NOT NULL DEFAULT 0 CHECK (complete IN (0, 1))
+);
+
+INSERT INTO dump_maintenance_backfill (id) VALUES (1);
+
+CREATE TRIGGER dump_records_validate_files
+BEFORE INSERT ON dump_records
+BEGIN
+  SELECT CASE WHEN NEW.request_body_descriptor IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM dump_file_gc
+    WHERE file_key = json_extract(NEW.request_body_descriptor, '$.key') AND claim_token IS NULL
+  ) THEN RAISE(ABORT, 'Dump request body file was not staged') END;
+  SELECT CASE WHEN NEW.response_body_descriptor IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM dump_file_gc
+    WHERE file_key = json_extract(NEW.response_body_descriptor, '$.key') AND claim_token IS NULL
+  ) THEN RAISE(ABORT, 'Dump response body file was not staged') END;
+END;
+
+CREATE TRIGGER dump_records_adopt_files
+AFTER INSERT ON dump_records
+BEGIN
+  DELETE FROM dump_file_gc
+  WHERE claim_token IS NULL AND file_key IN (
+    json_extract(NEW.request_body_descriptor, '$.key'),
+    json_extract(NEW.response_body_descriptor, '$.key')
+  );
+END;
+
+CREATE TRIGGER dump_records_retire_files
+AFTER DELETE ON dump_records
+BEGIN
+  INSERT OR IGNORE INTO dump_file_gc (file_key, eligible_at)
+  SELECT json_extract(OLD.request_body_descriptor, '$.key'), 0
+  WHERE OLD.request_body_descriptor IS NOT NULL;
+  INSERT OR IGNORE INTO dump_file_gc (file_key, eligible_at)
+  SELECT json_extract(OLD.response_body_descriptor, '$.key'), 0
+  WHERE OLD.response_body_descriptor IS NOT NULL;
+END;
+
+CREATE TRIGGER dump_records_schedule_maintenance
+AFTER INSERT ON dump_records
+BEGIN
+  INSERT INTO dump_maintenance_keys (key_id, due_at)
+  VALUES (
+    NEW.key_id,
+    COALESCE((
+      SELECT CASE
+        WHEN deleted_at IS NULL AND dump_retention_seconds IS NOT NULL
+          THEN NEW.created_at + dump_retention_seconds * 1000 + 1
+        ELSE 0
+      END
+      FROM api_keys WHERE id = NEW.key_id
+    ), 0)
+  )
+  ON CONFLICT (key_id) DO UPDATE SET
+    due_at = MIN(dump_maintenance_keys.due_at, excluded.due_at),
+    revision = dump_maintenance_keys.revision + 1;
+END;
+
+CREATE TRIGGER api_keys_schedule_dump_maintenance_update
+AFTER UPDATE OF dump_retention_seconds, deleted_at ON api_keys
+WHEN OLD.dump_retention_seconds IS NOT NEW.dump_retention_seconds OR OLD.deleted_at IS NOT NEW.deleted_at
+BEGIN
+  INSERT INTO dump_maintenance_keys (key_id, due_at)
+  VALUES (NEW.id, 0)
+  ON CONFLICT (key_id) DO UPDATE SET
+    due_at = 0,
+    revision = dump_maintenance_keys.revision + 1;
+END;
+
+CREATE TRIGGER api_keys_schedule_dump_maintenance_delete
+AFTER DELETE ON api_keys
+BEGIN
+  INSERT INTO dump_maintenance_keys (key_id, due_at)
+  VALUES (OLD.id, 0)
+  ON CONFLICT (key_id) DO UPDATE SET
+    due_at = 0,
+    revision = dump_maintenance_keys.revision + 1;
+END;
 
 CREATE TABLE responses_state_maintenance (
   id INTEGER PRIMARY KEY CHECK (id = 1),

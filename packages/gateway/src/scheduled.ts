@@ -2,7 +2,7 @@ import { getDumpStore } from './dump/registry.ts';
 import { sweepResponsesState } from './repo/responses-maintenance.ts';
 import { getImageCacheStore } from '@floway-dev/platform';
 
-const DUMP_BUCKETS_PER_TICK = 8;
+const DUMP_UNITS_PER_TICK = 4;
 
 const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boolean> => {
   try {
@@ -16,7 +16,8 @@ const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boole
 
 const sweepExpiredDumps = async (now: number): Promise<void> => {
   const store = getDumpStore();
-  for (let index = 0; index < DUMP_BUCKETS_PER_TICK; index += 1) {
+  await store.backfillMaintenanceBatch();
+  for (let index = 0; index < DUMP_UNITS_PER_TICK; index += 1) {
     if (!await store.purgeNextMaintenanceBatch(now)) return;
   }
 };

@@ -13,14 +13,16 @@ const noopImageCache = {
   sweepExpired: async () => { /* noop */ },
 };
 
-test('dump maintenance processes at most eight queued buckets per invocation', async () => {
+test('dump maintenance processes one backfill and at most four cleanup units per invocation', async () => {
   await setupAppTest();
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const backfill = vi.spyOn(stubs.store, 'backfillMaintenanceBatch').mockResolvedValue(true);
   const purge = vi.spyOn(stubs.store, 'purgeNextMaintenanceBatch').mockResolvedValue(true);
 
   await runScheduledDumpMaintenance();
 
-  assertEquals(purge.mock.calls.length, 8);
+  assertEquals(backfill.mock.calls.length, 1);
+  assertEquals(purge.mock.calls.length, 4);
 });
 
 test('runScheduledMaintenance keeps subsequent sweeps running when one top-level sweep throws', async () => {
