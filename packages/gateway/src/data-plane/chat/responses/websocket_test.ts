@@ -1047,8 +1047,8 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       // cache. Wipe the repo to prove the next lookup comes from the cache
       // alone.
       assertExists(await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, firstResponseId));
-      await repo.responsesSnapshots.deleteExpired(Number.MAX_SAFE_INTEGER, 100);
-      await repo.responsesItems.deleteExpired(Number.MAX_SAFE_INTEGER, 100);
+      await repo.responsesSnapshots.deleteReclaimable(apiKey.id, Number.MAX_SAFE_INTEGER, 100);
+      await repo.responsesItems.deleteReclaimable(apiKey.id, Number.MAX_SAFE_INTEGER, 100);
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, firstResponseId), null);
 
       const secondDone = waitForMessages(sessionA, messages => messages.some(message => message.type === 'response.done'));
@@ -1076,8 +1076,8 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       const restored = await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, firstResponseId);
       assertExists(restored);
       assertEquals((await repo.responsesItems.lookupMany(apiKey.id, apiKey.responsesStateEpoch, restored.itemIds)).length, restored.itemIds.length);
-      await repo.responsesSnapshots.deleteExpired(Number.MAX_SAFE_INTEGER, 100);
-      await repo.responsesItems.deleteExpired(Number.MAX_SAFE_INTEGER, 100);
+      await repo.responsesSnapshots.deleteReclaimable(apiKey.id, Number.MAX_SAFE_INTEGER, 100);
+      await repo.responsesItems.deleteReclaimable(apiKey.id, Number.MAX_SAFE_INTEGER, 100);
 
       // A fresh WS session for the same api key has its own empty cache; with
       // the repo wiped, the snapshot is unreachable.

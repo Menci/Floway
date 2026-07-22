@@ -428,6 +428,7 @@ const memoryStore = async (snapshots: readonly StoredResponsesSnapshot[], items:
     apiKeyId: API_KEY_ID,
     stateEpoch: TEST_RESPONSES_STATE_EPOCH,
     retentionSeconds: null,
+    visibleAfter: 0,
     reads: [backing],
     writes: [backing],
   });

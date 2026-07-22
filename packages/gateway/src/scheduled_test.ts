@@ -74,7 +74,7 @@ test('runScheduledMaintenance keeps spilled payloads when item-row deletion fail
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   const key = 'responses-items/v1/expires/2000/01/01/00/key/item/payload.gz';
   await files.put(key, new Uint8Array([1]));
-  const deletion = vi.spyOn(repo.responsesItems, 'deleteExpired').mockRejectedValue(new Error('item deletion failed'));
+  const deletion = vi.spyOn(repo.responsesItems, 'deleteReclaimable').mockRejectedValue(new Error('item deletion failed'));
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
   try {
     await runScheduledMaintenance();

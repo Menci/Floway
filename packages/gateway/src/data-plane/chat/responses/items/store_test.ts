@@ -96,7 +96,7 @@ describe('StatefulResponsesStore', () => {
     expect(snapshot?.itemIds).toHaveLength(2);
     const [storedOutput] = await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [output.id]);
     expect(storedOutput.payload.item).toEqual(output);
-    expect(storedOutput.expiresAt).toBeGreaterThanOrEqual(snapshot!.expiresAt);
+    expect(storedOutput.refreshedAt).toBeGreaterThanOrEqual(snapshot!.refreshedAt);
   });
 
   test('replace snapshots persist only their output state', async () => {
@@ -155,7 +155,7 @@ describe('StatefulResponsesStore', () => {
     expect(refreshed.every(row => row.refreshedAt > nearExpiry)).toBe(true);
     const snapshot = await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_reused');
     expect(snapshot?.itemIds).toEqual([directRow.id, hashedRow.id]);
-    expect(snapshot?.expiresAt).toBe(Math.min(...refreshed.map(row => row.expiresAt)));
+    expect(snapshot?.refreshedAt).toBe(Math.min(...refreshed.map(row => row.refreshedAt)));
   });
 
   test('snapshot lifetime follows a newer backing item timestamp', async () => {

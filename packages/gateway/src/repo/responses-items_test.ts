@@ -7,13 +7,40 @@ import { sweepResponsesState } from './responses-maintenance.ts';
 import { prepareStoredResponsesPayload } from './responses-payload.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
-import type { Repo, StoredResponsesItem } from './types.ts';
+import type { ApiKey, Repo, StoredResponsesItem } from './types.ts';
 import { testResponsesStateLifetime, TEST_RESPONSES_RETENTION_SECONDS, TEST_RESPONSES_STATE_EPOCH } from '../test-helpers/responses-state.ts';
 import { initFileProvider, MemoryFileProvider, type SqlDatabase, type SqlPreparedStatement } from '@floway-dev/platform';
 
+const testApiKey = (id: string): ApiKey => ({
+  id,
+  userId: 1,
+  name: id,
+  key: `raw-${id}`,
+  serverSecret: id === 'key-a' ? '11'.repeat(32) : '22'.repeat(32),
+  createdAt: '2026-01-01T00:00:00.000Z',
+  upstreamIds: null,
+  deletedAt: null,
+  dumpRetentionSeconds: null,
+  responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS,
+  responsesStateEpoch: TEST_RESPONSES_STATE_EPOCH,
+  responsesStateVisibleAfter: 0,
+});
+
+const enableResponses = async (repo: Repo, ...ids: string[]): Promise<void> => {
+  for (const id of ids) await repo.apiKeys.save(testApiKey(id));
+};
+
 const factories: Array<[string, () => Promise<Repo>]> = [
-  ['memory', async () => new InMemoryRepo()],
-  ['sql', async () => new SqlRepo(await createSqliteTestDb())],
+  ['memory', async () => {
+    const repo = new InMemoryRepo();
+    await enableResponses(repo, 'key-a', 'key-b');
+    return repo;
+  }],
+  ['sql', async () => {
+    const repo = new SqlRepo(await createSqliteTestDb());
+    await enableResponses(repo, 'key-a', 'key-b');
+    return repo;
+  }],
 ];
 
 const storedItem = (id: string, apiKeyId: string, contentHash: string, refreshedAt: number): StoredResponsesItem => {
@@ -44,9 +71,6 @@ const spilledItem = (id: string, apiKeyId: string, refreshedAt: number): StoredR
     payloadFileKey: 'spilled',
   };
 };
-
-const expiresAt = (refreshedAt: number): number =>
-  refreshedAt + TEST_RESPONSES_RETENTION_SECONDS * 1000;
 
 const payloadJson = async (item: StoredResponsesItem): Promise<string> =>
   (await prepareStoredResponsesPayload(item.id, item.apiKeyId, item.stateEpoch, item.payload)).payloadJson;
@@ -122,11 +146,11 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const repo = await createRepo();
     const expired = storedItem('msg_recycled', 'key-a', 'old-content', 1_000);
     await repo.responsesItems.insertMany([expired], 0);
-    const replacementBase = storedItem(expired.id, expired.apiKeyId, 'new-content', expired.expiresAt);
+    const replacementBase = storedItem(expired.id, expired.apiKeyId, 'new-content', 3_000);
     const payload = { item: { type: 'message', id: expired.id, role: 'assistant', content: [{ type: 'output_text', text: 'new' }] } };
     const replacement = { ...replacementBase, payload, payloadHash: JSON.stringify(payload) };
 
-    await repo.responsesItems.insertMany([replacement], expired.expiresAt);
+    await repo.responsesItems.insertMany([replacement], 2_000);
 
     expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [expired.id])).toEqual([replacement]);
   });
@@ -173,8 +197,8 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', stateEpoch: TEST_RESPONSES_STATE_EPOCH, itemIds: [old.id], ...testResponsesStateLifetime(1_000) });
     await repo.responsesSnapshots.insert({ id: 'resp_fresh', apiKeyId: 'key-a', stateEpoch: TEST_RESPONSES_STATE_EPOCH, itemIds: [fresh.id], ...testResponsesStateLifetime(3_000) });
 
-    expect(await repo.responsesItems.deleteExpired(expiresAt(2_000), 100)).toBe(1);
-    expect(await repo.responsesSnapshots.deleteExpired(expiresAt(2_000), 100)).toBe(1);
+    expect(await repo.responsesItems.deleteReclaimable('key-a', TEST_RESPONSES_RETENTION_SECONDS * 1000 + 2_000, 100)).toBe(1);
+    expect(await repo.responsesSnapshots.deleteReclaimable('key-a', TEST_RESPONSES_RETENTION_SECONDS * 1000 + 2_000, 100)).toBe(1);
     expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [old.id, fresh.id])).toEqual([fresh]);
     expect(await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_old')).toBeNull();
     expect(await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_fresh')).toEqual({
@@ -187,9 +211,9 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const repo = await createRepo();
     const item = storedItem('msg_missing', 'key-a', 'missing', 1_000);
     await repo.responsesItems.insertMany([item], 0);
-    await repo.responsesItems.deleteExpired(expiresAt(1_000), 100);
+    await repo.responsesItems.deleteReclaimable('key-a', TEST_RESPONSES_RETENTION_SECONDS * 1000 + 2_000, 100);
 
-    await expect(repo.responsesItems.refreshMany([item], 3_000, expiresAt(3_000)))
+    await expect(repo.responsesItems.refreshMany([item], 3_000))
       .rejects.toThrow('Responses item disappeared');
   });
 
@@ -210,8 +234,8 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const repo = await createRepo();
     const item = storedItem('msg_monotonic', 'key-a', 'monotonic', 1_000);
     await repo.responsesItems.insertMany([item], 0);
-    await repo.responsesItems.refreshMany([item], 3_000, expiresAt(3_000));
-    await repo.responsesItems.refreshMany([item], 2_000, expiresAt(2_000));
+    await repo.responsesItems.refreshMany([item], 3_000);
+    await repo.responsesItems.refreshMany([item], 2_000);
 
     expect((await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [item.id]))[0].refreshedAt).toBe(3_000);
   });
@@ -226,10 +250,10 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const put = vi.spyOn(files, 'put');
     const get = vi.spyOn(files, 'get');
     const deleteKeys = vi.spyOn(files, 'deleteKeys');
-    await repo.responsesItems.refreshMany([item], 1_000 + 10 * 60 * 1000, expiresAt(1_000 + 10 * 60 * 1000));
-    await repo.responsesItems.refreshMany([item], 1_000 + 2 * 60 * 60 * 1000, expiresAt(1_000 + 2 * 60 * 60 * 1000));
+    await repo.responsesItems.refreshMany([item], 1_000 + 10 * 60 * 1000);
+    await repo.responsesItems.refreshMany([item], 1_000 + 2 * 60 * 60 * 1000);
     const after = await files.listKeys('responses-items/');
-    await repo.responsesItems.refreshMany([item], 1_000 + 60 * 60 * 1000, expiresAt(1_000 + 60 * 60 * 1000));
+    await repo.responsesItems.refreshMany([item], 1_000 + 60 * 60 * 1000);
     const afterOlderRefresh = await files.listKeys('responses-items/');
 
     expect(put).not.toHaveBeenCalled();
@@ -261,6 +285,7 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
       .run();
   });
   const repo = new SqlRepo(db);
+  await enableResponses(repo, 'key-a');
   const item = spilledItem('msg_race', 'key-a', 1_000);
   await repo.responsesItems.insertMany([item], 0);
   const originalFiles = await files.listKeys('responses-items/');
@@ -270,7 +295,6 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
   await expect(repo.responsesItems.refreshMany(
     [item],
     1_000 + 2 * 60 * 60 * 1000,
-    expiresAt(1_000 + 2 * 60 * 60 * 1000),
   )).rejects.toThrow('Responses item disappeared or changed before lifetime refresh: msg_race');
 
   expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
@@ -282,7 +306,9 @@ test('SQL stale refresh preserves a newer concurrent lifetime', async () => {
   initFileProvider(files);
   const base = await createSqliteTestDb();
   const item = spilledItem('msg_refresh_cas', 'key-a', 1_000);
-  await new SqlRepo(base).responsesItems.insertMany([item], 0);
+  const baseRepo = new SqlRepo(base);
+  await enableResponses(baseRepo, 'key-a');
+  await baseRepo.responsesItems.insertMany([item], 0);
   const staleGate = Promise.withResolvers<void>();
   const staleStarted = Promise.withResolvers<void>();
   let updateNumber = 0;
@@ -297,9 +323,9 @@ test('SQL stale refresh preserves a newer concurrent lifetime', async () => {
   const staleRefreshedAt = 1_000 + 10 * 60 * 1000;
   const currentRefreshedAt = 1_000 + 2 * 60 * 60 * 1000;
 
-  const staleRefresh = repo.responsesItems.refreshMany([item], staleRefreshedAt, expiresAt(staleRefreshedAt));
+  const staleRefresh = repo.responsesItems.refreshMany([item], staleRefreshedAt);
   await staleStarted.promise;
-  await repo.responsesItems.refreshMany([item], currentRefreshedAt, expiresAt(currentRefreshedAt));
+  await repo.responsesItems.refreshMany([item], currentRefreshedAt);
   staleGate.resolve();
   await staleRefresh;
 
@@ -314,7 +340,9 @@ test('SQL newer refresh wins after an older concurrent lifetime update', async (
   initFileProvider(files);
   const base = await createSqliteTestDb();
   const item = spilledItem('msg_refresh_retry', 'key-a', 1_000);
-  await new SqlRepo(base).responsesItems.insertMany([item], 0);
+  const baseRepo = new SqlRepo(base);
+  await enableResponses(baseRepo, 'key-a');
+  await baseRepo.responsesItems.insertMany([item], 0);
   const newerGate = Promise.withResolvers<void>();
   const newerStarted = Promise.withResolvers<void>();
   let updateNumber = 0;
@@ -329,9 +357,9 @@ test('SQL newer refresh wins after an older concurrent lifetime update', async (
   const olderRefreshedAt = 1_000 + 60 * 60 * 1000;
   const newerRefreshedAt = 1_000 + 2 * 60 * 60 * 1000;
 
-  const newerRefresh = repo.responsesItems.refreshMany([item], newerRefreshedAt, expiresAt(newerRefreshedAt));
+  const newerRefresh = repo.responsesItems.refreshMany([item], newerRefreshedAt);
   await newerStarted.promise;
-  await repo.responsesItems.refreshMany([item], olderRefreshedAt, expiresAt(olderRefreshedAt));
+  await repo.responsesItems.refreshMany([item], olderRefreshedAt);
   newerGate.resolve();
   await newerRefresh;
 
@@ -368,13 +396,14 @@ test('SQL Responses item writes stay within D1 bind limits and use bounded state
     },
   };
   const repo = new SqlRepo(db);
+  await enableResponses(repo, 'key-a');
   const items = Array.from({ length: 240 }, (_, index) =>
     storedItem(`msg_bulk_${index}`, 'key-a', `hash-${index}`, 1_000));
 
   await repo.responsesItems.insertMany(items, 0);
-  await repo.responsesItems.refreshMany(items, 2_000, expiresAt(2_000));
+  await repo.responsesItems.refreshMany(items, 2_000);
 
-  expect(batchSizes).toEqual([3]);
+  expect(batchSizes).toEqual([4]);
   expect(maxBindCount).toBeLessThanOrEqual(100);
   expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, items.map(item => item.id))).toHaveLength(items.length);
 });
@@ -411,6 +440,8 @@ test('SQL real spilled writes stay within the reserved D1 and R2 budgets', async
     },
   });
   const repo = new SqlRepo({ prepare: query => wrap(base.prepare(query)), exec: sql => base.exec(sql) });
+  await enableResponses(repo, 'key-a');
+  queries = 0;
   const items = Array.from({ length: 20 }, (_, index) => spilledItem(`msg_spill_budget_${index}`, 'key-a', 1_000));
 
   await repo.responsesItems.insertMany(items, 0);
@@ -419,7 +450,7 @@ test('SQL real spilled writes stay within the reserved D1 and R2 budgets', async
   expect(put).toHaveBeenCalledTimes(items.length);
   queries = 0;
   put.mockClear();
-  await repo.responsesItems.refreshMany(items, 2_000, expiresAt(2_000));
+  await repo.responsesItems.refreshMany(items, 2_000);
   expect(queries).toBe(1);
   expect(put).not.toHaveBeenCalled();
 });
@@ -490,8 +521,8 @@ test('SQL rejects payload adoption after GC has claimed its staging row', async 
   await files.put(file.key, file.body);
 
   await expect(async () => await base.prepare(
-    `INSERT INTO responses_state_items (${['id', 'api_key_id', 'state_epoch', 'payload_json', 'content_hash', 'payload_hash', 'payload_file_key', 'refreshed_at', 'expires_at'].join(', ')})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO responses_state_items (${['id', 'api_key_id', 'state_epoch', 'payload_json', 'content_hash', 'payload_hash', 'payload_file_key', 'refreshed_at'].join(', ')})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     item.id,
     item.apiKeyId,
@@ -501,7 +532,6 @@ test('SQL rejects payload adoption after GC has claimed its staging row', async 
     item.payloadHash,
     file.key,
     item.refreshedAt,
-    item.expiresAt,
   ).run()).rejects.toThrow('Responses payload file was not staged');
 });
 
@@ -510,6 +540,7 @@ test('SQL refresh failure leaves stable payload files untouched', async () => {
   initFileProvider(files);
   const base = await createSqliteTestDb();
   const originalRepo = new SqlRepo(base);
+  await enableResponses(originalRepo, 'key-a');
   const item = spilledItem('msg_refresh_failure', 'key-a', 1_000);
   await originalRepo.responsesItems.insertMany([item], 0);
   const originalFiles = await files.listKeys('responses-items/');
@@ -520,7 +551,6 @@ test('SQL refresh failure leaves stable payload files untouched', async () => {
   await expect(repo.responsesItems.refreshMany(
     [item],
     1_000 + 2 * 60 * 60 * 1000,
-    expiresAt(1_000 + 2 * 60 * 60 * 1000),
   ))
     .rejects.toBe(batchFailure);
 
@@ -531,6 +561,7 @@ test('SQL exact duplicate refreshes its spill lifetime without rewriting the fil
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const repo = new SqlRepo(await createSqliteTestDb());
+  await enableResponses(repo, 'key-a');
   const original = spilledItem('msg_duplicate', 'key-a', 1_000);
   await repo.responsesItems.insertMany([original], 0);
   const originalFiles = await files.listKeys('responses-items/');
@@ -538,7 +569,7 @@ test('SQL exact duplicate refreshes its spill lifetime without rewriting the fil
 
   const put = vi.spyOn(files, 'put');
   const refreshedAt = 1_000 + 2 * 60 * 60 * 1000;
-  await repo.responsesItems.insertMany([{ ...original, refreshedAt, expiresAt: expiresAt(refreshedAt) }], 0);
+  await repo.responsesItems.insertMany([{ ...original, refreshedAt }], 0);
 
   expect(put).not.toHaveBeenCalled();
   const refreshedFiles = await files.listKeys('responses-items/');
@@ -549,7 +580,6 @@ test('SQL exact duplicate refreshes its spill lifetime without rewriting the fil
     contentHash: original.contentHash,
     payloadHash: original.payloadHash,
     refreshedAt,
-    expiresAt: expiresAt(refreshedAt),
   });
 });
 
@@ -557,18 +587,19 @@ test('SQL expired spill replacement queues and reclaims the old file', async () 
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const repo = new SqlRepo(await createSqliteTestDb());
+  await enableResponses(repo, 'key-a');
   initRepo(repo);
   const expired = spilledItem('msg_expired_spill', 'key-a', 1_000);
   await repo.responsesItems.insertMany([expired], 0);
   expect(await files.listKeys('responses-items/')).toHaveLength(1);
-  const replacementBase = storedItem(expired.id, expired.apiKeyId, 'replacement-content', expired.expiresAt);
+  const replacementBase = storedItem(expired.id, expired.apiKeyId, 'replacement-content', 3_000);
   const payload = { item: { type: 'message', id: expired.id, role: 'assistant', content: [{ type: 'output_text', text: 'replacement' }] } };
   const replacement = { ...replacementBase, payload, payloadHash: JSON.stringify(payload) };
 
-  await repo.responsesItems.insertMany([replacement], expired.expiresAt);
+  await repo.responsesItems.insertMany([replacement], 2_000);
 
   expect(await files.listKeys('responses-items/')).toHaveLength(1);
-  await sweepResponsesState(expired.expiresAt);
+  await sweepResponsesState(3_000);
   expect(await files.listKeys('responses-items/')).toEqual([]);
   expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [expired.id])).toEqual([replacement]);
 });
@@ -587,11 +618,11 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
       injectConflict = false;
       const insertWinner = base.prepare(
         `INSERT INTO responses_state_items
-          (id, api_key_id, state_epoch, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, api_key_id, state_epoch, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       );
-      await insertWinner.bind('msg_insert_race', 'key-a', TEST_RESPONSES_STATE_EPOCH, inlinePayload, 'race', 'race-payload', null, 1_000, expiresAt(1_000)).run();
-      await insertWinner.bind('msg_insert_survivor', 'key-a', TEST_RESPONSES_STATE_EPOCH, inlinePayload, 'survivor', 'survivor-payload', null, 1_000, expiresAt(1_000)).run();
+      await insertWinner.bind('msg_insert_race', 'key-a', TEST_RESPONSES_STATE_EPOCH, inlinePayload, 'race', 'race-payload', null, 1_000).run();
+      await insertWinner.bind('msg_insert_survivor', 'key-a', TEST_RESPONSES_STATE_EPOCH, inlinePayload, 'survivor', 'survivor-payload', null, 1_000).run();
       const results = [];
       for (const statement of statements) results.push(await statement.run());
       await base.prepare('DELETE FROM responses_state_items WHERE id = ? AND api_key_id = ? AND state_epoch = ?')
@@ -622,9 +653,9 @@ test('SQL rejects a different concurrent winner and cleans the losing spill', as
       injected = true;
       await base.prepare(
         `INSERT INTO responses_state_items
-          (id, api_key_id, state_epoch, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(winner.id, winner.apiKeyId, winner.stateEpoch, winnerPayload, winner.contentHash, winner.payloadHash, null, winner.refreshedAt, winner.expiresAt).run();
+          (id, api_key_id, state_epoch, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(winner.id, winner.apiKeyId, winner.stateEpoch, winnerPayload, winner.contentHash, winner.payloadHash, null, winner.refreshedAt).run();
     }
     const results = [];
     for (const statement of statements) results.push(await statement.run());
@@ -649,16 +680,16 @@ test('SQL conflict cleanup cannot delete a later winner\'s independently owned s
   const winnerFileKey = winnerPrepared.file.key;
   await files.put(winnerFileKey, winnerPrepared.file.body);
   await base.prepare('INSERT INTO responses_state_payload_gc (file_key, eligible_at) VALUES (?, ?)')
-    .bind(winnerFileKey, item.expiresAt)
+    .bind(winnerFileKey, item.refreshedAt)
     .run();
   const insertWinner = base.prepare(
     `INSERT INTO responses_state_items
-      (id, api_key_id, state_epoch, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, api_key_id, state_epoch, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const db = sqlDatabaseWithBatch(base, async statements => {
     await insertWinner
-      .bind(item.id, item.apiKeyId, item.stateEpoch, winnerPayload, item.contentHash, item.payloadHash, winnerFileKey, item.refreshedAt, item.expiresAt)
+      .bind(item.id, item.apiKeyId, item.stateEpoch, winnerPayload, item.contentHash, item.payloadHash, winnerFileKey, item.refreshedAt)
       .run();
     const results = [];
     for (const statement of statements) results.push(await statement.run());
@@ -670,7 +701,7 @@ test('SQL conflict cleanup cannot delete a later winner\'s independently owned s
   files.beforeDelete = async loserFileKeys => {
     expect(loserFileKeys).not.toContain(winnerFileKey);
     await insertWinner
-      .bind(item.id, item.apiKeyId, item.stateEpoch, winnerPayload, item.contentHash, item.payloadHash, winnerFileKey, item.refreshedAt, item.expiresAt)
+      .bind(item.id, item.apiKeyId, item.stateEpoch, winnerPayload, item.contentHash, item.payloadHash, winnerFileKey, item.refreshedAt)
       .run();
   };
   const repo = new SqlRepo(db);
