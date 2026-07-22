@@ -209,10 +209,11 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
     if (i < 0) return null;
-    const fieldsUpdated = { ...this.keys[i], ...patch };
-    this.keys[i] = patch.responsesRetentionSeconds === undefined
+    const { responsesRetentionSeconds, ...fields } = patch;
+    const fieldsUpdated = { ...this.keys[i], ...fields };
+    this.keys[i] = responsesRetentionSeconds === undefined
       ? fieldsUpdated
-      : withResponsesRetention(fieldsUpdated, patch.responsesRetentionSeconds);
+      : withResponsesRetention(fieldsUpdated, responsesRetentionSeconds);
     return { ...this.keys[i] };
   }
 
