@@ -446,12 +446,13 @@ test('SQL rejects payload adoption after GC has claimed its staging row', async 
   const repo = new SqlRepo(base);
   const item = spilledItem('msg_late_adoption', 'key-a', 1_000);
   const prepared = await prepareStoredResponsesPayload(item.id, item.apiKeyId, item.stateEpoch, item.payload);
-  if (prepared.file === null) throw new Error('expected spilled payload');
+  const file = prepared.file;
+  if (file === null) throw new Error('expected spilled payload');
   await base.prepare('INSERT INTO responses_state_payload_gc (file_key, eligible_at) VALUES (?, 0)')
-    .bind(prepared.file.key)
+    .bind(file.key)
     .run();
-  expect(await repo.responsesMaintenance.claimPayloadFiles('claim', 1, 0, 100)).toEqual([prepared.file.key]);
-  await files.put(prepared.file.key, prepared.file.body);
+  expect(await repo.responsesMaintenance.claimPayloadFiles('claim', 1, 0, 100)).toEqual([file.key]);
+  await files.put(file.key, file.body);
 
   await expect(async () => await base.prepare(
     `INSERT INTO responses_state_items (${['id', 'api_key_id', 'state_epoch', 'payload_json', 'content_hash', 'payload_hash', 'payload_file_key', 'refreshed_at', 'expires_at'].join(', ')})
@@ -463,7 +464,7 @@ test('SQL rejects payload adoption after GC has claimed its staging row', async 
     prepared.payloadJson,
     item.contentHash,
     item.payloadHash,
-    prepared.file.key,
+    file.key,
     item.refreshedAt,
     item.expiresAt,
   ).run()).rejects.toThrow('Responses payload file was not staged');
