@@ -179,13 +179,6 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return Promise.resolve(this.keys.filter(k => k.deletedAt === null).map(k => ({ ...k })));
   }
 
-  listMaintenancePage(slot: number, limit: number): Promise<ApiKey[]> {
-    const keys = this.keys.filter(key => key.deletedAt === null).toSorted((a, b) => a.id.localeCompare(b.id));
-    if (keys.length === 0) return Promise.resolve([]);
-    const start = (slot * limit) % keys.length;
-    return Promise.resolve(Array.from({ length: Math.min(keys.length, limit) }, (_, offset) => ({ ...keys[(start + offset) % keys.length] })));
-  }
-
   listIncludingDeleted(): Promise<ApiKey[]> {
     return Promise.resolve(this.keys.map(k => ({ ...k })));
   }

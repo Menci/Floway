@@ -227,6 +227,22 @@ BEGIN
     revision = responses_state_sweeps.revision + 1;
 END;
 
+DROP INDEX idx_dump_records_key_created;
+CREATE INDEX idx_dump_records_key_created ON dump_records (key_id, created_at DESC, id DESC);
+
+CREATE TABLE dump_maintenance_buckets (
+  key_id TEXT NOT NULL,
+  hour_start INTEGER NOT NULL,
+  PRIMARY KEY (key_id, hour_start)
+);
+
+CREATE INDEX idx_dump_maintenance_buckets_hour ON dump_maintenance_buckets (hour_start, key_id);
+
+INSERT INTO dump_maintenance_buckets (key_id, hour_start)
+SELECT key_id, (created_at / 3600000) * 3600000
+FROM dump_records
+GROUP BY key_id, (created_at / 3600000) * 3600000;
+
 CREATE TABLE responses_state_maintenance (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   v1_next_expiry_hour INTEGER NOT NULL,

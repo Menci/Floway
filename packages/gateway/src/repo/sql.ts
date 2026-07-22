@@ -142,23 +142,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     return results.map(toApiKey);
   }
 
-  async listMaintenancePage(slot: number, limit: number): Promise<ApiKey[]> {
-    const row = await this.db.prepare('SELECT COUNT(*) AS count FROM api_keys WHERE deleted_at IS NULL').first<{ count: number }>();
-    const count = row?.count ?? 0;
-    if (count === 0) return [];
-    const offset = (slot * limit) % count;
-    const read = async (pageOffset: number, pageLimit: number): Promise<ApiKey[]> => {
-      const { results } = await this.db
-        .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE deleted_at IS NULL ORDER BY id LIMIT ? OFFSET ?`)
-        .bind(pageLimit, pageOffset)
-        .all<ApiKeyRow>();
-      return results.map(toApiKey);
-    };
-    const first = await read(offset, Math.min(limit, count));
-    const remaining = Math.min(limit, count) - first.length;
-    return remaining === 0 ? first : [...first, ...await read(0, remaining)];
-  }
-
   async listIncludingDeleted(): Promise<ApiKey[]> {
     const { results } = await this.db
       .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys ORDER BY created_at`)

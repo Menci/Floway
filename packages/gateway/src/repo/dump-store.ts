@@ -132,6 +132,11 @@ export class FileDumpStore implements DumpStore {
 
   async put(keyId: string, record: DumpWriteRecord): Promise<void> {
     const bucket = hourBucket(record.meta.completedAt);
+    const bucketStart = hourBucketToMs(bucket)!;
+    await this.db
+      .prepare('INSERT OR IGNORE INTO dump_maintenance_buckets (key_id, hour_start) VALUES (?, ?)')
+      .bind(keyId, bucketStart)
+      .run();
     const requestDescriptor = record.request.body.decodedByteLength === 0
       ? null
       : await putPreparedBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), record.request.body);
@@ -273,38 +278,57 @@ export class FileDumpStore implements DumpStore {
     await this.db.prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?').bind(keyId, cutoff).run();
   }
 
-  async purgeMaintenanceBatch(keyId: string, retentionSeconds: number | null, now: number): Promise<void> {
-    const cutoff = retentionSeconds === null ? Number.MAX_SAFE_INTEGER : now - retentionSeconds * 1000;
+  async purgeNextMaintenanceBatch(now: number): Promise<boolean> {
+    const bucket = await this.db
+      .prepare(
+        `SELECT queued.key_id, queued.hour_start
+         FROM dump_maintenance_buckets AS queued
+         LEFT JOIN api_keys ON api_keys.id = queued.key_id AND api_keys.deleted_at IS NULL
+         WHERE api_keys.id IS NULL
+            OR api_keys.dump_retention_seconds IS NULL
+            OR queued.hour_start + ? <= ? - api_keys.dump_retention_seconds * 1000
+         ORDER BY queued.hour_start, queued.key_id
+         LIMIT 1`,
+      )
+      .bind(HOUR_MS, now)
+      .first<{ key_id: string; hour_start: number }>();
+    if (bucket === null) return false;
+    const bucketEnd = bucket.hour_start + HOUR_MS;
     const { results } = await this.db
       .prepare(
         `SELECT id, created_at, request_body_descriptor, response_body_descriptor
          FROM dump_records
-         WHERE key_id = ? AND created_at < ?
+         WHERE key_id = ? AND created_at >= ? AND created_at < ?
          ORDER BY created_at, id
          LIMIT ?`,
       )
-      .bind(keyId, cutoff, MAINTENANCE_ROW_BATCH_SIZE)
+      .bind(bucket.key_id, bucket.hour_start, bucketEnd, MAINTENANCE_ROW_BATCH_SIZE)
       .all<Pick<DumpRow, 'request_body_descriptor' | 'response_body_descriptor'> & { id: string; created_at: number }>();
-    if (results.length === 0) {
-      if (retentionSeconds === null) await this.files.deletePrefixPage(keyPrefix(keyId), MAINTENANCE_FILE_BATCH_SIZE);
-      return;
-    }
-
     const fileKeys = results.flatMap(row => [row.request_body_descriptor, row.response_body_descriptor]
       .flatMap(raw => raw === null ? [] : [(JSON.parse(raw) as BodyDescriptor).key]));
     await this.files.deleteKeys(fileKeys);
-    await this.db
-      .prepare('DELETE FROM dump_records WHERE key_id = ? AND id IN (SELECT value FROM json_each(?))')
-      .bind(keyId, JSON.stringify(results.map(row => row.id)))
-      .run();
+    if (results.length > 0) {
+      await this.db
+        .prepare('DELETE FROM dump_records WHERE key_id = ? AND id IN (SELECT value FROM json_each(?))')
+        .bind(bucket.key_id, JSON.stringify(results.map(row => row.id)))
+        .run();
+    }
 
-    const bucket = hourBucket(results[0].created_at);
-    const bucketStart = hourBucketToMs(bucket)!;
-    if (bucketStart + HOUR_MS > cutoff) return;
     const remaining = await this.db
       .prepare('SELECT 1 AS present FROM dump_records WHERE key_id = ? AND created_at >= ? AND created_at < ? LIMIT 1')
-      .bind(keyId, bucketStart, bucketStart + HOUR_MS)
+      .bind(bucket.key_id, bucket.hour_start, bucketEnd)
       .first<{ present: number }>();
-    if (remaining === null) await this.files.deletePrefixPage(bucketPrefix(keyId, bucket), MAINTENANCE_FILE_BATCH_SIZE);
+    if (remaining !== null) return true;
+    const page = await this.files.deletePrefixPage(
+      bucketPrefix(bucket.key_id, hourBucket(bucket.hour_start)),
+      MAINTENANCE_FILE_BATCH_SIZE,
+    );
+    if (page.complete) {
+      await this.db
+        .prepare('DELETE FROM dump_maintenance_buckets WHERE key_id = ? AND hour_start = ?')
+        .bind(bucket.key_id, bucket.hour_start)
+        .run();
+    }
+    return true;
   }
 }

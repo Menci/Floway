@@ -30,12 +30,25 @@ const UPSTREAMS_STUB_SQL = `
     provider TEXT NOT NULL,
     color TEXT NULL
   );
+  CREATE TABLE api_keys (
+    id TEXT PRIMARY KEY,
+    deleted_at TEXT,
+    dump_retention_seconds INTEGER
+  );
 `;
 
 const openDb = async (): Promise<SqlDatabase> => {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec(UPSTREAMS_STUB_SQL);
   sqlite.exec(await readFile(MIGRATION_PATH, 'utf8'));
+  sqlite.exec(`
+    CREATE TABLE dump_maintenance_buckets (
+      key_id TEXT NOT NULL,
+      hour_start INTEGER NOT NULL,
+      PRIMARY KEY (key_id, hour_start)
+    );
+    CREATE INDEX idx_dump_maintenance_buckets_hour ON dump_maintenance_buckets (hour_start, key_id);
+  `);
   return {
     prepare(query): SqlPreparedStatement {
       const stmt = sqlite.prepare(query);
@@ -257,13 +270,28 @@ test('FileDumpStore scheduled purge deletes at most one bounded row batch', asyn
   for (let index = 0; index < 501; index += 1) {
     await insert.bind('key_x', `dump_${index.toString().padStart(4, '0')}`, index).run();
   }
+  await db.prepare('INSERT INTO dump_maintenance_buckets (key_id, hour_start) VALUES (?, 0)').bind('key_x').run();
 
-  await store.purgeMaintenanceBatch('key_x', null, 1_000);
+  await store.purgeNextMaintenanceBatch(1_000);
 
   const count = await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE key_id = ?')
     .bind('key_x')
     .first<{ count: number }>();
   assertEquals(count?.count, 1);
+});
+
+test('FileDumpStore scheduled purge reclaims an orphan-only queued bucket', async () => {
+  const db = await openDb();
+  const files = new MemoryFileProvider();
+  const store = new FileDumpStore(db, files);
+  const key = 'dumps/v1/key_x/1970010100/orphan.req.gz';
+  await files.put(key, new Uint8Array([1]));
+  await db.prepare('INSERT INTO dump_maintenance_buckets (key_id, hour_start) VALUES (?, 0)').bind('key_x').run();
+
+  assertEquals(await store.purgeNextMaintenanceBatch(2 * 3600_000), true);
+
+  assertEquals(await files.get(key), null);
+  assertEquals(await store.purgeNextMaintenanceBatch(2 * 3600_000), false);
 });
 
 test('FileDumpStore.purgeExpired against a never-written key resolves without throwing', async () => {

@@ -153,7 +153,6 @@ export interface PerformanceTelemetryRecord extends PerformanceDimensions {
 
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
-  listMaintenancePage(slot: number, limit: number): Promise<ApiKey[]>;
   // Includes soft-deleted rows so the user_id behind a historical key stays
   // resolvable after the owner rotates or deletes it.
   listIncludingDeleted(): Promise<ApiKey[]>;

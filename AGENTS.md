@@ -265,9 +265,11 @@ drains the superseded Responses tables and hourly spill buckets; after the old
 30-day writer horizon, it removes any remaining v1 orphan root before marking
 that cleanup complete. Cloudflare runs this state/image work at minute 17 and
 dump cleanup at minute 47 in separate cron invocations. Dump maintenance
-rotates through at most fifteen keys and removes at most 500 rows plus bounded
-exact/prefix file pages per key, so neither cron inherits an unbounded D1 or R2
-workload from the other.
+drains at most eight queued hour buckets and removes at most 500 rows plus one
+bounded exact/prefix file page per bucket, so neither cron inherits an
+unbounded D1 or R2 workload from the other. A bucket is queued before its body
+files are written, making pre-row crash orphans discoverable without a prefix
+scan.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in

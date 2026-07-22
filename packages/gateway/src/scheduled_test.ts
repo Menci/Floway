@@ -13,42 +13,14 @@ const noopImageCache = {
   sweepExpired: async () => { /* noop */ },
 };
 
-test('runScheduledMaintenance continues sweeping the next key when one key throws', async () => {
-  const { repo, apiKey: keyA } = await setupAppTest();
-  await repo.apiKeys.save({ ...keyA, dumpRetentionSeconds: 3600 });
-  const keyB = {
-    ...keyA,
-    id: `${keyA.id}_sibling`,
-    key: `${keyA.key}_sibling`,
-    dumpRetentionSeconds: 1800,
-    responsesRetentionSeconds: 0,
-    responsesStateEpoch: '11'.repeat(16),
-  };
-  await repo.apiKeys.save(keyB);
-
-  initImageCacheStore(noopImageCache);
+test('dump maintenance processes at most eight queued buckets per invocation', async () => {
+  await setupAppTest();
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('purgeExpired', new Error('purge exploded'));
+  const purge = vi.spyOn(stubs.store, 'purgeNextMaintenanceBatch').mockResolvedValue(true);
 
-  const errors: unknown[][] = [];
-  const origError = console.error;
-  console.error = (...args: unknown[]): void => { errors.push(args); };
-  try {
-    await runScheduledMaintenance();
-  } finally {
-    console.error = origError;
-  }
+  await runScheduledDumpMaintenance();
 
-  assertEquals(stubs.purgedExpired.some(c => c.keyId === keyA.id), true);
-  assertEquals(stubs.purgedExpired.some(c => c.keyId === keyB.id), true);
-  assertEquals(
-    errors.some(args => args[0] === '[scheduled] dump sweep failed' && args[1] === keyA.id),
-    true,
-  );
-  assertEquals(
-    errors.some(args => args[0] === '[scheduled] dump sweep failed' && args[1] === keyB.id),
-    true,
-  );
+  assertEquals(purge.mock.calls.length, 8);
 });
 
 test('runScheduledMaintenance keeps subsequent sweeps running when one top-level sweep throws', async () => {
@@ -60,9 +32,10 @@ test('runScheduledMaintenance keeps subsequent sweeps running when one top-level
     sweepExpired: async () => { throw new Error('image cache exploded'); },
   });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const purge = vi.spyOn(stubs.store, 'purgeNextMaintenanceBatch').mockResolvedValueOnce(true).mockResolvedValue(false);
 
   await runScheduledMaintenance();
-  assertEquals(stubs.purgedExpired.some(c => c.keyId === keyA.id), true);
+  assertEquals(purge.mock.calls.length, 2);
 });
 
 test('state-maintenance failure keeps spilled payloads while dump maintenance remains independent', async () => {
@@ -72,6 +45,7 @@ test('state-maintenance failure keeps spilled payloads while dump maintenance re
   initFileProvider(files);
   initImageCacheStore({ ...noopImageCache, sweepExpired: imageSweep });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const dumpSweep = vi.spyOn(dumps.store, 'purgeNextMaintenanceBatch').mockResolvedValue(false);
   const key = 'responses-items/v1/expires/2000/01/01/00/key/item/payload.gz';
   await files.put(key, new Uint8Array([1]));
   vi.spyOn(repo.responsesMaintenance, 'claimStateSweep').mockResolvedValue({
@@ -91,25 +65,5 @@ test('state-maintenance failure keeps spilled payloads while dump maintenance re
 
   assertEquals(await files.get(key), new Uint8Array([1]));
   assertEquals(imageSweep.mock.calls.length, 0);
-  assertEquals(dumps.purgedAll.length, 1);
-  assertEquals(dumps.purgedExpired.length, 0);
-});
-
-test('dump maintenance processes at most fifteen keys per invocation', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  for (let index = 0; index < 24; index += 1) {
-    await repo.apiKeys.save({
-      ...apiKey,
-      id: `${apiKey.id}_${index}`,
-      key: `${apiKey.key}_${index}`,
-      serverSecret: (index + 1).toString(16).padStart(64, '0'),
-      dumpRetentionSeconds: 3600,
-    });
-  }
-  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
-
-  await runScheduledDumpMaintenance();
-
-  assertEquals(dumps.purgedExpired.length, 15);
+  assertEquals(dumpSweep.mock.calls.length, 1);
 });

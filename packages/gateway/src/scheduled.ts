@@ -1,10 +1,8 @@
 import { getDumpStore } from './dump/registry.ts';
-import { getRepo } from './repo/index.ts';
 import { sweepResponsesState } from './repo/responses-maintenance.ts';
 import { getImageCacheStore } from '@floway-dev/platform';
 
-const HOUR_MS = 60 * 60 * 1000;
-const DUMP_KEYS_PER_TICK = 15;
+const DUMP_BUCKETS_PER_TICK = 8;
 
 const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boolean> => {
   try {
@@ -18,16 +16,8 @@ const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boole
 
 const sweepExpiredDumps = async (now: number): Promise<void> => {
   const store = getDumpStore();
-  // Rotate a bounded slice across all active keys. Disabled keys stay in the
-  // rotation because an accumulator opened before the toggle can still land a
-  // late row; repeated bounded batches fold those rows and orphan files up.
-  const keys = await getRepo().apiKeys.listMaintenancePage(Math.floor(now / HOUR_MS), DUMP_KEYS_PER_TICK);
-  for (const key of keys) {
-    try {
-      await store.purgeMaintenanceBatch(key.id, key.dumpRetentionSeconds, now);
-    } catch (err) {
-      console.error('[scheduled] dump sweep failed', key.id, err);
-    }
+  for (let index = 0; index < DUMP_BUCKETS_PER_TICK; index += 1) {
+    if (!await store.purgeNextMaintenanceBatch(now)) return;
   }
 };
 
