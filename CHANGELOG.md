@@ -16,12 +16,14 @@ Severity levels:
 
 ## 2026-07-22 · hard
 
-**Responses stored state reset.**
+**Stateful Responses storage reset and made opt-in.**
 
-Responses item persistence now stores exact producer-owned IDs and payloads.
-Deploying this schema drops every existing Responses item and snapshot; old
-`previous_response_id` and stored `item_reference` chains will no longer
-resolve. Clients must start new stateful Responses chains after deployment.
+Responses item persistence now stores exact producer-owned IDs and payloads
+under a per-key state epoch. Durable storage defaults to off; operators must
+choose a positive Stateful Responses retention on each API key that needs it.
+Deploying this schema starts a new empty state namespace, so old
+`previous_response_id` and stored `item_reference` chains no longer resolve.
+Clients must start new chains after opt-in.
 
 ## 2026-07-18 · hard
 

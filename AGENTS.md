@@ -237,13 +237,18 @@ lives in `docs/AFFINITY.md`, and candidate ordering lives in `docs/RESOLUTION.md
 
 Native Responses persistence is independent from affinity. It stores the first
 complete client-facing item under each producer-owned, API-key-scoped item ID,
-plus response snapshots, for 30 days without rewriting item IDs. A completed
-output item becomes reusable at its first `response.output_item.done`, so its
-row commits before that event is published; the response snapshot commits at
-the successful terminal event. Repository writes treat exact
-item/private-payload reuse as idempotent and reject a different row under the
-same API-key-scoped ID. HTTP `store: false` bypasses item persistence, while
-WebSocket `store: false` is session-local.
+plus response snapshots, without rewriting item IDs. Durable state is opt-in
+per API key: zero retention installs no durable read or write backing, while a
+positive custom duration is a sliding TTL. The request `store` flag can narrow
+an enabled key to read-only (`store: false`) but cannot enable a disabled key.
+WebSocket session-local state remains available regardless of the durable
+setting. A completed output item becomes reusable at its first
+`response.output_item.done`, so its row commits before that event is published;
+the response snapshot commits at the successful terminal event. Repository
+writes treat exact item/private-payload reuse as idempotent and reject a
+different unexpired row under the same key/epoch/ID scope. Lifetime refresh is
+key-only and debounced near expiry. Cleanup advances a durable expiry-hour
+cursor in bounded autocommit batches, then deletes the drained R2 hour prefix.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in
