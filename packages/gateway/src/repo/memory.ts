@@ -31,6 +31,7 @@ import type {
   ProxyRepo,
   Repo,
   ResponsesItemsRepo,
+  ResponsesMaintenanceRepo,
   ResponsesSnapshotsRepo,
   SearchConfig,
   SearchConfigRepo,
@@ -638,25 +639,15 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  deleteInactive(apiKeyId: string, stateEpoch: string, now: number): Promise<number> {
+  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<{ deleted: number; fileKeys: string[] }> {
     let changes = 0;
     for (const [key, row] of this.store) {
-      if (row.apiKeyId === apiKeyId && (row.stateEpoch !== stateEpoch || row.expiresAt <= now)) {
-        this.store.delete(key);
-        changes += 1;
-      }
-    }
-    return Promise.resolve(changes);
-  }
-
-  deleteByApiKey(apiKeyId: string): Promise<number> {
-    let changes = 0;
-    for (const [key, row] of this.store) {
-      if (row.apiKeyId !== apiKeyId) continue;
+      if (changes >= limit) break;
+      if (row.expiresAt < hourStart || row.expiresAt >= hourEnd) continue;
       this.store.delete(key);
       changes += 1;
     }
-    return Promise.resolve(changes);
+    return Promise.resolve({ deleted: changes, fileKeys: [] });
   }
 
   deleteAll(): Promise<void> {
@@ -687,21 +678,11 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     return Promise.resolve();
   }
 
-  deleteInactive(apiKeyId: string, stateEpoch: string, now: number): Promise<number> {
+  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number> {
     let changes = 0;
     for (const [key, snapshot] of this.store) {
-      if (snapshot.apiKeyId === apiKeyId && (snapshot.stateEpoch !== stateEpoch || snapshot.expiresAt <= now)) {
-        this.store.delete(key);
-        changes += 1;
-      }
-    }
-    return Promise.resolve(changes);
-  }
-
-  deleteByApiKey(apiKeyId: string): Promise<number> {
-    let changes = 0;
-    for (const [key, snapshot] of this.store) {
-      if (snapshot.apiKeyId !== apiKeyId) continue;
+      if (changes >= limit) break;
+      if (snapshot.expiresAt < hourStart || snapshot.expiresAt >= hourEnd) continue;
       this.store.delete(key);
       changes += 1;
     }
@@ -710,6 +691,19 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
 
   deleteAll(): Promise<void> {
     this.store.clear();
+    return Promise.resolve();
+  }
+}
+
+class MemoryResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
+  private nextExpiryHour = 0;
+
+  getNextExpiryHour(): Promise<number> {
+    return Promise.resolve(this.nextExpiryHour);
+  }
+
+  setNextExpiryHour(hourStart: number): Promise<void> {
+    this.nextExpiryHour = hourStart;
     return Promise.resolve();
   }
 }
@@ -1040,6 +1034,7 @@ export class InMemoryRepo implements Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  responsesMaintenance: ResponsesMaintenanceRepo;
   agentSetup: AgentSetupRepository;
 
   constructor() {
@@ -1057,6 +1052,7 @@ export class InMemoryRepo implements Repo {
     this.modelAliases = new MemoryModelAliasesRepo();
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
+    this.responsesMaintenance = new MemoryResponsesMaintenanceRepo();
     this.agentSetup = new MemoryAgentSetupRepo();
   }
 }

@@ -394,8 +394,10 @@ export interface ResponsesItemsRepo {
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void>;
-  deleteInactive(apiKeyId: string, stateEpoch: string, now: number): Promise<number>;
-  deleteByApiKey(apiKeyId: string): Promise<number>;
+  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<{
+    deleted: number;
+    fileKeys: string[];
+  }>;
   deleteAll(): Promise<void>;
 }
 
@@ -412,9 +414,13 @@ export interface ResponsesSnapshotsRepo {
   lookup(apiKeyId: string, stateEpoch: string, id: string): Promise<StoredResponsesSnapshot | null>;
   lookupActive(apiKeyId: string, stateEpoch: string, id: string, now: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  deleteInactive(apiKeyId: string, stateEpoch: string, now: number): Promise<number>;
-  deleteByApiKey(apiKeyId: string): Promise<number>;
+  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
   deleteAll(): Promise<void>;
+}
+
+export interface ResponsesMaintenanceRepo {
+  getNextExpiryHour(): Promise<number>;
+  setNextExpiryHour(hourStart: number): Promise<void>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
@@ -437,5 +443,6 @@ export interface Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  responsesMaintenance: ResponsesMaintenanceRepo;
   agentSetup: AgentSetupRepository;
 }

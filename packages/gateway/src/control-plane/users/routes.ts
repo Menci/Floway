@@ -3,7 +3,6 @@ import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { purgeResponsesState } from '../../repo/responses-maintenance.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
@@ -127,7 +126,6 @@ export const deleteUser = async (c: AuthedContext) => {
   const keys = await repo.apiKeys.listByUserId(id);
   for (const key of keys) {
     await getDumpStore().purgeAll(key.id);
-    await purgeResponsesState(key.id);
     await notifyDisabledBestEffort(key.id, 'deleteUser cascade');
   }
 

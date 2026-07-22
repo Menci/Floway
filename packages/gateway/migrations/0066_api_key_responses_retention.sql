@@ -51,10 +51,7 @@ ALTER TABLE api_keys_new RENAME TO api_keys;
 CREATE INDEX idx_api_keys_user ON api_keys(user_id) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX idx_api_keys_server_secret ON api_keys(server_secret);
 
-DROP TABLE responses_snapshots;
-DROP TABLE responses_items;
-
-CREATE TABLE responses_items (
+CREATE TABLE responses_state_items (
   id TEXT NOT NULL,
   api_key_id TEXT NOT NULL,
   state_epoch TEXT NOT NULL,
@@ -73,7 +70,7 @@ CREATE TABLE responses_items (
   CHECK (expires_at > refreshed_at)
 );
 
-CREATE TABLE responses_snapshots (
+CREATE TABLE responses_state_snapshots (
   id TEXT NOT NULL,
   api_key_id TEXT NOT NULL,
   state_epoch TEXT NOT NULL,
@@ -87,8 +84,19 @@ CREATE TABLE responses_snapshots (
   CHECK (expires_at > refreshed_at)
 );
 
-CREATE UNIQUE INDEX idx_responses_items_id_scope ON responses_items (id, api_key_id, state_epoch);
-CREATE INDEX idx_responses_items_content_hash ON responses_items (api_key_id, state_epoch, content_hash, refreshed_at DESC);
-CREATE INDEX idx_responses_items_expiry ON responses_items (expires_at);
-CREATE UNIQUE INDEX idx_responses_snapshots_id_scope ON responses_snapshots (id, api_key_id, state_epoch);
-CREATE INDEX idx_responses_snapshots_expiry ON responses_snapshots (expires_at);
+CREATE UNIQUE INDEX idx_responses_state_items_id_scope ON responses_state_items (id, api_key_id, state_epoch);
+CREATE INDEX idx_responses_state_items_content_hash ON responses_state_items (api_key_id, state_epoch, content_hash, refreshed_at DESC);
+CREATE INDEX idx_responses_state_items_expiry ON responses_state_items (expires_at);
+CREATE UNIQUE INDEX idx_responses_state_snapshots_id_scope ON responses_state_snapshots (id, api_key_id, state_epoch);
+CREATE INDEX idx_responses_state_snapshots_expiry ON responses_state_snapshots (expires_at);
+
+CREATE TABLE responses_state_maintenance (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  next_expiry_hour INTEGER NOT NULL
+);
+
+INSERT INTO responses_state_maintenance (id, next_expiry_hour)
+VALUES (
+  1,
+  CAST(strftime('%s', strftime('%Y-%m-%d %H:00:00', 'now', '-30 days')) AS INTEGER) * 1000
+);

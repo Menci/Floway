@@ -1,7 +1,6 @@
 import { getDumpStore } from './dump/registry.ts';
 import { getRepo } from './repo/index.ts';
 import { sweepResponsesState } from './repo/responses-maintenance.ts';
-import { startOfUtcHour, sweepExpiredResponsesItemPayloadFiles } from './repo/responses-payload.ts';
 import { getImageCacheStore } from '@floway-dev/platform';
 
 const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boolean> => {
@@ -38,9 +37,7 @@ const sweepExpiredDumps = async (): Promise<void> => {
 
 export const runScheduledMaintenance = async (): Promise<void> => {
   const nowMs = Date.now();
-  const hourStart = startOfUtcHour(nowMs);
-  const responsesDeletionSucceeded = await runSweep('responsesState.sweep', () => sweepResponsesState(nowMs));
-  if (responsesDeletionSucceeded) await runSweep('responsesItems.sweepPayloadFiles', () => sweepExpiredResponsesItemPayloadFiles(hourStart));
+  await runSweep('responsesState.sweep', () => sweepResponsesState(nowMs));
   await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
   await runSweep('dumps.sweepExpired', () => sweepExpiredDumps());
 };

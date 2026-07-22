@@ -1,19 +1,41 @@
 import { getRepo } from './index.ts';
+import { deleteResponsesItemPayloadExpiryBucket } from './responses-payload.ts';
+import { getFileProvider } from '@floway-dev/platform';
 
-export const purgeResponsesState = async (apiKeyId: string): Promise<void> => {
-  const repo = getRepo();
-  await repo.responsesSnapshots.deleteByApiKey(apiKeyId);
-  await repo.responsesItems.deleteByApiKey(apiKeyId);
-};
+const HOUR_MS = 60 * 60 * 1000;
+const DELETE_BATCH_SIZE = 100;
+const MAX_D1_MUTATIONS_PER_TICK = 20;
 
 export const sweepResponsesState = async (now: number): Promise<void> => {
   const repo = getRepo();
-  for (const key of await repo.apiKeys.listIncludingDeleted()) {
-    if (key.deletedAt !== null || key.responsesRetentionSeconds === 0) {
-      await purgeResponsesState(key.id);
-      continue;
-    }
-    await repo.responsesSnapshots.deleteInactive(key.id, key.responsesStateEpoch, now);
-    await repo.responsesItems.deleteInactive(key.id, key.responsesStateEpoch, now);
+  const currentHour = Math.floor(now / HOUR_MS) * HOUR_MS;
+  let expiryHour = await repo.responsesMaintenance.getNextExpiryHour();
+  let mutations = 0;
+
+  while (expiryHour < currentHour && mutations < MAX_D1_MUTATIONS_PER_TICK) {
+    const hourEnd = expiryHour + HOUR_MS;
+    const deletedSnapshots = await repo.responsesSnapshots.deleteExpiredHour(
+      expiryHour,
+      hourEnd,
+      DELETE_BATCH_SIZE,
+    );
+    mutations += 1;
+    if (deletedSnapshots === DELETE_BATCH_SIZE) continue;
+    if (mutations >= MAX_D1_MUTATIONS_PER_TICK) return;
+
+    const deletedItems = await repo.responsesItems.deleteExpiredHour(
+      expiryHour,
+      hourEnd,
+      DELETE_BATCH_SIZE,
+    );
+    mutations += 1;
+    for (const key of deletedItems.fileKeys) await getFileProvider().deletePrefix(key);
+    if (deletedItems.deleted === DELETE_BATCH_SIZE) continue;
+    if (mutations >= MAX_D1_MUTATIONS_PER_TICK) return;
+
+    await deleteResponsesItemPayloadExpiryBucket(expiryHour);
+    await repo.responsesMaintenance.setNextExpiryHour(hourEnd);
+    mutations += 1;
+    expiryHour = hourEnd;
   }
 };

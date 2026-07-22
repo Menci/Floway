@@ -20,7 +20,6 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import { purgeResponsesState } from '../../repo/responses-maintenance.ts';
 import { generateResponsesStateEpoch, RESPONSES_RETENTION_MAX_SECONDS, withResponsesRetention } from '../../repo/responses-retention.ts';
 import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, UsageMetricRecord, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -861,9 +860,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       } else if (previous.dumpRetentionSeconds !== null && key.dumpRetentionSeconds !== null && key.dumpRetentionSeconds < previous.dumpRetentionSeconds) {
         await getDumpStore().purgeExpired(key.id, key.dumpRetentionSeconds);
       }
-    }
-    if (mode === 'merge' && previous !== undefined && next.responsesStateEpoch !== previous.responsesStateEpoch) {
-      await purgeResponsesState(key.id);
     }
   }
   for (const record of usage) await repo.usage.set(record);

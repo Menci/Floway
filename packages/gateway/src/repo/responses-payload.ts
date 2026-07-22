@@ -118,10 +118,10 @@ const parseDescriptor = (id: string, raw: string): StoredResponsesPayloadJson =>
   try {
     parsed = JSON.parse(raw);
   } catch (cause) {
-    throw new Error(`Malformed responses_items.payload_json JSON for id=${id}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    throw new Error(`Malformed responses_state_items.payload_json JSON for id=${id}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
 
-  if (!isRecord(parsed) || parsed.version !== 1) throw new Error(`Invalid responses_items.payload_json for id=${id}`);
+  if (!isRecord(parsed) || parsed.version !== 1) throw new Error(`Invalid responses_state_items.payload_json for id=${id}`);
   if (parsed.storage === 'inline') {
     if (parsed.encoding === 'gzip' && typeof parsed.payload === 'string') {
       return { version: 1, storage: 'inline', encoding: 'gzip', payload: parsed.payload };
@@ -136,7 +136,7 @@ const parseDescriptor = (id: string, raw: string): StoredResponsesPayloadJson =>
   ) {
     if (parsed.encoding === 'gzip') return { version: 1, storage: 'file', encoding: 'gzip', key: parsed.key, sha256: parsed.sha256, byteLength: parsed.byteLength };
   }
-  throw new Error(`Invalid responses_items.payload_json for id=${id} (storage=${typeof parsed.storage === 'string' ? parsed.storage : 'unknown'}, encoding=${typeof parsed.encoding === 'string' ? parsed.encoding : 'absent'})`);
+  throw new Error(`Invalid responses_state_items.payload_json for id=${id} (storage=${typeof parsed.storage === 'string' ? parsed.storage : 'unknown'}, encoding=${typeof parsed.encoding === 'string' ? parsed.encoding : 'absent'})`);
 };
 
 const assertPayloadObject = (id: string, value: unknown): StoredResponsesItemPayload => {
@@ -184,28 +184,12 @@ const base64ToBytes = (base64: string): Uint8Array => {
   return bytes;
 };
 
-// Files live under their expiry hour. A bucket whose hour is strictly before
-// the current hour is fully past its TTL, so the sweep enumerates the existing
-// bucket prefixes under the expiry root and deletes every expired one. Bucket
-// prefixes use UTC YYYY/MM/DD/HH, so lexical order matches chronological order.
-// This is resilient to missed cron runs: a skipped hour is revisited on the
-// next run rather than leaking into R2.
-export const sweepExpiredResponsesItemPayloadFiles = async (now: number): Promise<void> => {
-  const currentHourPrefix = responsesItemPayloadExpiryBucketPrefix(startOfUtcHour(now));
-  const provider = getFileProvider();
-  const keys = await provider.listKeys(RESPONSES_ITEMS_FILE_ROOT);
-  const expiredBuckets = new Set<string>();
-  for (const key of keys) {
-    const pathParts = key.slice(RESPONSES_ITEMS_FILE_ROOT.length).split('/');
-    if (pathParts.length < 4) continue;
-    const bucket = `${RESPONSES_ITEMS_FILE_ROOT}${pathParts.slice(0, 4).join('/')}/`;
-    if (bucket < currentHourPrefix) expiredBuckets.add(bucket);
-  }
-  for (const bucket of expiredBuckets) await provider.deletePrefix(bucket);
+export const deleteResponsesItemPayloadExpiryBucket = async (hourStart: number): Promise<void> => {
+  await getFileProvider().deletePrefix(responsesItemPayloadExpiryBucketPrefix(hourStart));
 };
 
 // Drop every spilled payload file. Paired with a `deleteAll` over the
-// responses_items rows so a full replace/clear does not orphan R2 objects.
+// responses_state_items rows so a full replace/clear does not orphan R2 objects.
 export const deleteAllResponsesItemPayloadFiles = async (): Promise<void> => {
   await getFileProvider().deletePrefix(RESPONSES_ITEMS_FILE_ROOT);
 };
