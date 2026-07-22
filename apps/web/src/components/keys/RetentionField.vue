@@ -22,7 +22,7 @@ const props = defineProps<{
 
 type SelectedPreset = 'off' | 'custom' | `seconds:${number}`;
 
-const options = [
+const options: Array<{ value: SelectedPreset; label: string }> = [
   { value: 'off', label: props.offLabel },
   ...props.presets.map(preset => ({ value: `seconds:${preset.seconds}`, label: preset.label })),
   { value: 'custom', label: 'Custom…' },
@@ -45,6 +45,7 @@ watch(model, value => {
     custom.value = '';
     return;
   }
+  if (value === null) throw new TypeError('RetentionField received null for a zero-off field');
   const preset = props.presets.find(option => option.seconds === value);
   if (preset !== undefined) {
     selected.value = `seconds:${preset.seconds}`;

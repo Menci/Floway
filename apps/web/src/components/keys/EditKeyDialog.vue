@@ -90,7 +90,7 @@ const retentionWarning = computed<string | null>(() => {
 const responsesRetentionWarning = computed<string | null>(() => {
   if (props.mode === 'create') return null;
   const next = responsesRetention.value;
-  if (next === 'invalid' || next >= props.apiKey.responses_retention_seconds) return null;
+  if (typeof next !== 'number' || next >= props.apiKey.responses_retention_seconds) return null;
   return 'Saving a shorter retention immediately resets existing Stateful Responses chains for this key.';
 });
 
@@ -104,7 +104,9 @@ const save = async () => {
     error.value = 'Select at least one upstream, or turn off the override to use every upstream available to you.';
     return;
   }
-  if (dumpRetention.value === 'invalid' || responsesRetention.value === 'invalid') {
+  const nextDumpRetention = dumpRetention.value;
+  const nextResponsesRetention = responsesRetention.value;
+  if (nextDumpRetention === 'invalid' || typeof nextResponsesRetention !== 'number') {
     error.value = 'Retention must be an integer number of seconds, or a value like 30m / 2h / 3d.';
     return;
   }
@@ -119,8 +121,8 @@ const save = async () => {
   const commonBody = {
     name: trimmed,
     upstream_ids: upstreamSelection.value.override ? upstreamSelection.value.ids : null,
-    dump_retention_seconds: dumpRetention.value,
-    responses_retention_seconds: responsesRetention.value,
+    dump_retention_seconds: nextDumpRetention,
+    responses_retention_seconds: nextResponsesRetention,
   };
   const { data, error: err } = props.mode === 'create'
     ? await callApi<ApiKey>(() => api.api.keys.$post({

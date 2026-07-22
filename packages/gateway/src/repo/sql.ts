@@ -900,7 +900,7 @@ interface PreparedResponsesInsertWrite extends PreparedResponsesPayloadWriteBase
   kind: 'insert';
 }
 
-interface PreparedResponsesRefreshWrite extends PreparedResponsesPayloadWriteBase<Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>> {
+interface PreparedResponsesRefreshWrite extends PreparedResponsesPayloadWriteBase<Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>> {
   kind: 'refresh';
   previousPayloadJson: string;
 }
@@ -1198,7 +1198,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   private async prepareRefreshWrite(
-    item: Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>,
+    item: Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadFileKey'>,
     initialDescriptor: ResponsesItemDescriptor,
     refreshedAt: number,
     expiresAt: number,
