@@ -20,6 +20,8 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { purgeResponsesState } from '../../repo/responses-maintenance.ts';
+import { generateResponsesStateEpoch, RESPONSES_RETENTION_MAX_SECONDS, withResponsesRetention } from '../../repo/responses-retention.ts';
 import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, UsageMetricRecord, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -48,12 +50,14 @@ interface SerializedProxy {
   dial_timeout_seconds: number | null;
 }
 
+type SerializedApiKey = Omit<ApiKey, 'responsesStateEpoch'>;
+
 interface ExportPayload {
-  version: 15;
+  version: 16;
   exportedAt: string;
   data: {
     users: User[];
-    apiKeys: ApiKey[];
+    apiKeys: SerializedApiKey[];
     upstreams: SerializedUpstreamRecord[];
     proxies: SerializedProxy[];
     usage: UsageRecord[];
@@ -64,7 +68,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 15;
+const EXPORT_VERSION = 16;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -259,10 +263,17 @@ const parseImportedDumpRetention = (value: unknown): number | null => {
   return value;
 };
 
-const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
+const parseImportedResponsesRetention = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > RESPONSES_RETENTION_MAX_SECONDS) {
+    throw new Error(`responsesRetentionSeconds must be an integer from 0 to ${RESPONSES_RETENTION_MAX_SECONDS}`);
+  }
+  return value;
+};
+
+const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: SerializedApiKey[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'apiKeys must be an array' };
 
-  const records: ApiKey[] = [];
+  const records: SerializedApiKey[] = [];
   for (let i = 0; i < value.length; i++) {
     const record = value[i];
     if (!isRecord(record)) return { type: 'invalid', index: i, error: 'record must be an object' };
@@ -287,6 +298,7 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
         upstreamIds: upstreamIdsParsed.value,
         deletedAt: record.deletedAt,
         dumpRetentionSeconds: parseImportedDumpRetention(record.dumpRetentionSeconds),
+        responsesRetentionSeconds: parseImportedResponsesRetention(record.responsesRetentionSeconds),
       });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
@@ -345,7 +357,7 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
   return { type: 'ok', records };
 };
 
-const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
+const validateApiKeyIdentities = (records: readonly SerializedApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();
   const rawKeys = new Map<string, string>();
   const serverSecrets = new Map<string, string>();
@@ -673,7 +685,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     exportedAt: new Date().toISOString(),
     data: {
       users,
-      apiKeys,
+      apiKeys: apiKeys.map(({ responsesStateEpoch: _epoch, ...key }) => key),
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(p => ({ id: p.id, name: p.name, url: p.url, dial_timeout_seconds: p.dialTimeoutSeconds })),
       usage,
@@ -772,7 +784,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   // `dumpRetentionSeconds` per key id so a retention shrink/disable in the
   // imported payload triggers the same purge transition `updateKey` would.
   const preImportKeys = await repo.apiKeys.listIncludingDeleted();
-  const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(k => [k.id, k.dumpRetentionSeconds]));
+  const preImportKeysById = new Map(preImportKeys.map(key => [key.id, key]));
   const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? preImportKeys : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
 
@@ -832,15 +844,26 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   for (const key of apiKeys) {
     // Merge mode mirrors `updateKey`'s purge transition when retention is
     // flipped off or shrunk; replace mode already purged everything above.
-    const previous = preImportRetentionById.get(key.id) ?? null;
-    await repo.apiKeys.save(key);
-    if (mode === 'merge' && previous !== key.dumpRetentionSeconds) {
-      if (key.dumpRetentionSeconds === null && previous !== null) {
+    const previous = mode === 'merge' ? preImportKeysById.get(key.id) : undefined;
+    const withEpoch: ApiKey = {
+      ...key,
+      ...(previous === undefined ? {} : { responsesRetentionSeconds: previous.responsesRetentionSeconds }),
+      responsesStateEpoch: previous?.responsesStateEpoch ?? generateResponsesStateEpoch(),
+    };
+    const next = previous === undefined
+      ? withEpoch
+      : withResponsesRetention(withEpoch, key.responsesRetentionSeconds);
+    await repo.apiKeys.save(next);
+    if (mode === 'merge' && previous !== undefined && previous.dumpRetentionSeconds !== key.dumpRetentionSeconds) {
+      if (key.dumpRetentionSeconds === null && previous.dumpRetentionSeconds !== null) {
         await getDumpStore().purgeAll(key.id);
         await notifyDisabledBestEffort(key.id, 'merge-mode retention disable');
-      } else if (previous !== null && key.dumpRetentionSeconds !== null && key.dumpRetentionSeconds < previous) {
+      } else if (previous.dumpRetentionSeconds !== null && key.dumpRetentionSeconds !== null && key.dumpRetentionSeconds < previous.dumpRetentionSeconds) {
         await getDumpStore().purgeExpired(key.id, key.dumpRetentionSeconds);
       }
+    }
+    if (mode === 'merge' && previous !== undefined && next.responsesStateEpoch !== previous.responsesStateEpoch) {
+      await purgeResponsesState(key.id);
     }
   }
   for (const record of usage) await repo.usage.set(record);
