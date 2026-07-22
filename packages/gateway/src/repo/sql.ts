@@ -1,9 +1,8 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
-import { assertSameStoredResponsesItem, scopedResponsesKey } from './responses-clone.ts';
-import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPONSES_STATE_TTL_MS, responsesItemPayloadExpiryBucketPrefix, serializeStoredResponsesPayload, storedResponsesPayloadFileKey } from './responses-payload.ts';
-import { generateResponsesStateEpoch } from './responses-retention.ts';
+import { assertSameStoredResponsesItem, persistedResponsesKey } from './responses-clone.ts';
+import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, responsesItemPayloadExpiryBucketPrefix, serializeStoredResponsesPayload, storedResponsesPayloadFileKey } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -856,42 +855,46 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
   }
 }
 
-const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, payload_json, content_hash, created_at';
+const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, state_epoch, payload_json, content_hash, refreshed_at, expires_at';
 // D1 permits 100 bound parameters per query. Descriptor reads reserve one
-// bind for api_key_id; inserts use five binds per item; refresh CASE updates
-// use four per item plus created_at and api_key_id.
+// bind each for api_key_id/state_epoch; inserts use seven binds per item plus
+// the shared expiry conflict gate; refresh CASE updates use four per item plus
+// five shared lifetime/scope binds.
 // https://developers.cloudflare.com/d1/platform/limits/#limits
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 90;
-const RESPONSES_INSERT_CHUNK_SIZE = 20;
-const RESPONSES_REFRESH_CHUNK_SIZE = 24;
+const RESPONSES_INSERT_CHUNK_SIZE = 14;
+const RESPONSES_REFRESH_CHUNK_SIZE = 23;
 
 interface ResponsesItemDescriptor {
   id: string;
   payloadJson: string;
-  createdAt: number;
+  refreshedAt: number;
+  expiresAt: number;
 }
 
 interface ResponsesItemDescriptorRow {
   id: string;
   api_key_id: string;
+  state_epoch: string;
   payload_json: string;
-  created_at: number;
+  refreshed_at: number;
+  expires_at: number;
 }
 
-interface PreparedResponsesPayloadWriteBase<TItem extends Pick<StoredResponsesItem, 'id' | 'apiKeyId'>> {
+interface PreparedResponsesPayloadWriteBase<TItem extends Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>> {
   item: TItem;
   payload: string;
   generatedFileKey: string | null;
+  previousFileKey: string | null;
 }
 
 interface PreparedResponsesInsertWrite extends PreparedResponsesPayloadWriteBase<StoredResponsesItem> {
   kind: 'insert';
 }
 
-interface PreparedResponsesRefreshWrite extends PreparedResponsesPayloadWriteBase<Pick<StoredResponsesItem, 'id' | 'apiKeyId'>> {
+interface PreparedResponsesRefreshWrite extends PreparedResponsesPayloadWriteBase<Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>> {
   kind: 'refresh';
   previousPayloadJson: string;
-  previousFileKey: string | null;
 }
 
 type PreparedResponsesPayloadWrite = PreparedResponsesInsertWrite | PreparedResponsesRefreshWrite;
@@ -899,7 +902,7 @@ type PreparedResponsesPayloadWrite = PreparedResponsesInsertWrite | PreparedResp
 const uniqueResponsesItems = (items: readonly StoredResponsesItem[]): StoredResponsesItem[] => {
   const unique = new Map<string, StoredResponsesItem>();
   for (const item of items) {
-    const key = scopedResponsesKey(item.apiKeyId, item.id);
+    const key = persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id);
     const existing = unique.get(key);
     if (existing === undefined) unique.set(key, item);
     else assertSameStoredResponsesItem(item, existing);
@@ -912,19 +915,35 @@ const responsesErrorMessage = (error: unknown): string => error instanceof Error
 class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   constructor(private db: SqlDatabase) {}
 
-  async lookupMany(apiKeyId: string, ids: readonly string[]): Promise<StoredResponsesItem[]> {
-    const rows = await this.lookupByColumn(apiKeyId, 'id', ids);
+  async lookupMany(apiKeyId: string, stateEpoch: string, ids: readonly string[]): Promise<StoredResponsesItem[]> {
+    const rows = await this.lookupByColumn(apiKeyId, stateEpoch, 'id', ids);
     const order = new Map([...new Set(ids)].map((id, index) => [id, index]));
     return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
   }
 
-  async lookupManyByContentHash(apiKeyId: string, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
-    return await this.lookupByColumn(apiKeyId, 'content_hash', hashes);
+  async lookupActiveMany(apiKeyId: string, stateEpoch: string, ids: readonly string[], now: number): Promise<StoredResponsesItem[]> {
+    const rows = await this.lookupByColumn(apiKeyId, stateEpoch, 'id', ids, now);
+    const order = new Map([...new Set(ids)].map((id, index) => [id, index]));
+    return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
+  }
+
+  async lookupManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+    return await this.lookupByColumn(apiKeyId, stateEpoch, 'content_hash', hashes);
+  }
+
+  async lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], now: number): Promise<StoredResponsesItem[]> {
+    return await this.lookupByColumn(apiKeyId, stateEpoch, 'content_hash', hashes, now);
   }
 
   // A single Responses request can echo back more stored items than one
   // IN-list can hold, so chunk the list and union the results.
-  private async lookupByColumn(apiKeyId: string, column: 'id' | 'content_hash', values: readonly string[]): Promise<StoredResponsesItem[]> {
+  private async lookupByColumn(
+    apiKeyId: string,
+    stateEpoch: string,
+    column: 'id' | 'content_hash',
+    values: readonly string[],
+    activeAt?: number,
+  ): Promise<StoredResponsesItem[]> {
     const unique = [...new Set(values)];
     if (unique.length === 0) return [];
 
@@ -935,10 +954,11 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
 
     const perChunk = await Promise.all(chunks.map(async chunk => {
       const placeholders = chunk.map(() => '?').join(', ');
-      const orderSql = column === 'id' ? '' : ' ORDER BY created_at DESC, id ASC';
+      const orderSql = column === 'id' ? '' : ' ORDER BY refreshed_at DESC, id ASC';
+      const activeSql = activeAt === undefined ? '' : ' AND expires_at > ?';
       const { results } = await this.db
-        .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE api_key_id = ? AND ${column} IN (${placeholders})${orderSql}`)
-        .bind(apiKeyId, ...chunk)
+        .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE api_key_id = ? AND state_epoch = ? AND ${column} IN (${placeholders})${activeSql}${orderSql}`)
+        .bind(apiKeyId, stateEpoch, ...chunk, ...(activeAt === undefined ? [] : [activeAt]))
         .all<ResponsesItemRow>();
       return results;
     }));
@@ -961,8 +981,8 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         return await toStoredResponsesItem(row);
       } catch (error) {
         const current = await this.db
-          .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE id = ? AND api_key_id = ?`)
-          .bind(row.id, row.api_key_id)
+          .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE id = ? AND api_key_id = ? AND state_epoch = ?`)
+          .bind(row.id, row.api_key_id, row.state_epoch)
           .first<ResponsesItemRow>();
         if (current === null) return null;
         if (current.payload_json === row.payload_json) throw error;
@@ -971,23 +991,32 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[], now: number): Promise<void> {
     const unique = uniqueResponsesItems(items);
-    const existing = await this.lookupExistingItems(unique);
+    const existing = await this.lookupExistingItems(unique, now);
     for (const item of unique) {
-      const actual = existing.get(scopedResponsesKey(item.apiKeyId, item.id));
+      const actual = existing.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id));
       if (actual !== undefined) assertSameStoredResponsesItem(item, actual);
     }
-    const pending = unique.filter(item => !existing.has(scopedResponsesKey(item.apiKeyId, item.id)));
+    const pending = unique.filter(item => !existing.has(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id)));
+    const previous = await this.lookupDescriptors(pending);
     const writes: PreparedResponsesInsertWrite[] = [];
     try {
       for (const item of pending) {
-        const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
+        const descriptor = previous.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id));
+        const payload = await serializeStoredResponsesPayload(
+          item.id,
+          item.apiKeyId,
+          item.stateEpoch,
+          item.expiresAt,
+          item.payload,
+        );
         writes.push({
           kind: 'insert',
           item,
           payload,
           generatedFileKey: storedResponsesPayloadFileKey(item.id, payload),
+          previousFileKey: descriptor === undefined ? null : storedResponsesPayloadFileKey(item.id, descriptor.payloadJson),
         });
       }
     } catch (error) {
@@ -997,19 +1026,26 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const statements: SqlPreparedStatement[] = [];
     for (let index = 0; index < writes.length; index += RESPONSES_INSERT_CHUNK_SIZE) {
       const chunk = writes.slice(index, index + RESPONSES_INSERT_CHUNK_SIZE);
-      const values = chunk.map(() => '(?, ?, ?, ?, ?)').join(', ');
+      const values = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
       statements.push(this.db
         .prepare(
           `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES ${values}
-           ON CONFLICT (id, api_key_id) DO NOTHING`,
+           ON CONFLICT (id, api_key_id, state_epoch) DO UPDATE SET
+             payload_json = excluded.payload_json,
+             content_hash = excluded.content_hash,
+             refreshed_at = excluded.refreshed_at,
+             expires_at = excluded.expires_at
+           WHERE responses_items.expires_at <= ?`,
         )
         .bind(...chunk.flatMap(({ item, payload }) => [
           item.id,
           item.apiKeyId,
+          item.stateEpoch,
           payload,
           item.contentHash,
-          item.createdAt,
-        ])));
+          item.refreshedAt,
+          item.expiresAt,
+        ]), now));
     }
     try {
       await runStatements(this.db, statements);
@@ -1018,41 +1054,51 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
     await this.finishPayloadWrites(writes, null);
 
-    const persisted = await this.lookupExistingItems(unique);
+    const persisted = await this.lookupExistingItems(unique, now);
     for (const item of unique) {
-      const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id));
+      const actual = persisted.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id));
       if (actual === undefined) throw new Error(`Responses item disappeared after insert: ${item.id}`);
       assertSameStoredResponsesItem(item, actual);
     }
-    const stale = unique.filter(item => persisted.get(scopedResponsesKey(item.apiKeyId, item.id))!.createdAt < item.createdAt);
-    if (stale.length > 0) await this.refreshMany(stale, Math.max(...stale.map(item => item.createdAt)));
+    const stale = unique.filter(item => persisted.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!.refreshedAt < item.refreshedAt);
+    if (stale.length > 0) {
+      const byLifetime = Map.groupBy(stale, item => `${item.refreshedAt}\0${item.expiresAt}`);
+      for (const group of byLifetime.values()) {
+        await this.refreshMany(group, group[0].refreshedAt, group[0].expiresAt);
+      }
+    }
   }
 
-  private async lookupExistingItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[]): Promise<Map<string, StoredResponsesItem>> {
-    const idsByApiKey = Map.groupBy(items, item => item.apiKeyId);
-    const rows = (await Promise.all([...idsByApiKey].map(async ([apiKeyId, scoped]) =>
-      await this.lookupMany(apiKeyId, scoped.map(item => item.id))))).flat();
-    return new Map(rows.map(item => [scopedResponsesKey(item.apiKeyId, item.id), item]));
+  private async lookupExistingItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>[], activeAt: number): Promise<Map<string, StoredResponsesItem>> {
+    const byScope = Map.groupBy(items, item => `${item.apiKeyId}\0${item.stateEpoch}`);
+    const rows = (await Promise.all([...byScope.values()].map(async scoped =>
+      await this.lookupActiveMany(scoped[0].apiKeyId, scoped[0].stateEpoch, scoped.map(item => item.id), activeAt)))).flat();
+    return new Map(rows.map(item => [persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id), item]));
   }
 
-  async refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void> {
-    const unique = [...new Map(items.map(item => [scopedResponsesKey(item.apiKeyId, item.id), item])).values()];
+  async refreshMany(
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>[],
+    refreshedAt: number,
+    expiresAt: number,
+  ): Promise<void> {
+    const unique = [...new Map(items.map(item => [persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id), item])).values()];
     const previous = await this.lookupDescriptors(unique);
     for (const item of unique) {
-      const key = scopedResponsesKey(item.apiKeyId, item.id);
+      const key = persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id);
       const descriptor = previous.get(key);
       if (descriptor === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${item.id}`);
     }
-    const pending = unique.filter(item => previous.get(scopedResponsesKey(item.apiKeyId, item.id))!.createdAt < createdAt);
+    const pending = unique.filter(item => previous.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!.refreshedAt < refreshedAt);
     if (pending.length === 0) return;
-    const targetFilePrefix = responsesItemPayloadExpiryBucketPrefix(createdAt + RESPONSES_STATE_TTL_MS);
+    const targetFilePrefix = responsesItemPayloadExpiryBucketPrefix(expiresAt);
     const writes: PreparedResponsesRefreshWrite[] = [];
     try {
       for (const item of pending) {
         writes.push(await this.prepareRefreshWrite(
           item,
-          previous.get(scopedResponsesKey(item.apiKeyId, item.id))!,
-          createdAt,
+          previous.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!,
+          refreshedAt,
+          expiresAt,
           targetFilePrefix,
         ));
       }
@@ -1060,14 +1106,16 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       await this.finishPayloadWrites(writes, error);
     }
 
-    const writesByApiKey = new Map<string, PreparedResponsesRefreshWrite[]>();
+    const writesByScope = new Map<string, PreparedResponsesRefreshWrite[]>();
     for (const write of writes) {
-      const group = writesByApiKey.get(write.item.apiKeyId) ?? [];
+      const scopeKey = `${write.item.apiKeyId}\0${write.item.stateEpoch}`;
+      const group = writesByScope.get(scopeKey) ?? [];
       group.push(write);
-      writesByApiKey.set(write.item.apiKeyId, group);
+      writesByScope.set(scopeKey, group);
     }
     const statements: SqlPreparedStatement[] = [];
-    for (const [apiKeyId, group] of writesByApiKey) {
+    for (const group of writesByScope.values()) {
+      const { apiKeyId, stateEpoch } = group[0].item;
       for (let index = 0; index < group.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
         const chunk = group.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
         const cases = chunk.map(() => 'WHEN ? THEN ?').join(' ');
@@ -1076,13 +1124,17 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           .prepare(
             `UPDATE responses_items
              SET payload_json = CASE id ${cases} ELSE payload_json END,
-                 created_at = MAX(created_at, ?)
-             WHERE api_key_id = ? AND (${conditions})`,
+                 expires_at = CASE WHEN refreshed_at < ? THEN ? ELSE expires_at END,
+                 refreshed_at = MAX(refreshed_at, ?)
+             WHERE api_key_id = ? AND state_epoch = ? AND (${conditions})`,
           )
           .bind(
             ...chunk.flatMap(({ item, payload }) => [item.id, payload]),
-            createdAt,
+            refreshedAt,
+            expiresAt,
+            refreshedAt,
             apiKeyId,
+            stateEpoch,
             ...chunk.flatMap(({ item, previousPayloadJson }) => [item.id, previousPayloadJson]),
           ));
       }
@@ -1094,25 +1146,26 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
     const persisted = await this.finishPayloadWrites(writes, null);
     const staleItems = writes.flatMap(write => {
-      const descriptor = persisted.get(scopedResponsesKey(write.item.apiKeyId, write.item.id));
+      const descriptor = persisted.get(persistedResponsesKey(write.item.apiKeyId, write.item.stateEpoch, write.item.id));
       if (descriptor === undefined) throw new Error(`Responses item disappeared after lifetime refresh: ${write.item.id}`);
-      return descriptor.createdAt < createdAt ? [write.item] : [];
+      return descriptor.refreshedAt < refreshedAt ? [write.item] : [];
     });
-    if (staleItems.length > 0) await this.refreshMany(staleItems, createdAt);
+    if (staleItems.length > 0) await this.refreshMany(staleItems, refreshedAt, expiresAt);
   }
 
   private async prepareRefreshWrite(
-    item: Pick<StoredResponsesItem, 'id' | 'apiKeyId'>,
+    item: Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>,
     initialDescriptor: ResponsesItemDescriptor,
-    createdAt: number,
+    refreshedAt: number,
+    expiresAt: number,
     targetFilePrefix: string,
   ): Promise<PreparedResponsesRefreshWrite> {
-    const key = scopedResponsesKey(item.apiKeyId, item.id);
+    const key = persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id);
     let descriptor = initialDescriptor;
     for (;;) {
       const previousFileKey = storedResponsesPayloadFileKey(item.id, descriptor.payloadJson);
       if (
-        descriptor.createdAt >= createdAt
+        descriptor.refreshedAt >= refreshedAt
         || previousFileKey === null
         || previousFileKey.startsWith(targetFilePrefix)
       ) {
@@ -1128,7 +1181,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
 
       try {
         const storedPayload = await parseStoredResponsesPayload(item.id, descriptor.payloadJson);
-        const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, storedPayload);
+        const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.stateEpoch, expiresAt, storedPayload);
         return {
           kind: 'refresh',
           item,
@@ -1146,23 +1199,24 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  private async lookupDescriptors(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[]): Promise<Map<string, ResponsesItemDescriptor>> {
-    const idsByApiKey = new Map<string, Set<string>>();
+  private async lookupDescriptors(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch'>[]): Promise<Map<string, ResponsesItemDescriptor>> {
+    const idsByScope = new Map<string, { apiKeyId: string; stateEpoch: string; ids: Set<string> }>();
     for (const item of items) {
-      const ids = idsByApiKey.get(item.apiKeyId) ?? new Set<string>();
-      ids.add(item.id);
-      idsByApiKey.set(item.apiKeyId, ids);
+      const scopeKey = `${item.apiKeyId}\0${item.stateEpoch}`;
+      const scope = idsByScope.get(scopeKey) ?? { apiKeyId: item.apiKeyId, stateEpoch: item.stateEpoch, ids: new Set<string>() };
+      scope.ids.add(item.id);
+      idsByScope.set(scopeKey, scope);
     }
 
     const queries: Promise<SqlResult<ResponsesItemDescriptorRow>>[] = [];
-    for (const [apiKeyId, idSet] of idsByApiKey) {
+    for (const { apiKeyId, stateEpoch, ids: idSet } of idsByScope.values()) {
       const ids = [...idSet];
       for (let index = 0; index < ids.length; index += RESPONSES_IN_QUERY_CHUNK_SIZE) {
         const chunk = ids.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(', ');
         queries.push(this.db
-          .prepare(`SELECT id, api_key_id, payload_json, created_at FROM responses_items WHERE api_key_id = ? AND id IN (${placeholders})`)
-          .bind(apiKeyId, ...chunk)
+          .prepare(`SELECT id, api_key_id, state_epoch, payload_json, refreshed_at, expires_at FROM responses_items WHERE api_key_id = ? AND state_epoch = ? AND id IN (${placeholders})`)
+          .bind(apiKeyId, stateEpoch, ...chunk)
           .all<ResponsesItemDescriptorRow>());
       }
     }
@@ -1171,9 +1225,10 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       const descriptor: ResponsesItemDescriptor = {
         id: row.id,
         payloadJson: row.payload_json,
-        createdAt: row.created_at,
+        refreshedAt: row.refreshed_at,
+        expiresAt: row.expires_at,
       };
-      return [scopedResponsesKey(row.api_key_id, row.id), descriptor] as const;
+      return [persistedResponsesKey(row.api_key_id, row.state_epoch, row.id), descriptor] as const;
     })));
   }
 
@@ -1207,8 +1262,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           obsoleteFileKeys.add(write.generatedFileKey);
         }
         if (
-          write.kind === 'refresh'
-          && write.previousFileKey !== null
+          write.previousFileKey !== null
           && !retainedFileKeys.has(write.previousFileKey)
         ) {
           obsoleteFileKeys.add(write.previousFileKey);
@@ -1222,7 +1276,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       }
     }
 
-    const missing = writes.find(write => !persisted.has(scopedResponsesKey(write.item.apiKeyId, write.item.id)));
+    const missing = writes.find(write => !persisted.has(persistedResponsesKey(write.item.apiKeyId, write.item.stateEpoch, write.item.id)));
     const missingError = missing === undefined
       ? null
       : new Error(missing.kind === 'insert'
@@ -1240,8 +1294,44 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     return persisted;
   }
 
-  async deleteOlderThan(createdBefore: number): Promise<number> {
-    const result = await this.db.prepare('DELETE FROM responses_items WHERE created_at < ?').bind(createdBefore).run();
+  async deleteInactive(apiKeyId: string, stateEpoch: string, now: number): Promise<number> {
+    return await this.deleteMatching(
+      apiKeyId,
+      'state_epoch != ? OR expires_at <= ?',
+      [stateEpoch, now],
+    );
+  }
+
+  async deleteByApiKey(apiKeyId: string): Promise<number> {
+    return await this.deleteMatching(apiKeyId, '1 = 1', []);
+  }
+
+  private async deleteMatching(apiKeyId: string, condition: string, binds: readonly unknown[]): Promise<number> {
+    const { results: before } = await this.db
+      .prepare(`SELECT id, api_key_id, state_epoch, payload_json, refreshed_at, expires_at FROM responses_items WHERE api_key_id = ? AND (${condition})`)
+      .bind(apiKeyId, ...binds)
+      .all<ResponsesItemDescriptorRow>();
+    if (before.length === 0) return 0;
+    const result = await this.db
+      .prepare(`DELETE FROM responses_items WHERE api_key_id = ? AND (${condition})`)
+      .bind(apiKeyId, ...binds)
+      .run();
+    const retained = await this.lookupDescriptors(before.map(row => ({
+      id: row.id,
+      apiKeyId: row.api_key_id,
+      stateEpoch: row.state_epoch,
+    })));
+    const retainedFiles = new Set([...retained.values()].flatMap(descriptor => {
+      const key = storedResponsesPayloadFileKey(descriptor.id, descriptor.payloadJson);
+      return key === null ? [] : [key];
+    }));
+    const obsoleteFiles = new Set(before.flatMap(row => {
+      const key = storedResponsesPayloadFileKey(row.id, row.payload_json);
+      return key !== null && !retainedFiles.has(key) ? [key] : [];
+    }));
+    const cleanup = await Promise.allSettled([...obsoleteFiles].map(async key => await getFileProvider().deletePrefix(key)));
+    const errors = cleanup.flatMap(entry => entry.status === 'rejected' ? [entry.reason] : []);
+    if (errors.length > 0) throw new AggregateError(errors, 'Responses payload cleanup failed after state deletion');
     return result.meta.changes ?? 0;
   }
 
@@ -1254,26 +1344,38 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
 interface ResponsesItemRow {
   id: string;
   api_key_id: string;
+  state_epoch: string;
   payload_json: string;
   content_hash: string;
-  created_at: number;
+  refreshed_at: number;
+  expires_at: number;
 }
 
 const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredResponsesItem> => ({
   id: row.id,
   apiKeyId: row.api_key_id,
+  stateEpoch: row.state_epoch,
   payload: await parseStoredResponsesPayload(row.id, row.payload_json),
   contentHash: row.content_hash,
-  createdAt: row.created_at,
+  refreshedAt: row.refreshed_at,
+  expiresAt: row.expires_at,
 });
 
 class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   constructor(private db: SqlDatabase) {}
 
-  async lookup(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
+  async lookup(apiKeyId: string, stateEpoch: string, id: string): Promise<StoredResponsesSnapshot | null> {
     const row = await this.db
-      .prepare('SELECT id, api_key_id, item_ids_json, created_at FROM responses_snapshots WHERE id = ? AND api_key_id = ?')
-      .bind(id, apiKeyId)
+      .prepare('SELECT id, api_key_id, state_epoch, item_ids_json, refreshed_at, expires_at FROM responses_snapshots WHERE id = ? AND api_key_id = ? AND state_epoch = ?')
+      .bind(id, apiKeyId, stateEpoch)
+      .first<ResponsesSnapshotRow>();
+    return row ? toStoredResponsesSnapshot(row) : null;
+  }
+
+  async lookupActive(apiKeyId: string, stateEpoch: string, id: string, now: number): Promise<StoredResponsesSnapshot | null> {
+    const row = await this.db
+      .prepare('SELECT id, api_key_id, state_epoch, item_ids_json, refreshed_at, expires_at FROM responses_snapshots WHERE id = ? AND api_key_id = ? AND state_epoch = ? AND expires_at > ?')
+      .bind(id, apiKeyId, stateEpoch, now)
       .first<ResponsesSnapshotRow>();
     return row ? toStoredResponsesSnapshot(row) : null;
   }
@@ -1281,20 +1383,32 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   async insert(snapshot: StoredResponsesSnapshot): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, created_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT (id, api_key_id) DO UPDATE SET
+        `INSERT INTO responses_snapshots (id, api_key_id, state_epoch, item_ids_json, refreshed_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id, api_key_id, state_epoch) DO UPDATE SET
            item_ids_json = CASE
-             WHEN excluded.created_at >= responses_snapshots.created_at THEN excluded.item_ids_json
+             WHEN excluded.refreshed_at >= responses_snapshots.refreshed_at THEN excluded.item_ids_json
              ELSE responses_snapshots.item_ids_json
            END,
-           created_at = MAX(responses_snapshots.created_at, excluded.created_at)`,
+           expires_at = CASE
+             WHEN excluded.refreshed_at >= responses_snapshots.refreshed_at THEN excluded.expires_at
+             ELSE responses_snapshots.expires_at
+           END,
+           refreshed_at = MAX(responses_snapshots.refreshed_at, excluded.refreshed_at)`,
       )
-      .bind(snapshot.id, snapshot.apiKeyId, JSON.stringify(snapshot.itemIds), snapshot.createdAt)
+      .bind(snapshot.id, snapshot.apiKeyId, snapshot.stateEpoch, JSON.stringify(snapshot.itemIds), snapshot.refreshedAt, snapshot.expiresAt)
       .run();
   }
 
-  async deleteOlderThan(createdBefore: number): Promise<number> {
-    const result = await this.db.prepare('DELETE FROM responses_snapshots WHERE created_at < ?').bind(createdBefore).run();
+  async deleteInactive(apiKeyId: string, stateEpoch: string, now: number): Promise<number> {
+    const result = await this.db
+      .prepare('DELETE FROM responses_snapshots WHERE api_key_id = ? AND (state_epoch != ? OR expires_at <= ?)')
+      .bind(apiKeyId, stateEpoch, now)
+      .run();
+    return result.meta.changes ?? 0;
+  }
+
+  async deleteByApiKey(apiKeyId: string): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM responses_snapshots WHERE api_key_id = ?').bind(apiKeyId).run();
     return result.meta.changes ?? 0;
   }
 
@@ -1306,8 +1420,10 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
 interface ResponsesSnapshotRow {
   id: string;
   api_key_id: string;
+  state_epoch: string;
   item_ids_json: string;
-  created_at: number;
+  refreshed_at: number;
+  expires_at: number;
 }
 
 const toStoredResponsesSnapshot = (row: ResponsesSnapshotRow): StoredResponsesSnapshot => {
@@ -1318,8 +1434,10 @@ const toStoredResponsesSnapshot = (row: ResponsesSnapshotRow): StoredResponsesSn
   return {
     id: row.id,
     apiKeyId: row.api_key_id,
+    stateEpoch: row.state_epoch,
     itemIds: parsed,
-    createdAt: row.created_at,
+    refreshedAt: row.refreshed_at,
+    expiresAt: row.expires_at,
   };
 };
 
