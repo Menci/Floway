@@ -14,7 +14,7 @@ import type {
 } from '../dump/types.ts';
 import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 
-// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
+// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{nonce}.{req|resp}.gz`.
 // The hour segment keeps operator inspection chronological; maintenance owns
 // exact file keys through its staged GC instead of scanning the prefix.
 
@@ -83,7 +83,7 @@ const hourBucketToMs = (bucket: string): number | null => {
 const keyPrefix = (keyId: string): string => `${ROOT}/${keyId}/`;
 const bucketPrefix = (keyId: string, bucket: string): string => `${ROOT}/${keyId}/${bucket}/`;
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
-  `${bucketPrefix(keyId, bucket)}${recordId}.${side}.gz`;
+  `${bucketPrefix(keyId, bucket)}${recordId}-${crypto.randomUUID()}.${side}.gz`;
 
 const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
   const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
