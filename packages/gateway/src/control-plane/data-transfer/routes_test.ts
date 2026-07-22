@@ -428,7 +428,7 @@ test('import rejects any version other than the current one before deleting data
   assertEquals((await repo.upstreams.list()).map(upstream => upstream.id), ['up_custom_a']);
 });
 
-test('import replace writes upstreams and clears replaced collections', async () => {
+test('import replace writes upstreams without synchronously purging retired Responses state', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   await repo.upstreams.save(CUSTOM_UPSTREAM);
@@ -468,7 +468,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
   assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_2]);
-  assertEquals(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [STORED_RESPONSES_ITEM.id]), []);
+  assertEquals(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [STORED_RESPONSES_ITEM.id]), [STORED_RESPONSES_ITEM]);
   assertEquals(await repo.searchConfig.get(), {
     provider: 'microsoft-grounding',
     tavily: { apiKey: '' },

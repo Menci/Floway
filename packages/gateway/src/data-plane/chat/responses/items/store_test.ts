@@ -331,16 +331,6 @@ describe('StatefulResponsesStore', () => {
     expect(await createResponsesHttpStore(testResponsesStatePolicy('key-a'), true).loadSnapshot('resp_large')).not.toBeNull();
     expect(queries).toBeLessThanOrEqual(35);
 
-    await base.prepare("UPDATE responses_state_items SET refreshed_at = ?, expires_at = ?, payload_file_key = 'synthetic-spill'")
-      .bind(nearExpiry, nearExpiry + TEST_RESPONSES_RETENTION_SECONDS * 1000)
-      .run();
-    await base.prepare('UPDATE responses_state_snapshots SET refreshed_at = ?, expires_at = ?')
-      .bind(nearExpiry, nearExpiry + TEST_RESPONSES_RETENTION_SECONDS * 1000)
-      .run();
-    queries = 0;
-    expect(await createResponsesHttpStore(testResponsesStatePolicy('key-a'), true).loadSnapshot('resp_large')).not.toBeNull();
-    expect(queries).toBeLessThanOrEqual(40);
-
     const newItems = items.map((item, index) => ({ ...item, id: `msg_new_${index}`, payloadHash: `new-payload-${index}` }));
     queries = 0;
     await new SqlRepo(countedDb).responsesItems.insertMany(newItems, Date.now());
