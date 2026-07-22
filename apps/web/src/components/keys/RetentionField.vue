@@ -23,9 +23,9 @@ const props = defineProps<{
 type SelectedPreset = 'off' | 'custom' | `seconds:${number}`;
 
 const options: Array<{ value: SelectedPreset; label: string }> = [
-  { value: 'off', label: props.offLabel },
-  ...props.presets.map(preset => ({ value: `seconds:${preset.seconds}`, label: preset.label })),
-  { value: 'custom', label: 'Custom…' },
+  { value: 'off' as const, label: props.offLabel },
+  ...props.presets.map(preset => ({ value: `seconds:${preset.seconds}` as SelectedPreset, label: preset.label })),
+  { value: 'custom' as const, label: 'Custom…' },
 ];
 
 const selected = shallowRef<SelectedPreset>('off');
