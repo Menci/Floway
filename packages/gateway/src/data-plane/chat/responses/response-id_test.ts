@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { createResponsesResponseId } from './response-id.ts';
 
-test('creates unique verifiable Floway response envelope ids', () => {
+test('creates unique opaque Floway response envelope ids', () => {
   const first = createResponsesResponseId();
   const second = createResponsesResponseId();
 
