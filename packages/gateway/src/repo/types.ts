@@ -378,7 +378,6 @@ export interface StoredResponsesItem {
   payloadHash: string;
   payloadFileKey: string | null;
   refreshedAt: number;
-  expiresAt: number;
 }
 
 export interface StoredResponsesItemPayload {
@@ -392,16 +391,15 @@ export interface StoredResponsesItemPayload {
 
 export interface ResponsesItemsRepo {
   lookupMany(apiKeyId: string, stateEpoch: string, ids: readonly string[]): Promise<StoredResponsesItem[]>;
-  lookupActiveMany(apiKeyId: string, stateEpoch: string, ids: readonly string[], now: number): Promise<StoredResponsesItem[]>;
+  lookupActiveMany(apiKeyId: string, stateEpoch: string, ids: readonly string[], refreshedAfter: number): Promise<StoredResponsesItem[]>;
   lookupManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
-  lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], now: number): Promise<StoredResponsesItem[]>;
-  insertMany(items: readonly StoredResponsesItem[], now: number): Promise<void>;
+  lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], refreshedAfter: number): Promise<StoredResponsesItem[]>;
+  insertMany(items: readonly StoredResponsesItem[], replaceBefore: number): Promise<void>;
   refreshMany(
     items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash'>[],
     refreshedAt: number,
-    expiresAt: number,
   ): Promise<void>;
-  deleteExpired(now: number, limit: number): Promise<number>;
+  deleteOutsideRetention(apiKeyId: string, stateEpoch: string | null, refreshedBefore: number, limit: number): Promise<number>;
 }
 
 export interface StoredResponsesSnapshot {
@@ -410,25 +408,34 @@ export interface StoredResponsesSnapshot {
   stateEpoch: string;
   itemIds: string[];
   refreshedAt: number;
-  expiresAt: number;
 }
 
 export interface ResponsesSnapshotsRepo {
   lookup(apiKeyId: string, stateEpoch: string, id: string): Promise<StoredResponsesSnapshot | null>;
-  lookupActive(apiKeyId: string, stateEpoch: string, id: string, now: number): Promise<StoredResponsesSnapshot | null>;
+  lookupActive(apiKeyId: string, stateEpoch: string, id: string, refreshedAfter: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  deleteExpired(now: number, limit: number): Promise<number>;
+  deleteOutsideRetention(apiKeyId: string, stateEpoch: string | null, refreshedBefore: number, limit: number): Promise<number>;
+}
+
+export interface ResponsesStateSweepClaim {
+  apiKeyId: string;
+  revision: number;
+  stateEpoch: string | null;
+  retentionSeconds: number;
 }
 
 export interface ResponsesMaintenanceRepo {
+  claimStateSweep(token: string, now: number, staleClaimBefore: number): Promise<ResponsesStateSweepClaim | null>;
+  findOldestStateRefresh(apiKeyId: string, stateEpoch: string): Promise<number | null>;
+  completeStateSweep(token: string, revision: number, nextDueAt: number | null): Promise<void>;
   claimPayloadFiles(token: string, now: number, staleClaimBefore: number, limit: number): Promise<string[]>;
   acknowledgePayloadFiles(token: string): Promise<number>;
-  getLegacyNextExpiryHour(): Promise<number | null>;
-  setLegacyNextExpiryHour(hourStart: number): Promise<void>;
-  deleteLegacyItemsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
-  deleteLegacySnapshotsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
-  isLegacyCleanupReady(now: number): Promise<boolean>;
-  completeLegacyCleanup(): Promise<void>;
+  getV1NextExpiryHour(): Promise<number | null>;
+  setV1NextExpiryHour(hourStart: number): Promise<void>;
+  deleteV1ItemsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
+  deleteV1SnapshotsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
+  isV1CleanupReady(now: number): Promise<boolean>;
+  completeV1Cleanup(): Promise<void>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
