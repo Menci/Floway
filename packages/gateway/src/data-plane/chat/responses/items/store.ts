@@ -1,11 +1,14 @@
 import { createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { assertSameStoredResponsesItem, cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
-import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
-import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import { responsesStateLifetime } from '../../../../repo/responses-retention.ts';
+import type { ApiKey, Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
+import type { ResponsesInputItem, ResponsesOutputItem } from '@floway-dev/protocols/responses';
 
 interface StatefulResponsesItemLookup {
   readonly apiKeyId: string;
+  readonly stateEpoch: string;
+  readonly activeAt: number;
   readonly ids: readonly string[];
   readonly contentHashes: readonly string[];
 }
@@ -13,13 +16,14 @@ interface StatefulResponsesItemLookup {
 interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]>;
   insertItems(items: readonly StoredResponsesItem[]): Promise<void>;
-  refreshItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void>;
-  lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
+  lookupSnapshot(query: Pick<StatefulResponsesItemLookup, 'apiKeyId' | 'stateEpoch' | 'activeAt'>, id: string): Promise<StoredResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
 }
 
 interface LayeredStatefulResponsesStoreOptions {
   readonly apiKeyId: string;
+  readonly stateEpoch: string;
+  readonly retentionSeconds: number | null;
   readonly reads: readonly StatefulResponsesBacking[];
   readonly writes: readonly StatefulResponsesBacking[];
 }
@@ -33,7 +37,7 @@ export interface StatefulResponsesStore {
   loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
-  persistOutputItem(row: StoredResponsesItem): Promise<void>;
+  persistOutputItem(item: ResponsesOutputItem): Promise<string>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void>;
   // Per-attempt transient state. `beginAttempt` reseeds the private-payload
   // scratchpad from hydrated items; interceptors can add server-only state
@@ -49,8 +53,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly stagedInputItemIds: string[] = [];
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
-  private readonly freshItemIds = new Set<string>();
   private readonly privatePayloads = new Map<string, unknown>();
+  private readonly activeAt = Date.now();
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
 
@@ -64,23 +68,21 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   async loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null> {
     for (const backing of this.options.reads) {
-      const snapshot = await backing.lookupSnapshot(this.apiKeyId, id);
+      const snapshot = await backing.lookupSnapshot({
+        apiKeyId: this.apiKeyId,
+        stateEpoch: this.options.stateEpoch,
+        activeAt: this.activeAt,
+      }, id);
       if (snapshot === null) continue;
       await this.loadItems({ ids: snapshot.itemIds, contentHashes: [] });
       if (!snapshot.itemIds.every(itemId => this.loadedItems.has(itemId))) continue;
       if (this.options.writes.length > 0) {
-        const createdAt = Date.now();
         const items = snapshot.itemIds.map(itemId => this.loadedItems.get(itemId)!);
         await this.commitItems(items);
-        await Promise.all(this.options.writes.map(async write => {
-          await write.refreshItems(items, createdAt);
-          await write.insertSnapshot({ ...snapshot, createdAt });
-        }));
-        for (const item of items) {
-          item.createdAt = Math.max(item.createdAt, createdAt);
-          this.freshItemIds.add(item.id);
-        }
-        snapshot.createdAt = Math.max(snapshot.createdAt, createdAt);
+        const lifetime = this.lifetime(Date.now());
+        const refreshedSnapshot = { ...snapshot, stateEpoch: this.options.stateEpoch, ...lifetime };
+        await Promise.all(this.options.writes.map(async write => await write.insertSnapshot(refreshedSnapshot)));
+        Object.assign(snapshot, refreshedSnapshot);
       }
       this.previousSnapshotItemIds = [...snapshot.itemIds];
       return cloneStoredResponsesSnapshot(snapshot);
@@ -116,12 +118,25 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of items) await this.stageInputItem(item);
   }
 
-  async persistOutputItem(row: StoredResponsesItem): Promise<void> {
-    if (!this.writesState) return;
-    const cloned = cloneStoredResponsesItem(row);
-    await this.commitItems([cloned]);
-    this.freshItemIds.add(cloned.id);
-    this.rememberItem(cloned);
+  async persistOutputItem(item: ResponsesOutputItem): Promise<string> {
+    const id = responsesItemId(item);
+    if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
+    if (!this.writesState) return id;
+    const privatePayload = this.getPrivatePayload(id);
+    const row: StoredResponsesItem = {
+      id,
+      apiKeyId: this.apiKeyId,
+      stateEpoch: this.options.stateEpoch,
+      payload: {
+        item,
+        ...(privatePayload !== undefined ? { private: privatePayload } : {}),
+      },
+      contentHash: await hashResponsesItemContent(item),
+      ...this.lifetime(Date.now()),
+    };
+    await this.commitItems([row]);
+    this.rememberItem(row);
+    return id;
   }
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode, outputItemIds: readonly string[]): Promise<void> {
@@ -136,21 +151,15 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return row;
     });
     await this.commitItems(uniqueRows);
-    const staleRows = uniqueRows.filter(row => !this.freshItemIds.has(row.id));
-    if (staleRows.length > 0) {
-      const createdAt = Date.now();
-      await Promise.all(this.options.writes.map(write => write.refreshItems(staleRows, createdAt)));
-      for (const row of staleRows) {
-        row.createdAt = Math.max(row.createdAt, createdAt);
-        this.freshItemIds.add(row.id);
-      }
-    }
-    const snapshotCreatedAt = Math.min(...uniqueRows.map(row => row.createdAt));
+    const snapshotRefreshedAt = Math.min(...uniqueRows.map(row => row.refreshedAt));
+    const snapshotExpiresAt = Math.min(...uniqueRows.map(row => row.expiresAt));
     const snapshot: StoredResponsesSnapshot = {
       id: responseId,
       apiKeyId: this.apiKeyId,
+      stateEpoch: this.options.stateEpoch,
       itemIds,
-      createdAt: snapshotCreatedAt,
+      refreshedAt: snapshotRefreshedAt,
+      expiresAt: snapshotExpiresAt,
     };
     await Promise.all(this.options.writes.map(write => write.insertSnapshot(snapshot)));
   }
@@ -172,7 +181,13 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     let ids = query.ids.filter(id => !this.loadedItems.has(id));
     for (const backing of this.options.reads) {
       if (ids.length === 0 && query.contentHashes.length === 0) return;
-      const results = await backing.lookupItems({ apiKeyId: this.apiKeyId, ids, contentHashes: query.contentHashes });
+      const results = await backing.lookupItems({
+        apiKeyId: this.apiKeyId,
+        stateEpoch: this.options.stateEpoch,
+        activeAt: this.activeAt,
+        ids,
+        contentHashes: query.contentHashes,
+      });
       for (const item of results) this.rememberItem(item);
       ids = ids.filter(id => !this.loadedItems.has(id));
     }
@@ -198,12 +213,12 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       const created: StoredResponsesItem = {
         id,
         apiKeyId: this.apiKeyId,
+        stateEpoch: this.options.stateEpoch,
         payload: { item },
         contentHash: await hashResponsesItemContent(item),
-        createdAt: Date.now(),
+        ...this.lifetime(Date.now()),
       };
       this.stagedInputItemIds.push(id);
-      this.freshItemIds.add(id);
       this.rememberItem(created);
       return;
     }
@@ -218,19 +233,19 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const row: StoredResponsesItem = {
       id: createResponsesStorageKey(),
       apiKeyId: this.apiKeyId,
+      stateEpoch: this.options.stateEpoch,
       payload: { item },
       contentHash,
-      createdAt: Date.now(),
+      ...this.lifetime(Date.now()),
     };
     this.stagedInputItemIds.push(row.id);
-    this.freshItemIds.add(row.id);
     this.rememberItem(row);
   }
 
   private rememberItem(row: StoredResponsesItem): void {
     const cloned = cloneStoredResponsesItem(row);
     const existing = this.loadedItems.get(cloned.id);
-    if (existing !== undefined && existing.createdAt >= cloned.createdAt) return;
+    if (existing !== undefined && existing.refreshedAt >= cloned.refreshedAt) return;
     this.loadedItems.set(cloned.id, cloned);
     const byHash = this.loadedByContentHash.get(cloned.contentHash);
     if (byHash === undefined || compareResponsesItemsByFreshness(cloned, byHash) < 0) {
@@ -239,7 +254,13 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {
-    const pending = rows.flatMap(row => {
+    const lifetime = this.lifetime(Date.now());
+    const currentRows = rows.map(row => ({
+      ...row,
+      stateEpoch: this.options.stateEpoch,
+      ...lifetime,
+    }));
+    const pending = currentRows.flatMap(row => {
       if (!this.committedItemIds.has(row.id)) return [row];
       const committed = this.loadedItems.get(row.id);
       if (committed === undefined) throw new Error(`Committed Responses item disappeared from request state: ${row.id}`);
@@ -248,7 +269,16 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     });
     if (pending.length === 0) return;
     for (const write of this.options.writes) await write.insertItems(pending);
-    for (const row of pending) this.committedItemIds.add(row.id);
+    for (const row of pending) {
+      this.committedItemIds.add(row.id);
+      this.rememberItem(row);
+    }
+  }
+
+  private lifetime(refreshedAt: number): Pick<StoredResponsesItem, 'refreshedAt' | 'expiresAt'> {
+    return this.options.retentionSeconds === null
+      ? { refreshedAt, expiresAt: Number.MAX_SAFE_INTEGER }
+      : responsesStateLifetime(refreshedAt, this.options.retentionSeconds);
   }
 }
 
@@ -257,8 +287,8 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
 
   async lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]> {
     const [byId, byContentHash] = await Promise.all([
-      this.getRepo().responsesItems.lookupMany(query.apiKeyId, query.ids),
-      this.getRepo().responsesItems.lookupManyByContentHash(query.apiKeyId, query.contentHashes),
+      this.getRepo().responsesItems.lookupActiveMany(query.apiKeyId, query.stateEpoch, query.ids, query.activeAt),
+      this.getRepo().responsesItems.lookupActiveManyByContentHash(query.apiKeyId, query.stateEpoch, query.contentHashes, query.activeAt),
     ]);
     const rows = new Map<string, StoredResponsesItem>();
     for (const row of [...byId, ...byContentHash]) rows.set(scopedResponsesKey(row.apiKeyId, row.id), row);
@@ -266,15 +296,11 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
   }
 
   async insertItems(items: readonly StoredResponsesItem[]): Promise<void> {
-    await this.getRepo().responsesItems.insertMany(items);
+    await this.getRepo().responsesItems.insertMany(items, Date.now());
   }
 
-  async refreshItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void> {
-    await this.getRepo().responsesItems.refreshMany(items, createdAt);
-  }
-
-  async lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
-    return await this.getRepo().responsesSnapshots.lookup(apiKeyId, id);
+  async lookupSnapshot(query: Pick<StatefulResponsesItemLookup, 'apiKeyId' | 'stateEpoch' | 'activeAt'>, id: string): Promise<StoredResponsesSnapshot | null> {
+    return await this.getRepo().responsesSnapshots.lookupActive(query.apiKeyId, query.stateEpoch, id, query.activeAt);
   }
 
   async insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
@@ -306,40 +332,51 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     for (const [key, item] of pending) this.items.set(key, cloneStoredResponsesItem(item));
     for (const item of items) {
       const stored = this.items.get(scopedResponsesKey(item.apiKeyId, item.id))!;
-      stored.createdAt = Math.max(stored.createdAt, item.createdAt);
+      if (item.refreshedAt >= stored.refreshedAt) {
+        stored.refreshedAt = item.refreshedAt;
+        stored.expiresAt = item.expiresAt;
+      }
     }
   }
 
-  async refreshItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void> {
-    const existing = items.map(item => this.items.get(scopedResponsesKey(item.apiKeyId, item.id)));
-    const missingIndex = existing.findIndex(item => item === undefined);
-    if (missingIndex !== -1) {
-      throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
-    }
-    for (const item of existing) item!.createdAt = Math.max(item!.createdAt, createdAt);
-  }
-
-  lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
-    const snapshot = this.snapshots.get(scopedResponsesKey(apiKeyId, id));
+  lookupSnapshot(query: Pick<StatefulResponsesItemLookup, 'apiKeyId'>, id: string): Promise<StoredResponsesSnapshot | null> {
+    const snapshot = this.snapshots.get(scopedResponsesKey(query.apiKeyId, id));
     return Promise.resolve(snapshot === undefined ? null : cloneStoredResponsesSnapshot(snapshot));
   }
 
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
     const key = scopedResponsesKey(snapshot.apiKeyId, snapshot.id);
     const existing = this.snapshots.get(key);
-    if (existing === undefined || snapshot.createdAt >= existing.createdAt) {
+    if (existing === undefined || snapshot.refreshedAt >= existing.refreshedAt) {
       this.snapshots.set(key, cloneStoredResponsesSnapshot(snapshot));
     }
     return Promise.resolve();
   }
 }
 
-export const createResponsesHttpStore = (apiKeyId: string, store: boolean | undefined): StatefulResponsesStore => {
-  const backing = new RepoStatefulResponsesBacking(getRepo);
-  const writes = store === false ? [] : [backing];
+export interface ResponsesStatePolicy {
+  readonly apiKeyId: string;
+  readonly stateEpoch: string;
+  readonly retentionSeconds: number;
+}
+
+export const responsesStatePolicyFromApiKey = (
+  apiKey: Pick<ApiKey, 'id' | 'responsesStateEpoch' | 'responsesRetentionSeconds'>,
+): ResponsesStatePolicy => ({
+  apiKeyId: apiKey.id,
+  stateEpoch: apiKey.responsesStateEpoch,
+  retentionSeconds: apiKey.responsesRetentionSeconds,
+});
+
+export const createResponsesHttpStore = (policy: ResponsesStatePolicy, store: boolean | undefined): StatefulResponsesStore => {
+  const backing = policy.retentionSeconds === 0 ? null : new RepoStatefulResponsesBacking(getRepo);
+  const reads = backing === null ? [] : [backing];
+  const writes = backing === null || store === false ? [] : [backing];
   return new LayeredStatefulResponsesStore({
-    apiKeyId,
-    reads: [backing],
+    apiKeyId: policy.apiKeyId,
+    stateEpoch: policy.stateEpoch,
+    retentionSeconds: policy.retentionSeconds === 0 ? null : policy.retentionSeconds,
+    reads,
     writes,
   });
 };
@@ -351,21 +388,24 @@ export const createResponsesHttpStore = (apiKeyId: string, store: boolean | unde
 // per-attempt state in memory and reads/writes nothing durable, keeping the
 // store present on every chat ctx.
 export const createNonResponsesSourceStore = (apiKeyId: string): StatefulResponsesStore =>
-  new LayeredStatefulResponsesStore({ apiKeyId, reads: [], writes: [] });
+  new LayeredStatefulResponsesStore({ apiKeyId, stateEpoch: '', retentionSeconds: null, reads: [], writes: [] });
 
 export const createResponsesWsSession = (): {
-  createStore(apiKeyId: string, store: boolean | undefined): StatefulResponsesStore;
+  createStore(policy: ResponsesStatePolicy, store: boolean | undefined): StatefulResponsesStore;
 } => {
   const local = new MemoryStatefulResponsesBacking();
-  const durable = new RepoStatefulResponsesBacking(getRepo);
   return {
-    createStore(apiKeyId: string, store: boolean | undefined): StatefulResponsesStore {
+    createStore(policy: ResponsesStatePolicy, store: boolean | undefined): StatefulResponsesStore {
+      const durable = policy.retentionSeconds === 0 ? null : new RepoStatefulResponsesBacking(getRepo);
       // Session-local state is the first store:true collision gate. Writing it
       // first prevents a rejected local history from creating a durable row.
-      const writes = store === false ? [local] : [local, durable];
+      const reads = durable === null ? [local] : [local, durable];
+      const writes = durable === null || store === false ? [local] : [local, durable];
       return new LayeredStatefulResponsesStore({
-        apiKeyId,
-        reads: [local, durable],
+        apiKeyId: policy.apiKeyId,
+        stateEpoch: policy.stateEpoch,
+        retentionSeconds: policy.retentionSeconds === 0 ? null : policy.retentionSeconds,
+        reads,
         writes,
       });
     },

@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
 import { wrapNativeResponsesClientOutput } from './client-output.ts';
-import { createResponsesWsSession } from './items/store.ts';
+import { createResponsesWsSession, responsesStatePolicyFromApiKey } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
@@ -240,7 +240,7 @@ const handleClientMessage = async (
       method: 'WS',
       model: payload.model,
       backgroundScheduler,
-    }, apiKeyId => session.createStore(apiKeyId, payload.store ?? undefined));
+    }, () => session.createStore(responsesStatePolicyFromApiKey(apiKeyFromContext(c)), payload.store ?? undefined));
 
     let result;
     try {
