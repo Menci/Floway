@@ -25,21 +25,23 @@ type StoredResponsesPayloadJson =
 const INLINE_PAYLOAD_LIMIT_BYTES = 64 * 1024;
 const HOUR_MS = 60 * 60 * 1000;
 
-// Root under which every stored-payload file lives, regardless of expiry hour.
-// The replace path deletes this whole tree alongside the D1 rows it clears.
-const RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v2/expires/';
+const RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v2/objects/';
 const LEGACY_RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v1/expires/';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-export const serializeStoredResponsesPayload = async (
+export interface PreparedStoredResponsesPayload {
+  payloadJson: string;
+  file: { key: string; body: Uint8Array } | null;
+}
+
+export const prepareStoredResponsesPayload = async (
   id: string,
   apiKeyId: string,
   stateEpoch: string,
-  expiresAt: number,
   payload: StoredResponsesItemPayload,
-): Promise<string> => {
+): Promise<PreparedStoredResponsesPayload> => {
   const rawBytes = encoder.encode(JSON.stringify(payload));
   const gzippedBytes = await gzipBytes(rawBytes);
 
@@ -49,7 +51,9 @@ export const serializeStoredResponsesPayload = async (
     encoding: 'gzip',
     payload: bytesToBase64(gzippedBytes),
   } satisfies StoredResponsesPayloadJson);
-  if (encoder.encode(inlineJson).byteLength <= INLINE_PAYLOAD_LIMIT_BYTES) return inlineJson;
+  if (encoder.encode(inlineJson).byteLength <= INLINE_PAYLOAD_LIMIT_BYTES) {
+    return { payloadJson: inlineJson, file: null };
+  }
 
   // File body holds the gzipped payload bytes only. The descriptor in D1's
   // `payload_json` column carries version, storage discriminator, encoding,
@@ -64,10 +68,9 @@ export const serializeStoredResponsesPayload = async (
   // The digest keeps integrity/content identity visible, while the nonce gives
   // each pre-SQL write exclusive cleanup ownership. A losing concurrent write
   // can then delete its object without racing a later winner that stored the
-  // same item bytes under the same expiry bucket.
-  const key = `${responsesItemPayloadExpiryBucketPrefix(expiresAt)}${apiKeyHash}/${stateEpoch}/${itemScopeHash}/${sha256}-${randomFileNonce()}.gz`;
-  await getFileProvider().put(key, gzippedBytes);
-  return JSON.stringify({
+  // same item bytes.
+  const key = `${RESPONSES_ITEMS_FILE_ROOT}${apiKeyHash}/${stateEpoch}/${itemScopeHash}/${sha256}-${randomFileNonce()}.gz`;
+  const payloadJson = JSON.stringify({
     version: 1,
     storage: 'file',
     encoding: 'gzip',
@@ -75,6 +78,11 @@ export const serializeStoredResponsesPayload = async (
     sha256,
     byteLength: gzippedBytes.byteLength,
   } satisfies StoredResponsesPayloadJson);
+  return { payloadJson, file: { key, body: gzippedBytes } };
+};
+
+export const writePreparedStoredResponsesPayload = async (prepared: PreparedStoredResponsesPayload): Promise<void> => {
+  if (prepared.file !== null) await getFileProvider().put(prepared.file.key, prepared.file.body);
 };
 
 export const parseStoredResponsesPayload = async (
@@ -185,22 +193,18 @@ const base64ToBytes = (base64: string): Uint8Array => {
   return bytes;
 };
 
-export const deleteResponsesItemPayloadExpiryBucket = async (hourStart: number): Promise<void> => {
-  await getFileProvider().deletePrefix(responsesItemPayloadExpiryBucketPrefix(hourStart));
-};
-
 export const deleteLegacyResponsesItemPayloadExpiryBucket = async (hourStart: number): Promise<void> => {
   await getFileProvider().deletePrefix(expiryBucketPrefix(LEGACY_RESPONSES_ITEMS_FILE_ROOT, hourStart));
+};
+
+export const deleteAllLegacyResponsesItemPayloadFiles = async (): Promise<void> => {
+  await getFileProvider().deletePrefix(LEGACY_RESPONSES_ITEMS_FILE_ROOT);
 };
 
 // Drop every spilled payload file. Paired with a `deleteAll` over the
 // responses_state_items rows so a full replace/clear does not orphan R2 objects.
 export const deleteAllResponsesItemPayloadFiles = async (): Promise<void> => {
   await getFileProvider().deletePrefix(RESPONSES_ITEMS_FILE_ROOT);
-};
-
-export const responsesItemPayloadExpiryBucketPrefix = (hourTimestamp: number): string => {
-  return expiryBucketPrefix(RESPONSES_ITEMS_FILE_ROOT, hourTimestamp);
 };
 
 const expiryBucketPrefix = (root: string, hourTimestamp: number): string => {
