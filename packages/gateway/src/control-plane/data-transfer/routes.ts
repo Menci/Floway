@@ -819,8 +819,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       // backoff rows behind would cool-down freshly imported proxies that
       // happen to reuse a deleted id. Same intent as wiping sessions.
       repo.proxyBackoffs.deleteAll(),
-      repo.responsesSnapshots.deleteAll(),
-      repo.responsesItems.deleteAll(),
       repo.users.deleteAll(),
     ];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
