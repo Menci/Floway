@@ -37,7 +37,8 @@ const sweepExpiredDumps = async (): Promise<void> => {
 
 export const runScheduledMaintenance = async (): Promise<void> => {
   const nowMs = Date.now();
-  await runSweep('responsesState.sweep', () => sweepResponsesState(nowMs));
+  const responsesStateHealthy = await runSweep('responsesState.sweep', () => sweepResponsesState(nowMs));
+  if (!responsesStateHealthy) return;
   await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
   await runSweep('dumps.sweepExpired', () => sweepExpiredDumps());
 };

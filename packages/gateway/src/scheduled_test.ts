@@ -68,9 +68,10 @@ test('runScheduledMaintenance keeps subsequent sweeps running when one top-level
 test('runScheduledMaintenance keeps spilled payloads when item-row deletion fails', async () => {
   const { repo } = await setupAppTest();
   const files = new MemoryFileProvider();
+  const imageSweep = vi.fn(async () => {});
   initFileProvider(files);
-  initImageCacheStore(noopImageCache);
-  installDumpStubs(initDumpStore, initDumpBroker);
+  initImageCacheStore({ ...noopImageCache, sweepExpired: imageSweep });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   const key = 'responses-items/v1/expires/2000/01/01/00/key/item/payload.gz';
   await files.put(key, new Uint8Array([1]));
   await repo.responsesMaintenance.setNextExpiryHour(Date.UTC(2000, 0, 1));
@@ -84,4 +85,7 @@ test('runScheduledMaintenance keeps spilled payloads when item-row deletion fail
   }
 
   assertEquals(await files.get(key), new Uint8Array([1]));
+  assertEquals(imageSweep.mock.calls.length, 0);
+  assertEquals(dumps.purgedAll.length, 0);
+  assertEquals(dumps.purgedExpired.length, 0);
 });

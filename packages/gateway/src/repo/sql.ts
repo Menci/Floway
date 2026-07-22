@@ -1078,7 +1078,12 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       if (descriptor === undefined || descriptor.expiresAt <= now) throw new Error(`Responses item disappeared after insert: ${item.id}`);
       assertSameResponsesItemDescriptor(item, descriptor);
     }
-    const stale = unique.filter(item => current.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!.refreshedAt < item.refreshedAt);
+    const stale = unique.flatMap(item => {
+      const descriptor = current.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!;
+      return descriptor.refreshedAt < item.refreshedAt
+        ? [{ ...item, payloadFileKey: descriptor.payloadFileKey }]
+        : [];
+    });
     if (stale.length > 0) {
       const byLifetime = Map.groupBy(stale, item => `${item.refreshedAt}\0${item.expiresAt}`);
       for (const group of byLifetime.values()) {
