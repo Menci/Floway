@@ -9,6 +9,7 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
 import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { testResponsesStateLifetime, testResponsesStatePolicy, TEST_RESPONSES_STATE_EPOCH } from '../../../test-helpers/responses-state.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -91,12 +92,15 @@ const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredRes
   const { type, ...itemOverrides } = overrides;
   const row: StoredResponsesItem = {
     apiKeyId: API_KEY_ID,
+    stateEpoch: TEST_RESPONSES_STATE_EPOCH,
     contentHash: `hash-${overrides.id}`,
+    payloadHash: `payload-hash-${overrides.id}`,
+    payloadFileKey: null,
     payload: { item: { type, id: overrides.id } },
-    createdAt: 1_000,
+    ...testResponsesStateLifetime(1_000),
     ...itemOverrides,
   };
-  await repo.responsesItems.insertMany([row]);
+  await repo.responsesItems.insertMany([row], 0);
   return row;
 };
 
@@ -116,7 +120,7 @@ test('generate native success leaves source-edge state ownership to the caller',
   }));
 
   const candidate = makeCandidate(callResponses);
-  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true);
   const ctx = makeGatewayCtx(store);
 
   const result = await responsesAttempt.generate({
@@ -156,7 +160,7 @@ test('generate treats a translated Responses payload as opaque to native affinit
     };
   });
   const candidate = makeCandidate(callResponses);
-  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true);
   const ctx = makeGatewayCtx(store);
   const carrier = await ctx.affinity.codec.wrap(
     undefined,
@@ -221,7 +225,7 @@ test('generate applies role compatibility flags in target-chain order', async ()
         { type: 'message', role: 'system', content: 'inline instructions' },
       ],
     }),
-    ctx: makeGatewayCtx(createResponsesHttpStore(API_KEY_ID, false)),
+    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), false)),
     candidate,
     headers: new Headers(),
   });
@@ -305,7 +309,7 @@ test('generate defers role promotion until after translation to Chat Completions
         { type: 'message', role: 'system', content: 'inline instructions' },
       ],
     }),
-    ctx: makeGatewayCtx(createResponsesHttpStore(API_KEY_ID, false)),
+    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), false)),
     candidate,
     headers: new Headers(),
   });
@@ -334,7 +338,7 @@ test('generate passes non-events provider result through unchanged', async () =>
   const candidate = makeCandidate(callResponses);
   const result = await responsesAttempt.generate({
     payload: makePayload(),
-    ctx: makeGatewayCtx(createResponsesHttpStore(API_KEY_ID, true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true)),
     candidate,
     headers: new Headers(),
   });
@@ -375,7 +379,7 @@ test('compact returns the clean upstream result for source-edge affinity and sto
   });
 
   const candidate = makeCandidate(callResponses);
-  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true);
   const result = await responsesAttempt.invoke({
     payload: makePayload({
       input: [
@@ -448,7 +452,7 @@ test('generate inherits headers and injects external image loading across transl
         content: [{ type: 'input_image', image_url: 'https://example.com/image.png', detail: 'auto' }],
       }],
     }),
-    ctx: makeGatewayCtx(createResponsesHttpStore(API_KEY_ID, true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true)),
     candidate,
     headers: new Headers({ 'x-test': 'abc' }),
   });
@@ -528,7 +532,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   });
   const candidate = makeCandidate(callResponses, new Set(['responses-web-search-shim']));
 
-  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true);
   await store.loadInputItems([{ type: 'web_search_call', id: storedId }], []);
   const ctx = makeGatewayCtx(store);
   const carrier = await ctx.affinity.codec.wrap(
@@ -605,7 +609,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
     headers: upstreamHeaders,
   }));
   const candidate = makeCandidate(callResponses);
-  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true);
   const result = await responsesAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(store),

@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
-import { parseStoredResponsesPayload, serializeStoredResponsesPayload, sweepExpiredResponsesItemPayloadFiles } from './responses-payload.ts';
+import { deleteResponsesItemPayloadExpiryBucket, parseStoredResponsesPayload, serializeStoredResponsesPayload } from './responses-payload.ts';
+import { TEST_RESPONSES_STATE_EPOCH } from '../test-helpers/responses-state.ts';
 import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -18,7 +19,7 @@ const incompressibleString = (approxBytes: number): string => {
 test('the reserved private payload field round-trips through both inline and file storage', async () => {
   initFileProvider(new MemoryFileProvider());
 
-  const inline = await serializeStoredResponsesPayload('msg_inline', 'key-test', 0, {
+  const inline = await serializeStoredResponsesPayload('msg_inline', 'key-test', TEST_RESPONSES_STATE_EPOCH, 0, {
     item: { type: 'web_search_call', id: 'ws_x' },
     private: { results: [{ url: 'https://example.test', title: 'kept' }] },
   });
@@ -29,7 +30,7 @@ test('the reserved private payload field round-trips through both inline and fil
 
   // A payload past the inline limit spills its body to the file provider; the
   // private slot must survive that path too.
-  const spilled = await serializeStoredResponsesPayload('msg_spilled', 'key-test', 0, {
+  const spilled = await serializeStoredResponsesPayload('msg_spilled', 'key-test', TEST_RESPONSES_STATE_EPOCH, 0, {
     item: { type: 'message', id: 'msg_big', content: incompressibleString(96 * 1024) },
     private: { results: 'preserved' },
   });
@@ -43,10 +44,10 @@ test('identical spilled payload writes get distinct owned keys that retain the c
   const createdAt = Date.UTC(2026, 4, 28, 12);
 
   const content = incompressibleString(96 * 1024);
-  const first = await serializeStoredResponsesPayload('msg_same_id', 'key_a', createdAt, {
+  const first = await serializeStoredResponsesPayload('msg_same_id', 'key_a', TEST_RESPONSES_STATE_EPOCH, createdAt, {
     item: { type: 'message', id: 'msg_big', content },
   });
-  const second = await serializeStoredResponsesPayload('msg_same_id', 'key_a', createdAt, {
+  const second = await serializeStoredResponsesPayload('msg_same_id', 'key_a', TEST_RESPONSES_STATE_EPOCH, createdAt, {
     item: { type: 'message', id: 'msg_big', content },
   });
   const firstDescriptor = JSON.parse(first) as { key: string; sha256: string };
@@ -68,7 +69,7 @@ test.each([
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const content = incompressibleString(96 * 1024);
-  const serialized = await serializeStoredResponsesPayload(id, 'key_a', 0, {
+  const serialized = await serializeStoredResponsesPayload(id, 'key_a', TEST_RESPONSES_STATE_EPOCH, 0, {
     item: { type: 'message', id, content },
   });
   const descriptor = JSON.parse(serialized) as { key: string };
@@ -86,7 +87,7 @@ test.each([
 test('inline payload round-trips through gzip+base64 and the descriptor advertises the encoding', async () => {
   initFileProvider(new MemoryFileProvider());
 
-  const serialized = await serializeStoredResponsesPayload('msg_round', 'key-test', 0, {
+  const serialized = await serializeStoredResponsesPayload('msg_round', 'key-test', TEST_RESPONSES_STATE_EPOCH, 0, {
     item: { type: 'message', id: 'msg_round', content: 'hello world' },
   });
   const descriptor = JSON.parse(serialized) as Record<string, unknown>;
@@ -105,7 +106,7 @@ test('spilled payload file body is gzip-compressed and the descriptor records th
   initFileProvider(files);
 
   const original = incompressibleString(96 * 1024);
-  const serialized = await serializeStoredResponsesPayload('msg_file_gz', 'key_a', 0, {
+  const serialized = await serializeStoredResponsesPayload('msg_file_gz', 'key_a', TEST_RESPONSES_STATE_EPOCH, 0, {
     item: { type: 'message', id: 'msg_file_gz', content: original },
   });
   const descriptor = JSON.parse(serialized) as Record<string, unknown>;
@@ -128,7 +129,7 @@ test('a tampered file body fails its hash check', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
 
-  const serialized = await serializeStoredResponsesPayload('msg_tampered', 'key_a', 0, {
+  const serialized = await serializeStoredResponsesPayload('msg_tampered', 'key_a', TEST_RESPONSES_STATE_EPOCH, 0, {
     item: { type: 'message', id: 'msg_tampered', content: incompressibleString(96 * 1024) },
   });
   const descriptor = JSON.parse(serialized) as { key: string; byteLength: number };
@@ -142,25 +143,15 @@ test('a tampered file body fails its hash check', async () => {
   await assertRejects(() => parseStoredResponsesPayload('msg_tampered', serialized), Error, 'hash mismatch');
 });
 
-test('sweepExpiredResponsesItemPayloadFiles deletes every elapsed hour bucket and leaves the current and future buckets intact', async () => {
+test('deletes exactly the expiry-hour bucket drained by the D1 janitor', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
 
-  // Two buckets older than the previous hour, the previous hour, the current
-  // hour, and a future hour. A bucket is expired iff its hour is strictly
-  // before the current hour, so only the first three should be deleted.
-  await files.put('responses-items/v1/expires/2026/06/27/08/scope/a.json', new Uint8Array([1]));
-  await files.put('responses-items/v1/expires/2026/06/27/09/scope/b.json', new Uint8Array([2]));
   await files.put('responses-items/v1/expires/2026/06/27/10/scope/c.json', new Uint8Array([3]));
   await files.put('responses-items/v1/expires/2026/06/27/11/scope/d.json', new Uint8Array([4]));
-  await files.put('responses-items/v1/expires/2026/06/27/12/scope/e.json', new Uint8Array([5]));
 
-  // now=2026-06-27T11:30 — the current hour is 11.
-  await sweepExpiredResponsesItemPayloadFiles(Date.UTC(2026, 5, 27, 11, 30));
+  await deleteResponsesItemPayloadExpiryBucket(Date.UTC(2026, 5, 27, 10));
 
-  assertEquals(await files.get('responses-items/v1/expires/2026/06/27/08/scope/a.json'), null);
-  assertEquals(await files.get('responses-items/v1/expires/2026/06/27/09/scope/b.json'), null);
   assertEquals(await files.get('responses-items/v1/expires/2026/06/27/10/scope/c.json'), null);
   assertEquals([...(await files.get('responses-items/v1/expires/2026/06/27/11/scope/d.json'))!], [4]);
-  assertEquals([...(await files.get('responses-items/v1/expires/2026/06/27/12/scope/e.json'))!], [5]);
 });

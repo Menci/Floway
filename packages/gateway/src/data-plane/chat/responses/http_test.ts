@@ -5,6 +5,7 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
+import { TEST_RESPONSES_STATE_EPOCH } from '../../../test-helpers/responses-state.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -446,8 +447,8 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
   const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
   assertEquals(body.object, 'response.compaction');
   assert(isFlowayResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
-  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id), null);
-  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id)), []);
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, TEST_RESPONSES_STATE_EPOCH, body.id), null);
+  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, TEST_RESPONSES_STATE_EPOCH, body.output.map(item => item.id)), []);
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
