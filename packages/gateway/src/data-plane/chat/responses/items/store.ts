@@ -189,7 +189,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
     const id = responsesItemId(item);
     if (id !== null) {
-      const row = this.getItemById(id);
+      const row = this.loadedItems.get(id);
       if (row !== undefined) {
         this.stagedInputItemIds.push(row.id);
         return;
@@ -198,7 +198,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       const created: StoredResponsesItem = {
         id,
         apiKeyId: this.apiKeyId,
-        payload: { item: structuredClone(item) },
+        payload: { item },
         contentHash: await hashResponsesItemContent(item),
         createdAt: Date.now(),
       };
@@ -218,7 +218,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const row: StoredResponsesItem = {
       id: createResponsesStorageKey(),
       apiKeyId: this.apiKeyId,
-      payload: { item: structuredClone(item) },
+      payload: { item },
       contentHash,
       createdAt: Date.now(),
     };
@@ -241,7 +241,13 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {
-    const pending = rows.filter(row => !this.committedItemIds.has(row.id));
+    const pending = rows.flatMap(row => {
+      if (!this.committedItemIds.has(row.id)) return [row];
+      const committed = this.loadedItems.get(row.id);
+      if (committed === undefined) throw new Error(`Committed Responses item disappeared from request state: ${row.id}`);
+      assertSameStoredResponsesItem(row, committed);
+      return [];
+    });
     if (pending.length === 0) return;
     for (const write of this.options.writes) await write.insertItems(pending);
     for (const row of pending) this.committedItemIds.add(row.id);
@@ -356,6 +362,8 @@ export const createResponsesWsSession = (): {
   const durable = new RepoStatefulResponsesBacking(getRepo);
   return {
     createStore(apiKeyId: string, store: boolean | undefined): StatefulResponsesStore {
+      // Session-local state is the first store:true collision gate. Writing it
+      // first prevents a rejected local history from creating a durable row.
       const writes = store === false ? [local] : [local, durable];
       return new LayeredStatefulResponsesStore({
         apiKeyId,

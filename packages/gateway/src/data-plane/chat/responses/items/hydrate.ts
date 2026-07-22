@@ -17,12 +17,12 @@ const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore): H
     return { item };
   }
   return {
-    item: structuredClone(stored.payload.item) as ResponsesInputItem,
-    ...(stored.payload.private !== undefined ? { privatePayload: structuredClone(stored.payload.private) } : {}),
+    item: stored.payload.item as ResponsesInputItem,
+    ...(stored.payload.private !== undefined ? { privatePayload: stored.payload.private } : {}),
   };
 };
 
-export interface HydratedResponsesPayload {
+interface HydratedResponsesPayload {
   readonly payload: CanonicalResponsesPayload;
   readonly privatePayloads: ReadonlyMap<string, unknown>;
 }

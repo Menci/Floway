@@ -60,6 +60,8 @@ export const serializeStoredResponsesPayload = async (
   const sha256 = await sha256Hex(gzippedBytes);
   const expiresAt = createdAt + RESPONSES_STATE_TTL_MS;
   const apiKeyHashPrefix = (await sha256Hex(encoder.encode(apiKeyId))).slice(0, 16);
+  // Producer IDs are opaque and may contain separators or unbounded text, so
+  // only their API-key-scoped digest is allowed into the object path.
   const itemScopeHash = await sha256Hex(encoder.encode(`${apiKeyId}\0${id}`));
   // The digest keeps integrity/content identity visible, while the nonce gives
   // each pre-SQL write exclusive cleanup ownership. A losing concurrent write

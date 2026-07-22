@@ -33,7 +33,7 @@ export const wrapResponsesClientOutput = async function* (
       id,
       apiKeyId: store.apiKeyId,
       payload: {
-        item: structuredClone(item),
+        item,
         ...(privatePayload !== undefined ? { private: privatePayload } : {}),
       },
       contentHash: await hashResponsesItemContent(item),
