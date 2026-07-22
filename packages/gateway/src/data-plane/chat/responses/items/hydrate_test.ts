@@ -12,6 +12,7 @@ describe('Responses stored-item hydration', () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     const id = 'rs_producer';
+    const now = Date.now();
     const row: StoredResponsesItem = {
       id,
       apiKeyId: 'key-a',
@@ -23,9 +24,9 @@ describe('Responses stored-item hydration', () => {
       contentHash: 'hash',
       payloadHash: 'payload-hash',
       payloadFileKey: null,
-      ...testResponsesStateLifetime(1_000),
+      ...testResponsesStateLifetime(now),
     };
-    await repo.responsesItems.insertMany([row], 0);
+    await repo.responsesItems.insertMany([row], now);
     const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
     const payload = { model: 'model', input: [{ type: 'item_reference' as const, id: row.id }] };
     await store.loadInputItems(payload.input, payload.input);

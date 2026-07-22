@@ -90,6 +90,7 @@ const installRepo = () => {
 
 const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredResponsesItem> & Pick<StoredResponsesItem, 'id'> & { type: string }): Promise<StoredResponsesItem> => {
   const { type, ...itemOverrides } = overrides;
+  const now = Date.now();
   const row: StoredResponsesItem = {
     apiKeyId: API_KEY_ID,
     stateEpoch: TEST_RESPONSES_STATE_EPOCH,
@@ -97,10 +98,10 @@ const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredRes
     payloadHash: `payload-hash-${overrides.id}`,
     payloadFileKey: null,
     payload: { item: { type, id: overrides.id } },
-    ...testResponsesStateLifetime(1_000),
+    ...testResponsesStateLifetime(now),
     ...itemOverrides,
   };
-  await repo.responsesItems.insertMany([row], 0);
+  await repo.responsesItems.insertMany([row], now);
   return row;
 };
 
