@@ -67,8 +67,8 @@ const { default: AgentSetupCard } = await import('./AgentSetupCard.vue');
 const model = (id: string, over: Partial<ControlPlaneModel> = {}): ControlPlaneModel => buildRealModel({ id, ...over });
 
 const defaultKeys: ApiKey[] = [
-  { id: 'key-1', name: 'Primary', key: 'first-key', created_at: '2026-01-01T00:00:00Z', last_used_at: null, upstream_ids: null, dump_retention_seconds: null },
-  { id: 'key-2', name: 'CI', key: 'second-key', created_at: '2026-01-01T00:00:00Z', last_used_at: null, upstream_ids: null, dump_retention_seconds: null },
+  { id: 'key-1', name: 'Primary', key: 'first-key', created_at: '2026-01-01T00:00:00Z', last_used_at: null, upstream_ids: null, dump_retention_seconds: null, responses_retention_seconds: 0 },
+  { id: 'key-2', name: 'CI', key: 'second-key', created_at: '2026-01-01T00:00:00Z', last_used_at: null, upstream_ids: null, dump_retention_seconds: null, responses_retention_seconds: 0 },
 ];
 
 const defaultModels: ControlPlaneModel[] = [
