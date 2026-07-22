@@ -1,6 +1,7 @@
 export interface FileProvider {
   put(key: string, body: Uint8Array): Promise<void>;
   get(key: string): Promise<Uint8Array | null>;
+  deleteKeys(keys: readonly string[]): Promise<void>;
   deletePrefix(prefix: string): Promise<void>;
   // Returns every key whose name starts with prefix. Implementations enumerate
   // exhaustively (paginating internally where the backing store requires it);
@@ -28,6 +29,10 @@ export class MemoryFileProvider implements FileProvider {
 
   async get(key: string): Promise<Uint8Array | null> {
     return this.files.get(key)?.slice() ?? null;
+  }
+
+  async deleteKeys(keys: readonly string[]): Promise<void> {
+    for (const key of keys) this.files.delete(key);
   }
 
   async deletePrefix(prefix: string): Promise<void> {

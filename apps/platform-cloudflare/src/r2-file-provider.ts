@@ -27,6 +27,12 @@ export class R2FileProvider implements FileProvider {
     return object ? new Uint8Array(await object.arrayBuffer()) : null;
   }
 
+  async deleteKeys(keys: readonly string[]): Promise<void> {
+    for (let index = 0; index < keys.length; index += R2_BATCH_LIMIT) {
+      await this.bucket.delete(keys.slice(index, index + R2_BATCH_LIMIT));
+    }
+  }
+
   async deletePrefix(prefix: string): Promise<void> {
     // Refuse the entire bucket: a stray empty-string prefix would otherwise
     // wipe every spilled payload across tenants. Matches FsFileProvider.
@@ -34,7 +40,7 @@ export class R2FileProvider implements FileProvider {
     let cursor: string | undefined;
     do {
       const page = await this.bucket.list({ prefix, cursor, limit: R2_BATCH_LIMIT });
-      if (page.objects.length > 0) await this.bucket.delete(page.objects.map(object => object.key));
+      await this.deleteKeys(page.objects.map(object => object.key));
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
   }

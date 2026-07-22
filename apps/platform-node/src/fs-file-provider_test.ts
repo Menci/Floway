@@ -58,6 +58,17 @@ test('deletePrefix removes everything under the prefix and is no-op for missing'
   await provider.deletePrefix('cleanup');
 }));
 
+test('deleteKeys removes exact files and ignores missing keys', () => withTempRoot(async root => {
+  const provider = new FsFileProvider(root);
+  await provider.put('cleanup/a.bin', new Uint8Array([1]));
+  await provider.put('cleanup/ab.bin', new Uint8Array([2]));
+
+  await provider.deleteKeys(['cleanup/a.bin', 'missing.bin']);
+
+  assertEquals(await provider.get('cleanup/a.bin'), null);
+  assertEquals(await provider.get('cleanup/ab.bin'), new Uint8Array([2]));
+}));
+
 test('put creates intermediate directories', () => withTempRoot(async root => {
   const provider = new FsFileProvider(root);
   await provider.put('deeply/nested/path/file.bin', new Uint8Array([42]));
