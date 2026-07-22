@@ -636,7 +636,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<{ deleted: number; fileKeys: string[] }> {
+  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number> {
     let changes = 0;
     for (const [key, row] of this.store) {
       if (changes >= limit) break;
@@ -644,7 +644,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       this.store.delete(key);
       changes += 1;
     }
-    return Promise.resolve({ deleted: changes, fileKeys: [] });
+    return Promise.resolve(changes);
   }
 
   deleteAll(): Promise<void> {

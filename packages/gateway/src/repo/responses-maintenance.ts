@@ -1,6 +1,5 @@
 import { getRepo } from './index.ts';
 import { deleteResponsesItemPayloadExpiryBucket } from './responses-payload.ts';
-import { getFileProvider } from '@floway-dev/platform';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DELETE_BATCH_SIZE = 100;
@@ -29,8 +28,7 @@ export const sweepResponsesState = async (now: number): Promise<void> => {
       DELETE_BATCH_SIZE,
     );
     mutations += 1;
-    for (const key of deletedItems.fileKeys) await getFileProvider().deletePrefix(key);
-    if (deletedItems.deleted === DELETE_BATCH_SIZE) continue;
+    if (deletedItems === DELETE_BATCH_SIZE) continue;
     if (mutations >= MAX_D1_MUTATIONS_PER_TICK) return;
 
     await deleteResponsesItemPayloadExpiryBucket(expiryHour);

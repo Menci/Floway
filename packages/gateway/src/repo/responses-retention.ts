@@ -1,3 +1,5 @@
+import type { ApiKey } from './types.ts';
+
 export const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
 
 export const generateResponsesStateEpoch = (): string => {
@@ -25,4 +27,3 @@ export const withResponsesRetention = (apiKey: ApiKey, responsesRetentionSeconds
       : {}),
   };
 };
-import type { ApiKey } from './types.ts';

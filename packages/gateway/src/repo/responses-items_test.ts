@@ -143,7 +143,7 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', stateEpoch: TEST_RESPONSES_STATE_EPOCH, itemIds: [old.id], ...testResponsesStateLifetime(1_000) });
     await repo.responsesSnapshots.insert({ id: 'resp_fresh', apiKeyId: 'key-a', stateEpoch: TEST_RESPONSES_STATE_EPOCH, itemIds: [fresh.id], ...testResponsesStateLifetime(3_000) });
 
-    expect((await repo.responsesItems.deleteExpiredHour(expiresAt(1_000), expiresAt(2_000), 100)).deleted).toBe(1);
+    expect(await repo.responsesItems.deleteExpiredHour(expiresAt(1_000), expiresAt(2_000), 100)).toBe(1);
     expect(await repo.responsesSnapshots.deleteExpiredHour(expiresAt(1_000), expiresAt(2_000), 100)).toBe(1);
     expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [old.id, fresh.id])).toEqual([fresh]);
     expect(await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_old')).toBeNull();

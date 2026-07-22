@@ -1348,8 +1348,8 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     return persisted;
   }
 
-  async deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<{ deleted: number; fileKeys: string[] }> {
-    const { results } = await this.db
+  async deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number> {
+    const result = await this.db
       .prepare(
         `DELETE FROM responses_state_items
          WHERE rowid IN (
@@ -1357,15 +1357,11 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
            WHERE expires_at >= ? AND expires_at < ?
            ORDER BY expires_at, rowid
            LIMIT ?
-         )
-         RETURNING payload_file_key`,
+         )`,
       )
       .bind(hourStart, hourEnd, limit)
-      .all<{ payload_file_key: string | null }>();
-    return {
-      deleted: results.length,
-      fileKeys: results.flatMap(row => row.payload_file_key === null ? [] : [row.payload_file_key]),
-    };
+      .run();
+    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {

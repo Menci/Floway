@@ -395,10 +395,7 @@ export interface ResponsesItemsRepo {
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void>;
-  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<{
-    deleted: number;
-    fileKeys: string[];
-  }>;
+  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
