@@ -661,11 +661,11 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number> {
+  deleteExpired(now: number, limit: number): Promise<number> {
     let changes = 0;
     for (const [key, row] of this.store) {
       if (changes >= limit) break;
-      if (row.expiresAt < hourStart || row.expiresAt >= hourEnd) continue;
+      if (row.expiresAt > now) continue;
       this.store.delete(key);
       changes += 1;
     }
@@ -700,11 +700,11 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     return Promise.resolve();
   }
 
-  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number> {
+  deleteExpired(now: number, limit: number): Promise<number> {
     let changes = 0;
     for (const [key, snapshot] of this.store) {
       if (changes >= limit) break;
-      if (snapshot.expiresAt < hourStart || snapshot.expiresAt >= hourEnd) continue;
+      if (snapshot.expiresAt > now) continue;
       this.store.delete(key);
       changes += 1;
     }
@@ -718,15 +718,12 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
 }
 
 class MemoryResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
-  private nextExpiryHour = 0;
-
-  getNextExpiryHour(): Promise<number> {
-    return Promise.resolve(this.nextExpiryHour);
+  claimPayloadFiles(_token: string, _now: number, _staleClaimBefore: number, _limit: number): Promise<string[]> {
+    return Promise.resolve([]);
   }
 
-  setNextExpiryHour(hourStart: number): Promise<void> {
-    this.nextExpiryHour = hourStart;
-    return Promise.resolve();
+  acknowledgePayloadFiles(_token: string): Promise<number> {
+    return Promise.resolve(0);
   }
 
   getLegacyNextExpiryHour(): Promise<null> {
@@ -745,8 +742,12 @@ class MemoryResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
     return Promise.resolve(0);
   }
 
-  completeLegacyCleanupIfEmpty(): Promise<boolean> {
-    return Promise.resolve(true);
+  isLegacyCleanupReady(_now: number): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+
+  completeLegacyCleanup(): Promise<void> {
+    return Promise.resolve();
   }
 }
 

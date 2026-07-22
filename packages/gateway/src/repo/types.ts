@@ -397,11 +397,11 @@ export interface ResponsesItemsRepo {
   lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], now: number): Promise<StoredResponsesItem[]>;
   insertMany(items: readonly StoredResponsesItem[], now: number): Promise<void>;
   refreshMany(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash' | 'payloadFileKey'>[],
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash'>[],
     refreshedAt: number,
     expiresAt: number,
   ): Promise<void>;
-  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
+  deleteExpired(now: number, limit: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -418,18 +418,19 @@ export interface ResponsesSnapshotsRepo {
   lookup(apiKeyId: string, stateEpoch: string, id: string): Promise<StoredResponsesSnapshot | null>;
   lookupActive(apiKeyId: string, stateEpoch: string, id: string, now: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  deleteExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
+  deleteExpired(now: number, limit: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
 export interface ResponsesMaintenanceRepo {
-  getNextExpiryHour(): Promise<number>;
-  setNextExpiryHour(hourStart: number): Promise<void>;
+  claimPayloadFiles(token: string, now: number, staleClaimBefore: number, limit: number): Promise<string[]>;
+  acknowledgePayloadFiles(token: string): Promise<number>;
   getLegacyNextExpiryHour(): Promise<number | null>;
   setLegacyNextExpiryHour(hourStart: number): Promise<void>;
   deleteLegacyItemsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
   deleteLegacySnapshotsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
-  completeLegacyCleanupIfEmpty(): Promise<boolean>;
+  isLegacyCleanupReady(now: number): Promise<boolean>;
+  completeLegacyCleanup(): Promise<void>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
