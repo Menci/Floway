@@ -3,8 +3,9 @@ import { expect, it } from 'vitest';
 
 import { app as gatewayApp } from '../../app.ts';
 import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-helpers.ts';
-import { isResponsesResponseId } from '../chat/responses/response-id.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+const isFlowayResponseId = (value: string): boolean => /^resp_[0-9a-f]{32}$/u.test(value);
 
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
 
@@ -175,7 +176,7 @@ it('chains previous_response_id on the Codex Responses WebSocket', async () => {
         response: { model: 'gpt-direct-responses', input: 'codex first', store: false },
       }));
       const firstResponseId = responseDoneId(await firstDone);
-      expect(isResponsesResponseId(firstResponseId)).toBe(true);
+      expect(isFlowayResponseId(firstResponseId)).toBe(true);
 
       const secondDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
       client.send(JSON.stringify({
@@ -188,7 +189,7 @@ it('chains previous_response_id on the Codex Responses WebSocket', async () => {
         },
       }));
       const secondResponseId = responseDoneId(await secondDone);
-      expect(isResponsesResponseId(secondResponseId)).toBe(true);
+      expect(isFlowayResponseId(secondResponseId)).toBe(true);
     }),
   );
 

@@ -181,7 +181,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private async stageInputItem(item: ResponsesInputItem): Promise<void> {
     if (item.type === 'compaction_trigger') return;
     if (item.type === 'item_reference') {
-      const row = this.getItemById(item.id);
+      const row = this.loadedItems.get(item.id);
       if (row === undefined) throw new Error(`Cannot stage unresolved Responses item_reference id=${item.id}`);
       this.stagedInputItemIds.push(row.id);
       return;

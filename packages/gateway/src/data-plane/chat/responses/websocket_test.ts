@@ -2,7 +2,6 @@ import type { ExecutionContext } from 'hono';
 import { test, vi } from 'vitest';
 
 import { hashResponsesItemContent } from './items/identity.ts';
-import { isResponsesResponseId } from './response-id.ts';
 import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
 import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
@@ -11,6 +10,8 @@ import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } fro
 import { FakeTime } from '../../../test-time.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+const isFlowayResponseId = (value: string): boolean => /^resp_[0-9a-f]{32}$/u.test(value);
 
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
 
@@ -254,7 +255,7 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
       assertExists(completed);
       const flowayResponseId = (completed.response as { id?: unknown } | undefined)?.id;
       assertEquals(typeof flowayResponseId, 'string');
-      assert(isResponsesResponseId(flowayResponseId as string), 'expected Floway-minted resp_ id, not the upstream blob');
+      assert(isFlowayResponseId(flowayResponseId as string), 'expected Floway-minted resp_ id, not the upstream blob');
       assertEquals(messages.at(-1), {
         type: 'response.done',
         event_id: 'evt_1',
@@ -760,7 +761,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       const firstMessages = await firstDone;
       const firstResponseId = responseDoneId(firstMessages);
 
-      assert(isResponsesResponseId(firstResponseId), 'expected a Floway response id');
+      assert(isFlowayResponseId(firstResponseId), 'expected a Floway response id');
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId), null);
       const firstOutput = firstMessages.find(message =>
         message.type === 'response.output_item.done'

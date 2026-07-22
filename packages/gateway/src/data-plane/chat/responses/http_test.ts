@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
-import { isResponsesResponseId } from './response-id.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -10,6 +9,8 @@ import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type Proto
 import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+
+const isFlowayResponseId = (value: string): boolean => /^resp_[0-9a-f]{32}$/u.test(value);
 
 // Mock the resolver seam so each test hands the http entry exactly the
 // provider candidates it wants, optionally with an alias-rules overlay
@@ -181,7 +182,7 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   // Wrap layer mints its own response id; upstream's "resp_test" is discarded.
   const completedMatch = body.match(/"id":"(resp_[A-Za-z0-9_-]+)"/);
   assert(completedMatch !== null, 'expected a Floway-minted resp_ id in the SSE body');
-  assert(isResponsesResponseId(completedMatch[1]));
+  assert(isFlowayResponseId(completedMatch[1]));
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
@@ -311,7 +312,7 @@ test('POST /v1/responses canonicalizes and promotes an implicit system message',
   assertEquals(response.status, 200);
   const responseBody = await response.text();
   const responseId = responseBody.match(/"id":"(resp_[A-Za-z0-9_-]+)"/)?.[1];
-  assert(responseId !== undefined && isResponsesResponseId(responseId), 'expected store:false to retain a Floway response id');
+  assert(responseId !== undefined && isFlowayResponseId(responseId), 'expected store:false to retain a Floway response id');
   assertEquals(observedBody?.input, [
     { type: 'message', role: 'developer', content: 'rules' },
     { type: 'message', role: 'user', content: 'hello' },
@@ -345,7 +346,7 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
   const body = await response.json() as ResponsesResult;
-  assert(isResponsesResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
+  assert(isFlowayResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
   assertEquals(body.status, 'completed');
 });
 
@@ -442,7 +443,7 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
   const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
   assertEquals(body.object, 'response.compaction');
-  assert(isResponsesResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
+  assert(isFlowayResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
   assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id), null);
   assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id)), []);
 });
