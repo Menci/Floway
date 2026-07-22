@@ -14,6 +14,9 @@ export const cloneStoredResponsesSnapshot = (snapshot: StoredResponsesSnapshot):
 
 export const scopedResponsesKey = (apiKeyId: string, id: string): string => `${apiKeyId}\0${id}`;
 
+export const persistedResponsesKey = (apiKeyId: string, stateEpoch: string, id: string): string =>
+  `${apiKeyId}\0${stateEpoch}\0${id}`;
+
 export const compareResponsesItemsByFreshness = (
   a: Pick<StoredResponsesItem, 'id' | 'refreshedAt'>,
   b: Pick<StoredResponsesItem, 'id' | 'refreshedAt'>,
