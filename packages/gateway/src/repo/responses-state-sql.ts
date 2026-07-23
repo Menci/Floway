@@ -1,4 +1,5 @@
 import { assertSameStoredResponsesItem, scopedResponsesKey } from './responses-clone.ts';
+import { hashResponsesJson } from './responses-hash.ts';
 import {
   prepareStoredResponsesPayload,
   writePreparedStoredResponsesPayload,
@@ -14,10 +15,10 @@ import type {
 } from './types.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 
-const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, payload_json, content_hash, payload_file_key, refreshed_at';
+const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at';
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 80;
-const RESPONSES_INSERT_CHUNK_SIZE = 16;
-const RESPONSES_REFRESH_CHUNK_SIZE = 80;
+const RESPONSES_INSERT_CHUNK_SIZE = 14;
+const RESPONSES_REFRESH_CHUNK_SIZE = 45;
 const FILE_STAGE_GRACE_MS = 60 * 60 * 1000;
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
@@ -50,6 +51,7 @@ interface ResponsesItemRow {
   api_key_id: string;
   payload_json: string;
   content_hash: string;
+  payload_hash: string;
   payload_file_key: string | null;
   refreshed_at: number;
 }
@@ -65,6 +67,7 @@ const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredRespo
 interface PreparedResponsesItem {
   item: StoredResponsesItem;
   payload: PreparedStoredResponsesPayload;
+  payloadHash: string;
 }
 
 export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
@@ -142,6 +145,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const prepared = await mapSequentially(pending, async item => ({
       item,
       payload: await prepareStoredResponsesPayload(item.id, item.apiKeyId, item.payload),
+      payloadHash: await hashResponsesJson(item.payload),
     }));
     await this.stageFiles(prepared);
     for (const entry of prepared) await writePreparedStoredResponsesPayload(entry.payload);
@@ -150,7 +154,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const policyAt = Date.now();
     for (let index = 0; index < prepared.length; index += RESPONSES_INSERT_CHUNK_SIZE) {
       const chunk = prepared.slice(index, index + RESPONSES_INSERT_CHUNK_SIZE);
-      const values = chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+      const values = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
       statements.push(this.db
         .prepare(
           `WITH incoming (${RESPONSES_ITEM_COLUMNS}) AS (VALUES ${values})
@@ -163,6 +167,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
            ON CONFLICT (id, api_key_id) DO UPDATE SET
              payload_json = excluded.payload_json,
              content_hash = excluded.content_hash,
+             payload_hash = excluded.payload_hash,
              payload_file_key = excluded.payload_file_key,
              refreshed_at = excluded.refreshed_at
            WHERE responses_items.refreshed_at < ?
@@ -175,11 +180,12 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
              )`,
         )
         .bind(
-          ...chunk.flatMap(({ item, payload }) => [
+          ...chunk.flatMap(({ item, payload, payloadHash }) => [
             item.id,
             item.apiKeyId,
             payload.payloadJson,
             item.contentHash,
+            payloadHash,
             payload.file?.key ?? null,
             item.refreshedAt,
           ]),
@@ -232,7 +238,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async refreshMany(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[],
+    items: readonly StoredResponsesItem[],
     refreshedAt: number,
     activeAfter: number,
   ): Promise<void> {
@@ -243,11 +249,17 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const statements: SqlPreparedStatement[] = [];
     const policyAt = Date.now();
     for (const [apiKeyId, scoped] of idsByApiKey) {
-      for (let index = 0; index < scoped.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
-        const chunk = scoped.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
+      const expected = await mapSequentially(scoped, async item => ({
+        item,
+        payloadHash: await hashResponsesJson(item.payload),
+      }));
+      for (let index = 0; index < expected.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
+        const chunk = expected.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
+        const values = chunk.map(() => '(?, ?)').join(', ');
         statements.push(this.db
           .prepare(
-            `UPDATE responses_items SET refreshed_at = MAX(refreshed_at, ?)
+            `WITH expected (id, payload_hash) AS (VALUES ${values})
+             UPDATE responses_items SET refreshed_at = MAX(refreshed_at, ?)
              WHERE api_key_id = ?
                AND refreshed_at >= ?
                AND EXISTS (
@@ -257,19 +269,32 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
                    AND api_keys.responses_retention_seconds > 0
                    AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
                )
-               AND id IN (${chunk.map(() => '?').join(', ')})`,
+               AND EXISTS (
+                 SELECT 1 FROM expected
+                 WHERE expected.id = responses_items.id
+                   AND expected.payload_hash = responses_items.payload_hash
+               )`,
           )
-          .bind(refreshedAt, apiKeyId, activeAfter, policyAt, ...chunk.map(item => item.id)));
+          .bind(
+            ...chunk.flatMap(({ item, payloadHash }) => [item.id, payloadHash]),
+            refreshedAt,
+            apiKeyId,
+            activeAfter,
+            policyAt,
+          ));
       }
     }
     await runStatements(this.db, statements);
     const persisted = await this.lookupCurrentPolicyItems(items, activeAfter, policyAt);
     const missing = items.find(item => !persisted.has(scopedResponsesKey(item.apiKeyId, item.id)));
     if (missing !== undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${missing.id}`);
+    for (const item of items) {
+      assertSameStoredResponsesItem(item, persisted.get(scopedResponsesKey(item.apiKeyId, item.id))!);
+    }
   }
 
   private async lookupCurrentPolicyItems(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[],
+    items: readonly StoredResponsesItem[],
     activeAfter: number,
     policyAt: number,
   ): Promise<Map<string, StoredResponsesItem>> {
@@ -286,6 +311,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
                responses_items.api_key_id,
                responses_items.payload_json,
                responses_items.content_hash,
+               responses_items.payload_hash,
                responses_items.payload_file_key,
                responses_items.refreshed_at
              FROM responses_items

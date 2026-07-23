@@ -14,7 +14,7 @@ interface StatefulResponsesItemLookup {
 interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]>;
   insertItems(items: readonly StoredResponsesItem[]): Promise<void>;
-  refreshItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], refreshedAt: number): Promise<void>;
+  refreshItems(items: readonly StoredResponsesItem[], refreshedAt: number): Promise<void>;
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
 }
@@ -273,7 +273,7 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
     await this.getRepo().responsesItems.insertMany(items, this.activeAfter);
   }
 
-  async refreshItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], refreshedAt: number): Promise<void> {
+  async refreshItems(items: readonly StoredResponsesItem[], refreshedAt: number): Promise<void> {
     await this.getRepo().responsesItems.refreshMany(items, refreshedAt, this.activeAfter);
   }
 
@@ -314,13 +314,16 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     }
   }
 
-  async refreshItems(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], refreshedAt: number): Promise<void> {
+  async refreshItems(items: readonly StoredResponsesItem[], refreshedAt: number): Promise<void> {
     const existing = items.map(item => this.items.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const missingIndex = existing.findIndex(item => item === undefined);
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
     }
-    for (const item of existing) item!.refreshedAt = Math.max(item!.refreshedAt, refreshedAt);
+    for (let index = 0; index < existing.length; index += 1) {
+      assertSameStoredResponsesItem(items[index], existing[index]!);
+      existing[index]!.refreshedAt = Math.max(existing[index]!.refreshedAt, refreshedAt);
+    }
   }
 
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
