@@ -30,7 +30,7 @@ const responseItem = (id: string, refreshedAt: number, apiKeyId = 'key-a'): Stor
   id,
   apiKeyId,
   payload: { item: { type: 'message', id, role: 'assistant', content: [] } },
-  contentHash: `hash-${id}`,
+  itemHash: `hash-${id}`,
   refreshedAt,
 });
 
