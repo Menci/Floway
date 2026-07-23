@@ -316,6 +316,12 @@ BEGIN
   )
   ON CONFLICT (key_id) DO UPDATE SET
     due_at = MIN(dump_maintenance_keys.due_at, excluded.due_at),
+    floor_cursor = CASE
+      WHEN json_extract(NEW.meta_json, '$.startedAt') < COALESCE((
+        SELECT started_after FROM dump_visibility_floor WHERE key_id = NEW.key_id
+      ), 0) THEN 0
+      ELSE dump_maintenance_keys.floor_cursor
+    END,
     revision = dump_maintenance_keys.revision + 1;
 END;
 

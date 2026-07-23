@@ -79,7 +79,7 @@ const openDb = async (): Promise<SqlDatabase> => {
         json_extract(NEW.request_body_descriptor, '$.key'), json_extract(NEW.response_body_descriptor, '$.key')
       );
       INSERT INTO dump_maintenance_keys (key_id, due_at) VALUES (NEW.key_id, 0)
-      ON CONFLICT (key_id) DO UPDATE SET due_at = 0, revision = dump_maintenance_keys.revision + 1;
+      ON CONFLICT (key_id) DO UPDATE SET due_at = 0, floor_cursor = 0, revision = dump_maintenance_keys.revision + 1;
     END;
     CREATE TRIGGER dump_records_retire_files AFTER DELETE ON dump_records BEGIN
       INSERT OR IGNORE INTO dump_file_gc (file_key, eligible_at)
