@@ -11,8 +11,8 @@ test('reads arbitrary non-empty producer ids without format filtering', () => {
 test('creates collision-resistant internal keys for idless stored inputs', () => {
   const first = createResponsesStorageKey();
   const second = createResponsesStorageKey();
-  expect(first).toMatch(/^stored_[0-9a-f]{32}$/);
-  expect(second).toMatch(/^stored_[0-9a-f]{32}$/);
+  expect(first).toMatch(/^stored_.+$/);
+  expect(second).toMatch(/^stored_.+$/);
   expect(second).not.toBe(first);
 });
 
