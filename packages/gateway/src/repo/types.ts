@@ -389,7 +389,8 @@ export interface ResponsesItemsRepo {
   lookupManyByContentHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
   insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void>;
   refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], refreshedAt: number, activeAfter: number): Promise<void>;
-  deleteExpired(now: number): Promise<number>;
+  deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
+  findOldestRefresh(apiKeyId: string): Promise<number | null>;
   deleteAll(): Promise<void>;
 }
 
@@ -403,13 +404,28 @@ export interface StoredResponsesSnapshot {
 export interface ResponsesSnapshotsRepo {
   lookup(apiKeyId: string, id: string, activeAfter: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  deleteExpired(now: number): Promise<number>;
+  deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
+  findOldestRefresh(apiKeyId: string): Promise<number | null>;
   deleteAll(): Promise<void>;
 }
 
 export interface SpilledFilesRepo {
   claimCollectible(token: string, now: number, staleClaimedBefore: number, limit: number): Promise<string[]>;
   acknowledge(token: string): Promise<number>;
+}
+
+export type ExpirationDomain = 'responses' | 'dumps';
+
+export interface ExpirationSweepClaim {
+  domain: ExpirationDomain;
+  keyId: string;
+  revision: number;
+}
+
+export interface ExpirationSweepsRepo {
+  schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void>;
+  claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null>;
+  complete(token: string, expectedRevision: number, nextDueAt: number | null): Promise<void>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
@@ -433,5 +449,6 @@ export interface Repo {
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
   spilledFiles: SpilledFilesRepo;
+  expirationSweeps: ExpirationSweepsRepo;
   agentSetup: AgentSetupRepository;
 }

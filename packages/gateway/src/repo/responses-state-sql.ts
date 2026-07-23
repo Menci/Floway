@@ -6,6 +6,9 @@ import {
   type PreparedStoredResponsesPayload,
 } from './responses-payload.ts';
 import type {
+  ExpirationDomain,
+  ExpirationSweepClaim,
+  ExpirationSweepsRepo,
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
   SpilledFilesRepo,
@@ -243,21 +246,35 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     if (missing !== undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${missing.id}`);
   }
 
-  async deleteExpired(now: number): Promise<number> {
+  async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
     const result = await this.db
       .prepare(
-        `DELETE FROM responses_items
-         WHERE NOT EXISTS (
-           SELECT 1 FROM api_keys
-           WHERE api_keys.id = responses_items.api_key_id
-             AND api_keys.deleted_at IS NULL
-             AND api_keys.responses_retention_seconds > 0
-             AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+        `DELETE FROM responses_items WHERE rowid IN (
+           SELECT stored.rowid
+           FROM responses_items AS stored
+           LEFT JOIN api_keys ON api_keys.id = stored.api_key_id
+           WHERE stored.api_key_id = ?
+             AND (
+               api_keys.id IS NULL
+               OR api_keys.deleted_at IS NOT NULL
+               OR api_keys.responses_retention_seconds = 0
+               OR stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
+             )
+           ORDER BY stored.refreshed_at, stored.rowid
+           LIMIT ?
          )`,
       )
-      .bind(now)
+      .bind(apiKeyId, now, limit)
       .run();
     return result.meta.changes ?? 0;
+  }
+
+  async findOldestRefresh(apiKeyId: string): Promise<number | null> {
+    const row = await this.db
+      .prepare('SELECT refreshed_at FROM responses_items WHERE api_key_id = ? ORDER BY refreshed_at LIMIT 1')
+      .bind(apiKeyId)
+      .first<{ refreshed_at: number }>();
+    return row?.refreshed_at ?? null;
   }
 
   async deleteAll(): Promise<void> {
@@ -314,21 +331,35 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       .run();
   }
 
-  async deleteExpired(now: number): Promise<number> {
+  async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
     const result = await this.db
       .prepare(
-        `DELETE FROM responses_snapshots
-         WHERE NOT EXISTS (
-           SELECT 1 FROM api_keys
-           WHERE api_keys.id = responses_snapshots.api_key_id
-             AND api_keys.deleted_at IS NULL
-             AND api_keys.responses_retention_seconds > 0
-             AND responses_snapshots.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+        `DELETE FROM responses_snapshots WHERE rowid IN (
+           SELECT stored.rowid
+           FROM responses_snapshots AS stored
+           LEFT JOIN api_keys ON api_keys.id = stored.api_key_id
+           WHERE stored.api_key_id = ?
+             AND (
+               api_keys.id IS NULL
+               OR api_keys.deleted_at IS NOT NULL
+               OR api_keys.responses_retention_seconds = 0
+               OR stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
+             )
+           ORDER BY stored.refreshed_at, stored.rowid
+           LIMIT ?
          )`,
       )
-      .bind(now)
+      .bind(apiKeyId, now, limit)
       .run();
     return result.meta.changes ?? 0;
+  }
+
+  async findOldestRefresh(apiKeyId: string): Promise<number | null> {
+    const row = await this.db
+      .prepare('SELECT refreshed_at FROM responses_snapshots WHERE api_key_id = ? ORDER BY refreshed_at LIMIT 1')
+      .bind(apiKeyId)
+      .first<{ refreshed_at: number }>();
+    return row?.refreshed_at ?? null;
   }
 
   async deleteAll(): Promise<void> {
@@ -365,5 +396,66 @@ export class SqlSpilledFilesRepo implements SpilledFilesRepo {
   async acknowledge(token: string): Promise<number> {
     const result = await this.db.prepare('DELETE FROM spilled_files WHERE claim_token = ?').bind(token).run();
     return result.meta.changes ?? 0;
+  }
+}
+
+export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
+  constructor(private readonly db: SqlDatabase) {}
+
+  async schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO expiration_sweeps (domain, key_id, due_at) VALUES (?, ?, ?)
+         ON CONFLICT (domain, key_id) DO UPDATE SET
+           due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
+           revision = expiration_sweeps.revision + 1`,
+      )
+      .bind(domain, keyId, dueAt)
+      .run();
+  }
+
+  async claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null> {
+    await this.db
+      .prepare(
+        `UPDATE expiration_sweeps
+         SET claim_token = ?, claimed_at = ?
+         WHERE (domain, key_id) = (
+           SELECT domain, key_id FROM expiration_sweeps
+           WHERE due_at <= ? AND (claim_token IS NULL OR claimed_at < ?)
+           ORDER BY due_at, domain, key_id
+           LIMIT 1
+         )`,
+      )
+      .bind(token, now, now, staleClaimedBefore)
+      .run();
+    const row = await this.db
+      .prepare('SELECT domain, key_id, revision FROM expiration_sweeps WHERE claim_token = ?')
+      .bind(token)
+      .first<{ domain: ExpirationDomain; key_id: string; revision: number }>();
+    return row === null ? null : { domain: row.domain, keyId: row.key_id, revision: row.revision };
+  }
+
+  async complete(token: string, expectedRevision: number, nextDueAt: number | null): Promise<void> {
+    if (nextDueAt === null) {
+      await this.db
+        .prepare('DELETE FROM expiration_sweeps WHERE claim_token = ? AND revision = ?')
+        .bind(token, expectedRevision)
+        .run();
+      await this.db
+        .prepare('UPDATE expiration_sweeps SET claim_token = NULL, claimed_at = NULL WHERE claim_token = ?')
+        .bind(token)
+        .run();
+      return;
+    }
+    await this.db
+      .prepare(
+        `UPDATE expiration_sweeps
+         SET due_at = CASE WHEN revision = ? THEN ? ELSE MIN(due_at, ?) END,
+             claim_token = NULL,
+             claimed_at = NULL
+         WHERE claim_token = ?`,
+      )
+      .bind(expectedRevision, nextDueAt, nextDueAt, token)
+      .run();
   }
 }

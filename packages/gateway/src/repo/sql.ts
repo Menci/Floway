@@ -1,11 +1,12 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
-import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo, SqlSpilledFilesRepo } from './responses-state-sql.ts';
+import { SqlExpirationSweepsRepo, SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo, SqlSpilledFilesRepo } from './responses-state-sql.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  ExpirationSweepsRepo,
   AgentSetupMutation,
   AgentSetupRecord,
   AgentSetupRenewal,
@@ -1667,6 +1668,7 @@ export class SqlRepo implements Repo {
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
   spilledFiles: SpilledFilesRepo;
+  expirationSweeps: ExpirationSweepsRepo;
   agentSetup: AgentSetupRepository;
 
   constructor(db: SqlDatabase) {
@@ -1685,6 +1687,7 @@ export class SqlRepo implements Repo {
     this.responsesItems = new SqlResponsesItemsRepo(db);
     this.responsesSnapshots = new SqlResponsesSnapshotsRepo(db);
     this.spilledFiles = new SqlSpilledFilesRepo(db);
+    this.expirationSweeps = new SqlExpirationSweepsRepo(db);
     this.agentSetup = new SqlAgentSetupRepo(db);
   }
 }

@@ -13,6 +13,9 @@ import type {
   ApiKey,
   ApiKeyRepo,
   ApiKeyUpdate,
+  ExpirationDomain,
+  ExpirationSweepClaim,
+  ExpirationSweepsRepo,
   AgentSetupMutation,
   AgentSetupRecord,
   AgentSetupRenewal,
@@ -630,9 +633,10 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     for (const item of existing) item!.refreshedAt = Math.max(item!.refreshedAt, refreshedAt);
   }
 
-  async deleteExpired(now: number): Promise<number> {
+  async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
     let changes = 0;
     for (const [key, row] of this.store) {
+      if (row.apiKeyId !== apiKeyId || changes >= limit) continue;
       const apiKey = await this.apiKeys.getById(row.apiKeyId);
       if (
         apiKey === null
@@ -644,6 +648,11 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       }
     }
     return changes;
+  }
+
+  findOldestRefresh(apiKeyId: string): Promise<number | null> {
+    const rows = [...this.store.values()].filter(row => row.apiKeyId === apiKeyId);
+    return Promise.resolve(rows.length === 0 ? null : Math.min(...rows.map(row => row.refreshedAt)));
   }
 
   deleteAll(): Promise<void> {
@@ -671,9 +680,10 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     return Promise.resolve();
   }
 
-  async deleteExpired(now: number): Promise<number> {
+  async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
     let changes = 0;
     for (const [key, snapshot] of this.store) {
+      if (snapshot.apiKeyId !== apiKeyId || changes >= limit) continue;
       const apiKey = await this.apiKeys.getById(snapshot.apiKeyId);
       if (
         apiKey === null
@@ -685,6 +695,11 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       }
     }
     return changes;
+  }
+
+  findOldestRefresh(apiKeyId: string): Promise<number | null> {
+    const rows = [...this.store.values()].filter(row => row.apiKeyId === apiKeyId);
+    return Promise.resolve(rows.length === 0 ? null : Math.min(...rows.map(row => row.refreshedAt)));
   }
 
   deleteAll(): Promise<void> {
@@ -700,6 +715,55 @@ class MemorySpilledFilesRepo implements SpilledFilesRepo {
 
   acknowledge(): Promise<number> {
     return Promise.resolve(0);
+  }
+}
+
+interface MemoryExpirationSweepRow extends ExpirationSweepClaim {
+  dueAt: number;
+  claimToken: string | null;
+  claimedAt: number | null;
+}
+
+class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
+  private readonly rows = new Map<string, MemoryExpirationSweepRow>();
+
+  private key(domain: ExpirationDomain, keyId: string): string {
+    return `${domain}\0${keyId}`;
+  }
+
+  schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {
+    const key = this.key(domain, keyId);
+    const existing = this.rows.get(key);
+    this.rows.set(key, existing === undefined
+      ? { domain, keyId, dueAt, revision: 0, claimToken: null, claimedAt: null }
+      : { ...existing, dueAt: Math.min(existing.dueAt, dueAt), revision: existing.revision + 1 });
+    return Promise.resolve();
+  }
+
+  claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null> {
+    const row = [...this.rows.values()]
+      .filter(candidate => candidate.dueAt <= now && (candidate.claimToken === null || candidate.claimedAt! < staleClaimedBefore))
+      .toSorted((a, b) => a.dueAt - b.dueAt || a.domain.localeCompare(b.domain) || a.keyId.localeCompare(b.keyId))[0];
+    if (row === undefined) return Promise.resolve(null);
+    row.claimToken = token;
+    row.claimedAt = now;
+    return Promise.resolve({ domain: row.domain, keyId: row.keyId, revision: row.revision });
+  }
+
+  complete(token: string, expectedRevision: number, nextDueAt: number | null): Promise<void> {
+    const row = [...this.rows.values()].find(candidate => candidate.claimToken === token);
+    if (row === undefined) return Promise.resolve();
+    const key = this.key(row.domain, row.keyId);
+    if (row.revision === expectedRevision && nextDueAt === null) {
+      this.rows.delete(key);
+      return Promise.resolve();
+    }
+    if (nextDueAt !== null) {
+      row.dueAt = row.revision === expectedRevision ? nextDueAt : Math.min(row.dueAt, nextDueAt);
+    }
+    row.claimToken = null;
+    row.claimedAt = null;
+    return Promise.resolve();
   }
 }
 
@@ -1030,6 +1094,7 @@ export class InMemoryRepo implements Repo {
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
   spilledFiles: SpilledFilesRepo;
+  expirationSweeps: ExpirationSweepsRepo;
   agentSetup: AgentSetupRepository;
 
   constructor() {
@@ -1048,6 +1113,7 @@ export class InMemoryRepo implements Repo {
     this.responsesItems = new MemoryResponsesItemsRepo(this.apiKeys);
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo(this.apiKeys);
     this.spilledFiles = new MemorySpilledFilesRepo();
+    this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.agentSetup = new MemoryAgentSetupRepo();
   }
 }

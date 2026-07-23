@@ -31,4 +31,7 @@ export interface DumpStore {
 
   // Drop records older than `retentionSeconds` for this key. Idempotent.
   purgeExpired(keyId: string, retentionSeconds: number): Promise<void>;
+
+  deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number>;
+  findOldestCreatedAt(keyId: string): Promise<number | null>;
 }
