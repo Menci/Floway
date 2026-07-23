@@ -339,12 +339,14 @@ test('bounded owner backfill skips API keys without persisted owners', async () 
   await repo.apiKeys.save({ ...key(now), id: 'key-empty', key: 'raw-empty', serverSecret: '99'.repeat(32) });
   await repo.responsesItems.insertMany([responseItem('msg-owned', now)], 0);
   await repo.responsesSnapshots.insert({ id: 'resp-owned', apiKeyId: 'key-a', itemIds: ['msg-owned'], refreshedAt: now });
-  await db.prepare('DELETE FROM expiration_sweeps').run();
+  await db.prepare("UPDATE expiration_sweeps SET due_at = ? WHERE domain = 'responses' AND key_id = 'key-a'")
+    .bind(now + 3600_000)
+    .run();
 
   await repo.expirationSweeps.backfillOwners(500);
 
-  expect((await db.prepare('SELECT domain, key_id FROM expiration_sweeps ORDER BY domain, key_id').all()).results)
-    .toEqual([{ domain: 'responses', key_id: 'key-a' }]);
+  expect((await db.prepare('SELECT domain, key_id, due_at FROM expiration_sweeps ORDER BY domain, key_id').all()).results)
+    .toEqual([{ domain: 'responses', key_id: 'key-a', due_at: 0 }]);
   await repo.apiKeys.update('key-empty', { responsesRetentionSeconds: 7200, dumpRetentionSeconds: 7200 });
   expect(await db.prepare("SELECT domain FROM expiration_sweeps WHERE key_id = 'key-empty'").first()).toBeNull();
 });

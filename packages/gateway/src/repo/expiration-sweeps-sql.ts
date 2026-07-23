@@ -92,7 +92,11 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
           `INSERT INTO expiration_sweeps (domain, key_id, due_at)
            SELECT ?, value, 0 FROM json_each(?)
            WHERE true
-           ON CONFLICT (domain, key_id) DO NOTHING`,
+           ON CONFLICT (domain, key_id) DO UPDATE SET
+             due_at = 0,
+             revision = expiration_sweeps.revision + 1
+           WHERE expiration_sweeps.claim_token IS NOT NULL
+              OR expiration_sweeps.due_at > 0`,
         )
         .bind(config.domain, JSON.stringify(keyIds))
         .run();
