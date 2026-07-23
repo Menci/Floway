@@ -146,7 +146,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
+    responsesRetentionSeconds: 30 * 24 * 60 * 60,
   };
   await repo.apiKeys.save(apiKey);
 

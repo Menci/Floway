@@ -37,7 +37,7 @@ describe('StatefulResponsesStore', () => {
       apiKeyId: 'key-a',
       payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
       contentHash: 'output-hash',
-      refreshedAt: 1_000,
+      refreshedAt: Date.now(),
     };
     await writer.persistOutputItem(output);
     await writer.commitSnapshot('resp_saved', 'append', [output.id]);
@@ -60,7 +60,7 @@ describe('StatefulResponsesStore', () => {
       apiKeyId: 'key-a',
       payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
       contentHash: 'output-hash',
-      refreshedAt: 1_000,
+      refreshedAt: Date.now(),
     };
     await store.persistOutputItem(output);
     await store.commitSnapshot('resp_saved', 'append', [output.id]);
@@ -68,7 +68,7 @@ describe('StatefulResponsesStore', () => {
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_saved', 0);
     expect(snapshot?.itemIds).toHaveLength(2);
     const [storedOutput] = await repo.responsesItems.lookupMany('key-a', [output.id], 0);
-    expect(storedOutput).toMatchObject({ ...output, createdAt: snapshot?.refreshedAt });
+    expect(storedOutput).toMatchObject({ ...output, refreshedAt: snapshot?.refreshedAt });
   });
 
   test('replace snapshots persist only their output state', async () => {
@@ -94,15 +94,16 @@ describe('StatefulResponsesStore', () => {
   test('append snapshots refresh the lifetime of every referenced item', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
+    const initialRefreshedAt = Date.now() - 1_000;
     const item = {
       id: 'msg_old',
       apiKeyId: 'key-a',
       payload: { item: { type: 'message', id: 'msg_old', role: 'assistant', content: [] } },
       contentHash: 'old-hash',
-      refreshedAt: 1,
+      refreshedAt: initialRefreshedAt,
     };
     await repo.responsesItems.insertMany([item], 0);
-    await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: 1 });
+    await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: initialRefreshedAt });
     const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
     expect(await store.loadSnapshot('resp_old')).not.toBeNull();
     expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toHaveLength(1);
@@ -110,7 +111,7 @@ describe('StatefulResponsesStore', () => {
     await store.commitSnapshot('resp_new', 'append', []);
 
     const [refreshed] = await repo.responsesItems.lookupMany('key-a', [item.id], 0);
-    expect(refreshed.refreshedAt).toBeGreaterThan(1);
+    expect(refreshed.refreshedAt).toBeGreaterThan(initialRefreshedAt);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_new', 0))?.itemIds).toEqual([item.id]);
     expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toHaveLength(1);
   });
@@ -121,19 +122,20 @@ describe('StatefulResponsesStore', () => {
     const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
     const directInput = { type: 'message' as const, id: 'msg_direct', role: 'user' as const, content: 'direct' };
     const hashedInput = { type: 'message' as const, role: 'user' as const, content: 'hashed' };
+    const initialRefreshedAt = Date.now() - 1_000;
     const directRow = {
       id: directInput.id,
       apiKeyId: 'key-a',
       payload: { item: directInput },
       contentHash: await hashResponsesItemContent(directInput),
-      refreshedAt: 1,
+      refreshedAt: initialRefreshedAt,
     };
     const hashedRow = {
       id: 'msg_hashed',
       apiKeyId: 'key-a',
       payload: { item: hashedInput },
       contentHash: await hashResponsesItemContent(hashedInput),
-      refreshedAt: 1,
+      refreshedAt: initialRefreshedAt,
     };
     await repo.responsesItems.insertMany([directRow, hashedRow], 0);
     await store.loadInputItems([directInput, hashedInput], [directInput, hashedInput]);
@@ -141,7 +143,7 @@ describe('StatefulResponsesStore', () => {
     await store.commitSnapshot('resp_reused', 'append', []);
 
     const refreshed = await repo.responsesItems.lookupMany('key-a', [directRow.id, hashedRow.id], 0);
-    expect(refreshed.every(row => row.refreshedAt > 1)).toBe(true);
+    expect(refreshed.every(row => row.refreshedAt > initialRefreshedAt)).toBe(true);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_reused', 0))?.itemIds).toEqual([directRow.id, hashedRow.id]);
   });
 

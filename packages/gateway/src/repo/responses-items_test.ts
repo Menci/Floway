@@ -159,11 +159,11 @@ test('a collector claim prevents a staged file from being adopted', async () => 
   ).bind(fileKey).run();
   expect(await repo.spilledFiles.claimCollectible('claim-a', 1, 0, 1)).toEqual([fileKey]);
 
-  await expect(db.prepare(
+  expect(() => db.prepare(
     `INSERT INTO responses_items
      (id, api_key_id, payload_json, content_hash, payload_file_key, refreshed_at)
      VALUES ('msg-a', 'key-a', '{"version":1,"storage":"file","encoding":"gzip","sha256":"aa","byteLength":1}', 'hash', ?, 1)`,
-  ).bind(fileKey).run()).rejects.toThrow('not staged');
+  ).bind(fileKey).run()).toThrow('not staged');
 });
 
 test('migration 0065 performs one direct cutover to disabled rolling state', async () => {

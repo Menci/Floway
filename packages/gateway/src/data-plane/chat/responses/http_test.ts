@@ -67,7 +67,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 0,
+  responsesRetentionSeconds: 30 * 24 * 60 * 60,
   ...overrides,
 });
 
