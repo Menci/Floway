@@ -202,6 +202,8 @@ test('FileDumpStore applies retention immediately and retires exact expired file
     const afterExpiredCursor = await store.list('key_x', { limit: 10, before: '01HZZ0000000000000000000A1' });
     assertEquals(afterExpiredCursor, []);
     assertEquals(await store.deleteExpiredBatch('key_x', now + 1, 100), 1);
+    const afterDeletedCursor = await store.list('key_x', { limit: 10, before: '01HZZ0000000000000000000A1' });
+    assertEquals(afterDeletedCursor, []);
     await collectSpilledFiles(now + 1);
   } finally {
     Date.now = originalNow;

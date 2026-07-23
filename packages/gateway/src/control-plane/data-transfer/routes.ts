@@ -805,7 +805,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
 
   if (mode === 'replace') {
     // Disconnect subscribers before the API-key deletion atomically schedules
-    // the retired owners for bounded reclamation. Imported keys use fresh ids,
+    // existing owners for bounded reclamation. Imported keys use fresh ids,
     // so late old accumulators remain isolated on the retired ids.
     for (const k of preImportKeys) {
       await notifyDisabledBestEffort(k.id, 'replace-mode import');

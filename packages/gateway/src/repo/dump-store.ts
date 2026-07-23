@@ -190,6 +190,7 @@ export class FileDumpStore implements DumpStore {
           'SELECT created_at FROM dump_records WHERE key_id = ? AND id = ?',
         ).bind(keyId, beforeId).first<{ created_at: number }>()
       : null;
+    if (beforeId !== null && beforeRow === null) return [];
     const beforeTs = beforeRow?.created_at ?? null;
 
     // Newest-first with a compound (created_at, id) cursor so rows sharing a

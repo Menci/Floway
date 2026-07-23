@@ -238,9 +238,8 @@ export class DumpAccumulator {
   // --- private: persist ---
 
   private async write(response: ResponseSnapshot): Promise<void> {
-    // ULID-from-completedAt keeps id-time and `created_at` agreeing on a row:
-    // ordering off-cursor (decoded ULID timestamp == row creation) matches
-    // ordering on-cursor (the ORDER BY (created_at, id) tie-breaker).
+    // ULID-from-completedAt keeps ids increasing with row creation time; the
+    // random tail provides the deterministic tie-breaker for one millisecond.
     const completedAt = Date.now();
     const recordId = ulid(completedAt);
 

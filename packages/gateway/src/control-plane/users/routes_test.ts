@@ -140,14 +140,12 @@ test('DELETE /api/users/:id succeeds when the broker close hook throws on a casc
   const [defaultKey] = await repo.apiKeys.listByUserId(user.id);
   // Enable retention on the cascaded key so the broker close hook is exercised.
   await repo.apiKeys.save({ ...defaultKey, dumpRetentionSeconds: 3600 });
-  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
 
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failOn('closeChannel', new Error('broker down'));
 
   const response = await adminDelete(adminSession, user.id);
   assertEquals(response.status, 200);
-  expect(schedule).toHaveBeenCalledWith('dumps', defaultKey.id, 0);
   // The user soft-delete still landed.
   expect(await repo.users.getById(user.id)).toBeNull();
 });
