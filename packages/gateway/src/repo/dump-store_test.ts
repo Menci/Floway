@@ -197,7 +197,6 @@ test('FileDumpStore applies retention immediately and retires exact expired file
   const originalNow = Date.now;
   Date.now = () => now + 1;
   try {
-    await store.purgeExpired('key_x', 2 * 3600);
     const left = await store.list('key_x', { limit: 10 });
     assertEquals(left.map(m => m.id), ['01HZZ0000000000000000000A2']);
     assertEquals(await store.deleteExpiredBatch('key_x', now + 1, 100), 1);
@@ -231,7 +230,7 @@ test('growing dump retention can reveal a row not yet physically deleted', async
   }
 });
 
-test('FileDumpStore purgeAll queues bounded owner deletion and exact file collection', async () => {
+test('FileDumpStore retires every disabled owner and collects its exact files', async () => {
   const db = await openDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
@@ -241,7 +240,6 @@ test('FileDumpStore purgeAll queues bounded owner deletion and exact file collec
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)));
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
-  await store.purgeAll('key_x');
   assertEquals((await store.list('key_x', { limit: 10 })).length, 0);
   assertEquals(await store.deleteExpiredBatch('key_x', Date.now(), 100), 2);
   assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE key_id = ?').bind('key_x').first<{ count: number }>())?.count, 0);
@@ -269,12 +267,12 @@ test('a losing dump write leaves only its nonce-owned staged files collectible',
   assertExists(await store.get('key_x', record.meta.id));
 });
 
-test('FileDumpStore.purgeExpired against a never-written key resolves without throwing', async () => {
+test('FileDumpStore expiration against a never-written key resolves without throwing', async () => {
   const db = await openDb();
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
-  await store.purgeExpired('never_written_key', 3600);
   assertEquals((await store.list('never_written_key', { limit: 10 })).length, 0);
+  assertEquals(await store.deleteExpiredBatch('never_written_key', Date.now(), 100), 0);
   assertEquals((await db.prepare("SELECT COUNT(*) AS count FROM dump_records WHERE key_id = 'never_written_key'").first<{ count: number }>())?.count, 0);
 });
 

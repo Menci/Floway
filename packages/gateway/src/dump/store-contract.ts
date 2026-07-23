@@ -25,12 +25,6 @@ export interface DumpStore {
 
   get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null>;
 
-  // Schedule every record for bounded deletion. Idempotent.
-  purgeAll(keyId: string): Promise<void>;
-
-  // Schedule records outside the current retention for bounded deletion.
-  purgeExpired(keyId: string, retentionSeconds: number): Promise<void>;
-
   deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number>;
   findOldestCreatedAt(keyId: string): Promise<number | null>;
 }

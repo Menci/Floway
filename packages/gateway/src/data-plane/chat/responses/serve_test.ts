@@ -1,6 +1,7 @@
 import { afterEach, test, vi } from 'vitest';
 
 import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from './items/store.ts';
+import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from './test-policy.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';
@@ -64,7 +65,7 @@ const installRepo = (): InMemoryRepo => {
     id: API_KEY_ID, userId: 1, name: 'Responses test key', key: 'raw-responses-test',
     serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
     upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 30 * 24 * 60 * 60,
+    responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS,
   });
   return repo;
 };
@@ -73,7 +74,7 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']) =>
   mockChatGatewayCtx({
     apiKeyId: API_KEY_ID,
     wantsStream: true,
-    store: store ?? createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true),
+    store: store ?? createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true),
   });
 
 const makePayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload => ({
@@ -402,7 +403,7 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
   };
   await repo.responsesSnapshots.insert(snapshot);
 
-  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true);
   const expanded = await expandPreviousResponseId(
     makePayload({
       previous_response_id: 'resp_prev',
@@ -557,7 +558,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const payload = makePayload({ model: 'gpt-fast' });
   const result = await responsesServe.generate({
     payload,
-    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true)),
     headers: new Headers(),
   });
 
@@ -583,7 +584,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'gpt-fast' }),
-    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true)),
     headers: new Headers(),
   });
 

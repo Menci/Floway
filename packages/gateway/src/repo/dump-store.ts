@@ -272,26 +272,6 @@ export class FileDumpStore implements DumpStore {
     return { meta, request, response };
   }
 
-  async purgeAll(keyId: string): Promise<void> {
-    await this.scheduleExpiration(keyId);
-  }
-
-  async purgeExpired(keyId: string, _retentionSeconds: number): Promise<void> {
-    await this.scheduleExpiration(keyId);
-  }
-
-  private async scheduleExpiration(keyId: string): Promise<void> {
-    await this.db
-      .prepare(
-        `INSERT INTO expiration_sweeps (domain, key_id, due_at) VALUES ('dumps', ?, 0)
-         ON CONFLICT (domain, key_id) DO UPDATE SET
-           due_at = 0,
-           revision = expiration_sweeps.revision + 1`,
-      )
-      .bind(keyId)
-      .run();
-  }
-
   async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {
     const active = await this.db
       .prepare(

@@ -422,11 +422,15 @@ export interface ExpirationSweepClaim {
   revision: number;
 }
 
+export type ExpirationSweepCompletion =
+  | { kind: 'drained'; nextDueAt: number | null }
+  | { kind: 'partial'; retryAt: number };
+
 export interface ExpirationSweepsRepo {
   backfillDumpKeys(limit: number): Promise<boolean>;
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void>;
   claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null>;
-  complete(token: string, expectedRevision: number, nextDueAt: number | null, advanceOnConflict: boolean): Promise<void>;
+  complete(token: string, expectedRevision: number, completion: ExpirationSweepCompletion): Promise<void>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants

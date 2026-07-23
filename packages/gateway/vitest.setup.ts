@@ -27,8 +27,6 @@ const noopStore: DumpStore = {
   async put(): Promise<void> { /* noop */ },
   async list(): Promise<DumpMetadata[]> { return []; },
   async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },
-  async purgeAll(): Promise<void> { /* noop */ },
-  async purgeExpired(): Promise<void> { /* noop */ },
   async deleteExpiredBatch(): Promise<number> { return 0; },
   async findOldestCreatedAt(): Promise<number | null> { return null; },
 };

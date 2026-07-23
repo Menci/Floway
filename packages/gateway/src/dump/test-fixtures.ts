@@ -30,8 +30,6 @@ type DumpStubFailMethod =
   | 'put'
   | 'list'
   | 'get'
-  | 'purgeAll'
-  | 'purgeExpired'
   | 'publish'
   | 'closeChannel';
 
@@ -40,8 +38,6 @@ export interface DumpStubHandle {
   broker: DumpBroker;
   stored: ReadonlyArray<{ keyId: string; record: StoredDumpRecord }>;
   published: ReadonlyArray<{ keyId: string; meta: DumpMetadata }>;
-  purgedAll: ReadonlyArray<string>;
-  purgedExpired: ReadonlyArray<{ keyId: string; retentionSeconds: number }>;
   closedChannels: ReadonlyArray<{ keyId: string; reason: string }>;
   seed: (keyId: string, record: StoredDumpRecord) => void;
   failOn: (method: DumpStubFailMethod, err: Error) => void;
@@ -55,8 +51,6 @@ export const installDumpStubs = (
   const subscribers = new Map<string, Array<(meta: DumpMetadata | null) => void>>();
   const stored: Array<{ keyId: string; record: StoredDumpRecord }> = [];
   const published: Array<{ keyId: string; meta: DumpMetadata }> = [];
-  const purgedAll: string[] = [];
-  const purgedExpired: Array<{ keyId: string; retentionSeconds: number }> = [];
   const closedChannels: Array<{ keyId: string; reason: string }> = [];
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
 
@@ -89,17 +83,6 @@ export const installDumpStubs = (
     async get(keyId, id) {
       if (throws.get) throw throws.get;
       return (records.get(keyId) ?? []).find(r => r.meta.id === id) ?? null;
-    },
-    async purgeAll(keyId) {
-      if (throws.purgeAll) throw throws.purgeAll;
-      purgedAll.push(keyId);
-      records.delete(keyId);
-    },
-    async purgeExpired(keyId, retentionSeconds) {
-      // Record before throwing so tests asserting per-key sweep isolation can
-      // observe that key B was visited even when key A's purge threw.
-      purgedExpired.push({ keyId, retentionSeconds });
-      if (throws.purgeExpired) throw throws.purgeExpired;
     },
     async deleteExpiredBatch() { return 0; },
     async findOldestCreatedAt() { return null; },
@@ -163,8 +146,6 @@ export const installDumpStubs = (
     broker,
     stored,
     published,
-    purgedAll,
-    purgedExpired,
     closedChannels,
     seed: (keyId, record) => {
       const list = records.get(keyId) ?? [];

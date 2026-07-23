@@ -1409,18 +1409,19 @@ test('any data bearing a historical version is rejected on the version gate, bef
   assertEquals((await repo.upstreams.list()).map(u => u.id), ['up_custom_a']);
 });
 
-test('replace-mode import purges every pre-existing key dump and cuts SSE subscribers', async () => {
+test('replace-mode import schedules every pre-existing key dump and cuts SSE subscribers', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
   await repo.apiKeys.save({ ...KEY_B, dumpRetentionSeconds: 1800 });
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const result = await doImport(app, 'replace', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
   }));
   assertEquals(result.status, 200);
-  assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
-  assertEquals(stubs.purgedAll.includes(KEY_B.id), true);
+  expect(schedule).toHaveBeenCalledWith('dumps', KEY_A.id, 0);
+  expect(schedule).toHaveBeenCalledWith('dumps', KEY_B.id, 0);
   assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_A.id), true);
   assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_B.id), true);
 });
@@ -1428,6 +1429,7 @@ test('replace-mode import purges every pre-existing key dump and cuts SSE subscr
 test('replace-mode import succeeds when the broker close hook throws', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failOn('closeChannel', new Error('broker down'));
 
@@ -1435,39 +1437,40 @@ test('replace-mode import succeeds when the broker close hook throws', async () 
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
   }));
   assertEquals(result.status, 200);
-  assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
+  expect(schedule).toHaveBeenCalledWith('dumps', KEY_A.id, 0);
 });
 
-test('merge-mode import flipping retention to null purges + closes the channel', async () => {
+test('merge-mode import flipping retention to null schedules expiration and closes the channel', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const result = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
   }));
   assertEquals(result.status, 200);
-  assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
+  expect(schedule).toHaveBeenCalledWith('dumps', KEY_A.id, 0);
   assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_A.id), true);
 });
 
-test('merge-mode import shrinking retention purges expired with the new window', async () => {
+test('merge-mode import shrinking retention schedules the new window', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 7200 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
+  installDumpStubs(initDumpStore, initDumpBroker);
 
   const result = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 1800 }],
   }));
   assertEquals(result.status, 200);
-  const call = stubs.purgedExpired.find(c => c.keyId === KEY_A.id);
-  expect(call).toBeDefined();
-  assertEquals(call!.retentionSeconds, 1800);
+  expect(schedule).toHaveBeenCalledWith('dumps', KEY_A.id, 0);
 });
 
 test('merge-mode retention transition tolerates dump-broker failure', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failOn('closeChannel', new Error('broker down'));
 
@@ -1475,18 +1478,13 @@ test('merge-mode retention transition tolerates dump-broker failure', async () =
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
   }));
   assertEquals(result.status, 200);
-  assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
+  expect(schedule).toHaveBeenCalledWith('dumps', KEY_A.id, 0);
 });
 
-test('replace-mode import surfaces a purgeAll failure', async () => {
-  // Replace mode promises data isolation: a reused key id in the imported
-  // payload cannot inherit the previous owner's captures. A swallowed
-  // purgeAll failure would defeat that — let the throw propagate so the
-  // operator sees a 500 instead of silently importing on top of stale dumps.
+test('replace-mode import surfaces an expiration scheduling failure', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('purgeAll', new Error('store down'));
+  vi.spyOn(repo.expirationSweeps, 'schedule').mockRejectedValue(new Error('queue down'));
 
   const resp = await app.request('/import', {
     method: 'POST',
@@ -1498,13 +1496,13 @@ test('replace-mode import surfaces a purgeAll failure', async () => {
     }),
   });
   assertEquals(resp.status, 500);
+  expect(await repo.apiKeys.getById(KEY_A.id)).not.toBeNull();
 });
 
-test('merge-mode retention transition surfaces a purgeAll failure', async () => {
+test('merge-mode retention transition surfaces an expiration scheduling failure', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('purgeAll', new Error('store down'));
+  vi.spyOn(repo.expirationSweeps, 'schedule').mockRejectedValue(new Error('queue down'));
 
   const resp = await app.request('/import', {
     method: 'POST',
@@ -1516,4 +1514,5 @@ test('merge-mode retention transition surfaces a purgeAll failure', async () => 
     }),
   });
   assertEquals(resp.status, 500);
+  expect((await repo.apiKeys.getById(KEY_A.id))?.dumpRetentionSeconds).toBe(3600);
 });

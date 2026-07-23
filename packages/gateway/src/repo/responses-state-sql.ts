@@ -7,12 +7,8 @@ import {
   type PreparedStoredResponsesPayload,
 } from './responses-payload.ts';
 import type {
-  ExpirationDomain,
-  ExpirationSweepClaim,
-  ExpirationSweepsRepo,
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
-  SpilledFilesRepo,
   StoredResponsesItem,
   StoredResponsesSnapshot,
 } from './types.ts';
@@ -506,132 +502,5 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
 
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM responses_snapshots').run();
-  }
-}
-
-export class SqlSpilledFilesRepo implements SpilledFilesRepo {
-  constructor(private readonly db: SqlDatabase) {}
-
-  async claimCollectible(token: string, now: number, staleClaimedBefore: number, limit: number): Promise<string[]> {
-    await this.db
-      .prepare(
-        `UPDATE spilled_files
-         SET claim_token = ?, claimed_at = ?
-         WHERE file_key IN (
-           SELECT file_key FROM spilled_files
-           WHERE state != 'owned'
-             AND collect_after <= ?
-             AND (claim_token IS NULL OR claimed_at < ?)
-           ORDER BY collect_after, file_key
-           LIMIT ?
-         )`,
-      )
-      .bind(token, now, now, staleClaimedBefore, limit)
-      .run();
-    const { results } = await this.db
-      .prepare('SELECT file_key FROM spilled_files WHERE claim_token = ? ORDER BY file_key')
-      .bind(token)
-      .all<{ file_key: string }>();
-    return results.map(row => row.file_key);
-  }
-
-  async acknowledge(token: string): Promise<number> {
-    const result = await this.db.prepare('DELETE FROM spilled_files WHERE claim_token = ?').bind(token).run();
-    return result.meta.changes ?? 0;
-  }
-}
-
-export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
-  constructor(private readonly db: SqlDatabase) {}
-
-  async backfillDumpKeys(limit: number): Promise<boolean> {
-    const state = await this.db
-      .prepare('SELECT next_dump_rowid, complete FROM expiration_sweep_backfill WHERE id = 1')
-      .first<{ next_dump_rowid: number; complete: number }>();
-    if (state === null) throw new Error('expiration_sweep_backfill singleton row missing');
-    if (state.complete !== 0) return true;
-
-    const { results } = await this.db
-      .prepare('SELECT rowid, key_id FROM dump_records WHERE rowid > ? ORDER BY rowid LIMIT ?')
-      .bind(state.next_dump_rowid, limit)
-      .all<{ rowid: number; key_id: string }>();
-    if (results.length > 0) {
-      const keyIds = [...new Set(results.map(row => row.key_id))];
-      await this.db
-        .prepare(
-          `INSERT INTO expiration_sweeps (domain, key_id, due_at)
-           SELECT 'dumps', value, 0 FROM json_each(?)
-           WHERE true
-           ON CONFLICT (domain, key_id) DO UPDATE SET
-             due_at = 0,
-             revision = expiration_sweeps.revision + 1`,
-        )
-        .bind(JSON.stringify(keyIds))
-        .run();
-    }
-    const complete = results.length < limit;
-    const nextRowId = results.at(-1)?.rowid ?? state.next_dump_rowid;
-    await this.db
-      .prepare('UPDATE expiration_sweep_backfill SET next_dump_rowid = ?, complete = ? WHERE id = 1')
-      .bind(nextRowId, complete ? 1 : 0)
-      .run();
-    return complete;
-  }
-
-  async schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {
-    await this.db
-      .prepare(
-        `INSERT INTO expiration_sweeps (domain, key_id, due_at) VALUES (?, ?, ?)
-         ON CONFLICT (domain, key_id) DO UPDATE SET
-           due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
-           revision = expiration_sweeps.revision + 1`,
-      )
-      .bind(domain, keyId, dueAt)
-      .run();
-  }
-
-  async claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null> {
-    await this.db
-      .prepare(
-        `UPDATE expiration_sweeps
-         SET claim_token = ?, claimed_at = ?
-         WHERE (domain, key_id) = (
-           SELECT domain, key_id FROM expiration_sweeps
-           WHERE due_at <= ? AND (claim_token IS NULL OR claimed_at < ?)
-           ORDER BY due_at, key_id, domain
-           LIMIT 1
-         )`,
-      )
-      .bind(token, now, now, staleClaimedBefore)
-      .run();
-    const row = await this.db
-      .prepare('SELECT domain, key_id, revision FROM expiration_sweeps WHERE claim_token = ?')
-      .bind(token)
-      .first<{ domain: ExpirationDomain; key_id: string; revision: number }>();
-    return row === null ? null : { domain: row.domain, keyId: row.key_id, revision: row.revision };
-  }
-
-  async complete(token: string, expectedRevision: number, nextDueAt: number | null, advanceOnConflict: boolean): Promise<void> {
-    if (nextDueAt === null) {
-      await this.db
-        .prepare('DELETE FROM expiration_sweeps WHERE claim_token = ? AND revision = ?')
-        .bind(token, expectedRevision)
-        .run();
-      await this.db
-        .prepare('UPDATE expiration_sweeps SET claim_token = NULL, claimed_at = NULL WHERE claim_token = ?')
-        .bind(token)
-        .run();
-      return;
-    }
-    await this.db
-      .prepare(
-        `UPDATE expiration_sweeps
-         SET due_at = CASE WHEN revision = ? OR ? THEN ? ELSE MIN(due_at, ?) END,
-             claim_token = NULL,
-             claimed_at = NULL
-         WHERE claim_token = ?`,
-      )
-      .bind(expectedRevision, advanceOnConflict, nextDueAt, nextDueAt, token)
-      .run();
   }
 }

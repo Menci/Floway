@@ -4,7 +4,7 @@ import { dirname, isAbsolute, resolve, sep } from 'node:path';
 
 import type { FileProvider } from '@floway-dev/platform';
 
-// Filesystem-backed FileProvider. Every key resolves to a path under `root`,
+// Filesystem-backed FileProvider. Every key resolves to a path under `root`.
 // Keys use forward-slash POSIX separators (matching R2's surface) and are
 // translated to native path segments on the way in/out so the same key reads
 // identically on Windows and POSIX hosts.

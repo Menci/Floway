@@ -8,6 +8,7 @@ import { AffinityCodec } from '../../shared/affinity/index.ts';
 import { hydrateResponsesPayload } from '../items/hydrate.ts';
 import { wrapResponsesClientOutput } from '../items/output.ts';
 import { createResponsesHttpStore } from '../items/store.ts';
+import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { stubModelCandidate } from '@floway-dev/test-utils';
@@ -27,12 +28,12 @@ test('affinity selects the route while item storage preserves the exact producer
     id: 'key-a', userId: 1, name: 'Responses test key', key: 'raw-responses-test',
     serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
     upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 30 * 24 * 60 * 60,
+    responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS,
   });
   const candidateA = modelCandidate('upstream-a');
   const candidateB = modelCandidate('upstream-b');
   const codec = new AffinityCodec('22'.repeat(32));
-  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(), true);
   store.beginAttempt(new Map());
 
   const programOutput = {

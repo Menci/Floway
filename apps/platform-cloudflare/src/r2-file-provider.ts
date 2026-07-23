@@ -7,6 +7,7 @@ export interface R2BucketLike {
 }
 
 // R2 caps `delete` at 1000 keys per call.
+// https://developers.cloudflare.com/r2/api/workers/workers-api-reference/#delete
 const R2_BATCH_LIMIT = 1000;
 
 export class R2FileProvider implements FileProvider {

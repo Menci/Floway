@@ -1,4 +1,4 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
@@ -337,6 +337,7 @@ test('PATCH /api/keys/:id sets dump_retention_seconds on the column', async () =
 test('PATCH /api/keys/:id clears dump_retention_seconds back to null', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);
@@ -344,6 +345,7 @@ test('PATCH /api/keys/:id clears dump_retention_seconds back to null', async () 
   const stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
   assertEquals(stored.dumpRetentionSeconds, null);
+  expect(schedule).toHaveBeenCalledWith('dumps', apiKey.id, 0);
 });
 
 test('PATCH /api/keys/:id rejects zero and negative dump_retention_seconds', async () => {
@@ -373,6 +375,7 @@ test('DELETE /api/keys/:id soft-deletes the key', async () => {
 test('DELETE /api/keys/:id succeeds when the broker close hook throws — broker outage must not block soft-delete', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failOn('closeChannel', new Error('broker down'));
 
@@ -381,43 +384,42 @@ test('DELETE /api/keys/:id succeeds when the broker close hook throws — broker
     headers: { 'x-api-key': apiKey.key },
   });
   assertEquals(response.status, 200);
-  // The store purge still ran.
-  assertEquals(stubs.purgedAll.includes(apiKey.id), true);
-  // The soft-delete still landed.
+  expect(schedule).toHaveBeenCalledWith('dumps', apiKey.id, 0);
   assertEquals(await repo.apiKeys.getById(apiKey.id), null);
 });
 
-test('PATCH /api/keys/:id positive→null retention purges + closes the channel', async () => {
+test('PATCH /api/keys/:id positive→null schedules expiration and closes the channel', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);
-  assertEquals(stubs.purgedAll.includes(apiKey.id), true);
+  expect(schedule).toHaveBeenCalledWith('dumps', apiKey.id, 0);
   assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), true);
 });
 
 test('PATCH /api/keys/:id positive→null succeeds when the broker close hook throws', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failOn('closeChannel', new Error('broker down'));
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);
-  assertEquals(stubs.purgedAll.includes(apiKey.id), true);
+  expect(schedule).toHaveBeenCalledWith('dumps', apiKey.id, 0);
 });
 
-test('PATCH /api/keys/:id positive→smaller positive purges expired with the new window', async () => {
+test('PATCH /api/keys/:id positive→smaller positive schedules the new window', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 7200 });
+  const schedule = vi.spyOn(repo.expirationSweeps, 'schedule');
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 1800 }, apiKey.key);
   assertEquals(response.status, 200);
-  const call = stubs.purgedExpired.find(c => c.keyId === apiKey.id);
-  assertExists(call);
-  assertEquals(call.retentionSeconds, 1800);
+  expect(schedule).toHaveBeenCalledWith('dumps', apiKey.id, 0);
   assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), false);
 });

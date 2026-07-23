@@ -6,7 +6,6 @@ CREATE TABLE expiration_sweeps (
   claim_token TEXT,
   claimed_at INTEGER,
   PRIMARY KEY (domain, key_id),
-  CHECK (domain IN ('responses', 'dumps')),
   CHECK ((claim_token IS NULL) = (claimed_at IS NULL))
 );
 
@@ -250,24 +249,45 @@ BEGIN
     OR excluded.due_at < expiration_sweeps.due_at;
 END;
 
-CREATE TRIGGER api_keys_schedule_expiration_update
-AFTER UPDATE OF responses_retention_seconds, dump_retention_seconds, deleted_at ON api_keys
+CREATE TRIGGER api_keys_schedule_responses_expiration_update
+AFTER UPDATE OF responses_retention_seconds, deleted_at ON api_keys
 WHEN OLD.responses_retention_seconds IS NOT NEW.responses_retention_seconds
-  OR OLD.dump_retention_seconds IS NOT NEW.dump_retention_seconds
   OR OLD.deleted_at IS NOT NEW.deleted_at
 BEGIN
   INSERT INTO expiration_sweeps (domain, key_id, due_at)
-  VALUES ('responses', NEW.id, 0), ('dumps', NEW.id, 0)
+  VALUES ('responses', NEW.id, 0)
   ON CONFLICT (domain, key_id) DO UPDATE SET
     due_at = 0,
     revision = expiration_sweeps.revision + 1;
 END;
 
-CREATE TRIGGER api_keys_schedule_expiration_delete
+CREATE TRIGGER api_keys_schedule_responses_expiration_delete
 AFTER DELETE ON api_keys
 BEGIN
   INSERT INTO expiration_sweeps (domain, key_id, due_at)
-  VALUES ('responses', OLD.id, 0), ('dumps', OLD.id, 0)
+  VALUES ('responses', OLD.id, 0)
+  ON CONFLICT (domain, key_id) DO UPDATE SET
+    due_at = 0,
+    revision = expiration_sweeps.revision + 1;
+END;
+
+CREATE TRIGGER api_keys_schedule_dumps_expiration_update
+AFTER UPDATE OF dump_retention_seconds, deleted_at ON api_keys
+WHEN OLD.dump_retention_seconds IS NOT NEW.dump_retention_seconds
+  OR OLD.deleted_at IS NOT NEW.deleted_at
+BEGIN
+  INSERT INTO expiration_sweeps (domain, key_id, due_at)
+  VALUES ('dumps', NEW.id, 0)
+  ON CONFLICT (domain, key_id) DO UPDATE SET
+    due_at = 0,
+    revision = expiration_sweeps.revision + 1;
+END;
+
+CREATE TRIGGER api_keys_schedule_dumps_expiration_delete
+AFTER DELETE ON api_keys
+BEGIN
+  INSERT INTO expiration_sweeps (domain, key_id, due_at)
+  VALUES ('dumps', OLD.id, 0)
   ON CONFLICT (domain, key_id) DO UPDATE SET
     due_at = 0,
     revision = expiration_sweeps.revision + 1;

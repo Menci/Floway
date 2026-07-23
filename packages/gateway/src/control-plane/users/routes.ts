@@ -1,5 +1,5 @@
 import { userToRawWire } from './wire.ts';
-import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
+import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -116,14 +116,10 @@ export const deleteUser = async (c: AuthedContext) => {
 
   const repo = getRepo();
 
-  // Purge each owned key's dumps before the cascade so a purge failure leaves
-  // the user (and their keys) intact and retriable. We iterate live keys
-  // because soft-deleted keys were already purged at their own delete time.
-  // The broker close hook cuts any live SSE subscriber but is best-effort —
+  // The broker close hook cuts any live SSE subscriber but is best-effort;
   // broker availability never blocks the cascade.
   const keys = await repo.apiKeys.listByUserId(id);
   for (const key of keys) {
-    await getDumpStore().purgeAll(key.id);
     await notifyDisabledBestEffort(key.id, 'deleteUser cascade');
   }
 

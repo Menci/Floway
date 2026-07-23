@@ -14,6 +14,7 @@ import type {
   ApiKeyRepo,
   ApiKeyUpdate,
   ExpirationDomain,
+  ExpirationSweepCompletion,
   ExpirationSweepClaim,
   ExpirationSweepsRepo,
   AgentSetupMutation,
@@ -177,6 +178,17 @@ class MemorySessionsRepo implements SessionsRepo {
 class MemoryApiKeyRepo implements ApiKeyRepo {
   private keys: ApiKey[] = [];
 
+  constructor(private readonly expirationSweeps: ExpirationSweepsRepo) {}
+
+  private async schedulePolicyChanges(previous: ApiKey, next: ApiKey): Promise<void> {
+    if (previous.responsesRetentionSeconds !== next.responsesRetentionSeconds || previous.deletedAt !== next.deletedAt) {
+      await this.expirationSweeps.schedule('responses', next.id, 0);
+    }
+    if (previous.dumpRetentionSeconds !== next.dumpRetentionSeconds || previous.deletedAt !== next.deletedAt) {
+      await this.expirationSweeps.schedule('dumps', next.id, 0);
+    }
+  }
+
   list(): Promise<ApiKey[]> {
     return Promise.resolve(this.keys.filter(k => k.deletedAt === null).map(k => ({ ...k })));
   }
@@ -205,40 +217,52 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
 
   async save(key: ApiKey): Promise<void> {
     const i = this.keys.findIndex(k => k.id === key.id);
-    if (i >= 0) this.keys[i] = { ...key };
+    if (i >= 0) {
+      await this.schedulePolicyChanges(this.keys[i], key);
+      this.keys[i] = { ...key };
+    }
     else this.keys.push({ ...key });
   }
 
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
     if (i < 0) return null;
-    this.keys[i] = { ...this.keys[i], ...patch };
-    return { ...this.keys[i] };
+    const next = { ...this.keys[i], ...patch };
+    await this.schedulePolicyChanges(this.keys[i], next);
+    this.keys[i] = next;
+    return { ...next };
   }
 
   async softDelete(id: string): Promise<boolean> {
     const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
     if (i < 0) return false;
-    this.keys[i] = { ...this.keys[i], deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 };
+    const next = { ...this.keys[i], deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 };
+    await this.schedulePolicyChanges(this.keys[i], next);
+    this.keys[i] = next;
     return true;
   }
 
-  softDeleteByUserId(userId: number): Promise<number> {
+  async softDeleteByUserId(userId: number): Promise<number> {
     const now = new Date().toISOString();
-    let count = 0;
+    const updates: Array<{ index: number; next: ApiKey }> = [];
     for (let i = 0; i < this.keys.length; i++) {
       const k = this.keys[i];
       if (k.userId === userId && k.deletedAt === null) {
-        this.keys[i] = { ...k, deletedAt: now, responsesRetentionSeconds: 0 };
-        count += 1;
+        const next = { ...k, deletedAt: now, responsesRetentionSeconds: 0 };
+        await this.schedulePolicyChanges(k, next);
+        updates.push({ index: i, next });
       }
     }
-    return Promise.resolve(count);
+    for (const update of updates) this.keys[update.index] = update.next;
+    return updates.length;
   }
 
-  deleteAll(): Promise<void> {
+  async deleteAll(): Promise<void> {
+    for (const key of this.keys) {
+      await this.expirationSweeps.schedule('responses', key.id, 0);
+      await this.expirationSweeps.schedule('dumps', key.id, 0);
+    }
     this.keys = [];
-    return Promise.resolve();
   }
 }
 
@@ -779,16 +803,17 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
     return Promise.resolve({ domain: row.domain, keyId: row.keyId, revision: row.revision });
   }
 
-  complete(token: string, expectedRevision: number, nextDueAt: number | null, advanceOnConflict: boolean): Promise<void> {
+  complete(token: string, expectedRevision: number, completion: ExpirationSweepCompletion): Promise<void> {
     const row = [...this.rows.values()].find(candidate => candidate.claimToken === token);
     if (row === undefined) return Promise.resolve();
     const key = this.key(row.domain, row.keyId);
-    if (row.revision === expectedRevision && nextDueAt === null) {
+    if (row.revision === expectedRevision && completion.kind === 'drained' && completion.nextDueAt === null) {
       this.rows.delete(key);
       return Promise.resolve();
     }
+    const nextDueAt = completion.kind === 'partial' ? completion.retryAt : completion.nextDueAt;
     if (nextDueAt !== null) {
-      row.dueAt = row.revision === expectedRevision || advanceOnConflict
+      row.dueAt = row.revision === expectedRevision || completion.kind === 'partial'
         ? nextDueAt
         : Math.min(row.dueAt, nextDueAt);
     }
@@ -1131,7 +1156,8 @@ export class InMemoryRepo implements Repo {
   constructor() {
     this.users = new MemoryUsersRepo();
     this.sessions = new MemorySessionsRepo();
-    this.apiKeys = new MemoryApiKeyRepo();
+    this.expirationSweeps = new MemoryExpirationSweepsRepo();
+    this.apiKeys = new MemoryApiKeyRepo(this.expirationSweeps);
     this.usage = new MemoryUsageRepo();
     this.searchUsage = new MemorySearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
@@ -1144,7 +1170,6 @@ export class InMemoryRepo implements Repo {
     this.responsesItems = new MemoryResponsesItemsRepo(this.apiKeys);
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo(this.apiKeys);
     this.spilledFiles = new MemorySpilledFilesRepo();
-    this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.agentSetup = new MemoryAgentSetupRepo();
   }
 }

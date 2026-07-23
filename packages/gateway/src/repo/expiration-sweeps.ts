@@ -1,5 +1,5 @@
 import { getRepo } from './index.ts';
-import type { ExpirationDomain } from './types.ts';
+import type { ExpirationDomain, ExpirationSweepCompletion } from './types.ts';
 import { getDumpStore } from '../dump/registry.ts';
 
 const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
@@ -10,7 +10,7 @@ const SWEEP_UNITS_PER_TICK = 4;
 const DUMP_BACKFILL_BATCH_SIZE = 500;
 
 interface ExpirationAdapter {
-  sweepKey(keyId: string, now: number): Promise<{ nextDueAt: number | null; advanceOnConflict: boolean }>;
+  sweepKey(keyId: string, now: number): Promise<ExpirationSweepCompletion>;
 }
 
 const nextResponsesDueAt = async (keyId: string): Promise<number | null> => {
@@ -31,9 +31,9 @@ const responsesAdapter: ExpirationAdapter = {
     const deletedSnapshots = await repo.responsesSnapshots.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
     const deletedItems = await repo.responsesItems.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
     if (deletedSnapshots === DELETE_BATCH_SIZE || deletedItems === DELETE_BATCH_SIZE) {
-      return { nextDueAt: now + PARTIAL_RETRY_MS, advanceOnConflict: true };
+      return { kind: 'partial', retryAt: now + PARTIAL_RETRY_MS };
     }
-    return { nextDueAt: await nextResponsesDueAt(keyId), advanceOnConflict: false };
+    return { kind: 'drained', nextDueAt: await nextResponsesDueAt(keyId) };
   },
 };
 
@@ -41,14 +41,14 @@ const dumpsAdapter: ExpirationAdapter = {
   async sweepKey(keyId, now) {
     const store = getDumpStore();
     const deleted = await store.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
-    if (deleted === DELETE_BATCH_SIZE) return { nextDueAt: now + PARTIAL_RETRY_MS, advanceOnConflict: true };
+    if (deleted === DELETE_BATCH_SIZE) return { kind: 'partial', retryAt: now + PARTIAL_RETRY_MS };
     const key = await getRepo().apiKeys.getById(keyId);
     const retentionSeconds = key?.dumpRetentionSeconds ?? null;
-    if (retentionSeconds === null) return { nextDueAt: null, advanceOnConflict: false };
+    if (retentionSeconds === null) return { kind: 'drained', nextDueAt: null };
     const oldest = await store.findOldestCreatedAt(keyId);
     return {
+      kind: 'drained',
       nextDueAt: oldest === null ? null : oldest + retentionSeconds * 1000 + 1,
-      advanceOnConflict: false,
     };
   },
 };
@@ -67,9 +67,9 @@ export const sweepExpirations = async (now: number): Promise<void> => {
     if (claim === null) return;
     try {
       const result = await adapters[claim.domain].sweepKey(claim.keyId, now);
-      await repo.expirationSweeps.complete(token, claim.revision, result.nextDueAt, result.advanceOnConflict);
+      await repo.expirationSweeps.complete(token, claim.revision, result);
     } catch (error) {
-      await repo.expirationSweeps.complete(token, claim.revision, now + ERROR_RETRY_MS, true);
+      await repo.expirationSweeps.complete(token, claim.revision, { kind: 'partial', retryAt: now + ERROR_RETRY_MS });
       console.error(`[scheduled] ${claim.domain} expiration failed`, claim.keyId, error);
     }
   }

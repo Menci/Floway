@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest';
 import { responsesItemId } from './identity.ts';
 import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
+import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -29,9 +30,9 @@ const memoryOutputHarness = () => {
     id: 'key-a', userId: 1, name: 'Responses test key', key: 'raw-responses-test',
     serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
     upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 30 * 24 * 60 * 60,
+    responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS,
   });
-  return { repo, store: createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true) };
+  return { repo, store: createResponsesHttpStore(testResponsesStatePolicy(), true) };
 };
 
 test('client output rewrites only the response id inside queued envelopes', async () => {
@@ -146,7 +147,7 @@ test('client output does not publish output_item.done when persistence fails', a
 test('store=false passes the producer item id through without persistence', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(), false);
   const result: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -419,7 +420,7 @@ test('stateful output rejects a terminal item that never emitted output_item.don
 
 test('store=false forwards an id-less finalized item without persistence work', async () => {
   initRepo(new InMemoryRepo());
-  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(), false);
   const item = {
     type: 'message' as const,
     role: 'assistant' as const,

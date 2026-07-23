@@ -130,7 +130,7 @@ test('a concurrent schedule wins over stale completion', async () => {
   if (claim === null) throw new Error('expected expiration claim');
 
   await repo.expirationSweeps.schedule('responses', 'key-race', 0);
-  await repo.expirationSweeps.complete('claim-race', claim.revision, 10_000, false);
+  await repo.expirationSweeps.complete('claim-race', claim.revision, { kind: 'drained', nextDueAt: 10_000 });
 
   const row = await db.prepare(
     "SELECT due_at, claim_token FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'key-race'",
@@ -151,7 +151,7 @@ test('a later owner inserted during a claim prevents queue deletion', async () =
   if (claim === null) throw new Error('expected expiration claim');
 
   await repo.responsesItems.insertMany([responseItem('msg-later', now)], 0);
-  await repo.expirationSweeps.complete('claim-owner-race', claim.revision, null, false);
+  await repo.expirationSweeps.complete('claim-owner-race', claim.revision, { kind: 'drained', nextDueAt: null });
 
   const row = await db.prepare(
     "SELECT due_at, claim_token FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'key-a'",
@@ -172,7 +172,7 @@ test('partial completion yields even when a concurrent owner bumps the revision'
   if (claim === null) throw new Error('expected expiration claim');
   await repo.responsesItems.insertMany([responseItem('msg-concurrent', now)], 0);
 
-  await repo.expirationSweeps.complete('claim-partial-race', claim.revision, now + 1, true);
+  await repo.expirationSweeps.complete('claim-partial-race', claim.revision, { kind: 'partial', retryAt: now + 1 });
 
   expect(await db.prepare(
     "SELECT due_at, claim_token FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'key-a'",
