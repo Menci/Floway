@@ -266,6 +266,8 @@ export const changeOwnPasswordBody = z.object({
 // The 10-year upper bound rejects absurd inputs as a clean validation error
 // rather than letting them through as de-facto "never expire".
 const dumpRetentionSecondsSchema = z.number().int().positive().max(RETENTION_MAX_SECONDS).nullable();
+// Keep the wire/storage unit aligned with dump retention while requiring the
+// dashboard's whole-day Responses contract at every control-plane boundary.
 const responsesRetentionSecondsSchema = z.union([
   z.literal(0),
   z.number().int().min(SECONDS_PER_DAY).max(RETENTION_MAX_SECONDS).multipleOf(SECONDS_PER_DAY),
