@@ -806,9 +806,9 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
 
   if (mode === 'replace') {
-    // Wipe each existing key's dump capture before the replace deletes wave so
-    // a reused id in the imported payload cannot inherit the previous owner's
-    // captures, and any live SSE subscriber is told the key went away.
+    // Queue each retired internal key's dumps for bounded reclamation and tell
+    // live SSE subscribers that the owner disappeared. Imported keys already
+    // use fresh ids, so late old accumulators remain isolated on these ids.
     for (const k of preImportKeys) {
       await getDumpStore().purgeAll(k.id);
       await notifyDisabledBestEffort(k.id, 'replace-mode import');
