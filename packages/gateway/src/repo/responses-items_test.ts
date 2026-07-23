@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
+import { hashResponsesJson } from './responses-hash.ts';
+import { prepareStoredResponsesPayload } from './responses-payload.ts';
 import { responsesStateCutoff } from './responses-retention.ts';
 import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
@@ -258,6 +260,38 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   await collectSpilledFiles(now);
   expect(await files.get(owned.file_key)).toBeNull();
   expect(await db.prepare('SELECT file_key FROM spilled_files WHERE file_key = ?').bind(owned.file_key).first()).toBeNull();
+});
+
+test('SQL hydration retries with every current item identity column after a replacement race', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  await repo.apiKeys.save(apiKey());
+  const now = Date.now();
+  const original = storedItem('msg-hydration-race', now, largeContent());
+  const replacement = storedItem(original.id, now + 1, 'replacement');
+  await repo.responsesItems.insertMany([original], 0);
+  const prepared = await prepareStoredResponsesPayload(replacement.id, replacement.apiKeyId, replacement.payload);
+  if (prepared.file !== null) throw new Error('replacement payload unexpectedly spilled');
+  const payloadHash = await hashResponsesJson(replacement.payload);
+  vi.spyOn(files, 'get').mockImplementationOnce(async () => {
+    await db.prepare(
+      `UPDATE responses_items
+       SET payload_json = ?, item_hash = ?, payload_hash = ?, payload_file_key = NULL, refreshed_at = ?
+       WHERE id = ? AND api_key_id = ?`,
+    ).bind(
+      prepared.payloadJson,
+      replacement.itemHash,
+      payloadHash,
+      replacement.refreshedAt,
+      replacement.id,
+      replacement.apiKeyId,
+    ).run();
+    return null;
+  });
+
+  expect(await repo.responsesItems.lookupMany(replacement.apiKeyId, [replacement.id], 0)).toEqual([replacement]);
 });
 
 test('a collector claim prevents a staged file from being adopted', async () => {

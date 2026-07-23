@@ -4,6 +4,8 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { FileDumpStore } from './dump-store.ts';
 import { sweepExpirations } from './expiration-sweeps.ts';
 import { initRepo } from './index.ts';
+import { InMemoryRepo } from './memory.ts';
+import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ApiKey, StoredResponsesItem } from './types.ts';
@@ -179,7 +181,7 @@ test('partial completion yields even when a concurrent owner bumps the revision'
   ).first<{ due_at: number; claim_token: string | null }>()).toEqual({ due_at: now + 1, claim_token: null });
 });
 
-test('migration 0066 queues existing keys and retires pre-ledger dump files on deletion', async () => {
+test('migration 0066 leaves owner discovery bounded and retires pre-ledger dump files on deletion', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
@@ -210,8 +212,13 @@ test('migration 0066 queues existing keys and retires pre-ledger dump files on d
     if (migration === undefined) throw new Error('missing migration 0066_expiration_sweeps.sql');
     db.run(migration[1]);
 
-    expect(db.exec("SELECT domain, due_at FROM expiration_sweeps WHERE key_id = 'key-old-dump' ORDER BY domain")[0].values)
-      .toEqual([['dumps', 0], ['responses', 0]]);
+    expect(db.exec('SELECT domain, key_id FROM expiration_sweeps')[0]?.values ?? []).toEqual([]);
+    expect(db.exec('SELECT source, next_rowid, complete FROM expiration_sweep_backfills ORDER BY source')[0].values)
+      .toEqual([
+        ['dump_records', 0, 0],
+        ['responses_items', 0, 0],
+        ['responses_snapshots', 0, 0],
+      ]);
 
     for (const [id, requestDescriptor, responseDescriptor] of [
       ['01K00000000000000000BAD0', JSON.stringify({ type: 'bytes' }), null],
@@ -290,21 +297,103 @@ test('expiration claims and owner deletions use their bounded range indexes', as
   expect(dumpsPlan).toContain('idx_dump_records_key_created');
 });
 
-test('bounded dump backfill schedules rows whose API key was hard-removed', async () => {
+test('bounded owner backfill schedules rows whose API key was hard-removed', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
   await repo.apiKeys.save(key(now));
+  const recordId = '01K00000000000000000ORPH';
+  const fileKey = `dumps/v1/key-a/1970010100/${recordId}.req.gz`;
   await db.prepare(
     `INSERT INTO dump_records
      (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-     VALUES ('key-a', '01K00000000000000000ORPH', 1, NULL, '{}', '[]', NULL, NULL, NULL)`,
-  ).run();
+     VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, ?, NULL)`,
+  ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes' })).run();
   await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
   await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
+  await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
 
-  await repo.expirationSweeps.backfillDumpKeys(500);
+  const state = await repo.expirationSweeps.backfillOwners(500);
+  expect(state).toEqual({ complete: true, dumpRecordsComplete: true });
   expect(await db.prepare(
     "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
   ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
+  expect(await db.prepare(
+    'SELECT owner_kind, owner_key, state FROM spilled_files WHERE file_key = ?',
+  ).bind(fileKey).first()).toEqual({
+    owner_kind: 'dump-request',
+    owner_key: JSON.stringify(['key-a', recordId]),
+    state: 'owned',
+  });
+});
+
+test('bounded owner backfill skips API keys without persisted owners', async () => {
+  const now = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initFileProvider(new MemoryFileProvider());
+  await repo.apiKeys.save(key(now));
+  await repo.apiKeys.save({ ...key(now), id: 'key-empty', key: 'raw-empty', serverSecret: '99'.repeat(32) });
+  await repo.responsesItems.insertMany([responseItem('msg-owned', now)], 0);
+  await repo.responsesSnapshots.insert({ id: 'resp-owned', apiKeyId: 'key-a', itemIds: ['msg-owned'], refreshedAt: now });
+  await db.prepare('DELETE FROM expiration_sweeps').run();
+
+  await repo.expirationSweeps.backfillOwners(500);
+
+  expect((await db.prepare('SELECT domain, key_id FROM expiration_sweeps ORDER BY domain, key_id').all()).results)
+    .toEqual([{ domain: 'responses', key_id: 'key-a' }]);
+});
+
+test('in-memory Responses owners enter the same expiration driver', async () => {
+  const now = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  initFileProvider(new MemoryFileProvider());
+  await repo.apiKeys.save(key(now));
+  const item = responseItem('msg-memory', now);
+  await repo.responsesItems.insertMany([item], 0);
+  await repo.responsesSnapshots.insert({ id: 'resp-memory', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: now });
+
+  await sweepExpirations(now + 3600_000 + 1);
+
+  expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp-memory', 0)).toBeNull();
+});
+
+test('dump inventory retires only untracked exact file keys', async () => {
+  const now = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const dumps = new FileDumpStore(db, files);
+  initDumpStore(dumps);
+  await repo.apiKeys.save(key(now));
+  const liveRecord = dumpRecord('01K00000000000000000LIVE', now);
+  liveRecord.request.body = {
+    encoding: 'identity',
+    bytes: new TextEncoder().encode('live'),
+    decodedByteLength: 4,
+  };
+  await dumps.put('key-a', liveRecord);
+  const liveDescriptor = await db.prepare(
+    'SELECT request_body_descriptor FROM dump_records WHERE key_id = ? AND id = ?',
+  ).bind('key-a', liveRecord.meta.id).first<{ request_body_descriptor: string }>();
+  if (liveDescriptor === null) throw new Error('live dump descriptor missing');
+  const liveFileKey = (JSON.parse(liveDescriptor.request_body_descriptor) as { key: string }).key;
+  const orphanFileKey = 'dumps/v1/orphan/untracked.req.gz';
+  await files.put(orphanFileKey, new Uint8Array([1]));
+
+  await sweepExpirations(now);
+  await collectSpilledFiles(now);
+
+  expect(await files.get(orphanFileKey)).toBeNull();
+  expect(await files.get(liveFileKey)).not.toBeNull();
 });
