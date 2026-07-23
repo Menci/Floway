@@ -6,13 +6,11 @@ import {
   cloneStoredResponsesItem,
   cloneStoredResponsesSnapshot,
   compareResponsesItemsByFreshness,
-  persistedResponsesKey,
+  scopedResponsesKey,
 } from './responses-clone.ts';
-import { generateResponsesStateEpoch, responsesStateCutoff, withResponsesRetention } from './responses-retention.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
-  ApiKeyUpdate,
   AgentSetupMutation,
   AgentSetupRecord,
   AgentSetupRenewal,
@@ -33,8 +31,6 @@ import type {
   ProxyRepo,
   Repo,
   ResponsesItemsRepo,
-  ResponsesMaintenanceRepo,
-  ResponsesStateSweepClaim,
   ResponsesSnapshotsRepo,
   SearchConfig,
   SearchConfigRepo,
@@ -207,37 +203,10 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     else this.keys.push({ ...key });
   }
 
-  async saveIfResponsesStateUnchanged(key: ApiKey, expectedRetentionSeconds: number, expectedEpoch: string, expectedVisibleAfter: number): Promise<boolean> {
-    const i = this.keys.findIndex(existing => existing.id === key.id
-      && existing.responsesRetentionSeconds === expectedRetentionSeconds
-      && existing.responsesStateEpoch === expectedEpoch
-      && existing.responsesStateVisibleAfter === expectedVisibleAfter);
-    if (i < 0) return false;
-    this.keys[i] = { ...key };
-    return true;
-  }
-
-  async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
-    const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
-    if (i < 0) return null;
-    const { responsesRetentionSeconds, ...fields } = patch;
-    const fieldsUpdated = { ...this.keys[i], ...fields };
-    this.keys[i] = responsesRetentionSeconds === undefined
-      ? fieldsUpdated
-      : withResponsesRetention(fieldsUpdated, responsesRetentionSeconds);
-    return { ...this.keys[i] };
-  }
-
-  async softDelete(id: string, responsesStateEpoch: string): Promise<boolean> {
+  async softDelete(id: string): Promise<boolean> {
     const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
     if (i < 0) return false;
-    this.keys[i] = {
-      ...this.keys[i],
-      deletedAt: new Date().toISOString(),
-      responsesRetentionSeconds: 0,
-      responsesStateEpoch,
-      responsesStateVisibleAfter: 0,
-    };
+    this.keys[i] = { ...this.keys[i], deletedAt: new Date().toISOString() };
     return true;
   }
 
@@ -247,13 +216,7 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     for (let i = 0; i < this.keys.length; i++) {
       const k = this.keys[i];
       if (k.userId === userId && k.deletedAt === null) {
-        this.keys[i] = {
-          ...k,
-          deletedAt: now,
-          responsesRetentionSeconds: 0,
-          responsesStateEpoch: generateResponsesStateEpoch(),
-          responsesStateVisibleAfter: 0,
-        };
+        this.keys[i] = { ...k, deletedAt: now };
         count += 1;
       }
     }
@@ -354,7 +317,6 @@ class MemoryUsageRepo implements UsageRepo {
     this.store.clear();
     return Promise.resolve();
   }
-
 }
 
 class MemorySearchUsageRepo implements SearchUsageRepo {
@@ -406,7 +368,6 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
     this.store.clear();
     return Promise.resolve();
   }
-
 }
 
 type StoredPerformanceRow = Omit<PerformanceTelemetryRecord, 'buckets'> & { bucketMap: Map<string, PerformanceBucketRow> };
@@ -609,227 +570,101 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
 class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   private store = new Map<string, StoredResponsesItem>();
 
-  constructor(private apiKeys: ApiKeyRepo) {}
-
-  lookupMany(apiKeyId: string, stateEpoch: string, ids: readonly string[]): Promise<StoredResponsesItem[]> {
+  lookupMany(apiKeyId: string, ids: readonly string[]): Promise<StoredResponsesItem[]> {
     const rows: StoredResponsesItem[] = [];
     const seen = new Set<string>();
     for (const id of ids) {
       if (seen.has(id)) continue;
       seen.add(id);
-      const row = this.store.get(persistedResponsesKey(apiKeyId, stateEpoch, id));
+      const row = this.store.get(scopedResponsesKey(apiKeyId, id));
       if (row !== undefined) rows.push(cloneStoredResponsesItem(row));
     }
     return Promise.resolve(rows);
   }
 
-  async lookupActiveMany(apiKeyId: string, stateEpoch: string, ids: readonly string[], refreshedAfter: number): Promise<StoredResponsesItem[]> {
-    return (await this.lookupMany(apiKeyId, stateEpoch, ids)).filter(row => row.refreshedAt >= refreshedAfter);
-  }
-
-  lookupManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+  lookupManyByContentHash(apiKeyId: string, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
     const wanted = new Set(hashes);
     if (wanted.size === 0) return Promise.resolve([]);
     const rows: StoredResponsesItem[] = [];
     for (const row of this.store.values()) {
-      if (row.apiKeyId === apiKeyId && row.stateEpoch === stateEpoch && wanted.has(row.contentHash)) {
+      if (row.apiKeyId === apiKeyId && wanted.has(row.contentHash)) {
         rows.push(cloneStoredResponsesItem(row));
       }
     }
     return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
   }
 
-  async lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], refreshedAfter: number): Promise<StoredResponsesItem[]> {
-    return (await this.lookupManyByContentHash(apiKeyId, stateEpoch, hashes)).filter(row => row.refreshedAt >= refreshedAfter);
-  }
-
-  async insertMany(items: readonly StoredResponsesItem[], replaceBefore: number): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     const pending = new Map<string, StoredResponsesItem>();
     for (const item of items) {
-      const key = persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id);
+      const key = scopedResponsesKey(item.apiKeyId, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
-      const apiKey = await this.apiKeys.getById(item.apiKeyId);
-      const activeUnderCurrentPolicy = existing !== undefined
-        && apiKey !== null
-        && apiKey.responsesRetentionSeconds > 0
-        && apiKey.responsesStateEpoch === existing.stateEpoch
-        && existing.refreshedAt >= responsesStateCutoff(Date.now(), apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter);
-      if (existing !== undefined && (existing.refreshedAt >= replaceBefore || activeUnderCurrentPolicy)) {
-        assertSameStoredResponsesItem(item, existing);
-      } else {
-        pending.set(key, item);
-      }
+      if (existing !== undefined) assertSameStoredResponsesItem(item, existing);
+      else pending.set(key, item);
     }
     for (const [key, item] of pending) this.store.set(key, cloneStoredResponsesItem(item));
     for (const item of items) {
-      const stored = this.store.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id))!;
-      if (item.refreshedAt >= stored.refreshedAt) {
-        stored.refreshedAt = item.refreshedAt;
-      }
+      const stored = this.store.get(scopedResponsesKey(item.apiKeyId, item.id))!;
+      stored.createdAt = Math.max(stored.createdAt, item.createdAt);
     }
   }
 
-  async refreshMany(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash'>[],
-    refreshedAt: number,
-  ): Promise<void> {
-    const existing = items.map(item => this.store.get(persistedResponsesKey(item.apiKeyId, item.stateEpoch, item.id)));
-    for (let index = 0; index < existing.length; index += 1) {
-      const stored = existing[index];
-      if (stored === undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${items[index].id}`);
-      if (stored.payloadHash !== items[index].payloadHash) throw new Error(`Responses item id collision: ${stored.id}`);
-      const apiKey = await this.apiKeys.getById(stored.apiKeyId);
-      if (apiKey !== null && (
-        apiKey.responsesRetentionSeconds === 0
-        || apiKey.responsesStateEpoch !== stored.stateEpoch
-        || stored.refreshedAt < responsesStateCutoff(refreshedAt, apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter)
-      )) {
-        throw new Error(`Responses item disappeared or changed before lifetime refresh: ${stored.id}`);
-      }
-      if (refreshedAt >= stored.refreshedAt) {
-        stored.refreshedAt = refreshedAt;
-      }
+  async refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void> {
+    const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
+    const missingIndex = existing.findIndex(item => item === undefined);
+    if (missingIndex !== -1) {
+      throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
     }
+    for (const item of existing) item!.createdAt = Math.max(item!.createdAt, createdAt);
   }
 
-  async deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number> {
-    const apiKey = await this.apiKeys.getById(apiKeyId);
-    const cutoff = apiKey === null || apiKey.responsesRetentionSeconds === 0
-      ? Number.MAX_SAFE_INTEGER
-      : responsesStateCutoff(now, apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter);
+  deleteOlderThan(createdBefore: number): Promise<number> {
     let changes = 0;
     for (const [key, row] of this.store) {
-      if (changes >= limit) break;
-      if (row.apiKeyId !== apiKeyId) continue;
-      if (apiKey !== null && apiKey.responsesRetentionSeconds > 0 && row.stateEpoch === apiKey.responsesStateEpoch && row.refreshedAt >= cutoff) continue;
-      this.store.delete(key);
-      changes += 1;
+      if (row.createdAt < createdBefore) {
+        this.store.delete(key);
+        changes += 1;
+      }
     }
-    return changes;
+    return Promise.resolve(changes);
   }
 
-  apiKeyIds(): string[] {
-    return [...new Set([...this.store.values()].map(row => row.apiKeyId))];
-  }
-
-  oldestRefresh(apiKeyId: string, stateEpoch: string): number | null {
-    const values = [...this.store.values()]
-      .filter(row => row.apiKeyId === apiKeyId && row.stateEpoch === stateEpoch)
-      .map(row => row.refreshedAt);
-    return values.length === 0 ? null : Math.min(...values);
+  deleteAll(): Promise<void> {
+    this.store.clear();
+    return Promise.resolve();
   }
 }
 
 class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   private store = new Map<string, StoredResponsesSnapshot>();
 
-  constructor(private apiKeys: ApiKeyRepo) {}
-
-  lookup(apiKeyId: string, stateEpoch: string, id: string): Promise<StoredResponsesSnapshot | null> {
-    const snapshot = this.store.get(persistedResponsesKey(apiKeyId, stateEpoch, id));
+  lookup(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
+    const snapshot = this.store.get(scopedResponsesKey(apiKeyId, id));
     return Promise.resolve(snapshot ? cloneStoredResponsesSnapshot(snapshot) : null);
   }
 
-  async lookupActive(apiKeyId: string, stateEpoch: string, id: string, refreshedAfter: number): Promise<StoredResponsesSnapshot | null> {
-    const snapshot = await this.lookup(apiKeyId, stateEpoch, id);
-    return snapshot !== null && snapshot.refreshedAt >= refreshedAfter ? snapshot : null;
-  }
-
   insert(snapshot: StoredResponsesSnapshot): Promise<void> {
-    const key = persistedResponsesKey(snapshot.apiKeyId, snapshot.stateEpoch, snapshot.id);
+    const key = scopedResponsesKey(snapshot.apiKeyId, snapshot.id);
     const existing = this.store.get(key);
-    if (existing === undefined || snapshot.refreshedAt >= existing.refreshedAt) {
+    if (existing === undefined || snapshot.createdAt >= existing.createdAt) {
       this.store.set(key, cloneStoredResponsesSnapshot(snapshot));
     }
     return Promise.resolve();
   }
 
-  async deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number> {
-    const apiKey = await this.apiKeys.getById(apiKeyId);
-    const cutoff = apiKey === null || apiKey.responsesRetentionSeconds === 0
-      ? Number.MAX_SAFE_INTEGER
-      : responsesStateCutoff(now, apiKey.responsesRetentionSeconds, apiKey.responsesStateVisibleAfter);
+  deleteOlderThan(createdBefore: number): Promise<number> {
     let changes = 0;
     for (const [key, snapshot] of this.store) {
-      if (changes >= limit) break;
-      if (snapshot.apiKeyId !== apiKeyId) continue;
-      if (apiKey !== null && apiKey.responsesRetentionSeconds > 0 && snapshot.stateEpoch === apiKey.responsesStateEpoch && snapshot.refreshedAt >= cutoff) continue;
-      this.store.delete(key);
-      changes += 1;
+      if (snapshot.createdAt < createdBefore) {
+        this.store.delete(key);
+        changes += 1;
+      }
     }
-    return changes;
+    return Promise.resolve(changes);
   }
 
-  apiKeyIds(): string[] {
-    return [...new Set([...this.store.values()].map(row => row.apiKeyId))];
-  }
-
-  oldestRefresh(apiKeyId: string, stateEpoch: string): number | null {
-    const values = [...this.store.values()]
-      .filter(row => row.apiKeyId === apiKeyId && row.stateEpoch === stateEpoch)
-      .map(row => row.refreshedAt);
-    return values.length === 0 ? null : Math.min(...values);
-  }
-}
-
-class MemoryResponsesMaintenanceRepo implements ResponsesMaintenanceRepo {
-  constructor(
-    private apiKeys: ApiKeyRepo,
-    private items: MemoryResponsesItemsRepo,
-    private snapshots: MemoryResponsesSnapshotsRepo,
-  ) {}
-
-  async claimStateSweep(_token: string, _now: number, _staleClaimBefore: number): Promise<ResponsesStateSweepClaim | null> {
-    const apiKeyId = [...new Set([...this.items.apiKeyIds(), ...this.snapshots.apiKeyIds()])][0];
-    if (apiKeyId === undefined) return null;
-    const apiKey = await this.apiKeys.getById(apiKeyId);
-    return {
-      apiKeyId,
-      revision: 0,
-      stateEpoch: apiKey !== null && apiKey.responsesRetentionSeconds > 0 ? apiKey.responsesStateEpoch : null,
-      retentionSeconds: apiKey?.responsesRetentionSeconds ?? 0,
-    };
-  }
-
-  findOldestStateRefresh(apiKeyId: string, stateEpoch: string): Promise<number | null> {
-    const values = [this.items.oldestRefresh(apiKeyId, stateEpoch), this.snapshots.oldestRefresh(apiKeyId, stateEpoch)]
-      .filter(value => value !== null);
-    return Promise.resolve(values.length === 0 ? null : Math.min(...values));
-  }
-
-  completeStateSweep(_token: string, _revision: number, _nextDueAt: number | null, _advanceDueAt: boolean): Promise<void> {
-    return Promise.resolve();
-  }
-
-  claimPayloadFiles(_token: string, _now: number, _staleClaimBefore: number, _limit: number): Promise<string[]> {
-    return Promise.resolve([]);
-  }
-
-  acknowledgePayloadFiles(_token: string): Promise<number> {
-    return Promise.resolve(0);
-  }
-
-  getV1NextExpiryHour(): Promise<null> {
-    return Promise.resolve(null);
-  }
-
-  setV1NextExpiryHour(_hourStart: number): Promise<void> {
-    return Promise.resolve();
-  }
-
-  deleteV1ItemsExpiredHour(_hourStart: number, _hourEnd: number, _limit: number): Promise<number> {
-    return Promise.resolve(0);
-  }
-
-  deleteV1SnapshotsExpiredHour(_hourStart: number, _hourEnd: number, _limit: number): Promise<number> {
-    return Promise.resolve(0);
-  }
-
-  isV1CleanupReady(_now: number): Promise<boolean> {
-    return Promise.resolve(false);
-  }
-
-  completeV1Cleanup(): Promise<void> {
+  deleteAll(): Promise<void> {
+    this.store.clear();
     return Promise.resolve();
   }
 }
@@ -1160,7 +995,6 @@ export class InMemoryRepo implements Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
-  responsesMaintenance: ResponsesMaintenanceRepo;
   agentSetup: AgentSetupRepository;
 
   constructor() {
@@ -1176,11 +1010,8 @@ export class InMemoryRepo implements Repo {
     this.proxies = new MemoryProxyRepo(this.upstreams);
     this.proxyBackoffs = new MemoryProxyBackoffRepo();
     this.modelAliases = new MemoryModelAliasesRepo();
-    const responsesItems = new MemoryResponsesItemsRepo(this.apiKeys);
-    const responsesSnapshots = new MemoryResponsesSnapshotsRepo(this.apiKeys);
-    this.responsesItems = responsesItems;
-    this.responsesSnapshots = responsesSnapshots;
-    this.responsesMaintenance = new MemoryResponsesMaintenanceRepo(this.apiKeys, responsesItems, responsesSnapshots);
+    this.responsesItems = new MemoryResponsesItemsRepo();
+    this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
     this.agentSetup = new MemoryAgentSetupRepo();
   }
 }

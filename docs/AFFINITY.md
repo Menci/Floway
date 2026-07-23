@@ -151,20 +151,5 @@ Full items and `item_reference`s hydrate by arbitrary exact ID with no format
 validation or candidate-specific rewrite. When state is written, idless input
 items use internal storage keys only inside snapshots; stateless HTTP requests
 neither hash nor stage them. The persistence backing accepts exact item/private
-payload reuse and rejects a different unexpired row under the same
-API-key/epoch/ID scope.
+payload reuse and rejects a different row under the same API-key-scoped ID.
 Affinity never reads, writes, authenticates, or validates item IDs.
-
-Durable persistence is controlled by the API key's Stateful Responses
-retention. Zero creates no durable backing, so `item_reference` and
-`previous_response_id` fail without querying stored state. Positive retention
-enables a sliding TTL; request-level `store: false` may read that durable state
-but writes none. WebSocket local state is independent and survives a durable
-setting of zero for the life of that connection. A private per-key epoch makes
-pre-disable in-flight writes invisible after retention is turned off. Positive
-retention changes keep the epoch: reads apply the current rolling cutoff plus a
-monotonic floor, so shortening preserves exactly the rows inside the new window
-and later growth cannot resurrect excluded history. Item lifetime refresh
-changes only D1 timestamps. Spilled payload objects keep immutable nonce-owned
-keys and are reclaimed asynchronously through a crash-safe, exact-key GC queue
-when their item row is replaced or leaves retention.

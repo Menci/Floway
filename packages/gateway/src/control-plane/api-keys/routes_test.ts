@@ -3,7 +3,6 @@ import { test, vi } from 'vitest';
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
-import { RESPONSES_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const ownerPatch = (id: string, body: unknown, rawKey: string) =>
@@ -13,13 +12,6 @@ const ownerPatch = (id: string, body: unknown, rawKey: string) =>
     body: JSON.stringify(body),
   });
 
-const assertPrivateStateAbsent = (value: Record<string, unknown>): void => {
-  assertEquals(Object.hasOwn(value, 'responsesStateEpoch'), false);
-  assertEquals(Object.hasOwn(value, 'responses_state_epoch'), false);
-  assertEquals(Object.hasOwn(value, 'responsesStateVisibleAfter'), false);
-  assertEquals(Object.hasOwn(value, 'responses_state_visible_after'), false);
-};
-
 test('GET /api/keys never exposes the server-side server secret', async () => {
   const { apiKey } = await setupAppTest();
   const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
@@ -28,7 +20,6 @@ test('GET /api/keys never exposes the server-side server secret', async () => {
   assertEquals(body.length, 1);
   assertEquals(Object.hasOwn(body[0]!, 'serverSecret'), false);
   assertEquals(Object.hasOwn(body[0]!, 'server_secret'), false);
-  assertPrivateStateAbsent(body[0]!);
 });
 
 test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async () => {
@@ -39,7 +30,6 @@ test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async ()
   const response = await ownerPatch(apiKey.id, { upstream_ids: ['up_y', 'up_x'] }, apiKey.key);
   assertEquals(response.status, 200);
   const body = await response.json();
-  assertPrivateStateAbsent(body);
   assertEquals(body.upstream_ids, ['up_y', 'up_x']);
 
   const stored = await repo.apiKeys.getById(apiKey.id);
@@ -329,56 +319,6 @@ test('PATCH /api/keys/:id rejects zero and negative dump_retention_seconds', asy
   assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: -1 }, apiKey.key)).status, 400);
 });
 
-test('Stateful Responses retention defaults off and grows without changing its state epoch', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const listed = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(listed.status, 200);
-  assertEquals(((await listed.json()) as Array<{ responses_retention_seconds: number }>)[0].responses_retention_seconds, 0);
-
-  const sevenDays = 7 * 24 * 60 * 60;
-  const thirtyDays = 30 * 24 * 60 * 60;
-  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: sevenDays }, apiKey.key)).status, 200);
-  let stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.responsesRetentionSeconds, sevenDays);
-  assertEquals(stored.responsesStateEpoch, apiKey.responsesStateEpoch);
-
-  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: thirtyDays }, apiKey.key)).status, 200);
-  stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.responsesRetentionSeconds, thirtyDays);
-  assertEquals(stored.responsesStateEpoch, apiKey.responsesStateEpoch);
-});
-
-test('shortening Stateful Responses retention advances its floor while disabling rotates its epoch', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const thirtyDays = 30 * 24 * 60 * 60;
-  const sevenDays = 7 * 24 * 60 * 60;
-  await repo.apiKeys.save({ ...apiKey, responsesRetentionSeconds: thirtyDays });
-
-  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: sevenDays }, apiKey.key)).status, 200);
-  let stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.responsesRetentionSeconds, sevenDays);
-  assertEquals(stored.responsesStateEpoch, apiKey.responsesStateEpoch);
-  if (stored.responsesStateVisibleAfter <= 0) throw new Error('retention shrink did not advance the visibility floor');
-
-  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: 0 }, apiKey.key)).status, 200);
-  stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.responsesRetentionSeconds, 0);
-  if (stored.responsesStateEpoch === apiKey.responsesStateEpoch) throw new Error('retention disable did not rotate state epoch');
-  assertEquals(stored.responsesStateVisibleAfter, 0);
-});
-
-test('rejects invalid Stateful Responses retention values', async () => {
-  const { apiKey } = await setupAppTest();
-  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: -1 }, apiKey.key)).status, 400);
-  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: 1 }, apiKey.key)).status, 400);
-  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: 1.5 }, apiKey.key)).status, 400);
-  assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: RESPONSES_RETENTION_MAX_SECONDS + 1 }, apiKey.key)).status, 400);
-});
-
 test('DELETE /api/keys/:id soft-deletes the key', async () => {
   const { repo, apiKey } = await setupAppTest();
   const response = await requestApp(`/api/keys/${apiKey.id}`, {
@@ -395,8 +335,6 @@ test('DELETE /api/keys/:id soft-deletes the key', async () => {
   const deleted = allKeys.find(k => k.id === apiKey.id);
   assertExists(deleted);
   assertEquals(typeof deleted.deletedAt, 'string');
-  assertEquals(deleted.responsesRetentionSeconds, 0);
-  if (deleted.responsesStateEpoch === apiKey.responsesStateEpoch) throw new Error('soft delete did not rotate state epoch');
 });
 
 test('DELETE /api/keys/:id succeeds when the broker close hook throws — broker outage must not block soft-delete', async () => {
@@ -425,23 +363,6 @@ test('PATCH /api/keys/:id positive→null retention purges + closes the channel'
   assertEquals(response.status, 200);
   assertEquals(stubs.purgedAll.includes(apiKey.id), true);
   assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), true);
-});
-
-test('PATCH /api/keys/:id disables dumps even when retention changed after ownership lookup', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const update = repo.apiKeys.update.bind(repo.apiKeys);
-  vi.spyOn(repo.apiKeys, 'update').mockImplementationOnce(async (id, patch) => {
-    await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-    return await update(id, patch);
-  });
-
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
-
-  assertEquals(response.status, 200);
-  assertEquals(stubs.purgedAll, [apiKey.id]);
-  assertEquals(stubs.closedChannels, [{ keyId: apiKey.id, reason: 'dump retention disabled' }]);
-  assertEquals((await repo.apiKeys.getById(apiKey.id))?.dumpRetentionSeconds, null);
 });
 
 test('PATCH /api/keys/:id positive→null succeeds when the broker close hook throws', async () => {

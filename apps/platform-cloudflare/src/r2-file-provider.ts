@@ -27,22 +27,6 @@ export class R2FileProvider implements FileProvider {
     return object ? new Uint8Array(await object.arrayBuffer()) : null;
   }
 
-  async deleteKeys(keys: readonly string[]): Promise<void> {
-    for (let index = 0; index < keys.length; index += R2_BATCH_LIMIT) {
-      await this.bucket.delete(keys.slice(index, index + R2_BATCH_LIMIT));
-    }
-  }
-
-  async deletePrefixPage(prefix: string, limit: number): Promise<{ deleted: number; complete: boolean }> {
-    if (prefix === '') throw new Error('R2FileProvider.deletePrefixPage: refusing empty prefix');
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > R2_BATCH_LIMIT) {
-      throw new RangeError(`R2FileProvider.deletePrefixPage limit must be from 1 to ${R2_BATCH_LIMIT}`);
-    }
-    const page = await this.bucket.list({ prefix, limit });
-    await this.deleteKeys(page.objects.map(object => object.key));
-    return { deleted: page.objects.length, complete: !page.truncated };
-  }
-
   async deletePrefix(prefix: string): Promise<void> {
     // Refuse the entire bucket: a stray empty-string prefix would otherwise
     // wipe every spilled payload across tenants. Matches FsFileProvider.
@@ -50,7 +34,7 @@ export class R2FileProvider implements FileProvider {
     let cursor: string | undefined;
     do {
       const page = await this.bucket.list({ prefix, cursor, limit: R2_BATCH_LIMIT });
-      await this.deleteKeys(page.objects.map(object => object.key));
+      if (page.objects.length > 0) await this.bucket.delete(page.objects.map(object => object.key));
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
   }

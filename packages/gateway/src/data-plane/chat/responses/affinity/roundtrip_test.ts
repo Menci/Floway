@@ -4,7 +4,6 @@ import { wrapResponsesAffinityEgress } from './egress.ts';
 import { prepareResponsesAffinity } from './ingress.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { testResponsesStatePolicy } from '../../../../test-helpers/responses-state.ts';
 import { AffinityCodec } from '../../shared/affinity/index.ts';
 import { hydrateResponsesPayload } from '../items/hydrate.ts';
 import { wrapResponsesClientOutput } from '../items/output.ts';
@@ -26,7 +25,7 @@ test('affinity selects the route while item storage preserves the exact producer
   const candidateA = modelCandidate('upstream-a');
   const candidateB = modelCandidate('upstream-b');
   const codec = new AffinityCodec('22'.repeat(32));
-  const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
+  const store = createResponsesHttpStore('key-a', true);
   store.beginAttempt(new Map());
 
   const programOutput = {

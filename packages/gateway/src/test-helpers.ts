@@ -146,9 +146,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
-    responsesStateEpoch: '00'.repeat(16),
-    responsesStateVisibleAfter: 0,
   };
   await repo.apiKeys.save(apiKey);
 

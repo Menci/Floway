@@ -14,9 +14,6 @@ const seedSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryRepo
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
-    responsesStateEpoch: '11'.repeat(16),
-    responsesStateVisibleAfter: 0,
   });
 
   await repo.searchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'search', hour: '2026-03-15T10', requests: 2 });
@@ -157,7 +154,7 @@ test('/api/search-usage all-by-user attributes soft-deleted keys to their origin
   // must still resolve the row to apiKey.userId — not the synthetic userId 0
   // it falls back to when the key→user lookup misses.
   await repo.searchUsage.set({ provider: 'tavily', keyId: apiKey.id, action: 'search', hour: '2026-03-15T10', requests: 7 });
-  await repo.apiKeys.softDelete(apiKey.id, '22'.repeat(16));
+  await repo.apiKeys.softDelete(apiKey.id);
 
   const response = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user', {
     headers: { 'x-floway-session': adminSession },

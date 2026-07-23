@@ -30,65 +30,12 @@ const UPSTREAMS_STUB_SQL = `
     provider TEXT NOT NULL,
     color TEXT NULL
   );
-  CREATE TABLE api_keys (
-    id TEXT PRIMARY KEY,
-    deleted_at TEXT,
-    dump_retention_seconds INTEGER
-  );
 `;
 
 const openDb = async (): Promise<SqlDatabase> => {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec(UPSTREAMS_STUB_SQL);
   sqlite.exec(await readFile(MIGRATION_PATH, 'utf8'));
-  sqlite.exec(`
-    CREATE TABLE dump_maintenance_keys (
-      key_id TEXT PRIMARY KEY,
-      due_at INTEGER NOT NULL,
-      floor_cursor INTEGER NOT NULL DEFAULT 0,
-      revision INTEGER NOT NULL DEFAULT 0,
-      claim_token TEXT,
-      claimed_at INTEGER
-    );
-    CREATE TABLE dump_file_gc (
-      file_key TEXT PRIMARY KEY,
-      eligible_at INTEGER NOT NULL,
-      claim_token TEXT,
-      claimed_at INTEGER
-    );
-    CREATE TABLE dump_visibility_floor (
-      key_id TEXT PRIMARY KEY,
-      started_after INTEGER NOT NULL
-    );
-    CREATE TABLE dump_maintenance_backfill (
-      id INTEGER PRIMARY KEY,
-      next_rowid INTEGER NOT NULL DEFAULT 0,
-      complete INTEGER NOT NULL DEFAULT 1
-    );
-    INSERT INTO dump_maintenance_backfill (id) VALUES (1);
-    CREATE TRIGGER dump_records_validate_files BEFORE INSERT ON dump_records BEGIN
-      SELECT CASE WHEN NEW.request_body_descriptor IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM dump_file_gc WHERE file_key = json_extract(NEW.request_body_descriptor, '$.key') AND claim_token IS NULL
-      ) THEN RAISE(ABORT, 'Dump request body file was not staged') END;
-      SELECT CASE WHEN NEW.response_body_descriptor IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM dump_file_gc WHERE file_key = json_extract(NEW.response_body_descriptor, '$.key') AND claim_token IS NULL
-      ) THEN RAISE(ABORT, 'Dump response body file was not staged') END;
-    END;
-    CREATE TRIGGER dump_records_adopt_files AFTER INSERT ON dump_records BEGIN
-      DELETE FROM dump_file_gc WHERE claim_token IS NULL AND file_key IN (
-        json_extract(NEW.request_body_descriptor, '$.key'), json_extract(NEW.response_body_descriptor, '$.key')
-      );
-      INSERT INTO dump_maintenance_keys (key_id, due_at) VALUES (NEW.key_id, 0)
-      ON CONFLICT (key_id) DO UPDATE SET due_at = 0, floor_cursor = 0, revision = dump_maintenance_keys.revision + 1;
-    END;
-    CREATE TRIGGER dump_records_retire_files AFTER DELETE ON dump_records BEGIN
-      INSERT OR IGNORE INTO dump_file_gc (file_key, eligible_at)
-      SELECT json_extract(OLD.request_body_descriptor, '$.key'), 0 WHERE OLD.request_body_descriptor IS NOT NULL;
-      INSERT OR IGNORE INTO dump_file_gc (file_key, eligible_at)
-      SELECT json_extract(OLD.response_body_descriptor, '$.key'), 0 WHERE OLD.response_body_descriptor IS NOT NULL;
-    END;
-    INSERT INTO api_keys (id, deleted_at, dump_retention_seconds) VALUES ('key_x', NULL, 315360000);
-  `);
   return {
     prepare(query): SqlPreparedStatement {
       const stmt = sqlite.prepare(query);
@@ -115,10 +62,6 @@ const openDb = async (): Promise<SqlDatabase> => {
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 const requestBody = utf8('{"hello":"world"}');
-
-const drainMaintenance = async (store: FileDumpStore, now: number): Promise<void> => {
-  while (await store.purgeNextMaintenanceBatch(now)) { /* bounded units */ }
-};
 
 const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
   meta: {
@@ -272,23 +215,20 @@ test('FileDumpStore.purgeExpired drops rows past the cutoff and sweeps whole hou
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12, 0, 0);
-  await db.prepare('UPDATE api_keys SET dump_retention_seconds = ? WHERE id = ?').bind(2 * 3600, 'key_x').run();
   // Old bucket 9:xx, current bucket 12:xx.
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', now));
   // 2 hours retention; the old bucket is past the cutoff and should disappear,
   // but the now bucket must stay because its end is still within the window.
   const originalNow = Date.now;
-  let leftIds: string[] = [];
   Date.now = () => now + 1;
   try {
     await store.purgeExpired('key_x', 2 * 3600);
-    await drainMaintenance(store, now + 1);
-    leftIds = (await store.list('key_x', { limit: 10 })).map(meta => meta.id);
   } finally {
     Date.now = originalNow;
   }
-  assertEquals(leftIds, ['01HZZ0000000000000000000A2']);
+  const left = await store.list('key_x', { limit: 10 });
+  assertEquals(left.map(m => m.id), ['01HZZ0000000000000000000A2']);
 
   const remainingFiles = await files.listKeys('dumps/v1/key_x/');
   assertEquals(remainingFiles.every(k => !k.includes('2026060109')), true);
@@ -301,45 +241,8 @@ test('FileDumpStore.purgeAll wipes every row and every file under the key prefix
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)));
   await store.purgeAll('key_x');
-  await drainMaintenance(store, Date.UTC(2026, 5, 1, 13));
   assertEquals((await store.list('key_x', { limit: 10 })).length, 0);
   assertEquals((await files.listKeys('dumps/v1/key_x/')).length, 0);
-});
-
-test('FileDumpStore scheduled purge deletes at most one bounded row batch', async () => {
-  const db = await openDb();
-  const files = new MemoryFileProvider();
-  const store = new FileDumpStore(db, files);
-  const insert = db.prepare(
-    `INSERT INTO dump_records
-      (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-     VALUES (?, ?, ?, NULL, '{}', '[]', NULL, NULL, NULL)`,
-  );
-  for (let index = 0; index < 501; index += 1) {
-    await insert.bind('key_x', `dump_${index.toString().padStart(4, '0')}`, index).run();
-  }
-  await db.prepare('UPDATE api_keys SET dump_retention_seconds = NULL WHERE id = ?').bind('key_x').run();
-
-  await store.purgeNextMaintenanceBatch(1_000);
-
-  const count = await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE key_id = ?')
-    .bind('key_x')
-    .first<{ count: number }>();
-  assertEquals(count?.count, 1);
-});
-
-test('FileDumpStore scheduled purge reclaims an orphan-only queued bucket', async () => {
-  const db = await openDb();
-  const files = new MemoryFileProvider();
-  const store = new FileDumpStore(db, files);
-  const key = 'dumps/v1/key_x/1970010100/orphan.req.gz';
-  await files.put(key, new Uint8Array([1]));
-  await db.prepare('INSERT INTO dump_file_gc (file_key, eligible_at) VALUES (?, 0)').bind(key).run();
-
-  assertEquals(await store.purgeNextMaintenanceBatch(2 * 3600_000), true);
-
-  assertEquals(await files.get(key), null);
-  assertEquals(await store.purgeNextMaintenanceBatch(2 * 3600_000), false);
 });
 
 test('FileDumpStore.purgeExpired against a never-written key resolves without throwing', async () => {
@@ -347,7 +250,6 @@ test('FileDumpStore.purgeExpired against a never-written key resolves without th
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
   await store.purgeExpired('never_written_key', 3600);
-  await drainMaintenance(store, Date.now());
   assertEquals((await store.list('never_written_key', { limit: 10 })).length, 0);
   assertEquals((await files.listKeys('dumps/v1/never_written_key/')).length, 0);
 });
@@ -372,14 +274,6 @@ class TmpDirFileProvider implements FileProvider {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw e;
     }
-  }
-  async deleteKeys(keys: readonly string[]): Promise<void> {
-    await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
-  }
-  async deletePrefixPage(prefix: string, limit: number): Promise<{ deleted: number; complete: boolean }> {
-    const keys = (await this.listKeys(prefix)).slice(0, limit);
-    await this.deleteKeys(keys);
-    return { deleted: keys.length, complete: keys.length < limit };
   }
   async deletePrefix(prefix: string): Promise<void> {
     if (prefix === '') throw new Error('refusing empty prefix');

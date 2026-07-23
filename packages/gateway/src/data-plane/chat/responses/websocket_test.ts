@@ -6,7 +6,6 @@ import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
 import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
-import { TEST_RESPONSES_RETENTION_SECONDS } from '../../../test-helpers/responses-state.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
@@ -381,7 +380,6 @@ test('Responses WebSocket rejects the next turn after its API key is rotated', a
 
 test('Responses WebSocket reports a failed turn when an output item cannot be persisted', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS });
   const persistence = vi.spyOn(repo.responsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
   try {
     await withMockedFetch(
@@ -764,15 +762,15 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       const firstResponseId = responseDoneId(firstMessages);
 
       assert(isFlowayResponseId(firstResponseId), 'expected a Floway response id');
-      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, firstResponseId), null);
+      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId), null);
       const firstOutput = firstMessages.find(message =>
         message.type === 'response.output_item.done'
         && (message as { item?: { type?: unknown } }).item?.type === 'message') as { item?: { id?: string } } | undefined;
       assertExists(firstOutput?.item?.id);
       assert(/^msg_[0-9a-f]{32}$/.test(firstOutput.item.id), 'expected a Copilot-normalized message id');
-      assertEquals(await repo.responsesItems.lookupMany(apiKey.id, apiKey.responsesStateEpoch, [firstOutput.item.id]), []);
+      assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id]), []);
       assertEquals(
-        await repo.responsesItems.lookupManyByContentHash(apiKey.id, apiKey.responsesStateEpoch, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })]),
+        await repo.responsesItems.lookupManyByContentHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })]),
         [],
       );
 
@@ -789,7 +787,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       }));
       const secondMessages = await followupDone;
       const secondResponseId = responseDoneId(secondMessages);
-      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, secondResponseId), null);
+      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, secondResponseId), null);
 
       const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
       assertEquals(secondBody.previous_response_id, undefined);
@@ -829,7 +827,6 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
 
 test('Responses WebSocket store:true durable snapshots can chain through local session cache', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS });
   let turn = 0;
   let firstResponseId: string | undefined;
   let secondResponseId: string | undefined;
@@ -881,8 +878,8 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
     }),
   );
 
-  const firstSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, firstResponseId!);
-  const secondSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, secondResponseId!);
+  const firstSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId!);
+  const secondSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, secondResponseId!);
   assertExists(firstSnapshot);
   assertExists(secondSnapshot);
   assertEquals(secondSnapshot.itemIds.length > firstSnapshot.itemIds.length, true);
@@ -998,7 +995,6 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
 // per-session, not per-api-key).
 test('Responses WebSocket session-level store: second message resolves prior items via session cache', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS });
   const upstreamBodies: unknown[] = [];
 
   await withMockedFetch(
@@ -1046,10 +1042,10 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       // The first turn wrote to both the durable repo and the session-local
       // cache. Wipe the repo to prove the next lookup comes from the cache
       // alone.
-      assertExists(await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, firstResponseId));
-      await repo.responsesSnapshots.deleteReclaimable(apiKey.id, Number.MAX_SAFE_INTEGER, 100);
-      await repo.responsesItems.deleteReclaimable(apiKey.id, Number.MAX_SAFE_INTEGER, 100);
-      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, firstResponseId), null);
+      assertExists(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId));
+      await repo.responsesSnapshots.deleteAll();
+      await repo.responsesItems.deleteAll();
+      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId), null);
 
       const secondDone = waitForMessages(sessionA, messages => messages.some(message => message.type === 'response.done'));
       sessionA.send(JSON.stringify({
@@ -1073,11 +1069,11 @@ test('Responses WebSocket session-level store: second message resolves prior ite
         ['message', 'user', 'turn two input'],
       ]);
 
-      const restored = await repo.responsesSnapshots.lookup(apiKey.id, apiKey.responsesStateEpoch, firstResponseId);
+      const restored = await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId);
       assertExists(restored);
-      assertEquals((await repo.responsesItems.lookupMany(apiKey.id, apiKey.responsesStateEpoch, restored.itemIds)).length, restored.itemIds.length);
-      await repo.responsesSnapshots.deleteReclaimable(apiKey.id, Number.MAX_SAFE_INTEGER, 100);
-      await repo.responsesItems.deleteReclaimable(apiKey.id, Number.MAX_SAFE_INTEGER, 100);
+      assertEquals((await repo.responsesItems.lookupMany(apiKey.id, restored.itemIds)).length, restored.itemIds.length);
+      await repo.responsesSnapshots.deleteAll();
+      await repo.responsesItems.deleteAll();
 
       // A fresh WS session for the same api key has its own empty cache; with
       // the repo wiped, the snapshot is unreachable.

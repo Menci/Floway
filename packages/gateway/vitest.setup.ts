@@ -29,8 +29,6 @@ const noopStore: DumpStore = {
   async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },
   async purgeAll(): Promise<void> { /* noop */ },
   async purgeExpired(): Promise<void> { /* noop */ },
-  async backfillMaintenanceBatch(): Promise<boolean> { return false; },
-  async purgeNextMaintenanceBatch(): Promise<boolean> { return false; },
 };
 const noopBroker: DumpBroker = {
   async publish(): Promise<void> { /* noop */ },

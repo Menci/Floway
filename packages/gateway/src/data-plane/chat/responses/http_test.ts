@@ -5,7 +5,6 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
-import { testResponsesStateLifetime, TEST_RESPONSES_RETENTION_SECONDS, TEST_RESPONSES_STATE_EPOCH } from '../../../test-helpers/responses-state.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -68,9 +67,6 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 0,
-  responsesStateEpoch: '11'.repeat(16),
-  responsesStateVisibleAfter: 0,
   ...overrides,
 });
 
@@ -86,12 +82,12 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   ...overrides,
 });
 
-const makeApp = (responsesRetentionSeconds = 0): Hono<{ Variables: AuthVars }> => {
+const makeApp = (): Hono<{ Variables: AuthVars }> => {
   const app = new Hono<{ Variables: AuthVars }>();
   // Stamp the authenticated key onto every request so the http entry sees the
   // same value the real auth middleware would set.
   app.use('*', async (c, next) => {
-    c.set('apiKey', buildApiKey({ responsesRetentionSeconds }));
+    c.set('apiKey', buildApiKey());
     c.set('user', buildUser());
     await next();
   });
@@ -360,7 +356,7 @@ test('POST /v1/responses returns 502 when a non-streaming output item cannot be 
   try {
     queueCompletedResponse();
 
-    const response = await makeApp(TEST_RESPONSES_RETENTION_SECONDS).request('/v1/responses', {
+    const response = await makeApp().request('/v1/responses', {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({ model: 'test-model', input: 'hello' }),
@@ -380,7 +376,7 @@ test('POST /v1/responses terminates an SSE stream with error when an output item
   try {
     queueCompletedResponse();
 
-    const response = await makeApp(TEST_RESPONSES_RETENTION_SECONDS).request('/v1/responses', {
+    const response = await makeApp().request('/v1/responses', {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
@@ -405,7 +401,7 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
   try {
     queueCompletedResponse();
 
-    const response = await makeApp(TEST_RESPONSES_RETENTION_SECONDS).request('/v1/responses', {
+    const response = await makeApp().request('/v1/responses', {
       method: 'POST',
       headers: new Headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({ model: 'test-model', input: 'hello' }),
@@ -448,32 +444,12 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
   const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
   assertEquals(body.object, 'response.compaction');
   assert(isFlowayResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
-  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, TEST_RESPONSES_STATE_EPOCH, body.id), null);
-  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, TEST_RESPONSES_STATE_EPOCH, body.output.map(item => item.id)), []);
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id), null);
+  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id)), []);
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
-  const repo = installRepo();
-  const item = { type: 'message', id: 'msg_saved', role: 'assistant', content: [] };
-  const payload = { item };
-  await repo.responsesItems.insertMany([{
-    id: item.id,
-    apiKeyId: API_KEY_ID,
-    stateEpoch: TEST_RESPONSES_STATE_EPOCH,
-    payload,
-    contentHash: 'saved-content-hash',
-    payloadHash: 'saved-payload-hash',
-    payloadFileKey: null,
-    ...testResponsesStateLifetime(Date.now()),
-  }], Date.now());
-  await repo.responsesSnapshots.insert({
-    id: 'resp_missing',
-    apiKeyId: API_KEY_ID,
-    stateEpoch: TEST_RESPONSES_STATE_EPOCH,
-    itemIds: [item.id],
-    ...testResponsesStateLifetime(Date.now()),
-  });
-  const lookup = vi.spyOn(repo.responsesSnapshots, 'lookupActive');
+  installRepo();
 
   // No candidates need to be queued — the entry rejects before routing runs.
   const response = await makeApp().request('/v1/responses', {
@@ -492,7 +468,6 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'previous_response_id');
   assertEquals(body.error.code, 'previous_response_not_found');
-  assertEquals(lookup.mock.calls.length, 0);
 });
 
 const queueCodexAutoReviewCandidate = (

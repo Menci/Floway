@@ -237,40 +237,13 @@ lives in `docs/AFFINITY.md`, and candidate ordering lives in `docs/RESOLUTION.md
 
 Native Responses persistence is independent from affinity. It stores the first
 complete client-facing item under each producer-owned, API-key-scoped item ID,
-plus response snapshots, without rewriting item IDs. Durable state is opt-in
-per API key: zero retention installs no durable read or write backing, while a
-positive custom duration is a sliding TTL. The request `store` flag can narrow
-an enabled key to read-only (`store: false`) but cannot enable a disabled key.
-WebSocket session-local state remains available regardless of the durable
-setting. A completed output item becomes reusable at its first
-`response.output_item.done`, so its row commits before that event is published;
-the response snapshot commits at the successful terminal event. Repository
-writes treat exact item/private-payload reuse as idempotent and reject a
-different visible row under the same key/epoch/ID scope. Rows store only
-`refreshed_at`; each durable read applies the API key's current rolling cutoff
-and monotonic visibility floor. Shortening retention keeps the epoch and
-advances that floor, so only rows outside the new window disappear and later
-growth cannot resurrect them based on janitor timing. Disabling retention
-rotates the epoch to isolate in-flight writes. Lifetime refresh is key-only and
-debounced near the cutoff. Enabled durations are at least one hour.
-
-Cleanup uses `(api_key_id, refreshed_at)` indexes and a claimed due-key queue.
-Each tick range-deletes one bounded item/snapshot batch against the current key
-policy, then fairly requeues a partially drained key. Large payloads use
-immutable, nonce-owned file keys: D1 stages a key before publication, item
-adoption removes that staging record transactionally, and row
-replacement/deletion queues exact keys for claimed batch deletion. Refresh
-never reads, copies, or deletes file objects. A separate bounded v1 cursor
-drains the superseded Responses tables and hourly spill buckets; after the old
-30-day writer horizon, it removes any remaining v1 orphan root before marking
-that cleanup complete. Cloudflare runs this state/image work at minute 17 and
-dump cleanup at minute 47 in separate cron invocations. Dump maintenance
-performs one bounded backfill unit plus at most four queued key/file-GC units,
-removing at most 500 rows or 1,000 exact files per unit, so neither cron inherits an unbounded D1 or R2
-workload from the other. Every body key is staged in D1 before publication and
-adopted by the metadata-row insert, making pre-row crash orphans discoverable
-without a prefix scan. Existing dump rows enter the queue through a bounded
-rowid cursor rather than migration-time full-table backfill.
+plus response snapshots, for 30 days without rewriting item IDs. A completed
+output item becomes reusable at its first `response.output_item.done`, so its
+row commits before that event is published; the response snapshot commits at
+the successful terminal event. Repository writes treat exact
+item/private-payload reuse as idempotent and reject a different row under the
+same API-key-scoped ID. HTTP `store: false` bypasses item persistence, while
+WebSocket `store: false` is session-local.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in

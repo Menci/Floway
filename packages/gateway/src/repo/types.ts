@@ -19,14 +19,6 @@ export interface ApiKey {
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
   dumpRetentionSeconds: number | null;
-  // 0 = durable Stateful Responses disabled; positive integer = sliding TTL.
-  responsesRetentionSeconds: number;
-  // Rotating this private namespace makes writes from pre-disable requests
-  // permanently invisible without changing the API key or affinity secret.
-  responsesStateEpoch: string;
-  // A shrink permanently excludes earlier rows even if retention grows again
-  // before bounded physical cleanup reaches them.
-  responsesStateVisibleAfter: number;
 }
 
 export interface User {
@@ -163,17 +155,10 @@ export interface ApiKeyRepo {
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
   save(key: ApiKey): Promise<void>;
-  saveIfResponsesStateUnchanged(key: ApiKey, expectedRetentionSeconds: number, expectedEpoch: string, expectedVisibleAfter: number): Promise<boolean>;
-  update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null>;
-  softDelete(id: string, responsesStateEpoch: string): Promise<boolean>;
+  softDelete(id: string): Promise<boolean>;
   softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
-
-export type ApiKeyUpdate = Partial<Pick<
-  ApiKey,
-  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'responsesRetentionSeconds'
->>;
 
 export interface UsersRepo {
   list(): Promise<User[]>;
@@ -376,12 +361,9 @@ export interface ModelAliasesRepo {
 export interface StoredResponsesItem {
   id: string;
   apiKeyId: string;
-  stateEpoch: string;
   payload: StoredResponsesItemPayload;
   contentHash: string;
-  payloadHash: string;
-  payloadFileKey: string | null;
-  refreshedAt: number;
+  createdAt: number;
 }
 
 export interface StoredResponsesItemPayload {
@@ -394,52 +376,26 @@ export interface StoredResponsesItemPayload {
 }
 
 export interface ResponsesItemsRepo {
-  lookupMany(apiKeyId: string, stateEpoch: string, ids: readonly string[]): Promise<StoredResponsesItem[]>;
-  lookupActiveMany(apiKeyId: string, stateEpoch: string, ids: readonly string[], refreshedAfter: number): Promise<StoredResponsesItem[]>;
-  lookupManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
-  lookupActiveManyByContentHash(apiKeyId: string, stateEpoch: string, hashes: readonly string[], refreshedAfter: number): Promise<StoredResponsesItem[]>;
-  insertMany(items: readonly StoredResponsesItem[], replaceBefore: number): Promise<void>;
-  refreshMany(
-    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'stateEpoch' | 'payloadHash'>[],
-    refreshedAt: number,
-  ): Promise<void>;
-  deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number>;
+  lookupMany(apiKeyId: string, ids: readonly string[]): Promise<StoredResponsesItem[]>;
+  lookupManyByContentHash(apiKeyId: string, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
+  insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
+  refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void>;
+  deleteOlderThan(createdBefore: number): Promise<number>;
+  deleteAll(): Promise<void>;
 }
 
 export interface StoredResponsesSnapshot {
   id: string;
   apiKeyId: string;
-  stateEpoch: string;
   itemIds: string[];
-  refreshedAt: number;
+  createdAt: number;
 }
 
 export interface ResponsesSnapshotsRepo {
-  lookup(apiKeyId: string, stateEpoch: string, id: string): Promise<StoredResponsesSnapshot | null>;
-  lookupActive(apiKeyId: string, stateEpoch: string, id: string, refreshedAfter: number): Promise<StoredResponsesSnapshot | null>;
+  lookup(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  deleteReclaimable(apiKeyId: string, now: number, limit: number): Promise<number>;
-}
-
-export interface ResponsesStateSweepClaim {
-  apiKeyId: string;
-  revision: number;
-  stateEpoch: string | null;
-  retentionSeconds: number;
-}
-
-export interface ResponsesMaintenanceRepo {
-  claimStateSweep(token: string, now: number, staleClaimBefore: number): Promise<ResponsesStateSweepClaim | null>;
-  findOldestStateRefresh(apiKeyId: string, stateEpoch: string): Promise<number | null>;
-  completeStateSweep(token: string, revision: number, nextDueAt: number | null, advanceDueAt: boolean): Promise<void>;
-  claimPayloadFiles(token: string, now: number, staleClaimBefore: number, limit: number): Promise<string[]>;
-  acknowledgePayloadFiles(token: string): Promise<number>;
-  getV1NextExpiryHour(): Promise<number | null>;
-  setV1NextExpiryHour(hourStart: number): Promise<void>;
-  deleteV1ItemsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
-  deleteV1SnapshotsExpiredHour(hourStart: number, hourEnd: number, limit: number): Promise<number>;
-  isV1CleanupReady(now: number): Promise<boolean>;
-  completeV1Cleanup(): Promise<void>;
+  deleteOlderThan(createdBefore: number): Promise<number>;
+  deleteAll(): Promise<void>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
@@ -462,6 +418,5 @@ export interface Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
-  responsesMaintenance: ResponsesMaintenanceRepo;
   agentSetup: AgentSetupRepository;
 }

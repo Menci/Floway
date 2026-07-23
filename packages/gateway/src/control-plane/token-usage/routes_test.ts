@@ -29,7 +29,7 @@ test('/api/token-usage all-by-user attributes soft-deleted keys to their origina
   // by-user aggregator must still resolve the row to apiKey.userId rather
   // than the synthetic userId 0 it falls back to when key→user lookup misses.
   await seedUsage(repo, apiKey.id, '2026-04-30T10', 'gpt-5', 3);
-  await repo.apiKeys.softDelete(apiKey.id, '22'.repeat(16));
+  await repo.apiKeys.softDelete(apiKey.id);
 
   const response = await requestApp(
     '/api/token-usage?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user',
@@ -47,7 +47,7 @@ test('/api/token-usage all-by-user attributes soft-deleted keys to their origina
 test('/api/token-usage self-by-key surfaces soft-deleted keys metadata to their owner', async () => {
   const { repo, apiKey } = await setupAppTest();
   await seedUsage(repo, apiKey.id, '2026-04-30T10', 'gpt-5', 7);
-  await repo.apiKeys.softDelete(apiKey.id, '22'.repeat(16));
+  await repo.apiKeys.softDelete(apiKey.id);
   // The acting api key was the one that was soft-deleted, so we need a fresh
   // active key under the same user to authenticate the request.
   await repo.apiKeys.save({
@@ -60,9 +60,6 @@ test('/api/token-usage self-by-key surfaces soft-deleted keys metadata to their 
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
-    responsesStateEpoch: '11'.repeat(16),
-    responsesStateVisibleAfter: 0,
   });
 
   const response = await requestApp(

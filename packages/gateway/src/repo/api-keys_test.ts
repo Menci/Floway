@@ -22,9 +22,6 @@ const baseKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 0,
-  responsesStateEpoch: '11'.repeat(16),
-  responsesStateVisibleAfter: 0,
   ...overrides,
 });
 
@@ -74,33 +71,6 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     await repo.apiKeys.save(baseKey({ serverSecret: secret }));
     assertEquals((await repo.apiKeys.findByRawKey('raw_dump_key'))?.serverSecret, secret);
 
-  });
-
-  test(`[${backend}] field updates cannot restore stale Responses retention state`, async () => {
-    const repo = await makeRepo();
-    await repo.apiKeys.save(baseKey({ responsesRetentionSeconds: 30 * 86400 }));
-    await repo.apiKeys.update('key_dump', { responsesRetentionSeconds: 0 });
-    const disabled = await repo.apiKeys.getById('key_dump');
-    if (disabled === null) throw new Error('key disappeared after retention update');
-
-    await repo.apiKeys.update('key_dump', { name: 'Renamed', lastUsedAt: '2026-07-23T00:00:00.000Z' });
-    const renamed = await repo.apiKeys.getById('key_dump');
-    assertEquals(renamed?.name, 'Renamed');
-    assertEquals(renamed?.lastUsedAt, '2026-07-23T00:00:00.000Z');
-    assertEquals(renamed?.responsesRetentionSeconds, 0);
-    assertEquals(renamed?.responsesStateEpoch, disabled.responsesStateEpoch);
-  });
-
-  test(`[${backend}] assigning the same positive retention does not advance its visibility floor`, async () => {
-    const repo = await makeRepo();
-    await repo.apiKeys.save(baseKey({
-      responsesRetentionSeconds: 7 * 86400,
-      responsesStateVisibleAfter: 123,
-    }));
-
-    const unchanged = await repo.apiKeys.update('key_dump', { responsesRetentionSeconds: 7 * 86400 });
-
-    assertEquals(unchanged?.responsesStateVisibleAfter, 123);
   });
 }
 

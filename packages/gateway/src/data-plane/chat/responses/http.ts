@@ -1,9 +1,9 @@
 import { responsesInputErrorResult } from './errors.ts';
-import { createResponsesHttpStore, responsesStatePolicyFromApiKey } from './items/store.ts';
+import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
-import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
+import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
@@ -77,8 +77,7 @@ export const responsesHttp = {
     try {
       const payload = parsePayload(requestBody);
       const wantsStream = payload.stream === true;
-      const statePolicy = responsesStatePolicyFromApiKey(apiKeyFromContext(c));
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, () => createResponsesHttpStore(statePolicy, payload.store ?? undefined));
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
       const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const response = await respondResponses(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
@@ -92,8 +91,7 @@ export const responsesHttp = {
     let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody);
-      const statePolicy = responsesStatePolicyFromApiKey(apiKeyFromContext(c));
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, () => createResponsesHttpStore(statePolicy, payload.store ?? undefined));
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
         // Compact drains the upstream stream into a single envelope with

@@ -3,7 +3,6 @@ import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { generateResponsesStateEpoch } from '../../repo/responses-retention.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
@@ -60,9 +59,6 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
-    responsesStateEpoch: generateResponsesStateEpoch(),
-    responsesStateVisibleAfter: 0,
   };
   await repo.apiKeys.save(defaultKey);
 

@@ -25,7 +25,6 @@ const key = (id: string, name: string, raw: string): ApiKey => ({
   last_used_at: null,
   upstream_ids: null,
   dump_retention_seconds: null,
-  responses_retention_seconds: 0,
 });
 
 const configuration = (): AgentSetupConfiguration => ({

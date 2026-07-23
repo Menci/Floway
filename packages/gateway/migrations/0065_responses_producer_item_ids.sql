@@ -1,0 +1,30 @@
+DROP TABLE responses_snapshots;
+DROP TABLE responses_items;
+
+CREATE TABLE responses_items (
+  id TEXT NOT NULL,
+  api_key_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  CHECK (length(id) > 0),
+  CHECK (length(api_key_id) > 0),
+  CHECK (length(payload_json) > 0),
+  CHECK (length(content_hash) > 0)
+);
+
+CREATE TABLE responses_snapshots (
+  id TEXT NOT NULL,
+  api_key_id TEXT NOT NULL,
+  item_ids_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  CHECK (length(id) > 0),
+  CHECK (length(api_key_id) > 0),
+  CHECK (length(item_ids_json) > 0)
+);
+
+CREATE UNIQUE INDEX idx_responses_items_id_scope ON responses_items (id, api_key_id);
+CREATE INDEX idx_responses_items_content_hash ON responses_items (api_key_id, content_hash);
+CREATE INDEX idx_responses_items_created_at ON responses_items (created_at);
+CREATE UNIQUE INDEX idx_responses_snapshots_id_scope ON responses_snapshots (id, api_key_id);
+CREATE INDEX idx_responses_snapshots_created_at ON responses_snapshots (created_at);

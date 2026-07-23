@@ -1,4 +1,6 @@
+import { hashResponsesItemContent, responsesItemId } from './identity.ts';
 import type { StatefulResponsesStore } from './store.ts';
+import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -23,10 +25,28 @@ export const wrapResponsesClientOutput = async function* (
   const finalizedOutputIds = new Map<number, string>();
   let sawCompactionItem = false;
 
+  const finalizedRow = async (item: ResponsesOutputItem): Promise<StoredResponsesItem> => {
+    const id = responsesItemId(item);
+    if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
+    const privatePayload = store.getPrivatePayload(id);
+    const row: StoredResponsesItem = {
+      id,
+      apiKeyId: store.apiKeyId,
+      payload: {
+        item,
+        ...(privatePayload !== undefined ? { private: privatePayload } : {}),
+      },
+      contentHash: await hashResponsesItemContent(item),
+      createdAt: Date.now(),
+    };
+    return row;
+  };
+
   const persistFinalizedItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<void> => {
     if (finalizedOutputIds.has(outputIndex)) return;
-    const id = await store.persistOutputItem(item);
-    finalizedOutputIds.set(outputIndex, id);
+    const row = await finalizedRow(item);
+    await store.persistOutputItem(row);
+    finalizedOutputIds.set(outputIndex, row.id);
   };
 
   const clientEnvelope = (response: ResponsesResult): ResponsesResult => ({

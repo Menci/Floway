@@ -269,7 +269,14 @@ export const recordUsage = async (
       requests: 1,
       metrics,
     }),
-    getRepo().apiKeys.update(keyId, { lastUsedAt: new Date().toISOString() }),
+    (async () => {
+      const key = await getRepo().apiKeys.getById(keyId);
+      if (!key) return;
+      await getRepo().apiKeys.save({
+        ...key,
+        lastUsedAt: new Date().toISOString(),
+      });
+    })(),
   ]);
 };
 

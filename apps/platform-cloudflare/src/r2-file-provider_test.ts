@@ -71,26 +71,6 @@ test('R2FileProvider deletePrefix is a no-op when nothing matches the prefix', a
   assertEquals(bucket.deleteCalls, []);
 });
 
-test('R2FileProvider deletes exact keys in one R2 batch', async () => {
-  const bucket = new FakeR2Bucket();
-  await bucket.put('drop/a', new Uint8Array([1]));
-  await bucket.put('drop/ab', new Uint8Array([2]));
-
-  await new R2FileProvider(bucket).deleteKeys(['drop/a', 'missing']);
-
-  assertEquals([...bucket.store.keys()], ['drop/ab']);
-  assertEquals(bucket.deleteCalls, [['drop/a', 'missing']]);
-});
-
-test('R2FileProvider reports whether a bounded prefix page completed the prefix', async () => {
-  const bucket = new FakeR2Bucket();
-  for (let index = 0; index < 3; index += 1) await bucket.put(`drop/${index}`, new Uint8Array([index]));
-  const provider = new R2FileProvider(bucket);
-
-  assertEquals(await provider.deletePrefixPage('drop/', 2), { deleted: 2, complete: false });
-  assertEquals(await provider.deletePrefixPage('drop/', 2), { deleted: 1, complete: true });
-});
-
 test('R2FileProvider listKeys paginates the listing and returns every matching key', async () => {
   const bucket = new FakeR2Bucket();
   for (let i = 0; i < 5; i += 1) await bucket.put(`scan/${i}.json`, new Uint8Array([i]));

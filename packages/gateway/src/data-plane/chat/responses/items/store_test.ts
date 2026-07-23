@@ -4,62 +4,23 @@ import { hashResponsesItemContent } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { SqlRepo } from '../../../../repo/sql.ts';
-import { createSqliteTestDb } from '../../../../repo/test-sqlite.ts';
-import { testResponsesStateLifetime, testResponsesStatePolicy, TEST_RESPONSES_RETENTION_SECONDS, TEST_RESPONSES_STATE_EPOCH } from '../../../../test-helpers/responses-state.ts';
-import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
-
-const storedRow = async (id: string, item: unknown, refreshedAt: number) => {
-  const payload = { item };
-  return {
-    id,
-    apiKeyId: 'key-a',
-    stateEpoch: TEST_RESPONSES_STATE_EPOCH,
-    payload,
-    contentHash: await hashResponsesItemContent(item),
-    payloadHash: await hashResponsesItemContent(payload),
-    payloadFileKey: null,
-    ...testResponsesStateLifetime(refreshedAt),
-  };
-};
 
 describe('StatefulResponsesStore', () => {
-  test('retention off performs no durable lookup or persistence queries', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
-    const itemLookup = vi.spyOn(repo.responsesItems, 'lookupActiveMany');
-    const hashLookup = vi.spyOn(repo.responsesItems, 'lookupActiveManyByContentHash');
-    const snapshotLookup = vi.spyOn(repo.responsesSnapshots, 'lookupActive');
-    const insert = vi.spyOn(repo.responsesItems, 'insertMany');
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a', 0), true);
-
-    const reference = { type: 'item_reference' as const, id: 'msg_missing' };
-    await store.loadInputItems([reference], [reference]);
-    expect(store.getItemById(reference.id)).toBeUndefined();
-    expect(await store.loadSnapshot('resp_missing')).toBeNull();
-    await store.stageInputItems([{ type: 'message', role: 'user', content: 'not persisted' }]);
-
-    expect(itemLookup).not.toHaveBeenCalled();
-    expect(hashLookup).not.toHaveBeenCalled();
-    expect(snapshotLookup).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-  });
-
   test('HTTP store=false performs no state writes', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), false);
+    const store = createResponsesHttpStore('key-a', false);
     expect(store.writesState).toBe(false);
 
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     await store.commitSnapshot('resp_none', 'append', []);
-    expect(await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_none')).toBeNull();
+    expect(await repo.responsesSnapshots.lookup('key-a', 'resp_none')).toBeNull();
   });
 
   test('HTTP store=false skips snapshot staging for idless input', async () => {
     initRepo(new InMemoryRepo());
     const digest = vi.spyOn(crypto.subtle, 'digest');
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), false);
+    const store = createResponsesHttpStore('key-a', false);
 
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
 
@@ -70,14 +31,20 @@ describe('StatefulResponsesStore', () => {
   test('HTTP store=false still reads durably-stored items and snapshots', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    const writer = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
-    const output = { type: 'message' as const, id: 'msg_public', role: 'assistant' as const, content: [] };
+    const writer = createResponsesHttpStore('key-a', true);
+    const output = {
+      id: 'msg_public',
+      apiKeyId: 'key-a',
+      payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
+      contentHash: 'output-hash',
+      createdAt: 1_000,
+    };
     await writer.persistOutputItem(output);
     await writer.commitSnapshot('resp_saved', 'append', [output.id]);
 
     // A store=false turn writes nothing but must still resolve a
     // previous_response_id and echoed item ids against durable state.
-    const reader = createResponsesHttpStore(testResponsesStatePolicy('key-a'), false);
+    const reader = createResponsesHttpStore('key-a', false);
     expect(reader.writesState).toBe(false);
     expect((await reader.loadSnapshot('resp_saved'))?.itemIds).toEqual([output.id]);
     expect(reader.getItemById(output.id)).toMatchObject({ id: 'msg_public' });
@@ -86,162 +53,157 @@ describe('StatefulResponsesStore', () => {
   test('HTTP default stores complete input and output snapshots', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), undefined);
+    const store = createResponsesHttpStore('key-a', undefined);
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
-    const output = { type: 'message' as const, id: 'msg_public', role: 'assistant' as const, content: [] };
+    const output = {
+      id: 'msg_public',
+      apiKeyId: 'key-a',
+      payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
+      contentHash: 'output-hash',
+      createdAt: 1_000,
+    };
     await store.persistOutputItem(output);
     await store.commitSnapshot('resp_saved', 'append', [output.id]);
 
-    const snapshot = await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_saved');
+    const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_saved');
     expect(snapshot?.itemIds).toHaveLength(2);
-    const [storedOutput] = await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [output.id]);
-    expect(storedOutput.payload.item).toEqual(output);
-    expect(storedOutput.refreshedAt).toBeGreaterThanOrEqual(snapshot!.refreshedAt);
+    const [storedOutput] = await repo.responsesItems.lookupMany('key-a', [output.id]);
+    expect(storedOutput).toMatchObject({ ...output, createdAt: snapshot?.createdAt });
   });
 
   test('replace snapshots persist only their output state', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
+    const store = createResponsesHttpStore('key-a', true);
     const input = { type: 'message' as const, role: 'user' as const, content: 'discarded history' };
     await store.stageInputItems([input]);
-    const output = { type: 'compaction' as const, id: 'cmp_public', encrypted_content: 'opaque' };
+    const output = {
+      id: 'cmp_public',
+      apiKeyId: 'key-a',
+      payload: { item: { type: 'compaction', id: 'cmp_public', encrypted_content: 'opaque' } },
+      contentHash: 'output-hash',
+      createdAt: 1_000,
+    };
     await store.persistOutputItem(output);
     await store.commitSnapshot('resp_compact', 'replace', [output.id]);
 
-    expect(await repo.responsesItems.lookupManyByContentHash('key-a', TEST_RESPONSES_STATE_EPOCH, [await hashResponsesItemContent(input)])).toEqual([]);
-    expect((await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_compact'))?.itemIds).toEqual([output.id]);
+    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await hashResponsesItemContent(input)])).toEqual([]);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact'))?.itemIds).toEqual([output.id]);
   });
 
   test('append snapshots refresh the lifetime of every referenced item', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    const nearExpiry = Date.now() - TEST_RESPONSES_RETENTION_SECONDS * 1000 + 60_000;
-    const item = await storedRow('msg_old', { type: 'message', id: 'msg_old', role: 'assistant', content: [] }, nearExpiry);
-    await repo.responsesItems.insertMany([item], 0);
-    await repo.responsesSnapshots.insert({
-      id: 'resp_old',
+    const item = {
+      id: 'msg_old',
       apiKeyId: 'key-a',
-      stateEpoch: TEST_RESPONSES_STATE_EPOCH,
-      itemIds: [item.id],
-      ...testResponsesStateLifetime(nearExpiry),
-    });
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
+      payload: { item: { type: 'message', id: 'msg_old', role: 'assistant', content: [] } },
+      contentHash: 'old-hash',
+      createdAt: 1,
+    };
+    await repo.responsesItems.insertMany([item]);
+    await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', itemIds: [item.id], createdAt: 1 });
+    const store = createResponsesHttpStore('key-a', true);
     expect(await store.loadSnapshot('resp_old')).not.toBeNull();
-    expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [item.id])).toHaveLength(1);
-    expect(await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_old')).not.toBeNull();
+    await repo.responsesItems.deleteOlderThan(2);
+    await repo.responsesSnapshots.deleteOlderThan(2);
+    expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toHaveLength(1);
+    expect(await repo.responsesSnapshots.lookup('key-a', 'resp_old')).not.toBeNull();
     await store.commitSnapshot('resp_new', 'append', []);
 
-    const [refreshed] = await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [item.id]);
-    expect(refreshed.refreshedAt).toBeGreaterThan(nearExpiry);
-    expect((await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_new'))?.itemIds).toEqual([item.id]);
+    const [refreshed] = await repo.responsesItems.lookupMany('key-a', [item.id]);
+    expect(refreshed.createdAt).toBeGreaterThan(1);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_new'))?.itemIds).toEqual([item.id]);
+    await repo.responsesItems.deleteOlderThan(2);
+    expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toHaveLength(1);
   });
 
   test('append snapshots refresh direct-id and content-hash input reuse', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
+    const store = createResponsesHttpStore('key-a', true);
     const directInput = { type: 'message' as const, id: 'msg_direct', role: 'user' as const, content: 'direct' };
     const hashedInput = { type: 'message' as const, role: 'user' as const, content: 'hashed' };
-    const nearExpiry = Date.now() - TEST_RESPONSES_RETENTION_SECONDS * 1000 + 60_000;
-    const directRow = await storedRow(directInput.id, directInput, nearExpiry);
-    const hashedRow = await storedRow('msg_hashed', hashedInput, nearExpiry);
-    await repo.responsesItems.insertMany([directRow, hashedRow], 0);
+    const directRow = {
+      id: directInput.id,
+      apiKeyId: 'key-a',
+      payload: { item: directInput },
+      contentHash: await hashResponsesItemContent(directInput),
+      createdAt: 1,
+    };
+    const hashedRow = {
+      id: 'msg_hashed',
+      apiKeyId: 'key-a',
+      payload: { item: hashedInput },
+      contentHash: await hashResponsesItemContent(hashedInput),
+      createdAt: 1,
+    };
+    await repo.responsesItems.insertMany([directRow, hashedRow]);
     await store.loadInputItems([directInput, hashedInput], [directInput, hashedInput]);
     await store.stageInputItems([directInput, hashedInput]);
     await store.commitSnapshot('resp_reused', 'append', []);
 
-    const refreshed = await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [directRow.id, hashedRow.id]);
-    expect(refreshed.every(row => row.refreshedAt > nearExpiry)).toBe(true);
-    const snapshot = await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_reused');
-    expect(snapshot?.itemIds).toEqual([directRow.id, hashedRow.id]);
-    expect(snapshot?.refreshedAt).toBe(Math.min(...refreshed.map(row => row.refreshedAt)));
+    const refreshed = await repo.responsesItems.lookupMany('key-a', [directRow.id, hashedRow.id]);
+    expect(refreshed.every(row => row.createdAt > 1)).toBe(true);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_reused'))?.itemIds).toEqual([directRow.id, hashedRow.id]);
   });
 
   test('snapshot lifetime follows a newer backing item timestamp', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
+    const store = createResponsesHttpStore('key-a', true);
     const input = { type: 'message' as const, role: 'user' as const, content: 'future lifetime' };
-    const futureRefreshedAt = Date.now() + 60_000;
-    const row = await storedRow('msg_future', input, futureRefreshedAt);
-    await repo.responsesItems.insertMany([row], 0);
+    const futureCreatedAt = Date.now() + 60_000;
+    const row = {
+      id: 'msg_future',
+      apiKeyId: 'key-a',
+      payload: { item: input },
+      contentHash: await hashResponsesItemContent(input),
+      createdAt: futureCreatedAt,
+    };
+    await repo.responsesItems.insertMany([row]);
     await store.loadInputItems([input], [input]);
     await store.stageInputItems([input]);
     await store.commitSnapshot('resp_future', 'append', []);
 
-    expect((await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, [row.id]))[0].refreshedAt).toBe(futureRefreshedAt);
-    expect((await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_future'))?.refreshedAt).toBe(futureRefreshedAt);
+    expect((await repo.responsesItems.lookupMany('key-a', [row.id]))[0].createdAt).toBe(futureCreatedAt);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_future'))?.createdAt).toBe(futureCreatedAt);
   });
 
   test('WebSocket store=false retains socket-local state only', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     const session = createResponsesWsSession();
-    const first = session.createStore(testResponsesStatePolicy('key-a'), false);
+    const first = session.createStore('key-a', false);
     expect(first.writesState).toBe(true);
     await first.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     await first.commitSnapshot('resp_local', 'append', []);
 
-    expect(await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_local')).toBeNull();
-    expect(await session.createStore(testResponsesStatePolicy('key-a'), false).loadSnapshot('resp_local')).not.toBeNull();
-  });
-
-  test('WebSocket local state remains available with durable retention off', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
-    const itemLookup = vi.spyOn(repo.responsesItems, 'lookupActiveMany');
-    const snapshotLookup = vi.spyOn(repo.responsesSnapshots, 'lookupActive');
-    const insert = vi.spyOn(repo.responsesItems, 'insertMany');
-    const session = createResponsesWsSession();
-    const policy = testResponsesStatePolicy('key-a', 0);
-    const first = session.createStore(policy, true);
-    await first.stageInputItems([{ type: 'message', role: 'user', content: 'local' }]);
-    await first.commitSnapshot('resp_local_off', 'append', []);
-
-    expect(await session.createStore(policy, false).loadSnapshot('resp_local_off')).not.toBeNull();
-    expect(itemLookup).not.toHaveBeenCalled();
-    expect(snapshotLookup).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
+    expect(await repo.responsesSnapshots.lookup('key-a', 'resp_local')).toBeNull();
+    expect(await session.createStore('key-a', false).loadSnapshot('resp_local')).not.toBeNull();
   });
 
   test('WebSocket store=true promotes every item referenced by a prior local snapshot', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     const session = createResponsesWsSession();
-    const local = session.createStore(testResponsesStatePolicy('key-a'), false);
+    const local = session.createStore('key-a', false);
     await local.stageInputItems([{ type: 'message', role: 'user', content: 'local' }]);
     await local.commitSnapshot('resp_local', 'append', []);
 
-    const durable = session.createStore(testResponsesStatePolicy('key-a'), true);
+    const durable = session.createStore('key-a', true);
     expect(await durable.loadSnapshot('resp_local')).not.toBeNull();
     await durable.stageInputItems([{ type: 'message', role: 'user', content: 'durable' }]);
     await durable.commitSnapshot('resp_durable', 'append', []);
 
-    const snapshot = await repo.responsesSnapshots.lookup('key-a', TEST_RESPONSES_STATE_EPOCH, 'resp_durable');
+    const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_durable');
     expect(snapshot).not.toBeNull();
     if (snapshot === null) throw new Error('Expected durable snapshot');
-    expect(await repo.responsesItems.lookupMany('key-a', TEST_RESPONSES_STATE_EPOCH, snapshot.itemIds)).toHaveLength(snapshot.itemIds.length);
-  });
-
-  test('a durable snapshot used on WebSocket remains local after durable retention is disabled', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
-    const policy = testResponsesStatePolicy('key-a');
-    const durableWriter = createResponsesHttpStore(policy, true);
-    const output = { type: 'message' as const, id: 'msg_durable', role: 'assistant' as const, content: [] };
-    await durableWriter.persistOutputItem(output);
-    await durableWriter.commitSnapshot('resp_durable_source', 'append', [output.id]);
-
-    const session = createResponsesWsSession();
-    expect(await session.createStore(policy, true).loadSnapshot('resp_durable_source')).not.toBeNull();
-    const disabledPolicy = { ...policy, stateEpoch: '22'.repeat(16), retentionSeconds: 0 };
-
-    expect(await session.createStore(disabledPolicy, true).loadSnapshot('resp_durable_source')).not.toBeNull();
+    expect(await repo.responsesItems.lookupMany('key-a', snapshot.itemIds)).toHaveLength(snapshot.itemIds.length);
   });
 
   test('per-attempt private payloads reset on each beginAttempt', () => {
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
+    const store = createResponsesHttpStore('key-a', true);
     store.beginAttempt(new Map([['item', { first: true }]]));
 
     expect(store.getPrivatePayload('item')).toEqual({ first: true });
@@ -265,90 +227,5 @@ describe('StatefulResponsesStore', () => {
     expect(store.getPrivatePayload('ws_aabbccdd')).toEqual({ ir: 'search result' });
     expect(store.getItemById('anything')).toBeUndefined();
     expect(await store.loadSnapshot('resp_x')).toBeNull();
-  });
-
-  test('large durable snapshot reads stay within the persistence query budget', async () => {
-    const base = await createSqliteTestDb();
-    const seedRepo = new SqlRepo(base);
-    await seedRepo.apiKeys.save({
-      id: 'key-a',
-      userId: 1,
-      name: 'State key',
-      key: 'raw-state-key',
-      serverSecret: '11'.repeat(32),
-      createdAt: '2026-01-01T00:00:00.000Z',
-      upstreamIds: null,
-      deletedAt: null,
-      dumpRetentionSeconds: null,
-      responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS,
-      responsesStateEpoch: TEST_RESPONSES_STATE_EPOCH,
-      responsesStateVisibleAfter: 0,
-    });
-    const refreshedAt = Date.now();
-    const items = Array.from({ length: 1_413 }, (_, index) => {
-      const item = { type: 'message', id: `msg_${index}`, role: 'assistant', content: [] };
-      const payload = { item };
-      return {
-        id: item.id,
-        apiKeyId: 'key-a',
-        stateEpoch: TEST_RESPONSES_STATE_EPOCH,
-        payload,
-        contentHash: `content-${index}`,
-        payloadHash: `payload-${index}`,
-        payloadFileKey: null,
-        ...testResponsesStateLifetime(refreshedAt),
-      };
-    });
-    await seedRepo.responsesItems.insertMany(items, refreshedAt);
-    await seedRepo.responsesSnapshots.insert({
-      id: 'resp_large',
-      apiKeyId: 'key-a',
-      stateEpoch: TEST_RESPONSES_STATE_EPOCH,
-      itemIds: items.map(item => item.id),
-      ...testResponsesStateLifetime(refreshedAt),
-    });
-
-    let queries = 0;
-    const countedStatement = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
-      bind: (...values) => countedStatement(statement.bind(...values)),
-      first: async <T>() => {
-        queries += 1;
-        return await statement.first<T>();
-      },
-      all: async <T>() => {
-        queries += 1;
-        return await statement.all<T>();
-      },
-      run: async () => {
-        queries += 1;
-        return await statement.run();
-      },
-    });
-    const countedDb: SqlDatabase = {
-      prepare: query => countedStatement(base.prepare(query)),
-      exec: sql => base.exec(sql),
-    };
-    initRepo(new SqlRepo(countedDb));
-
-    const store = createResponsesHttpStore(testResponsesStatePolicy('key-a'), true);
-    expect(await store.loadSnapshot('resp_large')).not.toBeNull();
-    expect(queries).toBeLessThanOrEqual(20);
-
-    const nearExpiry = Date.now() - TEST_RESPONSES_RETENTION_SECONDS * 1000 + 60 * 60 * 1000;
-    await base.prepare('UPDATE responses_state_items SET refreshed_at = ?')
-      .bind(nearExpiry)
-      .run();
-    await base.prepare('UPDATE responses_state_snapshots SET refreshed_at = ?')
-      .bind(nearExpiry)
-      .run();
-    queries = 0;
-    expect(await createResponsesHttpStore(testResponsesStatePolicy('key-a'), true).loadSnapshot('resp_large')).not.toBeNull();
-    expect(queries).toBeLessThanOrEqual(35);
-
-    const writeAt = Date.now();
-    const newItems = items.map((item, index) => ({ ...item, id: `msg_new_${index}`, payloadHash: `new-payload-${index}`, refreshedAt: writeAt }));
-    queries = 0;
-    await new SqlRepo(countedDb).responsesItems.insertMany(newItems, writeAt - TEST_RESPONSES_RETENTION_SECONDS * 1000);
-    expect(queries).toBeLessThanOrEqual(25);
   });
 });

@@ -18,7 +18,6 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
-import { RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../repo/responses-retention.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
@@ -267,11 +266,6 @@ export const changeOwnPasswordBody = z.object({
 // rather than letting them through as de-facto "never expire".
 export const DUMP_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
 const dumpRetentionSecondsSchema = z.number().int().positive().max(DUMP_RETENTION_MAX_SECONDS).nullable();
-export { RESPONSES_RETENTION_MAX_SECONDS } from '../repo/responses-retention.ts';
-const responsesRetentionSecondsSchema = z.number().int().min(0).max(RESPONSES_RETENTION_MAX_SECONDS)
-  .refine(value => value === 0 || value >= RESPONSES_RETENTION_MIN_SECONDS, {
-    message: `Stateful Responses retention must be 0 or at least ${RESPONSES_RETENTION_MIN_SECONDS} seconds`,
-  });
 
 // `key_source` picks how the raw key on this create/rotate request is
 // produced: 'generate' means the gateway mints an sk-...T3BlbkFJ... token
@@ -287,7 +281,6 @@ export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
-  responses_retention_seconds: responsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
 });
 
@@ -297,7 +290,6 @@ export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
   upstream_ids: upstreamIdsValueSchema.optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
-  responses_retention_seconds: responsesRetentionSecondsSchema.optional(),
 });
 
 // --- upstreams ---
@@ -701,7 +693,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(16, { error: 'version must be 16 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(15, { error: 'version must be 15 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });
