@@ -169,6 +169,21 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].payload).toEqual(old.payload);
   });
 
+  test('growing retention reveals a surviving row inside the wider window', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await makeRepo();
+    const now = Date.now();
+    const thirtyDays = 30 * 24 * 60 * 60;
+    const sevenDays = 7 * 24 * 60 * 60;
+    await repo.apiKeys.save(apiKey(thirtyDays));
+    const old = storedItem('msg-grow-visible', now - 20 * 24 * 60 * 60_000);
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
+
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
+    expect(await repo.responsesItems.lookupMany('key-a', [old.id], responsesStateCutoff(now, sevenDays))).toEqual([]);
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: thirtyDays });
+    expect(await repo.responsesItems.lookupMany('key-a', [old.id], responsesStateCutoff(now, thirtyDays))).toEqual([old]);
+  });
   test('a concurrent disable prevents a captured durable writer from inserting', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
