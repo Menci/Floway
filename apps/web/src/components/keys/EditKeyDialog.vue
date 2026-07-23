@@ -199,14 +199,16 @@ const save = async () => {
       <RetentionField
         v-model="responsesRetention"
         label="Stateful Responses retention"
-        description="Keeps Responses items and previous_response_id chains available across HTTP requests for a whole number of days. WebSocket session state works independently."
         :off-value="0"
-        off-label="Off (HTTP requests do not persist state)"
+        off-label="Off (do not persist)"
         :presets="responsesRetentionPresets"
         :minimum-seconds="86400"
         :maximum-seconds="responsesRetentionMaximumSeconds"
         custom-input-unit="days"
       >
+        <template #description>
+          When enabled, items and responses produced by <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">store: true</code> Responses API requests are persisted to be referenced by <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">item_reference</code> and <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">previous_response_id</code> for the number of days. Codex's WebSocket non-persistent session store works independently.
+        </template>
         <p v-if="responsesRetentionWarning" role="status" aria-live="polite" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
           {{ responsesRetentionWarning }}
         </p>

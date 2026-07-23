@@ -81,6 +81,25 @@ describe('RetentionField', () => {
     expect(trigger.attributes('aria-describedby')).toBe(description.attributes('id'));
   });
 
+  it('renders structured description content in the labelled description', () => {
+    const wrapper = mount(RetentionField, {
+      props: {
+        modelValue: 0,
+        label: 'State retention',
+        offValue: 0,
+        offLabel: 'Off',
+        presets: [],
+      },
+      slots: {
+        description: 'Persist <code>store: true</code> requests.',
+      },
+    });
+
+    const description = wrapper.get('p');
+    expect(description.get('code').text()).toBe('store: true');
+    expect(wrapper.get('button').attributes('aria-describedby')).toBe(description.attributes('id'));
+  });
+
   it('only suggests custom durations accepted by the configured minimum', async () => {
     const wrapper = mountField(0);
     await wrapper.setProps({ minimumSeconds: 3600 });

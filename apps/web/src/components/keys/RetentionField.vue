@@ -18,7 +18,7 @@ const SECONDS_PER_DAY = 24 * 60 * 60;
 const model = defineModel<RetentionFieldValue>({ required: true });
 const props = withDefaults(defineProps<{
   label: string;
-  description: string;
+  description?: string;
   offValue: 0 | null;
   offLabel: string;
   presets: readonly RetentionPreset[];
@@ -28,6 +28,14 @@ const props = withDefaults(defineProps<{
 }>(), {
   customInputUnit: 'duration',
 });
+const slots = defineSlots<{
+  default?: () => unknown;
+  description?: () => unknown;
+}>();
+
+if (props.description === undefined && slots.description === undefined) {
+  throw new TypeError('RetentionField requires a description prop or slot');
+}
 
 type SelectedPreset = 'off' | 'custom' | `seconds:${number}`;
 
@@ -148,7 +156,9 @@ const customInvalid = computed(() => {
 <template>
   <div class="space-y-2">
     <label :id="labelId" :for="selectId" class="block text-xs font-medium text-gray-500">{{ label }}</label>
-    <p :id="descriptionId" class="text-xs text-gray-600">{{ description }}</p>
+    <p :id="descriptionId" class="text-xs text-gray-600">
+      <slot name="description">{{ description }}</slot>
+    </p>
     <Select
       :id="selectId"
       :model-value="selected"
