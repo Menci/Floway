@@ -247,14 +247,14 @@ terminal event. Repository writes treat exact item/private-payload reuse as
 idempotent and reject a different live row under the same API-key-scoped ID.
 
 Large item payloads use immutable nonce-owned objects. The generic
-`spilled_files` ledger stages each object before the file write, atomically
-adopts it with its owner row, retires it when the owner is replaced or deleted,
-and supplies one exact-file collector shared by every storage domain. Hourly
-maintenance deletes Responses rows outside each key's current policy before
-collecting staged or retired files. HTTP `store: false` can read enabled
-durable state but never writes or refreshes it. WebSocket state is always
-session-local; `store: true` additionally writes durable state when the key has
-opted in.
+`spilled_files` ledger records an owner-neutral lifecycle; Responses currently
+stages each object before the file write, atomically adopts it with its item
+row, and retires it when that row is replaced or deleted. One exact-file
+collector handles staged or retired ledger entries. Hourly maintenance deletes
+Responses rows outside each key's current policy before collecting those
+objects. HTTP `store: false` can read enabled durable state but never writes or
+refreshes it. WebSocket state is always session-local; `store: true`
+additionally writes durable state when the key has opted in.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in
@@ -526,4 +526,5 @@ When working on a change and it is unclear whether it constitutes a
 breaking change, do not unilaterally add a CHANGELOG entry — ask the
 user to make the call. The user declares what is breaking; the agent
 records it.
+
 

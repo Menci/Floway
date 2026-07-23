@@ -611,8 +611,18 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     for (const item of items) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
-      if (existing !== undefined && existing.refreshedAt >= activeAfter) assertSameStoredResponsesItem(item, existing);
-      else pending.set(key, item);
+      const policy = await this.apiKeys.getById(item.apiKeyId);
+      if (policy !== null && policy.responsesRetentionSeconds === 0) {
+        throw new Error(`Responses persistence is disabled for API key: ${item.apiKeyId}`);
+      }
+      const currentActive = existing !== undefined
+        && policy !== null
+        && existing.refreshedAt >= responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds);
+      if (existing !== undefined && (existing.refreshedAt >= activeAfter || currentActive)) {
+        assertSameStoredResponsesItem(item, existing);
+      } else {
+        pending.set(key, item);
+      }
     }
     for (const [key, item] of pending) this.store.set(key, cloneStoredResponsesItem(item));
     for (const item of items) {
@@ -623,7 +633,15 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
 
   async refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], refreshedAt: number, activeAfter: number): Promise<void> {
     const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
-    const missingIndex = existing.findIndex(item => item === undefined || item.refreshedAt < activeAfter);
+    const currentPolicies = await Promise.all(items.map(async item => await this.apiKeys.getById(item.apiKeyId)));
+    const missingIndex = existing.findIndex((item, index) => {
+      if (item === undefined || item.refreshedAt < activeAfter) return true;
+      const policy = currentPolicies[index];
+      return policy !== null && (
+        policy.responsesRetentionSeconds === 0
+        || item.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds)
+      );
+    });
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
     }

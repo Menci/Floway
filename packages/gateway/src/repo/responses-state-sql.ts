@@ -147,18 +147,32 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     for (const entry of prepared) await writePreparedStoredResponsesPayload(entry.payload);
 
     const statements: SqlPreparedStatement[] = [];
+    const policyAt = Date.now();
     for (let index = 0; index < prepared.length; index += RESPONSES_INSERT_CHUNK_SIZE) {
       const chunk = prepared.slice(index, index + RESPONSES_INSERT_CHUNK_SIZE);
       const values = chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
       statements.push(this.db
         .prepare(
-          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES ${values}
+          `WITH incoming (${RESPONSES_ITEM_COLUMNS}) AS (VALUES ${values})
+           INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS})
+           SELECT incoming.* FROM incoming
+           JOIN api_keys ON api_keys.id = incoming.api_key_id
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.responses_retention_seconds > 0
+           WHERE true
            ON CONFLICT (id, api_key_id) DO UPDATE SET
              payload_json = excluded.payload_json,
              content_hash = excluded.content_hash,
              payload_file_key = excluded.payload_file_key,
              refreshed_at = excluded.refreshed_at
-           WHERE responses_items.refreshed_at < ?`,
+           WHERE responses_items.refreshed_at < ?
+             AND NOT EXISTS (
+               SELECT 1 FROM api_keys
+               WHERE api_keys.id = excluded.api_key_id
+                 AND api_keys.deleted_at IS NULL
+                 AND api_keys.responses_retention_seconds > 0
+                 AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+             )`,
         )
         .bind(
           ...chunk.flatMap(({ item, payload }) => [
@@ -170,11 +184,12 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
             item.refreshedAt,
           ]),
           activeAfter,
+          policyAt,
         ));
     }
     await runStatements(this.db, statements);
 
-    const persisted = await this.lookupExistingItems(unique, activeAfter);
+    const persisted = await this.lookupExistingItems(unique, 0);
     for (const item of unique) {
       const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id));
       if (actual === undefined) throw new Error(`Responses item disappeared after insert: ${item.id}`);
@@ -226,21 +241,68 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       item => item.apiKeyId,
     );
     const statements: SqlPreparedStatement[] = [];
+    const policyAt = Date.now();
     for (const [apiKeyId, scoped] of idsByApiKey) {
       for (let index = 0; index < scoped.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
         const chunk = scoped.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
         statements.push(this.db
           .prepare(
             `UPDATE responses_items SET refreshed_at = MAX(refreshed_at, ?)
-             WHERE api_key_id = ? AND refreshed_at >= ? AND id IN (${chunk.map(() => '?').join(', ')})`,
+             WHERE api_key_id = ?
+               AND refreshed_at >= ?
+               AND EXISTS (
+                 SELECT 1 FROM api_keys
+                 WHERE api_keys.id = responses_items.api_key_id
+                   AND api_keys.deleted_at IS NULL
+                   AND api_keys.responses_retention_seconds > 0
+                   AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+               )
+               AND id IN (${chunk.map(() => '?').join(', ')})`,
           )
-          .bind(refreshedAt, apiKeyId, activeAfter, ...chunk.map(item => item.id)));
+          .bind(refreshedAt, apiKeyId, activeAfter, policyAt, ...chunk.map(item => item.id)));
       }
     }
     await runStatements(this.db, statements);
-    const persisted = await this.lookupExistingItems(items, activeAfter);
+    const persisted = await this.lookupCurrentPolicyItems(items, activeAfter, policyAt);
     const missing = items.find(item => !persisted.has(scopedResponsesKey(item.apiKeyId, item.id)));
     if (missing !== undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${missing.id}`);
+  }
+
+  private async lookupCurrentPolicyItems(
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[],
+    activeAfter: number,
+    policyAt: number,
+  ): Promise<Map<string, StoredResponsesItem>> {
+    const idsByApiKey = Map.groupBy(items, item => item.apiKeyId);
+    const rows: StoredResponsesItem[] = [];
+    for (const [apiKeyId, scoped] of idsByApiKey) {
+      const ids = [...new Set(scoped.map(item => item.id))];
+      for (let index = 0; index < ids.length; index += RESPONSES_IN_QUERY_CHUNK_SIZE) {
+        const chunk = ids.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
+        const { results } = await this.db
+          .prepare(
+            `SELECT
+               responses_items.id,
+               responses_items.api_key_id,
+               responses_items.payload_json,
+               responses_items.content_hash,
+               responses_items.payload_file_key,
+               responses_items.refreshed_at
+             FROM responses_items
+             JOIN api_keys ON api_keys.id = responses_items.api_key_id
+             WHERE responses_items.api_key_id = ?
+               AND api_keys.deleted_at IS NULL
+               AND api_keys.responses_retention_seconds > 0
+               AND responses_items.refreshed_at >= ?
+               AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+               AND responses_items.id IN (${chunk.map(() => '?').join(', ')})`,
+          )
+          .bind(apiKeyId, activeAfter, policyAt, ...chunk)
+          .all<ResponsesItemRow>();
+        rows.push(...await mapSequentially(results, async row => await toStoredResponsesItem(row)));
+      }
+    }
+    return new Map(rows.map(item => [scopedResponsesKey(item.apiKeyId, item.id), item]));
   }
 
   async deleteExpired(now: number): Promise<number> {
