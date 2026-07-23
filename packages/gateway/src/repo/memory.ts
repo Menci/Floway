@@ -905,7 +905,7 @@ class MemorySpilledFilesRepo implements SpilledFilesRepo {
     collectAfter: number,
   ): Promise<boolean> {
     const row = this.inventories.get(prefix);
-    if (row === undefined || row.claimToken !== token || row.revision !== expectedRevision) return Promise.resolve(false);
+    if (row?.claimToken !== token || row.revision !== expectedRevision) return Promise.resolve(false);
     for (const fileKey of fileKeys) {
       this.files.set(fileKey, this.files.get(fileKey) ?? { collectAfter, claimToken: null, claimedAt: null });
     }
