@@ -1,4 +1,4 @@
-// codex-internal `/models` shape.
+// Codex-internal `/models` shape assembled for the shared catalog handler.
 //
 // codex reads this via `OpenAiModelsManager::list_models` and replaces its
 // bundled catalog when AuthMode is Chatgpt / ChatgptAuthTokens /
@@ -14,14 +14,8 @@
 // overlays it announces, and capabilities proven by the exact client catalog
 // (see synthesize.ts for the exact field precedence rules).
 
-import type { Context } from 'hono';
-
 import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCatalogCapabilities } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
-import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
@@ -30,7 +24,7 @@ import type { Fetcher } from '@floway-dev/provider';
 // codex-shaped catalog (drops unlisted alternates and non-chat kinds).
 // Extracted so tests can drive the mapping logic without standing up the
 // addressable-enumeration pipeline.
-export const assembleCatalog = (
+export const assembleCodexCatalog = (
   catalog: CodexCatalog,
   addressable: readonly AddressableIdEntry[],
   capabilities: CodexCatalogCapabilities = {},
@@ -65,7 +59,7 @@ export const assembleCatalog = (
   return { models };
 };
 
-const computeCatalog = async (
+export const loadCodexCatalog = async (
   userAgent: string | undefined,
   upstreamIds: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -75,13 +69,5 @@ const computeCatalog = async (
     resolveCodexCatalog(userAgent),
     enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
   ]);
-  return assembleCatalog(resolution.catalog, addressable, resolution.capabilities);
-};
-
-export const codexModels = async (c: Context): Promise<Response> => {
-  const userAgent = c.req.header('user-agent');
-  const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
-  const scheduler = backgroundSchedulerFromContext(c);
-  return Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler));
+  return assembleCodexCatalog(resolution.catalog, addressable, resolution.capabilities);
 };

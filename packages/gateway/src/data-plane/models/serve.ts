@@ -1,6 +1,7 @@
-// OpenAI and Anthropic /models field names do not overlap, so one payload
-// satisfies both client shapes. The one exception is the Claude Code CLI
-// discovery caller — see toClaudeCodeShape below.
+// All OpenAI-compatible model-list paths terminate here. The request path is
+// deliberately absent from catalog selection: Codex and Claude Code identify
+// their private discovery formats through User-Agent, while every other caller
+// receives Floway's public OpenAI/Anthropic superset.
 
 import type { Context } from 'hono';
 
@@ -11,6 +12,8 @@ import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { isCodexUserAgent } from '../codex/catalog.ts';
+import { loadCodexCatalog } from '../codex/models.ts';
 import type { PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
@@ -43,7 +46,7 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery
 // https://docs.claude.com/en/api/models-list
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/models.ts
-const toClaudeCodeShape = (response: PublicModelsResponse) => {
+const toClaudeCodeCatalog = (response: PublicModelsResponse) => {
   const CREATED_AT_UNKNOWN = '1970-01-01T00:00:00Z';
   const data = response.data.map(model => {
     const max = model.limits.max_context_window_tokens;
@@ -65,10 +68,21 @@ const toClaudeCodeShape = (response: PublicModelsResponse) => {
   };
 };
 
-export const models = async (c: Context) => {
+const isClaudeCodeUserAgent = (userAgent: string | undefined): boolean =>
+  userAgent?.startsWith('claude-code/') ?? false;
+
+export const serveModels = async (c: Context): Promise<Response> => {
   try {
+    const userAgent = c.req.header('user-agent');
     const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
-    const response = await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases);
+    const upstreamIds = effectiveUpstreamIdsFromContext(c);
+    const scheduler = backgroundSchedulerFromContext(c);
+
+    if (isCodexUserAgent(userAgent)) {
+      return Response.json(await loadCodexCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler));
+    }
+
+    const publicCatalog = await loadModels(upstreamIds, fetcherForUpstream, scheduler, getRepo().modelAliases);
     // The Claude Code CLI's model discovery request identifies itself with
     // a `claude-code/<version>` User-Agent (built from the CLI's `n_()`
     // helper — verified in the v2.1.206 binary). The CLI's other request
@@ -76,10 +90,9 @@ export const models = async (c: Context) => {
     // discovery UA specifically. Every other caller (OpenAI SDKs,
     // Anthropic SDKs, dashboards) receives the standard PublicModel
     // superset.
-    if (c.req.header('user-agent')?.startsWith('claude-code/')) {
-      return Response.json(toClaudeCodeShape(response));
-    }
-    return Response.json(response);
+    return Response.json(isClaudeCodeUserAgent(userAgent)
+      ? toClaudeCodeCatalog(publicCatalog)
+      : publicCatalog);
   } catch (e) {
     // Upstream HTTP/parse failures squash to a generic message so we do not
     // leak upstream identity. Other registry-thrown errors (e.g. the "no

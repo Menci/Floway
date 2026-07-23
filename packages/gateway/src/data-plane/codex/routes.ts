@@ -21,12 +21,12 @@
 
 import type { Hono } from 'hono';
 
-import { codexModels } from './models.ts';
 import type { AuthVars } from '../../middleware/auth.ts';
 import { mountAlphaSearchRoute } from '../alpha-search/routes.ts';
 import { responsesHttp } from '../chat/responses/http.ts';
 import { responsesWebSocket } from '../chat/responses/websocket.ts';
 import { imagesEdits, imagesGenerations } from '../images/serve.ts';
+import { serveModels } from '../models/serve.ts';
 
 const CODEX_BASE_PATH = '/azure-api.codex';
 
@@ -41,5 +41,5 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   app.post(`${CODEX_BASE_PATH}/images/generations`, imagesGenerations);
   app.post(`${CODEX_BASE_PATH}/images/edits`, imagesEdits);
 
-  app.get(`${CODEX_BASE_PATH}/models`, codexModels);
+  app.get(`${CODEX_BASE_PATH}/models`, serveModels);
 };

@@ -46,9 +46,11 @@ export interface CodexCatalogResolution {
 }
 
 // Codex uses its active originator as the User-Agent product token, followed
-// by the app-server build version. This covers CLI, Desktop, IDE, and legacy
-// `codex_exec` originators without coupling catalog resolution to one surface.
-// https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/login/src/auth/default_client.rs#L161-L172
+// by the app-server build version. Current TUI requests start with `codex-tui`;
+// the same formatter covers Desktop, IDE, `codex_cli_rs`, and `codex_exec`
+// originators without coupling catalog resolution to one surface.
+// https://github.com/openai/codex/blob/fd51e505401b7b2da958edc269e4d7280be86bd5/codex-rs/login/src/auth/default_client.rs#L159-L183
+// https://github.com/openai/codex/blob/fd51e505401b7b2da958edc269e4d7280be86bd5/codex-rs/tui/src/lib.rs#L553-L574
 const VERSION_FROM_USER_AGENT = /^codex[^/]*\/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/i;
 
 const inMemoryCache = new Map<string, CodexCatalogResolution>();
@@ -74,6 +76,9 @@ const bundledFallback = (): CodexCatalogResolution => ({ catalog: bundled, capab
 
 const parseCodexVersion = (userAgent: string | undefined): string | null =>
   userAgent?.match(VERSION_FROM_USER_AGENT)?.[1] ?? null;
+
+export const isCodexUserAgent = (userAgent: string | undefined): boolean =>
+  parseCodexVersion(userAgent) !== null;
 
 const fetchCodexCatalog = async (version: string): Promise<CodexCatalog | null> => {
   const url = `https://raw.githubusercontent.com/openai/codex/rust-v${version}/codex-rs/models-manager/models.json`;

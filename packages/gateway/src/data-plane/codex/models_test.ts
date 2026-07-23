@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { CodexCatalogCapabilities } from './catalog.ts';
-import { assembleCatalog } from './models.ts';
+import { assembleCodexCatalog } from './models.ts';
 import type { AddressableIdEntry } from '../shared/listing/addressable.ts';
 import type { InternalModel } from '@floway-dev/provider';
 
@@ -37,9 +37,9 @@ const ultraCapabilities: CodexCatalogCapabilities = {
   ultraReasoningLevel: { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
 };
 
-describe('assembleCatalog', () => {
+describe('assembleCodexCatalog', () => {
   test('bundled match: reuses bundled entry, slug=publicId, display_name from registry', () => {
-    const out = assembleCatalog(bundled, entries(chat('gpt-5.5', 'Custom Display Name', 200000)));
+    const out = assembleCodexCatalog(bundled, entries(chat('gpt-5.5', 'Custom Display Name', 200000)));
     expect(out.models).toHaveLength(1);
     const e = out.models[0];
     expect(e.slug).toBe('gpt-5.5');
@@ -50,13 +50,13 @@ describe('assembleCatalog', () => {
   });
 
   test('bundled match: registry display_name=undefined preserves the bundled display_name', () => {
-    const out = assembleCatalog(bundled, entries(chat('gpt-5.5')));     // chat() passes display_name: undefined
+    const out = assembleCodexCatalog(bundled, entries(chat('gpt-5.5')));     // chat() passes display_name: undefined
     expect(out.models).toHaveLength(1);
     expect(out.models[0].display_name).toBe('GPT-5.5');         // bundled's display_name
   });
 
   test('segment match via prefix and suffix', () => {
-    const out = assembleCatalog(bundled, entries(
+    const out = assembleCodexCatalog(bundled, entries(
       chat('openrouter/gpt-5.5:nitro'),
       chat('azure/gpt-5.4'),
     ));
@@ -69,12 +69,12 @@ describe('assembleCatalog', () => {
     // The model-prefix feature (packages/provider/src/model-prefix.ts) lets
     // operators republish an upstream model under a path-shaped prefix —
     // `openrouter/gpt-5.5`, `vendor/sub/region/gpt-5.5`. By the time the
-    // public id reaches assembleCatalog the prefix is already baked in, so
+    // public id reaches assembleCodexCatalog the prefix is already baked in, so
     // bundle-matching falls out of the segment splitter: the publicId is
     // split on `/` (model-prefix segments) and `:` (OpenRouter-style
     // `:variant` suffixes), and the segments are walked leaf-first against
     // the bundled slug map — the trailing model slug is tried first.
-    const out = assembleCatalog(bundled, entries(chat('vendor/sub/region/gpt-5.5', 'Sub-region GPT-5.5', 200000)));
+    const out = assembleCodexCatalog(bundled, entries(chat('vendor/sub/region/gpt-5.5', 'Sub-region GPT-5.5', 200000)));
     expect(out.models).toHaveLength(1);
     const e = out.models[0];
     expect(e.slug).toBe('vendor/sub/region/gpt-5.5');   // slug overridden to the prefixed publicId
@@ -84,7 +84,7 @@ describe('assembleCatalog', () => {
   });
 
   test('multiple bundled-matching ids of the same bundled slug coexist', () => {
-    const out = assembleCatalog(bundled, entries(chat('gpt-5.5'), chat('openrouter/gpt-5.5:nitro')));
+    const out = assembleCodexCatalog(bundled, entries(chat('gpt-5.5'), chat('openrouter/gpt-5.5:nitro')));
     expect(out.models).toHaveLength(2);
     expect(out.models.every(m => m.priority === 1)).toBe(true);
   });
@@ -93,12 +93,12 @@ describe('assembleCatalog', () => {
     // `openrouter/gpt-5.5/gpt-5.4` binds against gpt-5.4 — walking segments
     // leaf-first avoids binding against an earlier segment (`gpt-5.5`) that
     // happens to collide with a bundled slug.
-    const out = assembleCatalog(bundled, entries(chat('openrouter/gpt-5.5/gpt-5.4')));
+    const out = assembleCodexCatalog(bundled, entries(chat('openrouter/gpt-5.5/gpt-5.4')));
     expect(out.models[0].priority).toBe(2);  // gpt-5.4's priority
   });
 
   test('no match: synthesizes a new entry', () => {
-    const out = assembleCatalog(bundled, entries(chat('deepseek-v4-pro', 'DeepSeek V4 Pro', 128000)));
+    const out = assembleCodexCatalog(bundled, entries(chat('deepseek-v4-pro', 'DeepSeek V4 Pro', 128000)));
     expect(out.models).toHaveLength(1);
     const e = out.models[0];
     expect(e.slug).toBe('deepseek-v4-pro');
@@ -113,8 +113,8 @@ describe('assembleCatalog', () => {
       ...chat('deepseek-v4-pro'),
       chat: { reasoning: { effort: { supported: ['high', 'max'], default: 'high' } } },
     };
-    const withoutCapability = assembleCatalog(bundled, entries(maxModel));
-    const withCapability = assembleCatalog(bundled, entries(maxModel), ultraCapabilities);
+    const withoutCapability = assembleCodexCatalog(bundled, entries(maxModel));
+    const withCapability = assembleCodexCatalog(bundled, entries(maxModel), ultraCapabilities);
 
     expect(withoutCapability.models[0].supported_reasoning_levels).toEqual([
       { effort: 'high', description: '' },
@@ -130,7 +130,7 @@ describe('assembleCatalog', () => {
   });
 
   test('non-chat models are dropped', () => {
-    const out = assembleCatalog(bundled, [
+    const out = assembleCodexCatalog(bundled, [
       entry({ id: 'text-embedding-3', display_name: 'emb', kind: 'embedding', limits: {}, endpoints: {} } as InternalModel),
       entry(chat('gpt-5.5')),
     ]);
@@ -142,7 +142,7 @@ describe('assembleCatalog', () => {
     // A model reachable only via `modelPrefix.addressable` alternates (not
     // listed on /v1/models) also stays off the codex picker — the operator
     // opted out of the default listing surface on that side too.
-    const out = assembleCatalog(bundled, [
+    const out = assembleCodexCatalog(bundled, [
       entry(chat('gpt-5.5'), true),
       entry(chat('gpt-5.4')),
     ]);
@@ -154,12 +154,12 @@ describe('assembleCatalog', () => {
       ...chat('openrouter/gpt-5.5:nitro'),
       pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'fast' }, rates: { input_tokens: '1' } }] },
     };
-    const out = assembleCatalog(bundled, entries(im));
+    const out = assembleCodexCatalog(bundled, entries(im));
     expect(out.models[0].service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
   });
 
   test('bundled reuse: no registry pricing.entries yields service_tiers: []', () => {
-    const out = assembleCatalog(bundled, entries(chat('openrouter/gpt-5.5:nitro')));
+    const out = assembleCodexCatalog(bundled, entries(chat('openrouter/gpt-5.5:nitro')));
     expect(out.models[0].service_tiers).toEqual([]);
   });
 });

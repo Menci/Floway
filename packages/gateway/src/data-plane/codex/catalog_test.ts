@@ -13,6 +13,28 @@ describe('resolveCodexCatalog', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it.each([
+    'codex-tui/0.145.0 (Mac OS 26.5.0; arm64)',
+    'codex_cli_rs/0.144.1 (Linux 6.8; x86_64)',
+    'codex_exec/0.144.1 (Linux 6.8; x86_64)',
+    'codex_vscode/0.144.1 (Windows 11; x86_64)',
+    'codex_desktop/0.145.0-alpha.18 (Windows 11; x86_64)',
+    'Codex Desktop/0.145.0 (Mac OS 26.5.0; arm64)',
+  ])('recognizes the Codex originator User-Agent %s', async userAgent => {
+    const { isCodexUserAgent } = await import('./catalog.ts');
+    expect(isCodexUserAgent(userAgent)).toBe(true);
+  });
+
+  it.each([
+    undefined,
+    'openai-python/1.42.0',
+    'claude-code/2.1.206',
+    'codex-tui/not-a-version',
+  ])('does not classify a non-Codex catalog caller %s', async userAgent => {
+    const { isCodexUserAgent } = await import('./catalog.ts');
+    expect(isCodexUserAgent(userAgent)).toBe(false);
+  });
+
   it('falls back to bundled when user-agent is missing', async () => {
     const { resolveCodexCatalog: resolve } = await import('./catalog.ts');
     const { catalog, capabilities } = await resolve(undefined);
