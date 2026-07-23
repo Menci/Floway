@@ -1,6 +1,6 @@
-import { getDumpStore } from '../dump/registry.ts';
 import { getRepo } from './index.ts';
 import type { ExpirationDomain } from './types.ts';
+import { getDumpStore } from '../dump/registry.ts';
 
 const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
 const ERROR_RETRY_MS = 60 * 1000;
@@ -39,9 +39,10 @@ const dumpsAdapter: ExpirationAdapter = {
     const deleted = await store.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
     if (deleted === DELETE_BATCH_SIZE) return now;
     const key = await getRepo().apiKeys.getById(keyId);
-    if (key === null || key.dumpRetentionSeconds === null) return null;
+    const retentionSeconds = key?.dumpRetentionSeconds ?? null;
+    if (retentionSeconds === null) return null;
     const oldest = await store.findOldestCreatedAt(keyId);
-    return oldest === null ? null : oldest + key.dumpRetentionSeconds * 1000 + 1;
+    return oldest === null ? null : oldest + retentionSeconds * 1000 + 1;
   },
 };
 

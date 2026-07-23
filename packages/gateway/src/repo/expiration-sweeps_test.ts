@@ -1,14 +1,14 @@
 import initSqlJs from 'sql.js';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { initDumpStore } from '../dump/registry.ts';
-import type { DumpWriteRecord } from '../dump/types.ts';
 import { FileDumpStore } from './dump-store.ts';
 import { sweepExpirations } from './expiration-sweeps.ts';
 import { initRepo } from './index.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ApiKey, StoredResponsesItem } from './types.ts';
+import { initDumpStore } from '../dump/registry.ts';
+import type { DumpWriteRecord } from '../dump/types.ts';
 import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());

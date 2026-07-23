@@ -6,8 +6,8 @@ import { expect, test } from 'vitest';
 
 import { FileDumpStore } from './dump-store.ts';
 import { initRepo } from './index.ts';
-import { SqlRepo } from './sql.ts';
 import { sweepSpilledFiles } from './spilled-files.ts';
+import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import type { DumpWriteRecord } from '../dump/types.ts';
 import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
