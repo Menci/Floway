@@ -11,15 +11,23 @@ interface RetentionPreset {
   readonly label: string;
 }
 
+type CustomInputUnit = 'duration' | 'days';
+
+const SECONDS_PER_DAY = 24 * 60 * 60;
+
 const model = defineModel<RetentionFieldValue>({ required: true });
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   label: string;
   description: string;
   offValue: 0 | null;
   offLabel: string;
   presets: readonly RetentionPreset[];
   minimumSeconds?: number;
-}>();
+  maximumSeconds?: number;
+  customInputUnit?: CustomInputUnit;
+}>(), {
+  customInputUnit: 'duration',
+});
 
 type SelectedPreset = 'off' | 'custom' | `seconds:${number}`;
 
@@ -44,14 +52,42 @@ const durationExamples = computed(() => [
   { value: 2 * 60 * 60, label: '2h' },
   { value: 3 * 24 * 60 * 60, label: '3d' },
   { value: 30 * 24 * 60 * 60, label: '30d' },
-].filter(example => example.value >= (props.minimumSeconds ?? 1)).slice(0, 2));
+].filter(example => (
+  example.value >= (props.minimumSeconds ?? 1)
+  && example.value <= (props.maximumSeconds ?? Number.MAX_SAFE_INTEGER)
+)).slice(0, 2));
 
-const formatCustomDuration = (seconds: number): string => {
+const formatDuration = (seconds: number): string => {
   if (seconds % 86400 === 0) return `${seconds / 86400}d`;
   if (seconds % 3600 === 0) return `${seconds / 3600}h`;
   if (seconds % 60 === 0) return `${seconds / 60}m`;
   return `${seconds}s`;
 };
+
+const formatCustomValue = (seconds: number): string => {
+  if (props.customInputUnit === 'duration') return formatDuration(seconds);
+  if (seconds % SECONDS_PER_DAY !== 0) throw new TypeError('Day-based retention must contain a whole number of days');
+  return String(seconds / SECONDS_PER_DAY);
+};
+
+const parseCustomValue = (input: string): number | null => {
+  const seconds = props.customInputUnit === 'duration'
+    ? parseDuration(input)
+    : /^\d+$/.test(input.trim())
+      ? Number(input.trim()) * SECONDS_PER_DAY
+      : null;
+  if (
+    seconds === null
+    || !Number.isSafeInteger(seconds)
+    || seconds < (props.minimumSeconds ?? 1)
+    || seconds > (props.maximumSeconds ?? Number.MAX_SAFE_INTEGER)
+  ) return null;
+  return seconds;
+};
+
+const customPlaceholder = computed(() => props.customInputUnit === 'days'
+  ? 'e.g. 14'
+  : `e.g. ${durationExamples.value.map(example => example.label).join(', ')}, ${props.minimumSeconds ?? 1800}`);
 
 watch(model, value => {
   if (value === lastEmitted) {
@@ -72,7 +108,7 @@ watch(model, value => {
     return;
   }
   selected.value = 'custom';
-  custom.value = formatCustomDuration(value);
+  custom.value = formatCustomValue(value);
 }, { immediate: true });
 
 const updateModel = (value: RetentionFieldValue): void => {
@@ -81,8 +117,7 @@ const updateModel = (value: RetentionFieldValue): void => {
 };
 
 const parsedCustomValue = (): number | 'invalid' => {
-  const parsed = parseDuration(custom.value);
-  return parsed !== null && parsed >= (props.minimumSeconds ?? 1) ? parsed : 'invalid';
+  return parseCustomValue(custom.value) ?? 'invalid';
 };
 
 const updateSelected = (value: SelectedPreset | undefined): void => {
@@ -106,8 +141,7 @@ const updateCustom = (value: string): void => {
 
 const customInvalid = computed(() => {
   if (selected.value !== 'custom') return false;
-  const parsed = parseDuration(custom.value);
-  return parsed === null || parsed < (props.minimumSeconds ?? 1);
+  return parseCustomValue(custom.value) === null;
 });
 </script>
 
@@ -123,18 +157,27 @@ const customInvalid = computed(() => {
       :aria-describedby="descriptionId"
       @update:model-value="updateSelected"
     />
-    <Input
-      v-if="selected === 'custom'"
-      :id="customId"
-      :model-value="custom"
-      :placeholder="`e.g. ${durationExamples.map(example => example.label).join(', ')}, ${minimumSeconds ?? 1800}`"
-      :aria-label="`${label} custom duration`"
-      :aria-describedby="customInvalid ? `${descriptionId} ${errorId}` : descriptionId"
-      :aria-invalid="customInvalid"
-      @update:model-value="updateCustom"
-    />
+    <div v-if="selected === 'custom'" class="relative">
+      <Input
+        :id="customId"
+        :model-value="custom"
+        :type="customInputUnit === 'days' ? 'number' : 'text'"
+        :placeholder="customPlaceholder"
+        :class="customInputUnit === 'days' ? 'pr-16' : undefined"
+        :aria-label="`${label} custom duration`"
+        :aria-describedby="customInvalid ? `${descriptionId} ${errorId}` : descriptionId"
+        :aria-invalid="customInvalid"
+        @update:model-value="updateCustom"
+      />
+      <span v-if="customInputUnit === 'days'" class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-gray-500">days</span>
+    </div>
     <p v-if="customInvalid" :id="errorId" class="text-xs text-accent-rose">
-      Enter an integer number of seconds or a duration such as {{ durationExamples.map(example => example.label).join(' or ') }}<span v-if="minimumSeconds">, at least {{ formatCustomDuration(minimumSeconds) }}</span>.
+      <template v-if="customInputUnit === 'days'">
+        Enter a whole number of days<span v-if="minimumSeconds">, at least {{ minimumSeconds / SECONDS_PER_DAY }}</span>.
+      </template>
+      <template v-else>
+        Enter an integer number of seconds or a duration such as {{ durationExamples.map(example => example.label).join(' or ') }}<span v-if="minimumSeconds">, at least {{ formatDuration(minimumSeconds) }}</span>.
+      </template>
     </p>
     <slot />
   </div>

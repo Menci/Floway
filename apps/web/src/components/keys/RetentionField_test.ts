@@ -4,7 +4,11 @@ import { nextTick } from 'vue';
 
 import RetentionField from './RetentionField.vue';
 
-const mountField = (modelValue: number | null | 'invalid', offValue: 0 | null = 0) => mount(RetentionField, {
+const mountField = (
+  modelValue: number | null | 'invalid',
+  offValue: 0 | null = 0,
+  customInputUnit: 'duration' | 'days' = 'duration',
+) => mount(RetentionField, {
   props: {
     modelValue,
     label: 'State retention',
@@ -15,6 +19,8 @@ const mountField = (modelValue: number | null | 'invalid', offValue: 0 | null = 
       { seconds: 7 * 86400, label: '7 days' },
       { seconds: 30 * 86400, label: '30 days' },
     ],
+    customInputUnit,
+    ...(customInputUnit === 'days' ? { minimumSeconds: 86400 } : {}),
   },
   global: {
     stubs: {
@@ -24,9 +30,9 @@ const mountField = (modelValue: number | null | 'invalid', offValue: 0 | null = 
         template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
       },
       Input: {
-        props: ['modelValue', 'placeholder'],
+        props: ['modelValue', 'placeholder', 'type'],
         emits: ['update:modelValue'],
-        template: '<input :value="modelValue" :placeholder="placeholder" @input="$emit(\'update:modelValue\', $event.target.value)">',
+        template: '<input :type="type" :value="modelValue" :placeholder="placeholder" @input="$emit(\'update:modelValue\', $event.target.value)">',
       },
     },
   },
@@ -90,6 +96,32 @@ describe('RetentionField', () => {
 
     expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('custom');
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('14d');
+  });
+
+  it('accepts custom Stateful Responses retention as whole days', async () => {
+    const wrapper = mountField(0, 0, 'days');
+    await wrapper.get('select').setValue('custom');
+
+    const input = wrapper.get('input');
+    expect(input.attributes('type')).toBe('number');
+    expect(input.attributes('placeholder')).toBe('e.g. 14');
+    expect(wrapper.text()).toContain('days');
+
+    await input.setValue('14');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toBe(14 * 86400);
+
+    await input.setValue('0');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toBe('invalid');
+    expect(wrapper.text()).toContain('Enter a whole number of days, at least 1.');
+  });
+
+  it('renders an external day-based value as a day count', async () => {
+    const wrapper = mountField(0, 0, 'days');
+    await wrapper.setProps({ modelValue: 14 * 86400 });
+    await nextTick();
+
+    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('custom');
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('14');
   });
 
   it('preserves each raw custom keystroke through a real parent v-model loop', async () => {
