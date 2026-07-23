@@ -153,6 +153,27 @@ describe('StatefulResponsesStore', () => {
     expect(refreshItems).not.toHaveBeenCalled();
   });
 
+  test('a store crossing UTC midnight refreshes items into the new day', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_DAY + DAY_MS - 1_000);
+    const repo = installRepo();
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const output = {
+      id: 'msg_before_midnight',
+      apiKeyId: 'key-a',
+      payload: { item: { type: 'message', id: 'msg_before_midnight', role: 'assistant', content: [] } },
+      itemHash: 'before-midnight-hash',
+      refreshedAt: Date.now(),
+    };
+    await store.persistOutputItem(output);
+
+    vi.setSystemTime(TEST_DAY + DAY_MS + 1_000);
+    await store.commitSnapshot('resp_after_midnight', 'append', [output.id]);
+
+    expect((await repo.responsesItems.lookupMany('key-a', [output.id], 0))[0].refreshedAt).toBe(TEST_DAY + DAY_MS);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_after_midnight', 0))?.refreshedAt).toBe(TEST_DAY + DAY_MS);
+  });
+
   test('append snapshots refresh direct-id and content-hash input reuse', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(TEST_DAY + DAY_MS / 2);

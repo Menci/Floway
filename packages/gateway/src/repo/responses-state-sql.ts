@@ -197,7 +197,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
     await runStatements(this.db, statements);
 
-    const persisted = await this.lookupExistingItems(unique, 0);
+    const persisted = await this.lookupCurrentPolicyItems(unique, 0, policyAt);
     for (const item of unique) {
       const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id));
       if (actual === undefined) throw new Error(`Responses item disappeared after insert: ${item.id}`);

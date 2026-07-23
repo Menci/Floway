@@ -227,6 +227,23 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
   });
 
+  test('a concurrent disable rejects same-day reuse without relying on a refresh write', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await makeRepo();
+    const now = atDay(10, DAY_MS / 2);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    await repo.apiKeys.save(apiKey());
+    const item = storedItem('msg-disabled-same-day', now);
+    await repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS));
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
+
+    await expect(repo.responsesItems.insertMany(
+      [{ ...item, refreshedAt: now + 1_000 }],
+      responsesStateCutoff(now, RETENTION_SECONDS),
+    )).rejects.toThrow();
+  });
+
   test('an old request cannot refresh a replacement payload under a reused ID', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();

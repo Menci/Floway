@@ -50,7 +50,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly stagedInputItemIds: string[] = [];
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
-  private readonly freshItemIds = new Set<string>();
   private readonly privatePayloads = new Map<string, unknown>();
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
@@ -80,7 +79,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         }));
         for (const item of items) {
           if (item.refreshedAt < refreshedAt) item.refreshedAt = refreshedAt;
-          this.freshItemIds.add(item.id);
         }
         if (snapshot.refreshedAt < refreshedAt) snapshot.refreshedAt = refreshedAt;
       }
@@ -125,7 +123,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       refreshedAt: quantizeResponsesRefreshedAt(row.refreshedAt),
     });
     await this.commitItems([cloned]);
-    this.freshItemIds.add(cloned.id);
     this.rememberItem(cloned);
   }
 
@@ -142,15 +139,13 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     });
     await this.commitItems(uniqueRows);
     const refreshedAt = quantizeResponsesRefreshedAt(Date.now());
-    const staleRows = uniqueRows.filter(row =>
-      !this.freshItemIds.has(row.id) && row.refreshedAt < refreshedAt);
+    const staleRows = uniqueRows.filter(row => row.refreshedAt < refreshedAt);
     if (staleRows.length > 0) {
       await Promise.all(this.options.writes.map(write => write.refreshItems(staleRows, refreshedAt)));
       for (const row of staleRows) {
         if (row.refreshedAt < refreshedAt) row.refreshedAt = refreshedAt;
       }
     }
-    for (const row of uniqueRows) this.freshItemIds.add(row.id);
     const snapshotRefreshedAt = Math.min(...uniqueRows.map(row => row.refreshedAt));
     const snapshot: StoredResponsesSnapshot = {
       id: responseId,
@@ -209,7 +204,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         refreshedAt: quantizeResponsesRefreshedAt(Date.now()),
       };
       this.stagedInputItemIds.push(id);
-      this.freshItemIds.add(id);
       this.rememberItem(created);
       return;
     }
@@ -229,7 +223,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       refreshedAt: quantizeResponsesRefreshedAt(Date.now()),
     };
     this.stagedInputItemIds.push(row.id);
-    this.freshItemIds.add(row.id);
     this.rememberItem(row);
   }
 
