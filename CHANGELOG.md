@@ -1,38 +1,41 @@
 # Breaking Changes
 
-This file records user-facing breaking changes by date. It is prepend-only:
-new entries go at the top, below this header. Each entry states the date,
-severity, what broke, and what users need to know or do.
+This file records user-facing breaking changes by date. New entries go at the
+top, below this header. Each entry states the severity, what broke, and what
+users need to know or do.
 
 Severity levels:
 
-- **hard** — all users are affected; previously working functionality
-  fails or behaves differently.
+- **hard** — all users are affected; previously working functionality fails or
+  behaves differently.
 - **minor** — specific behaviors, fields, or integration patterns change;
   users who depend on them need to adapt, but the primary functionality
   continues to work.
 
 ---
 
-## 2026-07-22 · hard
+## 2026-07-23 · hard
 
-**Responses stored state reset.**
+**Stateful Responses persistence reset and made opt-in.**
 
-Responses item persistence now stores exact producer-owned IDs and payloads.
-Deploying this schema drops every existing Responses item and snapshot; old
-`previous_response_id` and stored `item_reference` chains will no longer
-resolve. Clients must start new stateful Responses chains after deployment.
+The migration drops every existing Responses item and snapshot. Old
+`previous_response_id` and stored `item_reference` chains no longer resolve;
+clients must start new chains after deployment.
+
+New API keys and all migrated keys start with durable persistence disabled.
+Users who need cross-request Stateful Responses must configure a positive
+retention duration for each API key. Stored item IDs are now the exact IDs
+owned by their producer rather than a gateway namespace.
 
 ## 2026-07-18 · hard
 
 **Affinity and Responses state reset.**
 
-The client-carried affinity mechanism was redesigned from scratch.
-Existing conversations that previously routed requests to a specific
-upstream model via affinity context will lose that routing — subsequent
-messages may be dispatched to a different upstream than the one that
-produced the prior turns.
+The client-carried affinity mechanism was redesigned from scratch. Existing
+conversations that previously routed requests to a specific upstream model via
+affinity context lose that routing; subsequent messages may be dispatched to a
+different upstream than the one that produced the prior turns.
 
-All Responses API items and snapshots stored before this date are
-discarded. References to old `previous_response_id` values will no
-longer resolve; clients must start new response chains.
+All Responses API items and snapshots stored before this date are discarded.
+References to old `previous_response_id` values no longer resolve; clients must
+start new response chains.

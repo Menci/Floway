@@ -235,15 +235,26 @@ and request context live under `data-plane/chat/shared/affinity`; each source
 protocol owns its `affinity/ingress.ts` and `affinity/egress.ts`. Wire behavior
 lives in `docs/AFFINITY.md`, and candidate ordering lives in `docs/RESOLUTION.md`.
 
-Native Responses persistence is independent from affinity. It stores the first
-complete client-facing item under each producer-owned, API-key-scoped item ID,
-plus response snapshots, for 30 days without rewriting item IDs. A completed
-output item becomes reusable at its first `response.output_item.done`, so its
-row commits before that event is published; the response snapshot commits at
-the successful terminal event. Repository writes treat exact
-item/private-payload reuse as idempotent and reject a different row under the
-same API-key-scoped ID. HTTP `store: false` bypasses item persistence, while
-WebSocket `store: false` is session-local.
+Native Responses persistence is independent from affinity and opt-in per API
+key. A zero retention disables every durable lookup and write; a positive
+retention keeps producer-owned items and response snapshots from their last
+successful reuse. Visibility is the current rolling window over
+`refreshed_at`; increasing the configured duration may expose a row that the
+eventually-consistent cleanup has not deleted yet. A completed output item
+becomes reusable at its first `response.output_item.done`, so its row commits
+before that event is published; the response snapshot commits at the successful
+terminal event. Repository writes treat exact item/private-payload reuse as
+idempotent and reject a different live row under the same API-key-scoped ID.
+
+Large item payloads use immutable nonce-owned objects. The generic
+`spilled_files` ledger stages each object before the file write, atomically
+adopts it with its owner row, retires it when the owner is replaced or deleted,
+and supplies one exact-file collector shared by every storage domain. Hourly
+maintenance deletes Responses rows outside each key's current policy before
+collecting staged or retired files. HTTP `store: false` can read enabled
+durable state but never writes or refreshes it. WebSocket state is always
+session-local; `store: true` additionally writes durable state when the key has
+opted in.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in
@@ -515,3 +526,4 @@ When working on a change and it is unclear whether it constitutes a
 breaking change, do not unilaterally add a CHANGELOG entry — ask the
 user to make the call. The user declares what is breaking; the agent
 records it.
+
