@@ -27,6 +27,15 @@ Users who need cross-request Stateful Responses must configure a positive
 retention duration for each API key. Stored item IDs are now the exact IDs
 owned by their producer rather than a gateway namespace.
 
+Immediately after deploying through this migration, the database contains no
+stored Responses items, and no new ones are persisted until an API key is
+manually opted in. We recommend manually deleting every object under the
+file-storage `responses-items/` namespace at that point; do not delete other
+stored files. This is an additional manual step after the automated deployment,
+not part of deploy automation. If an AI agent is performing the deployment, it
+must explain why this cleanup is recommended and ask the user whether to do it,
+without deleting the objects automatically.
+
 ## 2026-07-18 · hard
 
 **Affinity and Responses state reset.**
