@@ -19,7 +19,7 @@ describe('Responses stored-item hydration', () => {
         private: { replay: true },
       },
       contentHash: 'hash',
-      refreshedAt: 1_000,
+      refreshedAt: Date.now(),
     };
     await repo.responsesItems.insertMany([row], 0);
     const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);

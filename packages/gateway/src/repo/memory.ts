@@ -643,7 +643,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
         changes += 1;
       }
     }
-    return Promise.resolve(changes);
+    return changes;
   }
 
   deleteAll(): Promise<void> {
@@ -684,7 +684,7 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
         changes += 1;
       }
     }
-    return Promise.resolve(changes);
+    return changes;
   }
 
   deleteAll(): Promise<void> {

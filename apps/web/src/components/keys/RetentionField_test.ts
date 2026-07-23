@@ -104,4 +104,3 @@ describe('RetentionField', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toBe(45 * 86400);
   });
 });
-

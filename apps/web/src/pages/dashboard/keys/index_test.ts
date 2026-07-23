@@ -84,6 +84,7 @@ const apiKey = (over: Partial<ApiKey> & { id: string; name: string }): ApiKey =>
   upstream_ids: null,
   dump_retention_seconds: null,
   ...over,
+  responses_retention_seconds: over.responses_retention_seconds ?? 0,
 });
 
 beforeEach(() => {

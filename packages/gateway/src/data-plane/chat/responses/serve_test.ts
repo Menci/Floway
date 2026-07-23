@@ -386,13 +386,13 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
     apiKeyId: API_KEY_ID,
     contentHash: 'previous-message-hash',
     payload: { item: { type: 'message', id: previousMessageId, role: 'user', content: 'first turn' } },
-    refreshedAt: 1_000,
+    refreshedAt: Date.now(),
   }], 0);
   const snapshot: StoredResponsesSnapshot = {
     id: 'resp_prev',
     apiKeyId: API_KEY_ID,
     itemIds: [previousMessageId],
-    refreshedAt: 1_000,
+    refreshedAt: Date.now(),
   };
   await repo.responsesSnapshots.insert(snapshot);
 
