@@ -230,6 +230,7 @@ END;
 CREATE TABLE dump_maintenance_keys (
   key_id TEXT PRIMARY KEY,
   due_at INTEGER NOT NULL,
+  floor_cursor INTEGER NOT NULL DEFAULT 0,
   revision INTEGER NOT NULL DEFAULT 0,
   claim_token TEXT,
   claimed_at INTEGER,
@@ -247,6 +248,11 @@ CREATE TABLE dump_file_gc (
 );
 
 CREATE INDEX idx_dump_file_gc_eligible ON dump_file_gc (eligible_at, file_key);
+
+CREATE TABLE dump_visibility_floor (
+  key_id TEXT PRIMARY KEY,
+  started_after INTEGER NOT NULL
+);
 
 CREATE TABLE dump_maintenance_backfill (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -298,11 +304,14 @@ BEGIN
     NEW.key_id,
     COALESCE((
       SELECT CASE
+        WHEN json_extract(NEW.meta_json, '$.startedAt') < COALESCE(dump_visibility_floor.started_after, 0)
+          THEN 0
         WHEN deleted_at IS NULL AND dump_retention_seconds IS NOT NULL
           THEN NEW.created_at + dump_retention_seconds * 1000 + 1
         ELSE 0
       END
-      FROM api_keys WHERE id = NEW.key_id
+      FROM api_keys LEFT JOIN dump_visibility_floor ON dump_visibility_floor.key_id = api_keys.id
+      WHERE api_keys.id = NEW.key_id
     ), 0)
   )
   ON CONFLICT (key_id) DO UPDATE SET
@@ -318,6 +327,7 @@ BEGIN
   VALUES (NEW.id, 0)
   ON CONFLICT (key_id) DO UPDATE SET
     due_at = 0,
+    floor_cursor = 0,
     revision = dump_maintenance_keys.revision + 1;
 END;
 

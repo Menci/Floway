@@ -45,6 +45,7 @@ const openDb = async (): Promise<SqlDatabase> => {
     CREATE TABLE dump_maintenance_keys (
       key_id TEXT PRIMARY KEY,
       due_at INTEGER NOT NULL,
+      floor_cursor INTEGER NOT NULL DEFAULT 0,
       revision INTEGER NOT NULL DEFAULT 0,
       claim_token TEXT,
       claimed_at INTEGER
@@ -54,6 +55,10 @@ const openDb = async (): Promise<SqlDatabase> => {
       eligible_at INTEGER NOT NULL,
       claim_token TEXT,
       claimed_at INTEGER
+    );
+    CREATE TABLE dump_visibility_floor (
+      key_id TEXT PRIMARY KEY,
+      started_after INTEGER NOT NULL
     );
     CREATE TABLE dump_maintenance_backfill (
       id INTEGER PRIMARY KEY,
@@ -82,6 +87,7 @@ const openDb = async (): Promise<SqlDatabase> => {
       INSERT OR IGNORE INTO dump_file_gc (file_key, eligible_at)
       SELECT json_extract(OLD.response_body_descriptor, '$.key'), 0 WHERE OLD.response_body_descriptor IS NOT NULL;
     END;
+    INSERT INTO api_keys (id, deleted_at, dump_retention_seconds) VALUES ('key_x', NULL, 315360000);
   `);
   return {
     prepare(query): SqlPreparedStatement {
@@ -109,6 +115,10 @@ const openDb = async (): Promise<SqlDatabase> => {
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 const requestBody = utf8('{"hello":"world"}');
+
+const drainMaintenance = async (store: FileDumpStore, now: number): Promise<void> => {
+  while (await store.purgeNextMaintenanceBatch(now)) { /* bounded units */ }
+};
 
 const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
   meta: {
@@ -262,20 +272,23 @@ test('FileDumpStore.purgeExpired drops rows past the cutoff and sweeps whole hou
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12, 0, 0);
+  await db.prepare('UPDATE api_keys SET dump_retention_seconds = ? WHERE id = ?').bind(2 * 3600, 'key_x').run();
   // Old bucket 9:xx, current bucket 12:xx.
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', now));
   // 2 hours retention; the old bucket is past the cutoff and should disappear,
   // but the now bucket must stay because its end is still within the window.
   const originalNow = Date.now;
+  let leftIds: string[] = [];
   Date.now = () => now + 1;
   try {
     await store.purgeExpired('key_x', 2 * 3600);
+    await drainMaintenance(store, now + 1);
+    leftIds = (await store.list('key_x', { limit: 10 })).map(meta => meta.id);
   } finally {
     Date.now = originalNow;
   }
-  const left = await store.list('key_x', { limit: 10 });
-  assertEquals(left.map(m => m.id), ['01HZZ0000000000000000000A2']);
+  assertEquals(leftIds, ['01HZZ0000000000000000000A2']);
 
   const remainingFiles = await files.listKeys('dumps/v1/key_x/');
   assertEquals(remainingFiles.every(k => !k.includes('2026060109')), true);
@@ -288,6 +301,7 @@ test('FileDumpStore.purgeAll wipes every row and every file under the key prefix
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)));
   await store.purgeAll('key_x');
+  await drainMaintenance(store, Date.UTC(2026, 5, 1, 13));
   assertEquals((await store.list('key_x', { limit: 10 })).length, 0);
   assertEquals((await files.listKeys('dumps/v1/key_x/')).length, 0);
 });
@@ -304,6 +318,7 @@ test('FileDumpStore scheduled purge deletes at most one bounded row batch', asyn
   for (let index = 0; index < 501; index += 1) {
     await insert.bind('key_x', `dump_${index.toString().padStart(4, '0')}`, index).run();
   }
+  await db.prepare('UPDATE api_keys SET dump_retention_seconds = NULL WHERE id = ?').bind('key_x').run();
 
   await store.purgeNextMaintenanceBatch(1_000);
 
@@ -332,6 +347,7 @@ test('FileDumpStore.purgeExpired against a never-written key resolves without th
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
   await store.purgeExpired('never_written_key', 3600);
+  await drainMaintenance(store, Date.now());
   assertEquals((await store.list('never_written_key', { limit: 10 })).length, 0);
   assertEquals((await files.listKeys('dumps/v1/never_written_key/')).length, 0);
 });

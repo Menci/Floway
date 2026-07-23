@@ -841,7 +841,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     });
   }
   for (const key of apiKeys) {
-    // Dump transitions below perform physical purge work. Responses state is
+    // Dump transitions below advance the visibility floor and enqueue bounded
+    // physical cleanup. Responses state is
     // independent: merge preserves its private namespace and applies the
     // epoch/floor transition, while replace/reactivation starts a new one and
     // leaves bounded maintenance to reclaim retired rows.

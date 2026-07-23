@@ -82,8 +82,8 @@ const retentionWarning = computed<string | null>(() => {
   if (previous === null) return null;
   const next = dumpRetention.value;
   if (next === 'invalid') return null;
-  if (next === null) return 'Saving will immediately delete dumps for this key.';
-  if (next < previous) return 'Saving will immediately delete dumps older than the new window.';
+  if (next === null) return 'Saving will make existing dumps unavailable and queue them for deletion.';
+  if (next < previous) return 'Saving will hide dumps older than the new window and queue them for deletion.';
   return null;
 });
 

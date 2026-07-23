@@ -152,7 +152,7 @@ export const deleteKey = async (c: AuthedContext) => {
   const id = c.req.param('id')!;
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
-  // Purge dump state before the soft-delete so a purge failure leaves a
+  // Queue dump state before the soft-delete so a scheduling failure leaves a
   // retriable, still-owned key rather than a half-deleted row whose dump
   // records are orphaned beyond the operator's reach.
   await getDumpStore().purgeAll(id);

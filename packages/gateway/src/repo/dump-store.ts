@@ -71,16 +71,6 @@ const hourBucket = (ms: number): string => {
   return `${y}${m}${d}${h}`;
 };
 
-const hourBucketToMs = (bucket: string): number | null => {
-  if (!/^\d{10}$/.test(bucket)) return null;
-  const y = Number(bucket.slice(0, 4));
-  const m = Number(bucket.slice(4, 6));
-  const d = Number(bucket.slice(6, 8));
-  const h = Number(bucket.slice(8, 10));
-  return Date.UTC(y, m - 1, d, h, 0, 0, 0);
-};
-
-const keyPrefix = (keyId: string): string => `${ROOT}/${keyId}/`;
 const bucketPrefix = (keyId: string, bucket: string): string => `${ROOT}/${keyId}/${bucket}/`;
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
   `${bucketPrefix(keyId, bucket)}${recordId}-${crypto.randomUUID()}.${side}.gz`;
@@ -214,13 +204,17 @@ export class FileDumpStore implements DumpStore {
     // creation order within the ms.
     const select
       = 'SELECT d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.color AS upstream_color '
-      + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id';
+      + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
+      + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '
+      + 'LEFT JOIN dump_visibility_floor v ON v.key_id = d.key_id';
+    const visible = 'd.key_id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000 '
+      + "AND json_extract(d.meta_json, '$.startedAt') >= COALESCE(v.started_after, 0)";
     const sql = beforeTs === null
-      ? `${select} WHERE d.key_id = ? ORDER BY d.created_at DESC, d.id DESC LIMIT ?`
-      : `${select} WHERE d.key_id = ? AND (d.created_at < ? OR (d.created_at = ? AND d.id < ?)) ORDER BY d.created_at DESC, d.id DESC LIMIT ?`;
+      ? `${select} WHERE ${visible} ORDER BY d.created_at DESC, d.id DESC LIMIT ?`
+      : `${select} WHERE ${visible} AND (d.created_at < ? OR (d.created_at = ? AND d.id < ?)) ORDER BY d.created_at DESC, d.id DESC LIMIT ?`;
     const stmt = beforeTs === null
-      ? this.db.prepare(sql).bind(keyId, opts.limit)
-      : this.db.prepare(sql).bind(keyId, beforeTs, beforeTs, beforeId, opts.limit);
+      ? this.db.prepare(sql).bind(keyId, Date.now(), opts.limit)
+      : this.db.prepare(sql).bind(keyId, Date.now(), beforeTs, beforeTs, beforeId, opts.limit);
     const { results } = await stmt.all<Pick<DumpRow, 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_color'>>();
     return results.map(row => ({
       ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
@@ -233,8 +227,10 @@ export class FileDumpStore implements DumpStore {
       'SELECT d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.color AS upstream_color, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
-      + 'WHERE d.key_id = ? AND d.id = ?',
-    ).bind(keyId, recordId).first<DumpRow>();
+      + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '
+      + 'LEFT JOIN dump_visibility_floor v ON v.key_id = d.key_id '
+      + "WHERE d.key_id = ? AND d.id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000 AND json_extract(d.meta_json, '$.startedAt') >= COALESCE(v.started_after, 0)",
+    ).bind(keyId, recordId, Date.now()).first<DumpRow>();
     if (!row) return null;
 
     const meta: DumpMetadata = {
@@ -278,31 +274,36 @@ export class FileDumpStore implements DumpStore {
   }
 
   async purgeAll(keyId: string): Promise<void> {
-    // Files before rows, matching `put`'s ordering invariant.
-    await this.files.deletePrefix(keyPrefix(keyId));
-    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
+    await this.advanceVisibilityFloor(keyId, Date.now());
+    await this.scheduleMaintenance(keyId, true);
   }
 
   async purgeExpired(keyId: string, retentionSeconds: number): Promise<void> {
-    const cutoff = Date.now() - retentionSeconds * 1000;
+    await this.advanceVisibilityFloor(keyId, Date.now() - retentionSeconds * 1000);
+    await this.scheduleMaintenance(keyId, true);
+  }
 
-    // FileProvider has no delimiter-aware list, so derive the hour buckets by
-    // scanning all keys under the prefix and grouping on the first segment.
-    const prefix = keyPrefix(keyId);
-    const buckets = new Set<string>();
-    for (const file of await this.files.listKeys(prefix)) {
-      const tail = file.slice(prefix.length);
-      const slash = tail.indexOf('/');
-      if (slash > 0) buckets.add(tail.slice(0, slash));
-    }
-    for (const bucket of buckets) {
-      const bucketStart = hourBucketToMs(bucket);
-      if (bucketStart === null) continue;
-      const bucketEnd = bucketStart + HOUR_MS;
-      if (bucketEnd <= cutoff) await this.files.deletePrefix(bucketPrefix(keyId, bucket));
-    }
+  private async advanceVisibilityFloor(keyId: string, startedAfter: number): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO dump_visibility_floor (key_id, started_after) VALUES (?, ?)
+         ON CONFLICT (key_id) DO UPDATE SET started_after = MAX(dump_visibility_floor.started_after, excluded.started_after)`,
+      )
+      .bind(keyId, startedAfter)
+      .run();
+  }
 
-    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?').bind(keyId, cutoff).run();
+  private async scheduleMaintenance(keyId: string, resetFloorCursor: boolean): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO dump_maintenance_keys (key_id, due_at) VALUES (?, 0)
+         ON CONFLICT (key_id) DO UPDATE SET
+           due_at = 0,
+           floor_cursor = CASE WHEN ? THEN 0 ELSE dump_maintenance_keys.floor_cursor END,
+           revision = dump_maintenance_keys.revision + 1`,
+      )
+      .bind(keyId, resetFloorCursor ? 1 : 0)
+      .run();
   }
 
   async backfillMaintenanceBatch(): Promise<boolean> {
@@ -367,33 +368,77 @@ export class FileDumpStore implements DumpStore {
            WHERE due_at <= ? AND (claim_token IS NULL OR claimed_at <= ?)
            ORDER BY due_at, key_id LIMIT 1
          )
-         RETURNING key_id, revision`,
+         RETURNING key_id, revision, floor_cursor`,
       )
       .bind(token, now, now, now - CLAIM_TIMEOUT_MS)
-      .all<{ key_id: string; revision: number }>();
+      .all<{ key_id: string; revision: number; floor_cursor: number }>();
     const claim = claims[0];
     if (claim === undefined) return gcRows.length > 0;
     const policy = await this.db
-      .prepare('SELECT dump_retention_seconds FROM api_keys WHERE id = ? AND deleted_at IS NULL')
+      .prepare(
+        `SELECT api_keys.dump_retention_seconds, COALESCE(dump_visibility_floor.started_after, 0) AS started_after
+         FROM api_keys LEFT JOIN dump_visibility_floor ON dump_visibility_floor.key_id = api_keys.id
+         WHERE api_keys.id = ? AND api_keys.deleted_at IS NULL`,
+      )
       .bind(claim.key_id)
-      .first<{ dump_retention_seconds: number | null }>();
+      .first<{ dump_retention_seconds: number | null; started_after: number }>();
     const retentionSeconds = policy?.dump_retention_seconds ?? null;
+    const startedAfter = policy?.started_after ?? 0;
     const cutoff = retentionSeconds === null ? Number.MAX_SAFE_INTEGER : now - retentionSeconds * 1000;
-    const { results: rows } = await this.db
+    const { results: ttlRows } = await this.db
       .prepare(
         `SELECT id FROM dump_records
          WHERE key_id = ? AND created_at < ?
-         ORDER BY created_at, id LIMIT ?`,
+         ORDER BY created_at LIMIT ?`,
       )
       .bind(claim.key_id, cutoff, MAINTENANCE_ROW_BATCH_SIZE)
       .all<{ id: string }>();
-    if (rows.length > 0) {
+    const floorBudget = MAINTENANCE_ROW_BATCH_SIZE - ttlRows.length;
+    const { results: floorRows } = startedAfter === 0 || floorBudget === 0
+      ? { results: [] }
+      : await this.db
+          .prepare(
+            `SELECT rowid, id, meta_json FROM dump_records
+             WHERE key_id = ? AND rowid > ? ORDER BY rowid LIMIT ?`,
+          )
+          .bind(claim.key_id, claim.floor_cursor, floorBudget)
+          .all<{ rowid: number; id: string; meta_json: string }>();
+    const floorIds = floorRows.flatMap(row => {
+      const startedAt = (JSON.parse(row.meta_json) as { startedAt?: unknown }).startedAt;
+      return typeof startedAt === 'number' && startedAt < startedAfter ? [row.id] : [];
+    });
+    const ids = [...new Set([...ttlRows.map(row => row.id), ...floorIds])];
+    const nextFloorCursor = floorRows.at(-1)?.rowid ?? claim.floor_cursor;
+    if (ids.length > 0) {
       await this.db
-        .prepare('DELETE FROM dump_records WHERE key_id = ? AND id IN (SELECT value FROM json_each(?))')
-        .bind(claim.key_id, JSON.stringify(rows.map(row => row.id)))
+        .prepare(
+          `DELETE FROM dump_records
+           WHERE key_id = ?
+             AND id IN (SELECT value FROM json_each(?))
+             AND EXISTS (
+               SELECT 1 FROM dump_maintenance_keys
+               WHERE key_id = ? AND claim_token = ? AND revision = ?
+             )
+             AND (
+               NOT EXISTS (
+                 SELECT 1 FROM api_keys
+                 WHERE api_keys.id = dump_records.key_id
+                   AND api_keys.deleted_at IS NULL
+                   AND api_keys.dump_retention_seconds IS NOT NULL
+               )
+               OR created_at < ? - (
+                 SELECT dump_retention_seconds * 1000 FROM api_keys
+                 WHERE api_keys.id = dump_records.key_id AND api_keys.deleted_at IS NULL
+               )
+               OR json_extract(meta_json, '$.startedAt') < COALESCE((
+                 SELECT started_after FROM dump_visibility_floor WHERE key_id = dump_records.key_id
+               ), 0)
+             )`,
+        )
+        .bind(claim.key_id, JSON.stringify(ids), claim.key_id, token, claim.revision, now)
         .run();
     }
-    const partial = rows.length === MAINTENANCE_ROW_BATCH_SIZE;
+    const partial = ttlRows.length === MAINTENANCE_ROW_BATCH_SIZE || floorRows.length === floorBudget;
     const oldest = partial
       ? null
       : await this.db
@@ -418,11 +463,12 @@ export class FileDumpStore implements DumpStore {
                WHEN revision = ? AND ? IS NOT NULL THEN ?
                ELSE due_at
              END,
+             floor_cursor = CASE WHEN revision = ? THEN ? ELSE floor_cursor END,
              claim_token = NULL,
              claimed_at = NULL
          WHERE claim_token = ?`,
       )
-      .bind(partial ? 1 : 0, now, claim.revision, nextDueAt, nextDueAt, token)
+      .bind(partial ? 1 : 0, now, claim.revision, nextDueAt, nextDueAt, claim.revision, nextFloorCursor, token)
       .run();
     return true;
   }
