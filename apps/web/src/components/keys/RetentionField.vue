@@ -156,9 +156,9 @@ const customInvalid = computed(() => {
 <template>
   <div class="space-y-2">
     <label :id="labelId" :for="selectId" class="block text-xs font-medium text-gray-500">{{ label }}</label>
-    <p :id="descriptionId" class="text-xs text-gray-600">
-      <slot name="description">{{ description }}</slot>
-    </p>
+    <div :id="descriptionId" class="text-xs text-gray-600">
+      <slot name="description"><p>{{ description }}</p></slot>
+    </div>
     <Select
       :id="selectId"
       :model-value="selected"

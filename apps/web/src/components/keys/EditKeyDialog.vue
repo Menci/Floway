@@ -207,7 +207,12 @@ const save = async () => {
         custom-input-unit="days"
       >
         <template #description>
-          When enabled, items and responses produced by <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">store: true</code> Responses API requests are persisted to be referenced by <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">item_reference</code> and <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">previous_response_id</code> for the number of days. Codex's WebSocket non-persistent session store works independently.
+          <p>
+            When enabled, items and responses produced by <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">store: true</code> Responses API requests are persisted for the configured number of days, so they can be referenced by <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">item_reference</code> and <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">previous_response_id</code> during that period.
+          </p>
+          <p class="mt-2">
+            Codex's WebSocket non-persistent session store works independently.
+          </p>
         </template>
         <p v-if="responsesRetentionWarning" role="status" aria-live="polite" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
           {{ responsesRetentionWarning }}

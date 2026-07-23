@@ -76,7 +76,7 @@ describe('RetentionField', () => {
     });
     const trigger = wrapper.get('button');
     const label = wrapper.get('label');
-    const description = wrapper.get('p');
+    const description = wrapper.get(`#${trigger.attributes('aria-describedby')}`);
     expect(trigger.attributes('aria-labelledby')).toBe(label.attributes('id'));
     expect(trigger.attributes('aria-describedby')).toBe(description.attributes('id'));
   });
@@ -91,11 +91,12 @@ describe('RetentionField', () => {
         presets: [],
       },
       slots: {
-        description: 'Persist <code>store: true</code> requests.',
+        description: '<p>Persist <code>store: true</code> requests.</p><p>WebSocket state is independent.</p>',
       },
     });
 
-    const description = wrapper.get('p');
+    const description = wrapper.get(`#${wrapper.get('button').attributes('aria-describedby')}`);
+    expect(description.findAll('p')).toHaveLength(2);
     expect(description.get('code').text()).toBe('store: true');
     expect(wrapper.get('button').attributes('aria-describedby')).toBe(description.attributes('id'));
   });
