@@ -69,7 +69,6 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
     const dumpRecords = states.find(state => state.source === 'dump_records');
     if (dumpRecords === undefined) throw new Error('dump_records expiration owner backfill state missing');
     return {
-      complete: states.every(state => state.complete !== 0),
       dumpRecordsComplete: dumpRecords.complete !== 0,
     };
   }

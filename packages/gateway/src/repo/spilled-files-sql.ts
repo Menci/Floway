@@ -76,13 +76,12 @@ export class SqlSpilledFilesRepo implements SpilledFilesRepo {
       .prepare(
         `UPDATE spilled_file_inventories
          SET cursor = ?,
-             passes = passes + CASE WHEN ? IS NULL THEN 1 ELSE 0 END,
              revision = revision + 1,
              claim_token = NULL,
              claimed_at = NULL
          WHERE prefix = ? AND claim_token = ? AND revision = ?`,
       )
-      .bind(nextCursor, nextCursor, prefix, token, expectedRevision)
+      .bind(nextCursor, prefix, token, expectedRevision)
       .run();
     return (result.meta.changes ?? 0) === 1;
   }

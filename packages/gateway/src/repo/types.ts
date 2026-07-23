@@ -442,7 +442,6 @@ export type ExpirationSweepCompletion =
   | { kind: 'partial'; retryAt: number };
 
 export interface ExpirationOwnerBackfillState {
-  complete: boolean;
   dumpRecordsComplete: boolean;
 }
 

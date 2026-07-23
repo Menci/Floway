@@ -27,7 +27,6 @@ CREATE TABLE spilled_file_inventories (
   prefix TEXT PRIMARY KEY,
   cursor TEXT,
   revision INTEGER NOT NULL DEFAULT 0,
-  passes INTEGER NOT NULL DEFAULT 0,
   claim_token TEXT,
   claimed_at INTEGER,
   CHECK ((claim_token IS NULL) = (claimed_at IS NULL))

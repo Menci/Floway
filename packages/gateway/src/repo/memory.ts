@@ -840,7 +840,11 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
 }
 
 class MemorySpilledFilesRepo implements SpilledFilesRepo {
-  private readonly files = new Map<string, { collectAfter: number; claimToken: string | null }>();
+  private readonly files = new Map<string, {
+    collectAfter: number;
+    claimToken: string | null;
+    claimedAt: number | null;
+  }>();
   private readonly inventories = new Map<string, {
     cursor: string | null;
     revision: number;
@@ -848,13 +852,18 @@ class MemorySpilledFilesRepo implements SpilledFilesRepo {
     claimedAt: number | null;
   }>();
 
-  claimCollectible(token: string, now: number, _staleClaimedBefore: number, limit: number): Promise<string[]> {
+  claimCollectible(token: string, now: number, staleClaimedBefore: number, limit: number): Promise<string[]> {
     const keys = [...this.files]
-      .filter(([, file]) => file.claimToken === null && file.collectAfter <= now)
+      .filter(([, file]) =>
+        file.collectAfter <= now && (file.claimToken === null || file.claimedAt! < staleClaimedBefore))
       .map(([fileKey]) => fileKey)
       .sort()
       .slice(0, limit);
-    for (const key of keys) this.files.get(key)!.claimToken = token;
+    for (const key of keys) {
+      const file = this.files.get(key)!;
+      file.claimToken = token;
+      file.claimedAt = now;
+    }
     return Promise.resolve(keys);
   }
 
@@ -898,7 +907,7 @@ class MemorySpilledFilesRepo implements SpilledFilesRepo {
     const row = this.inventories.get(prefix);
     if (row === undefined || row.claimToken !== token || row.revision !== expectedRevision) return Promise.resolve(false);
     for (const fileKey of fileKeys) {
-      this.files.set(fileKey, this.files.get(fileKey) ?? { collectAfter, claimToken: null });
+      this.files.set(fileKey, this.files.get(fileKey) ?? { collectAfter, claimToken: null, claimedAt: null });
     }
     row.cursor = nextCursor;
     row.revision += 1;
@@ -930,8 +939,8 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
     return `${domain}\0${keyId}`;
   }
 
-  backfillOwners(): Promise<{ complete: boolean; dumpRecordsComplete: boolean }> {
-    return Promise.resolve({ complete: true, dumpRecordsComplete: true });
+  backfillOwners(): Promise<{ dumpRecordsComplete: boolean }> {
+    return Promise.resolve({ dumpRecordsComplete: true });
   }
 
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {

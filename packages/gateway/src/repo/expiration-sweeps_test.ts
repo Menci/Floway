@@ -315,7 +315,7 @@ test('bounded owner backfill schedules rows whose API key was hard-removed', asy
   await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
 
   const state = await repo.expirationSweeps.backfillOwners(500);
-  expect(state).toEqual({ complete: true, dumpRecordsComplete: true });
+  expect(state).toEqual({ dumpRecordsComplete: true });
   expect(await db.prepare(
     "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
   ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
