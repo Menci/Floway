@@ -131,6 +131,28 @@ describe('StatefulResponsesStore', () => {
     expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toHaveLength(1);
   });
 
+  test('same-day snapshot reuse does not call the durable item refresher', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_DAY + DAY_MS / 2);
+    const repo = installRepo();
+    const item = {
+      id: 'msg_current_day',
+      apiKeyId: 'key-a',
+      payload: { item: { type: 'message', id: 'msg_current_day', role: 'assistant', content: [] } },
+      itemHash: 'current-day-hash',
+      refreshedAt: TEST_DAY + 1_000,
+    };
+    await repo.responsesItems.insertMany([item], 0);
+    await repo.responsesSnapshots.insert({ id: 'resp_current_day', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: item.refreshedAt });
+    const refreshItems = vi.spyOn(repo.responsesItems, 'refreshMany');
+
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    expect(await store.loadSnapshot('resp_current_day')).not.toBeNull();
+    await store.commitSnapshot('resp_current_day_next', 'append', []);
+
+    expect(refreshItems).not.toHaveBeenCalled();
+  });
+
   test('append snapshots refresh direct-id and content-hash input reuse', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(TEST_DAY + DAY_MS / 2);
