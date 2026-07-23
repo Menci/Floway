@@ -372,7 +372,7 @@ export interface StoredResponsesItem {
   apiKeyId: string;
   payload: StoredResponsesItemPayload;
   contentHash: string;
-  createdAt: number;
+  refreshedAt: number;
 }
 
 export interface StoredResponsesItemPayload {
@@ -385,11 +385,11 @@ export interface StoredResponsesItemPayload {
 }
 
 export interface ResponsesItemsRepo {
-  lookupMany(apiKeyId: string, ids: readonly string[]): Promise<StoredResponsesItem[]>;
-  lookupManyByContentHash(apiKeyId: string, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
-  insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
-  refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], createdAt: number): Promise<void>;
-  deleteOlderThan(createdBefore: number): Promise<number>;
+  lookupMany(apiKeyId: string, ids: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
+  lookupManyByContentHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
+  insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void>;
+  refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], refreshedAt: number, activeAfter: number): Promise<void>;
+  deleteExpired(now: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -397,14 +397,19 @@ export interface StoredResponsesSnapshot {
   id: string;
   apiKeyId: string;
   itemIds: string[];
-  createdAt: number;
+  refreshedAt: number;
 }
 
 export interface ResponsesSnapshotsRepo {
-  lookup(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
+  lookup(apiKeyId: string, id: string, activeAfter: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  deleteOlderThan(createdBefore: number): Promise<number>;
+  deleteExpired(now: number): Promise<number>;
   deleteAll(): Promise<void>;
+}
+
+export interface SpilledFilesRepo {
+  claimCollectible(token: string, now: number, staleClaimedBefore: number, limit: number): Promise<string[]>;
+  acknowledge(token: string): Promise<number>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
@@ -427,5 +432,6 @@ export interface Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  spilledFiles: SpilledFilesRepo;
   agentSetup: AgentSetupRepository;
 }
