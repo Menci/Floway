@@ -1,6 +1,6 @@
 import { getDumpStore } from './dump/registry.ts';
 import { getRepo } from './repo/index.ts';
-import { RESPONSES_STATE_TTL_MS, startOfUtcHour, sweepExpiredResponsesItemPayloadFiles } from './repo/responses-payload.ts';
+import { sweepSpilledFiles } from './repo/spilled-files.ts';
 import { getImageCacheStore } from '@floway-dev/platform';
 
 const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boolean> => {
@@ -37,10 +37,9 @@ const sweepExpiredDumps = async (): Promise<void> => {
 
 export const runScheduledMaintenance = async (): Promise<void> => {
   const nowMs = Date.now();
-  const hourStart = startOfUtcHour(nowMs);
-  await runSweep('responsesSnapshots.deleteOlderThan', () => getRepo().responsesSnapshots.deleteOlderThan(hourStart - RESPONSES_STATE_TTL_MS));
-  const itemsDeletionSucceeded = await runSweep('responsesItems.deleteOlderThan', () => getRepo().responsesItems.deleteOlderThan(hourStart - RESPONSES_STATE_TTL_MS));
-  if (itemsDeletionSucceeded) await runSweep('responsesItems.sweepPayloadFiles', () => sweepExpiredResponsesItemPayloadFiles(hourStart));
+  await runSweep('responsesSnapshots.deleteExpired', () => getRepo().responsesSnapshots.deleteExpired(nowMs));
+  await runSweep('responsesItems.deleteExpired', () => getRepo().responsesItems.deleteExpired(nowMs));
+  await runSweep('spilledFiles.sweep', () => sweepSpilledFiles(nowMs));
   await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
   await runSweep('dumps.sweepExpired', () => sweepExpiredDumps());
 };
