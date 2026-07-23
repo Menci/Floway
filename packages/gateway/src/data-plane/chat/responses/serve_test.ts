@@ -60,6 +60,12 @@ afterEach(() => { resolutionsQueue.length = 0; });
 const installRepo = (): InMemoryRepo => {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  void repo.apiKeys.save({
+    id: API_KEY_ID, userId: 1, name: 'Responses test key', key: 'raw-responses-test',
+    serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
+    upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 30 * 24 * 60 * 60,
+  });
   return repo;
 };
 

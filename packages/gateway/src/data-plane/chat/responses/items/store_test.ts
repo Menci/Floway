@@ -5,10 +5,21 @@ import { createNonResponsesSourceStore, createResponsesHttpStore, createResponse
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 
+const installRepo = (): InMemoryRepo => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  void repo.apiKeys.save({
+    id: 'key-a', userId: 1, name: 'Responses test key', key: 'raw-responses-test',
+    serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
+    upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 30 * 24 * 60 * 60,
+  });
+  return repo;
+};
+
 describe('StatefulResponsesStore', () => {
   test('HTTP store=false performs no state writes', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
+    const repo = installRepo();
     const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
     expect(store.writesState).toBe(false);
 
@@ -29,8 +40,7 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('HTTP store=false still reads durably-stored items and snapshots', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
+    installRepo();
     const writer = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
     const output = {
       id: 'msg_public',
@@ -51,8 +61,7 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('HTTP default stores complete input and output snapshots', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
+    const repo = installRepo();
     const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, undefined);
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     const output = {
@@ -72,8 +81,7 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('replace snapshots persist only their output state', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
+    const repo = installRepo();
     const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
     const input = { type: 'message' as const, role: 'user' as const, content: 'discarded history' };
     await store.stageInputItems([input]);
@@ -92,8 +100,7 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('append snapshots refresh the lifetime of every referenced item', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
+    const repo = installRepo();
     const initialRefreshedAt = Date.now() - 1_000;
     const item = {
       id: 'msg_old',
@@ -117,8 +124,7 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('append snapshots refresh direct-id and content-hash input reuse', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
+    const repo = installRepo();
     const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
     const directInput = { type: 'message' as const, id: 'msg_direct', role: 'user' as const, content: 'direct' };
     const hashedInput = { type: 'message' as const, role: 'user' as const, content: 'hashed' };
@@ -148,8 +154,7 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('snapshot lifetime follows a newer backing item timestamp', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
+    const repo = installRepo();
     const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
     const input = { type: 'message' as const, role: 'user' as const, content: 'future lifetime' };
     const futureRefreshedAt = Date.now() + 60_000;
@@ -170,8 +175,7 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('WebSocket store=false retains socket-local state only', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
+    const repo = installRepo();
     const session = createResponsesWsSession();
     const first = session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
     expect(first.writesState).toBe(true);
@@ -183,8 +187,7 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('WebSocket store=true promotes every item referenced by a prior local snapshot', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
+    const repo = installRepo();
     const session = createResponsesWsSession();
     const local = session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
     await local.stageInputItems([{ type: 'message', role: 'user', content: 'local' }]);
