@@ -208,7 +208,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       return actual.refreshedAt < item.refreshedAt;
     }), item => item.refreshedAt);
     for (const [refreshedAt, group] of refreshGroups) {
-      await this.refreshMany(group, refreshedAt, activeAfter);
+      await this.refreshMany(group, refreshedAt, 0);
     }
   }
 
