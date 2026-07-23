@@ -10,6 +10,12 @@ describe('Responses stored-item hydration', () => {
   test('replaces an arbitrary item reference with its exact producer payload and private state', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
+    void repo.apiKeys.save({
+      id: 'key-a', userId: 1, name: 'Responses test key', key: 'raw-responses-test',
+      serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
+      upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
+      responsesRetentionSeconds: 30 * 24 * 60 * 60,
+    });
     const id = 'rs_producer';
     const row: StoredResponsesItem = {
       id,

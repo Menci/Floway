@@ -615,7 +615,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
       const policy = await this.apiKeys.getById(item.apiKeyId);
-      if (policy !== null && policy.responsesRetentionSeconds === 0) {
+      if (policy === null || policy.responsesRetentionSeconds === 0) {
         throw new Error(`Responses persistence is disabled for API key: ${item.apiKeyId}`);
       }
       const currentActive = existing !== undefined
@@ -640,10 +640,9 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     const missingIndex = existing.findIndex((item, index) => {
       if (item === undefined || item.refreshedAt < activeAfter) return true;
       const policy = currentPolicies[index];
-      return policy !== null && (
-        policy.responsesRetentionSeconds === 0
-        || item.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds)
-      );
+      return policy === null
+        || policy.responsesRetentionSeconds === 0
+        || item.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds);
     });
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);

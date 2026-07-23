@@ -211,6 +211,20 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
       .rejects.toThrow('id collision');
     expect((await repo.responsesItems.lookupMany('key-a', [original.id], 0))[0]).toEqual(replacement);
   });
+
+  test('missing and soft-deleted keys reject captured writes consistently', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await makeRepo();
+    const now = Date.now();
+    const missing = storedItem('msg-missing-key', now);
+    await expect(repo.responsesItems.insertMany([missing], 0)).rejects.toThrow();
+
+    await repo.apiKeys.save(apiKey());
+    const existing = storedItem('msg-deleted-key', now);
+    await repo.responsesItems.insertMany([existing], 0);
+    await repo.apiKeys.softDelete('key-a');
+    await expect(repo.responsesItems.refreshMany([existing], now + 1, 0)).rejects.toThrow('disappeared');
+  });
 });
 
 test('SQL spill ownership is first-class and the shared collector reclaims retired files', async () => {
