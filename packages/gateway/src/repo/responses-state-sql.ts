@@ -204,8 +204,8 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       assertSameStoredResponsesItem(item, actual);
     }
     const refreshGroups = Map.groupBy(unique.filter(item => {
-      const actual = existing.get(scopedResponsesKey(item.apiKeyId, item.id));
-      return actual !== undefined && actual.refreshedAt < item.refreshedAt;
+      const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id))!;
+      return actual.refreshedAt < item.refreshedAt;
     }), item => item.refreshedAt);
     for (const [refreshedAt, group] of refreshGroups) {
       await this.refreshMany(group, refreshedAt, activeAfter);

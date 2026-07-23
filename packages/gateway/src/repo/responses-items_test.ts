@@ -176,6 +176,27 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].payload).toEqual(old.payload);
   });
 
+  test('a concurrent grow refreshes an identical newly-live item', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await makeRepo();
+    const now = atDay(40, DAY_MS / 2);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const thirtyDays = 30 * RETENTION_SECONDS;
+    const sevenDays = 7 * RETENTION_SECONDS;
+    await repo.apiKeys.save(apiKey(thirtyDays));
+    const old = storedItem('msg-grow-refresh', now - 20 * DAY_MS);
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
+    const reused = { ...old, refreshedAt: now };
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: thirtyDays });
+
+    await repo.responsesItems.insertMany([reused], responsesStateCutoff(now, sevenDays));
+
+    expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt)
+      .toBe(quantizeResponsesRefreshedAt(now));
+  });
+
   test('growing retention reveals a surviving row inside the wider window', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
