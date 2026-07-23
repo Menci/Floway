@@ -3,14 +3,17 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
-import { responsesStateCutoff } from './responses-retention.ts';
+import { quantizeResponsesRefreshedAt, responsesStateCutoff } from './responses-retention.ts';
 import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ApiKey, Repo, StoredResponsesItem } from './types.ts';
 import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
 
-const RETENTION_SECONDS = 60 * 60;
+const RETENTION_SECONDS = 24 * 60 * 60;
+const DAY_MS = RETENTION_SECONDS * 1000;
+const DAY_ZERO = Date.UTC(2026, 0, 1);
+const atDay = (day: number, milliseconds = 0): number => DAY_ZERO + day * DAY_MS + milliseconds;
 
 afterEach(() => vi.useRealTimers());
 
@@ -50,65 +53,65 @@ const backends: Array<readonly [string, () => Promise<Repo>]> = [
 describe.each(backends)('%s Responses state repository', (_backend, makeRepo) => {
   test('scopes exact and content-hash reads by key and rolling cutoff', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(4_000);
+    vi.setSystemTime(atDay(4));
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     await repo.apiKeys.save(apiKey());
     await repo.apiKeys.save({ ...apiKey(), id: 'key-b', key: 'raw-key-b', serverSecret: '22'.repeat(32) });
-    const old = storedItem('msg-old', 1_000, 'same');
-    const current = storedItem('msg-current', 2_000, 'same');
-    const foreign = storedItem('msg-foreign', 2_000, 'same', 'key-b');
+    const old = storedItem('msg-old', atDay(1), 'same');
+    const current = storedItem('msg-current', atDay(2), 'same');
+    const foreign = storedItem('msg-foreign', atDay(2), 'same', 'key-b');
     await repo.responsesItems.insertMany([old, current, foreign], 0);
 
-    expect(await repo.responsesItems.lookupMany('key-a', [old.id, current.id], 1_500)).toEqual([current]);
+    expect(await repo.responsesItems.lookupMany('key-a', [old.id, current.id], atDay(1, 1))).toEqual([current]);
     expect(await repo.responsesItems.lookupMany('key-b', [current.id], 0)).toEqual([]);
     expect(await repo.responsesItems.lookupManyByItemHash('key-a', [current.itemHash], 0)).toEqual([current, old]);
   });
 
   test('rejects a live producer-ID collision but replaces an expired row', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(4_000);
+    vi.setSystemTime(atDay(11, DAY_MS / 2));
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     await repo.apiKeys.save(apiKey());
-    const original = storedItem('msg-collision', 1_000, 'original');
-    const replacement = storedItem('msg-collision', 3_000, 'replacement');
+    const original = storedItem('msg-collision', atDay(10), 'original');
+    const replacement = storedItem('msg-collision', atDay(12), 'replacement');
     await repo.responsesItems.insertMany([original], 0);
 
-    await expect(repo.responsesItems.insertMany([replacement], 500)).rejects.toThrow('id collision');
-    vi.setSystemTime(3_602_001);
-    await expect(repo.responsesItems.insertMany([replacement], 2_000)).resolves.toBeUndefined();
-    expect(await repo.responsesItems.lookupMany('key-a', [original.id], 2_000)).toEqual([replacement]);
+    await expect(repo.responsesItems.insertMany([replacement], atDay(9))).rejects.toThrow('id collision');
+    vi.setSystemTime(atDay(12, 1));
+    await expect(repo.responsesItems.insertMany([replacement], atDay(10, 1))).resolves.toBeUndefined();
+    expect(await repo.responsesItems.lookupMany('key-a', [original.id], atDay(10, 1))).toEqual([replacement]);
   });
 
   test('refreshes only active rows and never lowers their timestamp', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(4_000);
+    vi.setSystemTime(atDay(11, DAY_MS / 2));
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     await repo.apiKeys.save(apiKey());
-    const item = storedItem('msg-refresh', 1_000);
+    const item = storedItem('msg-refresh', atDay(10));
     await repo.responsesItems.insertMany([item], 0);
 
-    await repo.responsesItems.refreshMany([item], 3_000, 500);
-    await repo.responsesItems.refreshMany([item], 2_000, 500);
-    expect((await repo.responsesItems.lookupMany('key-a', [item.id], 0))[0].refreshedAt).toBe(3_000);
-    await expect(repo.responsesItems.refreshMany([item], 4_000, 3_001)).rejects.toThrow('disappeared');
+    await repo.responsesItems.refreshMany([item], atDay(11, 1_000), atDay(9));
+    await repo.responsesItems.refreshMany([item], atDay(11, DAY_MS - 1), atDay(9));
+    expect((await repo.responsesItems.lookupMany('key-a', [item.id], 0))[0].refreshedAt).toBe(atDay(11));
+    await expect(repo.responsesItems.refreshMany([item], atDay(12), atDay(11, 1))).rejects.toThrow('disappeared');
   });
 
   test('deletes rows outside each key current rolling policy', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
-    const now = 10_000_000;
+    const now = atDay(10);
     vi.useFakeTimers();
     vi.setSystemTime(now);
-    await repo.apiKeys.save(apiKey(7_200));
-    const expired = storedItem('msg-expired', responsesStateCutoff(now, 3_600) - 1);
-    const current = storedItem('msg-current', responsesStateCutoff(now, 3_600));
+    await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
+    const expired = storedItem('msg-expired', responsesStateCutoff(now, RETENTION_SECONDS) - 1);
+    const current = storedItem('msg-current', responsesStateCutoff(now, RETENTION_SECONDS));
     await repo.responsesItems.insertMany([expired, current], 0);
     await repo.responsesSnapshots.insert({ id: 'resp-expired', apiKeyId: 'key-a', itemIds: [expired.id], refreshedAt: expired.refreshedAt });
     await repo.responsesSnapshots.insert({ id: 'resp-current', apiKeyId: 'key-a', itemIds: [current.id], refreshedAt: current.refreshedAt });
-    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 3_600 });
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
 
     expect(await repo.responsesItems.deleteExpired(now)).toBe(1);
     expect(await repo.responsesSnapshots.deleteExpired(now)).toBe(1);
@@ -123,19 +126,19 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
 
   test('keeps the newest snapshot payload while extending its refresh timestamp', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(4_000);
+    vi.setSystemTime(atDay(4));
     const repo = await makeRepo();
     await repo.apiKeys.save(apiKey());
-    await repo.responsesSnapshots.insert({ id: 'resp-a', apiKeyId: 'key-a', itemIds: ['new'], refreshedAt: 2_000 });
-    await repo.responsesSnapshots.insert({ id: 'resp-a', apiKeyId: 'key-a', itemIds: ['old'], refreshedAt: 1_000 });
+    await repo.responsesSnapshots.insert({ id: 'resp-a', apiKeyId: 'key-a', itemIds: ['new'], refreshedAt: atDay(3) });
+    await repo.responsesSnapshots.insert({ id: 'resp-a', apiKeyId: 'key-a', itemIds: ['old'], refreshedAt: atDay(2) });
 
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp-a', 0)).toEqual({
       id: 'resp-a',
       apiKeyId: 'key-a',
       itemIds: ['new'],
-      refreshedAt: 2_000,
+      refreshedAt: atDay(3),
     });
-    expect(await repo.responsesSnapshots.lookup('key-a', 'resp-a', 2_001)).toBeNull();
+    expect(await repo.responsesSnapshots.lookup('key-a', 'resp-a', atDay(3, 1))).toBeNull();
   });
 
   test('a concurrent shrink prevents an old request from refreshing excluded state', async () => {
@@ -151,7 +154,8 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
 
     await expect(repo.responsesItems.refreshMany([old], now, responsesStateCutoff(now, thirtyDays)))
       .rejects.toThrow('disappeared');
-    expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt).toBe(old.refreshedAt);
+    expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt)
+      .toBe(quantizeResponsesRefreshedAt(old.refreshedAt));
   });
 
   test('a concurrent grow protects a newly-live producer ID from replacement', async () => {
@@ -185,7 +189,9 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
     expect(await repo.responsesItems.lookupMany('key-a', [old.id], responsesStateCutoff(now, sevenDays))).toEqual([]);
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: thirtyDays });
-    expect(await repo.responsesItems.lookupMany('key-a', [old.id], responsesStateCutoff(now, thirtyDays))).toEqual([old]);
+    expect(await repo.responsesItems.lookupMany('key-a', [old.id], responsesStateCutoff(now, thirtyDays))).toEqual([
+      { ...old, refreshedAt: quantizeResponsesRefreshedAt(old.refreshedAt) },
+    ]);
   });
 
   test('a concurrent disable prevents a captured durable writer from inserting', async () => {
@@ -203,9 +209,11 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   test('an old request cannot refresh a replacement payload under a reused ID', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
-    const now = Date.now();
+    const now = atDay(10, DAY_MS / 2);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
     await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
-    const original = storedItem('msg-reused', now - 90 * 60_000, 'original');
+    const original = storedItem('msg-reused', now - 2.5 * DAY_MS, 'original');
     await repo.responsesItems.insertMany([original], responsesStateCutoff(now, 2 * RETENTION_SECONDS));
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
     const replacement = storedItem(original.id, now, 'replacement');
@@ -213,7 +221,10 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
 
     await expect(repo.responsesItems.refreshMany([original], now + 1, responsesStateCutoff(now, 2 * RETENTION_SECONDS)))
       .rejects.toThrow('id collision');
-    expect((await repo.responsesItems.lookupMany('key-a', [original.id], 0))[0]).toEqual(replacement);
+    expect((await repo.responsesItems.lookupMany('key-a', [original.id], 0))[0]).toEqual({
+      ...replacement,
+      refreshedAt: quantizeResponsesRefreshedAt(replacement.refreshedAt),
+    });
   });
 
   test('missing and soft-deleted keys reject captured writes consistently', async () => {
@@ -237,9 +248,11 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   initRepo(repo);
   const files = new MemoryFileProvider();
   initFileProvider(files);
-  const now = Date.now();
+  const now = atDay(10, DAY_MS / 2);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
   await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
-  const item = storedItem('msg-spilled', now - RETENTION_SECONDS * 1000 - 1, largeContent());
+  const item = storedItem('msg-spilled', now - 2.5 * DAY_MS, largeContent());
   await repo.responsesItems.insertMany([item], 0);
   await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
 
@@ -259,6 +272,34 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   await collectSpilledFiles(now);
   expect(await files.get(owned.file_key)).toBeNull();
   expect(await db.prepare('SELECT file_key FROM spilled_files WHERE file_key = ?').bind(owned.file_key).first()).toBeNull();
+});
+
+test('SQL performs no item or snapshot mutation after an earlier refresh in the same UTC day', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(atDay(10, DAY_MS / 4));
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initFileProvider(new MemoryFileProvider());
+  await repo.apiKeys.save(apiKey());
+  const item = storedItem('msg-daily-refresh', atDay(10, 1_000));
+  const snapshot = { id: 'resp-daily-refresh', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: atDay(10, 1_000) };
+  await repo.responsesItems.insertMany([item], 0);
+  await repo.responsesSnapshots.insert(snapshot);
+
+  const totalChanges = async (): Promise<number> => {
+    const row = await db.prepare('SELECT total_changes() AS value').first<{ value: number }>();
+    if (row === null) throw new Error('SQLite did not return total_changes()');
+    return row.value;
+  };
+  const beforeSameDayReuse = await totalChanges();
+  await repo.responsesItems.refreshMany([item], atDay(10, DAY_MS - 1), 0);
+  await repo.responsesSnapshots.insert({ ...snapshot, refreshedAt: atDay(10, DAY_MS - 1) });
+  expect(await totalChanges()).toBe(beforeSameDayReuse);
+
+  vi.setSystemTime(atDay(11, 1_000));
+  await repo.responsesItems.refreshMany([item], atDay(11, 1_000), 0);
+  await repo.responsesSnapshots.insert({ ...snapshot, refreshedAt: atDay(11, 1_000) });
+  expect(await totalChanges()).toBe(beforeSameDayReuse + 2);
 });
 
 test('a collector claim prevents a staged file from being adopted', async () => {
