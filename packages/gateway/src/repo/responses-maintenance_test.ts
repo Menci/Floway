@@ -92,8 +92,8 @@ test('v1 cursor drains prior tables and removes the entire v1 object root after 
   const expiryHour = Date.UTC(2026, 6, 1, 10);
   const v1CreatedAt = expiryHour - 30 * 24 * 60 * 60 * 1000 + 1;
   await base.prepare(
-    'INSERT INTO responses_items (id, api_key_id, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?)',
-  ).bind('msg_v1', 'key-a', '{}', 'hash', v1CreatedAt).run();
+    'INSERT INTO responses_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  ).bind('msg_v1', 'key-a', null, null, 'message', '{}', 'hash', v1CreatedAt).run();
   await base.prepare(
     'INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, created_at) VALUES (?, ?, ?, ?)',
   ).bind('resp_v1', 'key-a', '["msg_v1"]', v1CreatedAt).run();
