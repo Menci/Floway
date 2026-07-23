@@ -454,10 +454,12 @@ test('import replace writes upstreams and clears replaced collections', async ()
 
   assertEquals(result.status, 200);
   assertEquals(result.body.imported, { users: 1, apiKeys: 1, upstreams: 1, proxies: 0, usage: 1, searchUsage: 1, performance: 0 });
-  assertEquals(await repo.apiKeys.list(), [KEY_B]);
+  const restoredKey = await repo.apiKeys.findByRawKey(KEY_B.key);
+  if (restoredKey === null) throw new Error('restored key missing');
+  assertEquals(restoredKey, { ...KEY_B, id: restoredKey.id });
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
-  assertEquals(await repo.usage.listAll(), [USAGE_2]);
-  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_2]);
+  assertEquals(await repo.usage.listAll(), [{ ...USAGE_2, keyId: restoredKey.id }]);
+  assertEquals(await repo.searchUsage.listAll(), [{ ...SEARCH_USAGE_2, keyId: restoredKey.id }]);
   assertEquals(await repo.responsesItems.lookupMany('key-a', [STORED_RESPONSES_ITEM.id], 0), []);
   assertEquals(await repo.searchConfig.get(), {
     provider: 'microsoft-grounding',
@@ -897,7 +899,7 @@ test('import preserves a positive dumpRetentionSeconds on api keys', async () =>
   }));
 
   assertEquals(result.status, 200);
-  const restored = await repo.apiKeys.getById(KEY_A.id);
+  const restored = await repo.apiKeys.findByRawKey(KEY_A.key);
   assertEquals(restored?.dumpRetentionSeconds, 3600);
 });
 
@@ -907,7 +909,7 @@ test('v16 import preserves and validates Responses retention', async () => {
     apiKeys: [{ ...KEY_A, responsesRetentionSeconds: 7 * 24 * 60 * 60 }],
   }));
   assertEquals(retained.status, 200);
-  assertEquals((await repo.apiKeys.getById(KEY_A.id))?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
+  assertEquals((await repo.apiKeys.findByRawKey(KEY_A.key))?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
 
   for (const value of [-1, 1, 3599, 315_360_001, 3600.5]) {
     const invalid = await doImport(app, 'replace', latestImportData({

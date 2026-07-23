@@ -99,6 +99,8 @@ test('one fair driver drains bounded Responses and dump backlogs', async () => {
 
 test('a partial hot key yields the current tick to another due key', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
@@ -138,6 +140,8 @@ test('a concurrent schedule wins over stale completion', async () => {
 
 test('a later owner inserted during a claim prevents queue deletion', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
   initFileProvider(new MemoryFileProvider());
@@ -157,6 +161,8 @@ test('a later owner inserted during a claim prevents queue deletion', async () =
 
 test('partial completion yields even when a concurrent owner bumps the revision', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
   initFileProvider(new MemoryFileProvider());
@@ -206,6 +212,18 @@ test('migration 0066 queues existing keys and retires pre-ledger dump files on d
 
     expect(db.exec("SELECT domain, due_at FROM expiration_sweeps WHERE key_id = 'key-old-dump' ORDER BY domain")[0].values)
       .toEqual([['dumps', 0], ['responses', 0]]);
+
+    for (const [id, requestDescriptor, responseDescriptor] of [
+      ['01K00000000000000000BAD0', JSON.stringify({ type: 'bytes' }), null],
+      ['01K00000000000000000BAD1', null, JSON.stringify({ key: null, type: 'bytes' })],
+    ] as const) {
+      expect(() => db.run(
+        `INSERT INTO dump_records
+         (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
+         VALUES (?, ?, ?, NULL, '{}', '[]', '[]', ?, ?)`,
+        ['key-old-dump', id, Date.UTC(2026, 0, 2, 3), requestDescriptor, responseDescriptor],
+      )).toThrow(/file key must be text/u);
+    }
 
     const bridgeCreatedAt = Date.UTC(2026, 0, 2, 3);
     const bridgeId = '01K00000000000000000OLD1';

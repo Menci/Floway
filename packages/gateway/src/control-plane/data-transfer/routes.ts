@@ -785,23 +785,18 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   // `dumpRetentionSeconds` per key id so a retention shrink/disable in the
   // imported payload triggers the same purge transition `updateKey` would.
   const preImportKeys = await repo.apiKeys.listIncludingDeleted();
-  if (mode === 'replace') {
-    const occupiedIds = new Set(preImportKeys.map(key => key.id));
-    const remappedIds = new Map<string, string>();
-    for (const key of apiKeys) {
-      if (occupiedIds.has(key.id)) remappedIds.set(key.id, crypto.randomUUID());
-    }
-    if (remappedIds.size > 0) {
-      const remap = (keyId: string): string => remappedIds.get(keyId) ?? keyId;
-      apiKeys = apiKeys.map(key => ({ ...key, id: remap(key.id) }));
-      usage = usage.map(record => ({ ...record, keyId: remap(record.keyId) }));
-      searchUsage = searchUsage.map(record => ({ ...record, keyId: remap(record.keyId) }));
-      performance = performance.map(record => ({ ...record, keyId: remap(record.keyId) }));
-    }
-  }
-  const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(k => [k.id, k.dumpRetentionSeconds]));
   const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? preImportKeys : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
+  if (mode === 'replace') {
+    const remappedIds = new Map<string, string>();
+    for (const key of apiKeys) remappedIds.set(key.id, crypto.randomUUID());
+    const remap = (keyId: string): string => remappedIds.get(keyId) ?? keyId;
+    apiKeys = apiKeys.map(key => ({ ...key, id: remap(key.id) }));
+    usage = usage.map(record => ({ ...record, keyId: remap(record.keyId) }));
+    searchUsage = searchUsage.map(record => ({ ...record, keyId: remap(record.keyId) }));
+    performance = performance.map(record => ({ ...record, keyId: remap(record.keyId) }));
+  }
+  const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(k => [k.id, k.dumpRetentionSeconds]));
 
   // In merge mode an imported upstream's proxy_fallback_list may reference an
   // existing local proxy alongside an imported one; replace mode wipes the
