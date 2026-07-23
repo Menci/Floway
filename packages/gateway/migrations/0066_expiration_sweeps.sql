@@ -12,6 +12,14 @@ CREATE TABLE expiration_sweeps (
 CREATE INDEX idx_expiration_sweeps_due
 ON expiration_sweeps (due_at, key_id, domain);
 
+CREATE UNIQUE INDEX idx_expiration_sweeps_claim
+ON expiration_sweeps (claim_token)
+WHERE claim_token IS NOT NULL;
+
+CREATE INDEX idx_spilled_files_claim
+ON spilled_files (claim_token)
+WHERE claim_token IS NOT NULL;
+
 CREATE TABLE expiration_sweep_backfills (
   source TEXT PRIMARY KEY,
   next_rowid INTEGER NOT NULL DEFAULT 0,

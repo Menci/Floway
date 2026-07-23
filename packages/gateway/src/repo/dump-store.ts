@@ -187,13 +187,8 @@ export class FileDumpStore implements DumpStore {
     const beforeId = opts.before ?? null;
     const beforeRow = beforeId !== null
       ? await this.db.prepare(
-          `SELECT d.created_at FROM dump_records AS d
-           JOIN api_keys AS k ON k.id = d.key_id
-           WHERE d.key_id = ? AND d.id = ?
-             AND k.deleted_at IS NULL
-             AND k.dump_retention_seconds IS NOT NULL
-             AND d.created_at >= ? - k.dump_retention_seconds * 1000`,
-        ).bind(keyId, beforeId, Date.now()).first<{ created_at: number }>()
+          'SELECT created_at FROM dump_records WHERE key_id = ? AND id = ?',
+        ).bind(keyId, beforeId).first<{ created_at: number }>()
       : null;
     const beforeTs = beforeRow?.created_at ?? null;
 

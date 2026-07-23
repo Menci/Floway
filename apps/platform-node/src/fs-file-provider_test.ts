@@ -64,3 +64,15 @@ test('listPage walks one prefix in stable bounded pages', () => withTempRoot(asy
   });
   assertEquals(second, { keys: ['dumps/v1/b/file.bin'], nextCursor: null });
 }));
+
+test('listPage orders directory separators with the full emitted key', () => withTempRoot(async root => {
+  const provider = new FsFileProvider(root);
+  await provider.put('dumps/v1/a/file.bin', new Uint8Array());
+  await provider.put('dumps/v1/a-/file.bin', new Uint8Array());
+
+  const first = await provider.listPage('dumps/v1/', null, 1);
+  const second = await provider.listPage('dumps/v1/', first.nextCursor, 1);
+
+  assertEquals(first, { keys: ['dumps/v1/a-/file.bin'], nextCursor: 'dumps/v1/a-/file.bin' });
+  assertEquals(second, { keys: ['dumps/v1/a/file.bin'], nextCursor: 'dumps/v1/a/file.bin' });
+}));

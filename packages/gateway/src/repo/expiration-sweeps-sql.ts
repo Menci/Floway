@@ -26,7 +26,8 @@ interface DumpBackfillOwnerRow extends BackfillOwnerRow {
 interface DumpFileOwner {
   fileKey: string;
   ownerKind: 'dump-request' | 'dump-response';
-  ownerKey: [string, string];
+  keyId: string;
+  recordId: string;
 }
 
 const BACKFILL_SOURCES = {
@@ -120,12 +121,14 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
       ...(row.request_body_descriptor === null ? [] : [{
         fileKey: dumpFileKey(row.request_body_descriptor, 'request body'),
         ownerKind: 'dump-request' as const,
-        ownerKey: [row.key_id, row.id] as [string, string],
+        keyId: row.key_id,
+        recordId: row.id,
       }]),
       ...(row.response_body_descriptor === null ? [] : [{
         fileKey: dumpFileKey(row.response_body_descriptor, 'response body'),
         ownerKind: 'dump-response' as const,
-        ownerKey: [row.key_id, row.id] as [string, string],
+        keyId: row.key_id,
+        recordId: row.id,
       }]),
     ]);
     if (files.length === 0) return;
@@ -135,11 +138,20 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
          SELECT
            json_extract(value, '$.fileKey'),
            json_extract(value, '$.ownerKind'),
-           json_extract(value, '$.ownerKey'),
+           json_array(records.key_id, records.id),
            'owned',
            NULL
-         FROM json_each(?)
-         WHERE true
+         FROM json_each(?) AS incoming
+         JOIN dump_records AS records
+           ON records.key_id = json_extract(incoming.value, '$.keyId')
+          AND records.id = json_extract(incoming.value, '$.recordId')
+         WHERE (
+           json_extract(incoming.value, '$.ownerKind') = 'dump-request'
+           AND json_extract(records.request_body_descriptor, '$.key') = json_extract(incoming.value, '$.fileKey')
+         ) OR (
+           json_extract(incoming.value, '$.ownerKind') = 'dump-response'
+           AND json_extract(records.response_body_descriptor, '$.key') = json_extract(incoming.value, '$.fileKey')
+         )
          ON CONFLICT (file_key) DO NOTHING`,
       )
       .bind(JSON.stringify(files))

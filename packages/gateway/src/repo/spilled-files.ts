@@ -19,7 +19,7 @@ export const inventorySpilledFiles = async (prefix: string, now: number): Promis
       claim.revision,
       page.keys,
       page.nextCursor,
-      now + SPILLED_FILE_STAGE_GRACE_MS,
+      Date.now() + SPILLED_FILE_STAGE_GRACE_MS,
     );
     if (!completed) throw new Error(`Spilled-file inventory lost its claim for prefix: ${prefix}`);
   } catch (error) {

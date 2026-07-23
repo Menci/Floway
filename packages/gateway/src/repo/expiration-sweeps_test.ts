@@ -271,6 +271,18 @@ test('expiration claims and owner deletions use their bounded range indexes', as
   );
   expect(claimPlan).toContain('idx_expiration_sweeps_due');
 
+  const expirationClaimLookup = await explain(
+    'SELECT domain, key_id, revision FROM expiration_sweeps WHERE claim_token = ?',
+    'claim',
+  );
+  expect(expirationClaimLookup).toContain('idx_expiration_sweeps_claim');
+
+  const spilledClaimLookup = await explain(
+    'SELECT file_key FROM spilled_files WHERE claim_token = ? ORDER BY file_key',
+    'claim',
+  );
+  expect(spilledClaimLookup).toContain('idx_spilled_files_claim');
+
   const responsesPlan = await explain(
     `DELETE FROM responses_items WHERE rowid IN (
        SELECT stored.rowid FROM api_keys CROSS JOIN responses_items AS stored
@@ -403,4 +415,27 @@ test('dump inventory retires only untracked exact file keys', async () => {
 
   expect(await files.get(orphanFileKey)).toBeNull();
   expect(await files.get(liveFileKey)).not.toBeNull();
+});
+
+test('a stale inventory completion changes neither ledger nor cursor', async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  const prefix = 'dumps/v1/';
+  const first = await repo.spilledFiles.claimInventory('inventory-old', prefix, 1, 0);
+  if (first === null) throw new Error('initial inventory claim missing');
+  const replacement = await repo.spilledFiles.claimInventory('inventory-new', prefix, 3, 2);
+  if (replacement === null) throw new Error('replacement inventory claim missing');
+
+  expect(await repo.spilledFiles.completeInventory(
+    'inventory-old',
+    prefix,
+    first.revision,
+    ['dumps/v1/stale.req.gz'],
+    'stale-cursor',
+    4,
+  )).toBe(false);
+  expect(await db.prepare("SELECT file_key FROM spilled_files WHERE owner_kind = 'inventory'").first()).toBeNull();
+  expect(await db.prepare(
+    'SELECT cursor, revision, claim_token FROM spilled_file_inventories WHERE prefix = ?',
+  ).bind(prefix).first()).toEqual({ cursor: null, revision: 0, claim_token: 'inventory-new' });
 });

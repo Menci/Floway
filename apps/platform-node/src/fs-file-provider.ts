@@ -50,8 +50,8 @@ export class FsFileProvider implements FileProvider {
     const baseKey = separator === -1 ? '' : prefix.slice(0, separator + 1);
     const keys: string[] = [];
     try {
-      for await (const key of this.walk(this.pathFor(baseKey), baseKey)) {
-        if (!key.startsWith(prefix) || (cursor !== null && key <= cursor)) continue;
+      for await (const key of this.walk(this.pathFor(baseKey), baseKey, cursor)) {
+        if (!key.startsWith(prefix)) continue;
         keys.push(key);
         if (keys.length === limit) break;
       }
@@ -65,13 +65,20 @@ export class FsFileProvider implements FileProvider {
     await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
   }
 
-  private async *walk(directory: string, keyPrefix: string): AsyncGenerator<string> {
+  private async *walk(directory: string, keyPrefix: string, cursor: string | null): AsyncGenerator<string> {
     const entries = (await readdir(directory, { withFileTypes: true }))
-      .toSorted((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+      .toSorted((left, right) => {
+        const leftKey = `${left.name}${left.isDirectory() ? '/' : ''}`;
+        const rightKey = `${right.name}${right.isDirectory() ? '/' : ''}`;
+        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+      });
     for (const entry of entries) {
       const key = `${keyPrefix}${entry.name}`;
-      if (entry.isDirectory()) yield* this.walk(this.pathFor(key), `${key}/`);
-      else if (entry.isFile()) yield key;
+      if (entry.isDirectory()) {
+        const subtreePrefix = `${key}/`;
+        if (cursor !== null && subtreePrefix <= cursor && !cursor.startsWith(subtreePrefix)) continue;
+        yield* this.walk(this.pathFor(key), subtreePrefix, cursor);
+      } else if (entry.isFile() && (cursor === null || key > cursor)) yield key;
     }
   }
 

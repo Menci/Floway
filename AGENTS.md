@@ -256,12 +256,13 @@ deletes file prefixes.
 Responses and dump reads both apply their API key's current rolling retention
 before physical cleanup. One `expiration_sweeps` due queue orders work across
 both domains. Its single bounded driver claims a key, dispatches either the
-Responses or dump adapter, and completes through a revision check so concurrent
-writes and policy edits keep the earlier due time. The adapters only define
-their indexed owner-row deletion and oldest-row probe; scheduling, fairness,
-claim recovery, and retries are shared. Fresh owner writes schedule their key
-directly. A bounded, monotonic cursor per owner table discovers rows that
-predate the queue without pre-seeding API keys that own no state.
+Responses or dump adapter, and completes through a revision check. A drained
+completion preserves concurrent earlier work; partial and error completions set
+a bounded retry so a hot or failing key yields to other due keys. The adapters
+only define their indexed owner-row deletion and oldest-row probe; scheduling,
+fairness, claim recovery, and retries are shared. Fresh owner writes schedule
+their key directly. A bounded, monotonic cursor per owner table discovers rows
+that predate the queue without pre-seeding API keys that own no state.
 
 Dump-file inventory starts only after the dump owner backfill has registered
 every descriptor in `spilled_files`. It lists at most one persisted prefix page
