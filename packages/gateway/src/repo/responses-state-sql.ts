@@ -203,7 +203,10 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       if (actual === undefined) throw new Error(`Responses item disappeared after insert: ${item.id}`);
       assertSameStoredResponsesItem(item, actual);
     }
-    const refreshGroups = Map.groupBy(unique, item => item.refreshedAt);
+    const refreshGroups = Map.groupBy(unique.filter(item => {
+      const actual = existing.get(scopedResponsesKey(item.apiKeyId, item.id));
+      return actual !== undefined && actual.refreshedAt < item.refreshedAt;
+    }), item => item.refreshedAt);
     for (const [refreshedAt, group] of refreshGroups) {
       await this.refreshMany(group, refreshedAt, activeAfter);
     }

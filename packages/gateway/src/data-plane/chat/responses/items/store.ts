@@ -73,8 +73,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         const refreshedAt = quantizeResponsesRefreshedAt(Date.now());
         const items = snapshot.itemIds.map(itemId => this.loadedItems.get(itemId)!);
         await this.commitItems(items);
+        const staleItems = items.filter(item => item.refreshedAt < refreshedAt);
         await Promise.all(this.options.writes.map(async write => {
-          await write.refreshItems(items, refreshedAt);
+          if (staleItems.length > 0) await write.refreshItems(staleItems, refreshedAt);
           await write.insertSnapshot({ ...snapshot, refreshedAt });
         }));
         for (const item of items) {
@@ -140,15 +141,16 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return row;
     });
     await this.commitItems(uniqueRows);
-    const staleRows = uniqueRows.filter(row => !this.freshItemIds.has(row.id));
+    const refreshedAt = quantizeResponsesRefreshedAt(Date.now());
+    const staleRows = uniqueRows.filter(row =>
+      !this.freshItemIds.has(row.id) && row.refreshedAt < refreshedAt);
     if (staleRows.length > 0) {
-      const refreshedAt = quantizeResponsesRefreshedAt(Date.now());
       await Promise.all(this.options.writes.map(write => write.refreshItems(staleRows, refreshedAt)));
       for (const row of staleRows) {
         if (row.refreshedAt < refreshedAt) row.refreshedAt = refreshedAt;
-        this.freshItemIds.add(row.id);
       }
     }
+    for (const row of uniqueRows) this.freshItemIds.add(row.id);
     const snapshotRefreshedAt = Math.min(...uniqueRows.map(row => row.refreshedAt));
     const snapshot: StoredResponsesSnapshot = {
       id: responseId,
