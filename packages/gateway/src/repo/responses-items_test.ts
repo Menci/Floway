@@ -56,8 +56,8 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     vi.setSystemTime(atDay(4));
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
-    await repo.apiKeys.save(apiKey());
-    await repo.apiKeys.save({ ...apiKey(), id: 'key-b', key: 'raw-key-b', serverSecret: '22'.repeat(32) });
+    await repo.apiKeys.save(apiKey(7 * RETENTION_SECONDS));
+    await repo.apiKeys.save({ ...apiKey(7 * RETENTION_SECONDS), id: 'key-b', key: 'raw-key-b', serverSecret: '22'.repeat(32) });
     const old = storedItem('msg-old', atDay(1), 'same');
     const current = storedItem('msg-current', atDay(2), 'same');
     const foreign = storedItem('msg-foreign', atDay(2), 'same', 'key-b');
