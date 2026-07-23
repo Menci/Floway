@@ -598,7 +598,7 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
     return row === null ? null : { domain: row.domain, keyId: row.key_id, revision: row.revision };
   }
 
-  async complete(token: string, expectedRevision: number, nextDueAt: number | null): Promise<void> {
+  async complete(token: string, expectedRevision: number, nextDueAt: number | null, advanceOnConflict: boolean): Promise<void> {
     if (nextDueAt === null) {
       await this.db
         .prepare('DELETE FROM expiration_sweeps WHERE claim_token = ? AND revision = ?')
@@ -613,12 +613,12 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
     await this.db
       .prepare(
         `UPDATE expiration_sweeps
-         SET due_at = CASE WHEN revision = ? THEN ? ELSE MIN(due_at, ?) END,
+         SET due_at = CASE WHEN revision = ? OR ? THEN ? ELSE MIN(due_at, ?) END,
              claim_token = NULL,
              claimed_at = NULL
          WHERE claim_token = ?`,
       )
-      .bind(expectedRevision, nextDueAt, nextDueAt, token)
+      .bind(expectedRevision, advanceOnConflict, nextDueAt, nextDueAt, token)
       .run();
   }
 }

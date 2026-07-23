@@ -128,7 +128,7 @@ test('a concurrent schedule wins over stale completion', async () => {
   if (claim === null) throw new Error('expected expiration claim');
 
   await repo.expirationSweeps.schedule('responses', 'key-race', 0);
-  await repo.expirationSweeps.complete('claim-race', claim.revision, 10_000);
+  await repo.expirationSweeps.complete('claim-race', claim.revision, 10_000, false);
 
   const row = await db.prepare(
     "SELECT due_at, claim_token FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'key-race'",
@@ -147,12 +147,30 @@ test('a later owner inserted during a claim prevents queue deletion', async () =
   if (claim === null) throw new Error('expected expiration claim');
 
   await repo.responsesItems.insertMany([responseItem('msg-later', now)], 0);
-  await repo.expirationSweeps.complete('claim-owner-race', claim.revision, null);
+  await repo.expirationSweeps.complete('claim-owner-race', claim.revision, null, false);
 
   const row = await db.prepare(
     "SELECT due_at, claim_token FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'key-a'",
   ).first<{ due_at: number; claim_token: string | null }>();
   expect(row).toEqual({ due_at: 0, claim_token: null });
+});
+
+test('partial completion yields even when a concurrent owner bumps the revision', async () => {
+  const now = Date.UTC(2026, 6, 23, 12);
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initFileProvider(new MemoryFileProvider());
+  await repo.apiKeys.save(key(now));
+  await repo.expirationSweeps.schedule('responses', 'key-a', 0);
+  const claim = await repo.expirationSweeps.claim('claim-partial-race', now, 0);
+  if (claim === null) throw new Error('expected expiration claim');
+  await repo.responsesItems.insertMany([responseItem('msg-concurrent', now)], 0);
+
+  await repo.expirationSweeps.complete('claim-partial-race', claim.revision, now + 1, true);
+
+  expect(await db.prepare(
+    "SELECT due_at, claim_token FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'key-a'",
+  ).first<{ due_at: number; claim_token: string | null }>()).toEqual({ due_at: now + 1, claim_token: null });
 });
 
 test('migration 0066 queues existing keys and retires pre-ledger dump files on deletion', async () => {

@@ -10,7 +10,7 @@ const SWEEP_UNITS_PER_TICK = 4;
 const DUMP_BACKFILL_BATCH_SIZE = 500;
 
 interface ExpirationAdapter {
-  sweepKey(keyId: string, now: number): Promise<number | null>;
+  sweepKey(keyId: string, now: number): Promise<{ nextDueAt: number | null; advanceOnConflict: boolean }>;
 }
 
 const nextResponsesDueAt = async (keyId: string): Promise<number | null> => {
@@ -30,8 +30,10 @@ const responsesAdapter: ExpirationAdapter = {
     const repo = getRepo();
     const deletedSnapshots = await repo.responsesSnapshots.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
     const deletedItems = await repo.responsesItems.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
-    if (deletedSnapshots === DELETE_BATCH_SIZE || deletedItems === DELETE_BATCH_SIZE) return now + PARTIAL_RETRY_MS;
-    return await nextResponsesDueAt(keyId);
+    if (deletedSnapshots === DELETE_BATCH_SIZE || deletedItems === DELETE_BATCH_SIZE) {
+      return { nextDueAt: now + PARTIAL_RETRY_MS, advanceOnConflict: true };
+    }
+    return { nextDueAt: await nextResponsesDueAt(keyId), advanceOnConflict: false };
   },
 };
 
@@ -39,12 +41,15 @@ const dumpsAdapter: ExpirationAdapter = {
   async sweepKey(keyId, now) {
     const store = getDumpStore();
     const deleted = await store.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
-    if (deleted === DELETE_BATCH_SIZE) return now + PARTIAL_RETRY_MS;
+    if (deleted === DELETE_BATCH_SIZE) return { nextDueAt: now + PARTIAL_RETRY_MS, advanceOnConflict: true };
     const key = await getRepo().apiKeys.getById(keyId);
     const retentionSeconds = key?.dumpRetentionSeconds ?? null;
-    if (retentionSeconds === null) return null;
+    if (retentionSeconds === null) return { nextDueAt: null, advanceOnConflict: false };
     const oldest = await store.findOldestCreatedAt(keyId);
-    return oldest === null ? null : oldest + retentionSeconds * 1000 + 1;
+    return {
+      nextDueAt: oldest === null ? null : oldest + retentionSeconds * 1000 + 1,
+      advanceOnConflict: false,
+    };
   },
 };
 
@@ -61,10 +66,10 @@ export const sweepExpirations = async (now: number): Promise<void> => {
     const claim = await repo.expirationSweeps.claim(token, now, now - CLAIM_TIMEOUT_MS);
     if (claim === null) return;
     try {
-      const nextDueAt = await adapters[claim.domain].sweepKey(claim.keyId, now);
-      await repo.expirationSweeps.complete(token, claim.revision, nextDueAt);
+      const result = await adapters[claim.domain].sweepKey(claim.keyId, now);
+      await repo.expirationSweeps.complete(token, claim.revision, result.nextDueAt, result.advanceOnConflict);
     } catch (error) {
-      await repo.expirationSweeps.complete(token, claim.revision, now + ERROR_RETRY_MS);
+      await repo.expirationSweeps.complete(token, claim.revision, now + ERROR_RETRY_MS, true);
       console.error(`[scheduled] ${claim.domain} expiration failed`, claim.keyId, error);
     }
   }

@@ -775,7 +775,7 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
     return Promise.resolve({ domain: row.domain, keyId: row.keyId, revision: row.revision });
   }
 
-  complete(token: string, expectedRevision: number, nextDueAt: number | null): Promise<void> {
+  complete(token: string, expectedRevision: number, nextDueAt: number | null, advanceOnConflict: boolean): Promise<void> {
     const row = [...this.rows.values()].find(candidate => candidate.claimToken === token);
     if (row === undefined) return Promise.resolve();
     const key = this.key(row.domain, row.keyId);
@@ -784,7 +784,9 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
       return Promise.resolve();
     }
     if (nextDueAt !== null) {
-      row.dueAt = row.revision === expectedRevision ? nextDueAt : Math.min(row.dueAt, nextDueAt);
+      row.dueAt = row.revision === expectedRevision || advanceOnConflict
+        ? nextDueAt
+        : Math.min(row.dueAt, nextDueAt);
     }
     row.claimToken = null;
     row.claimedAt = null;
