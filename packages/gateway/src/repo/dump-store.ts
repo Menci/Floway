@@ -273,11 +273,7 @@ export class FileDumpStore implements DumpStore {
   }
 
   async purgeAll(keyId: string): Promise<void> {
-    // Replace imports may immediately reuse an API-key id. Since that id is
-    // the dump row's ownership identity, the old owner rows must disappear
-    // before the replacement activates; their files still retire through the
-    // shared asynchronous collector.
-    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
+    await this.scheduleExpiration(keyId);
   }
 
   async purgeExpired(keyId: string, _retentionSeconds: number): Promise<void> {

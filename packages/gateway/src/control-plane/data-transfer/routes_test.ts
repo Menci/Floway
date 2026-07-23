@@ -468,6 +468,26 @@ test('import replace writes upstreams and clears replaced collections', async ()
   });
 });
 
+test('replace import remaps colliding key IDs and every imported reference', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save(KEY_A);
+  const result = await doImport(app, 'replace', latestImportData({
+    apiKeys: [KEY_A],
+    usage: [USAGE_1],
+    searchUsage: [SEARCH_USAGE_1],
+    performanceIncluded: true,
+    performance: [PERFORMANCE_1],
+  }));
+  assertEquals(result.status, 200);
+
+  const restored = await repo.apiKeys.findByRawKey(KEY_A.key);
+  if (restored === null) throw new Error('restored key missing');
+  expect(restored.id).not.toBe(KEY_A.id);
+  assertEquals((await repo.usage.listAll())[0].keyId, restored.id);
+  assertEquals((await repo.searchUsage.listAll())[0].keyId, restored.id);
+  assertEquals((await repo.performance.listAll())[0].keyId, restored.id);
+});
+
 test('import merge upserts by repository key without clearing unrelated rows', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
@@ -1170,7 +1190,7 @@ test('v16 export/import round-trips users and per-key user_id', async () => {
 
   const restoredUsers = await repo.users.listIncludingDeleted();
   assertEquals(restoredUsers.find(u => u.id === USER_BOB.id)?.passwordHash, USER_BOB.passwordHash);
-  const restoredKey = await repo.apiKeys.getById(KEY_B.id);
+  const restoredKey = await repo.apiKeys.findByRawKey(KEY_B.key);
   assertEquals(restoredKey?.userId, USER_BOB.id);
 });
 
@@ -1350,9 +1370,11 @@ test('a full v16 export re-imports verbatim — the export→import round trip i
   // Spot-check fidelity across collection types (order-independent).
   assertEquals((await repo.upstreams.list()).find(u => u.id === 'up_codex_a')?.state, CODEX_UPSTREAM.state);
   assertEquals((await repo.users.listIncludingDeleted()).find(u => u.id === USER_BOB.id), USER_BOB);
-  assertEquals((await repo.apiKeys.getById('key-b'))?.userId, USER_BOB.id);
-  assertEquals((await repo.usage.listAll()).find(u => u.keyId === 'key-a' && u.hour === USAGE_1.hour), USAGE_1);
-  assertEquals((await repo.performance.listAll()).find(p => p.keyId === 'key-a' && p.hour === PERFORMANCE_1.hour), PERFORMANCE_1);
+  assertEquals((await repo.apiKeys.findByRawKey(KEY_B.key))?.userId, USER_BOB.id);
+  const restoredKeyA = await repo.apiKeys.findByRawKey(KEY_A.key);
+  if (restoredKeyA === null) throw new Error('restored key A missing');
+  assertEquals((await repo.usage.listAll()).find(u => u.keyId === restoredKeyA.id && u.hour === USAGE_1.hour), { ...USAGE_1, keyId: restoredKeyA.id });
+  assertEquals((await repo.performance.listAll()).find(p => p.keyId === restoredKeyA.id && p.hour === PERFORMANCE_1.hour), { ...PERFORMANCE_1, keyId: restoredKeyA.id });
   assertEquals(await repo.searchConfig.get(), config);
 });
 

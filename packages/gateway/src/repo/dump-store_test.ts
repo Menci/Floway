@@ -231,7 +231,7 @@ test('growing dump retention can reveal a row not yet physically deleted', async
   }
 });
 
-test('FileDumpStore purgeAll deletes owner rows before exact file collection', async () => {
+test('FileDumpStore purgeAll queues bounded owner deletion and exact file collection', async () => {
   const db = await openDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
@@ -243,6 +243,7 @@ test('FileDumpStore purgeAll deletes owner rows before exact file collection', a
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
   await store.purgeAll('key_x');
   assertEquals((await store.list('key_x', { limit: 10 })).length, 0);
+  assertEquals(await store.deleteExpiredBatch('key_x', Date.now(), 100), 2);
   assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE key_id = ?').bind('key_x').first<{ count: number }>())?.count, 0);
   await collectSpilledFiles(Date.now());
   assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>())?.count, 0);

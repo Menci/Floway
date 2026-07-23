@@ -713,7 +713,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     const location = apiKeysResult.index >= 0 ? ` at index ${apiKeysResult.index}` : '';
     return c.json({ error: `invalid apiKeys${location}: ${apiKeysResult.error}` }, 400);
   }
-  const apiKeys = apiKeysResult.records;
+  let apiKeys = apiKeysResult.records;
 
   const usersResult = parseUserRecords(data.users);
   if (usersResult.type === 'invalid') {
@@ -736,7 +736,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     const location = usageResult.index >= 0 ? ` at index ${usageResult.index}` : '';
     return c.json({ error: `invalid usage${location}: ${usageResult.error}` }, 400);
   }
-  const usage = usageResult.records;
+  let usage = usageResult.records;
 
   const upstreamsResult = parseUpstreamRecords(data.upstreams);
   if (upstreamsResult.type === 'invalid') {
@@ -760,7 +760,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     const location = searchUsageResult.index >= 0 ? ` at index ${searchUsageResult.index}` : '';
     return c.json({ error: `invalid searchUsage${location}: ${searchUsageResult.error}` }, 400);
   }
-  const searchUsage = searchUsageResult.records;
+  let searchUsage = searchUsageResult.records;
 
   const searchConfigResult = parseSearchConfig(data.searchConfig);
   if (searchConfigResult.type === 'invalid') {
@@ -777,16 +777,28 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   if (performanceResult.type === 'invalid') {
     return c.json({ error: performanceResult.index >= 0 ? `invalid performance record at index ${performanceResult.index}: ${performanceResult.error}` : `invalid performance: ${performanceResult.error}` }, 400);
   }
-  const performance = performanceResult.records;
+  let performance = performanceResult.records;
 
   const repo = getRepo();
   // Snapshot pre-import key state once and reuse it for identity validation
-  // and the dump-purge transitions below. Replace mode also needs to purge
-  // each pre-existing key's dumps (otherwise the new owner of a reused id
-  // silently inherits the old owner's captures); merge mode needs the prior
+  // and the dump-purge transitions below. Merge mode needs the prior
   // `dumpRetentionSeconds` per key id so a retention shrink/disable in the
   // imported payload triggers the same purge transition `updateKey` would.
   const preImportKeys = await repo.apiKeys.listIncludingDeleted();
+  if (mode === 'replace') {
+    const occupiedIds = new Set(preImportKeys.map(key => key.id));
+    const remappedIds = new Map<string, string>();
+    for (const key of apiKeys) {
+      if (occupiedIds.has(key.id)) remappedIds.set(key.id, crypto.randomUUID());
+    }
+    if (remappedIds.size > 0) {
+      const remap = (keyId: string): string => remappedIds.get(keyId) ?? keyId;
+      apiKeys = apiKeys.map(key => ({ ...key, id: remap(key.id) }));
+      usage = usage.map(record => ({ ...record, keyId: remap(record.keyId) }));
+      searchUsage = searchUsage.map(record => ({ ...record, keyId: remap(record.keyId) }));
+      performance = performance.map(record => ({ ...record, keyId: remap(record.keyId) }));
+    }
+  }
   const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(k => [k.id, k.dumpRetentionSeconds]));
   const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? preImportKeys : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
