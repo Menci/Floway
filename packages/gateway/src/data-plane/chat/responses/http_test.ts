@@ -54,6 +54,7 @@ const queueResolution = (
 const installRepo = (): InMemoryRepo => {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  void repo.apiKeys.save(buildApiKey());
   return repo;
 };
 

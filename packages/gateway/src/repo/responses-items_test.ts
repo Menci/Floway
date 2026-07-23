@@ -122,7 +122,10 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('keeps the newest snapshot payload while extending its refresh timestamp', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(4_000);
     const repo = await makeRepo();
+    await repo.apiKeys.save(apiKey());
     await repo.responsesSnapshots.insert({ id: 'resp-a', apiKeyId: 'key-a', itemIds: ['new'], refreshedAt: 2_000 });
     await repo.responsesSnapshots.insert({ id: 'resp-a', apiKeyId: 'key-a', itemIds: ['old'], refreshedAt: 1_000 });
 
