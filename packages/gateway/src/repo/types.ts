@@ -19,6 +19,9 @@ export interface ApiKey {
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
   dumpRetentionSeconds: number | null;
+  // 0 = durable Stateful Responses disabled; positive integer = sliding
+  // retention from the last successful reuse.
+  responsesRetentionSeconds: number;
 }
 
 export interface User {
@@ -155,10 +158,16 @@ export interface ApiKeyRepo {
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
   save(key: ApiKey): Promise<void>;
+  update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null>;
   softDelete(id: string): Promise<boolean>;
   softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
+
+export type ApiKeyUpdate = Partial<Pick<
+  ApiKey,
+  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'dumpRetentionSeconds' | 'responsesRetentionSeconds'
+>>;
 
 export interface UsersRepo {
   list(): Promise<User[]>;

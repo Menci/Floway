@@ -11,6 +11,7 @@ import {
 import type {
   ApiKey,
   ApiKeyRepo,
+  ApiKeyUpdate,
   AgentSetupMutation,
   AgentSetupRecord,
   AgentSetupRenewal,
@@ -203,10 +204,17 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     else this.keys.push({ ...key });
   }
 
+  async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
+    const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
+    if (i < 0) return null;
+    this.keys[i] = { ...this.keys[i], ...patch };
+    return { ...this.keys[i] };
+  }
+
   async softDelete(id: string): Promise<boolean> {
     const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
     if (i < 0) return false;
-    this.keys[i] = { ...this.keys[i], deletedAt: new Date().toISOString() };
+    this.keys[i] = { ...this.keys[i], deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 };
     return true;
   }
 
@@ -216,7 +224,7 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     for (let i = 0; i < this.keys.length; i++) {
       const k = this.keys[i];
       if (k.userId === userId && k.deletedAt === null) {
-        this.keys[i] = { ...k, deletedAt: now };
+        this.keys[i] = { ...k, deletedAt: now, responsesRetentionSeconds: 0 };
         count += 1;
       }
     }

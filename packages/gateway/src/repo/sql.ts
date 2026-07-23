@@ -6,6 +6,7 @@ import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPON
 import type {
   ApiKey,
   ApiKeyRepo,
+  ApiKeyUpdate,
   AgentSetupMutation,
   AgentSetupRecord,
   AgentSetupRenewal,
@@ -79,9 +80,10 @@ interface ApiKeyRow {
   upstream_ids: string | null;
   deleted_at: string | null;
   dump_retention_seconds: number | null;
+  responses_retention_seconds: number;
 }
 
-const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds';
+const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds, responses_retention_seconds';
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
@@ -111,6 +113,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
   deletedAt: row.deleted_at,
   dumpRetentionSeconds: row.dump_retention_seconds,
+  responsesRetentionSeconds: row.responses_retention_seconds,
 });
 
 class SqlApiKeyRepo implements ApiKeyRepo {
@@ -165,7 +168,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async save(key: ApiKey): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            user_id = excluded.user_id,
            name = excluded.name,
@@ -174,7 +177,8 @@ class SqlApiKeyRepo implements ApiKeyRepo {
            last_used_at = excluded.last_used_at,
            upstream_ids = excluded.upstream_ids,
            deleted_at = excluded.deleted_at,
-           dump_retention_seconds = excluded.dump_retention_seconds`,
+           dump_retention_seconds = excluded.dump_retention_seconds,
+           responses_retention_seconds = excluded.responses_retention_seconds`,
       )
       .bind(
         key.id,
@@ -187,13 +191,46 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         serializeUpstreamIds(key.upstreamIds),
         key.deletedAt,
         key.dumpRetentionSeconds,
+        key.responsesRetentionSeconds,
       )
       .run();
   }
 
+  async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
+    const hasName = patch.name !== undefined;
+    const hasKey = patch.key !== undefined;
+    const hasLastUsedAt = patch.lastUsedAt !== undefined;
+    const hasUpstreamIds = patch.upstreamIds !== undefined;
+    const hasDumpRetention = patch.dumpRetentionSeconds !== undefined;
+    const hasResponsesRetention = patch.responsesRetentionSeconds !== undefined;
+    const row = await this.db
+      .prepare(
+        `UPDATE api_keys
+         SET name = CASE WHEN ? THEN ? ELSE name END,
+             key = CASE WHEN ? THEN ? ELSE key END,
+             last_used_at = CASE WHEN ? THEN ? ELSE last_used_at END,
+             upstream_ids = CASE WHEN ? THEN ? ELSE upstream_ids END,
+             dump_retention_seconds = CASE WHEN ? THEN ? ELSE dump_retention_seconds END,
+             responses_retention_seconds = CASE WHEN ? THEN ? ELSE responses_retention_seconds END
+         WHERE id = ? AND deleted_at IS NULL
+         RETURNING ${API_KEY_COLUMNS}`,
+      )
+      .bind(
+        hasName, patch.name ?? null,
+        hasKey, patch.key ?? null,
+        hasLastUsedAt, patch.lastUsedAt ?? null,
+        hasUpstreamIds, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
+        hasDumpRetention, patch.dumpRetentionSeconds ?? null,
+        hasResponsesRetention, patch.responsesRetentionSeconds ?? null,
+        id,
+      )
+      .first<ApiKeyRow>();
+    return row === null ? null : toApiKey(row);
+  }
+
   async softDelete(id: string): Promise<boolean> {
     const result = await this.db
-      .prepare('UPDATE api_keys SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+      .prepare('UPDATE api_keys SET deleted_at = ?, responses_retention_seconds = 0 WHERE id = ? AND deleted_at IS NULL')
       .bind(new Date().toISOString(), id)
       .run();
     return (result.meta.changes ?? 0) > 0;
@@ -201,7 +238,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
 
   async softDeleteByUserId(userId: number): Promise<number> {
     const result = await this.db
-      .prepare('UPDATE api_keys SET deleted_at = ? WHERE user_id = ? AND deleted_at IS NULL')
+      .prepare('UPDATE api_keys SET deleted_at = ?, responses_retention_seconds = 0 WHERE user_id = ? AND deleted_at IS NULL')
       .bind(new Date().toISOString(), userId)
       .run();
     return result.meta.changes ?? 0;

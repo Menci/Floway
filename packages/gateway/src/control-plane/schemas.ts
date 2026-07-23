@@ -266,6 +266,10 @@ export const changeOwnPasswordBody = z.object({
 // rather than letting them through as de-facto "never expire".
 export const DUMP_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
 const dumpRetentionSecondsSchema = z.number().int().positive().max(DUMP_RETENTION_MAX_SECONDS).nullable();
+const responsesRetentionSecondsSchema = z.union([
+  z.literal(0),
+  z.number().int().min(60 * 60).max(10 * 365 * 24 * 60 * 60),
+]);
 
 // `key_source` picks how the raw key on this create/rotate request is
 // produced: 'generate' means the gateway mints an sk-...T3BlbkFJ... token
@@ -281,6 +285,7 @@ export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
+  responses_retention_seconds: responsesRetentionSecondsSchema.optional(),
   ...keySourceShape,
 });
 
@@ -290,6 +295,7 @@ export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
   upstream_ids: upstreamIdsValueSchema.optional(),
   dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
+  responses_retention_seconds: responsesRetentionSecondsSchema.optional(),
 });
 
 // --- upstreams ---
