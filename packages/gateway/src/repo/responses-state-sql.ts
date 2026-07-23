@@ -390,7 +390,12 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   async insert(snapshot: StoredResponsesSnapshot): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, refreshed_at) VALUES (?, ?, ?, ?)
+        `INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, refreshed_at)
+         SELECT ?, ?, ?, ? FROM api_keys
+         WHERE api_keys.id = ?
+           AND api_keys.deleted_at IS NULL
+           AND api_keys.responses_retention_seconds > 0
+           AND ? >= ? - api_keys.responses_retention_seconds * 1000
          ON CONFLICT (id, api_key_id) DO UPDATE SET
            item_ids_json = CASE
              WHEN excluded.refreshed_at >= responses_snapshots.refreshed_at THEN excluded.item_ids_json
@@ -398,7 +403,15 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
            END,
            refreshed_at = MAX(responses_snapshots.refreshed_at, excluded.refreshed_at)`,
       )
-      .bind(snapshot.id, snapshot.apiKeyId, JSON.stringify(snapshot.itemIds), snapshot.refreshedAt)
+      .bind(
+        snapshot.id,
+        snapshot.apiKeyId,
+        JSON.stringify(snapshot.itemIds),
+        snapshot.refreshedAt,
+        snapshot.apiKeyId,
+        snapshot.refreshedAt,
+        Date.now(),
+      )
       .run();
   }
 

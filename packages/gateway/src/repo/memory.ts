@@ -682,13 +682,18 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     return Promise.resolve(snapshot !== undefined && snapshot.refreshedAt >= activeAfter ? cloneStoredResponsesSnapshot(snapshot) : null);
   }
 
-  insert(snapshot: StoredResponsesSnapshot): Promise<void> {
+  async insert(snapshot: StoredResponsesSnapshot): Promise<void> {
+    const policy = await this.apiKeys.getById(snapshot.apiKeyId);
+    if (
+      policy === null
+      || policy.responsesRetentionSeconds === 0
+      || snapshot.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds)
+    ) return;
     const key = scopedResponsesKey(snapshot.apiKeyId, snapshot.id);
     const existing = this.store.get(key);
     if (existing === undefined || snapshot.refreshedAt >= existing.refreshedAt) {
       this.store.set(key, cloneStoredResponsesSnapshot(snapshot));
     }
-    return Promise.resolve();
   }
 
   async deleteExpired(now: number): Promise<number> {

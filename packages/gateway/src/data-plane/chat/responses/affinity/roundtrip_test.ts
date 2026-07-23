@@ -21,7 +21,14 @@ const modelCandidate = (upstream: string) => {
 };
 
 test('affinity selects the route while item storage preserves the exact producer id', async () => {
-  initRepo(new InMemoryRepo());
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  void repo.apiKeys.save({
+    id: 'key-a', userId: 1, name: 'Responses test key', key: 'raw-responses-test',
+    serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
+    upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 30 * 24 * 60 * 60,
+  });
   const candidateA = modelCandidate('upstream-a');
   const candidateB = modelCandidate('upstream-b');
   const codec = new AffinityCodec('22'.repeat(32));

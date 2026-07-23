@@ -90,7 +90,7 @@ describe('StatefulResponsesStore', () => {
       apiKeyId: 'key-a',
       payload: { item: { type: 'compaction', id: 'cmp_public', encrypted_content: 'opaque' } },
       contentHash: 'output-hash',
-      refreshedAt: 1_000,
+      refreshedAt: Date.now(),
     };
     await store.persistOutputItem(output);
     await store.commitSnapshot('resp_compact', 'replace', [output.id]);
@@ -172,6 +172,23 @@ describe('StatefulResponsesStore', () => {
 
     expect((await repo.responsesItems.lookupMany('key-a', [row.id], 0))[0].refreshedAt).toBe(futureRefreshedAt);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_future', 0))?.refreshedAt).toBe(futureRefreshedAt);
+  });
+
+  test('disable between output-item done and terminal skips durable snapshot creation', async () => {
+    const repo = installRepo();
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const output = {
+      id: 'msg-before-disable',
+      apiKeyId: 'key-a',
+      payload: { item: { type: 'message', id: 'msg-before-disable', role: 'assistant', content: [] } },
+      contentHash: 'before-disable-hash',
+      refreshedAt: Date.now(),
+    };
+    await store.persistOutputItem(output);
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
+    await store.commitSnapshot('resp-after-disable', 'append', [output.id]);
+
+    expect(await repo.responsesSnapshots.lookup('key-a', 'resp-after-disable', 0)).toBeNull();
   });
 
   test('WebSocket store=false retains socket-local state only', async () => {
