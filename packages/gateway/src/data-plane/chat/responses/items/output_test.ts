@@ -164,7 +164,7 @@ test('store=false passes the producer item id through without persistence', asyn
 
   const terminal = events.at(-1);
   if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
-  // The envelope id stays Floway-owned, while item identity remains producer-owned.
+  // The response envelope ID is source-boundary-owned, while item identity remains producer-owned.
   expect(terminal.response.id).toBe('resp_public');
   expect(terminal.response.output[0].id).toBe('rs_upstream');
   const added = events.find(event => event.type === 'response.output_item.added');
