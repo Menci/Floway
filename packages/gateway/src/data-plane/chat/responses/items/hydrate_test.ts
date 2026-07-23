@@ -25,7 +25,7 @@ describe('Responses stored-item hydration', () => {
         item: { type: 'reasoning', id, summary: [], encrypted_content: 'wrapped' },
         private: { replay: true },
       },
-      contentHash: 'hash',
+      itemHash: 'hash',
       refreshedAt: Date.now(),
     };
     await repo.responsesItems.insertMany([row], 0);

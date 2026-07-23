@@ -14,7 +14,7 @@ import type {
 } from './types.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 
-const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, payload_json, content_hash, payload_hash, payload_file_key, refreshed_at';
+const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, payload_json, item_hash, payload_hash, payload_file_key, refreshed_at';
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 80;
 const RESPONSES_INSERT_CHUNK_SIZE = 14;
 const RESPONSES_REFRESH_CHUNK_SIZE = 45;
@@ -49,7 +49,7 @@ interface ResponsesItemRow {
   id: string;
   api_key_id: string;
   payload_json: string;
-  content_hash: string;
+  item_hash: string;
   payload_hash: string;
   payload_file_key: string | null;
   refreshed_at: number;
@@ -59,7 +59,7 @@ const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredRespo
   id: row.id,
   apiKeyId: row.api_key_id,
   payload: await parseStoredResponsesPayload(row.id, row.payload_json, row.payload_file_key),
-  contentHash: row.content_hash,
+  itemHash: row.item_hash,
   refreshedAt: row.refreshed_at,
 });
 
@@ -78,13 +78,13 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
   }
 
-  async lookupManyByContentHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
-    return await this.lookupByColumn(apiKeyId, 'content_hash', hashes, activeAfter);
+  async lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
+    return await this.lookupByColumn(apiKeyId, 'item_hash', hashes, activeAfter);
   }
 
   private async lookupByColumn(
     apiKeyId: string,
-    column: 'id' | 'content_hash',
+    column: 'id' | 'item_hash',
     values: readonly string[],
     activeAfter: number,
   ): Promise<StoredResponsesItem[]> {
@@ -94,7 +94,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     for (let index = 0; index < unique.length; index += RESPONSES_IN_QUERY_CHUNK_SIZE) {
       const chunk = unique.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
       const placeholders = chunk.map(() => '?').join(', ');
-      const orderSql = column === 'content_hash' ? ' ORDER BY refreshed_at DESC, id ASC' : '';
+      const orderSql = column === 'item_hash' ? ' ORDER BY refreshed_at DESC, id ASC' : '';
       queries.push(this.db
         .prepare(
           `SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items
@@ -107,7 +107,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const hydrated = await mapSequentially(rows, async row => await this.hydrateCurrentItem(row, activeAfter));
     const wanted = new Set(unique);
     return hydrated.flatMap(item =>
-      item !== null && (column === 'id' ? wanted.has(item.id) : wanted.has(item.contentHash))
+      item !== null && (column === 'id' ? wanted.has(item.id) : wanted.has(item.itemHash))
         ? [item]
         : []);
   }
@@ -172,7 +172,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
            WHERE true
            ON CONFLICT (id, api_key_id) DO UPDATE SET
              payload_json = excluded.payload_json,
-             content_hash = excluded.content_hash,
+             item_hash = excluded.item_hash,
              payload_hash = excluded.payload_hash,
              payload_file_key = excluded.payload_file_key,
              refreshed_at = excluded.refreshed_at
@@ -190,7 +190,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
             item.id,
             item.apiKeyId,
             payload.payloadJson,
-            item.contentHash,
+            item.itemHash,
             payloadHash,
             payload.file?.key ?? null,
             item.refreshedAt,
@@ -316,7 +316,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
                responses_items.id,
                responses_items.api_key_id,
                responses_items.payload_json,
-               responses_items.content_hash,
+               responses_items.item_hash,
                responses_items.payload_hash,
                responses_items.payload_file_key,
                responses_items.refreshed_at

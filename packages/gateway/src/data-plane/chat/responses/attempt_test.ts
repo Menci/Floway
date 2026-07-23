@@ -98,7 +98,7 @@ const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredRes
   const { type, ...itemOverrides } = overrides;
   const row: StoredResponsesItem = {
     apiKeyId: API_KEY_ID,
-    contentHash: `hash-${overrides.id}`,
+    itemHash: `hash-${overrides.id}`,
     payload: { item: { type, id: overrides.id } },
     refreshedAt: Date.now(),
     ...itemOverrides,

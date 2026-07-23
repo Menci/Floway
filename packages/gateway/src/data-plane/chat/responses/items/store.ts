@@ -8,7 +8,7 @@ import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 interface StatefulResponsesItemLookup {
   readonly apiKeyId: string;
   readonly ids: readonly string[];
-  readonly contentHashes: readonly string[];
+  readonly itemHashes: readonly string[];
 }
 
 interface StatefulResponsesBacking {
@@ -67,7 +67,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const backing of this.options.reads) {
       const snapshot = await backing.lookupSnapshot(this.apiKeyId, id);
       if (snapshot === null) continue;
-      await this.loadItems({ ids: snapshot.itemIds, contentHashes: [] });
+      await this.loadItems({ ids: snapshot.itemIds, itemHashes: [] });
       if (!snapshot.itemIds.every(itemId => this.loadedItems.has(itemId))) continue;
       if (this.options.writes.length > 0) {
         const refreshedAt = Date.now();
@@ -98,13 +98,13 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       const id = responsesItemId(item);
       if (id !== null) ids.add(id);
     }
-    const contentHashes = new Set<string>();
+    const itemHashes = new Set<string>();
     for (const item of this.writesState ? inputItemsToStage : []) {
       if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
       if (responsesItemId(item) !== null) continue;
-      contentHashes.add(await hashResponsesItemContent(item));
+      itemHashes.add(await hashResponsesItemContent(item));
     }
-    await this.loadItems({ ids: [...ids], contentHashes: [...contentHashes] });
+    await this.loadItems({ ids: [...ids], itemHashes: [...itemHashes] });
   }
 
   getItemById(id: string): StoredResponsesItem | undefined {
@@ -169,11 +169,11 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     return structuredClone(this.privatePayloads.get(id));
   }
 
-  private async loadItems(query: { ids: readonly string[]; contentHashes: readonly string[] }): Promise<void> {
+  private async loadItems(query: { ids: readonly string[]; itemHashes: readonly string[] }): Promise<void> {
     let ids = query.ids.filter(id => !this.loadedItems.has(id));
     for (const backing of this.options.reads) {
-      if (ids.length === 0 && query.contentHashes.length === 0) return;
-      const results = await backing.lookupItems({ apiKeyId: this.apiKeyId, ids, contentHashes: query.contentHashes });
+      if (ids.length === 0 && query.itemHashes.length === 0) return;
+      const results = await backing.lookupItems({ apiKeyId: this.apiKeyId, ids, itemHashes: query.itemHashes });
       for (const item of results) this.rememberItem(item);
       ids = ids.filter(id => !this.loadedItems.has(id));
     }
@@ -200,7 +200,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         id,
         apiKeyId: this.apiKeyId,
         payload: { item },
-        contentHash: await hashResponsesItemContent(item),
+        itemHash: await hashResponsesItemContent(item),
         refreshedAt: Date.now(),
       };
       this.stagedInputItemIds.push(id);
@@ -209,8 +209,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return;
     }
 
-    const contentHash = await hashResponsesItemContent(item);
-    const existing = this.loadedByContentHash.get(contentHash);
+    const itemHash = await hashResponsesItemContent(item);
+    const existing = this.loadedByContentHash.get(itemHash);
     if (existing !== undefined) {
       this.stagedInputItemIds.push(existing.id);
       return;
@@ -220,7 +220,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       id: createResponsesStorageKey(),
       apiKeyId: this.apiKeyId,
       payload: { item },
-      contentHash,
+      itemHash,
       refreshedAt: Date.now(),
     };
     this.stagedInputItemIds.push(row.id);
@@ -233,9 +233,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const existing = this.loadedItems.get(cloned.id);
     if (existing !== undefined && existing.refreshedAt >= cloned.refreshedAt) return;
     this.loadedItems.set(cloned.id, cloned);
-    const byHash = this.loadedByContentHash.get(cloned.contentHash);
+    const byHash = this.loadedByContentHash.get(cloned.itemHash);
     if (byHash === undefined || compareResponsesItemsByFreshness(cloned, byHash) < 0) {
-      this.loadedByContentHash.set(cloned.contentHash, cloned);
+      this.loadedByContentHash.set(cloned.itemHash, cloned);
     }
   }
 
@@ -262,7 +262,7 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
   async lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]> {
     const [byId, byContentHash] = await Promise.all([
       this.getRepo().responsesItems.lookupMany(query.apiKeyId, query.ids, this.activeAfter),
-      this.getRepo().responsesItems.lookupManyByContentHash(query.apiKeyId, query.contentHashes, this.activeAfter),
+      this.getRepo().responsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.activeAfter),
     ]);
     const rows = new Map<string, StoredResponsesItem>();
     for (const row of [...byId, ...byContentHash]) rows.set(scopedResponsesKey(row.apiKeyId, row.id), row);
@@ -292,9 +292,9 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
 
   lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]> {
     const ids = new Set(query.ids);
-    const hashes = new Set(query.contentHashes);
+    const hashes = new Set(query.itemHashes);
     return Promise.resolve([...this.items.values()]
-      .filter(row => row.apiKeyId === query.apiKeyId && (ids.has(row.id) || hashes.has(row.contentHash)))
+      .filter(row => row.apiKeyId === query.apiKeyId && (ids.has(row.id) || hashes.has(row.itemHash)))
       .map(cloneStoredResponsesItem)
       .toSorted(compareResponsesItemsByFreshness));
   }

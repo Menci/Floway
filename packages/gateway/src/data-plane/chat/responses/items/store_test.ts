@@ -47,7 +47,7 @@ describe('StatefulResponsesStore', () => {
       id: 'msg_public',
       apiKeyId: 'key-a',
       payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
-      contentHash: 'output-hash',
+      itemHash: 'output-hash',
       refreshedAt: Date.now(),
     };
     await writer.persistOutputItem(output);
@@ -69,7 +69,7 @@ describe('StatefulResponsesStore', () => {
       id: 'msg_public',
       apiKeyId: 'key-a',
       payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
-      contentHash: 'output-hash',
+      itemHash: 'output-hash',
       refreshedAt: Date.now(),
     };
     await store.persistOutputItem(output);
@@ -90,13 +90,13 @@ describe('StatefulResponsesStore', () => {
       id: 'cmp_public',
       apiKeyId: 'key-a',
       payload: { item: { type: 'compaction', id: 'cmp_public', encrypted_content: 'opaque' } },
-      contentHash: 'output-hash',
+      itemHash: 'output-hash',
       refreshedAt: Date.now(),
     };
     await store.persistOutputItem(output);
     await store.commitSnapshot('resp_compact', 'replace', [output.id]);
 
-    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await hashResponsesItemContent(input)], 0)).toEqual([]);
+    expect(await repo.responsesItems.lookupManyByItemHash('key-a', [await hashResponsesItemContent(input)], 0)).toEqual([]);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact', 0))?.itemIds).toEqual([output.id]);
   });
 
@@ -107,7 +107,7 @@ describe('StatefulResponsesStore', () => {
       id: 'msg_old',
       apiKeyId: 'key-a',
       payload: { item: { type: 'message', id: 'msg_old', role: 'assistant', content: [] } },
-      contentHash: 'old-hash',
+      itemHash: 'old-hash',
       refreshedAt: initialRefreshedAt,
     };
     await repo.responsesItems.insertMany([item], 0);
@@ -134,14 +134,14 @@ describe('StatefulResponsesStore', () => {
       id: directInput.id,
       apiKeyId: 'key-a',
       payload: { item: directInput },
-      contentHash: await hashResponsesItemContent(directInput),
+      itemHash: await hashResponsesItemContent(directInput),
       refreshedAt: initialRefreshedAt,
     };
     const hashedRow = {
       id: 'msg_hashed',
       apiKeyId: 'key-a',
       payload: { item: hashedInput },
-      contentHash: await hashResponsesItemContent(hashedInput),
+      itemHash: await hashResponsesItemContent(hashedInput),
       refreshedAt: initialRefreshedAt,
     };
     await repo.responsesItems.insertMany([directRow, hashedRow], 0);
@@ -163,7 +163,7 @@ describe('StatefulResponsesStore', () => {
       id: 'msg_future',
       apiKeyId: 'key-a',
       payload: { item: input },
-      contentHash: await hashResponsesItemContent(input),
+      itemHash: await hashResponsesItemContent(input),
       refreshedAt: futureRefreshedAt,
     };
     await repo.responsesItems.insertMany([row], 0);
@@ -182,7 +182,7 @@ describe('StatefulResponsesStore', () => {
       id: 'msg-before-disable',
       apiKeyId: 'key-a',
       payload: { item: { type: 'message', id: 'msg-before-disable', role: 'assistant', content: [] } },
-      contentHash: 'before-disable-hash',
+      itemHash: 'before-disable-hash',
       refreshedAt: Date.now(),
     };
     await store.persistOutputItem(output);

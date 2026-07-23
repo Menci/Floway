@@ -621,12 +621,12 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve(rows);
   }
 
-  lookupManyByContentHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
+  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
     const wanted = new Set(hashes);
     if (wanted.size === 0) return Promise.resolve([]);
     const rows: StoredResponsesItem[] = [];
     for (const row of this.store.values()) {
-      if (row.apiKeyId === apiKeyId && row.refreshedAt >= activeAfter && wanted.has(row.contentHash)) {
+      if (row.apiKeyId === apiKeyId && row.refreshedAt >= activeAfter && wanted.has(row.itemHash)) {
         rows.push(cloneStoredResponsesItem(row));
       }
     }

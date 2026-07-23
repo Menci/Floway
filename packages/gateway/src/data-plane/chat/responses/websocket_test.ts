@@ -770,7 +770,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       assert(/^msg_[0-9a-f]{32}$/.test(firstOutput.item.id), 'expected a Copilot-normalized message id');
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id], 0), []);
       assertEquals(
-        await repo.responsesItems.lookupManyByContentHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })], 0),
+        await repo.responsesItems.lookupManyByItemHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })], 0),
         [],
       );
 
