@@ -19,17 +19,16 @@ export interface DumpStore {
   // orphan files (sweep-collectable), not orphan rows (broken records).
   put(keyId: string, record: DumpWriteRecord): Promise<void>;
 
-  // Newest-first, paginated by ULID cursor. Retention is enforced by the
-  // cron sweep, not here, so the dashboard may briefly show records that
-  // have aged past retention until the next sweep window drops them.
+  // Newest-first, paginated by ULID cursor. Reads enforce the API key's
+  // current rolling retention even before queued physical deletion runs.
   list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]>;
 
   get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null>;
 
-  // Drop every record (rows + files) for this key. Idempotent.
+  // Schedule every record for bounded deletion. Idempotent.
   purgeAll(keyId: string): Promise<void>;
 
-  // Drop records older than `retentionSeconds` for this key. Idempotent.
+  // Schedule records outside the current retention for bounded deletion.
   purgeExpired(keyId: string, retentionSeconds: number): Promise<void>;
 
   deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number>;

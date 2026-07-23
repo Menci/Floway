@@ -1,62 +1,34 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
 
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { FileDumpStore } from './dump-store.ts';
+import { initRepo } from './index.ts';
+import { SqlRepo } from './sql.ts';
+import { sweepSpilledFiles } from './spilled-files.ts';
+import { createSqliteTestDb } from './test-sqlite.ts';
 import type { DumpWriteRecord } from '../dump/types.ts';
-import { MemoryFileProvider } from '@floway-dev/platform';
-import type { FileProvider, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
+import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
+import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
-// Thin SqlDatabase adapter over node:sqlite's DatabaseSync, kept inside the
-// test file because the production gateway core never needs it — node-only
-// production code lives in apps/platform-node. Mirrors the shape of the
-// Node app's wrapper just enough to back the dump-store schema.
-//
-// `dump_records` LEFT JOINs `upstreams` to resolve each row's current
-// upstream name, kind, and color at read time. The test schema therefore
-// needs both tables present; we synthesise a minimal `upstreams` shape
-// (only the columns the join reads) so the test stays decoupled from
-// the full production upstreams migration.
-const MIGRATION_PATH = resolve(fileURLToPath(import.meta.url), '..', '..', '..', 'migrations', '0041_dump_records.sql');
-const UPSTREAMS_STUB_SQL = `
-  CREATE TABLE upstreams (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    provider TEXT NOT NULL,
-    color TEXT NULL
-  );
-`;
-
 const openDb = async (): Promise<SqlDatabase> => {
-  const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec(UPSTREAMS_STUB_SQL);
-  sqlite.exec(await readFile(MIGRATION_PATH, 'utf8'));
-  return {
-    prepare(query): SqlPreparedStatement {
-      const stmt = sqlite.prepare(query);
-      const make = (bound: unknown[]): SqlPreparedStatement => ({
-        bind(...values) { return make(values); },
-        first: async <T = Record<string, unknown>>() =>
-          (stmt.get(...bound as never[]) as T | undefined) ?? null,
-        all: async <T = Record<string, unknown>>() => ({
-          results: stmt.all(...bound as never[]) as T[],
-          success: true,
-          meta: {},
-        } satisfies SqlResult<T>),
-        run: async () => {
-          const r = stmt.run(...bound as never[]);
-          return { results: [], success: true, meta: { changes: Number(r.changes) } } satisfies SqlResult;
-        },
-      });
-      return make([]);
-    },
-    exec: async sql => { sqlite.exec(sql); },
-  };
+  const db = await createSqliteTestDb();
+  await new SqlRepo(db).apiKeys.save({
+    id: 'key_x',
+    userId: 1,
+    name: 'Dump key',
+    key: 'raw-dump-key',
+    serverSecret: '44'.repeat(32),
+    createdAt: '2026-01-01T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+    dumpRetentionSeconds: 10 * 365 * 24 * 60 * 60,
+    responsesRetentionSeconds: 0,
+  });
+  return db;
 };
 
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
@@ -210,39 +182,88 @@ test('FileDumpStore.list paginates newest-first with the (createdAt, id) cursor'
   assertEquals(next.map(m => m.id), ['01HZZ000000000000000000A02', '01HZZ000000000000000000A01']);
 });
 
-test('FileDumpStore.purgeExpired drops rows past the cutoff and sweeps whole hour buckets', async () => {
+test('FileDumpStore applies retention immediately and retires exact expired files', async () => {
   const db = await openDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
   const files = new MemoryFileProvider();
+  initFileProvider(files);
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12, 0, 0);
   // Old bucket 9:xx, current bucket 12:xx.
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', now));
-  // 2 hours retention; the old bucket is past the cutoff and should disappear,
-  // but the now bucket must stay because its end is still within the window.
+  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 2 * 3600 });
   const originalNow = Date.now;
   Date.now = () => now + 1;
   try {
     await store.purgeExpired('key_x', 2 * 3600);
+    const left = await store.list('key_x', { limit: 10 });
+    assertEquals(left.map(m => m.id), ['01HZZ0000000000000000000A2']);
+    assertEquals(await store.deleteExpiredBatch('key_x', now + 1, 100), 1);
+    await sweepSpilledFiles(now + 1);
   } finally {
     Date.now = originalNow;
   }
-  const left = await store.list('key_x', { limit: 10 });
-  assertEquals(left.map(m => m.id), ['01HZZ0000000000000000000A2']);
 
   const remainingFiles = await files.listKeys('dumps/v1/key_x/');
   assertEquals(remainingFiles.every(k => !k.includes('2026060109')), true);
 });
 
-test('FileDumpStore.purgeAll wipes every row and every file under the key prefix', async () => {
+test('growing dump retention can reveal a row not yet physically deleted', async () => {
   const db = await openDb();
+  const repo = new SqlRepo(db);
   const files = new MemoryFileProvider();
+  const store = new FileDumpStore(db, files);
+  const now = Date.UTC(2026, 5, 1, 12);
+  await store.put('key_x', baseRecord('01HZZ0000000000000000000A4', now - 3 * 3600_000));
+  const originalNow = Date.now;
+  Date.now = () => now;
+  try {
+    await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 2 * 3600 });
+    assertEquals(await store.list('key_x', { limit: 10 }), []);
+    await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 4 * 3600 });
+    assertEquals((await store.list('key_x', { limit: 10 })).map(row => row.id), ['01HZZ0000000000000000000A4']);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('FileDumpStore disable hides rows before bounded deletion and exact collection', async () => {
+  const db = await openDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
   const store = new FileDumpStore(db, files);
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)));
+  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
   await store.purgeAll('key_x');
   assertEquals((await store.list('key_x', { limit: 10 })).length, 0);
+  assertEquals(await store.deleteExpiredBatch('key_x', Date.now(), 100), 2);
+  await sweepSpilledFiles(Date.now());
   assertEquals((await files.listKeys('dumps/v1/key_x/')).length, 0);
+});
+
+test('a losing dump write leaves only its nonce-owned staged files collectible', async () => {
+  const db = await openDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const store = new FileDumpStore(db, files);
+  const record = baseRecord('01HZZ0000000000000000000A3', Date.now());
+  await store.put('key_x', record);
+
+  await expect(store.put('key_x', record)).rejects.toThrow();
+  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(2);
+  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(2);
+
+  await sweepSpilledFiles(Date.now() + 60 * 60 * 1000 + 1);
+  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(0);
+  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(2);
+  assertExists(await store.get('key_x', record.meta.id));
 });
 
 test('FileDumpStore.purgeExpired against a never-written key resolves without throwing', async () => {
@@ -303,7 +324,7 @@ class TmpDirFileProvider implements FileProvider {
   }
 }
 
-test('FileDumpStore: put + get round-trips through real-filesystem IO + node:sqlite', async () => {
+test('FileDumpStore: put + get round-trips through real-filesystem IO', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dump-store-'));
   try {
     const db = await openDb();

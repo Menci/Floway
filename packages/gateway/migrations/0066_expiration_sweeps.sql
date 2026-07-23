@@ -35,8 +35,9 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
-    revision = expiration_sweeps.revision + 1;
+    due_at = excluded.due_at,
+    revision = expiration_sweeps.revision + 1
+  WHERE excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER responses_items_schedule_expiration_update
@@ -56,8 +57,9 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
-    revision = expiration_sweeps.revision + 1;
+    due_at = excluded.due_at,
+    revision = expiration_sweeps.revision + 1
+  WHERE excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER responses_snapshots_schedule_expiration_insert
@@ -77,8 +79,9 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
-    revision = expiration_sweeps.revision + 1;
+    due_at = excluded.due_at,
+    revision = expiration_sweeps.revision + 1
+  WHERE excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER responses_snapshots_schedule_expiration_update
@@ -98,8 +101,9 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
-    revision = expiration_sweeps.revision + 1;
+    due_at = excluded.due_at,
+    revision = expiration_sweeps.revision + 1
+  WHERE excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER dump_records_validate_spilled_files
@@ -169,8 +173,9 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
-    revision = expiration_sweeps.revision + 1;
+    due_at = excluded.due_at,
+    revision = expiration_sweeps.revision + 1
+  WHERE excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER api_keys_schedule_expiration_update
