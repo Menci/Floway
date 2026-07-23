@@ -128,8 +128,15 @@ BEGIN
       AND owner_key = json_array(NEW.key_id, NEW.id)
       AND state = 'staged'
       AND claim_token IS NULL
-  ) AND json_extract(NEW.request_body_descriptor, '$.key') !=
-    'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.req.gz'
+  ) AND NOT (
+    json_extract(NEW.request_body_descriptor, '$.key') =
+      'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.req.gz'
+    AND NOT EXISTS (
+      SELECT 1 FROM spilled_files
+      WHERE file_key = json_extract(NEW.request_body_descriptor, '$.key')
+        AND claim_token IS NOT NULL
+    )
+  )
   THEN RAISE(ABORT, 'Dump request body file was not staged') END;
   SELECT CASE WHEN NEW.response_body_descriptor IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM spilled_files
@@ -138,8 +145,15 @@ BEGIN
       AND owner_key = json_array(NEW.key_id, NEW.id)
       AND state = 'staged'
       AND claim_token IS NULL
-  ) AND json_extract(NEW.response_body_descriptor, '$.key') !=
-    'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.resp.gz'
+  ) AND NOT (
+    json_extract(NEW.response_body_descriptor, '$.key') =
+      'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.resp.gz'
+    AND NOT EXISTS (
+      SELECT 1 FROM spilled_files
+      WHERE file_key = json_extract(NEW.response_body_descriptor, '$.key')
+        AND claim_token IS NOT NULL
+    )
+  )
   THEN RAISE(ABORT, 'Dump response body file was not staged') END;
 END;
 
@@ -155,7 +169,7 @@ BEGIN
       json_extract(NEW.response_body_descriptor, '$.key')
     );
 
-  INSERT OR IGNORE INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+  INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
   SELECT
     json_extract(NEW.request_body_descriptor, '$.key'),
     'dump-request',
@@ -164,9 +178,15 @@ BEGIN
     NULL
   WHERE NEW.request_body_descriptor IS NOT NULL
     AND json_extract(NEW.request_body_descriptor, '$.key') =
-      'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.req.gz';
+      'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.req.gz'
+  ON CONFLICT (file_key) DO UPDATE SET
+    owner_kind = excluded.owner_kind,
+    owner_key = excluded.owner_key,
+    state = 'owned',
+    collect_after = NULL
+  WHERE spilled_files.claim_token IS NULL;
 
-  INSERT OR IGNORE INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+  INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
   SELECT
     json_extract(NEW.response_body_descriptor, '$.key'),
     'dump-response',
@@ -175,7 +195,13 @@ BEGIN
     NULL
   WHERE NEW.response_body_descriptor IS NOT NULL
     AND json_extract(NEW.response_body_descriptor, '$.key') =
-      'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.resp.gz';
+      'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.resp.gz'
+  ON CONFLICT (file_key) DO UPDATE SET
+    owner_kind = excluded.owner_kind,
+    owner_key = excluded.owner_key,
+    state = 'owned',
+    collect_after = NULL
+  WHERE spilled_files.claim_token IS NULL;
 END;
 
 CREATE TRIGGER dump_records_retire_spilled_files
