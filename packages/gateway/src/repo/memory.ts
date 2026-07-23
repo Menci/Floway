@@ -840,12 +840,79 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
 }
 
 class MemorySpilledFilesRepo implements SpilledFilesRepo {
-  claimCollectible(): Promise<string[]> {
-    return Promise.resolve([]);
+  private readonly files = new Map<string, string | null>();
+  private readonly inventories = new Map<string, {
+    cursor: string | null;
+    revision: number;
+    claimToken: string | null;
+    claimedAt: number | null;
+  }>();
+
+  claimCollectible(token: string, _now: number, _staleClaimedBefore: number, limit: number): Promise<string[]> {
+    const keys = [...this.files]
+      .filter(([, claimToken]) => claimToken === null)
+      .map(([fileKey]) => fileKey)
+      .sort()
+      .slice(0, limit);
+    for (const key of keys) this.files.set(key, token);
+    return Promise.resolve(keys);
   }
 
-  acknowledge(): Promise<number> {
-    return Promise.resolve(0);
+  acknowledge(token: string): Promise<number> {
+    let changes = 0;
+    for (const [key, claimToken] of this.files) {
+      if (claimToken !== token) continue;
+      this.files.delete(key);
+      changes += 1;
+    }
+    return Promise.resolve(changes);
+  }
+
+  claimInventory(
+    token: string,
+    prefix: string,
+    now: number,
+    staleClaimedBefore: number,
+  ): Promise<{ cursor: string | null; revision: number } | null> {
+    const row = this.inventories.get(prefix) ?? {
+      cursor: null,
+      revision: 0,
+      claimToken: null,
+      claimedAt: null,
+    };
+    this.inventories.set(prefix, row);
+    if (row.claimToken !== null && row.claimedAt! >= staleClaimedBefore) return Promise.resolve(null);
+    row.claimToken = token;
+    row.claimedAt = now;
+    return Promise.resolve({ cursor: row.cursor, revision: row.revision });
+  }
+
+  completeInventory(
+    token: string,
+    prefix: string,
+    expectedRevision: number,
+    fileKeys: readonly string[],
+    nextCursor: string | null,
+  ): Promise<boolean> {
+    const row = this.inventories.get(prefix);
+    if (row === undefined || row.claimToken !== token || row.revision !== expectedRevision) return Promise.resolve(false);
+    for (const fileKey of fileKeys) {
+      if (!this.files.has(fileKey)) this.files.set(fileKey, null);
+    }
+    row.cursor = nextCursor;
+    row.revision += 1;
+    row.claimToken = null;
+    row.claimedAt = null;
+    return Promise.resolve(true);
+  }
+
+  releaseInventory(token: string): Promise<void> {
+    for (const row of this.inventories.values()) {
+      if (row.claimToken !== token) continue;
+      row.claimToken = null;
+      row.claimedAt = null;
+    }
+    return Promise.resolve();
   }
 }
 
@@ -862,8 +929,8 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
     return `${domain}\0${keyId}`;
   }
 
-  backfillDumpKeys(): Promise<void> {
-    return Promise.resolve();
+  backfillOwners(): Promise<{ complete: boolean; dumpRecordsComplete: boolean }> {
+    return Promise.resolve({ complete: true, dumpRecordsComplete: true });
   }
 
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {

@@ -12,18 +12,28 @@ CREATE TABLE expiration_sweeps (
 CREATE INDEX idx_expiration_sweeps_due
 ON expiration_sweeps (due_at, key_id, domain);
 
-CREATE TABLE expiration_sweep_backfill (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  next_dump_rowid INTEGER NOT NULL DEFAULT 0,
+CREATE TABLE expiration_sweep_backfills (
+  source TEXT PRIMARY KEY,
+  next_rowid INTEGER NOT NULL DEFAULT 0,
   complete INTEGER NOT NULL DEFAULT 0 CHECK (complete IN (0, 1))
 );
 
-INSERT INTO expiration_sweep_backfill (id) VALUES (1);
+INSERT INTO expiration_sweep_backfills (source) VALUES
+  ('responses_items'),
+  ('responses_snapshots'),
+  ('dump_records');
 
-INSERT INTO expiration_sweeps (domain, key_id, due_at)
-SELECT domain, api_keys.id, 0
-FROM api_keys
-CROSS JOIN (SELECT 'responses' AS domain UNION ALL SELECT 'dumps');
+CREATE TABLE spilled_file_inventories (
+  prefix TEXT PRIMARY KEY,
+  cursor TEXT,
+  revision INTEGER NOT NULL DEFAULT 0,
+  passes INTEGER NOT NULL DEFAULT 0,
+  claim_token TEXT,
+  claimed_at INTEGER,
+  CHECK ((claim_token IS NULL) = (claimed_at IS NULL))
+);
+
+INSERT INTO spilled_file_inventories (prefix) VALUES ('dumps/v1/');
 
 CREATE TRIGGER responses_items_schedule_expiration_insert
 AFTER INSERT ON responses_items

@@ -1,5 +1,5 @@
 import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
-import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
+import { DUMP_FILE_PREFIX, SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
@@ -19,7 +19,6 @@ import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 // The hour segment remains useful for operator inspection; lifecycle and
 // collection are driven by the shared spilled_files ledger.
 
-const ROOT = 'dumps/v1';
 const HOUR_MS = 60 * 60 * 1000;
 
 interface BodyDescriptor {
@@ -69,7 +68,7 @@ const hourBucket = (ms: number): string => {
 };
 
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
-  `${ROOT}/${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
+  `${DUMP_FILE_PREFIX}${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
 
 const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
   const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));

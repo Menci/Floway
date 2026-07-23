@@ -412,6 +412,14 @@ export interface ResponsesSnapshotsRepo {
 export interface SpilledFilesRepo {
   claimCollectible(token: string, now: number, staleClaimedBefore: number, limit: number): Promise<string[]>;
   acknowledge(token: string): Promise<number>;
+  claimInventory(token: string, prefix: string, now: number, staleClaimedBefore: number): Promise<SpilledFileInventoryClaim | null>;
+  completeInventory(token: string, prefix: string, expectedRevision: number, fileKeys: readonly string[], nextCursor: string | null): Promise<boolean>;
+  releaseInventory(token: string): Promise<void>;
+}
+
+export interface SpilledFileInventoryClaim {
+  cursor: string | null;
+  revision: number;
 }
 
 export type ExpirationDomain = 'responses' | 'dumps';
@@ -426,8 +434,13 @@ export type ExpirationSweepCompletion =
   | { kind: 'drained'; nextDueAt: number | null }
   | { kind: 'partial'; retryAt: number };
 
+export interface ExpirationOwnerBackfillState {
+  complete: boolean;
+  dumpRecordsComplete: boolean;
+}
+
 export interface ExpirationSweepsRepo {
-  backfillDumpKeys(limit: number): Promise<void>;
+  backfillOwners(limit: number): Promise<ExpirationOwnerBackfillState>;
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void>;
   claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null>;
   complete(token: string, expectedRevision: number, completion: ExpirationSweepCompletion): Promise<void>;

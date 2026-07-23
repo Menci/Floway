@@ -1,4 +1,6 @@
 import { getRepo } from './index.ts';
+import { inventorySpilledFiles } from './spilled-files.ts';
+import { DUMP_FILE_PREFIX } from './spilled-files-policy.ts';
 import type { ExpirationDomain, ExpirationSweepCompletion } from './types.ts';
 import { getDumpStore } from '../dump/registry.ts';
 
@@ -7,7 +9,7 @@ const ERROR_RETRY_MS = 60 * 1000;
 const PARTIAL_RETRY_MS = 1;
 const DELETE_BATCH_SIZE = 100;
 const SWEEP_UNITS_PER_TICK = 4;
-const DUMP_BACKFILL_BATCH_SIZE = 500;
+const OWNER_BACKFILL_BATCH_SIZE = 500;
 
 interface ExpirationAdapter {
   sweepKey(keyId: string, now: number): Promise<ExpirationSweepCompletion>;
@@ -60,11 +62,11 @@ const adapters: Record<ExpirationDomain, ExpirationAdapter> = {
 
 export const sweepExpirations = async (now: number): Promise<void> => {
   const repo = getRepo();
-  await repo.expirationSweeps.backfillDumpKeys(DUMP_BACKFILL_BATCH_SIZE);
+  const backfill = await repo.expirationSweeps.backfillOwners(OWNER_BACKFILL_BATCH_SIZE);
   for (let index = 0; index < SWEEP_UNITS_PER_TICK; index += 1) {
     const token = crypto.randomUUID();
     const claim = await repo.expirationSweeps.claim(token, now, now - CLAIM_TIMEOUT_MS);
-    if (claim === null) return;
+    if (claim === null) break;
     try {
       const result = await adapters[claim.domain].sweepKey(claim.keyId, now);
       await repo.expirationSweeps.complete(token, claim.revision, result);
@@ -73,4 +75,5 @@ export const sweepExpirations = async (now: number): Promise<void> => {
       console.error(`[scheduled] ${claim.domain} expiration failed`, claim.keyId, error);
     }
   }
+  if (backfill.dumpRecordsComplete) await inventorySpilledFiles(DUMP_FILE_PREFIX, now);
 };
