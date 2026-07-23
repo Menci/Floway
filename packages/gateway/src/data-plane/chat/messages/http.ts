@@ -74,7 +74,7 @@ export const messagesHttp = {
       if (rejected) return rejected;
 
       const wantsStream = payload.stream === true;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createNonResponsesSourceStore(apiKeyId));
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
       const result = await messagesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
@@ -91,7 +91,7 @@ export const messagesHttp = {
       const rejected = rejectBodyBetaResponse(payload);
       if (rejected) return rejected;
 
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createNonResponsesSourceStore(apiKeyId));
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
       const result = await messagesServe.countTokens({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, false, ctx);
       return finalizeGatewayResponse(ctx, response);

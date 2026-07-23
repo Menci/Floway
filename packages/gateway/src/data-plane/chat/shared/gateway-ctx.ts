@@ -3,6 +3,7 @@ import type { RequestBody } from './request-body.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../../runtime/runtime-info.ts';
+import type { ApiKey } from '../../../repo/types.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -124,18 +125,18 @@ export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Re
 };
 
 // Chat-protocol counterpart of `createGatewayCtxFromHono`. The factory receives
-// the authoritative API-key id. Native Responses HTTP and WebSocket entries
+// the authoritative API key. Native Responses HTTP and WebSocket entries
 // supply a persisting store factory; non-Responses sources supply
 // `createNonResponsesSourceStore`, so every chat ctx carries a store.
 export const createChatGatewayCtxFromHono = (
   c: AuthedContext,
   opts: CreateGatewayCtxOptions,
-  storeFactory: (apiKeyId: string) => StatefulResponsesStore,
+  storeFactory: (apiKey: ApiKey) => StatefulResponsesStore,
 ): ChatGatewayCtx => {
   const base = createGatewayCtxFromHono(c, opts);
   return {
     ...base,
     affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
-    store: storeFactory(base.apiKeyId),
+    store: storeFactory(apiKeyFromContext(c)),
   };
 };

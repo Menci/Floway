@@ -37,7 +37,7 @@ export const wrapResponsesClientOutput = async function* (
         ...(privatePayload !== undefined ? { private: privatePayload } : {}),
       },
       contentHash: await hashResponsesItemContent(item),
-      createdAt: Date.now(),
+      refreshedAt: Date.now(),
     };
     return row;
   };
