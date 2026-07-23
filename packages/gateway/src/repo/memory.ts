@@ -8,7 +8,7 @@ import {
   compareResponsesItemsByFreshness,
   scopedResponsesKey,
 } from './responses-clone.ts';
-import { responsesStateCutoff } from './responses-retention.ts';
+import { quantizeResponsesRefreshedAt, responsesStateCutoff } from './responses-retention.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -607,8 +607,12 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void> {
+    const quantizedItems = items.map(item => ({
+      ...item,
+      refreshedAt: quantizeResponsesRefreshedAt(item.refreshedAt),
+    }));
     const pending = new Map<string, StoredResponsesItem>();
-    for (const item of items) {
+    for (const item of quantizedItems) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
       const policy = await this.apiKeys.getById(item.apiKeyId);
@@ -625,13 +629,14 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       }
     }
     for (const [key, item] of pending) this.store.set(key, cloneStoredResponsesItem(item));
-    for (const item of items) {
+    for (const item of quantizedItems) {
       const stored = this.store.get(scopedResponsesKey(item.apiKeyId, item.id))!;
-      stored.refreshedAt = Math.max(stored.refreshedAt, item.refreshedAt);
+      if (stored.refreshedAt < item.refreshedAt) stored.refreshedAt = item.refreshedAt;
     }
   }
 
   async refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, activeAfter: number): Promise<void> {
+    const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
     const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const currentPolicies = await Promise.all(items.map(async item => await this.apiKeys.getById(item.apiKeyId)));
     const missingIndex = existing.findIndex((item, index) => {
@@ -646,7 +651,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
     for (let index = 0; index < existing.length; index += 1) {
       assertSameStoredResponsesItem(items[index], existing[index]!);
-      existing[index]!.refreshedAt = Math.max(existing[index]!.refreshedAt, refreshedAt);
+      if (existing[index]!.refreshedAt < quantizedRefreshedAt) existing[index]!.refreshedAt = quantizedRefreshedAt;
     }
   }
 
@@ -683,16 +688,20 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   }
 
   async insert(snapshot: StoredResponsesSnapshot): Promise<void> {
-    const policy = await this.apiKeys.getById(snapshot.apiKeyId);
+    const quantized = {
+      ...snapshot,
+      refreshedAt: quantizeResponsesRefreshedAt(snapshot.refreshedAt),
+    };
+    const policy = await this.apiKeys.getById(quantized.apiKeyId);
     if (
       policy === null
       || policy.responsesRetentionSeconds === 0
-      || snapshot.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds)
+      || quantized.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds)
     ) return;
-    const key = scopedResponsesKey(snapshot.apiKeyId, snapshot.id);
+    const key = scopedResponsesKey(quantized.apiKeyId, quantized.id);
     const existing = this.store.get(key);
-    if (existing === undefined || snapshot.refreshedAt >= existing.refreshedAt) {
-      this.store.set(key, cloneStoredResponsesSnapshot(snapshot));
+    if (existing === undefined || quantized.refreshedAt > existing.refreshedAt) {
+      this.store.set(key, cloneStoredResponsesSnapshot(quantized));
     }
   }
 
