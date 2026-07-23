@@ -269,7 +269,9 @@ WHEN OLD.responses_retention_seconds IS NOT NEW.responses_retention_seconds
   OR OLD.deleted_at IS NOT NEW.deleted_at
 BEGIN
   INSERT INTO expiration_sweeps (domain, key_id, due_at)
-  VALUES ('responses', NEW.id, 0)
+  SELECT 'responses', NEW.id, 0
+  WHERE EXISTS (SELECT 1 FROM responses_items WHERE api_key_id = NEW.id)
+     OR EXISTS (SELECT 1 FROM responses_snapshots WHERE api_key_id = NEW.id)
   ON CONFLICT (domain, key_id) DO UPDATE SET
     due_at = 0,
     revision = expiration_sweeps.revision + 1;
@@ -279,7 +281,9 @@ CREATE TRIGGER api_keys_schedule_responses_expiration_delete
 AFTER DELETE ON api_keys
 BEGIN
   INSERT INTO expiration_sweeps (domain, key_id, due_at)
-  VALUES ('responses', OLD.id, 0)
+  SELECT 'responses', OLD.id, 0
+  WHERE EXISTS (SELECT 1 FROM responses_items WHERE api_key_id = OLD.id)
+     OR EXISTS (SELECT 1 FROM responses_snapshots WHERE api_key_id = OLD.id)
   ON CONFLICT (domain, key_id) DO UPDATE SET
     due_at = 0,
     revision = expiration_sweeps.revision + 1;
@@ -291,7 +295,8 @@ WHEN OLD.dump_retention_seconds IS NOT NEW.dump_retention_seconds
   OR OLD.deleted_at IS NOT NEW.deleted_at
 BEGIN
   INSERT INTO expiration_sweeps (domain, key_id, due_at)
-  VALUES ('dumps', NEW.id, 0)
+  SELECT 'dumps', NEW.id, 0
+  WHERE EXISTS (SELECT 1 FROM dump_records WHERE key_id = NEW.id)
   ON CONFLICT (domain, key_id) DO UPDATE SET
     due_at = 0,
     revision = expiration_sweeps.revision + 1;
@@ -301,7 +306,8 @@ CREATE TRIGGER api_keys_schedule_dumps_expiration_delete
 AFTER DELETE ON api_keys
 BEGIN
   INSERT INTO expiration_sweeps (domain, key_id, due_at)
-  VALUES ('dumps', OLD.id, 0)
+  SELECT 'dumps', OLD.id, 0
+  WHERE EXISTS (SELECT 1 FROM dump_records WHERE key_id = OLD.id)
   ON CONFLICT (domain, key_id) DO UPDATE SET
     due_at = 0,
     revision = expiration_sweeps.revision + 1;

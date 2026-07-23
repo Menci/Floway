@@ -67,7 +67,7 @@ export class FsFileProvider implements FileProvider {
 
   private async *walk(directory: string, keyPrefix: string): AsyncGenerator<string> {
     const entries = (await readdir(directory, { withFileTypes: true }))
-      .toSorted((left, right) => left.name.localeCompare(right.name));
+      .toSorted((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
     for (const entry of entries) {
       const key = `${keyPrefix}${entry.name}`;
       if (entry.isDirectory()) yield* this.walk(this.pathFor(key), `${key}/`);

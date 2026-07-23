@@ -1,5 +1,5 @@
-import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import { DUMP_FILE_PREFIX, SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
+import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,

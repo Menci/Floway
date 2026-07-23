@@ -1,6 +1,6 @@
 import { getRepo } from './index.ts';
-import { inventorySpilledFiles } from './spilled-files.ts';
 import { DUMP_FILE_PREFIX } from './spilled-files-policy.ts';
+import { inventorySpilledFiles } from './spilled-files.ts';
 import type { ExpirationDomain, ExpirationSweepCompletion } from './types.ts';
 import { getDumpStore } from '../dump/registry.ts';
 

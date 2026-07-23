@@ -1,4 +1,5 @@
 import { getRepo } from './index.ts';
+import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { getFileProvider } from '@floway-dev/platform';
 
 const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
@@ -18,6 +19,7 @@ export const inventorySpilledFiles = async (prefix: string, now: number): Promis
       claim.revision,
       page.keys,
       page.nextCursor,
+      now + SPILLED_FILE_STAGE_GRACE_MS,
     );
     if (!completed) throw new Error(`Spilled-file inventory lost its claim for prefix: ${prefix}`);
   } catch (error) {

@@ -259,10 +259,20 @@ both domains. Its single bounded driver claims a key, dispatches either the
 Responses or dump adapter, and completes through a revision check so concurrent
 writes and policy edits keep the earlier due time. The adapters only define
 their indexed owner-row deletion and oldest-row probe; scheduling, fairness,
-claim recovery, retries, and physical file collection are shared. HTTP
-`store: false` can read enabled durable Responses state but never writes or
-refreshes it. WebSocket state is always session-local; `store: true`
-additionally writes durable state when the key has opted in.
+claim recovery, and retries are shared. Fresh owner writes schedule their key
+directly. A bounded, monotonic cursor per owner table discovers rows that
+predate the queue without pre-seeding API keys that own no state.
+
+Dump-file inventory starts only after the dump owner backfill has registered
+every descriptor in `spilled_files`. It lists at most one persisted prefix page
+per maintenance tick and records only unknown exact keys as retired after the
+same grace period used for staged writes. Its cursor resets at the end of each
+pass, so files left by an interrupted writer are eventually rediscovered while
+live or staged ledger entries remain untouched. Physical deletion remains the
+single shared exact-file collector. HTTP `store: false` can read enabled durable
+Responses state but never writes or refreshes it. WebSocket state is always
+session-local; `store: true` additionally writes durable state when the key has
+opted in.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in
@@ -534,4 +544,3 @@ When working on a change and it is unclear whether it constitutes a
 breaking change, do not unilaterally add a CHANGELOG entry — ask the
 user to make the call. The user declares what is breaking; the agent
 records it.
-

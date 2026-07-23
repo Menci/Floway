@@ -840,7 +840,7 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
 }
 
 class MemorySpilledFilesRepo implements SpilledFilesRepo {
-  private readonly files = new Map<string, string | null>();
+  private readonly files = new Map<string, { collectAfter: number; claimToken: string | null }>();
   private readonly inventories = new Map<string, {
     cursor: string | null;
     revision: number;
@@ -848,20 +848,20 @@ class MemorySpilledFilesRepo implements SpilledFilesRepo {
     claimedAt: number | null;
   }>();
 
-  claimCollectible(token: string, _now: number, _staleClaimedBefore: number, limit: number): Promise<string[]> {
+  claimCollectible(token: string, now: number, _staleClaimedBefore: number, limit: number): Promise<string[]> {
     const keys = [...this.files]
-      .filter(([, claimToken]) => claimToken === null)
+      .filter(([, file]) => file.claimToken === null && file.collectAfter <= now)
       .map(([fileKey]) => fileKey)
       .sort()
       .slice(0, limit);
-    for (const key of keys) this.files.set(key, token);
+    for (const key of keys) this.files.get(key)!.claimToken = token;
     return Promise.resolve(keys);
   }
 
   acknowledge(token: string): Promise<number> {
     let changes = 0;
-    for (const [key, claimToken] of this.files) {
-      if (claimToken !== token) continue;
+    for (const [key, file] of this.files) {
+      if (file.claimToken !== token) continue;
       this.files.delete(key);
       changes += 1;
     }
@@ -893,11 +893,12 @@ class MemorySpilledFilesRepo implements SpilledFilesRepo {
     expectedRevision: number,
     fileKeys: readonly string[],
     nextCursor: string | null,
+    collectAfter: number,
   ): Promise<boolean> {
     const row = this.inventories.get(prefix);
     if (row === undefined || row.claimToken !== token || row.revision !== expectedRevision) return Promise.resolve(false);
     for (const fileKey of fileKeys) {
-      if (!this.files.has(fileKey)) this.files.set(fileKey, null);
+      this.files.set(fileKey, this.files.get(fileKey) ?? { collectAfter, claimToken: null });
     }
     row.cursor = nextCursor;
     row.revision += 1;

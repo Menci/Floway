@@ -5,6 +5,7 @@ import { FileDumpStore } from './dump-store.ts';
 import { sweepExpirations } from './expiration-sweeps.ts';
 import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
+import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
@@ -344,6 +345,8 @@ test('bounded owner backfill skips API keys without persisted owners', async () 
 
   expect((await db.prepare('SELECT domain, key_id FROM expiration_sweeps ORDER BY domain, key_id').all()).results)
     .toEqual([{ domain: 'responses', key_id: 'key-a' }]);
+  await repo.apiKeys.update('key-empty', { responsesRetentionSeconds: 7200, dumpRetentionSeconds: 7200 });
+  expect(await db.prepare("SELECT domain FROM expiration_sweeps WHERE key_id = 'key-empty'").first()).toBeNull();
 });
 
 test('in-memory Responses owners enter the same expiration driver', async () => {
@@ -393,6 +396,8 @@ test('dump inventory retires only untracked exact file keys', async () => {
 
   await sweepExpirations(now);
   await collectSpilledFiles(now);
+  expect(await files.get(orphanFileKey)).not.toBeNull();
+  await collectSpilledFiles(now + SPILLED_FILE_STAGE_GRACE_MS + 1);
 
   expect(await files.get(orphanFileKey)).toBeNull();
   expect(await files.get(liveFileKey)).not.toBeNull();

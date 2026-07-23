@@ -58,17 +58,18 @@ export class SqlSpilledFilesRepo implements SpilledFilesRepo {
     expectedRevision: number,
     fileKeys: readonly string[],
     nextCursor: string | null,
+    collectAfter: number,
   ): Promise<boolean> {
     if (fileKeys.length > 0) {
       await this.db
         .prepare(
           `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
-           SELECT value, 'inventory', json_array(?, value), 'retired', 0
+           SELECT value, 'inventory', json_array(?, value), 'retired', ?
            FROM json_each(?)
            WHERE true
            ON CONFLICT (file_key) DO NOTHING`,
         )
-        .bind(prefix, JSON.stringify(fileKeys))
+        .bind(prefix, collectAfter, JSON.stringify(fileKeys))
         .run();
     }
     const result = await this.db

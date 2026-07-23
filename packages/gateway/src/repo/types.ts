@@ -413,7 +413,14 @@ export interface SpilledFilesRepo {
   claimCollectible(token: string, now: number, staleClaimedBefore: number, limit: number): Promise<string[]>;
   acknowledge(token: string): Promise<number>;
   claimInventory(token: string, prefix: string, now: number, staleClaimedBefore: number): Promise<SpilledFileInventoryClaim | null>;
-  completeInventory(token: string, prefix: string, expectedRevision: number, fileKeys: readonly string[], nextCursor: string | null): Promise<boolean>;
+  completeInventory(
+    token: string,
+    prefix: string,
+    expectedRevision: number,
+    fileKeys: readonly string[],
+    nextCursor: string | null,
+    collectAfter: number,
+  ): Promise<boolean>;
   releaseInventory(token: string): Promise<void>;
 }
 
