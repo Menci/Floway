@@ -79,12 +79,14 @@ CREATE TABLE responses_items (
   api_key_id TEXT NOT NULL,
   payload_json TEXT NOT NULL,
   content_hash TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
   payload_file_key TEXT,
   refreshed_at INTEGER NOT NULL,
   CHECK (length(id) > 0),
   CHECK (length(api_key_id) > 0),
   CHECK (length(payload_json) > 0),
-  CHECK (length(content_hash) > 0)
+  CHECK (length(content_hash) > 0),
+  CHECK (length(payload_hash) > 0)
 );
 
 CREATE TABLE responses_snapshots (

@@ -195,6 +195,22 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await expect(repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS))).rejects.toThrow();
     expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
   });
+
+  test('an old request cannot refresh a replacement payload under a reused ID', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await makeRepo();
+    const now = Date.now();
+    await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
+    const original = storedItem('msg-reused', now - 90 * 60_000, 'original');
+    await repo.responsesItems.insertMany([original], responsesStateCutoff(now, 2 * RETENTION_SECONDS));
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
+    const replacement = storedItem(original.id, now, 'replacement');
+    await repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, RETENTION_SECONDS));
+
+    await expect(repo.responsesItems.refreshMany([original], now + 1, responsesStateCutoff(now, 2 * RETENTION_SECONDS)))
+      .rejects.toThrow('id collision');
+    expect((await repo.responsesItems.lookupMany('key-a', [original.id], 0))[0]).toEqual(replacement);
+  });
 });
 
 test('SQL spill ownership is first-class and the shared collector reclaims retired files', async () => {
@@ -286,6 +302,7 @@ test('migration 0065 performs one direct cutover to disabled rolling state', asy
       'api_key_id',
       'payload_json',
       'content_hash',
+      'payload_hash',
       'payload_file_key',
       'refreshed_at',
     ]);

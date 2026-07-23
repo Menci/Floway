@@ -634,7 +634,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], refreshedAt: number, activeAfter: number): Promise<void> {
+  async refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, activeAfter: number): Promise<void> {
     const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const currentPolicies = await Promise.all(items.map(async item => await this.apiKeys.getById(item.apiKeyId)));
     const missingIndex = existing.findIndex((item, index) => {
@@ -648,7 +648,10 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
     }
-    for (const item of existing) item!.refreshedAt = Math.max(item!.refreshedAt, refreshedAt);
+    for (let index = 0; index < existing.length; index += 1) {
+      assertSameStoredResponsesItem(items[index], existing[index]!);
+      existing[index]!.refreshedAt = Math.max(existing[index]!.refreshedAt, refreshedAt);
+    }
   }
 
   async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
