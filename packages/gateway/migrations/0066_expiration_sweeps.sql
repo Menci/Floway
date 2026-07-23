@@ -11,7 +11,15 @@ CREATE TABLE expiration_sweeps (
 );
 
 CREATE INDEX idx_expiration_sweeps_due
-ON expiration_sweeps (due_at, domain, key_id);
+ON expiration_sweeps (due_at, key_id, domain);
+
+CREATE TABLE expiration_sweep_backfill (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  next_dump_rowid INTEGER NOT NULL DEFAULT 0,
+  complete INTEGER NOT NULL DEFAULT 0 CHECK (complete IN (0, 1))
+);
+
+INSERT INTO expiration_sweep_backfill (id) VALUES (1);
 
 INSERT INTO expiration_sweeps (domain, key_id, due_at)
 SELECT domain, api_keys.id, 0
@@ -35,9 +43,10 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = excluded.due_at,
+    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
     revision = expiration_sweeps.revision + 1
-  WHERE excluded.due_at < expiration_sweeps.due_at;
+  WHERE expiration_sweeps.claim_token IS NOT NULL
+    OR excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER responses_items_schedule_expiration_update
@@ -57,9 +66,10 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = excluded.due_at,
+    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
     revision = expiration_sweeps.revision + 1
-  WHERE excluded.due_at < expiration_sweeps.due_at;
+  WHERE expiration_sweeps.claim_token IS NOT NULL
+    OR excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER responses_snapshots_schedule_expiration_insert
@@ -79,9 +89,10 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = excluded.due_at,
+    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
     revision = expiration_sweeps.revision + 1
-  WHERE excluded.due_at < expiration_sweeps.due_at;
+  WHERE expiration_sweeps.claim_token IS NOT NULL
+    OR excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER responses_snapshots_schedule_expiration_update
@@ -101,9 +112,10 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = excluded.due_at,
+    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
     revision = expiration_sweeps.revision + 1
-  WHERE excluded.due_at < expiration_sweeps.due_at;
+  WHERE expiration_sweeps.claim_token IS NOT NULL
+    OR excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER dump_records_validate_spilled_files
@@ -116,7 +128,9 @@ BEGIN
       AND owner_key = json_array(NEW.key_id, NEW.id)
       AND state = 'staged'
       AND claim_token IS NULL
-  ) THEN RAISE(ABORT, 'Dump request body file was not staged') END;
+  ) AND json_extract(NEW.request_body_descriptor, '$.key') !=
+    'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.req.gz'
+  THEN RAISE(ABORT, 'Dump request body file was not staged') END;
   SELECT CASE WHEN NEW.response_body_descriptor IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM spilled_files
     WHERE file_key = json_extract(NEW.response_body_descriptor, '$.key')
@@ -124,7 +138,9 @@ BEGIN
       AND owner_key = json_array(NEW.key_id, NEW.id)
       AND state = 'staged'
       AND claim_token IS NULL
-  ) THEN RAISE(ABORT, 'Dump response body file was not staged') END;
+  ) AND json_extract(NEW.response_body_descriptor, '$.key') !=
+    'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.resp.gz'
+  THEN RAISE(ABORT, 'Dump response body file was not staged') END;
 END;
 
 CREATE TRIGGER dump_records_adopt_spilled_files
@@ -138,6 +154,28 @@ BEGIN
       json_extract(NEW.request_body_descriptor, '$.key'),
       json_extract(NEW.response_body_descriptor, '$.key')
     );
+
+  INSERT OR IGNORE INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+  SELECT
+    json_extract(NEW.request_body_descriptor, '$.key'),
+    'dump-request',
+    json_array(NEW.key_id, NEW.id),
+    'owned',
+    NULL
+  WHERE NEW.request_body_descriptor IS NOT NULL
+    AND json_extract(NEW.request_body_descriptor, '$.key') =
+      'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.req.gz';
+
+  INSERT OR IGNORE INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+  SELECT
+    json_extract(NEW.response_body_descriptor, '$.key'),
+    'dump-response',
+    json_array(NEW.key_id, NEW.id),
+    'owned',
+    NULL
+  WHERE NEW.response_body_descriptor IS NOT NULL
+    AND json_extract(NEW.response_body_descriptor, '$.key') =
+      'dumps/v1/' || NEW.key_id || '/' || strftime('%Y%m%d%H', NEW.created_at / 1000, 'unixepoch') || '/' || NEW.id || '.resp.gz';
 END;
 
 CREATE TRIGGER dump_records_retire_spilled_files
@@ -147,13 +185,13 @@ BEGIN
   SELECT json_extract(OLD.request_body_descriptor, '$.key'), 'dump-request', json_array(OLD.key_id, OLD.id), 'retired', 0
   WHERE OLD.request_body_descriptor IS NOT NULL
   ON CONFLICT (file_key) DO UPDATE SET
-    state = 'retired', collect_after = 0, claim_token = NULL, claimed_at = NULL;
+    state = 'retired', collect_after = 0;
 
   INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
   SELECT json_extract(OLD.response_body_descriptor, '$.key'), 'dump-response', json_array(OLD.key_id, OLD.id), 'retired', 0
   WHERE OLD.response_body_descriptor IS NOT NULL
   ON CONFLICT (file_key) DO UPDATE SET
-    state = 'retired', collect_after = 0, claim_token = NULL, claimed_at = NULL;
+    state = 'retired', collect_after = 0;
 END;
 
 CREATE TRIGGER dump_records_schedule_expiration
@@ -173,9 +211,10 @@ BEGIN
     ), 0)
   )
   ON CONFLICT (domain, key_id) DO UPDATE SET
-    due_at = excluded.due_at,
+    due_at = MIN(expiration_sweeps.due_at, excluded.due_at),
     revision = expiration_sweeps.revision + 1
-  WHERE excluded.due_at < expiration_sweeps.due_at;
+  WHERE expiration_sweeps.claim_token IS NOT NULL
+    OR excluded.due_at < expiration_sweeps.due_at;
 END;
 
 CREATE TRIGGER api_keys_schedule_expiration_update

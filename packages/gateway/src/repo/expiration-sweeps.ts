@@ -4,8 +4,10 @@ import { getDumpStore } from '../dump/registry.ts';
 
 const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
 const ERROR_RETRY_MS = 60 * 1000;
+const PARTIAL_RETRY_MS = 1;
 const DELETE_BATCH_SIZE = 100;
 const SWEEP_UNITS_PER_TICK = 4;
+const DUMP_BACKFILL_BATCH_SIZE = 500;
 
 interface ExpirationAdapter {
   sweepKey(keyId: string, now: number): Promise<number | null>;
@@ -28,7 +30,7 @@ const responsesAdapter: ExpirationAdapter = {
     const repo = getRepo();
     const deletedSnapshots = await repo.responsesSnapshots.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
     const deletedItems = await repo.responsesItems.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
-    if (deletedSnapshots === DELETE_BATCH_SIZE || deletedItems === DELETE_BATCH_SIZE) return now;
+    if (deletedSnapshots === DELETE_BATCH_SIZE || deletedItems === DELETE_BATCH_SIZE) return now + PARTIAL_RETRY_MS;
     return await nextResponsesDueAt(keyId);
   },
 };
@@ -37,7 +39,7 @@ const dumpsAdapter: ExpirationAdapter = {
   async sweepKey(keyId, now) {
     const store = getDumpStore();
     const deleted = await store.deleteExpiredBatch(keyId, now, DELETE_BATCH_SIZE);
-    if (deleted === DELETE_BATCH_SIZE) return now;
+    if (deleted === DELETE_BATCH_SIZE) return now + PARTIAL_RETRY_MS;
     const key = await getRepo().apiKeys.getById(keyId);
     const retentionSeconds = key?.dumpRetentionSeconds ?? null;
     if (retentionSeconds === null) return null;
@@ -53,6 +55,7 @@ const adapters: Record<ExpirationDomain, ExpirationAdapter> = {
 
 export const sweepExpirations = async (now: number): Promise<void> => {
   const repo = getRepo();
+  await repo.expirationSweeps.backfillDumpKeys(DUMP_BACKFILL_BATCH_SIZE);
   for (let index = 0; index < SWEEP_UNITS_PER_TICK; index += 1) {
     const token = crypto.randomUUID();
     const claim = await repo.expirationSweeps.claim(token, now, now - CLAIM_TIMEOUT_MS);

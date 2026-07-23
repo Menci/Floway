@@ -4,7 +4,7 @@ import { getFileProvider } from '@floway-dev/platform';
 const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
 const FILE_DELETE_BATCH_SIZE = 1_000;
 
-export const sweepSpilledFiles = async (now: number): Promise<void> => {
+export const collectSpilledFiles = async (now: number): Promise<void> => {
   const repo = getRepo();
   const token = crypto.randomUUID();
   const keys = await repo.spilledFiles.claimCollectible(

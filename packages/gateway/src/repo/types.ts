@@ -423,6 +423,7 @@ export interface ExpirationSweepClaim {
 }
 
 export interface ExpirationSweepsRepo {
+  backfillDumpKeys(limit: number): Promise<boolean>;
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void>;
   claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null>;
   complete(token: string, expectedRevision: number, nextDueAt: number | null): Promise<void>;

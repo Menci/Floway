@@ -1,16 +1,18 @@
 import initSqlJs from 'sql.js';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
 import { responsesStateCutoff } from './responses-retention.ts';
-import { sweepSpilledFiles } from './spilled-files.ts';
+import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ApiKey, Repo, StoredResponsesItem } from './types.ts';
 import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
 
 const RETENTION_SECONDS = 60 * 60;
+
+afterEach(() => vi.useRealTimers());
 
 const apiKey = (responsesRetentionSeconds = RETENTION_SECONDS): ApiKey => ({
   id: 'key-a',
@@ -47,8 +49,12 @@ const backends: Array<readonly [string, () => Promise<Repo>]> = [
 
 describe.each(backends)('%s Responses state repository', (_backend, makeRepo) => {
   test('scopes exact and content-hash reads by key and rolling cutoff', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(4_000);
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
+    await repo.apiKeys.save(apiKey());
+    await repo.apiKeys.save({ ...apiKey(), id: 'key-b', key: 'raw-key-b', serverSecret: '22'.repeat(32) });
     const old = storedItem('msg-old', 1_000, 'same');
     const current = storedItem('msg-current', 2_000, 'same');
     const foreign = storedItem('msg-foreign', 2_000, 'same', 'key-b');
@@ -60,20 +66,27 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('rejects a live producer-ID collision but replaces an expired row', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(4_000);
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
+    await repo.apiKeys.save(apiKey());
     const original = storedItem('msg-collision', 1_000, 'original');
     const replacement = storedItem('msg-collision', 3_000, 'replacement');
     await repo.responsesItems.insertMany([original], 0);
 
     await expect(repo.responsesItems.insertMany([replacement], 500)).rejects.toThrow('id collision');
+    vi.setSystemTime(3_602_001);
     await expect(repo.responsesItems.insertMany([replacement], 2_000)).resolves.toBeUndefined();
     expect(await repo.responsesItems.lookupMany('key-a', [original.id], 2_000)).toEqual([replacement]);
   });
 
   test('refreshes only active rows and never lowers their timestamp', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(4_000);
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
+    await repo.apiKeys.save(apiKey());
     const item = storedItem('msg-refresh', 1_000);
     await repo.responsesItems.insertMany([item], 0);
 
@@ -87,12 +100,15 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = 10_000_000;
-    await repo.apiKeys.save(apiKey(3_600));
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    await repo.apiKeys.save(apiKey(7_200));
     const expired = storedItem('msg-expired', responsesStateCutoff(now, 3_600) - 1);
     const current = storedItem('msg-current', responsesStateCutoff(now, 3_600));
     await repo.responsesItems.insertMany([expired, current], 0);
     await repo.responsesSnapshots.insert({ id: 'resp-expired', apiKeyId: 'key-a', itemIds: [expired.id], refreshedAt: expired.refreshedAt });
     await repo.responsesSnapshots.insert({ id: 'resp-current', apiKeyId: 'key-a', itemIds: [current.id], refreshedAt: current.refreshedAt });
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 3_600 });
 
     expect(await repo.responsesItems.deleteExpiredBatch('key-a', now, 100)).toBe(1);
     expect(await repo.responsesSnapshots.deleteExpiredBatch('key-a', now, 100)).toBe(1);
@@ -118,6 +134,52 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     });
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp-a', 2_001)).toBeNull();
   });
+
+  test('a concurrent shrink prevents an old request from refreshing excluded state', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await makeRepo();
+    const now = Date.now();
+    const thirtyDays = 30 * 24 * 60 * 60;
+    const sevenDays = 7 * 24 * 60 * 60;
+    await repo.apiKeys.save(apiKey(thirtyDays));
+    const old = storedItem('msg-shrink-race', now - 20 * 24 * 60 * 60_000);
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
+
+    await expect(repo.responsesItems.refreshMany([old], now, responsesStateCutoff(now, thirtyDays)))
+      .rejects.toThrow('disappeared');
+    expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt).toBe(old.refreshedAt);
+  });
+
+  test('a concurrent grow protects a newly-live producer ID from replacement', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await makeRepo();
+    const now = Date.now();
+    const thirtyDays = 30 * 24 * 60 * 60;
+    const sevenDays = 7 * 24 * 60 * 60;
+    await repo.apiKeys.save(apiKey(thirtyDays));
+    const old = storedItem('msg-grow-race', now - 20 * 24 * 60 * 60_000, 'old');
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
+    const replacement = storedItem(old.id, now, 'replacement');
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: thirtyDays });
+
+    await expect(repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, sevenDays)))
+      .rejects.toThrow('id collision');
+    expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].payload).toEqual(old.payload);
+  });
+
+  test('a concurrent disable prevents a captured durable writer from inserting', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await makeRepo();
+    const now = Date.now();
+    await repo.apiKeys.save(apiKey(RETENTION_SECONDS));
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
+    const item = storedItem('msg-disabled-race', now);
+
+    await expect(repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS))).rejects.toThrow();
+    expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
+  });
 });
 
 test('SQL spill ownership is first-class and the shared collector reclaims retired files', async () => {
@@ -127,9 +189,10 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const now = Date.now();
-  await repo.apiKeys.save(apiKey());
+  await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
   const item = storedItem('msg-spilled', now - RETENTION_SECONDS * 1000 - 1, largeContent());
   await repo.responsesItems.insertMany([item], 0);
+  await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
 
   const owned = await db.prepare(
     "SELECT file_key, owner_kind, owner_key, state FROM spilled_files WHERE state = 'owned'",
@@ -144,7 +207,7 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   expect(await repo.responsesItems.deleteExpiredBatch('key-a', now, 100)).toBe(1);
   expect((await db.prepare('SELECT state FROM spilled_files WHERE file_key = ?').bind(owned.file_key).first<{ state: string }>())?.state)
     .toBe('retired');
-  await sweepSpilledFiles(now);
+  await collectSpilledFiles(now);
   expect(await files.get(owned.file_key)).toBeNull();
   expect(await db.prepare('SELECT file_key FROM spilled_files WHERE file_key = ?').bind(owned.file_key).first()).toBeNull();
 });

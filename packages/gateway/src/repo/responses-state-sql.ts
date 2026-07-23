@@ -121,7 +121,14 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       } catch (error) {
         const current = await this.db
           .prepare(
-            `SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items
+            `SELECT
+               responses_items.id,
+               responses_items.api_key_id,
+               responses_items.payload_json,
+               responses_items.content_hash,
+               responses_items.payload_file_key,
+               responses_items.refreshed_at
+             FROM responses_items
              WHERE id = ? AND api_key_id = ? AND refreshed_at >= ?`,
           )
           .bind(row.id, row.api_key_id, activeAfter)
@@ -150,18 +157,32 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     for (const entry of prepared) await writePreparedStoredResponsesPayload(entry.payload);
 
     const statements: SqlPreparedStatement[] = [];
+    const policyAt = Date.now();
     for (let index = 0; index < prepared.length; index += RESPONSES_INSERT_CHUNK_SIZE) {
       const chunk = prepared.slice(index, index + RESPONSES_INSERT_CHUNK_SIZE);
       const values = chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
       statements.push(this.db
         .prepare(
-          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES ${values}
+          `WITH incoming (${RESPONSES_ITEM_COLUMNS}) AS (VALUES ${values})
+           INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS})
+           SELECT incoming.* FROM incoming
+           JOIN api_keys ON api_keys.id = incoming.api_key_id
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.responses_retention_seconds > 0
+           WHERE true
            ON CONFLICT (id, api_key_id) DO UPDATE SET
              payload_json = excluded.payload_json,
              content_hash = excluded.content_hash,
              payload_file_key = excluded.payload_file_key,
              refreshed_at = excluded.refreshed_at
-           WHERE responses_items.refreshed_at < ?`,
+           WHERE responses_items.refreshed_at < ?
+             AND NOT EXISTS (
+               SELECT 1 FROM api_keys
+               WHERE api_keys.id = excluded.api_key_id
+                 AND api_keys.deleted_at IS NULL
+                 AND api_keys.responses_retention_seconds > 0
+                 AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+             )`,
         )
         .bind(
           ...chunk.flatMap(({ item, payload }) => [
@@ -173,11 +194,12 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
             item.refreshedAt,
           ]),
           activeAfter,
+          policyAt,
         ));
     }
     await runStatements(this.db, statements);
 
-    const persisted = await this.lookupExistingItems(unique, activeAfter);
+    const persisted = await this.lookupExistingItems(unique, 0);
     for (const item of unique) {
       const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id));
       if (actual === undefined) throw new Error(`Responses item disappeared after insert: ${item.id}`);
@@ -229,44 +251,108 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       item => item.apiKeyId,
     );
     const statements: SqlPreparedStatement[] = [];
+    const policyAt = Date.now();
     for (const [apiKeyId, scoped] of idsByApiKey) {
       for (let index = 0; index < scoped.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
         const chunk = scoped.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
         statements.push(this.db
           .prepare(
             `UPDATE responses_items SET refreshed_at = MAX(refreshed_at, ?)
-             WHERE api_key_id = ? AND refreshed_at >= ? AND id IN (${chunk.map(() => '?').join(', ')})`,
+             WHERE api_key_id = ?
+               AND refreshed_at >= ?
+               AND EXISTS (
+                 SELECT 1 FROM api_keys
+                 WHERE api_keys.id = responses_items.api_key_id
+                   AND api_keys.deleted_at IS NULL
+                   AND api_keys.responses_retention_seconds > 0
+                   AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+               )
+               AND id IN (${chunk.map(() => '?').join(', ')})`,
           )
-          .bind(refreshedAt, apiKeyId, activeAfter, ...chunk.map(item => item.id)));
+          .bind(refreshedAt, apiKeyId, activeAfter, policyAt, ...chunk.map(item => item.id)));
       }
     }
     await runStatements(this.db, statements);
-    const persisted = await this.lookupExistingItems(items, activeAfter);
+    const persisted = await this.lookupCurrentPolicyItems(items, activeAfter, policyAt);
     const missing = items.find(item => !persisted.has(scopedResponsesKey(item.apiKeyId, item.id)));
     if (missing !== undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${missing.id}`);
   }
 
+  private async lookupCurrentPolicyItems(
+    items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[],
+    activeAfter: number,
+    policyAt: number,
+  ): Promise<Map<string, StoredResponsesItem>> {
+    const idsByApiKey = Map.groupBy(items, item => item.apiKeyId);
+    const rows: StoredResponsesItem[] = [];
+    for (const [apiKeyId, scoped] of idsByApiKey) {
+      const ids = [...new Set(scoped.map(item => item.id))];
+      for (let index = 0; index < ids.length; index += RESPONSES_IN_QUERY_CHUNK_SIZE) {
+        const chunk = ids.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
+        const { results } = await this.db
+          .prepare(
+            `SELECT
+               responses_items.id,
+               responses_items.api_key_id,
+               responses_items.payload_json,
+               responses_items.content_hash,
+               responses_items.payload_file_key,
+               responses_items.refreshed_at
+             FROM responses_items
+             JOIN api_keys ON api_keys.id = responses_items.api_key_id
+             WHERE responses_items.api_key_id = ?
+               AND api_keys.deleted_at IS NULL
+               AND api_keys.responses_retention_seconds > 0
+               AND responses_items.refreshed_at >= ?
+               AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+               AND responses_items.id IN (${chunk.map(() => '?').join(', ')})`,
+          )
+          .bind(apiKeyId, activeAfter, policyAt, ...chunk)
+          .all<ResponsesItemRow>();
+        rows.push(...await mapSequentially(results, async row => await toStoredResponsesItem(row)));
+      }
+    }
+    return new Map(rows.map(item => [scopedResponsesKey(item.apiKeyId, item.id), item]));
+  }
+
   async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
-    const result = await this.db
+    const active = await this.db
       .prepare(
         `DELETE FROM responses_items WHERE rowid IN (
            SELECT stored.rowid
-           FROM responses_items AS stored
-           LEFT JOIN api_keys ON api_keys.id = stored.api_key_id
-           WHERE stored.api_key_id = ?
-             AND (
-               api_keys.id IS NULL
-               OR api_keys.deleted_at IS NOT NULL
-               OR api_keys.responses_retention_seconds = 0
-               OR stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
-             )
+           FROM api_keys
+           CROSS JOIN responses_items AS stored
+           WHERE api_keys.id = ?
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.responses_retention_seconds > 0
+             AND stored.api_key_id = api_keys.id
+             AND stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
            ORDER BY stored.refreshed_at, stored.rowid
            LIMIT ?
          )`,
       )
       .bind(apiKeyId, now, limit)
       .run();
-    return result.meta.changes ?? 0;
+    const activeDeleted = active.meta.changes ?? 0;
+    if (activeDeleted >= limit) return activeDeleted;
+    const inactive = await this.db
+      .prepare(
+        `DELETE FROM responses_items WHERE rowid IN (
+           SELECT stored.rowid FROM responses_items AS stored
+           WHERE stored.api_key_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM api_keys
+               WHERE api_keys.id = stored.api_key_id
+                 AND api_keys.deleted_at IS NULL
+                 AND api_keys.responses_retention_seconds > 0
+             )
+           ORDER BY stored.refreshed_at, stored.rowid
+           LIMIT ?
+         )`,
+      )
+      .bind(apiKeyId, limit - activeDeleted)
+      .run();
+    return activeDeleted + (inactive.meta.changes ?? 0);
   }
 
   async findOldestRefresh(apiKeyId: string): Promise<number | null> {
@@ -332,26 +418,43 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   }
 
   async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
-    const result = await this.db
+    const active = await this.db
       .prepare(
         `DELETE FROM responses_snapshots WHERE rowid IN (
            SELECT stored.rowid
-           FROM responses_snapshots AS stored
-           LEFT JOIN api_keys ON api_keys.id = stored.api_key_id
-           WHERE stored.api_key_id = ?
-             AND (
-               api_keys.id IS NULL
-               OR api_keys.deleted_at IS NOT NULL
-               OR api_keys.responses_retention_seconds = 0
-               OR stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
-             )
+           FROM api_keys
+           CROSS JOIN responses_snapshots AS stored
+           WHERE api_keys.id = ?
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.responses_retention_seconds > 0
+             AND stored.api_key_id = api_keys.id
+             AND stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
            ORDER BY stored.refreshed_at, stored.rowid
            LIMIT ?
          )`,
       )
       .bind(apiKeyId, now, limit)
       .run();
-    return result.meta.changes ?? 0;
+    const activeDeleted = active.meta.changes ?? 0;
+    if (activeDeleted >= limit) return activeDeleted;
+    const inactive = await this.db
+      .prepare(
+        `DELETE FROM responses_snapshots WHERE rowid IN (
+           SELECT stored.rowid FROM responses_snapshots AS stored
+           WHERE stored.api_key_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM api_keys
+               WHERE api_keys.id = stored.api_key_id
+                 AND api_keys.deleted_at IS NULL
+                 AND api_keys.responses_retention_seconds > 0
+             )
+           ORDER BY stored.refreshed_at, stored.rowid
+           LIMIT ?
+         )`,
+      )
+      .bind(apiKeyId, limit - activeDeleted)
+      .run();
+    return activeDeleted + (inactive.meta.changes ?? 0);
   }
 
   async findOldestRefresh(apiKeyId: string): Promise<number | null> {
@@ -402,6 +505,40 @@ export class SqlSpilledFilesRepo implements SpilledFilesRepo {
 export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   constructor(private readonly db: SqlDatabase) {}
 
+  async backfillDumpKeys(limit: number): Promise<boolean> {
+    const state = await this.db
+      .prepare('SELECT next_dump_rowid, complete FROM expiration_sweep_backfill WHERE id = 1')
+      .first<{ next_dump_rowid: number; complete: number }>();
+    if (state === null) throw new Error('expiration_sweep_backfill singleton row missing');
+    if (state.complete !== 0) return true;
+
+    const { results } = await this.db
+      .prepare('SELECT rowid, key_id FROM dump_records WHERE rowid > ? ORDER BY rowid LIMIT ?')
+      .bind(state.next_dump_rowid, limit)
+      .all<{ rowid: number; key_id: string }>();
+    if (results.length > 0) {
+      const keyIds = [...new Set(results.map(row => row.key_id))];
+      await this.db
+        .prepare(
+          `INSERT INTO expiration_sweeps (domain, key_id, due_at)
+           SELECT 'dumps', value, 0 FROM json_each(?)
+           WHERE true
+           ON CONFLICT (domain, key_id) DO UPDATE SET
+             due_at = 0,
+             revision = expiration_sweeps.revision + 1`,
+        )
+        .bind(JSON.stringify(keyIds))
+        .run();
+    }
+    const complete = results.length < limit;
+    const nextRowId = results.at(-1)?.rowid ?? state.next_dump_rowid;
+    await this.db
+      .prepare('UPDATE expiration_sweep_backfill SET next_dump_rowid = ?, complete = ? WHERE id = 1')
+      .bind(nextRowId, complete ? 1 : 0)
+      .run();
+    return complete;
+  }
+
   async schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {
     await this.db
       .prepare(
@@ -422,7 +559,7 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
          WHERE (domain, key_id) = (
            SELECT domain, key_id FROM expiration_sweeps
            WHERE due_at <= ? AND (claim_token IS NULL OR claimed_at < ?)
-           ORDER BY due_at, domain, key_id
+           ORDER BY due_at, key_id, domain
            LIMIT 1
          )`,
       )

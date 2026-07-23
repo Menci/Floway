@@ -1,12 +1,12 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { expect, test } from 'vitest';
 
 import { FileDumpStore } from './dump-store.ts';
 import { initRepo } from './index.ts';
-import { sweepSpilledFiles } from './spilled-files.ts';
+import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import type { DumpWriteRecord } from '../dump/types.ts';
@@ -201,13 +201,15 @@ test('FileDumpStore applies retention immediately and retires exact expired file
     const left = await store.list('key_x', { limit: 10 });
     assertEquals(left.map(m => m.id), ['01HZZ0000000000000000000A2']);
     assertEquals(await store.deleteExpiredBatch('key_x', now + 1, 100), 1);
-    await sweepSpilledFiles(now + 1);
+    await collectSpilledFiles(now + 1);
   } finally {
     Date.now = originalNow;
   }
 
-  const remainingFiles = await files.listKeys('dumps/v1/key_x/');
-  assertEquals(remainingFiles.every(k => !k.includes('2026060109')), true);
+  const { results: remainingFiles } = await db
+    .prepare("SELECT file_key FROM spilled_files WHERE state = 'owned' ORDER BY file_key")
+    .all<{ file_key: string }>();
+  assertEquals(remainingFiles.every(row => !row.file_key.includes('2026060109')), true);
 });
 
 test('growing dump retention can reveal a row not yet physically deleted', async () => {
@@ -229,7 +231,7 @@ test('growing dump retention can reveal a row not yet physically deleted', async
   }
 });
 
-test('FileDumpStore disable hides rows before bounded deletion and exact collection', async () => {
+test('FileDumpStore purgeAll deletes owner rows before exact file collection', async () => {
   const db = await openDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
@@ -241,9 +243,9 @@ test('FileDumpStore disable hides rows before bounded deletion and exact collect
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
   await store.purgeAll('key_x');
   assertEquals((await store.list('key_x', { limit: 10 })).length, 0);
-  assertEquals(await store.deleteExpiredBatch('key_x', Date.now(), 100), 2);
-  await sweepSpilledFiles(Date.now());
-  assertEquals((await files.listKeys('dumps/v1/key_x/')).length, 0);
+  assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE key_id = ?').bind('key_x').first<{ count: number }>())?.count, 0);
+  await collectSpilledFiles(Date.now());
+  assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>())?.count, 0);
 });
 
 test('a losing dump write leaves only its nonce-owned staged files collectible', async () => {
@@ -260,7 +262,7 @@ test('a losing dump write leaves only its nonce-owned staged files collectible',
   expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(2);
   expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(2);
 
-  await sweepSpilledFiles(Date.now() + 60 * 60 * 1000 + 1);
+  await collectSpilledFiles(Date.now() + 60 * 60 * 1000 + 1);
   expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(0);
   expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(2);
   assertExists(await store.get('key_x', record.meta.id));
@@ -272,7 +274,7 @@ test('FileDumpStore.purgeExpired against a never-written key resolves without th
   const store = new FileDumpStore(db, files);
   await store.purgeExpired('never_written_key', 3600);
   assertEquals((await store.list('never_written_key', { limit: 10 })).length, 0);
-  assertEquals((await files.listKeys('dumps/v1/never_written_key/')).length, 0);
+  assertEquals((await db.prepare("SELECT COUNT(*) AS count FROM dump_records WHERE key_id = 'never_written_key'").first<{ count: number }>())?.count, 0);
 });
 
 // Smoke test: drive FileDumpStore against a real-filesystem FileProvider so a
@@ -296,28 +298,8 @@ class TmpDirFileProvider implements FileProvider {
       throw e;
     }
   }
-  async deletePrefix(prefix: string): Promise<void> {
-    if (prefix === '') throw new Error('refusing empty prefix');
-    await rm(this.pathFor(prefix), { recursive: true, force: true });
-  }
   async deleteKeys(keys: readonly string[]): Promise<void> {
     await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
-  }
-  async listKeys(prefix: string): Promise<string[]> {
-    let entries;
-    try {
-      entries = await readdir(this.pathFor(prefix), { withFileTypes: true, recursive: true });
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT' || code === 'ENOTDIR') return [];
-      throw e;
-    }
-    const out: string[] = [];
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      out.push(relative(this.root, join(entry.parentPath, entry.name)).split(sep).join('/'));
-    }
-    return out;
   }
   private pathFor(key: string): string {
     return resolve(this.root, ...key.split('/'));

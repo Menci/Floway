@@ -273,7 +273,7 @@ export class FileDumpStore implements DumpStore {
   }
 
   async purgeAll(keyId: string): Promise<void> {
-    await this.scheduleExpiration(keyId);
+    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
   }
 
   async purgeExpired(keyId: string, _retentionSeconds: number): Promise<void> {
@@ -293,26 +293,43 @@ export class FileDumpStore implements DumpStore {
   }
 
   async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {
-    const result = await this.db
+    const active = await this.db
       .prepare(
         `DELETE FROM dump_records WHERE rowid IN (
            SELECT records.rowid
-           FROM dump_records AS records
-           LEFT JOIN api_keys ON api_keys.id = records.key_id
-           WHERE records.key_id = ?
-             AND (
-               api_keys.id IS NULL
-               OR api_keys.deleted_at IS NOT NULL
-               OR api_keys.dump_retention_seconds IS NULL
-               OR records.created_at < ? - api_keys.dump_retention_seconds * 1000
-             )
+           FROM api_keys
+           CROSS JOIN dump_records AS records
+           WHERE api_keys.id = ?
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.dump_retention_seconds IS NOT NULL
+             AND records.key_id = api_keys.id
+             AND records.created_at < ? - api_keys.dump_retention_seconds * 1000
            ORDER BY records.created_at, records.rowid
            LIMIT ?
          )`,
       )
       .bind(keyId, now, limit)
       .run();
-    return result.meta.changes ?? 0;
+    const activeDeleted = active.meta.changes ?? 0;
+    if (activeDeleted >= limit) return activeDeleted;
+    const inactive = await this.db
+      .prepare(
+        `DELETE FROM dump_records WHERE rowid IN (
+           SELECT records.rowid FROM dump_records AS records
+           WHERE records.key_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM api_keys
+               WHERE api_keys.id = records.key_id
+                 AND api_keys.deleted_at IS NULL
+                 AND api_keys.dump_retention_seconds IS NOT NULL
+             )
+           ORDER BY records.created_at, records.rowid
+           LIMIT ?
+         )`,
+      )
+      .bind(keyId, limit - activeDeleted)
+      .run();
+    return activeDeleted + (inactive.meta.changes ?? 0);
   }
 
   async findOldestCreatedAt(keyId: string): Promise<number | null> {

@@ -614,8 +614,18 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     for (const item of items) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
-      if (existing !== undefined && existing.refreshedAt >= activeAfter) assertSameStoredResponsesItem(item, existing);
-      else pending.set(key, item);
+      const policy = await this.apiKeys.getById(item.apiKeyId);
+      if (policy !== null && policy.responsesRetentionSeconds === 0) {
+        throw new Error(`Responses persistence is disabled for API key: ${item.apiKeyId}`);
+      }
+      const currentActive = existing !== undefined
+        && policy !== null
+        && existing.refreshedAt >= responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds);
+      if (existing !== undefined && (existing.refreshedAt >= activeAfter || currentActive)) {
+        assertSameStoredResponsesItem(item, existing);
+      } else {
+        pending.set(key, item);
+      }
     }
     for (const [key, item] of pending) this.store.set(key, cloneStoredResponsesItem(item));
     for (const item of items) {
@@ -626,7 +636,15 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
 
   async refreshMany(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[], refreshedAt: number, activeAfter: number): Promise<void> {
     const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
-    const missingIndex = existing.findIndex(item => item === undefined || item.refreshedAt < activeAfter);
+    const currentPolicies = await Promise.all(items.map(async item => await this.apiKeys.getById(item.apiKeyId)));
+    const missingIndex = existing.findIndex((item, index) => {
+      if (item === undefined || item.refreshedAt < activeAfter) return true;
+      const policy = currentPolicies[index];
+      return policy !== null && (
+        policy.responsesRetentionSeconds === 0
+        || item.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds)
+      );
+    });
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
     }
@@ -731,6 +749,10 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
     return `${domain}\0${keyId}`;
   }
 
+  backfillDumpKeys(): Promise<boolean> {
+    return Promise.resolve(true);
+  }
+
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {
     const key = this.key(domain, keyId);
     const existing = this.rows.get(key);
@@ -743,7 +765,7 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
   claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null> {
     const row = [...this.rows.values()]
       .filter(candidate => candidate.dueAt <= now && (candidate.claimToken === null || candidate.claimedAt! < staleClaimedBefore))
-      .toSorted((a, b) => a.dueAt - b.dueAt || a.domain.localeCompare(b.domain) || a.keyId.localeCompare(b.keyId))[0];
+      .toSorted((a, b) => a.dueAt - b.dueAt || a.keyId.localeCompare(b.keyId) || a.domain.localeCompare(b.domain))[0];
     if (row === undefined) return Promise.resolve(null);
     row.claimToken = token;
     row.claimedAt = now;

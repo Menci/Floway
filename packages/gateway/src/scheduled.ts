@@ -1,5 +1,5 @@
 import { sweepExpirations } from './repo/expiration-sweeps.ts';
-import { sweepSpilledFiles } from './repo/spilled-files.ts';
+import { collectSpilledFiles } from './repo/spilled-files.ts';
 import { getImageCacheStore } from '@floway-dev/platform';
 
 const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boolean> => {
@@ -15,6 +15,6 @@ const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<boole
 export const runScheduledMaintenance = async (): Promise<void> => {
   const nowMs = Date.now();
   await runSweep('expirations.sweep', () => sweepExpirations(nowMs));
-  await runSweep('spilledFiles.sweep', () => sweepSpilledFiles(nowMs));
+  await runSweep('spilledFiles.collect', () => collectSpilledFiles(nowMs));
   await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(nowMs));
 };

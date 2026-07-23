@@ -25,7 +25,8 @@ export interface DumpStore {
 
   get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null>;
 
-  // Schedule every record for bounded deletion. Idempotent.
+  // Delete every owner row immediately. File deletion remains asynchronous
+  // through the shared spill collector. Idempotent.
   purgeAll(keyId: string): Promise<void>;
 
   // Schedule records outside the current retention for bounded deletion.
