@@ -180,13 +180,15 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
 
   constructor(private readonly expirationSweeps: ExpirationSweepsRepo) {}
 
-  private async schedulePolicyChanges(previous: ApiKey, next: ApiKey): Promise<void> {
+  private schedulePolicyChanges(previous: ApiKey, next: ApiKey): Promise<void> {
+    const schedules: Promise<void>[] = [];
     if (previous.responsesRetentionSeconds !== next.responsesRetentionSeconds || previous.deletedAt !== next.deletedAt) {
-      await this.expirationSweeps.schedule('responses', next.id, 0);
+      schedules.push(this.expirationSweeps.schedule('responses', next.id, 0));
     }
     if (previous.dumpRetentionSeconds !== next.dumpRetentionSeconds || previous.deletedAt !== next.deletedAt) {
-      await this.expirationSweeps.schedule('dumps', next.id, 0);
+      schedules.push(this.expirationSweeps.schedule('dumps', next.id, 0));
     }
+    return Promise.all(schedules).then(() => undefined);
   }
 
   list(): Promise<ApiKey[]> {
@@ -218,50 +220,79 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
   async save(key: ApiKey): Promise<void> {
     const i = this.keys.findIndex(k => k.id === key.id);
     if (i >= 0) {
-      await this.schedulePolicyChanges(this.keys[i], key);
+      const previous = this.keys[i];
       this.keys[i] = { ...key };
+      try {
+        await this.schedulePolicyChanges(previous, key);
+      } catch (error) {
+        this.keys[i] = previous;
+        throw error;
+      }
     } else this.keys.push({ ...key });
   }
 
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const i = this.keys.findIndex(key => key.id === id && key.deletedAt === null);
     if (i < 0) return null;
-    const next = { ...this.keys[i], ...patch };
-    await this.schedulePolicyChanges(this.keys[i], next);
+    const previous = this.keys[i];
+    const next = { ...previous, ...patch };
     this.keys[i] = next;
+    try {
+      await this.schedulePolicyChanges(previous, next);
+    } catch (error) {
+      this.keys[i] = previous;
+      throw error;
+    }
     return { ...next };
   }
 
   async softDelete(id: string): Promise<boolean> {
     const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
     if (i < 0) return false;
-    const next = { ...this.keys[i], deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 };
-    await this.schedulePolicyChanges(this.keys[i], next);
+    const previous = this.keys[i];
+    const next = { ...previous, deletedAt: new Date().toISOString(), responsesRetentionSeconds: 0 };
     this.keys[i] = next;
+    try {
+      await this.schedulePolicyChanges(previous, next);
+    } catch (error) {
+      this.keys[i] = previous;
+      throw error;
+    }
     return true;
   }
 
   async softDeleteByUserId(userId: number): Promise<number> {
     const now = new Date().toISOString();
-    const updates: Array<{ index: number; next: ApiKey }> = [];
+    const updates: Array<{ index: number; previous: ApiKey; next: ApiKey }> = [];
     for (let i = 0; i < this.keys.length; i++) {
       const k = this.keys[i];
       if (k.userId === userId && k.deletedAt === null) {
         const next = { ...k, deletedAt: now, responsesRetentionSeconds: 0 };
-        await this.schedulePolicyChanges(k, next);
-        updates.push({ index: i, next });
+        updates.push({ index: i, previous: k, next });
       }
     }
     for (const update of updates) this.keys[update.index] = update.next;
+    try {
+      await Promise.all(updates.map(update => this.schedulePolicyChanges(update.previous, update.next)));
+    } catch (error) {
+      for (const update of updates) this.keys[update.index] = update.previous;
+      throw error;
+    }
     return updates.length;
   }
 
   async deleteAll(): Promise<void> {
-    for (const key of this.keys) {
-      await this.expirationSweeps.schedule('responses', key.id, 0);
-      await this.expirationSweeps.schedule('dumps', key.id, 0);
-    }
+    const previous = this.keys;
     this.keys = [];
+    try {
+      await Promise.all(previous.flatMap(key => [
+        this.expirationSweeps.schedule('responses', key.id, 0),
+        this.expirationSweeps.schedule('dumps', key.id, 0),
+      ]));
+    } catch (error) {
+      this.keys = previous;
+      throw error;
+    }
   }
 }
 
@@ -606,7 +637,10 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
 class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   private store = new Map<string, StoredResponsesItem>();
 
-  constructor(private readonly apiKeys: ApiKeyRepo) {}
+  constructor(
+    private readonly apiKeys: ApiKeyRepo,
+    private readonly expirationSweeps: ExpirationSweepsRepo,
+  ) {}
 
   lookupMany(apiKeyId: string, ids: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
     const rows: StoredResponsesItem[] = [];
@@ -634,6 +668,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
 
   async insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void> {
     const pending = new Map<string, StoredResponsesItem>();
+    const dueByApiKey = new Map<string, number>();
     for (const item of items) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
@@ -649,11 +684,29 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       } else {
         pending.set(key, item);
       }
+      const refreshedAt = Math.max(existing?.refreshedAt ?? item.refreshedAt, item.refreshedAt);
+      const dueAt = refreshedAt + policy.responsesRetentionSeconds * 1000 + 1;
+      dueByApiKey.set(item.apiKeyId, Math.min(dueByApiKey.get(item.apiKeyId) ?? dueAt, dueAt));
+    }
+    const previous = new Map<string, StoredResponsesItem | undefined>();
+    for (const item of items) {
+      const key = scopedResponsesKey(item.apiKeyId, item.id);
+      if (!previous.has(key)) previous.set(key, this.store.has(key) ? cloneStoredResponsesItem(this.store.get(key)!) : undefined);
     }
     for (const [key, item] of pending) this.store.set(key, cloneStoredResponsesItem(item));
     for (const item of items) {
       const stored = this.store.get(scopedResponsesKey(item.apiKeyId, item.id))!;
       stored.refreshedAt = Math.max(stored.refreshedAt, item.refreshedAt);
+    }
+    try {
+      await Promise.all([...dueByApiKey].map(([apiKeyId, dueAt]) =>
+        this.expirationSweeps.schedule('responses', apiKeyId, dueAt)));
+    } catch (error) {
+      for (const [key, item] of previous) {
+        if (item === undefined) this.store.delete(key);
+        else this.store.set(key, item);
+      }
+      throw error;
     }
   }
 
@@ -670,9 +723,25 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
     }
+    const dueByApiKey = new Map<string, number>();
     for (let index = 0; index < existing.length; index += 1) {
       assertSameStoredResponsesItem(items[index], existing[index]!);
-      existing[index]!.refreshedAt = Math.max(existing[index]!.refreshedAt, refreshedAt);
+      const nextRefreshedAt = Math.max(existing[index]!.refreshedAt, refreshedAt);
+      const policy = currentPolicies[index]!;
+      const dueAt = nextRefreshedAt + policy.responsesRetentionSeconds * 1000 + 1;
+      dueByApiKey.set(items[index].apiKeyId, Math.min(dueByApiKey.get(items[index].apiKeyId) ?? dueAt, dueAt));
+    }
+    const previous = new Map(existing.map(item => {
+      const row = item!;
+      return [scopedResponsesKey(row.apiKeyId, row.id), cloneStoredResponsesItem(row)] as const;
+    }));
+    for (const item of existing) item!.refreshedAt = Math.max(item!.refreshedAt, refreshedAt);
+    try {
+      await Promise.all([...dueByApiKey].map(([apiKeyId, dueAt]) =>
+        this.expirationSweeps.schedule('responses', apiKeyId, dueAt)));
+    } catch (error) {
+      for (const [key, item] of previous) this.store.set(key, item);
+      throw error;
     }
   }
 
@@ -707,7 +776,10 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
 class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   private store = new Map<string, StoredResponsesSnapshot>();
 
-  constructor(private readonly apiKeys: ApiKeyRepo) {}
+  constructor(
+    private readonly apiKeys: ApiKeyRepo,
+    private readonly expirationSweeps: ExpirationSweepsRepo,
+  ) {}
 
   lookup(apiKeyId: string, id: string, activeAfter: number): Promise<StoredResponsesSnapshot | null> {
     const snapshot = this.store.get(scopedResponsesKey(apiKeyId, id));
@@ -725,6 +797,17 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     const existing = this.store.get(key);
     if (existing === undefined || snapshot.refreshedAt >= existing.refreshedAt) {
       this.store.set(key, cloneStoredResponsesSnapshot(snapshot));
+      try {
+        await this.expirationSweeps.schedule(
+          'responses',
+          snapshot.apiKeyId,
+          snapshot.refreshedAt + policy.responsesRetentionSeconds * 1000 + 1,
+        );
+      } catch (error) {
+        if (existing === undefined) this.store.delete(key);
+        else this.store.set(key, existing);
+        throw error;
+      }
     }
   }
 
@@ -779,8 +862,8 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
     return `${domain}\0${keyId}`;
   }
 
-  backfillDumpKeys(): Promise<boolean> {
-    return Promise.resolve(true);
+  backfillDumpKeys(): Promise<void> {
+    return Promise.resolve();
   }
 
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {
@@ -1166,8 +1249,8 @@ export class InMemoryRepo implements Repo {
     this.proxies = new MemoryProxyRepo(this.upstreams);
     this.proxyBackoffs = new MemoryProxyBackoffRepo();
     this.modelAliases = new MemoryModelAliasesRepo();
-    this.responsesItems = new MemoryResponsesItemsRepo(this.apiKeys);
-    this.responsesSnapshots = new MemoryResponsesSnapshotsRepo(this.apiKeys);
+    this.responsesItems = new MemoryResponsesItemsRepo(this.apiKeys, this.expirationSweeps);
+    this.responsesSnapshots = new MemoryResponsesSnapshotsRepo(this.apiKeys, this.expirationSweeps);
     this.spilledFiles = new MemorySpilledFilesRepo();
     this.agentSetup = new MemoryAgentSetupRepo();
   }

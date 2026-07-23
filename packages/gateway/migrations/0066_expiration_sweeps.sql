@@ -127,6 +127,10 @@ BEGIN
     AND json_type(NEW.response_body_descriptor, '$.key') IS NOT 'text'
   THEN RAISE(ABORT, 'Dump response body file key must be text') END;
 
+  -- Migrations run before the new Worker is published, so an old writer may
+  -- still insert its deterministic path without a staged ledger row. Only the
+  -- exact path derived from that row is bridged; nonce paths remain staging-only,
+  -- and a collector claim always wins.
   SELECT CASE WHEN NEW.request_body_descriptor IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM spilled_files
     WHERE file_key = json_extract(NEW.request_body_descriptor, '$.key')

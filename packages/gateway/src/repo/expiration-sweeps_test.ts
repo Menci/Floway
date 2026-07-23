@@ -303,7 +303,7 @@ test('bounded dump backfill schedules rows whose API key was hard-removed', asyn
   await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
   await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
 
-  expect(await repo.expirationSweeps.backfillDumpKeys(500)).toBe(true);
+  await repo.expirationSweeps.backfillDumpKeys(500);
   expect(await db.prepare(
     "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
   ).first<{ due_at: number }>()).toEqual({ due_at: 0 });

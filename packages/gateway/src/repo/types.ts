@@ -427,7 +427,7 @@ export type ExpirationSweepCompletion =
   | { kind: 'partial'; retryAt: number };
 
 export interface ExpirationSweepsRepo {
-  backfillDumpKeys(limit: number): Promise<boolean>;
+  backfillDumpKeys(limit: number): Promise<void>;
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void>;
   claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null>;
   complete(token: string, expectedRevision: number, completion: ExpirationSweepCompletion): Promise<void>;

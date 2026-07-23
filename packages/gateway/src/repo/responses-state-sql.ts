@@ -1,5 +1,6 @@
 import { assertSameStoredResponsesItem, scopedResponsesKey } from './responses-clone.ts';
 import { hashResponsesJson } from './responses-hash.ts';
+import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import {
   prepareStoredResponsesPayload,
   writePreparedStoredResponsesPayload,
@@ -18,7 +19,6 @@ const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, payload_json, item_hash, payload
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 80;
 const RESPONSES_INSERT_CHUNK_SIZE = 14;
 const RESPONSES_REFRESH_CHUNK_SIZE = 45;
-const FILE_STAGE_GRACE_MS = 60 * 60 * 1000;
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -120,14 +120,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       } catch (error) {
         const current = await this.db
           .prepare(
-            `SELECT
-               responses_items.id,
-               responses_items.api_key_id,
-               responses_items.payload_json,
-               responses_items.content_hash,
-               responses_items.payload_file_key,
-               responses_items.refreshed_at
-             FROM responses_items
+            `SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items
              WHERE id = ? AND api_key_id = ? AND refreshed_at >= ?`,
           )
           .bind(row.id, row.api_key_id, activeAfter)
@@ -229,7 +222,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
            ?
          FROM json_each(?)`,
       )
-      .bind(Date.now() + FILE_STAGE_GRACE_MS, JSON.stringify(files))
+      .bind(Date.now() + SPILLED_FILE_STAGE_GRACE_MS, JSON.stringify(files))
       .run();
   }
 

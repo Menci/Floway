@@ -1,4 +1,5 @@
 import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
+import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
@@ -67,11 +68,8 @@ const hourBucket = (ms: number): string => {
   return `${y}${m}${d}${h}`;
 };
 
-const bucketPrefix = (keyId: string, bucket: string): string => `${ROOT}/${keyId}/${bucket}/`;
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
-  `${bucketPrefix(keyId, bucket)}${recordId}-${crypto.randomUUID()}.${side}.gz`;
-
-const FILE_STAGE_GRACE_MS = 60 * 60 * 1000;
+  `${ROOT}/${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
 
 const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
   const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
@@ -147,7 +145,7 @@ export class FileDumpStore implements DumpStore {
              ?
            FROM json_each(?)`,
         )
-        .bind(keyId, record.meta.id, Date.now() + FILE_STAGE_GRACE_MS, JSON.stringify(staged))
+        .bind(keyId, record.meta.id, Date.now() + SPILLED_FILE_STAGE_GRACE_MS, JSON.stringify(staged))
         .run();
     }
     const requestDescriptor = record.request.body.decodedByteLength === 0

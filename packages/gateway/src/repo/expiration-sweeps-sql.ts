@@ -9,12 +9,12 @@ import type { SqlDatabase } from '@floway-dev/platform';
 export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   constructor(private readonly db: SqlDatabase) {}
 
-  async backfillDumpKeys(limit: number): Promise<boolean> {
+  async backfillDumpKeys(limit: number): Promise<void> {
     const state = await this.db
       .prepare('SELECT next_dump_rowid, complete FROM expiration_sweep_backfill WHERE id = 1')
       .first<{ next_dump_rowid: number; complete: number }>();
     if (state === null) throw new Error('expiration_sweep_backfill singleton row missing');
-    if (state.complete !== 0) return true;
+    if (state.complete !== 0) return;
 
     const { results } = await this.db
       .prepare('SELECT rowid, key_id FROM dump_records WHERE rowid > ? ORDER BY rowid LIMIT ?')
@@ -27,9 +27,7 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
           `INSERT INTO expiration_sweeps (domain, key_id, due_at)
            SELECT 'dumps', value, 0 FROM json_each(?)
            WHERE true
-           ON CONFLICT (domain, key_id) DO UPDATE SET
-             due_at = 0,
-             revision = expiration_sweeps.revision + 1`,
+           ON CONFLICT (domain, key_id) DO NOTHING`,
         )
         .bind(JSON.stringify(keyIds))
         .run();
@@ -40,7 +38,6 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
       .prepare('UPDATE expiration_sweep_backfill SET next_dump_rowid = ?, complete = ? WHERE id = 1')
       .bind(nextRowId, complete ? 1 : 0)
       .run();
-    return complete;
   }
 
   async schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {
