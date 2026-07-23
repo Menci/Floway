@@ -881,6 +881,23 @@ test('import preserves a positive dumpRetentionSeconds on api keys', async () =>
   assertEquals(restored?.dumpRetentionSeconds, 3600);
 });
 
+test('v16 import preserves and validates Responses retention', async () => {
+  const { app, repo } = setup();
+  const retained = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, responsesRetentionSeconds: 7 * 24 * 60 * 60 }],
+  }));
+  assertEquals(retained.status, 200);
+  assertEquals((await repo.apiKeys.getById(KEY_A.id))?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
+
+  for (const value of [-1, 1, 3599, 315_360_001, 3600.5]) {
+    const invalid = await doImport(app, 'replace', latestImportData({
+      apiKeys: [{ ...KEY_A, responsesRetentionSeconds: value }],
+    }));
+    assertEquals(invalid.status, 400);
+    assertEquals(String(invalid.body.error).includes('responsesRetentionSeconds must be 0 or an integer'), true);
+  }
+});
+
 test('import rejects api keys whose dumpRetentionSeconds is out of range', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);

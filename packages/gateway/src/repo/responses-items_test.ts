@@ -83,7 +83,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await expect(repo.responsesItems.refreshMany([item], 4_000, 3_001)).rejects.toThrow('disappeared');
   });
 
-  test('deletes rows outside each key current policy without a visibility floor', async () => {
+  test('deletes rows outside each key current rolling policy', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = 10_000_000;
@@ -190,8 +190,19 @@ test('migration 0065 performs one direct cutover to disabled rolling state', asy
     expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
     expect(db.exec('SELECT * FROM responses_snapshots')[0]?.values ?? []).toEqual([]);
     expect(db.exec("SELECT responses_retention_seconds FROM api_keys WHERE id = 'key-a'")[0].values).toEqual([[0]]);
-    expect(db.exec('PRAGMA table_info(api_keys)')[0].values.map(row => row[1])).not.toContain('responses_state_visible_after');
-    expect(db.exec('PRAGMA table_info(api_keys)')[0].values.map(row => row[1])).not.toContain('responses_state_epoch');
+    expect(db.exec('PRAGMA table_info(api_keys)')[0].values.map(row => row[1])).toEqual([
+      'id',
+      'user_id',
+      'name',
+      'key',
+      'created_at',
+      'last_used_at',
+      'upstream_ids',
+      'deleted_at',
+      'dump_retention_seconds',
+      'server_secret',
+      'responses_retention_seconds',
+    ]);
     expect(db.exec('PRAGMA table_info(responses_items)')[0].values.map(row => row[1])).toEqual([
       'id',
       'api_key_id',
