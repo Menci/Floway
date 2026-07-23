@@ -230,7 +230,7 @@ const SEARCH_USAGE_2: SearchUsageRecord = {
 const STORED_RESPONSES_ITEM: StoredResponsesItem = {
   id: 'msg_producer',
   apiKeyId: 'key-a',
-  contentHash: 'stored-content-hash',
+  itemHash: 'stored-content-hash',
   payload: { item: { type: 'message', id: 'msg_producer', role: 'assistant', content: [] } },
   refreshedAt: 1_000,
 };

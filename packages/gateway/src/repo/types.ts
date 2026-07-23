@@ -371,7 +371,7 @@ export interface StoredResponsesItem {
   id: string;
   apiKeyId: string;
   payload: StoredResponsesItemPayload;
-  contentHash: string;
+  itemHash: string;
   refreshedAt: number;
 }
 
@@ -386,7 +386,7 @@ export interface StoredResponsesItemPayload {
 
 export interface ResponsesItemsRepo {
   lookupMany(apiKeyId: string, ids: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
-  lookupManyByContentHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
+  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
   insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void>;
   refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, activeAfter: number): Promise<void>;
   deleteExpired(now: number): Promise<number>;

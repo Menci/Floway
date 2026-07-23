@@ -390,7 +390,7 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
   await repo.responsesItems.insertMany([{
     id: previousMessageId,
     apiKeyId: API_KEY_ID,
-    contentHash: 'previous-message-hash',
+    itemHash: 'previous-message-hash',
     payload: { item: { type: 'message', id: previousMessageId, role: 'user', content: 'first turn' } },
     refreshedAt: Date.now(),
   }], 0);
@@ -437,7 +437,7 @@ test('expandPreviousResponseId resolves snapshots from a non-repo-backed store',
   const item: StoredResponsesItem = {
     id,
     apiKeyId: API_KEY_ID,
-    contentHash: 'memory-message-hash',
+    itemHash: 'memory-message-hash',
     payload: { item: { type: 'message', id, role: 'user', content: 'remembered' } },
     refreshedAt: 1_000,
   };

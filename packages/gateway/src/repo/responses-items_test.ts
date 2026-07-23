@@ -36,7 +36,7 @@ const storedItem = (
   id,
   apiKeyId,
   payload: { item: { type: 'message', id, role: 'assistant', content } },
-  contentHash: `hash-${content}`,
+  itemHash: `hash-${content}`,
   refreshedAt,
 });
 
@@ -62,7 +62,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
 
     expect(await repo.responsesItems.lookupMany('key-a', [old.id, current.id], 1_500)).toEqual([current]);
     expect(await repo.responsesItems.lookupMany('key-b', [current.id], 0)).toEqual([]);
-    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [current.contentHash], 0)).toEqual([current, old]);
+    expect(await repo.responsesItems.lookupManyByItemHash('key-a', [current.itemHash], 0)).toEqual([current, old]);
   });
 
   test('rejects a live producer-ID collision but replaces an expired row', async () => {
@@ -273,7 +273,7 @@ test('a collector claim prevents a staged file from being adopted', async () => 
 
   expect(() => db.prepare(
     `INSERT INTO responses_items
-     (id, api_key_id, payload_json, content_hash, payload_file_key, refreshed_at)
+     (id, api_key_id, payload_json, item_hash, payload_file_key, refreshed_at)
      VALUES ('msg-a', 'key-a', '{"version":1,"storage":"file","encoding":"gzip","sha256":"aa","byteLength":1}', 'hash', ?, 1)`,
   ).bind(fileKey).run()).toThrow('not staged');
 });
@@ -319,7 +319,7 @@ test('migration 0065 performs one direct cutover to disabled rolling state', asy
       'id',
       'api_key_id',
       'payload_json',
-      'content_hash',
+      'item_hash',
       'payload_hash',
       'payload_file_key',
       'refreshed_at',
