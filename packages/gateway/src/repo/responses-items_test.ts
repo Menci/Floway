@@ -866,47 +866,12 @@ test.each([
   }
 });
 
-test('migration 0065 invalidates all prior Responses state and installs the exact-item schema', async () => {
+test('migration 0065 installs final disabled retention state and leaves prior rows for bounded disposal', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0065_responses_producer_item_ids.sql') break;
-      db.run(sql);
-    }
-    db.run('INSERT INTO responses_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      ['msg_old', 'key-a', 'provider-a', 'msg_raw', 'message', '{}', 'hash', 1_000]);
-    db.run(
-      `INSERT INTO responses_snapshots
-        (id, api_key_id, item_ids_json, created_at)
-       VALUES (?, ?, ?, ?)`,
-      ['resp_old', 'key-a', '["msg_old"]', 1_000],
-    );
-
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0065_responses_producer_item_ids.sql');
-    if (migration === undefined) throw new Error('missing migration 0065_responses_producer_item_ids.sql');
-    db.run(migration[1]);
-
-    expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
-    expect(db.exec('SELECT * FROM responses_snapshots')[0]?.values ?? []).toEqual([]);
-    expect(db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1])).toEqual([
-      'id',
-      'api_key_id',
-      'payload_json',
-      'content_hash',
-      'created_at',
-    ]);
-  } finally {
-    db.close();
-  }
-});
-
-test('migration 0066 cuts over to empty retention tables without dropping populated prior state', async () => {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
-  try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0066_api_key_responses_retention.sql') break;
+      if (filename === '0065_api_key_responses_retention.sql') break;
       db.run(sql);
     }
     db.run(
@@ -915,15 +880,11 @@ test('migration 0066 cuts over to empty retention tables without dropping popula
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ['key-retention', 1, 'Retention', 'raw-retention', '11'.repeat(32), '2026-01-01T00:00:00Z', null, null, null, null],
     );
-    db.run(
-      `INSERT INTO responses_items
-        (id, api_key_id, payload_json, content_hash, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      ['msg_populated', 'key-retention', '{}', 'hash', 1_000],
-    );
+    db.run('INSERT INTO responses_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      ['msg_populated', 'key-retention', 'provider-a', 'msg_raw', 'message', '{}', 'hash', 1_000]);
 
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0066_api_key_responses_retention.sql');
-    if (migration === undefined) throw new Error('missing migration 0066_api_key_responses_retention.sql');
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0065_api_key_responses_retention.sql');
+    if (migration === undefined) throw new Error('missing migration 0065_api_key_responses_retention.sql');
     db.run(migration[1]);
 
     expect(db.exec('SELECT id FROM responses_items')[0].values).toEqual([['msg_populated']]);
