@@ -20,6 +20,7 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/responses-retention.ts';
 import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, UsageMetricRecord, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -49,7 +50,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 15;
+  version: 16;
   exportedAt: string;
   data: {
     users: User[];
@@ -64,7 +65,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 15;
+const EXPORT_VERSION = 16;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -259,6 +260,19 @@ const parseImportedDumpRetention = (value: unknown): number | null => {
   return value;
 };
 
+const parseImportedResponsesRetention = (value: unknown): number => {
+  if (
+    typeof value !== 'number'
+    || !Number.isInteger(value)
+    || (value !== 0 && (value < RESPONSES_RETENTION_MIN_SECONDS || value > RESPONSES_RETENTION_MAX_SECONDS))
+  ) {
+    throw new Error(
+      `responsesRetentionSeconds must be 0 or an integer from ${RESPONSES_RETENTION_MIN_SECONDS} to ${RESPONSES_RETENTION_MAX_SECONDS}`,
+    );
+  }
+  return value;
+};
+
 const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'apiKeys must be an array' };
 
@@ -287,6 +301,7 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
         upstreamIds: upstreamIdsParsed.value,
         deletedAt: record.deletedAt,
         dumpRetentionSeconds: parseImportedDumpRetention(record.dumpRetentionSeconds),
+        responsesRetentionSeconds: parseImportedResponsesRetention(record.responsesRetentionSeconds),
       });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
