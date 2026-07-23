@@ -43,6 +43,7 @@ const setup = (): Harness => {
     background,
     ctx: ({ apiKeyId = 'key_a', firstOutputTokenAt = null, upstreamCallStartedAt = null } = {}) => ({
       apiKeyId,
+      requestStartedAt: 0,
       upstreamIds: null,
       wantsStream: true,
       runtimeLocation: 'TEST',

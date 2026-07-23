@@ -102,7 +102,7 @@ const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredRes
     refreshedAt: Date.now(),
     ...itemOverrides,
   };
-  await repo.responsesItems.insertMany([row], 0);
+  await repo.responsesItems.insertMany([row], 0, Date.now());
   return row;
 };
 
@@ -122,7 +122,7 @@ test('generate native success leaves source-edge state ownership to the caller',
   }));
 
   const candidate = makeCandidate(callResponses);
-  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
   const ctx = makeGatewayCtx(store);
 
   const result = await responsesAttempt.generate({
@@ -162,7 +162,7 @@ test('generate treats a translated Responses payload as opaque to native affinit
     };
   });
   const candidate = makeCandidate(callResponses);
-  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
   const ctx = makeGatewayCtx(store);
   const carrier = await ctx.affinity.codec.wrap(
     undefined,
@@ -227,7 +227,7 @@ test('generate applies role compatibility flags in target-chain order', async ()
         { type: 'message', role: 'system', content: 'inline instructions' },
       ],
     }),
-    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false)),
+    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false)),
     candidate,
     headers: new Headers(),
   });
@@ -311,7 +311,7 @@ test('generate defers role promotion until after translation to Chat Completions
         { type: 'message', role: 'system', content: 'inline instructions' },
       ],
     }),
-    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false)),
+    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false)),
     candidate,
     headers: new Headers(),
   });
@@ -340,7 +340,7 @@ test('generate passes non-events provider result through unchanged', async () =>
   const candidate = makeCandidate(callResponses);
   const result = await responsesAttempt.generate({
     payload: makePayload(),
-    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true)),
     candidate,
     headers: new Headers(),
   });
@@ -381,7 +381,7 @@ test('compact returns the clean upstream result for source-edge affinity and sto
   });
 
   const candidate = makeCandidate(callResponses);
-  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
   const result = await responsesAttempt.invoke({
     payload: makePayload({
       input: [
@@ -454,7 +454,7 @@ test('generate inherits headers and injects external image loading across transl
         content: [{ type: 'input_image', image_url: 'https://example.com/image.png', detail: 'auto' }],
       }],
     }),
-    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true)),
     candidate,
     headers: new Headers({ 'x-test': 'abc' }),
   });
@@ -534,7 +534,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   });
   const candidate = makeCandidate(callResponses, new Set(['responses-web-search-shim']));
 
-  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
   await store.loadInputItems([{ type: 'web_search_call', id: storedId }], []);
   const ctx = makeGatewayCtx(store);
   const carrier = await ctx.affinity.codec.wrap(
@@ -611,7 +611,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
     headers: upstreamHeaders,
   }));
   const candidate = makeCandidate(callResponses);
-  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
   const result = await responsesAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(store),

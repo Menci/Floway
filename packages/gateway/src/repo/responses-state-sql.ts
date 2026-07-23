@@ -135,7 +135,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[], activeAfter: number, policyAt: number): Promise<void> {
     const unique = uniqueResponsesItems(items);
     const existing = await this.lookupExistingItems(unique, activeAfter);
     for (const item of unique) {
@@ -153,7 +153,6 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     for (const entry of prepared) await writePreparedStoredResponsesPayload(entry.payload);
 
     const statements: SqlPreparedStatement[] = [];
-    const policyAt = Date.now();
     for (let index = 0; index < prepared.length; index += RESPONSES_INSERT_CHUNK_SIZE) {
       const chunk = prepared.slice(index, index + RESPONSES_INSERT_CHUNK_SIZE);
       const values = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
@@ -208,7 +207,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       return actual.refreshedAt < item.refreshedAt;
     }), item => item.refreshedAt);
     for (const [refreshedAt, group] of refreshGroups) {
-      await this.refreshMany(group, refreshedAt, 0);
+      await this.refreshMany(group, refreshedAt, 0, policyAt);
     }
   }
 
@@ -246,6 +245,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     items: readonly StoredResponsesItem[],
     refreshedAt: number,
     activeAfter: number,
+    policyAt: number,
   ): Promise<void> {
     const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
     const idsByApiKey = Map.groupBy(
@@ -253,7 +253,6 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       item => item.apiKeyId,
     );
     const statements: SqlPreparedStatement[] = [];
-    const policyAt = Date.now();
     for (const [apiKeyId, scoped] of idsByApiKey) {
       const expected = await mapSequentially(scoped, async item => ({
         item,

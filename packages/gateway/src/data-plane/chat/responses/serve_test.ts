@@ -73,7 +73,7 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']) =>
   mockChatGatewayCtx({
     apiKeyId: API_KEY_ID,
     wantsStream: true,
-    store: store ?? createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true),
+    store: store ?? createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true),
   });
 
 const makePayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload => ({
@@ -393,7 +393,7 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
     itemHash: 'previous-message-hash',
     payload: { item: { type: 'message', id: previousMessageId, role: 'user', content: 'first turn' } },
     refreshedAt: Date.now(),
-  }], 0);
+  }], 0, Date.now());
   const snapshot: StoredResponsesSnapshot = {
     id: 'resp_prev',
     apiKeyId: API_KEY_ID,
@@ -402,7 +402,7 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
   };
   await repo.responsesSnapshots.insert(snapshot);
 
-  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+  const store = createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
   const expanded = await expandPreviousResponseId(
     makePayload({
       previous_response_id: 'resp_prev',
@@ -557,7 +557,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const payload = makePayload({ model: 'gpt-fast' });
   const result = await responsesServe.generate({
     payload,
-    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true)),
     headers: new Headers(),
   });
 
@@ -583,7 +583,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'gpt-fast' }),
-    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore({ id: API_KEY_ID, responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true)),
     headers: new Headers(),
   });
 

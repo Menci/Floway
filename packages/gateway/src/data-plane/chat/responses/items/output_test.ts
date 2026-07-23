@@ -31,7 +31,7 @@ const memoryOutputHarness = () => {
     upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
     responsesRetentionSeconds: 30 * 24 * 60 * 60,
   });
-  return { repo, store: createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true) };
+  return { repo, store: createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true) };
 };
 
 test('client output rewrites only the response id inside queued envelopes', async () => {
@@ -103,7 +103,7 @@ test('client output waits for persistence before publishing output_item.done', a
   vi.spyOn(repo.responsesItems, 'insertMany').mockImplementation(async (items, activeAfter) => {
     resolveInsertStarted();
     await insertReleased;
-    await insert(items, activeAfter);
+    await insert(items, activeAfter, Date.now());
   });
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });
@@ -146,7 +146,7 @@ test('client output does not publish output_item.done when persistence fails', a
 test('store=false passes the producer item id through without persistence', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
+  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false);
   const result: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -419,7 +419,7 @@ test('stateful output rejects a terminal item that never emitted output_item.don
 
 test('store=false forwards an id-less finalized item without persistence work', async () => {
   initRepo(new InMemoryRepo());
-  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
+  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false);
   const item = {
     type: 'message' as const,
     role: 'assistant' as const,

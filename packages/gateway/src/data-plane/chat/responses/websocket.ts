@@ -240,7 +240,7 @@ const handleClientMessage = async (
       method: 'WS',
       model: payload.model,
       backgroundScheduler,
-    }, apiKey => session.createStore(apiKey, payload.store ?? undefined));
+    }, (apiKey, requestStartedAt) => session.createStore(apiKey, requestStartedAt, payload.store ?? undefined));
 
     let result;
     try {

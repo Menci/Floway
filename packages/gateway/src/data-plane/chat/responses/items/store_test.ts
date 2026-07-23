@@ -26,7 +26,7 @@ const installRepo = (): InMemoryRepo => {
 describe('StatefulResponsesStore', () => {
   test('HTTP store=false performs no state writes', async () => {
     const repo = installRepo();
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false);
     expect(store.writesState).toBe(false);
 
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
@@ -37,7 +37,7 @@ describe('StatefulResponsesStore', () => {
   test('HTTP store=false skips snapshot staging for idless input', async () => {
     initRepo(new InMemoryRepo());
     const digest = vi.spyOn(crypto.subtle, 'digest');
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false);
 
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
 
@@ -47,7 +47,7 @@ describe('StatefulResponsesStore', () => {
 
   test('HTTP store=false still reads durably-stored items and snapshots', async () => {
     installRepo();
-    const writer = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const writer = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     const output = {
       id: 'msg_public',
       apiKeyId: 'key-a',
@@ -60,7 +60,7 @@ describe('StatefulResponsesStore', () => {
 
     // A store=false turn writes nothing but must still resolve a
     // previous_response_id and echoed item ids against durable state.
-    const reader = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
+    const reader = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false);
     expect(reader.writesState).toBe(false);
     expect((await reader.loadSnapshot('resp_saved'))?.itemIds).toEqual([output.id]);
     expect(reader.getItemById(output.id)).toMatchObject({ id: 'msg_public' });
@@ -68,7 +68,7 @@ describe('StatefulResponsesStore', () => {
 
   test('HTTP default stores complete input and output snapshots', async () => {
     const repo = installRepo();
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, undefined);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), undefined);
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     const output = {
       id: 'msg_public',
@@ -88,7 +88,7 @@ describe('StatefulResponsesStore', () => {
 
   test('replace snapshots persist only their output state', async () => {
     const repo = installRepo();
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     const input = { type: 'message' as const, role: 'user' as const, content: 'discarded history' };
     await store.stageInputItems([input]);
     const output = {
@@ -117,9 +117,9 @@ describe('StatefulResponsesStore', () => {
       itemHash: 'old-hash',
       refreshedAt: initialRefreshedAt,
     };
-    await repo.responsesItems.insertMany([item], 0);
+    await repo.responsesItems.insertMany([item], 0, Date.now());
     await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: initialRefreshedAt });
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     expect(await store.loadSnapshot('resp_old')).not.toBeNull();
     expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toHaveLength(1);
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_old', 0)).not.toBeNull();
@@ -142,11 +142,11 @@ describe('StatefulResponsesStore', () => {
       itemHash: 'current-day-hash',
       refreshedAt: TEST_DAY + 1_000,
     };
-    await repo.responsesItems.insertMany([item], 0);
+    await repo.responsesItems.insertMany([item], 0, Date.now());
     await repo.responsesSnapshots.insert({ id: 'resp_current_day', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: item.refreshedAt });
     const refreshItems = vi.spyOn(repo.responsesItems, 'refreshMany');
 
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     expect(await store.loadSnapshot('resp_current_day')).not.toBeNull();
     await store.commitSnapshot('resp_current_day_next', 'append', []);
 
@@ -157,7 +157,7 @@ describe('StatefulResponsesStore', () => {
     vi.useFakeTimers();
     vi.setSystemTime(TEST_DAY + DAY_MS - 1_000);
     const repo = installRepo();
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     const output = {
       id: 'msg_before_midnight',
       apiKeyId: 'key-a',
@@ -178,7 +178,7 @@ describe('StatefulResponsesStore', () => {
     vi.useFakeTimers();
     vi.setSystemTime(TEST_DAY + DAY_MS / 2);
     const repo = installRepo();
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     const directInput = { type: 'message' as const, id: 'msg_direct', role: 'user' as const, content: 'direct' };
     const hashedInput = { type: 'message' as const, role: 'user' as const, content: 'hashed' };
     const initialRefreshedAt = TEST_DAY - DAY_MS / 2;
@@ -196,7 +196,7 @@ describe('StatefulResponsesStore', () => {
       itemHash: await hashResponsesItemContent(hashedInput),
       refreshedAt: initialRefreshedAt,
     };
-    await repo.responsesItems.insertMany([directRow, hashedRow], 0);
+    await repo.responsesItems.insertMany([directRow, hashedRow], 0, Date.now());
     await store.loadInputItems([directInput, hashedInput], [directInput, hashedInput]);
     await store.stageInputItems([directInput, hashedInput]);
     await store.commitSnapshot('resp_reused', 'append', []);
@@ -210,7 +210,7 @@ describe('StatefulResponsesStore', () => {
     vi.useFakeTimers();
     vi.setSystemTime(TEST_DAY + DAY_MS / 2);
     const repo = installRepo();
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     const input = { type: 'message' as const, role: 'user' as const, content: 'future lifetime' };
     const futureRefreshedAt = TEST_DAY + DAY_MS + 60_000;
     const quantizedFutureRefreshedAt = quantizeResponsesRefreshedAt(futureRefreshedAt);
@@ -221,7 +221,7 @@ describe('StatefulResponsesStore', () => {
       itemHash: await hashResponsesItemContent(input),
       refreshedAt: futureRefreshedAt,
     };
-    await repo.responsesItems.insertMany([row], 0);
+    await repo.responsesItems.insertMany([row], 0, Date.now());
     await store.loadInputItems([input], [input]);
     await store.stageInputItems([input]);
     await store.commitSnapshot('resp_future', 'append', []);
@@ -232,7 +232,7 @@ describe('StatefulResponsesStore', () => {
 
   test('disable between output-item done and terminal skips durable snapshot creation', async () => {
     const repo = installRepo();
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     const output = {
       id: 'msg-before-disable',
       apiKeyId: 'key-a',
@@ -250,23 +250,23 @@ describe('StatefulResponsesStore', () => {
   test('WebSocket store=false retains socket-local state only', async () => {
     const repo = installRepo();
     const session = createResponsesWsSession();
-    const first = session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
+    const first = session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false);
     expect(first.writesState).toBe(true);
     await first.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     await first.commitSnapshot('resp_local', 'append', []);
 
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_local', 0)).toBeNull();
-    expect(await session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false).loadSnapshot('resp_local')).not.toBeNull();
+    expect(await session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false).loadSnapshot('resp_local')).not.toBeNull();
   });
 
   test('WebSocket store=true promotes every item referenced by a prior local snapshot', async () => {
     const repo = installRepo();
     const session = createResponsesWsSession();
-    const local = session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
+    const local = session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false);
     await local.stageInputItems([{ type: 'message', role: 'user', content: 'local' }]);
     await local.commitSnapshot('resp_local', 'append', []);
 
-    const durable = session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const durable = session.createStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     expect(await durable.loadSnapshot('resp_local')).not.toBeNull();
     await durable.stageInputItems([{ type: 'message', role: 'user', content: 'durable' }]);
     await durable.commitSnapshot('resp_durable', 'append', []);
@@ -278,7 +278,7 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('per-attempt private payloads reset on each beginAttempt', () => {
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
     store.beginAttempt(new Map([['item', { first: true }]]));
 
     expect(store.getPrivatePayload('item')).toEqual({ first: true });

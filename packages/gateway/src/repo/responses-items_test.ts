@@ -61,7 +61,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const old = storedItem('msg-old', atDay(1), 'same');
     const current = storedItem('msg-current', atDay(2), 'same');
     const foreign = storedItem('msg-foreign', atDay(2), 'same', 'key-b');
-    await repo.responsesItems.insertMany([old, current, foreign], 0);
+    await repo.responsesItems.insertMany([old, current, foreign], 0, Date.now());
 
     expect(await repo.responsesItems.lookupMany('key-a', [old.id, current.id], atDay(1, 1))).toEqual([current]);
     expect(await repo.responsesItems.lookupMany('key-b', [current.id], 0)).toEqual([]);
@@ -76,11 +76,11 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.save(apiKey());
     const original = storedItem('msg-collision', atDay(10), 'original');
     const replacement = storedItem('msg-collision', atDay(12), 'replacement');
-    await repo.responsesItems.insertMany([original], 0);
+    await repo.responsesItems.insertMany([original], 0, Date.now());
 
-    await expect(repo.responsesItems.insertMany([replacement], atDay(9))).rejects.toThrow('id collision');
+    await expect(repo.responsesItems.insertMany([replacement], atDay(9), Date.now())).rejects.toThrow('id collision');
     vi.setSystemTime(atDay(12, 1));
-    await expect(repo.responsesItems.insertMany([replacement], atDay(10, 1))).resolves.toBeUndefined();
+    await expect(repo.responsesItems.insertMany([replacement], atDay(10, 1), Date.now())).resolves.toBeUndefined();
     expect(await repo.responsesItems.lookupMany('key-a', [original.id], atDay(10, 1))).toEqual([replacement]);
   });
 
@@ -91,12 +91,12 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const repo = await makeRepo();
     await repo.apiKeys.save(apiKey());
     const item = storedItem('msg-refresh', atDay(10));
-    await repo.responsesItems.insertMany([item], 0);
+    await repo.responsesItems.insertMany([item], 0, Date.now());
 
-    await repo.responsesItems.refreshMany([item], atDay(11, 1_000), atDay(9));
-    await repo.responsesItems.refreshMany([item], atDay(11, DAY_MS - 1), atDay(9));
+    await repo.responsesItems.refreshMany([item], atDay(11, 1_000), atDay(9), Date.now());
+    await repo.responsesItems.refreshMany([item], atDay(11, DAY_MS - 1), atDay(9), Date.now());
     expect((await repo.responsesItems.lookupMany('key-a', [item.id], 0))[0].refreshedAt).toBe(atDay(11));
-    await expect(repo.responsesItems.refreshMany([item], atDay(12), atDay(11, 1))).rejects.toThrow('disappeared');
+    await expect(repo.responsesItems.refreshMany([item], atDay(12), atDay(11, 1), Date.now())).rejects.toThrow('disappeared');
   });
 
   test('deletes rows outside each key current rolling policy', async () => {
@@ -108,7 +108,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
     const expired = storedItem('msg-expired', responsesStateCutoff(now, RETENTION_SECONDS) - 1);
     const current = storedItem('msg-current', responsesStateCutoff(now, RETENTION_SECONDS));
-    await repo.responsesItems.insertMany([expired, current], 0);
+    await repo.responsesItems.insertMany([expired, current], 0, Date.now());
     await repo.responsesSnapshots.insert({ id: 'resp-expired', apiKeyId: 'key-a', itemIds: [expired.id], refreshedAt: expired.refreshedAt });
     await repo.responsesSnapshots.insert({ id: 'resp-current', apiKeyId: 'key-a', itemIds: [current.id], refreshedAt: current.refreshedAt });
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
@@ -149,10 +149,10 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const sevenDays = 7 * 24 * 60 * 60;
     await repo.apiKeys.save(apiKey(thirtyDays));
     const old = storedItem('msg-shrink-race', now - 20 * 24 * 60 * 60_000);
-    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays), Date.now());
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
 
-    await expect(repo.responsesItems.refreshMany([old], now, responsesStateCutoff(now, thirtyDays)))
+    await expect(repo.responsesItems.refreshMany([old], now, responsesStateCutoff(now, thirtyDays), Date.now()))
       .rejects.toThrow('disappeared');
     expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt)
       .toBe(quantizeResponsesRefreshedAt(old.refreshedAt));
@@ -166,12 +166,12 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const sevenDays = 7 * 24 * 60 * 60;
     await repo.apiKeys.save(apiKey(thirtyDays));
     const old = storedItem('msg-grow-race', now - 20 * 24 * 60 * 60_000, 'old');
-    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays), Date.now());
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
     const replacement = storedItem(old.id, now, 'replacement');
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: thirtyDays });
 
-    await expect(repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, sevenDays)))
+    await expect(repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, sevenDays), Date.now()))
       .rejects.toThrow('id collision');
     expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].payload).toEqual(old.payload);
   });
@@ -186,12 +186,12 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const sevenDays = 7 * RETENTION_SECONDS;
     await repo.apiKeys.save(apiKey(thirtyDays));
     const old = storedItem('msg-grow-refresh', now - 20 * DAY_MS);
-    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays), Date.now());
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
     const reused = { ...old, refreshedAt: now };
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: thirtyDays });
 
-    await repo.responsesItems.insertMany([reused], responsesStateCutoff(now, sevenDays));
+    await repo.responsesItems.insertMany([reused], responsesStateCutoff(now, sevenDays), Date.now());
 
     expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt)
       .toBe(quantizeResponsesRefreshedAt(now));
@@ -205,7 +205,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const sevenDays = 7 * 24 * 60 * 60;
     await repo.apiKeys.save(apiKey(thirtyDays));
     const old = storedItem('msg-grow-visible', now - 20 * 24 * 60 * 60_000);
-    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays), Date.now());
 
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
     expect(await repo.responsesItems.lookupMany('key-a', [old.id], responsesStateCutoff(now, sevenDays))).toEqual([]);
@@ -223,7 +223,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
     const item = storedItem('msg-disabled-race', now);
 
-    await expect(repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS))).rejects.toThrow();
+    await expect(repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS), Date.now())).rejects.toThrow();
     expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
   });
 
@@ -235,12 +235,13 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     vi.setSystemTime(now);
     await repo.apiKeys.save(apiKey());
     const item = storedItem('msg-disabled-same-day', now);
-    await repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS));
+    await repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS), Date.now());
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
 
     await expect(repo.responsesItems.insertMany(
       [{ ...item, refreshedAt: now + 1_000 }],
       responsesStateCutoff(now, RETENTION_SECONDS),
+      Date.now(),
     )).rejects.toThrow();
   });
 
@@ -252,12 +253,12 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     vi.setSystemTime(now);
     await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
     const original = storedItem('msg-reused', now - 2.5 * DAY_MS, 'original');
-    await repo.responsesItems.insertMany([original], responsesStateCutoff(now, 2 * RETENTION_SECONDS));
+    await repo.responsesItems.insertMany([original], responsesStateCutoff(now, 2 * RETENTION_SECONDS), Date.now());
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
     const replacement = storedItem(original.id, now, 'replacement');
-    await repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, RETENTION_SECONDS));
+    await repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, RETENTION_SECONDS), Date.now());
 
-    await expect(repo.responsesItems.refreshMany([original], now + 1, responsesStateCutoff(now, 2 * RETENTION_SECONDS)))
+    await expect(repo.responsesItems.refreshMany([original], now + 1, responsesStateCutoff(now, 2 * RETENTION_SECONDS), Date.now()))
       .rejects.toThrow('id collision');
     expect((await repo.responsesItems.lookupMany('key-a', [original.id], 0))[0]).toEqual({
       ...replacement,
@@ -270,13 +271,13 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const repo = await makeRepo();
     const now = Date.now();
     const missing = storedItem('msg-missing-key', now);
-    await expect(repo.responsesItems.insertMany([missing], 0)).rejects.toThrow();
+    await expect(repo.responsesItems.insertMany([missing], 0, Date.now())).rejects.toThrow();
 
     await repo.apiKeys.save(apiKey());
     const existing = storedItem('msg-deleted-key', now);
-    await repo.responsesItems.insertMany([existing], 0);
+    await repo.responsesItems.insertMany([existing], 0, Date.now());
     await repo.apiKeys.softDelete('key-a');
-    await expect(repo.responsesItems.refreshMany([existing], now + 1, 0)).rejects.toThrow('disappeared');
+    await expect(repo.responsesItems.refreshMany([existing], now + 1, 0, Date.now())).rejects.toThrow('disappeared');
   });
 });
 
@@ -291,7 +292,7 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   vi.setSystemTime(now);
   await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
   const item = storedItem('msg-spilled', now - 2.5 * DAY_MS, largeContent());
-  await repo.responsesItems.insertMany([item], 0);
+  await repo.responsesItems.insertMany([item], 0, Date.now());
   await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
 
   const owned = await db.prepare(
@@ -321,7 +322,7 @@ test('SQL performs no item or snapshot mutation after an earlier refresh in the 
   await repo.apiKeys.save(apiKey());
   const item = storedItem('msg-daily-refresh', atDay(10, 1_000));
   const snapshot = { id: 'resp-daily-refresh', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: atDay(10, 1_000) };
-  await repo.responsesItems.insertMany([item], 0);
+  await repo.responsesItems.insertMany([item], 0, Date.now());
   await repo.responsesSnapshots.insert(snapshot);
 
   const totalChanges = async (): Promise<number> => {
@@ -330,12 +331,12 @@ test('SQL performs no item or snapshot mutation after an earlier refresh in the 
     return row.value;
   };
   const beforeSameDayReuse = await totalChanges();
-  await repo.responsesItems.refreshMany([item], atDay(10, DAY_MS - 1), 0);
+  await repo.responsesItems.refreshMany([item], atDay(10, DAY_MS - 1), 0, Date.now());
   await repo.responsesSnapshots.insert({ ...snapshot, refreshedAt: atDay(10, DAY_MS - 1) });
   expect(await totalChanges()).toBe(beforeSameDayReuse);
 
   vi.setSystemTime(atDay(11, 1_000));
-  await repo.responsesItems.refreshMany([item], atDay(11, 1_000), 0);
+  await repo.responsesItems.refreshMany([item], atDay(11, 1_000), 0, Date.now());
   await repo.responsesSnapshots.insert({ ...snapshot, refreshedAt: atDay(11, 1_000) });
   expect(await totalChanges()).toBe(beforeSameDayReuse + 2);
 });

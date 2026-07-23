@@ -387,8 +387,8 @@ export interface StoredResponsesItemPayload {
 export interface ResponsesItemsRepo {
   lookupMany(apiKeyId: string, ids: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
   lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
-  insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void>;
-  refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, activeAfter: number): Promise<void>;
+  insertMany(items: readonly StoredResponsesItem[], activeAfter: number, policyAt: number): Promise<void>;
+  refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, activeAfter: number, policyAt: number): Promise<void>;
   deleteExpired(now: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
