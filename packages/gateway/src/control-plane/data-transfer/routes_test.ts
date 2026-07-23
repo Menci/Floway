@@ -423,7 +423,7 @@ test('import rejects any version other than the current one before deleting data
 
 test('import replace writes upstreams and clears replaced collections', async () => {
   const { app, repo } = setup();
-  await repo.apiKeys.save(KEY_A);
+  await repo.apiKeys.save({ ...KEY_A, responsesRetentionSeconds: 3600 });
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.searchUsage.set(SEARCH_USAGE_1);
