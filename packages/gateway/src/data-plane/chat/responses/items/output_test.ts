@@ -25,7 +25,7 @@ const completedReasoningItem: ResponsesOutputReasoning = Object.freeze({
 const memoryOutputHarness = () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  return { repo, store: createResponsesHttpStore('key-a', true) };
+  return { repo, store: createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true) };
 };
 
 test('client output rewrites only the response id inside queued envelopes', async () => {
@@ -81,10 +81,10 @@ test('client output preserves producer ids and persists the exact complete item 
   if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
   const publicItem = terminal.response.output[0];
   expect(publicItem.id).toBe('rs_upstream');
-  const rows = await repo.responsesItems.lookupMany('key-a', [publicItem.id!]);
+  const rows = await repo.responsesItems.lookupMany('key-a', [publicItem.id!], 0);
   expect(rows[0].payload.item).toEqual(publicItem);
   expect(rows[0].payload.item).toMatchObject({ encrypted_content: 'wrapped-affinity' });
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).not.toBeNull();
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0)).not.toBeNull();
 });
 
 test('client output waits for persistence before publishing output_item.done', async () => {
@@ -94,10 +94,10 @@ test('client output waits for persistence before publishing output_item.done', a
   const insertStarted = new Promise<void>(resolve => { resolveInsertStarted = resolve; });
   let releaseInsert!: () => void;
   const insertReleased = new Promise<void>(resolve => { releaseInsert = resolve; });
-  vi.spyOn(repo.responsesItems, 'insertMany').mockImplementation(async items => {
+  vi.spyOn(repo.responsesItems, 'insertMany').mockImplementation(async (items, activeAfter) => {
     resolveInsertStarted();
     await insertReleased;
-    await insert(items);
+    await insert(items, activeAfter);
   });
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });
@@ -118,7 +118,7 @@ test('client output waits for persistence before publishing output_item.done', a
     throw new Error('Expected completed output item');
   }
   const clientId = done.value.event.item.id!;
-  expect(await repo.responsesItems.lookupMany('key-a', [clientId])).toHaveLength(1);
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId], 0)).toHaveLength(1);
   await iterator.return?.(doneFrame());
 });
 
@@ -140,7 +140,7 @@ test('client output does not publish output_item.done when persistence fails', a
 test('store=false passes the producer item id through without persistence', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  const store = createResponsesHttpStore('key-a', false);
+  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
   const result: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -163,7 +163,7 @@ test('store=false passes the producer item id through without persistence', asyn
   expect(terminal.response.output[0].id).toBe('rs_upstream');
   const added = events.find(event => event.type === 'response.output_item.added');
   expect(added?.type === 'response.output_item.added' && added.item.id).toBe('rs_upstream');
-  expect(await repo.responsesItems.lookupMany('key-a', ['rs_upstream'])).toEqual([]);
+  expect(await repo.responsesItems.lookupMany('key-a', ['rs_upstream'], 0)).toEqual([]);
 });
 
 test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
@@ -199,8 +199,8 @@ test('client output uses one item id across lifecycle snapshots without committi
     return [];
   });
   expect(new Set(ids).size).toBe(1);
-  expect(await repo.responsesItems.lookupMany('key-a', ids.filter((id): id is string => typeof id === 'string'))).toHaveLength(1);
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+  expect(await repo.responsesItems.lookupMany('key-a', ids.filter((id): id is string => typeof id === 'string'), 0)).toHaveLength(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
 
 test('client output persists a completed item before forwarding an error event', async () => {
@@ -220,8 +220,8 @@ test('client output persists a completed item before forwarding an error event',
   }
 
   expect(clientId).toEqual(expect.any(String));
-  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toHaveLength(1);
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId!], 0)).toHaveLength(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
 
 test('client output does not persist a partial item without output_item.done', async () => {
@@ -241,8 +241,8 @@ test('client output does not persist a partial item without output_item.done', a
   }
 
   expect(clientId).toEqual(expect.any(String));
-  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toEqual([]);
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId!], 0)).toEqual([]);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
 
 test('client output persists completed items before rethrowing an iterator error', async () => {
@@ -265,8 +265,8 @@ test('client output persists completed items before rethrowing an iterator error
 
   await expect(collect()).rejects.toBe(upstreamError);
   expect(clientId).toEqual(expect.any(String));
-  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toHaveLength(1);
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId!], 0)).toHaveLength(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
 
 test('client output persists completed items when the source ends without a terminal event', async () => {
@@ -286,8 +286,8 @@ test('client output persists completed items when the source ends without a term
   }
 
   expect(clientId).toEqual(expect.any(String));
-  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toHaveLength(1);
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId!], 0)).toHaveLength(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
 
 test('client output persists a completed item when its consumer cancels', async () => {
@@ -309,8 +309,8 @@ test('client output persists a completed item when its consumer cancels', async 
   const clientId = first.value.event.item.id!;
   await iterator.return?.(doneFrame());
 
-  expect(await repo.responsesItems.lookupMany('key-a', [clientId])).toHaveLength(1);
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId], 0)).toHaveLength(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
 
 test('client output makes every finalized item durable before publishing its done frame', async () => {
@@ -347,13 +347,13 @@ test('client output makes every finalized item durable before publishing its don
       throw new Error('Expected finalized output item');
     }
     expect(next.value.event.item.id).toBe(item.id);
-    expect(await repo.responsesItems.lookupMany('key-a', [next.value.event.item.id!])).toHaveLength(1);
+    expect(await repo.responsesItems.lookupMany('key-a', [next.value.event.item.id!], 0)).toHaveLength(1);
   }
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 
   const terminal = await iterator.next();
   expect(terminal.value?.type === 'event' && terminal.value.event.type).toBe('response.completed');
-  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toHaveLength(items.length);
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toHaveLength(items.length);
 });
 
 test('client output refuses to persist an id-less upstream item', async () => {
@@ -407,13 +407,13 @@ test('stateful output rejects a terminal item that never emitted output_item.don
   };
 
   await expect(collect()).rejects.toThrow('terminal output_index 0 arrived before output_item.done');
-  expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toEqual([]);
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+  expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
 
 test('store=false forwards an id-less finalized item without persistence work', async () => {
   initRepo(new InMemoryRepo());
-  const store = createResponsesHttpStore('key-a', false);
+  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, false);
   const item = {
     type: 'message' as const,
     role: 'assistant' as const,
@@ -480,10 +480,10 @@ test('client output forwards terminal item drift while retaining the first done 
 
   await collect();
   expect(terminal?.output[0]).toMatchObject({ encrypted_content: 'terminal-blob' });
-  const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_public');
+  const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0);
   expect(snapshot).not.toBeNull();
   if (snapshot === null) throw new Error('Expected persisted snapshot');
-  expect((await repo.responsesItems.lookupMany('key-a', snapshot.itemIds))[0].payload.item)
+  expect((await repo.responsesItems.lookupMany('key-a', snapshot.itemIds, 0))[0].payload.item)
     .toMatchObject({ encrypted_content: 'done-blob' });
 });
 
@@ -512,7 +512,7 @@ test('client output forwards repeated done drift while retaining the first done 
   expect(publicItems).toHaveLength(2);
   expect(publicItems[0].id).toBe(publicItems[1].id);
   expect(publicItems[1]).toMatchObject({ summary: [{ type: 'summary_text', text: 'new' }] });
-  expect((await repo.responsesItems.lookupMany('key-a', [publicItems[0].id]))[0].payload.item).toMatchObject({
+  expect((await repo.responsesItems.lookupMany('key-a', [publicItems[0].id], 0))[0].payload.item).toMatchObject({
     summary: [{ type: 'summary_text', text: 'old' }],
   });
 });
@@ -554,7 +554,7 @@ test('later done and terminal views may omit id after first-done durability', as
   expect(doneItems).toEqual([first, later]);
   const terminal = events.at(-1);
   expect(terminal?.type === 'response.completed' && terminal.response.output).toEqual([later]);
-  expect((await repo.responsesItems.lookupMany('key-a', [first.id]))[0].payload.item).toEqual(first);
+  expect((await repo.responsesItems.lookupMany('key-a', [first.id], 0))[0].payload.item).toEqual(first);
 });
 
 test('snapshot output IDs follow output_index rather than done arrival order', async () => {
@@ -582,7 +582,7 @@ test('snapshot output IDs follow output_index rather than done arrival order', a
   })) if (frame.type === 'event' && frame.event.type === 'response.completed') terminal = frame.event.response;
   if (terminal === undefined) throw new Error('Expected terminal response');
 
-  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toEqual(
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toEqual(
     terminal.output.map(item => item.id),
   );
 });

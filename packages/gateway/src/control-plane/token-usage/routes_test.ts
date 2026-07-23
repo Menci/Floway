@@ -60,6 +60,7 @@ test('/api/token-usage self-by-key surfaces soft-deleted keys metadata to their 
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
   });
 
   const response = await requestApp(

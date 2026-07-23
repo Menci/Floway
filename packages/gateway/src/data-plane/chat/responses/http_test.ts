@@ -67,6 +67,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
   ...overrides,
 });
 
@@ -444,8 +445,8 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
   const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
   assertEquals(body.object, 'response.compaction');
   assert(isFlowayResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
-  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id), null);
-  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id)), []);
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id, 0), null);
+  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id), 0), []);
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {

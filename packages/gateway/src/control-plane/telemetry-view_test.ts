@@ -14,6 +14,7 @@ const stubKey = (overrides: Partial<ApiKey> & Pick<ApiKey, 'id' | 'userId'>): Ap
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
   ...overrides,
 });
 

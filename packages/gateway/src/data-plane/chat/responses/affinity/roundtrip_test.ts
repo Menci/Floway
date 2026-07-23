@@ -25,7 +25,7 @@ test('affinity selects the route while item storage preserves the exact producer
   const candidateA = modelCandidate('upstream-a');
   const candidateB = modelCandidate('upstream-b');
   const codec = new AffinityCodec('22'.repeat(32));
-  const store = createResponsesHttpStore('key-a', true);
+  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
   store.beginAttempt(new Map());
 
   const programOutput = {

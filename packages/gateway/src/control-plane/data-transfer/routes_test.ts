@@ -38,6 +38,7 @@ const KEY_A: ApiKey = {
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
 };
 
 const KEY_B: ApiKey = {
@@ -50,6 +51,7 @@ const KEY_B: ApiKey = {
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
+  responsesRetentionSeconds: 0,
 };
 
 const SEED_ADMIN: User = {
@@ -230,7 +232,7 @@ const STORED_RESPONSES_ITEM: StoredResponsesItem = {
   apiKeyId: 'key-a',
   contentHash: 'stored-content-hash',
   payload: { item: { type: 'message', id: 'msg_producer', role: 'assistant', content: [] } },
-  createdAt: 1_000,
+  refreshedAt: 1_000,
 };
 
 const PERFORMANCE_1: PerformanceTelemetryRecord = {
@@ -425,7 +427,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.searchUsage.set(SEARCH_USAGE_1);
-  await repo.responsesItems.insertMany([STORED_RESPONSES_ITEM]);
+  await repo.responsesItems.insertMany([STORED_RESPONSES_ITEM], 0);
   await repo.searchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'old' },
@@ -456,7 +458,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
   assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_2]);
-  assertEquals(await repo.responsesItems.lookupMany('key-a', [STORED_RESPONSES_ITEM.id]), []);
+  assertEquals(await repo.responsesItems.lookupMany('key-a', [STORED_RESPONSES_ITEM.id], 0), []);
   assertEquals(await repo.searchConfig.get(), {
     provider: 'microsoft-grounding',
     tavily: { apiKey: '' },

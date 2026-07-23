@@ -63,6 +63,7 @@ test('/api/performance/overview scopes to actor\'s keys in self-by-key mode', as
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -129,6 +130,7 @@ test('/api/performance/overview all-by-user view aggregates over every key', asy
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -171,6 +173,7 @@ test('/api/performance/overview keeps API-key data self-scoped in all-by-user vi
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -234,6 +237,7 @@ test('/api/performance/overview all-by-user userRows split rows per user', async
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -278,6 +282,7 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
   });
 
   const sample = {
@@ -507,6 +512,7 @@ test('/api/performance/overview self-by-key surfaces soft-deleted keys metadata 
     upstreamIds: null,
     deletedAt: null,
     dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
   });
 
   const response = await requestApp(

@@ -31,6 +31,6 @@ export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): Cha
   return {
     ...base,
     affinity,
-    store: overrides.store ?? createResponsesHttpStore(base.apiKeyId, false),
+    store: overrides.store ?? createResponsesHttpStore({ id: base.apiKeyId, responsesRetentionSeconds: 0 }, false),
   };
 };

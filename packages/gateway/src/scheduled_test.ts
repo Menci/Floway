@@ -63,22 +63,26 @@ test('runScheduledMaintenance keeps subsequent sweeps running when one top-level
   assertEquals(stubs.purgedExpired.some(c => c.keyId === keyA.id), true);
 });
 
-test('runScheduledMaintenance keeps spilled payloads when item-row deletion fails', async () => {
+test('runScheduledMaintenance still collects retired files when item-row deletion fails', async () => {
   const { repo } = await setupAppTest();
   const files = new MemoryFileProvider();
   initFileProvider(files);
   initImageCacheStore(noopImageCache);
   installDumpStubs(initDumpStore, initDumpBroker);
-  const key = 'responses-items/v1/expires/2000/01/01/00/key/item/payload.gz';
+  const key = 'responses-items/v2/objects/retired.gz';
   await files.put(key, new Uint8Array([1]));
-  const deletion = vi.spyOn(repo.responsesItems, 'deleteOlderThan').mockRejectedValue(new Error('item deletion failed'));
+  const deletion = vi.spyOn(repo.responsesItems, 'deleteExpired').mockRejectedValue(new Error('item deletion failed'));
+  const claim = vi.spyOn(repo.spilledFiles, 'claimCollectible').mockResolvedValue([key]);
+  const acknowledge = vi.spyOn(repo.spilledFiles, 'acknowledge').mockResolvedValue(1);
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
   try {
     await runScheduledMaintenance();
   } finally {
     deletion.mockRestore();
+    claim.mockRestore();
+    acknowledge.mockRestore();
     error.mockRestore();
   }
 
-  assertEquals(await files.get(key), new Uint8Array([1]));
+  assertEquals(await files.get(key), null);
 });
