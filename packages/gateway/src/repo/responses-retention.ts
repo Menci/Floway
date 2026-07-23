@@ -29,5 +29,8 @@ export const responsesStateCutoff = (activeAt: number, retentionSeconds: number)
       `Responses retention must be a whole-day integer from ${RESPONSES_RETENTION_MIN_SECONDS} to ${RESPONSES_RETENTION_MAX_SECONDS} seconds`,
     );
   }
+  // Stored refresh times are floored to UTC day boundaries. Extending the
+  // cutoff by that same bucket prevents quantization from expiring state
+  // before its exact last access plus the configured retention.
   return activeAt - retentionSeconds * 1000 - RESPONSES_REFRESH_GRANULARITY_MS;
 };
