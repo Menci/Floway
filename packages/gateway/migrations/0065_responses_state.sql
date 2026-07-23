@@ -11,7 +11,13 @@ CREATE TABLE api_keys_new (
   server_secret TEXT NOT NULL
     CHECK (length(server_secret) = 64 AND server_secret NOT GLOB '*[^0-9a-f]*'),
   responses_retention_seconds INTEGER NOT NULL DEFAULT 0
-    CHECK (responses_retention_seconds = 0 OR responses_retention_seconds BETWEEN 3600 AND 315360000)
+    CHECK (
+      responses_retention_seconds = 0
+      OR (
+        responses_retention_seconds BETWEEN 86400 AND 315360000
+        AND responses_retention_seconds % 86400 = 0
+      )
+    )
 );
 
 INSERT INTO api_keys_new (
@@ -81,7 +87,7 @@ CREATE TABLE responses_items (
   item_hash TEXT NOT NULL,
   payload_hash TEXT NOT NULL,
   payload_file_key TEXT,
-  refreshed_at INTEGER NOT NULL,
+  refreshed_at INTEGER NOT NULL CHECK (refreshed_at >= 0 AND refreshed_at % 86400000 = 0),
   CHECK (length(id) > 0),
   CHECK (length(api_key_id) > 0),
   CHECK (length(payload_json) > 0),
@@ -93,7 +99,7 @@ CREATE TABLE responses_snapshots (
   id TEXT NOT NULL,
   api_key_id TEXT NOT NULL,
   item_ids_json TEXT NOT NULL,
-  refreshed_at INTEGER NOT NULL,
+  refreshed_at INTEGER NOT NULL CHECK (refreshed_at >= 0 AND refreshed_at % 86400000 = 0),
   CHECK (length(id) > 0),
   CHECK (length(api_key_id) > 0),
   CHECK (length(item_ids_json) > 0)
