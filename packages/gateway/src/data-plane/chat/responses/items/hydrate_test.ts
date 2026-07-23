@@ -2,10 +2,10 @@ import { describe, expect, test } from 'vitest';
 
 import { hydrateResponsesPayload } from './hydrate.ts';
 import { createResponsesHttpStore } from './store.ts';
-import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
+import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 
 describe('Responses stored-item hydration', () => {
   test('replaces an arbitrary item reference with its exact producer payload and private state', async () => {

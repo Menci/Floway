@@ -2,9 +2,9 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { hashResponsesItemContent } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
-import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 
 const installRepo = (): InMemoryRepo => {
   const repo = new InMemoryRepo();

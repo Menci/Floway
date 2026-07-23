@@ -220,8 +220,7 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     if (i >= 0) {
       await this.schedulePolicyChanges(this.keys[i], key);
       this.keys[i] = { ...key };
-    }
-    else this.keys.push({ ...key });
+    } else this.keys.push({ ...key });
   }
 
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
