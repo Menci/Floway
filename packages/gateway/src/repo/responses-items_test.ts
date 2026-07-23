@@ -94,15 +94,15 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.responsesSnapshots.insert({ id: 'resp-expired', apiKeyId: 'key-a', itemIds: [expired.id], refreshedAt: expired.refreshedAt });
     await repo.responsesSnapshots.insert({ id: 'resp-current', apiKeyId: 'key-a', itemIds: [current.id], refreshedAt: current.refreshedAt });
 
-    expect(await repo.responsesItems.deleteExpired(now)).toBe(1);
-    expect(await repo.responsesSnapshots.deleteExpired(now)).toBe(1);
+    expect(await repo.responsesItems.deleteExpiredBatch('key-a', now, 100)).toBe(1);
+    expect(await repo.responsesSnapshots.deleteExpiredBatch('key-a', now, 100)).toBe(1);
     expect(await repo.responsesItems.lookupMany('key-a', [expired.id, current.id], 0)).toEqual([current]);
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp-expired', 0)).toBeNull();
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp-current', 0)).not.toBeNull();
 
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
-    expect(await repo.responsesItems.deleteExpired(now)).toBe(1);
-    expect(await repo.responsesSnapshots.deleteExpired(now)).toBe(1);
+    expect(await repo.responsesItems.deleteExpiredBatch('key-a', now, 100)).toBe(1);
+    expect(await repo.responsesSnapshots.deleteExpiredBatch('key-a', now, 100)).toBe(1);
   });
 
   test('keeps the newest snapshot payload while extending its refresh timestamp', async () => {
@@ -141,7 +141,7 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   expect((await db.prepare('SELECT payload_json FROM responses_items WHERE id = ?').bind(item.id).first<{ payload_json: string }>())?.payload_json)
     .not.toContain(owned.file_key);
 
-  expect(await repo.responsesItems.deleteExpired(now)).toBe(1);
+  expect(await repo.responsesItems.deleteExpiredBatch('key-a', now, 100)).toBe(1);
   expect((await db.prepare('SELECT state FROM spilled_files WHERE file_key = ?').bind(owned.file_key).first<{ state: string }>())?.state)
     .toBe('retired');
   await sweepSpilledFiles(now);
