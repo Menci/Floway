@@ -246,15 +246,23 @@ before that event is published; the response snapshot commits at the successful
 terminal event. Repository writes treat exact item/private-payload reuse as
 idempotent and reject a different live row under the same API-key-scoped ID.
 
-Large item payloads use immutable nonce-owned objects. The generic
-`spilled_files` ledger stages each object before the file write, atomically
-adopts it with its owner row, retires it when the owner is replaced or deleted,
-and supplies one exact-file collector shared by every storage domain. Hourly
-maintenance deletes Responses rows outside each key's current policy before
-collecting staged or retired files. HTTP `store: false` can read enabled
-durable state but never writes or refreshes it. WebSocket state is always
-session-local; `store: true` additionally writes durable state when the key has
-opted in.
+Large Responses payloads and dump bodies use immutable nonce-owned objects.
+The generic `spilled_files` ledger stages each object before its file write,
+atomically adopts it with its owner row, and retires it when that row is
+replaced or deleted. One exact-file collector claims staged or retired objects
+regardless of which domain owned them; owner-specific code never scans or
+deletes file prefixes.
+
+Responses and dump reads both apply their API key's current rolling retention
+before physical cleanup. One `expiration_sweeps` due queue orders work across
+both domains. Its single bounded driver claims a key, dispatches either the
+Responses or dump adapter, and completes through a revision check so concurrent
+writes and policy edits keep the earlier due time. The adapters only define
+their indexed owner-row deletion and oldest-row probe; scheduling, fairness,
+claim recovery, retries, and physical file collection are shared. HTTP
+`store: false` can read enabled durable Responses state but never writes or
+refreshes it. WebSocket state is always session-local; `store: true`
+additionally writes durable state when the key has opted in.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in
@@ -526,4 +534,5 @@ When working on a change and it is unclear whether it constitutes a
 breaking change, do not unilaterally add a CHANGELOG entry — ask the
 user to make the call. The user declares what is breaking; the agent
 records it.
+
 
