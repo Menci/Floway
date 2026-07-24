@@ -769,7 +769,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return changes;
   }
 
-  findOldestRefresh(apiKeyId: string): Promise<number | null> {
+  findOldestRefreshedAt(apiKeyId: string): Promise<number | null> {
     const rows = [...this.store.values()].filter(row => row.apiKeyId === apiKeyId);
     return Promise.resolve(rows.length === 0 ? null : Math.min(...rows.map(row => row.refreshedAt)));
   }
@@ -839,7 +839,7 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     return changes;
   }
 
-  findOldestRefresh(apiKeyId: string): Promise<number | null> {
+  findOldestRefreshedAt(apiKeyId: string): Promise<number | null> {
     const rows = [...this.store.values()].filter(row => row.apiKeyId === apiKeyId);
     return Promise.resolve(rows.length === 0 ? null : Math.min(...rows.map(row => row.refreshedAt)));
   }
@@ -897,7 +897,7 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
     return `${domain}\0${keyId}`;
   }
 
-  backfillOwners(): Promise<void> {
+  backfillCleanupQueue(): Promise<void> {
     return Promise.resolve();
   }
 

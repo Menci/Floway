@@ -378,7 +378,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     return activeDeleted + (inactive.meta.changes ?? 0);
   }
 
-  async findOldestRefresh(apiKeyId: string): Promise<number | null> {
+  async findOldestRefreshedAt(apiKeyId: string): Promise<number | null> {
     const row = await this.db
       .prepare('SELECT refreshed_at FROM responses_items WHERE api_key_id = ? ORDER BY refreshed_at LIMIT 1')
       .bind(apiKeyId)
@@ -495,7 +495,7 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     return activeDeleted + (inactive.meta.changes ?? 0);
   }
 
-  async findOldestRefresh(apiKeyId: string): Promise<number | null> {
+  async findOldestRefreshedAt(apiKeyId: string): Promise<number | null> {
     const row = await this.db
       .prepare('SELECT refreshed_at FROM responses_snapshots WHERE api_key_id = ? ORDER BY refreshed_at LIMIT 1')
       .bind(apiKeyId)

@@ -390,7 +390,7 @@ export interface ResponsesItemsRepo {
   insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void>;
   refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, activeAfter: number): Promise<void>;
   deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
-  findOldestRefresh(apiKeyId: string): Promise<number | null>;
+  findOldestRefreshedAt(apiKeyId: string): Promise<number | null>;
   deleteAll(): Promise<void>;
 }
 
@@ -405,7 +405,7 @@ export interface ResponsesSnapshotsRepo {
   lookup(apiKeyId: string, id: string, activeAfter: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
   deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
-  findOldestRefresh(apiKeyId: string): Promise<number | null>;
+  findOldestRefreshedAt(apiKeyId: string): Promise<number | null>;
   deleteAll(): Promise<void>;
 }
 
@@ -427,7 +427,7 @@ export type ExpirationSweepCompletion =
   | { kind: 'partial'; retryAt: number };
 
 export interface ExpirationSweepsRepo {
-  backfillOwners(limit: number): Promise<void>;
+  backfillCleanupQueue(limit: number): Promise<void>;
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void>;
   claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null>;
   complete(token: string, expectedRevision: number, completion: ExpirationSweepCompletion): Promise<void>;

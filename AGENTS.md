@@ -264,9 +264,9 @@ Responses or dump adapter, and completes through a revision check. A drained
 completion preserves concurrent earlier work; partial and error completions set
 a bounded retry so a hot or failing key yields to other due keys. The adapters
 only define their indexed owner-row deletion and oldest-row probe; scheduling,
-fairness, claim recovery, and retries are shared. Fresh owner writes schedule
-their key directly. A bounded, monotonic cursor per owner table discovers rows
-that predate the queue without pre-seeding API keys that own no state.
+fairness, claim recovery, and retries are shared. New stored rows schedule
+their API key directly. A bounded, monotonic cursor per source table discovers rows
+that predate the queue without pre-seeding API keys that have no stored state.
 
 HTTP `store: false` can read enabled durable Responses state but never writes or
 refreshes it. WebSocket state is always session-local; `store: true`

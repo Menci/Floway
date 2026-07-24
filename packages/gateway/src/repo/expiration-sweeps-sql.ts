@@ -11,12 +11,12 @@ interface BackfillSourceState {
   next_rowid: number;
 }
 
-interface BackfillOwnerRow {
+interface BackfillRow {
   rowid: number;
   key_id: string;
 }
 
-interface DumpBackfillOwnerRow extends BackfillOwnerRow {
+interface DumpBackfillRow extends BackfillRow {
   id: string;
   request_body_descriptor: string | null;
   response_body_descriptor: string | null;
@@ -50,15 +50,15 @@ const dumpFileKey = (descriptor: string, source: string): string => {
 export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   constructor(private readonly db: SqlDatabase) {}
 
-  async backfillOwners(limit: number): Promise<void> {
-    if (!Number.isInteger(limit) || limit <= 0) throw new Error(`Expiration owner backfill limit must be positive: ${limit}`);
+  async backfillCleanupQueue(limit: number): Promise<void> {
+    if (!Number.isInteger(limit) || limit <= 0) throw new Error(`Retention cleanup backfill limit must be positive: ${limit}`);
     const { results: sources } = await this.db
       .prepare('SELECT source, next_rowid FROM expiration_sweep_backfills WHERE complete = 0 ORDER BY source')
       .all<BackfillSourceState>();
     let remaining = limit;
     for (let index = 0; index < sources.length && remaining > 0; index += 1) {
       const source = sources[index];
-      if (!isBackfillSource(source.source)) throw new Error(`Unknown expiration owner backfill source: ${source.source}`);
+      if (!isBackfillSource(source.source)) throw new Error(`Unknown retention cleanup backfill source: ${source.source}`);
       const sourceLimit = Math.max(1, Math.floor(remaining / (sources.length - index)));
       const consumed = await this.backfillSource(source.source, source.next_rowid, sourceLimit);
       remaining -= consumed;
@@ -76,7 +76,7 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
          FROM ${source} WHERE rowid > ? ORDER BY rowid LIMIT ?`,
       )
       .bind(cursor, limit)
-      .all<DumpBackfillOwnerRow>();
+      .all<DumpBackfillRow>();
     if (results.length > 0) {
       const keyIds = [...new Set(results.map(row => row.key_id))];
       await this.db
@@ -107,7 +107,7 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
     return results.length;
   }
 
-  private async registerDumpFiles(rows: readonly DumpBackfillOwnerRow[]): Promise<void> {
+  private async registerDumpFiles(rows: readonly DumpBackfillRow[]): Promise<void> {
     const files: DumpFileOwner[] = rows.flatMap(row => [
       ...(row.request_body_descriptor === null ? [] : [{
         fileKey: dumpFileKey(row.request_body_descriptor, 'request body'),

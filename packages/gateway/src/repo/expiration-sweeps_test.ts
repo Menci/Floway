@@ -312,7 +312,7 @@ test('expiration claims and owner deletions use their bounded range indexes', as
   expect(dumpsPlan).toContain('idx_dump_records_key_created');
 });
 
-test('bounded owner backfill schedules rows whose API key was hard-removed', async () => {
+test('bounded queue backfill schedules rows whose API key was hard-deleted', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
@@ -328,7 +328,7 @@ test('bounded owner backfill schedules rows whose API key was hard-removed', asy
   await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
   await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
 
-  await repo.expirationSweeps.backfillOwners(500);
+  await repo.expirationSweeps.backfillCleanupQueue(500);
   expect(await db.prepare(
     "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
   ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
@@ -341,7 +341,7 @@ test('bounded owner backfill schedules rows whose API key was hard-removed', asy
   });
 });
 
-test('bounded owner backfill skips API keys without persisted owners', async () => {
+test('bounded queue backfill skips API keys without stored state', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   vi.useFakeTimers();
   vi.setSystemTime(now);
@@ -356,7 +356,7 @@ test('bounded owner backfill skips API keys without persisted owners', async () 
     .bind(now + 3600_000)
     .run();
 
-  await repo.expirationSweeps.backfillOwners(500);
+  await repo.expirationSweeps.backfillCleanupQueue(500);
 
   expect((await db.prepare('SELECT domain, key_id, due_at FROM expiration_sweeps ORDER BY domain, key_id').all()).results)
     .toEqual([{ domain: 'responses', key_id: 'key-a', due_at: 0 }]);

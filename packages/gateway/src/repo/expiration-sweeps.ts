@@ -8,19 +8,19 @@ const ERROR_RETRY_MS = 60 * 1000;
 const PARTIAL_RETRY_MS = 1;
 const DELETE_BATCH_SIZE = 100;
 const SWEEP_UNITS_PER_TICK = 4;
-const OWNER_BACKFILL_BATCH_SIZE = 500;
+const BACKFILL_ROWS_PER_TICK = 500;
 
 interface ExpirationAdapter {
   sweepKey(keyId: string, now: number): Promise<ExpirationSweepCompletion>;
 }
 
-const nextResponsesDueAt = async (keyId: string): Promise<number | null> => {
+const findNextResponsesCleanupAt = async (keyId: string): Promise<number | null> => {
   const repo = getRepo();
   const key = await repo.apiKeys.getById(keyId);
   if (key === null || key.responsesRetentionSeconds === 0) return null;
   const [itemRefresh, snapshotRefresh] = await Promise.all([
-    repo.responsesItems.findOldestRefresh(keyId),
-    repo.responsesSnapshots.findOldestRefresh(keyId),
+    repo.responsesItems.findOldestRefreshedAt(keyId),
+    repo.responsesSnapshots.findOldestRefreshedAt(keyId),
   ]);
   const oldest = [itemRefresh, snapshotRefresh].filter((value): value is number => value !== null);
   return oldest.length === 0
@@ -36,7 +36,7 @@ const responsesAdapter: ExpirationAdapter = {
     if (deletedSnapshots === DELETE_BATCH_SIZE || deletedItems === DELETE_BATCH_SIZE) {
       return { kind: 'partial', retryAt: now + PARTIAL_RETRY_MS };
     }
-    return { kind: 'drained', nextDueAt: await nextResponsesDueAt(keyId) };
+    return { kind: 'drained', nextDueAt: await findNextResponsesCleanupAt(keyId) };
   },
 };
 
@@ -63,7 +63,7 @@ const adapters: Record<ExpirationDomain, ExpirationAdapter> = {
 
 export const sweepExpirations = async (now: number): Promise<void> => {
   const repo = getRepo();
-  await repo.expirationSweeps.backfillOwners(OWNER_BACKFILL_BATCH_SIZE);
+  await repo.expirationSweeps.backfillCleanupQueue(BACKFILL_ROWS_PER_TICK);
   for (let index = 0; index < SWEEP_UNITS_PER_TICK; index += 1) {
     const token = crypto.randomUUID();
     const claim = await repo.expirationSweeps.claim(token, now, now - CLAIM_TIMEOUT_MS);
