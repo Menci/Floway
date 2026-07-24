@@ -6,7 +6,6 @@ import { sweepExpirations } from './expiration-sweeps.ts';
 import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
 import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from './responses-retention.ts';
-import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ApiKey, StoredResponsesItem } from './types.ts';
