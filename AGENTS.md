@@ -254,8 +254,8 @@ Large Responses payloads and dump bodies use immutable objects with per-write
 unique keys. The shared `spilled_files` registry records each object as staged
 before its file write, atomically adopts it with its owner row, and retires it
 when that row is replaced or deleted. One collector claims staged or retired
-records regardless of which domain owned them and deletes only their registered
-object keys; owner-specific code never scans or deletes file prefixes.
+records regardless of their source domain and deletes only their registered
+object keys; domain-specific code never scans or deletes file prefixes.
 
 Responses and dump reads both apply their API key's current rolling retention
 before physical cleanup. One `expiration_sweeps` due queue orders work across
@@ -263,10 +263,11 @@ both domains. Its single bounded driver claims a key, dispatches either the
 Responses or dump adapter, and completes through a revision check. A drained
 completion preserves concurrent earlier work; partial and error completions set
 a bounded retry so a hot or failing key yields to other due keys. The adapters
-only define their indexed owner-row deletion and oldest-row probe; scheduling,
+only define their indexed stored-row deletion and oldest-row probe; scheduling,
 fairness, claim recovery, and retries are shared. New stored rows schedule
-their API key directly. A bounded, monotonic cursor per source table discovers rows
-that predate the queue without pre-seeding API keys that have no stored state.
+their API key directly. A bounded, monotonic cursor per source table backfills
+the due queue and exact dump-file registry entries for existing stored rows; it
+never pre-seeds API keys without stored state or scans file storage.
 
 HTTP `store: false` can read enabled durable Responses state but never writes or
 refreshes it. WebSocket state is always session-local; `store: true`

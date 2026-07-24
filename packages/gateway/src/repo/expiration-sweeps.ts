@@ -63,7 +63,7 @@ const adapters: Record<ExpirationDomain, ExpirationAdapter> = {
 
 export const sweepExpirations = async (now: number): Promise<void> => {
   const repo = getRepo();
-  await repo.expirationSweeps.backfillCleanupQueue(BACKFILL_ROWS_PER_TICK);
+  await repo.expirationSweeps.backfillCleanupTracking(BACKFILL_ROWS_PER_TICK);
   for (let index = 0; index < SWEEP_UNITS_PER_TICK; index += 1) {
     const token = crypto.randomUUID();
     const claim = await repo.expirationSweeps.claim(token, now, now - CLAIM_TIMEOUT_MS);

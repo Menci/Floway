@@ -20,13 +20,13 @@ CREATE INDEX idx_spilled_files_claim
 ON spilled_files (claim_token)
 WHERE claim_token IS NOT NULL;
 
-CREATE TABLE expiration_sweep_backfills (
+CREATE TABLE cleanup_backfills (
   source TEXT PRIMARY KEY,
   next_rowid INTEGER NOT NULL DEFAULT 0,
   complete INTEGER NOT NULL DEFAULT 0 CHECK (complete IN (0, 1))
 );
 
-INSERT INTO expiration_sweep_backfills (source) VALUES
+INSERT INTO cleanup_backfills (source) VALUES
   ('responses_items'),
   ('responses_snapshots'),
   ('dump_records');

@@ -6,7 +6,7 @@ import type {
 } from './types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 
-interface BackfillSourceState {
+interface CleanupBackfillSourceState {
   source: string;
   next_rowid: number;
 }
@@ -29,15 +29,15 @@ interface DumpFileOwner {
   recordId: string;
 }
 
-const BACKFILL_SOURCES = {
+const CLEANUP_BACKFILL_SOURCES = {
   dump_records: { domain: 'dumps', keyColumn: 'key_id' },
   responses_items: { domain: 'responses', keyColumn: 'api_key_id' },
   responses_snapshots: { domain: 'responses', keyColumn: 'api_key_id' },
 } as const satisfies Record<string, { domain: ExpirationDomain; keyColumn: string }>;
 
-type BackfillSource = keyof typeof BACKFILL_SOURCES;
+type CleanupBackfillSource = keyof typeof CLEANUP_BACKFILL_SOURCES;
 
-const isBackfillSource = (source: string): source is BackfillSource => source in BACKFILL_SOURCES;
+const isCleanupBackfillSource = (source: string): source is CleanupBackfillSource => source in CLEANUP_BACKFILL_SOURCES;
 
 const dumpFileKey = (descriptor: string, source: string): string => {
   const parsed: unknown = JSON.parse(descriptor);
@@ -50,23 +50,23 @@ const dumpFileKey = (descriptor: string, source: string): string => {
 export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   constructor(private readonly db: SqlDatabase) {}
 
-  async backfillCleanupQueue(limit: number): Promise<void> {
+  async backfillCleanupTracking(limit: number): Promise<void> {
     if (!Number.isInteger(limit) || limit <= 0) throw new Error(`Retention cleanup backfill limit must be positive: ${limit}`);
     const { results: sources } = await this.db
-      .prepare('SELECT source, next_rowid FROM expiration_sweep_backfills WHERE complete = 0 ORDER BY source')
-      .all<BackfillSourceState>();
+      .prepare('SELECT source, next_rowid FROM cleanup_backfills WHERE complete = 0 ORDER BY source')
+      .all<CleanupBackfillSourceState>();
     let remaining = limit;
     for (let index = 0; index < sources.length && remaining > 0; index += 1) {
       const source = sources[index];
-      if (!isBackfillSource(source.source)) throw new Error(`Unknown retention cleanup backfill source: ${source.source}`);
+      if (!isCleanupBackfillSource(source.source)) throw new Error(`Unknown retention cleanup backfill source: ${source.source}`);
       const sourceLimit = Math.max(1, Math.floor(remaining / (sources.length - index)));
-      const consumed = await this.backfillSource(source.source, source.next_rowid, sourceLimit);
+      const consumed = await this.backfillCleanupSource(source.source, source.next_rowid, sourceLimit);
       remaining -= consumed;
     }
   }
 
-  private async backfillSource(source: BackfillSource, cursor: number, limit: number): Promise<number> {
-    const config = BACKFILL_SOURCES[source];
+  private async backfillCleanupSource(source: CleanupBackfillSource, cursor: number, limit: number): Promise<number> {
+    const config = CLEANUP_BACKFILL_SOURCES[source];
     const descriptorColumns = source === 'dump_records'
       ? ', id, request_body_descriptor, response_body_descriptor'
       : '';
@@ -98,7 +98,7 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
     const nextRowId = results.at(-1)?.rowid ?? cursor;
     await this.db
       .prepare(
-        `UPDATE expiration_sweep_backfills
+        `UPDATE cleanup_backfills
          SET next_rowid = MAX(next_rowid, ?), complete = MAX(complete, ?)
          WHERE source = ?`,
       )

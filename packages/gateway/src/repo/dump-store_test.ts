@@ -234,7 +234,7 @@ test('growing dump retention can reveal a row not yet physically deleted', async
   }
 });
 
-test('FileDumpStore retires every disabled owner and collects its exact files', async () => {
+test('FileDumpStore retires every dump record when retention is disabled and collects its exact files', async () => {
   const db = await openDb();
   const repo = new SqlRepo(db);
   initRepo(repo);

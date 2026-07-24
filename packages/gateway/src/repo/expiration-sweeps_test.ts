@@ -143,7 +143,7 @@ test('a concurrent schedule wins over stale completion', async () => {
   expect(row).toEqual({ due_at: 0, claim_token: null });
 });
 
-test('a later owner inserted during a claim prevents queue deletion', async () => {
+test('a later Responses row inserted during a claim prevents queue deletion', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   vi.useFakeTimers();
   vi.setSystemTime(now);
@@ -152,11 +152,11 @@ test('a later owner inserted during a claim prevents queue deletion', async () =
   initFileProvider(new MemoryFileProvider());
   await repo.apiKeys.save(key(now));
   await repo.expirationSweeps.schedule('responses', 'key-a', 0);
-  const claim = await repo.expirationSweeps.claim('claim-owner-race', now, 0);
+  const claim = await repo.expirationSweeps.claim('claim-row-race', now, 0);
   if (claim === null) throw new Error('expected expiration claim');
 
   await repo.responsesItems.insertMany([responseItem('msg-later', now)], 0);
-  await repo.expirationSweeps.complete('claim-owner-race', claim.revision, { kind: 'drained', nextDueAt: null });
+  await repo.expirationSweeps.complete('claim-row-race', claim.revision, { kind: 'drained', nextDueAt: null });
 
   const row = await db.prepare(
     "SELECT due_at, claim_token FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'key-a'",
@@ -164,7 +164,7 @@ test('a later owner inserted during a claim prevents queue deletion', async () =
   expect(row).toEqual({ due_at: 0, claim_token: null });
 });
 
-test('partial completion yields even when a concurrent owner bumps the revision', async () => {
+test('partial completion yields even when a concurrent Responses row bumps the revision', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   vi.useFakeTimers();
   vi.setSystemTime(now);
@@ -216,7 +216,7 @@ test('migration 0066 bounds existing-row discovery and tracks older dump files o
     db.run(migration[1]);
 
     expect(db.exec('SELECT domain, key_id FROM expiration_sweeps')[0]?.values ?? []).toEqual([]);
-    expect(db.exec('SELECT source, next_rowid, complete FROM expiration_sweep_backfills ORDER BY source')[0].values)
+    expect(db.exec('SELECT source, next_rowid, complete FROM cleanup_backfills ORDER BY source')[0].values)
       .toEqual([
         ['dump_records', 0, 0],
         ['responses_items', 0, 0],
@@ -255,7 +255,7 @@ test('migration 0066 bounds existing-row discovery and tracks older dump files o
   }
 });
 
-test('expiration claims and owner deletions use their bounded range indexes', async () => {
+test('expiration claims and expired-row deletions use their bounded range indexes', async () => {
   const db = await createSqliteTestDb();
   const explain = async (sql: string, ...values: Array<string | number>): Promise<string> => {
     const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(...values).all<{ detail: string }>();
@@ -312,7 +312,7 @@ test('expiration claims and owner deletions use their bounded range indexes', as
   expect(dumpsPlan).toContain('idx_dump_records_key_created');
 });
 
-test('bounded queue backfill schedules rows whose API key was hard-deleted', async () => {
+test('bounded cleanup backfill tracks rows whose API key was hard-deleted', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
@@ -328,7 +328,7 @@ test('bounded queue backfill schedules rows whose API key was hard-deleted', asy
   await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
   await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
 
-  await repo.expirationSweeps.backfillCleanupQueue(500);
+  await repo.expirationSweeps.backfillCleanupTracking(500);
   expect(await db.prepare(
     "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
   ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
@@ -341,7 +341,7 @@ test('bounded queue backfill schedules rows whose API key was hard-deleted', asy
   });
 });
 
-test('bounded queue backfill skips API keys without stored state', async () => {
+test('bounded cleanup backfill skips API keys without stored state', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   vi.useFakeTimers();
   vi.setSystemTime(now);
@@ -356,7 +356,7 @@ test('bounded queue backfill skips API keys without stored state', async () => {
     .bind(now + 3600_000)
     .run();
 
-  await repo.expirationSweeps.backfillCleanupQueue(500);
+  await repo.expirationSweeps.backfillCleanupTracking(500);
 
   expect((await db.prepare('SELECT domain, key_id, due_at FROM expiration_sweeps ORDER BY domain, key_id').all()).results)
     .toEqual([{ domain: 'responses', key_id: 'key-a', due_at: 0 }]);
@@ -364,7 +364,7 @@ test('bounded queue backfill skips API keys without stored state', async () => {
   expect(await db.prepare("SELECT domain FROM expiration_sweeps WHERE key_id = 'key-empty'").first()).toBeNull();
 });
 
-test('in-memory Responses owners enter the same expiration driver', async () => {
+test('in-memory Responses rows enter the same expiration driver', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   vi.useFakeTimers();
   vi.setSystemTime(now);

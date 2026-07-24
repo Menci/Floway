@@ -897,7 +897,7 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
     return `${domain}\0${keyId}`;
   }
 
-  backfillCleanupQueue(): Promise<void> {
+  backfillCleanupTracking(): Promise<void> {
     return Promise.resolve();
   }
 
