@@ -1,8 +1,8 @@
 // GET /api/search-usage — query per-key or per-user web search usage records.
 //
-// Mirrors the token-usage endpoint: the `view` query parameter selects between
-// `self-by-key` (the actor's own keys) and `all-by-user` (cross-user aggregate,
-// administrators only). Default view is determined by capability.
+// Mirrors the token-usage endpoint: the required `view` query parameter selects
+// between `self-by-key` (the actor's own keys) and `all-by-user` (cross-user
+// aggregate, administrators only).
 
 import { aggregateSearchUsageByKey, aggregateSearchUsageByUser } from './aggregate.ts';
 import { loadSearchConfig } from '../../data-plane/tools/web-search/search-config.ts';

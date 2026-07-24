@@ -167,9 +167,14 @@ export const serializeUrlState = (state: UrlState): Record<string, string> => {
   return out;
 };
 
-export const buildOverviewQuery = (state: UrlState, view: PerformanceView, at: number): Record<string, string> => {
+// The optional filters make this a plain string map, but the backend requires
+// `view`, so it is pinned in the type rather than dissolving into the map —
+// otherwise the RPC client rejects the call.
+export type OverviewQuery = Record<string, string> & { view: PerformanceView };
+
+export const buildOverviewQuery = (state: UrlState, view: PerformanceView, at: number): OverviewQuery => {
   const { start, end, bucket } = dashboardRangeQuery(state.range, at);
-  const q: Record<string, string> = {
+  const q: OverviewQuery = {
     start, end, bucket,
     timezone_offset_minutes: String(new Date().getTimezoneOffset()),
     view,

@@ -1,8 +1,8 @@
 // GET /api/token-usage — query per-key or per-user usage records.
 //
-// The `view` query parameter selects between two shapes: `self-by-key` returns
-// the actor's own keys, while `all-by-user` aggregates across users and is
-// reserved for administrators.
+// The required `view` query parameter selects between two shapes: `self-by-key`
+// returns the actor's own keys, while `all-by-user` aggregates across users and
+// is reserved for administrators.
 
 import { aggregateUsageByUserForDisplay, aggregateUsageForDisplay } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';

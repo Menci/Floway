@@ -19,15 +19,14 @@ export type ResolvedTelemetryView =
 export const resolveTelemetryView = (
   c: AuthedContext,
   domain: TelemetryDomain,
-  rawView: TelemetryView | undefined,
+  view: TelemetryView,
   rawKeyId: string | undefined,
 ): ResolvedTelemetryView | { error: 'forbidden' | 'bad_request'; message: string } => {
   const user = userFromContext(c);
-  const canViewGlobal = canViewGlobalTelemetry(user, domain);
 
-  const view = rawView ?? (canViewGlobal ? 'all-by-user' : 'self-by-key');
+  if (view === 'self-by-key') return { view: 'self-by-key', scopeUserId: user.id };
 
-  if (view === 'all-by-user' && !canViewGlobal) {
+  if (!canViewGlobalTelemetry(user, domain)) {
     return {
       error: 'forbidden',
       message: domain === 'usage'
@@ -35,16 +34,13 @@ export const resolveTelemetryView = (
         : 'You do not have permission to view global telemetry',
     };
   }
-  if (view === 'all-by-user' && rawKeyId !== undefined && rawKeyId !== '') {
+  if (rawKeyId !== undefined && rawKeyId !== '') {
     return {
       error: 'bad_request',
       message: 'key_id is not allowed in all-by-user mode',
     };
   }
-
-  return view === 'self-by-key'
-    ? { view: 'self-by-key', scopeUserId: user.id }
-    : { view: 'all-by-user' };
+  return { view: 'all-by-user' };
 };
 
 export const loadTelemetryKeys = async (

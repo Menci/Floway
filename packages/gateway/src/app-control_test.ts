@@ -133,7 +133,7 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
     metrics: tokenUsageMetrics({ input: 20, output: 8, input_cache_read: 6, input_cache_write: 2 }, null),
   });
 
-  const response = await requestApp('/api/token-usage?start=2026-03-15T00&end=2026-03-16T00', {
+  const response = await requestApp('/api/token-usage?start=2026-03-15T00&end=2026-03-16T00&view=self-by-key', {
     headers: { 'x-api-key': apiKey.key },
   });
 
@@ -173,7 +173,7 @@ test('/api/token-usage in self-by-key mode includes per-key metadata for the act
     metrics: tokenUsageMetrics({ input: 20, output: 8 }, null),
   });
 
-  const response = await requestApp('/api/token-usage?start=2026-03-16T00&end=2026-03-17T00&include_key_metadata=1', {
+  const response = await requestApp('/api/token-usage?start=2026-03-16T00&end=2026-03-17T00&include_key_metadata=1&view=self-by-key', {
     headers: { 'x-api-key': apiKey.key },
   });
 
@@ -209,6 +209,20 @@ test('/api/token-usage all-by-user view aggregates across keys per user', async 
   assertEquals(body.length, 1);
   assertEquals(body[0].userId, apiKey.userId);
   assertEquals(displayQuantity(body[0], 'input'), '10');
+});
+
+test('telemetry endpoints require an explicit view', async () => {
+  const { apiKey } = await setupAppTest();
+  const paths = [
+    '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00',
+    '/api/search-usage?start=2026-03-15T00&end=2026-03-16T00',
+    '/api/performance/overview?start=2026-03-15T00&end=2026-03-16T00',
+  ];
+  for (const path of paths) {
+    const response = await requestApp(path, { headers: { 'x-api-key': apiKey.key } });
+    assertEquals(response.status, 400, path);
+    assertEquals(await response.json(), { error: "view must be 'all-by-user' or 'self-by-key'" }, path);
+  }
 });
 
 test('/api/token-usage rejects all-by-user from a non-admin user', async () => {
@@ -253,13 +267,13 @@ test('/api/token-usage stays admin-only for a non-admin holding canViewGlobalTel
   );
   assertEquals(explicit.status, 403);
 
-  // The flag must not flip the default view to the global shape either.
-  const defaulted = await requestApp(
-    '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00',
+  // Nor may the flag widen what a self-by-key request returns.
+  const selfView = await requestApp(
+    '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00&view=self-by-key',
     { headers: { 'x-api-key': apiKey.key } },
   );
-  assertEquals(defaulted.status, 200);
-  const body = await defaulted.json();
+  assertEquals(selfView.status, 200);
+  const body = await selfView.json();
   assertEquals(body.map((r: { keyId: string }) => r.keyId), [apiKey.id]);
 });
 
@@ -296,7 +310,7 @@ test('/api/token-usage merges Claude variants into backend base model records', 
     metrics: tokenUsageMetrics({ input: 3, output: 4 }, null),
   });
 
-  const response = await requestApp('/api/token-usage?start=2026-03-17T00&end=2026-03-18T00', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/token-usage?start=2026-03-17T00&end=2026-03-18T00&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();

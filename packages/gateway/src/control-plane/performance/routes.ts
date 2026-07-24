@@ -4,10 +4,14 @@
 //
 // View semantics mirror /api/token-usage and /api/search-usage:
 // - `self-by-key` scopes every axis to the actor's keys (active +
-//   soft-deleted). `group_by=userId` is rejected because every row belongs to
-//   the actor.
+//   soft-deleted).
 // - `all-by-user` uses every row for global and per-user axes, while API-key
 //   axes, metadata, and filters remain scoped to the actor's own keys.
+//
+// Per-user attribution is a separate, administrator-only capability on top of
+// the global view: a user granted global telemetry sees everyone's latency in
+// aggregate, never who produced it. That covers the By-User rows, the username
+// listing, the userId dropdown, `group_by=userId`, and `filter_user_id`.
 
 import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
 import { userFromContext } from '../../middleware/auth.ts';
@@ -74,16 +78,35 @@ const readPerformanceQuery = (
   };
 };
 
-const resolveView = (
+// The resolved view carrying the per-user attribution capability that rides on
+// top of it. Both the request gate (which query knobs are legal) and the
+// response shape (which axes and metadata are populated) read that flag.
+type PerformanceScope = ResolvedTelemetryView & { attributeUsers: boolean };
+
+const resolveScope = (
   c: Ctx,
   params: PerformanceQueryParams,
-): ResolvedTelemetryView | { error: 'forbidden' | 'bad_request'; message: string } => {
+): PerformanceScope | { error: 'forbidden' | 'bad_request'; message: string } => {
   const resolved = resolveTelemetryView(c, 'performance', c.req.valid('query').view, params.keyId);
   if ('error' in resolved) return resolved;
-  if (resolved.view === 'self-by-key' && params.groupBy === 'userId') {
-    return { error: 'bad_request', message: 'group_by=userId is not allowed in self-by-key mode' };
+
+  // Both knobs below name a user dimension. In self-by-key every row already
+  // belongs to the actor, so the dimension is meaningless rather than
+  // privileged — administrators are refused there too.
+  const attributeUsers = resolved.view === 'all-by-user' && userFromContext(c).isAdmin;
+  if (!attributeUsers) {
+    const knob = params.groupBy === 'userId'
+      ? 'group_by=userId'
+      : params.filters.userId !== undefined
+        ? 'filter_user_id'
+        : null;
+    if (knob !== null) {
+      return resolved.view === 'self-by-key'
+        ? { error: 'bad_request', message: `${knob} is not allowed in self-by-key mode` }
+        : { error: 'forbidden', message: `${knob} requires administrator privileges` };
+    }
   }
-  return resolved;
+  return { ...resolved, attributeUsers };
 };
 
 const queryRecordsForView = async (
@@ -119,8 +142,8 @@ interface DimensionValues {
   operations: string[];
   runtimeLocations: string[];
   // The frontend joins these raw ids to the users/keys metadata below.
-  // keyIds always belongs to the actor; userIds spans all users only in the
-  // global view and stays empty in self-view.
+  // keyIds always belongs to the actor; userIds is populated only when the
+  // caller may attribute rows to users, and stays empty otherwise.
   keyIds: string[];
   userIds: number[];
 }
@@ -182,25 +205,24 @@ export const performanceOverview = async (c: Ctx) => {
   const params = readPerformanceQuery(c);
   if (params.type === 'error') return c.json({ error: params.error }, 400);
 
-  const resolved = resolveView(c, params.value);
-  if ('error' in resolved) return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
+  const scope = resolveScope(c, params.value);
+  if ('error' in scope) return c.json({ error: scope.message }, scope.error === 'forbidden' ? 403 : 400);
 
   const repo = getRepo();
-  const allKeys = await loadTelemetryKeys(repo, resolved);
+  const allKeys = await loadTelemetryKeys(repo, scope);
   const actorUserId = userFromContext(c).id;
   const ownedKeys = allKeys.filter(key => key.userId === actorUserId);
   const ownedKeyIds = new Set(ownedKeys.map(key => key.id));
-  if (resolved.view === 'all-by-user' && params.value.filters.keyId !== undefined && !ownedKeyIds.has(params.value.filters.keyId)) {
+  if (scope.view === 'all-by-user' && params.value.filters.keyId !== undefined && !ownedKeyIds.has(params.value.filters.keyId)) {
     return c.json({ error: 'Unknown filter_key_id' }, 404);
   }
 
-  const rawRecords = await queryRecordsForView(resolved, params.value, ownedKeyIds);
+  const rawRecords = await queryRecordsForView(scope, params.value, ownedKeyIds);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
-  const includeUserRows = resolved.view === 'all-by-user';
-  const users = includeUserRows ? await repo.users.listIncludingDeleted() : [];
+  const users = scope.attributeUsers ? await repo.users.listIncludingDeleted() : [];
   const keyToUser = buildKeyToUserMap(allKeys);
-  const { filtered, dimensionValues } = partitionRecords(rawRecords, params.value.filters, keyToUser, ownedKeyIds, includeUserRows);
+  const { filtered, dimensionValues } = partitionRecords(rawRecords, params.value.filters, keyToUser, ownedKeyIds, scope.attributeUsers);
 
   const tzOnly = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   const { series, ...axes } = aggregatePerformanceForDisplay(filtered, {
@@ -215,8 +237,8 @@ export const performanceOverview = async (c: Ctx) => {
     userId: { ...tzOnly, bucket: 'all', groupBy: 'userId' as const },
   }, keyToUser, ownedKeyIds);
 
-  // Global views expose user metadata for By User, while key metadata remains
-  // actor-owned for By API Key and its filter.
+  // Per-user attribution exposes the username listing for By User, while key
+  // metadata remains actor-owned for By API Key and its filter.
   const userMetadata = users
     .map(u => ({ id: u.id, username: u.username }))
     .sort((a, b) => a.id - b.id);
@@ -228,7 +250,7 @@ export const performanceOverview = async (c: Ctx) => {
     series,
     axes: {
       ...axes,
-      userId: includeUserRows ? axes.userId : [],
+      userId: scope.attributeUsers ? axes.userId : [],
     },
     dimensionValues,
     users: userMetadata,

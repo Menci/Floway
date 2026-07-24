@@ -712,9 +712,15 @@ export const exportQuery = z.object({
 
 // --- query strings (token-usage, search-usage, performance) ---
 //
+// `view` is required. The two views return different payload shapes, so
+// deriving one from the caller's capability would make the same URL answer
+// differently per user — and silently widen as soon as someone is granted a
+// flag. Declaring it required in the schema also makes the RPC client demand
+// it at compile time.
+//
 // start/end stay optional in the schema (rather than `.min(1)`) so the
 // handler can return the canonical "start and end query parameters are
-// required" message its tests assert on. The schema's job here is to
+// required" message its tests assert on. The schema's job there is to
 // inform the RPC client of the available fields, not duplicate the
 // required-ness check.
 
@@ -724,7 +730,7 @@ const usageBaseQuery = {
   key_id: z.string().optional(),
   include_key_metadata: z.string().optional(),
   include_user_metadata: z.string().optional(),
-  view: z.enum(['all-by-user', 'self-by-key']).optional(),
+  view: z.enum(['all-by-user', 'self-by-key'], { error: "view must be 'all-by-user' or 'self-by-key'" }),
 };
 
 export const tokenUsageQuery = z.object(usageBaseQuery);
