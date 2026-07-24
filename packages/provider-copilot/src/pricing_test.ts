@@ -12,6 +12,8 @@ test('Copilot Claude pricing uses explicit base and fast entries', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-4-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, OPUS_BASE);
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-4-7'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '30', input_cache_read_tokens: '3', input_cache_write_tokens: '37.5', output_tokens: '150' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-4-8'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }));
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5'), { inputTokens: 0 }).rates, OPUS_BASE);
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }));
 });
 
 test('Copilot GPT-5.6 pricing resolves standard short and long entries', () => {
@@ -54,4 +56,8 @@ test('pricingForCopilotModelKey strips Claude variant suffixes before lookup', (
     assertEquals(priceRequest(pricingForCopilotModelKey(id), { inputTokens: 0 }).rates, OPUS_BASE);
   }
   assertEquals(priceRequest(pricingForCopilotModelKey('claude-opus-4-7-fast'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '30', input_cache_read_tokens: '3', input_cache_write_tokens: '37.5', output_tokens: '150' }));
+  for (const id of ['claude-opus-5', 'claude-opus-5-high', 'claude-opus-5-xhigh', 'claude-opus-5-1m']) {
+    assertEquals(priceRequest(pricingForCopilotModelKey(id), { inputTokens: 0 }).rates, OPUS_BASE);
+  }
+  assertEquals(priceRequest(pricingForCopilotModelKey('claude-opus-5-fast'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }));
 });
