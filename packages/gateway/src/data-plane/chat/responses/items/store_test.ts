@@ -174,6 +174,33 @@ describe('StatefulResponsesStore', () => {
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_after_midnight', 0))?.refreshedAt).toBe(TEST_DAY + DAY_MS);
   });
 
+  test('a store crossing its visibility cutoff keeps the request-start policy clock', async () => {
+    vi.useFakeTimers();
+    const retentionSeconds = 24 * 60 * 60;
+    const requestStartedAt = TEST_DAY + 2 * DAY_MS - 1_000;
+    vi.setSystemTime(requestStartedAt);
+    const repo = installRepo();
+    await repo.apiKeys.update('key-a', { responsesRetentionSeconds: retentionSeconds });
+    const item = {
+      id: 'msg_cutoff_edge',
+      apiKeyId: 'key-a',
+      payload: { item: { type: 'message', id: 'msg_cutoff_edge', role: 'assistant', content: [] } },
+      itemHash: 'cutoff-edge-hash',
+      refreshedAt: TEST_DAY + DAY_MS,
+    };
+    await repo.responsesItems.insertMany([item], 0, requestStartedAt);
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: retentionSeconds }, requestStartedAt, true);
+
+    vi.setSystemTime(TEST_DAY + 3 * DAY_MS + 1_000);
+    const reference = { type: 'item_reference' as const, id: item.id };
+    await store.loadInputItems([reference], []);
+    await store.stageInputItems([reference]);
+    await store.commitSnapshot('resp_after_cutoff', 'append', []);
+
+    expect((await repo.responsesItems.lookupMany('key-a', [item.id], 0))[0].refreshedAt)
+      .toBe(TEST_DAY + 3 * DAY_MS);
+  });
+
   test('append snapshots refresh direct-id and content-hash input reuse', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(TEST_DAY + DAY_MS / 2);
