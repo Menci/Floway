@@ -16,19 +16,16 @@ initRuntimeKind('node');
 
 initBackgroundSchedulerResolver(_c => trackBackground);
 
-// Default no-op dump bindings. The capture-dump middleware short-circuits on
-// keys without retention, so every test whose fixture leaves
-// dumpRetentionSeconds null never touches these. The api-keys and users
-// routes call purgeAll on every delete though, so the no-op needs to be
-// installed regardless. Tests that exercise the dump system itself re-init
-// with their own implementations.
+// Default no-op dump bindings keep tests that do not exercise dump persistence
+// independent of that subsystem. Dump-specific tests install real or recording
+// implementations.
 const noopStore: DumpStore = {
   async prepareRequestBody(body) { return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength }; },
   async put(): Promise<void> { /* noop */ },
   async list(): Promise<DumpMetadata[]> { return []; },
   async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },
-  async purgeAll(): Promise<void> { /* noop */ },
-  async purgeExpired(): Promise<void> { /* noop */ },
+  async deleteExpiredBatch(): Promise<number> { return 0; },
+  async findOldestCreatedAt(): Promise<number | null> { return null; },
 };
 const noopBroker: DumpBroker = {
   async publish(): Promise<void> { /* noop */ },

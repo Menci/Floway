@@ -15,7 +15,7 @@ import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
-import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
+import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -779,16 +779,12 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const performance = performanceResult.records;
 
   const repo = getRepo();
-  // Snapshot pre-import key state once and reuse it for identity validation
-  // and the dump-purge transitions below. Replace mode also needs to purge
-  // each pre-existing key's dumps (otherwise the new owner of a reused id
-  // silently inherits the old owner's captures); merge mode needs the prior
-  // `dumpRetentionSeconds` per key id so a retention shrink/disable in the
-  // imported payload triggers the same purge transition `updateKey` would.
+  // Merge mode needs each key's prior dump policy to identify transitions that
+  // must disconnect live subscribers after the replacement row is stored.
   const preImportKeys = await repo.apiKeys.listIncludingDeleted();
-  const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(k => [k.id, k.dumpRetentionSeconds]));
   const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? preImportKeys : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
+  const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(k => [k.id, k.dumpRetentionSeconds]));
 
   // In merge mode an imported upstream's proxy_fallback_list may reference an
   // existing local proxy alongside an imported one; replace mode wipes the
@@ -798,11 +794,9 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
 
   if (mode === 'replace') {
-    // Wipe each existing key's dump capture before the replace deletes wave so
-    // a reused id in the imported payload cannot inherit the previous owner's
-    // captures, and any live SSE subscriber is told the key went away.
+    // Disconnect subscribers before the API-key deletion atomically schedules
+    // existing stored state for bounded reclamation.
     for (const k of preImportKeys) {
-      await getDumpStore().purgeAll(k.id);
       await notifyDisabledBestEffort(k.id, 'replace-mode import');
     }
 
@@ -844,16 +838,11 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     });
   }
   for (const key of apiKeys) {
-    // Merge mode mirrors `updateKey`'s purge transition when retention is
-    // flipped off or shrunk; replace mode already purged everything above.
     const previous = preImportRetentionById.get(key.id) ?? null;
     await repo.apiKeys.save(key);
     if (mode === 'merge' && previous !== key.dumpRetentionSeconds) {
       if (key.dumpRetentionSeconds === null && previous !== null) {
-        await getDumpStore().purgeAll(key.id);
         await notifyDisabledBestEffort(key.id, 'merge-mode retention disable');
-      } else if (previous !== null && key.dumpRetentionSeconds !== null && key.dumpRetentionSeconds < previous) {
-        await getDumpStore().purgeExpired(key.id, key.dumpRetentionSeconds);
       }
     }
   }

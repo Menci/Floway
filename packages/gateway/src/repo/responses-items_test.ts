@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
+import { hashResponsesJson } from './responses-hash.ts';
+import { prepareStoredResponsesPayload } from './responses-payload.ts';
 import { quantizeResponsesRefreshedAt, responsesStateCutoff } from './responses-retention.ts';
 import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
@@ -113,15 +115,15 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.responsesSnapshots.insert({ id: 'resp-current', apiKeyId: 'key-a', itemIds: [current.id], refreshedAt: current.refreshedAt });
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
 
-    expect(await repo.responsesItems.deleteExpired(now)).toBe(1);
-    expect(await repo.responsesSnapshots.deleteExpired(now)).toBe(1);
+    expect(await repo.responsesItems.deleteExpiredBatch('key-a', now, 100)).toBe(1);
+    expect(await repo.responsesSnapshots.deleteExpiredBatch('key-a', now, 100)).toBe(1);
     expect(await repo.responsesItems.lookupMany('key-a', [expired.id, current.id], 0)).toEqual([current]);
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp-expired', 0)).toBeNull();
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp-current', 0)).not.toBeNull();
 
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
-    expect(await repo.responsesItems.deleteExpired(now)).toBe(1);
-    expect(await repo.responsesSnapshots.deleteExpired(now)).toBe(1);
+    expect(await repo.responsesItems.deleteExpiredBatch('key-a', now, 100)).toBe(1);
+    expect(await repo.responsesSnapshots.deleteExpiredBatch('key-a', now, 100)).toBe(1);
   });
 
   test('keeps the newest snapshot payload while extending its refresh timestamp', async () => {
@@ -214,7 +216,6 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
       { ...old, refreshedAt: quantizeResponsesRefreshedAt(old.refreshedAt) },
     ]);
   });
-
   test('a concurrent disable prevents a captured durable writer from inserting', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
@@ -305,7 +306,7 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   expect((await db.prepare('SELECT payload_json FROM responses_items WHERE id = ?').bind(item.id).first<{ payload_json: string }>())?.payload_json)
     .not.toContain(owned.file_key);
 
-  expect(await repo.responsesItems.deleteExpired(now)).toBe(1);
+  expect(await repo.responsesItems.deleteExpiredBatch('key-a', now, 100)).toBe(1);
   expect((await db.prepare('SELECT state FROM spilled_files WHERE file_key = ?').bind(owned.file_key).first<{ state: string }>())?.state)
     .toBe('retired');
   await collectSpilledFiles(now);
@@ -339,6 +340,39 @@ test('SQL performs no item or snapshot mutation after an earlier refresh in the 
   await repo.responsesItems.refreshMany([item], atDay(11, 1_000), 0, Date.now());
   await repo.responsesSnapshots.insert({ ...snapshot, refreshedAt: atDay(11, 1_000) });
   expect(await totalChanges()).toBe(beforeSameDayReuse + 2);
+});
+
+test('SQL hydration retries with every current item identity column after a replacement race', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(atDay(11));
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  await repo.apiKeys.save(apiKey());
+  const original = storedItem('msg-hydration-race', atDay(10), largeContent());
+  const replacement = storedItem(original.id, atDay(11), 'replacement');
+  await repo.responsesItems.insertMany([original], 0, Date.now());
+  const prepared = await prepareStoredResponsesPayload(replacement.id, replacement.apiKeyId, replacement.payload);
+  if (prepared.file !== null) throw new Error('replacement payload unexpectedly spilled');
+  const payloadHash = await hashResponsesJson(replacement.payload);
+  vi.spyOn(files, 'get').mockImplementationOnce(async () => {
+    await db.prepare(
+      `UPDATE responses_items
+       SET payload_json = ?, item_hash = ?, payload_hash = ?, payload_file_key = NULL, refreshed_at = ?
+       WHERE id = ? AND api_key_id = ?`,
+    ).bind(
+      prepared.payloadJson,
+      replacement.itemHash,
+      payloadHash,
+      replacement.refreshedAt,
+      replacement.id,
+      replacement.apiKeyId,
+    ).run();
+    return null;
+  });
+
+  expect(await repo.responsesItems.lookupMany(replacement.apiKeyId, [replacement.id], 0)).toEqual([replacement]);
 });
 
 test('a collector claim prevents a staged file from being adopted', async () => {

@@ -1,3 +1,4 @@
+import { DUMP_FILE_PREFIX, SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
@@ -14,10 +15,10 @@ import type {
 } from '../dump/types.ts';
 import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 
-// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
-// The hour bucket lets the cron sweep `deletePrefix` whole expired hours.
+// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{req|resp}.gz`.
+// The hour segment remains useful for operator inspection; lifecycle and
+// collection are driven by the shared spilled_files registry.
 
-const ROOT = 'dumps/v1';
 const HOUR_MS = 60 * 60 * 1000;
 
 interface BodyDescriptor {
@@ -66,19 +67,8 @@ const hourBucket = (ms: number): string => {
   return `${y}${m}${d}${h}`;
 };
 
-const hourBucketToMs = (bucket: string): number | null => {
-  if (!/^\d{10}$/.test(bucket)) return null;
-  const y = Number(bucket.slice(0, 4));
-  const m = Number(bucket.slice(4, 6));
-  const d = Number(bucket.slice(6, 8));
-  const h = Number(bucket.slice(8, 10));
-  return Date.UTC(y, m - 1, d, h, 0, 0, 0);
-};
-
-const keyPrefix = (keyId: string): string => `${ROOT}/${keyId}/`;
-const bucketPrefix = (keyId: string, bucket: string): string => `${ROOT}/${keyId}/${bucket}/`;
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
-  `${bucketPrefix(keyId, bucket)}${recordId}.${side}.gz`;
+  `${DUMP_FILE_PREFIX}${keyId}/${bucket}/${recordId}-${crypto.randomUUID()}.${side}.gz`;
 
 const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
   const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
@@ -130,17 +120,44 @@ export class FileDumpStore implements DumpStore {
 
   async put(keyId: string, record: DumpWriteRecord): Promise<void> {
     const bucket = hourBucket(record.meta.completedAt);
+    const requestFileKey = record.request.body.decodedByteLength === 0
+      ? null
+      : bodyPath(keyId, bucket, record.meta.id, 'req');
+    const responseFileKey = record.response.body.type === 'bytes' && record.response.body.body.byteLength === 0
+      ? null
+      : record.response.body.type === 'none'
+        ? null
+        : bodyPath(keyId, bucket, record.meta.id, 'resp');
+    const staged = [
+      ...(requestFileKey === null ? [] : [{ fileKey: requestFileKey, ownerKind: 'dump-request' }]),
+      ...(responseFileKey === null ? [] : [{ fileKey: responseFileKey, ownerKind: 'dump-response' }]),
+    ];
+    if (staged.length > 0) {
+      await this.db
+        .prepare(
+          `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+           SELECT
+             json_extract(value, '$.fileKey'),
+             json_extract(value, '$.ownerKind'),
+             json_array(?, ?),
+             'staged',
+             ?
+           FROM json_each(?)`,
+        )
+        .bind(keyId, record.meta.id, Date.now() + SPILLED_FILE_STAGE_GRACE_MS, JSON.stringify(staged))
+        .run();
+    }
     const requestDescriptor = record.request.body.decodedByteLength === 0
       ? null
-      : await putPreparedBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), record.request.body);
+      : await putPreparedBody(this.files, requestFileKey!, record.request.body);
 
     let responseDescriptor: BodyDescriptor | null = null;
     if (record.response.body.type === 'bytes') {
       if (record.response.body.body.byteLength > 0) {
-        responseDescriptor = await putRawBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), record.response.body.body, 'bytes');
+        responseDescriptor = await putRawBody(this.files, responseFileKey!, record.response.body.body, 'bytes');
       }
     } else if (record.response.body.type === 'stream') {
-      responseDescriptor = await putRawBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), new TextEncoder().encode(JSON.stringify(record.response.body.events)), 'events');
+      responseDescriptor = await putRawBody(this.files, responseFileKey!, new TextEncoder().encode(JSON.stringify(record.response.body.events)), 'events');
     }
 
     // Strip the in-memory `upstream` field; the ref is rebuilt from the join
@@ -173,6 +190,7 @@ export class FileDumpStore implements DumpStore {
           'SELECT created_at FROM dump_records WHERE key_id = ? AND id = ?',
         ).bind(keyId, beforeId).first<{ created_at: number }>()
       : null;
+    if (beforeId !== null && beforeRow === null) return [];
     const beforeTs = beforeRow?.created_at ?? null;
 
     // Newest-first with a compound (created_at, id) cursor so rows sharing a
@@ -180,13 +198,16 @@ export class FileDumpStore implements DumpStore {
     // creation order within the ms.
     const select
       = 'SELECT d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.color AS upstream_color '
-      + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id';
+      + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
+      + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL ';
+    const visible = 'd.key_id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000';
     const sql = beforeTs === null
-      ? `${select} WHERE d.key_id = ? ORDER BY d.created_at DESC, d.id DESC LIMIT ?`
-      : `${select} WHERE d.key_id = ? AND (d.created_at < ? OR (d.created_at = ? AND d.id < ?)) ORDER BY d.created_at DESC, d.id DESC LIMIT ?`;
+      ? `${select} WHERE ${visible} ORDER BY d.created_at DESC, d.id DESC LIMIT ?`
+      : `${select} WHERE ${visible} AND (d.created_at < ? OR (d.created_at = ? AND d.id < ?)) ORDER BY d.created_at DESC, d.id DESC LIMIT ?`;
+    const now = Date.now();
     const stmt = beforeTs === null
-      ? this.db.prepare(sql).bind(keyId, opts.limit)
-      : this.db.prepare(sql).bind(keyId, beforeTs, beforeTs, beforeId, opts.limit);
+      ? this.db.prepare(sql).bind(keyId, now, opts.limit)
+      : this.db.prepare(sql).bind(keyId, now, beforeTs, beforeTs, beforeId, opts.limit);
     const { results } = await stmt.all<Pick<DumpRow, 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_color'>>();
     return results.map(row => ({
       ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
@@ -199,8 +220,9 @@ export class FileDumpStore implements DumpStore {
       'SELECT d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.color AS upstream_color, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
-      + 'WHERE d.key_id = ? AND d.id = ?',
-    ).bind(keyId, recordId).first<DumpRow>();
+      + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '
+      + 'WHERE d.key_id = ? AND d.id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000',
+    ).bind(keyId, recordId, Date.now()).first<DumpRow>();
     if (!row) return null;
 
     const meta: DumpMetadata = {
@@ -243,31 +265,51 @@ export class FileDumpStore implements DumpStore {
     return { meta, request, response };
   }
 
-  async purgeAll(keyId: string): Promise<void> {
-    // Files before rows, matching `put`'s ordering invariant.
-    await this.files.deletePrefix(keyPrefix(keyId));
-    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
+  async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {
+    const active = await this.db
+      .prepare(
+        `DELETE FROM dump_records WHERE rowid IN (
+           SELECT records.rowid
+           FROM api_keys
+           CROSS JOIN dump_records AS records
+           WHERE api_keys.id = ?
+             AND api_keys.deleted_at IS NULL
+             AND api_keys.dump_retention_seconds IS NOT NULL
+             AND records.key_id = api_keys.id
+             AND records.created_at < ? - api_keys.dump_retention_seconds * 1000
+           ORDER BY records.created_at, records.rowid
+           LIMIT ?
+         )`,
+      )
+      .bind(keyId, now, limit)
+      .run();
+    const activeDeleted = active.meta.changes ?? 0;
+    if (activeDeleted >= limit) return activeDeleted;
+    const inactive = await this.db
+      .prepare(
+        `DELETE FROM dump_records WHERE rowid IN (
+           SELECT records.rowid FROM dump_records AS records
+           WHERE records.key_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM api_keys
+               WHERE api_keys.id = records.key_id
+                 AND api_keys.deleted_at IS NULL
+                 AND api_keys.dump_retention_seconds IS NOT NULL
+             )
+           ORDER BY records.created_at, records.rowid
+           LIMIT ?
+         )`,
+      )
+      .bind(keyId, limit - activeDeleted)
+      .run();
+    return activeDeleted + (inactive.meta.changes ?? 0);
   }
 
-  async purgeExpired(keyId: string, retentionSeconds: number): Promise<void> {
-    const cutoff = Date.now() - retentionSeconds * 1000;
-
-    // FileProvider has no delimiter-aware list, so derive the hour buckets by
-    // scanning all keys under the prefix and grouping on the first segment.
-    const prefix = keyPrefix(keyId);
-    const buckets = new Set<string>();
-    for (const file of await this.files.listKeys(prefix)) {
-      const tail = file.slice(prefix.length);
-      const slash = tail.indexOf('/');
-      if (slash > 0) buckets.add(tail.slice(0, slash));
-    }
-    for (const bucket of buckets) {
-      const bucketStart = hourBucketToMs(bucket);
-      if (bucketStart === null) continue;
-      const bucketEnd = bucketStart + HOUR_MS;
-      if (bucketEnd <= cutoff) await this.files.deletePrefix(bucketPrefix(keyId, bucket));
-    }
-
-    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?').bind(keyId, cutoff).run();
+  async findOldestCreatedAt(keyId: string): Promise<number | null> {
+    const row = await this.db
+      .prepare('SELECT created_at FROM dump_records WHERE key_id = ? ORDER BY created_at LIMIT 1')
+      .bind(keyId)
+      .first<{ created_at: number }>();
+    return row?.created_at ?? null;
   }
 }

@@ -250,13 +250,26 @@ the response snapshot commits at the successful terminal event. Repository
 writes treat exact item/private-payload reuse as idempotent and reject a
 different live row under the same API-key-scoped ID.
 
-Large item payloads use immutable nonce-owned objects. The generic
-`spilled_files` ledger records an owner-neutral lifecycle; Responses currently
-stages each object before the file write, atomically adopts it with its item
-row, and retires it when that row is replaced or deleted. One exact-file
-collector handles staged or retired ledger entries. Hourly maintenance deletes
-Responses rows outside each key's current policy before collecting those
-objects. HTTP `store: false` can read enabled durable state but never writes or
+Large Responses payloads and dump bodies use immutable objects with per-write
+unique keys. The shared `spilled_files` registry records each object as staged
+before its file write, atomically adopts it with its owner row, and retires it
+when that row is replaced or deleted. One collector claims staged or retired
+records regardless of their source domain and deletes only their registered
+object keys; domain-specific code never scans or deletes file prefixes.
+
+Responses and dump reads both apply their API key's current rolling retention
+before physical cleanup. One `expiration_sweeps` due queue orders work across
+both domains. Its single bounded driver claims a key, dispatches either the
+Responses or dump adapter, and completes through a revision check. A drained
+completion preserves concurrent earlier work; partial and error completions set
+a bounded retry so a hot or failing key yields to other due keys. The adapters
+only define their indexed stored-row deletion and oldest-row probe; scheduling,
+fairness, claim recovery, and retries are shared. New stored rows schedule
+their API key directly. A bounded, monotonic cursor per source table backfills
+the due queue and exact dump-file registry entries for existing stored rows; it
+never pre-seeds API keys without stored state or scans file storage.
+
+HTTP `store: false` can read enabled durable Responses state but never writes or
 refreshes it. WebSocket state is always session-local; `store: true`
 additionally writes durable state when the key has opted in.
 
@@ -392,11 +405,11 @@ message (which records the commit revision of that deployment).
 `d1 migrations list --remote` prints applied migrations and the pending
 diff this deploy would apply.
 
-**Step 2 — declare breaking changes.** Extract the deploy message of the
-currently active deployment from Step 1's output. The message is a short
-commit revision (recorded by the previous deploy's `--message` flag). Use
-it to diff `CHANGELOG.md` between that revision and the current working
-tree:
+**Step 2 — declare breaking changes and collect recommended actions.**
+Extract the deploy message of the currently active deployment from Step 1's
+output. The message is a short commit revision (recorded by the previous
+deploy's `--message` flag). Use it to diff `CHANGELOG.md` between that revision
+and the current working tree:
 
 ```bash
 git diff <PREVIOUS_COMMIT_REV> -- CHANGELOG.md
@@ -408,17 +421,21 @@ workflow), and the database shows applied migrations (confirming Floway
 is already running in production), treat the entire content of
 `CHANGELOG.md` as potentially new to the user.
 
-When the diff (or full content) contains new breaking-change entries,
-summarize their combined user-facing impact to the user. When the same
-area was broken by consecutive entries, do not enumerate each
-intermediate state — synthesize the net effect. Tell the user that all
-listed breaking changes are intentional, describe their impact, and ask
-the user to confirm before proceeding. This is the **only** point in the
-deploy flow where the agent pauses and waits for user input.
+Classify every new entry by its heading. `hard` and `minor` entries are
+breaking changes; summarize their combined user-facing impact. When the same
+area was broken by consecutive entries, synthesize the net effect instead of
+enumerating intermediate states. Tell the user that all listed breaking
+changes are intentional, describe their impact, and ask the user to confirm
+before proceeding. This is the **only** point in the deploy flow where the
+agent pauses before deployment.
 
-When there are no new breaking-change entries, or when `CHANGELOG.md`
-does not exist at the previous revision and is empty now, skip
-confirmation and proceed to Step 3 immediately.
+`advisory` entries do not trigger confirmation. Recommended operations may
+appear in `hard`, `minor`, or `advisory` entries; collect all of them for the
+post-deploy report. A note is information, not authority to mutate state.
+
+When there are no new `hard` or `minor` entries, or when `CHANGELOG.md` does
+not exist at the previous revision and is empty now, skip confirmation and
+proceed to Step 3 immediately.
 
 **Step 3 — report findings and stage the rollback.** Tell the user the
 active version id, the active deployment timestamp, the latest applied
@@ -471,6 +488,13 @@ migrations and `wrangler deploy` always publishes the current code. When
 there are no pending migrations, the command reduces to
 `pnpm run deploy -- --message "$(git rev-parse --short HEAD)"`.
 
+After the Worker is live, report every recommended operation collected from
+the new Deployment Notes. Perform read-only checks directly when they are
+within scope. For any state-changing operation that was not already explicitly
+authorized, explain the recommendation and ask the user before doing it; never
+fold it silently into deployment automation. The deployment itself is complete
+even when a recommended follow-up remains for a later user turn.
+
 Worker rollback by version id (`pnpm wrangler rollback <VERSION_ID>`)
 works across the 100 most recent versions, but Cloudflare blocks rollback
 when intervening deployments changed Durable Object migrations or removed
@@ -486,26 +510,36 @@ from `account_id`, the one personal-only key the gate allowlists). So
 plain code rollback stays safe; D1 state is rolled back separately as
 above.
 
-A complete deploy without breaking changes fits in a strict turn budget:
+A complete deploy without `hard` or `minor` notes fits in a strict turn budget:
 **three agent turns when migrations are pending** (Step 1 = gather,
 Step 3 = bookmark + report + two rollback commands, Step 4 = deploy)
 and **two agent turns when no migrations are pending** (Step 3 collapses
 into Turn 1: gather + report + single code-rollback command; Turn 2 =
-deploy). Step 2 adds one turn only when new breaking-change entries
-exist.
+deploy). Step 2 adds one turn only when new `hard` or `minor` entries exist.
+Reporting recommended operations after deploy does not add a deployment turn;
+executing one may require a separate authorization turn.
 
-## Breaking Changes (CHANGELOG.md)
+## Deployment Notes (CHANGELOG.md)
 
-`CHANGELOG.md` records user-facing breaking changes. It is prepend-only:
-new entries go at the top, below the file header. Each entry has a date
-heading and a description of what broke and what users need to know.
+`CHANGELOG.md` records user-facing breaking changes and recommended deployment
+operations. It is prepend-only: new entries go at the top, below the file
+header. Each entry has a date heading, an impact level, and a description of
+what users need to know or do.
 
-Each entry carries a severity: **hard** (all users are affected;
-previously working functionality fails or behaves differently) or
-**minor** (specific behaviors, fields, or integration patterns change;
-users who depend on them need to adapt, but the primary functionality
-continues to work). The date heading format is `## YYYY-MM-DD · hard`
-or `## YYYY-MM-DD · minor`.
+Each entry carries one of three levels:
+
+- **hard** — all users are affected; previously working functionality fails or
+  behaves differently.
+- **minor** — a specific behavior, field, or integration pattern changes;
+  affected users need to adapt, but primary functionality continues to work.
+- **advisory** — no previously working behavior breaks, but the deployment
+  creates or reveals a condition for which an agent or operator should consider
+  a concrete follow-up action.
+
+The date heading format is `## YYYY-MM-DD · hard`,
+`## YYYY-MM-DD · minor`, or `## YYYY-MM-DD · advisory`. Recommended operations
+may appear in any level; they do not need a separate advisory entry when they
+belong to the same hard or minor change.
 
 A change qualifies as a breaking change when it causes previously working
 user-facing behavior to stop working or behave differently in a way
@@ -519,15 +553,16 @@ users must be aware of. Examples:
   data-plane output) that downstream consumers or cascaded Floway
   instances read.
 
-The following are NOT breaking changes and must not appear:
+An advisory qualifies only when there is a concrete deployment-related action
+to report. The following must not appear by themselves:
 
 - Database schema migrations (internal storage detail).
 - Control-plane API changes (admin-only surface).
-- Export version bumps, internal refactors, new features that do not
-  alter existing behavior.
+- Export version bumps, internal refactors, and new features that neither alter
+  existing behavior nor require an operator action.
 
 When working on a change and it is unclear whether it constitutes a
-breaking change, do not unilaterally add a CHANGELOG entry — ask the
-user to make the call. The user declares what is breaking; the agent
-records it.
-
+`hard` or `minor` breaking change, do not classify it unilaterally — ask the
+user to make the call. The user declares what is breaking; the agent records
+it. An advisory must state the recommended action, its reason, and enough scope
+to avoid accidentally applying it to unrelated state.

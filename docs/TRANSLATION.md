@@ -164,7 +164,7 @@ steps.
 
 - resolves `previous_response_id` and every `item_reference` through the
   Responses store before candidate dispatch. Every reference is replaced with
-  the first durable client-facing projection under its producer-owned ID before
+  the first durable client-facing item under its emitted ID before
   affinity projects blobs for a candidate. Item IDs are opaque and never
   reformatted or rewritten. A missing durable payload returns `item_not_found`,
   and no provider receives an

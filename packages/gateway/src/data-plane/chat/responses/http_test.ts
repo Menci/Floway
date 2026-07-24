@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
+import { TEST_RESPONSES_RETENTION_SECONDS } from './test-policy.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -66,7 +67,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: null,
-  responsesRetentionSeconds: 30 * 24 * 60 * 60,
+  responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS,
   ...overrides,
 });
 

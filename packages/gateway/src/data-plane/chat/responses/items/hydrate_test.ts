@@ -5,6 +5,7 @@ import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
+import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 
 describe('Responses stored-item hydration', () => {
   test('replaces an arbitrary item reference with its exact producer payload and private state', async () => {
@@ -14,7 +15,7 @@ describe('Responses stored-item hydration', () => {
       id: 'key-a', userId: 1, name: 'Responses test key', key: 'raw-responses-test',
       serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
       upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
-      responsesRetentionSeconds: 30 * 24 * 60 * 60,
+      responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS,
     });
     const id = 'rs_producer';
     const row: StoredResponsesItem = {
@@ -28,7 +29,7 @@ describe('Responses stored-item hydration', () => {
       refreshedAt: Date.now(),
     };
     await repo.responsesItems.insertMany([row], 0, Date.now());
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
+    const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
     const payload = { model: 'model', input: [{ type: 'item_reference' as const, id: row.id }] };
     await store.loadInputItems(payload.input, payload.input);
 
@@ -40,7 +41,7 @@ describe('Responses stored-item hydration', () => {
 
   test('rejects any missing item reference without an id-format prefilter', () => {
     initRepo(new InMemoryRepo());
-    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true);
+    const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
     expect(() => hydrateResponsesPayload({
       model: 'model',
       input: [{ type: 'item_reference', id: 'arbitrary-missing-id' }],

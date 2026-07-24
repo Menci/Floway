@@ -27,7 +27,7 @@ export const wrapResponsesClientOutput = async function* (
 
   const finalizedRow = async (item: ResponsesOutputItem): Promise<StoredResponsesItem> => {
     const id = responsesItemId(item);
-    if (id === null) throw new TypeError(`Responses ${item.type} output has no producer id`);
+    if (id === null) throw new TypeError(`Responses ${item.type} output has no id`);
     const privatePayload = store.getPrivatePayload(id);
     const row: StoredResponsesItem = {
       id,
@@ -103,7 +103,7 @@ export const wrapResponsesClientOutput = async function* (
   }
 };
 
-// A non-streaming compact result enters the same durability membrane as a live
+// A non-streaming compact result enters the same persistence path as a live
 // stream. Every complete item gets an added/done pair before the terminal
 // envelope, followed by the regular done sentinel.
 export const syntheticEventsFromResult = async function* (result: ResponsesResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {

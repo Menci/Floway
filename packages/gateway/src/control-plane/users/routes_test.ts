@@ -146,8 +146,6 @@ test('DELETE /api/users/:id succeeds when the broker close hook throws on a casc
 
   const response = await adminDelete(adminSession, user.id);
   assertEquals(response.status, 200);
-  // The store purge still ran for the cascaded key.
-  assertEquals(stubs.purgedAll.includes(defaultKey.id), true);
   // The user soft-delete still landed.
   expect(await repo.users.getById(user.id)).toBeNull();
 });

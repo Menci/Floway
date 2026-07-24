@@ -4,15 +4,11 @@ export interface R2BucketLike {
   put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null): Promise<unknown>;
   get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
   delete(keys: string | string[]): Promise<void>;
-  list(options: { prefix: string; cursor?: string; limit?: number }): Promise<{
-    objects: readonly { key: string }[];
-    truncated: boolean;
-    cursor?: string;
-  }>;
 }
 
-// R2 caps `delete` at 1000 keys per call and `list` at 1000 objects per page,
-// so paginate with the listing cursor and delete each page as we go.
+// R2 caps both `list` and `delete` at 1000 keys per call.
+// https://developers.cloudflare.com/r2/api/workers/workers-api-reference/#list
+// https://developers.cloudflare.com/r2/api/workers/workers-api-reference/#delete
 const R2_BATCH_LIMIT = 1000;
 
 export class R2FileProvider implements FileProvider {
@@ -31,28 +27,5 @@ export class R2FileProvider implements FileProvider {
     for (let index = 0; index < keys.length; index += R2_BATCH_LIMIT) {
       await this.bucket.delete(keys.slice(index, index + R2_BATCH_LIMIT));
     }
-  }
-
-  async deletePrefix(prefix: string): Promise<void> {
-    // Refuse the entire bucket: a stray empty-string prefix would otherwise
-    // wipe every spilled payload across tenants. Matches FsFileProvider.
-    if (prefix === '') throw new Error('R2FileProvider.deletePrefix: refusing empty prefix');
-    let cursor: string | undefined;
-    do {
-      const page = await this.bucket.list({ prefix, cursor, limit: R2_BATCH_LIMIT });
-      await this.deleteKeys(page.objects.map(object => object.key));
-      cursor = page.truncated ? page.cursor : undefined;
-    } while (cursor);
-  }
-
-  async listKeys(prefix: string): Promise<string[]> {
-    const keys: string[] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await this.bucket.list({ prefix, cursor, limit: R2_BATCH_LIMIT });
-      for (const object of page.objects) keys.push(object.key);
-      cursor = page.truncated ? page.cursor : undefined;
-    } while (cursor);
-    return keys;
   }
 }

@@ -326,7 +326,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     const existing = items.map(item => this.items.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const missingIndex = existing.findIndex(item => item === undefined);
     if (missingIndex !== -1) {
-      throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
+      throw new Error(`Responses item disappeared before retention refresh: ${items[missingIndex].id}`);
     }
     for (let index = 0; index < existing.length; index += 1) {
       assertSameStoredResponsesItem(items[index], existing[index]!);

@@ -7,10 +7,10 @@ import {
   type PreparedStoredResponsesPayload,
 } from './responses-payload.ts';
 import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from './responses-retention.ts';
+import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import type {
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
-  SpilledFilesRepo,
   StoredResponsesItem,
   StoredResponsesSnapshot,
 } from './types.ts';
@@ -20,7 +20,6 @@ const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, payload_json, item_hash, payload
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 80;
 const RESPONSES_INSERT_CHUNK_SIZE = 14;
 const RESPONSES_REFRESH_CHUNK_SIZE = 45;
-const FILE_STAGE_GRACE_MS = 60 * 60 * 1000;
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -227,7 +226,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
            ?
          FROM json_each(?)`,
       )
-      .bind(Date.now() + FILE_STAGE_GRACE_MS, JSON.stringify(files))
+      .bind(Date.now() + SPILLED_FILE_STAGE_GRACE_MS, JSON.stringify(files))
       .run();
   }
 
@@ -294,7 +293,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     await runStatements(this.db, statements);
     const persisted = await this.lookupCurrentPolicyItems(items, minimumRefreshedAt, policyAt);
     const missing = items.find(item => !persisted.has(scopedResponsesKey(item.apiKeyId, item.id)));
-    if (missing !== undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${missing.id}`);
+    if (missing !== undefined) throw new Error(`Responses item disappeared before retention refresh: ${missing.id}`);
     for (const item of items) {
       assertSameStoredResponsesItem(item, persisted.get(scopedResponsesKey(item.apiKeyId, item.id))!);
     }
@@ -338,21 +337,52 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     return new Map(rows.map(item => [scopedResponsesKey(item.apiKeyId, item.id), item]));
   }
 
-  async deleteExpired(now: number): Promise<number> {
-    const result = await this.db
+  async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
+    const active = await this.db
       .prepare(
-        `DELETE FROM responses_items
-         WHERE NOT EXISTS (
-           SELECT 1 FROM api_keys
-           WHERE api_keys.id = responses_items.api_key_id
+        `DELETE FROM responses_items WHERE rowid IN (
+           SELECT stored.rowid
+           FROM api_keys
+           CROSS JOIN responses_items AS stored
+           WHERE api_keys.id = ?
              AND api_keys.deleted_at IS NULL
              AND api_keys.responses_retention_seconds > 0
-             AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+             AND stored.api_key_id = api_keys.id
+             AND stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
+           ORDER BY stored.refreshed_at, stored.rowid
+           LIMIT ?
          )`,
       )
-      .bind(now - RESPONSES_REFRESH_GRANULARITY_MS)
+      .bind(apiKeyId, now - RESPONSES_REFRESH_GRANULARITY_MS, limit)
       .run();
-    return result.meta.changes ?? 0;
+    const activeDeleted = active.meta.changes ?? 0;
+    if (activeDeleted >= limit) return activeDeleted;
+    const inactive = await this.db
+      .prepare(
+        `DELETE FROM responses_items WHERE rowid IN (
+           SELECT stored.rowid FROM responses_items AS stored
+           WHERE stored.api_key_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM api_keys
+               WHERE api_keys.id = stored.api_key_id
+                 AND api_keys.deleted_at IS NULL
+                 AND api_keys.responses_retention_seconds > 0
+             )
+           ORDER BY stored.refreshed_at, stored.rowid
+           LIMIT ?
+         )`,
+      )
+      .bind(apiKeyId, limit - activeDeleted)
+      .run();
+    return activeDeleted + (inactive.meta.changes ?? 0);
+  }
+
+  async findOldestRefreshedAt(apiKeyId: string): Promise<number | null> {
+    const row = await this.db
+      .prepare('SELECT refreshed_at FROM responses_items WHERE api_key_id = ? ORDER BY refreshed_at LIMIT 1')
+      .bind(apiKeyId)
+      .first<{ refreshed_at: number }>();
+    return row?.refreshed_at ?? null;
   }
 
   async deleteAll(): Promise<void> {
@@ -424,56 +454,55 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       .run();
   }
 
-  async deleteExpired(now: number): Promise<number> {
-    const result = await this.db
+  async deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number> {
+    const active = await this.db
       .prepare(
-        `DELETE FROM responses_snapshots
-         WHERE NOT EXISTS (
-           SELECT 1 FROM api_keys
-           WHERE api_keys.id = responses_snapshots.api_key_id
+        `DELETE FROM responses_snapshots WHERE rowid IN (
+           SELECT stored.rowid
+           FROM api_keys
+           CROSS JOIN responses_snapshots AS stored
+           WHERE api_keys.id = ?
              AND api_keys.deleted_at IS NULL
              AND api_keys.responses_retention_seconds > 0
-             AND responses_snapshots.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
+             AND stored.api_key_id = api_keys.id
+             AND stored.refreshed_at < ? - api_keys.responses_retention_seconds * 1000
+           ORDER BY stored.refreshed_at, stored.rowid
+           LIMIT ?
          )`,
       )
-      .bind(now - RESPONSES_REFRESH_GRANULARITY_MS)
+      .bind(apiKeyId, now - RESPONSES_REFRESH_GRANULARITY_MS, limit)
       .run();
-    return result.meta.changes ?? 0;
+    const activeDeleted = active.meta.changes ?? 0;
+    if (activeDeleted >= limit) return activeDeleted;
+    const inactive = await this.db
+      .prepare(
+        `DELETE FROM responses_snapshots WHERE rowid IN (
+           SELECT stored.rowid FROM responses_snapshots AS stored
+           WHERE stored.api_key_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM api_keys
+               WHERE api_keys.id = stored.api_key_id
+                 AND api_keys.deleted_at IS NULL
+                 AND api_keys.responses_retention_seconds > 0
+             )
+           ORDER BY stored.refreshed_at, stored.rowid
+           LIMIT ?
+         )`,
+      )
+      .bind(apiKeyId, limit - activeDeleted)
+      .run();
+    return activeDeleted + (inactive.meta.changes ?? 0);
+  }
+
+  async findOldestRefreshedAt(apiKeyId: string): Promise<number | null> {
+    const row = await this.db
+      .prepare('SELECT refreshed_at FROM responses_snapshots WHERE api_key_id = ? ORDER BY refreshed_at LIMIT 1')
+      .bind(apiKeyId)
+      .first<{ refreshed_at: number }>();
+    return row?.refreshed_at ?? null;
   }
 
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM responses_snapshots').run();
-  }
-}
-
-export class SqlSpilledFilesRepo implements SpilledFilesRepo {
-  constructor(private readonly db: SqlDatabase) {}
-
-  async claimCollectible(token: string, now: number, staleClaimedBefore: number, limit: number): Promise<string[]> {
-    await this.db
-      .prepare(
-        `UPDATE spilled_files
-         SET claim_token = ?, claimed_at = ?
-         WHERE file_key IN (
-           SELECT file_key FROM spilled_files
-           WHERE state != 'owned'
-             AND collect_after <= ?
-             AND (claim_token IS NULL OR claimed_at < ?)
-           ORDER BY collect_after, file_key
-           LIMIT ?
-         )`,
-      )
-      .bind(token, now, now, staleClaimedBefore, limit)
-      .run();
-    const { results } = await this.db
-      .prepare('SELECT file_key FROM spilled_files WHERE claim_token = ? ORDER BY file_key')
-      .bind(token)
-      .all<{ file_key: string }>();
-    return results.map(row => row.file_key);
-  }
-
-  async acknowledge(token: string): Promise<number> {
-    const result = await this.db.prepare('DELETE FROM spilled_files WHERE claim_token = ?').bind(token).run();
-    return result.meta.changes ?? 0;
   }
 }

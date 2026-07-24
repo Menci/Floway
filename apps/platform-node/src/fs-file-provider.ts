@@ -1,15 +1,13 @@
-import type { Dirent } from 'node:fs';
 import { mkdirSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, resolve, sep } from 'node:path';
 
 import type { FileProvider } from '@floway-dev/platform';
 
-// Filesystem-backed FileProvider. Every key resolves to a path under `root`,
-// so listKeys / deletePrefix walk the filesystem rather than maintaining a
-// separate index. Keys use forward-slash POSIX separators (matching R2's
-// surface) and are translated to native path segments on the way in/out so
-// the same key reads identically on Windows and POSIX hosts.
+// Filesystem-backed FileProvider. Every key resolves to a path under `root`.
+// Keys use forward-slash POSIX separators (matching R2's surface) and are
+// translated to native path segments on the way in/out so the same key reads
+// identically on Windows and POSIX hosts.
 //
 // Threat model: `root` (`FLOWAY_FILES_DIR`) is gateway-trusted. Everything
 // dumped here is data the gateway already holds in its database (API keys,
@@ -48,36 +46,6 @@ export class FsFileProvider implements FileProvider {
 
   async deleteKeys(keys: readonly string[]): Promise<void> {
     await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
-  }
-
-  async deletePrefix(prefix: string): Promise<void> {
-    // Refuse to delete the entire root: a stray empty-string prefix would
-    // otherwise wipe every spilled payload across tenants. Callers wanting a
-    // full reset must enumerate prefixes explicitly.
-    if (prefix === '') throw new Error('FsFileProvider.deletePrefix: refusing empty prefix');
-    await rm(this.pathFor(prefix), { recursive: true, force: true });
-  }
-
-  async listKeys(prefix: string): Promise<string[]> {
-    const dir = this.pathFor(prefix);
-    let entries: Dirent[];
-    try {
-      entries = await readdir(dir, { withFileTypes: true, recursive: true });
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      // ENOENT is "the prefix has nothing under it"; ENOTDIR is "the prefix
-      // points at a file, not a directory" — both should yield an empty list,
-      // matching R2's "list of zero objects" semantics for a missing prefix.
-      if (code === 'ENOENT' || code === 'ENOTDIR') return [];
-      throw e;
-    }
-    const keys: string[] = [];
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      const fullPath = join(entry.parentPath, entry.name);
-      keys.push(relative(this.root, fullPath).split(sep).join('/'));
-    }
-    return keys;
   }
 
   // Resolve a key against `root` and reject paths that escape it. Even though

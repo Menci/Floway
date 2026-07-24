@@ -381,20 +381,16 @@ test('DELETE /api/keys/:id succeeds when the broker close hook throws — broker
     headers: { 'x-api-key': apiKey.key },
   });
   assertEquals(response.status, 200);
-  // The store purge still ran.
-  assertEquals(stubs.purgedAll.includes(apiKey.id), true);
-  // The soft-delete still landed.
   assertEquals(await repo.apiKeys.getById(apiKey.id), null);
 });
 
-test('PATCH /api/keys/:id positive→null retention purges + closes the channel', async () => {
+test('PATCH /api/keys/:id positive→null closes the channel', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);
-  assertEquals(stubs.purgedAll.includes(apiKey.id), true);
   assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), true);
 });
 
@@ -406,18 +402,14 @@ test('PATCH /api/keys/:id positive→null succeeds when the broker close hook th
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);
-  assertEquals(stubs.purgedAll.includes(apiKey.id), true);
 });
 
-test('PATCH /api/keys/:id positive→smaller positive purges expired with the new window', async () => {
+test('PATCH /api/keys/:id positive→smaller positive keeps the channel open', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 7200 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 1800 }, apiKey.key);
   assertEquals(response.status, 200);
-  const call = stubs.purgedExpired.find(c => c.keyId === apiKey.id);
-  assertExists(call);
-  assertEquals(call.retentionSeconds, 1800);
   assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), false);
 });

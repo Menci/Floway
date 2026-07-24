@@ -52,7 +52,7 @@ export const prepareStoredResponsesPayload = async (
 
   // File body holds the gzipped payload bytes only. The descriptor in D1's
   // `payload_json` column carries version, storage discriminator, encoding,
-  // sha256 and byteLength; the first-class file relation supplies the key.
+  // sha256 and byteLength; `payload_file_key` stores the associated object key.
   // sha256/byteLength describe the file's actual bytes (gzipped) so file
   // integrity verification stays a plain hash-of-body check.
   const sha256 = await sha256Hex(gzippedBytes);
@@ -60,11 +60,10 @@ export const prepareStoredResponsesPayload = async (
   // Producer IDs are opaque and may contain separators or unbounded text, so
   // only their API-key-scoped digest is allowed into the object path.
   const itemScopeHash = await sha256Hex(encoder.encode(`${apiKeyId}\0${id}`));
-  // The digest keeps integrity/content identity visible, while the nonce gives
-  // each pre-SQL write exclusive cleanup ownership. A losing concurrent write
-  // can then delete its object without racing a later winner that stored the
-  // same item bytes under the same expiry bucket.
-  const key = `${RESPONSES_ITEMS_FILE_ROOT}${apiKeyHash}/${itemScopeHash}/${sha256}-${randomFileNonce()}.gz`;
+  // The digest keeps content identity visible, while the random suffix gives
+  // each attempted write a unique object key. A losing concurrent write can
+  // delete its object without racing the winner for the same item.
+  const key = `${RESPONSES_ITEMS_FILE_ROOT}${apiKeyHash}/${itemScopeHash}/${sha256}-${randomFileSuffix()}.gz`;
   const payloadJson = JSON.stringify({
     version: 1,
     storage: 'file',
@@ -171,7 +170,7 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
-const randomFileNonce = (): string => {
+const randomFileSuffix = (): string => {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return bytesToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');

@@ -389,7 +389,8 @@ export interface ResponsesItemsRepo {
   lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], minimumRefreshedAt: number): Promise<StoredResponsesItem[]>;
   insertMany(items: readonly StoredResponsesItem[], minimumRefreshedAt: number, policyAt: number): Promise<void>;
   refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, minimumRefreshedAt: number, policyAt: number): Promise<void>;
-  deleteExpired(now: number): Promise<number>;
+  deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
+  findOldestRefreshedAt(apiKeyId: string): Promise<number | null>;
   deleteAll(): Promise<void>;
 }
 
@@ -403,13 +404,33 @@ export interface StoredResponsesSnapshot {
 export interface ResponsesSnapshotsRepo {
   lookup(apiKeyId: string, id: string, minimumRefreshedAt: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  deleteExpired(now: number): Promise<number>;
+  deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
+  findOldestRefreshedAt(apiKeyId: string): Promise<number | null>;
   deleteAll(): Promise<void>;
 }
 
 export interface SpilledFilesRepo {
   claimCollectible(token: string, now: number, staleClaimedBefore: number, limit: number): Promise<string[]>;
   acknowledge(token: string): Promise<number>;
+}
+
+export type ExpirationDomain = 'responses' | 'dumps';
+
+export interface ExpirationSweepClaim {
+  domain: ExpirationDomain;
+  keyId: string;
+  revision: number;
+}
+
+export type ExpirationSweepCompletion =
+  | { kind: 'drained'; nextDueAt: number | null }
+  | { kind: 'partial'; retryAt: number };
+
+export interface ExpirationSweepsRepo {
+  backfillCleanupTracking(limit: number): Promise<void>;
+  schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void>;
+  claim(token: string, now: number, staleClaimedBefore: number): Promise<ExpirationSweepClaim | null>;
+  complete(token: string, expectedRevision: number, completion: ExpirationSweepCompletion): Promise<void>;
 }
 
 // The Agent Setup lease store. Its shape, record, and mutation discriminants
@@ -433,5 +454,6 @@ export interface Repo {
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
   spilledFiles: SpilledFilesRepo;
+  expirationSweeps: ExpirationSweepsRepo;
   agentSetup: AgentSetupRepository;
 }

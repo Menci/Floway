@@ -5,6 +5,7 @@ import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -29,9 +30,9 @@ const memoryOutputHarness = () => {
     id: 'key-a', userId: 1, name: 'Responses test key', key: 'raw-responses-test',
     serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
     upstreamIds: null, deletedAt: null, dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 30 * 24 * 60 * 60,
+    responsesRetentionSeconds: TEST_RESPONSES_RETENTION_SECONDS,
   });
-  return { repo, store: createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), true) };
+  return { repo, store: createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true) };
 };
 
 test('client output rewrites only the response id inside queued envelopes', async () => {
@@ -62,7 +63,7 @@ test('client output rewrites only the response id inside queued envelopes', asyn
   expect(frame.event.response.output[0].id).toBe('rs_upstream');
 });
 
-test('client output preserves producer ids and persists the exact complete item before terminal', async () => {
+test('client output preserves emitted ids and persists the exact complete item before terminal', async () => {
   const { repo, store } = memoryOutputHarness();
   const result: ResponsesResult = {
     id: 'resp_upstream',
@@ -100,10 +101,10 @@ test('client output waits for persistence before publishing output_item.done', a
   const insertStarted = new Promise<void>(resolve => { resolveInsertStarted = resolve; });
   let releaseInsert!: () => void;
   const insertReleased = new Promise<void>(resolve => { releaseInsert = resolve; });
-  vi.spyOn(repo.responsesItems, 'insertMany').mockImplementation(async (items, minimumRefreshedAt) => {
+  vi.spyOn(repo.responsesItems, 'insertMany').mockImplementation(async (items, minimumRefreshedAt, policyAt) => {
     resolveInsertStarted();
     await insertReleased;
-    await insert(items, minimumRefreshedAt, Date.now());
+    await insert(items, minimumRefreshedAt, policyAt);
   });
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });
@@ -143,10 +144,10 @@ test('client output does not publish output_item.done when persistence fails', a
   await expect(iterator.next()).rejects.toBe(persistenceError);
 });
 
-test('store=false passes the producer item id through without persistence', async () => {
+test('store=false passes the emitted item id through without persistence', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), false);
   const result: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -164,7 +165,7 @@ test('store=false passes the producer item id through without persistence', asyn
 
   const terminal = events.at(-1);
   if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
-  // The response envelope ID is source-boundary-owned, while item identity remains producer-owned.
+  // The client-facing boundary applies the response ID without changing item IDs.
   expect(terminal.response.id).toBe('resp_public');
   expect(terminal.response.output[0].id).toBe('rs_upstream');
   const added = events.find(event => event.type === 'response.output_item.added');
@@ -387,7 +388,7 @@ test('client output refuses to persist an id-less upstream item', async () => {
     })) { /* drain */ }
   };
 
-  await expect(collect()).rejects.toThrow('Responses message output has no producer id');
+  await expect(collect()).rejects.toThrow('Responses message output has no id');
 });
 
 test('stateful output rejects a terminal item that never emitted output_item.done', async () => {
@@ -419,7 +420,7 @@ test('stateful output rejects a terminal item that never emitted output_item.don
 
 test('store=false forwards an id-less finalized item without persistence work', async () => {
   initRepo(new InMemoryRepo());
-  const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, Date.now(), false);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), false);
   const item = {
     type: 'message' as const,
     role: 'assistant' as const,
