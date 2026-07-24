@@ -537,9 +537,11 @@ Each entry carries one of three levels:
   a concrete follow-up action.
 
 The date heading format is `## YYYY-MM-DD · hard`,
-`## YYYY-MM-DD · minor`, or `## YYYY-MM-DD · advisory`. Recommended operations
-may appear in any level; they do not need a separate advisory entry when they
-belong to the same hard or minor change.
+`## YYYY-MM-DD · minor`, or `## YYYY-MM-DD · advisory`, followed by a
+`### Short title` heading naming the change and then its description. Unlike
+this file, `CHANGELOG.md` is not hard-wrapped: each paragraph is one line.
+Recommended operations may appear in any level; they do not need a separate
+advisory entry when they belong to the same hard or minor change.
 
 A change qualifies as a breaking change when it causes previously working
 user-facing behavior to stop working or behave differently in a way
