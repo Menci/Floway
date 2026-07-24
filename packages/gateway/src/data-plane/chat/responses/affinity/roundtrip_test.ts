@@ -21,7 +21,7 @@ const modelCandidate = (upstream: string) => {
   });
 };
 
-test('affinity selects the route while item storage preserves the exact producer id', async () => {
+test('affinity selects the route while item storage preserves the exact emitted id', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   void repo.apiKeys.save({

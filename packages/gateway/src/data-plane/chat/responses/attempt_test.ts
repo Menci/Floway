@@ -472,14 +472,14 @@ test('generate inherits headers and injects external image loading across transl
 
 test('generate seeds privatePayload before interceptors so the web-search shim replays the prior wsc results on echo', async () => {
   // End-to-end contract: when a stateless client (e.g. Codex CLI) echoes a
-  // prior gateway-created web_search_call by its producer-owned id, the web-search shim's
+  // prior gateway-created web_search_call by its emitted id, the web-search shim's
   // `transformItems` (which runs as part of the interceptor chain) must
   // find the persisted `payload.private` and emit the cached function_call
   // + function_call_output pair to upstream — NOT the not-preserved
   // placeholder.
   //
   // The wire shape we model here:
-  //   - row.id = the web-search producer's public item id, echoed as `wsc.id`.
+  //   - row.id = the public item id echoed as `wsc.id`.
   //   - payload.item.id = that same public id.
   //   - payload.private = WebSearchCallPrivatePayload (v:1, functionCallItem, ir).
   //

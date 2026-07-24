@@ -12,7 +12,7 @@ export const wrapNativeResponsesClientOutput = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   ctx: GatewayCtx,
 ): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
-  if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('Responses output reached the native client membrane without chat context');
+  if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('Responses output reached the client-facing boundary without chat context');
   const chatCtx = ctx as ChatGatewayCtx;
   const withAffinity = wrapResponsesAffinityEgress(frames, {
     codec: chatCtx.affinity.codec,

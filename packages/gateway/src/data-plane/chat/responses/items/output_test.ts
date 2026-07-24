@@ -63,7 +63,7 @@ test('client output rewrites only the response id inside queued envelopes', asyn
   expect(frame.event.response.output[0].id).toBe('rs_upstream');
 });
 
-test('client output preserves producer ids and persists the exact complete item before terminal', async () => {
+test('client output preserves emitted ids and persists the exact complete item before terminal', async () => {
   const { repo, store } = memoryOutputHarness();
   const result: ResponsesResult = {
     id: 'resp_upstream',
@@ -144,7 +144,7 @@ test('client output does not publish output_item.done when persistence fails', a
   await expect(iterator.next()).rejects.toBe(persistenceError);
 });
 
-test('store=false passes the producer item id through without persistence', async () => {
+test('store=false passes the emitted item id through without persistence', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const store = createResponsesHttpStore(testResponsesStatePolicy(), false);
@@ -165,7 +165,7 @@ test('store=false passes the producer item id through without persistence', asyn
 
   const terminal = events.at(-1);
   if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
-  // The response envelope ID is source-boundary-owned, while item identity remains producer-owned.
+  // The client-facing boundary applies the response ID without changing item IDs.
   expect(terminal.response.id).toBe('resp_public');
   expect(terminal.response.output[0].id).toBe('rs_upstream');
   const added = events.find(event => event.type === 'response.output_item.added');
@@ -388,7 +388,7 @@ test('client output refuses to persist an id-less upstream item', async () => {
     })) { /* drain */ }
   };
 
-  await expect(collect()).rejects.toThrow('Responses message output has no producer id');
+  await expect(collect()).rejects.toThrow('Responses message output has no id');
 });
 
 test('stateful output rejects a terminal item that never emitted output_item.done', async () => {
