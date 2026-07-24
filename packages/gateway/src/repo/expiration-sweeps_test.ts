@@ -5,6 +5,7 @@ import { FileDumpStore } from './dump-store.ts';
 import { sweepExpirations } from './expiration-sweeps.ts';
 import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
+import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from './responses-retention.ts';
 import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
@@ -16,6 +17,8 @@ import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());
 
+const RESPONSES_RETENTION_SECONDS = 24 * 60 * 60;
+
 const key = (now: number): ApiKey => ({
   id: 'key-a',
   userId: 1,
@@ -26,7 +29,7 @@ const key = (now: number): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: 3600,
-  responsesRetentionSeconds: 3600,
+  responsesRetentionSeconds: RESPONSES_RETENTION_SECONDS,
 });
 
 const responseItem = (id: string, refreshedAt: number, apiKeyId = 'key-a'): StoredResponsesItem => ({
@@ -74,27 +77,28 @@ test('one fair driver drains bounded Responses and dump backlogs', async () => {
   initFileProvider(files);
   const dumps = new FileDumpStore(db, files);
   initDumpStore(dumps);
-  await repo.apiKeys.save({ ...key(now), dumpRetentionSeconds: 7200, responsesRetentionSeconds: 7200 });
+  await repo.apiKeys.save({ ...key(now), dumpRetentionSeconds: 7200, responsesRetentionSeconds: 2 * RESPONSES_RETENTION_SECONDS });
 
-  const expiredAt = now - 3600_000 - 1;
+  const responsesExpiredAt = now - 2 * RESPONSES_REFRESH_GRANULARITY_MS - 1;
+  const dumpExpiredAt = now - 3600_000 - 1;
   await repo.responsesItems.insertMany(
-    Array.from({ length: 150 }, (_, index) => responseItem(`msg-expired-${index}`, expiredAt)),
+    Array.from({ length: 150 }, (_, index) => responseItem(`msg-expired-${index}`, responsesExpiredAt)),
     0,
   );
   await repo.responsesItems.insertMany([responseItem('msg-current', now)], 0);
   for (let index = 0; index < 150; index += 1) {
-    await dumps.put('key-a', dumpRecord(`01K00000000000000000${String(index).padStart(4, '0')}`, expiredAt));
+    await dumps.put('key-a', dumpRecord(`01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt));
   }
   await dumps.put('key-a', dumpRecord('01K00000000000000000LIVE', now));
-  await repo.apiKeys.update('key-a', { dumpRetentionSeconds: 3600, responsesRetentionSeconds: 3600 });
+  await repo.apiKeys.update('key-a', { dumpRetentionSeconds: 3600, responsesRetentionSeconds: RESPONSES_RETENTION_SECONDS });
 
   await sweepExpirations(now);
 
-  expect((await db.prepare('SELECT COUNT(*) AS count FROM responses_items WHERE refreshed_at < ?').bind(now).first<{ count: number }>())?.count).toBe(50);
+  expect((await db.prepare("SELECT COUNT(*) AS count FROM responses_items WHERE id LIKE 'msg-expired-%'").first<{ count: number }>())?.count).toBe(50);
   expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(50);
   await sweepExpirations(now + 1);
 
-  expect((await db.prepare('SELECT COUNT(*) AS count FROM responses_items WHERE refreshed_at < ?').bind(now).first<{ count: number }>())?.count).toBe(0);
+  expect((await db.prepare("SELECT COUNT(*) AS count FROM responses_items WHERE id LIKE 'msg-expired-%'").first<{ count: number }>())?.count).toBe(0);
   expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(0);
   expect(await repo.responsesItems.lookupMany('key-a', ['msg-current'], 0)).toHaveLength(1);
   expect((await dumps.list('key-a', { limit: 10 })).map(row => row.id)).toEqual(['01K00000000000000000LIVE']);
@@ -108,16 +112,16 @@ test('a partial hot key yields the current tick to another due key', async () =>
   const repo = new SqlRepo(db);
   initRepo(repo);
   initFileProvider(new MemoryFileProvider());
-  await repo.apiKeys.save({ ...key(now), id: 'a-hot', key: 'raw-a-hot', serverSecret: '77'.repeat(32), responsesRetentionSeconds: 7200 });
-  await repo.apiKeys.save({ ...key(now), id: 'b-small', key: 'raw-b-small', serverSecret: '88'.repeat(32), responsesRetentionSeconds: 7200 });
-  const expiredAt = now - 3600_000 - 1;
+  await repo.apiKeys.save({ ...key(now), id: 'a-hot', key: 'raw-a-hot', serverSecret: '77'.repeat(32), responsesRetentionSeconds: 2 * RESPONSES_RETENTION_SECONDS });
+  await repo.apiKeys.save({ ...key(now), id: 'b-small', key: 'raw-b-small', serverSecret: '88'.repeat(32), responsesRetentionSeconds: 2 * RESPONSES_RETENTION_SECONDS });
+  const expiredAt = now - 2 * RESPONSES_REFRESH_GRANULARITY_MS - 1;
   await repo.responsesItems.insertMany(
     Array.from({ length: 450 }, (_, index) => responseItem(`msg-hot-${index}`, expiredAt, 'a-hot')),
     0,
   );
   await repo.responsesItems.insertMany([responseItem('msg-small', expiredAt, 'b-small')], 0);
-  await repo.apiKeys.update('a-hot', { responsesRetentionSeconds: 3600 });
-  await repo.apiKeys.update('b-small', { responsesRetentionSeconds: 3600 });
+  await repo.apiKeys.update('a-hot', { responsesRetentionSeconds: RESPONSES_RETENTION_SECONDS });
+  await repo.apiKeys.update('b-small', { responsesRetentionSeconds: RESPONSES_RETENTION_SECONDS });
 
   await sweepExpirations(now);
 
@@ -359,7 +363,7 @@ test('bounded owner backfill skips API keys without persisted owners', async () 
 
   expect((await db.prepare('SELECT domain, key_id, due_at FROM expiration_sweeps ORDER BY domain, key_id').all()).results)
     .toEqual([{ domain: 'responses', key_id: 'key-a', due_at: 0 }]);
-  await repo.apiKeys.update('key-empty', { responsesRetentionSeconds: 7200, dumpRetentionSeconds: 7200 });
+  await repo.apiKeys.update('key-empty', { responsesRetentionSeconds: 2 * RESPONSES_RETENTION_SECONDS, dumpRetentionSeconds: 7200 });
   expect(await db.prepare("SELECT domain FROM expiration_sweeps WHERE key_id = 'key-empty'").first()).toBeNull();
 });
 
@@ -375,7 +379,17 @@ test('in-memory Responses owners enter the same expiration driver', async () => 
   await repo.responsesItems.insertMany([item], 0);
   await repo.responsesSnapshots.insert({ id: 'resp-memory', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: now });
 
-  await sweepExpirations(now + 3600_000 + 1);
+  const expiresAt = quantizeResponsesRefreshedAt(now)
+    + RESPONSES_RETENTION_SECONDS * 1000
+    + RESPONSES_REFRESH_GRANULARITY_MS;
+  await sweepExpirations(expiresAt);
+  expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([{
+    ...item,
+    refreshedAt: quantizeResponsesRefreshedAt(item.refreshedAt),
+  }]);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp-memory', 0)).not.toBeNull();
+
+  await sweepExpirations(expiresAt + 1);
 
   expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp-memory', 0)).toBeNull();
