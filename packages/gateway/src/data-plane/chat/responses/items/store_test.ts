@@ -1,10 +1,16 @@
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { hashResponsesItemContent } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { quantizeResponsesRefreshedAt } from '../../../../repo/responses-retention.ts';
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TEST_DAY = Date.UTC(2026, 0, 10);
+
+afterEach(() => vi.useRealTimers());
 
 const installRepo = (): InMemoryRepo => {
   const repo = new InMemoryRepo();
@@ -101,8 +107,10 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('append snapshots refresh the lifetime of every referenced item', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_DAY + DAY_MS / 2);
     const repo = installRepo();
-    const initialRefreshedAt = Date.now() - 1_000;
+    const initialRefreshedAt = TEST_DAY - DAY_MS / 2;
     const item = {
       id: 'msg_old',
       apiKeyId: 'key-a',
@@ -119,17 +127,62 @@ describe('StatefulResponsesStore', () => {
     await store.commitSnapshot('resp_new', 'append', []);
 
     const [refreshed] = await repo.responsesItems.lookupMany('key-a', [item.id], 0);
-    expect(refreshed.refreshedAt).toBeGreaterThan(initialRefreshedAt);
+    expect(refreshed.refreshedAt).toBe(TEST_DAY);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_new', 0))?.itemIds).toEqual([item.id]);
     expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toHaveLength(1);
   });
 
+  test('same-day snapshot reuse does not call the durable item refresher', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_DAY + DAY_MS / 2);
+    const repo = installRepo();
+    const item = {
+      id: 'msg_current_day',
+      apiKeyId: 'key-a',
+      payload: { item: { type: 'message', id: 'msg_current_day', role: 'assistant', content: [] } },
+      itemHash: 'current-day-hash',
+      refreshedAt: TEST_DAY + 1_000,
+    };
+    await repo.responsesItems.insertMany([item], 0);
+    await repo.responsesSnapshots.insert({ id: 'resp_current_day', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: item.refreshedAt });
+    const refreshItems = vi.spyOn(repo.responsesItems, 'refreshMany');
+
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    expect(await store.loadSnapshot('resp_current_day')).not.toBeNull();
+    await store.commitSnapshot('resp_current_day_next', 'append', []);
+
+    expect(refreshItems).not.toHaveBeenCalled();
+  });
+
+  test('a store crossing UTC midnight refreshes items into the new day', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_DAY + DAY_MS - 1_000);
+    const repo = installRepo();
+    const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: 30 * 24 * 60 * 60 }, true);
+    const output = {
+      id: 'msg_before_midnight',
+      apiKeyId: 'key-a',
+      payload: { item: { type: 'message', id: 'msg_before_midnight', role: 'assistant', content: [] } },
+      itemHash: 'before-midnight-hash',
+      refreshedAt: Date.now(),
+    };
+    await store.persistOutputItem(output);
+
+    vi.setSystemTime(TEST_DAY + DAY_MS + 1_000);
+    await store.commitSnapshot('resp_after_midnight', 'append', [output.id]);
+
+    expect((await repo.responsesItems.lookupMany('key-a', [output.id], 0))[0].refreshedAt).toBe(TEST_DAY + DAY_MS);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_after_midnight', 0))?.refreshedAt).toBe(TEST_DAY + DAY_MS);
+  });
+
   test('append snapshots refresh direct-id and content-hash input reuse', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_DAY + DAY_MS / 2);
     const repo = installRepo();
     const store = createResponsesHttpStore(testResponsesStatePolicy(), true);
     const directInput = { type: 'message' as const, id: 'msg_direct', role: 'user' as const, content: 'direct' };
     const hashedInput = { type: 'message' as const, role: 'user' as const, content: 'hashed' };
-    const initialRefreshedAt = Date.now() - 1_000;
+    const initialRefreshedAt = TEST_DAY - DAY_MS / 2;
     const directRow = {
       id: directInput.id,
       apiKeyId: 'key-a',
@@ -150,15 +203,18 @@ describe('StatefulResponsesStore', () => {
     await store.commitSnapshot('resp_reused', 'append', []);
 
     const refreshed = await repo.responsesItems.lookupMany('key-a', [directRow.id, hashedRow.id], 0);
-    expect(refreshed.every(row => row.refreshedAt > initialRefreshedAt)).toBe(true);
+    expect(refreshed.every(row => row.refreshedAt === TEST_DAY)).toBe(true);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_reused', 0))?.itemIds).toEqual([directRow.id, hashedRow.id]);
   });
 
   test('snapshot lifetime follows a newer backing item timestamp', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TEST_DAY + DAY_MS / 2);
     const repo = installRepo();
     const store = createResponsesHttpStore(testResponsesStatePolicy(), true);
     const input = { type: 'message' as const, role: 'user' as const, content: 'future lifetime' };
-    const futureRefreshedAt = Date.now() + 60_000;
+    const futureRefreshedAt = TEST_DAY + DAY_MS + 60_000;
+    const quantizedFutureRefreshedAt = quantizeResponsesRefreshedAt(futureRefreshedAt);
     const row = {
       id: 'msg_future',
       apiKeyId: 'key-a',
@@ -171,8 +227,8 @@ describe('StatefulResponsesStore', () => {
     await store.stageInputItems([input]);
     await store.commitSnapshot('resp_future', 'append', []);
 
-    expect((await repo.responsesItems.lookupMany('key-a', [row.id], 0))[0].refreshedAt).toBe(futureRefreshedAt);
-    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_future', 0))?.refreshedAt).toBe(futureRefreshedAt);
+    expect((await repo.responsesItems.lookupMany('key-a', [row.id], 0))[0].refreshedAt).toBe(quantizedFutureRefreshedAt);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_future', 0))?.refreshedAt).toBe(quantizedFutureRefreshedAt);
   });
 
   test('disable between output-item done and terminal skips durable snapshot creation', async () => {

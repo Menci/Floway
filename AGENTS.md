@@ -236,15 +236,19 @@ protocol owns its `affinity/ingress.ts` and `affinity/egress.ts`. Wire behavior
 lives in `docs/AFFINITY.md`, and candidate ordering lives in `docs/RESOLUTION.md`.
 
 Native Responses persistence is independent from affinity and opt-in per API
-key. A zero retention disables every durable lookup and write; a positive
-retention keeps producer-owned items and response snapshots from their last
-successful reuse. Visibility is the current rolling window over
-`refreshed_at`; increasing the configured duration may expose a row that the
-eventually-consistent cleanup has not deleted yet. A completed output item
-becomes reusable at its first `response.output_item.done`, so its row commits
-before that event is published; the response snapshot commits at the successful
-terminal event. Repository writes treat exact item/private-payload reuse as
-idempotent and reject a different live row under the same API-key-scoped ID.
+key. Retention is stored and transferred in seconds so it shares the same
+duration representation as dumps, but every positive value is a whole number
+of days with a one-day minimum; zero disables every durable lookup and write.
+`refreshed_at` is the start of the UTC day containing the latest successful
+reuse. Reuse within that same day performs no refresh write. Visibility and
+cleanup apply the configured rolling window plus one fixed day of expiration
+grace, so quantization never expires state early and may retain it for up to one
+extra day. Increasing the configured duration may expose a row that cleanup has
+not deleted yet. A completed output item becomes reusable at its first
+`response.output_item.done`, so its row commits before that event is published;
+the response snapshot commits at the successful terminal event. Repository
+writes treat exact item/private-payload reuse as idempotent and reject a
+different live row under the same API-key-scoped ID.
 
 Large Responses payloads and dump bodies use immutable nonce-owned objects.
 The generic `spilled_files` ledger stages each object before its file write,

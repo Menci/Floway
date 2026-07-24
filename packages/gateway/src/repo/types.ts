@@ -19,8 +19,8 @@ export interface ApiKey {
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
   dumpRetentionSeconds: number | null;
-  // 0 = durable Stateful Responses disabled; positive integer = sliding
-  // retention from the last successful reuse.
+  // 0 = durable Stateful Responses disabled; a positive value is seconds in
+  // whole-day increments. Reuse lifetime is quantized to UTC days.
   responsesRetentionSeconds: number;
 }
 

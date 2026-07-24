@@ -423,7 +423,7 @@ test('import rejects any version other than the current one before deleting data
 
 test('import replace writes upstreams and clears replaced collections', async () => {
   const { app, repo } = setup();
-  await repo.apiKeys.save({ ...KEY_A, responsesRetentionSeconds: 3600 });
+  await repo.apiKeys.save({ ...KEY_A, responsesRetentionSeconds: 24 * 60 * 60 });
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.searchUsage.set(SEARCH_USAGE_1);
@@ -911,12 +911,12 @@ test('v16 import preserves and validates Responses retention', async () => {
   assertEquals(retained.status, 200);
   assertEquals((await repo.apiKeys.findByRawKey(KEY_A.key))?.responsesRetentionSeconds, 7 * 24 * 60 * 60);
 
-  for (const value of [-1, 1, 3599, 315_360_001, 3600.5]) {
+  for (const value of [-1, 1, 3600, 86_401, 315_360_001, 86_400.5]) {
     const invalid = await doImport(app, 'replace', latestImportData({
       apiKeys: [{ ...KEY_A, responsesRetentionSeconds: value }],
     }));
     assertEquals(invalid.status, 400);
-    assertEquals(String(invalid.body.error).includes('responsesRetentionSeconds must be 0 or an integer'), true);
+    assertEquals(String(invalid.body.error).includes('responsesRetentionSeconds must be 0 or a whole-day integer'), true);
   }
 });
 

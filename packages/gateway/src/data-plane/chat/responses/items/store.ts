@@ -1,7 +1,7 @@
 import { createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { assertSameStoredResponsesItem, cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
-import { responsesStateCutoff } from '../../../../repo/responses-retention.ts';
+import { quantizeResponsesRefreshedAt, responsesStateCutoff } from '../../../../repo/responses-retention.ts';
 import type { ApiKey, Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
@@ -50,7 +50,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly stagedInputItemIds: string[] = [];
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
-  private readonly freshItemIds = new Set<string>();
   private readonly privatePayloads = new Map<string, unknown>();
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
@@ -70,18 +69,18 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       await this.loadItems({ ids: snapshot.itemIds, itemHashes: [] });
       if (!snapshot.itemIds.every(itemId => this.loadedItems.has(itemId))) continue;
       if (this.options.writes.length > 0) {
-        const refreshedAt = Date.now();
+        const refreshedAt = quantizeResponsesRefreshedAt(Date.now());
         const items = snapshot.itemIds.map(itemId => this.loadedItems.get(itemId)!);
         await this.commitItems(items);
+        const staleItems = items.filter(item => item.refreshedAt < refreshedAt);
         await Promise.all(this.options.writes.map(async write => {
-          await write.refreshItems(items, refreshedAt);
+          if (staleItems.length > 0) await write.refreshItems(staleItems, refreshedAt);
           await write.insertSnapshot({ ...snapshot, refreshedAt });
         }));
         for (const item of items) {
-          item.refreshedAt = Math.max(item.refreshedAt, refreshedAt);
-          this.freshItemIds.add(item.id);
+          if (item.refreshedAt < refreshedAt) item.refreshedAt = refreshedAt;
         }
-        snapshot.refreshedAt = Math.max(snapshot.refreshedAt, refreshedAt);
+        if (snapshot.refreshedAt < refreshedAt) snapshot.refreshedAt = refreshedAt;
       }
       this.previousSnapshotItemIds = [...snapshot.itemIds];
       return cloneStoredResponsesSnapshot(snapshot);
@@ -119,9 +118,11 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   async persistOutputItem(row: StoredResponsesItem): Promise<void> {
     if (!this.writesState) return;
-    const cloned = cloneStoredResponsesItem(row);
+    const cloned = cloneStoredResponsesItem({
+      ...row,
+      refreshedAt: quantizeResponsesRefreshedAt(row.refreshedAt),
+    });
     await this.commitItems([cloned]);
-    this.freshItemIds.add(cloned.id);
     this.rememberItem(cloned);
   }
 
@@ -137,13 +138,12 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return row;
     });
     await this.commitItems(uniqueRows);
-    const staleRows = uniqueRows.filter(row => !this.freshItemIds.has(row.id));
+    const refreshedAt = quantizeResponsesRefreshedAt(Date.now());
+    const staleRows = uniqueRows.filter(row => row.refreshedAt < refreshedAt);
     if (staleRows.length > 0) {
-      const refreshedAt = Date.now();
       await Promise.all(this.options.writes.map(write => write.refreshItems(staleRows, refreshedAt)));
       for (const row of staleRows) {
-        row.refreshedAt = Math.max(row.refreshedAt, refreshedAt);
-        this.freshItemIds.add(row.id);
+        if (row.refreshedAt < refreshedAt) row.refreshedAt = refreshedAt;
       }
     }
     const snapshotRefreshedAt = Math.min(...uniqueRows.map(row => row.refreshedAt));
@@ -201,10 +201,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         apiKeyId: this.apiKeyId,
         payload: { item },
         itemHash: await hashResponsesItemContent(item),
-        refreshedAt: Date.now(),
+        refreshedAt: quantizeResponsesRefreshedAt(Date.now()),
       };
       this.stagedInputItemIds.push(id);
-      this.freshItemIds.add(id);
       this.rememberItem(created);
       return;
     }
@@ -221,10 +220,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       apiKeyId: this.apiKeyId,
       payload: { item },
       itemHash,
-      refreshedAt: Date.now(),
+      refreshedAt: quantizeResponsesRefreshedAt(Date.now()),
     };
     this.stagedInputItemIds.push(row.id);
-    this.freshItemIds.add(row.id);
     this.rememberItem(row);
   }
 
@@ -300,21 +298,26 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
   }
 
   async insertItems(items: readonly StoredResponsesItem[]): Promise<void> {
+    const quantizedItems = items.map(item => ({
+      ...item,
+      refreshedAt: quantizeResponsesRefreshedAt(item.refreshedAt),
+    }));
     const pending = new Map<string, StoredResponsesItem>();
-    for (const item of items) {
+    for (const item of quantizedItems) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
       const existing = pending.get(key) ?? this.items.get(key);
       if (existing !== undefined) assertSameStoredResponsesItem(item, existing);
       else pending.set(key, item);
     }
     for (const [key, item] of pending) this.items.set(key, cloneStoredResponsesItem(item));
-    for (const item of items) {
+    for (const item of quantizedItems) {
       const stored = this.items.get(scopedResponsesKey(item.apiKeyId, item.id))!;
-      stored.refreshedAt = Math.max(stored.refreshedAt, item.refreshedAt);
+      if (stored.refreshedAt < item.refreshedAt) stored.refreshedAt = item.refreshedAt;
     }
   }
 
   async refreshItems(items: readonly StoredResponsesItem[], refreshedAt: number): Promise<void> {
+    const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
     const existing = items.map(item => this.items.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const missingIndex = existing.findIndex(item => item === undefined);
     if (missingIndex !== -1) {
@@ -322,7 +325,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     }
     for (let index = 0; index < existing.length; index += 1) {
       assertSameStoredResponsesItem(items[index], existing[index]!);
-      existing[index]!.refreshedAt = Math.max(existing[index]!.refreshedAt, refreshedAt);
+      if (existing[index]!.refreshedAt < quantizedRefreshedAt) existing[index]!.refreshedAt = quantizedRefreshedAt;
     }
   }
 
@@ -332,10 +335,14 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
   }
 
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
-    const key = scopedResponsesKey(snapshot.apiKeyId, snapshot.id);
+    const quantized = {
+      ...snapshot,
+      refreshedAt: quantizeResponsesRefreshedAt(snapshot.refreshedAt),
+    };
+    const key = scopedResponsesKey(quantized.apiKeyId, quantized.id);
     const existing = this.snapshots.get(key);
-    if (existing === undefined || snapshot.refreshedAt >= existing.refreshedAt) {
-      this.snapshots.set(key, cloneStoredResponsesSnapshot(snapshot));
+    if (existing === undefined || quantized.refreshedAt > existing.refreshedAt) {
+      this.snapshots.set(key, cloneStoredResponsesSnapshot(quantized));
     }
     return Promise.resolve();
   }

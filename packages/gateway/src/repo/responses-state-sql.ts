@@ -6,6 +6,7 @@ import {
   parseStoredResponsesPayload,
   type PreparedStoredResponsesPayload,
 } from './responses-payload.ts';
+import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from './responses-retention.ts';
 import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import type {
   ResponsesItemsRepo,
@@ -36,7 +37,8 @@ const mapSequentially = async <T, U>(values: readonly T[], mapper: (value: T) =>
 
 const uniqueResponsesItems = (items: readonly StoredResponsesItem[]): StoredResponsesItem[] => {
   const unique = new Map<string, StoredResponsesItem>();
-  for (const item of items) {
+  for (const source of items) {
+    const item = { ...source, refreshedAt: quantizeResponsesRefreshedAt(source.refreshedAt) };
     const key = scopedResponsesKey(item.apiKeyId, item.id);
     const existing = unique.get(key);
     if (existing === undefined) unique.set(key, item);
@@ -189,20 +191,23 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
             item.refreshedAt,
           ]),
           activeAfter,
-          policyAt,
+          policyAt - RESPONSES_REFRESH_GRANULARITY_MS,
         ));
     }
     await runStatements(this.db, statements);
 
-    const persisted = await this.lookupExistingItems(unique, 0);
+    const persisted = await this.lookupCurrentPolicyItems(unique, 0, policyAt);
     for (const item of unique) {
       const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id));
       if (actual === undefined) throw new Error(`Responses item disappeared after insert: ${item.id}`);
       assertSameStoredResponsesItem(item, actual);
     }
-    const refreshGroups = Map.groupBy(unique, item => item.refreshedAt);
+    const refreshGroups = Map.groupBy(unique.filter(item => {
+      const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id))!;
+      return actual.refreshedAt < item.refreshedAt;
+    }), item => item.refreshedAt);
     for (const [refreshedAt, group] of refreshGroups) {
-      await this.refreshMany(group, refreshedAt, activeAfter);
+      await this.refreshMany(group, refreshedAt, 0);
     }
   }
 
@@ -241,6 +246,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     refreshedAt: number,
     activeAfter: number,
   ): Promise<void> {
+    const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
     const idsByApiKey = Map.groupBy(
       [...new Map(items.map(item => [scopedResponsesKey(item.apiKeyId, item.id), item])).values()],
       item => item.apiKeyId,
@@ -258,9 +264,10 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         statements.push(this.db
           .prepare(
             `WITH expected (id, payload_hash) AS (VALUES ${values})
-             UPDATE responses_items SET refreshed_at = MAX(refreshed_at, ?)
+             UPDATE responses_items SET refreshed_at = ?
              WHERE api_key_id = ?
                AND refreshed_at >= ?
+               AND refreshed_at < ?
                AND EXISTS (
                  SELECT 1 FROM api_keys
                  WHERE api_keys.id = responses_items.api_key_id
@@ -276,10 +283,11 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           )
           .bind(
             ...chunk.flatMap(({ item, payloadHash }) => [item.id, payloadHash]),
-            refreshedAt,
+            quantizedRefreshedAt,
             apiKeyId,
             activeAfter,
-            policyAt,
+            quantizedRefreshedAt,
+            policyAt - RESPONSES_REFRESH_GRANULARITY_MS,
           ));
       }
     }
@@ -322,7 +330,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
                AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
                AND responses_items.id IN (${chunk.map(() => '?').join(', ')})`,
           )
-          .bind(apiKeyId, activeAfter, policyAt, ...chunk)
+          .bind(apiKeyId, activeAfter, policyAt - RESPONSES_REFRESH_GRANULARITY_MS, ...chunk)
           .all<ResponsesItemRow>();
         rows.push(...await mapSequentially(results, async row => await toStoredResponsesItem(row)));
       }
@@ -346,7 +354,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
            LIMIT ?
          )`,
       )
-      .bind(apiKeyId, now, limit)
+      .bind(apiKeyId, now - RESPONSES_REFRESH_GRANULARITY_MS, limit)
       .run();
     const activeDeleted = active.meta.changes ?? 0;
     if (activeDeleted >= limit) return activeDeleted;
@@ -418,6 +426,10 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   }
 
   async insert(snapshot: StoredResponsesSnapshot): Promise<void> {
+    const quantized = {
+      ...snapshot,
+      refreshedAt: quantizeResponsesRefreshedAt(snapshot.refreshedAt),
+    };
     await this.db
       .prepare(
         `INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, refreshed_at)
@@ -427,20 +439,18 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
            AND api_keys.responses_retention_seconds > 0
            AND ? >= ? - api_keys.responses_retention_seconds * 1000
          ON CONFLICT (id, api_key_id) DO UPDATE SET
-           item_ids_json = CASE
-             WHEN excluded.refreshed_at >= responses_snapshots.refreshed_at THEN excluded.item_ids_json
-             ELSE responses_snapshots.item_ids_json
-           END,
-           refreshed_at = MAX(responses_snapshots.refreshed_at, excluded.refreshed_at)`,
+           item_ids_json = excluded.item_ids_json,
+           refreshed_at = excluded.refreshed_at
+         WHERE responses_snapshots.refreshed_at < excluded.refreshed_at`,
       )
       .bind(
-        snapshot.id,
-        snapshot.apiKeyId,
-        JSON.stringify(snapshot.itemIds),
-        snapshot.refreshedAt,
-        snapshot.apiKeyId,
-        snapshot.refreshedAt,
-        Date.now(),
+        quantized.id,
+        quantized.apiKeyId,
+        JSON.stringify(quantized.itemIds),
+        quantized.refreshedAt,
+        quantized.apiKeyId,
+        quantized.refreshedAt,
+        Date.now() - RESPONSES_REFRESH_GRANULARITY_MS,
       )
       .run();
   }
@@ -461,7 +471,7 @@ export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
            LIMIT ?
          )`,
       )
-      .bind(apiKeyId, now, limit)
+      .bind(apiKeyId, now - RESPONSES_REFRESH_GRANULARITY_MS, limit)
       .run();
     const activeDeleted = active.meta.changes ?? 0;
     if (activeDeleted >= limit) return activeDeleted;

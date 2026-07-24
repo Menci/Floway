@@ -1,4 +1,5 @@
 import { getRepo } from './index.ts';
+import { RESPONSES_REFRESH_GRANULARITY_MS } from './responses-retention.ts';
 import { DUMP_FILE_PREFIX } from './spilled-files-policy.ts';
 import { inventorySpilledFiles } from './spilled-files.ts';
 import type { ExpirationDomain, ExpirationSweepCompletion } from './types.ts';
@@ -24,7 +25,9 @@ const nextResponsesDueAt = async (keyId: string): Promise<number | null> => {
     repo.responsesSnapshots.findOldestRefresh(keyId),
   ]);
   const oldest = [itemRefresh, snapshotRefresh].filter((value): value is number => value !== null);
-  return oldest.length === 0 ? null : Math.min(...oldest) + key.responsesRetentionSeconds * 1000 + 1;
+  return oldest.length === 0
+    ? null
+    : Math.min(...oldest) + key.responsesRetentionSeconds * 1000 + RESPONSES_REFRESH_GRANULARITY_MS + 1;
 };
 
 const responsesAdapter: ExpirationAdapter = {

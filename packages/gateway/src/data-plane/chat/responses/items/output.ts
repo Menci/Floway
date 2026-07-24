@@ -10,10 +10,10 @@ import { responsesResultToEvents, type ResponsesOutputItem, type ResponsesResult
 // separately before a successful terminal frame. Failed/error terminals keep
 // completed item rows but never a snapshot.
 //
-// Response envelope ids remain Floway-owned because one client response can
-// span several upstream calls behind the server-tool runtime. The caller mints
-// one id and this wrapper applies it to every queued/created/in-progress and
-// terminal response envelope without changing any output item.
+// One client response can span several upstream calls behind the server-tool
+// runtime. The caller mints its envelope id once, and this wrapper applies it
+// to every queued/created/in-progress and terminal response envelope without
+// changing any output item.
 export const wrapResponsesClientOutput = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {

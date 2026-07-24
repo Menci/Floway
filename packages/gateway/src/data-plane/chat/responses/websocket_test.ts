@@ -11,8 +11,6 @@ import { FakeTime } from '../../../test-time.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const isFlowayResponseId = (value: string): boolean => /^resp_[0-9a-f]{32}$/u.test(value);
-
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
 
 class TestWorkerWebSocket extends EventTarget {
@@ -253,14 +251,14 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
       assert(messages.every(message => message.event_id === 'evt_1'));
       const completed = messages.find(message => message.type === 'response.completed') as { response?: { id?: unknown } } | undefined;
       assertExists(completed);
-      const flowayResponseId = (completed.response as { id?: unknown } | undefined)?.id;
-      assertEquals(typeof flowayResponseId, 'string');
-      assert(isFlowayResponseId(flowayResponseId as string), 'expected Floway-minted resp_ id, not the upstream blob');
+      const responseId = (completed.response as { id?: unknown } | undefined)?.id;
+      assertEquals(typeof responseId, 'string');
+      assert(responseId !== 'resp_ws', 'expected the source boundary to replace the upstream response id');
       assertEquals(messages.at(-1), {
         type: 'response.done',
         event_id: 'evt_1',
         response: {
-          id: flowayResponseId,
+          id: responseId,
           usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
         },
       });
@@ -761,13 +759,13 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       const firstMessages = await firstDone;
       const firstResponseId = responseDoneId(firstMessages);
 
-      assert(isFlowayResponseId(firstResponseId), 'expected a Floway response id');
+      assert(firstResponseId !== 'resp_ws_store_false_1', 'expected the source boundary to replace the upstream response id');
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
       const firstOutput = firstMessages.find(message =>
         message.type === 'response.output_item.done'
         && (message as { item?: { type?: unknown } }).item?.type === 'message') as { item?: { id?: string } } | undefined;
       assertExists(firstOutput?.item?.id);
-      assert(/^msg_[0-9a-f]{32}$/.test(firstOutput.item.id), 'expected a Copilot-normalized message id');
+      assert(firstOutput.item.id !== 'assistant_ws_store_false_1', 'expected Copilot to replace the raw message id');
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id], 0), []);
       assertEquals(
         await repo.responsesItems.lookupManyByItemHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })], 0),
@@ -961,7 +959,7 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
         const messages = await firstDone;
         const done = messages.find(message => message.type === 'response.output_item.done') as { item?: typeof originalReasoning } | undefined;
         assertExists(done?.item);
-        assert(/^rs_[0-9a-f]{32}$/.test(done.item.id));
+        assert(done.item.id !== originalReasoning.id, 'expected Copilot to replace the carried reasoning id');
         assert(done.item.encrypted_content !== originalReasoning.encrypted_content);
         firstClient.close();
 

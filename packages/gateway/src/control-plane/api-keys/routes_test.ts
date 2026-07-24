@@ -50,7 +50,7 @@ test('PATCH /api/keys/:id changes only the rolling Responses duration', async ()
 
 test('PATCH /api/keys/:id rejects unsupported Responses retention values', async () => {
   const { apiKey } = await setupAppTest();
-  for (const value of [-1, 1, 3599, 315_360_001, 3600.5]) {
+  for (const value of [-1, 1, 3600, 86_401, 315_360_001, 86_400.5]) {
     assertEquals((await ownerPatch(apiKey.id, { responses_retention_seconds: value }, apiKey.key)).status, 400);
   }
 });

@@ -1,4 +1,4 @@
-// A response from Floway can span several upstream calls behind hosted tools,
+// One client response can span several upstream calls behind hosted tools,
 // so the source boundary owns one envelope id independently of output items.
 export const createResponsesResponseId = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(16));

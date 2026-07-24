@@ -52,7 +52,7 @@ BEGIN
     COALESCE((
       SELECT CASE
         WHEN deleted_at IS NULL AND responses_retention_seconds > 0
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 1
+          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1
         ELSE 0
       END
       FROM api_keys WHERE id = NEW.api_key_id
@@ -75,7 +75,7 @@ BEGIN
     COALESCE((
       SELECT CASE
         WHEN deleted_at IS NULL AND responses_retention_seconds > 0
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 1
+          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1
         ELSE 0
       END
       FROM api_keys WHERE id = NEW.api_key_id
@@ -98,7 +98,7 @@ BEGIN
     COALESCE((
       SELECT CASE
         WHEN deleted_at IS NULL AND responses_retention_seconds > 0
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 1
+          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1
         ELSE 0
       END
       FROM api_keys WHERE id = NEW.api_key_id
@@ -121,7 +121,7 @@ BEGIN
     COALESCE((
       SELECT CASE
         WHEN deleted_at IS NULL AND responses_retention_seconds > 0
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 1
+          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1
         ELSE 0
       END
       FROM api_keys WHERE id = NEW.api_key_id

@@ -40,6 +40,8 @@ const responsesRetentionPresets = [
   { seconds: 30 * 86400, label: '30 days' },
 ] as const;
 
+const responsesRetentionMaximumSeconds = 10 * 365 * 86400;
+
 const name = ref('');
 const upstreamSelection = ref<UpstreamPickerValue>({ override: false, ids: [] });
 const dumpRetention = ref<RetentionFieldValue>(null);
@@ -108,7 +110,7 @@ const save = async () => {
   const nextDumpRetention = dumpRetention.value;
   const nextResponsesRetention = responsesRetention.value;
   if (nextDumpRetention === 'invalid' || typeof nextResponsesRetention !== 'number') {
-    error.value = 'Retention must be an integer number of seconds, or a value like 30m / 2h / 3d.';
+    error.value = 'Fix the invalid retention value before saving.';
     return;
   }
   const custom = customKey.value.trim();
@@ -197,12 +199,21 @@ const save = async () => {
       <RetentionField
         v-model="responsesRetention"
         label="Stateful Responses retention"
-        description="Controls durable Responses items and previous_response_id chains for this key. Off keeps HTTP stateless; WebSocket session-local state remains available."
         :off-value="0"
-        off-label="Off (no durable state)"
+        off-label="Off (do not persist)"
         :presets="responsesRetentionPresets"
-        :minimum-seconds="3600"
+        :minimum-seconds="86400"
+        :maximum-seconds="responsesRetentionMaximumSeconds"
+        custom-input-unit="days"
       >
+        <template #description>
+          <p>
+            When enabled, items and responses produced by <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">store: true</code> Responses API requests are persisted for the configured number of days, so they can be referenced by <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">item_reference</code> and <code class="rounded bg-surface-700 px-1 py-0.5 font-mono text-[11px] text-gray-300">previous_response_id</code> during that period.
+          </p>
+          <p class="mt-2">
+            Codex's WebSocket non-persistent session store works independently.
+          </p>
+        </template>
         <p v-if="responsesRetentionWarning" role="status" aria-live="polite" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
           {{ responsesRetentionWarning }}
         </p>

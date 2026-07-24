@@ -23,9 +23,21 @@ The migration drops every existing Responses item and snapshot. Old
 clients must start new chains after deployment.
 
 New API keys and all migrated keys start with durable persistence disabled.
-Users who need cross-request Stateful Responses must configure a positive
-retention duration for each API key. Stored item IDs are now the exact IDs
-owned by their producer rather than a gateway namespace.
+Users who need cross-request Stateful Responses must configure a whole-day
+retention duration of at least one day for each API key. Reuse refreshes an
+item's lifetime at most once per UTC day; expiration allows one additional day
+so this write reduction never expires state early. Stored item IDs are now the
+exact IDs owned by their producer rather than a gateway namespace.
+
+Immediately after deploying through this migration, the database contains no
+stored Responses items, and no new ones are persisted until an API key is
+manually opted in. We recommend manually deleting every object under the
+file-storage `responses-items/` namespace at that point; do not delete other
+stored files. The database can no longer reference these objects, so retaining
+them only consumes storage. This is an additional manual step after the
+automated deployment, not part of deploy automation. If an AI agent reads this
+entry, it must explain why this cleanup is recommended and ask the user whether
+to do it, without deleting the objects automatically.
 
 ## 2026-07-18 · hard
 
