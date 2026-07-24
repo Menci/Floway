@@ -29,9 +29,6 @@ export const stampUpstreamCallStart = (attempt: AttemptState) =>
 
 export interface GatewayCtx {
   readonly apiKeyId: string;
-  // Reference timestamp captured when the request context is created.
-  // Responses retention eligibility and item-collision checks use this same
-  // timestamp; retention refreshes still record when reuse actually occurs.
   readonly requestStartedAt: number;
   readonly upstreamIds: readonly string[] | null;
   readonly abortSignal?: AbortSignal;
