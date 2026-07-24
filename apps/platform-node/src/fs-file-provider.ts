@@ -1,8 +1,8 @@
 import { mkdirSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve, sep } from 'node:path';
 
-import type { FileListPage, FileProvider } from '@floway-dev/platform';
+import type { FileProvider } from '@floway-dev/platform';
 
 // Filesystem-backed FileProvider. Every key resolves to a path under `root`.
 // Keys use forward-slash POSIX separators (matching R2's surface) and are
@@ -44,42 +44,8 @@ export class FsFileProvider implements FileProvider {
     }
   }
 
-  async listPage(prefix: string, cursor: string | null, limit: number): Promise<FileListPage> {
-    if (!Number.isInteger(limit) || limit <= 0) throw new Error(`File list limit must be positive: ${limit}`);
-    const separator = prefix.lastIndexOf('/');
-    const baseKey = separator === -1 ? '' : prefix.slice(0, separator + 1);
-    const keys: string[] = [];
-    try {
-      for await (const key of this.walk(this.pathFor(baseKey), baseKey, cursor)) {
-        if (!key.startsWith(prefix)) continue;
-        keys.push(key);
-        if (keys.length === limit) break;
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-    return { keys, nextCursor: keys.length === limit ? keys.at(-1)! : null };
-  }
-
   async deleteKeys(keys: readonly string[]): Promise<void> {
     await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
-  }
-
-  private async *walk(directory: string, keyPrefix: string, cursor: string | null): AsyncGenerator<string> {
-    const entries = (await readdir(directory, { withFileTypes: true }))
-      .toSorted((left, right) => {
-        const leftKey = `${left.name}${left.isDirectory() ? '/' : ''}`;
-        const rightKey = `${right.name}${right.isDirectory() ? '/' : ''}`;
-        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-      });
-    for (const entry of entries) {
-      const key = `${keyPrefix}${entry.name}`;
-      if (entry.isDirectory()) {
-        const subtreePrefix = `${key}/`;
-        if (cursor !== null && subtreePrefix <= cursor && !cursor.startsWith(subtreePrefix)) continue;
-        yield* this.walk(this.pathFor(key), subtreePrefix, cursor);
-      } else if (entry.isFile() && (cursor === null || key > cursor)) yield key;
-    }
   }
 
   // Resolve a key against `root` and reject paths that escape it. Even though

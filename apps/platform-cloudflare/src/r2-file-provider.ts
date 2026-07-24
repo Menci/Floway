@@ -1,13 +1,8 @@
-import type { FileListPage, FileProvider } from '@floway-dev/platform';
+import type { FileProvider } from '@floway-dev/platform';
 
 export interface R2BucketLike {
   put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null): Promise<unknown>;
   get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
-  list(options: { prefix: string; cursor?: string; limit: number }): Promise<{
-    objects: Array<{ key: string }>;
-    truncated: boolean;
-    cursor?: string;
-  }>;
   delete(keys: string | string[]): Promise<void>;
 }
 
@@ -26,20 +21,6 @@ export class R2FileProvider implements FileProvider {
   async get(key: string): Promise<Uint8Array | null> {
     const object = await this.bucket.get(key);
     return object ? new Uint8Array(await object.arrayBuffer()) : null;
-  }
-
-  async listPage(prefix: string, cursor: string | null, limit: number): Promise<FileListPage> {
-    if (!Number.isInteger(limit) || limit <= 0) throw new Error(`File list limit must be positive: ${limit}`);
-    const page = await this.bucket.list({
-      prefix,
-      ...(cursor === null ? {} : { cursor }),
-      limit: Math.min(limit, R2_BATCH_LIMIT),
-    });
-    if (page.truncated && page.cursor === undefined) throw new Error('R2 truncated a file listing without a cursor');
-    return {
-      keys: page.objects.map(object => object.key),
-      nextCursor: page.truncated ? page.cursor! : null,
-    };
   }
 
   async deleteKeys(keys: readonly string[]): Promise<void> {

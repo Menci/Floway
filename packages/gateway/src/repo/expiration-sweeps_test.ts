@@ -6,7 +6,6 @@ import { sweepExpirations } from './expiration-sweeps.ts';
 import { initRepo } from './index.ts';
 import { InMemoryRepo } from './memory.ts';
 import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from './responses-retention.ts';
-import { SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
@@ -330,8 +329,7 @@ test('bounded owner backfill schedules rows whose API key was hard-removed', asy
   await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
   await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
 
-  const state = await repo.expirationSweeps.backfillOwners(500);
-  expect(state).toEqual({ dumpRecordsComplete: true });
+  await repo.expirationSweeps.backfillOwners(500);
   expect(await db.prepare(
     "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
   ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
@@ -393,63 +391,4 @@ test('in-memory Responses owners enter the same expiration driver', async () => 
 
   expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp-memory', 0)).toBeNull();
-});
-
-test('dump inventory retires only untracked exact file keys', async () => {
-  const now = Date.UTC(2026, 6, 23, 12);
-  vi.useFakeTimers();
-  vi.setSystemTime(now);
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  initRepo(repo);
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
-  const dumps = new FileDumpStore(db, files);
-  initDumpStore(dumps);
-  await repo.apiKeys.save(key(now));
-  const liveRecord = dumpRecord('01K00000000000000000LIVE', now);
-  liveRecord.request.body = {
-    encoding: 'identity',
-    bytes: new TextEncoder().encode('live'),
-    decodedByteLength: 4,
-  };
-  await dumps.put('key-a', liveRecord);
-  const liveDescriptor = await db.prepare(
-    'SELECT request_body_descriptor FROM dump_records WHERE key_id = ? AND id = ?',
-  ).bind('key-a', liveRecord.meta.id).first<{ request_body_descriptor: string }>();
-  if (liveDescriptor === null) throw new Error('live dump descriptor missing');
-  const liveFileKey = (JSON.parse(liveDescriptor.request_body_descriptor) as { key: string }).key;
-  const orphanFileKey = 'dumps/v1/orphan/untracked.req.gz';
-  await files.put(orphanFileKey, new Uint8Array([1]));
-
-  await sweepExpirations(now);
-  await collectSpilledFiles(now);
-  expect(await files.get(orphanFileKey)).not.toBeNull();
-  await collectSpilledFiles(now + SPILLED_FILE_STAGE_GRACE_MS + 1);
-
-  expect(await files.get(orphanFileKey)).toBeNull();
-  expect(await files.get(liveFileKey)).not.toBeNull();
-});
-
-test('a stale inventory completion changes neither ledger nor cursor', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  const prefix = 'dumps/v1/';
-  const first = await repo.spilledFiles.claimInventory('inventory-old', prefix, 1, 0);
-  if (first === null) throw new Error('initial inventory claim missing');
-  const replacement = await repo.spilledFiles.claimInventory('inventory-new', prefix, 3, 2);
-  if (replacement === null) throw new Error('replacement inventory claim missing');
-
-  expect(await repo.spilledFiles.completeInventory(
-    'inventory-old',
-    prefix,
-    first.revision,
-    ['dumps/v1/stale.req.gz'],
-    'stale-cursor',
-    4,
-  )).toBe(false);
-  expect(await db.prepare("SELECT file_key FROM spilled_files WHERE owner_kind = 'inventory'").first()).toBeNull();
-  expect(await db.prepare(
-    'SELECT cursor, revision, claim_token FROM spilled_file_inventories WHERE prefix = ?',
-  ).bind(prefix).first()).toEqual({ cursor: null, revision: 0, claim_token: 'inventory-new' });
 });

@@ -301,9 +301,6 @@ class TmpDirFileProvider implements FileProvider {
       throw e;
     }
   }
-  listPage(): Promise<{ keys: string[]; nextCursor: string | null }> {
-    throw new Error('TmpDirFileProvider listing is outside this store test');
-  }
   async deleteKeys(keys: readonly string[]): Promise<void> {
     await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
   }

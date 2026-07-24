@@ -1,12 +1,6 @@
-export interface FileListPage {
-  keys: string[];
-  nextCursor: string | null;
-}
-
 export interface FileProvider {
   put(key: string, body: Uint8Array): Promise<void>;
   get(key: string): Promise<Uint8Array | null>;
-  listPage(prefix: string, cursor: string | null, limit: number): Promise<FileListPage>;
   deleteKeys(keys: readonly string[]): Promise<void>;
 }
 
@@ -30,15 +24,6 @@ export class MemoryFileProvider implements FileProvider {
 
   async get(key: string): Promise<Uint8Array | null> {
     return this.files.get(key)?.slice() ?? null;
-  }
-
-  async listPage(prefix: string, cursor: string | null, limit: number): Promise<FileListPage> {
-    if (!Number.isInteger(limit) || limit <= 0) throw new Error(`File list limit must be positive: ${limit}`);
-    const keys = [...this.files.keys()]
-      .filter(key => key.startsWith(prefix) && (cursor === null || key > cursor))
-      .sort()
-      .slice(0, limit);
-    return { keys, nextCursor: keys.length === limit ? keys.at(-1)! : null };
   }
 
   async deleteKeys(keys: readonly string[]): Promise<void> {

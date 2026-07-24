@@ -1,7 +1,5 @@
 import { getRepo } from './index.ts';
 import { RESPONSES_REFRESH_GRANULARITY_MS } from './responses-retention.ts';
-import { DUMP_FILE_PREFIX } from './spilled-files-policy.ts';
-import { inventorySpilledFiles } from './spilled-files.ts';
 import type { ExpirationDomain, ExpirationSweepCompletion } from './types.ts';
 import { getDumpStore } from '../dump/registry.ts';
 
@@ -65,7 +63,7 @@ const adapters: Record<ExpirationDomain, ExpirationAdapter> = {
 
 export const sweepExpirations = async (now: number): Promise<void> => {
   const repo = getRepo();
-  const backfill = await repo.expirationSweeps.backfillOwners(OWNER_BACKFILL_BATCH_SIZE);
+  await repo.expirationSweeps.backfillOwners(OWNER_BACKFILL_BATCH_SIZE);
   for (let index = 0; index < SWEEP_UNITS_PER_TICK; index += 1) {
     const token = crypto.randomUUID();
     const claim = await repo.expirationSweeps.claim(token, now, now - CLAIM_TIMEOUT_MS);
@@ -78,5 +76,4 @@ export const sweepExpirations = async (now: number): Promise<void> => {
       console.error(`[scheduled] ${claim.domain} expiration failed`, claim.keyId, error);
     }
   }
-  if (backfill.dumpRecordsComplete) await inventorySpilledFiles(DUMP_FILE_PREFIX, now);
 };

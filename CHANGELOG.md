@@ -14,6 +14,16 @@ Severity levels:
 
 ---
 
+## 2026-07-24 · minor
+
+**Replace imports allocate new internal API-key IDs.**
+
+A replace-mode data import now assigns a new internal ID to every imported API
+key and rewrites imported usage, search, and performance references to those
+new IDs. Raw API-key tokens, server secrets, and user ownership remain
+unchanged. Integrations that retain exported internal key IDs must refresh them
+from the imported deployment instead of assuming they survive replacement.
+
 ## 2026-07-23 · hard
 
 **Stateful Responses persistence reset and made opt-in.**

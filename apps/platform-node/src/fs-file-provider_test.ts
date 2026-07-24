@@ -47,32 +47,3 @@ test('put creates intermediate directories', () => withTempRoot(async root => {
   const read = await provider.get('deeply/nested/path/file.bin');
   assertEquals(read, new Uint8Array([42]));
 }));
-
-test('listPage walks one prefix in stable bounded pages', () => withTempRoot(async root => {
-  const provider = new FsFileProvider(root);
-  await provider.put('dumps/v1/b/file.bin', new Uint8Array());
-  await provider.put('dumps/v1/a/second.bin', new Uint8Array());
-  await provider.put('dumps/v1/a/first.bin', new Uint8Array());
-  await provider.put('other/file.bin', new Uint8Array());
-
-  const first = await provider.listPage('dumps/v1/', null, 2);
-  const second = await provider.listPage('dumps/v1/', first.nextCursor, 2);
-
-  assertEquals(first, {
-    keys: ['dumps/v1/a/first.bin', 'dumps/v1/a/second.bin'],
-    nextCursor: 'dumps/v1/a/second.bin',
-  });
-  assertEquals(second, { keys: ['dumps/v1/b/file.bin'], nextCursor: null });
-}));
-
-test('listPage orders directory separators with the full emitted key', () => withTempRoot(async root => {
-  const provider = new FsFileProvider(root);
-  await provider.put('dumps/v1/a/file.bin', new Uint8Array());
-  await provider.put('dumps/v1/a-/file.bin', new Uint8Array());
-
-  const first = await provider.listPage('dumps/v1/', null, 1);
-  const second = await provider.listPage('dumps/v1/', first.nextCursor, 1);
-
-  assertEquals(first, { keys: ['dumps/v1/a-/file.bin'], nextCursor: 'dumps/v1/a-/file.bin' });
-  assertEquals(second, { keys: ['dumps/v1/a/file.bin'], nextCursor: 'dumps/v1/a/file.bin' });
-}));

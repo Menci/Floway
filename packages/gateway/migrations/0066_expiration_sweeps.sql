@@ -31,17 +31,6 @@ INSERT INTO expiration_sweep_backfills (source) VALUES
   ('responses_snapshots'),
   ('dump_records');
 
-CREATE TABLE spilled_file_inventories (
-  prefix TEXT PRIMARY KEY,
-  cursor TEXT,
-  revision INTEGER NOT NULL DEFAULT 0,
-  claim_token TEXT,
-  claimed_at INTEGER,
-  CHECK ((claim_token IS NULL) = (claimed_at IS NULL))
-);
-
-INSERT INTO spilled_file_inventories (prefix) VALUES ('dumps/v1/');
-
 CREATE TRIGGER responses_items_schedule_expiration_insert
 AFTER INSERT ON responses_items
 BEGIN

@@ -35,17 +35,3 @@ test('MemoryFileProvider deletes exact keys without treating them as prefixes', 
   assertEquals(await provider.get('drop/a'), null);
   assertEquals(await provider.get('drop/ab'), new Uint8Array([2]));
 });
-
-test('MemoryFileProvider lists stable prefix pages', async () => {
-  const provider = new MemoryFileProvider();
-  await provider.put('dumps/b', new Uint8Array());
-  await provider.put('dumps/a', new Uint8Array());
-  await provider.put('other/c', new Uint8Array());
-
-  const first = await provider.listPage('dumps/', null, 1);
-  const second = await provider.listPage('dumps/', first.nextCursor, 1);
-
-  assertEquals(first, { keys: ['dumps/a'], nextCursor: 'dumps/a' });
-  assertEquals(second, { keys: ['dumps/b'], nextCursor: 'dumps/b' });
-  assertEquals(await provider.listPage('dumps/', second.nextCursor, 1), { keys: [], nextCursor: null });
-});

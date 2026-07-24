@@ -856,12 +856,6 @@ class MemorySpilledFilesRepo implements SpilledFilesRepo {
     claimToken: string | null;
     claimedAt: number | null;
   }>();
-  private readonly inventories = new Map<string, {
-    cursor: string | null;
-    revision: number;
-    claimToken: string | null;
-    claimedAt: number | null;
-  }>();
 
   claimCollectible(token: string, now: number, staleClaimedBefore: number, limit: number): Promise<string[]> {
     const keys = [...this.files]
@@ -888,53 +882,6 @@ class MemorySpilledFilesRepo implements SpilledFilesRepo {
     return Promise.resolve(changes);
   }
 
-  claimInventory(
-    token: string,
-    prefix: string,
-    now: number,
-    staleClaimedBefore: number,
-  ): Promise<{ cursor: string | null; revision: number } | null> {
-    const row = this.inventories.get(prefix) ?? {
-      cursor: null,
-      revision: 0,
-      claimToken: null,
-      claimedAt: null,
-    };
-    this.inventories.set(prefix, row);
-    if (row.claimToken !== null && row.claimedAt! >= staleClaimedBefore) return Promise.resolve(null);
-    row.claimToken = token;
-    row.claimedAt = now;
-    return Promise.resolve({ cursor: row.cursor, revision: row.revision });
-  }
-
-  completeInventory(
-    token: string,
-    prefix: string,
-    expectedRevision: number,
-    fileKeys: readonly string[],
-    nextCursor: string | null,
-    collectAfter: number,
-  ): Promise<boolean> {
-    const row = this.inventories.get(prefix);
-    if (row?.claimToken !== token || row.revision !== expectedRevision) return Promise.resolve(false);
-    for (const fileKey of fileKeys) {
-      this.files.set(fileKey, this.files.get(fileKey) ?? { collectAfter, claimToken: null, claimedAt: null });
-    }
-    row.cursor = nextCursor;
-    row.revision += 1;
-    row.claimToken = null;
-    row.claimedAt = null;
-    return Promise.resolve(true);
-  }
-
-  releaseInventory(token: string): Promise<void> {
-    for (const row of this.inventories.values()) {
-      if (row.claimToken !== token) continue;
-      row.claimToken = null;
-      row.claimedAt = null;
-    }
-    return Promise.resolve();
-  }
 }
 
 interface MemoryExpirationSweepRow extends ExpirationSweepClaim {
@@ -950,8 +897,8 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
     return `${domain}\0${keyId}`;
   }
 
-  backfillOwners(): Promise<{ dumpRecordsComplete: boolean }> {
-    return Promise.resolve({ dumpRecordsComplete: true });
+  backfillOwners(): Promise<void> {
+    return Promise.resolve();
   }
 
   schedule(domain: ExpirationDomain, keyId: string, dueAt: number): Promise<void> {

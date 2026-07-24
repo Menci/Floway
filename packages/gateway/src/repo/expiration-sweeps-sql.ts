@@ -1,6 +1,5 @@
 import type {
   ExpirationDomain,
-  ExpirationOwnerBackfillState,
   ExpirationSweepClaim,
   ExpirationSweepCompletion,
   ExpirationSweepsRepo,
@@ -51,7 +50,7 @@ const dumpFileKey = (descriptor: string, source: string): string => {
 export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   constructor(private readonly db: SqlDatabase) {}
 
-  async backfillOwners(limit: number): Promise<ExpirationOwnerBackfillState> {
+  async backfillOwners(limit: number): Promise<void> {
     if (!Number.isInteger(limit) || limit <= 0) throw new Error(`Expiration owner backfill limit must be positive: ${limit}`);
     const { results: sources } = await this.db
       .prepare('SELECT source, next_rowid FROM expiration_sweep_backfills WHERE complete = 0 ORDER BY source')
@@ -64,14 +63,6 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
       const consumed = await this.backfillSource(source.source, source.next_rowid, sourceLimit);
       remaining -= consumed;
     }
-    const { results: states } = await this.db
-      .prepare('SELECT source, complete FROM expiration_sweep_backfills')
-      .all<{ source: string; complete: number }>();
-    const dumpRecords = states.find(state => state.source === 'dump_records');
-    if (dumpRecords === undefined) throw new Error('dump_records expiration owner backfill state missing');
-    return {
-      dumpRecordsComplete: dumpRecords.complete !== 0,
-    };
   }
 
   private async backfillSource(source: BackfillSource, cursor: number, limit: number): Promise<number> {
