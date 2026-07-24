@@ -1,8 +1,8 @@
-# Breaking Changes
+# Deployment Notes
 
-This file records user-facing breaking changes by date. New entries go at the
-top, below this header. Each entry states the severity, what broke, and what
-users need to know or do.
+This file records user-facing breaking changes and recommended deployment
+operations by date. New entries go at the top, below this header. Each entry
+states its impact level and what users need to know or do.
 
 Severity levels:
 
@@ -11,6 +11,11 @@ Severity levels:
 - **minor** — specific behaviors, fields, or integration patterns change;
   users who depend on them need to adapt, but the primary functionality
   continues to work.
+- **advisory** — no behavior breaks, but an agent or operator should consider a
+  concrete deployment-related follow-up action.
+
+Hard and minor entries may include recommended actions; those actions do not
+need a separate advisory entry.
 
 ---
 
