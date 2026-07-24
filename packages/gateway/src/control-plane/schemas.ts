@@ -714,8 +714,7 @@ export const exportQuery = z.object({
 // payload shapes, so deriving one from the caller's capability would make the
 // same URL answer differently per user — and silently widen as soon as
 // someone's role changes. Declaring it required in the schema also makes the
-// RPC client demand it at compile time. Performance carries no view at all:
-// its scope follows `group_by` (see performance/routes.ts).
+// RPC client demand it at compile time.
 //
 // start/end stay optional in the schema (rather than `.min(1)`) so the
 // handler can return the canonical "start and end query parameters are
@@ -723,13 +722,9 @@ export const exportQuery = z.object({
 // inform the RPC client of the available fields, not duplicate the
 // required-ness check.
 
-const telemetryRangeQuery = {
+const usageBaseQuery = {
   start: z.string().optional(),
   end: z.string().optional(),
-};
-
-const usageBaseQuery = {
-  ...telemetryRangeQuery,
   key_id: z.string().optional(),
   include_key_metadata: z.string().optional(),
   include_user_metadata: z.string().optional(),
@@ -755,7 +750,8 @@ export const searchUsageQuery = z.object({
 });
 
 export const performanceQuery = z.object({
-  ...telemetryRangeQuery,
+  start: z.string().optional(),
+  end: z.string().optional(),
   group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).optional(),
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
   timezone_offset_minutes: z.string().optional(),

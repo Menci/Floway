@@ -2,11 +2,11 @@
 // six per-dimension breakdown tables, and dropdown menus, all built from a
 // single raw record query.
 //
-// There is no view parameter: the requested breakdown decides the scope.
-// `group_by=keyId` is inherently a question about the actor's own traffic, so
-// it aggregates the actor's keys (active + soft-deleted) alone; every other
-// breakdown aggregates all users' rows. Latency is not sensitive on its own,
-// so that global read is open to every user.
+// The requested breakdown decides the scope. `group_by=keyId` is inherently a
+// question about the actor's own traffic, so it aggregates the actor's keys
+// (active + soft-deleted) alone; every other breakdown — including the `model`
+// default — aggregates all users' rows. Latency is not sensitive on its own, so
+// that cross-user read is open to every user.
 //
 // Per-user attribution is the administrator-only part — the By-User rows, the
 // username listing, the userId dropdown, `group_by=userId`, and
@@ -76,14 +76,6 @@ const readPerformanceQuery = (
       },
     },
   };
-};
-
-// The two user-dimension knobs, refused for non-administrators. Named so the
-// rejection quotes the exact parameter the caller passed.
-const userDimensionKnob = (params: PerformanceQueryParams): string | null => {
-  if (params.groupBy === 'userId') return 'group_by=userId';
-  if (params.filters.userId !== undefined) return 'filter_user_id';
-  return null;
 };
 
 // Distinct values per dimension observed in the UNFILTERED record set so the
@@ -157,36 +149,34 @@ const partitionRecords = (
 export const performanceOverview = async (c: Ctx) => {
   const params = readPerformanceQuery(c);
   if (params.type === 'error') return c.json({ error: params.error }, 400);
+  const { start, end, bucket, groupBy, timezoneOffsetMinutes, filters } = params.value;
 
-  const attributeUsers = userFromContext(c).isAdmin;
-  if (!attributeUsers) {
-    const knob = userDimensionKnob(params.value);
-    if (knob !== null) return c.json({ error: `${knob} requires administrator privileges` }, 403);
+  const actor = userFromContext(c);
+  if (!actor.isAdmin) {
+    if (groupBy === 'userId') return c.json({ error: 'group_by=userId requires administrator privileges' }, 403);
+    if (filters.userId !== undefined) return c.json({ error: 'filter_user_id requires administrator privileges' }, 403);
   }
 
   const repo = getRepo();
   const allKeys = await repo.apiKeys.listIncludingDeleted();
-  const actorUserId = userFromContext(c).id;
-  const ownedKeys = allKeys.filter(key => key.userId === actorUserId);
+  const ownedKeys = allKeys.filter(key => key.userId === actor.id);
   const ownedKeyIds = new Set(ownedKeys.map(key => key.id));
-  if (params.value.filters.keyId !== undefined && !ownedKeyIds.has(params.value.filters.keyId)) {
+  if (filters.keyId !== undefined && !ownedKeyIds.has(filters.keyId)) {
     return c.json({ error: 'Unknown filter_key_id' }, 404);
   }
 
-  const rawRecords = await repo.performance.query({ start: params.value.start, end: params.value.end });
-  // By API Key asks about the actor's own traffic, so it narrows the whole
-  // aggregate — summary and every other axis included — to the actor's rows.
-  const scopedRecords = params.value.groupBy === 'keyId'
+  const rawRecords = await repo.performance.query({ start, end });
+  const scopedRecords = groupBy === 'keyId'
     ? rawRecords.filter(r => ownedKeyIds.has(r.keyId))
     : rawRecords;
 
-  const users = attributeUsers ? await repo.users.listIncludingDeleted() : [];
+  const users = actor.isAdmin ? await repo.users.listIncludingDeleted() : [];
   const keyToUser = buildKeyToUserMap(allKeys);
-  const { filtered, dimensionValues } = partitionRecords(scopedRecords, params.value.filters, keyToUser, ownedKeyIds, attributeUsers);
+  const { filtered, dimensionValues } = partitionRecords(scopedRecords, filters, keyToUser, ownedKeyIds, actor.isAdmin);
 
-  const tzOnly = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
+  const tzOnly = { timezoneOffsetMinutes };
   const { series, ...axes } = aggregatePerformanceForDisplay(filtered, {
-    series: { ...tzOnly, bucket: params.value.bucket, groupBy: params.value.groupBy },
+    series: { ...tzOnly, bucket, groupBy },
     // 'none' axis carries the summary row.
     none: { ...tzOnly, bucket: 'all', groupBy: 'none' as const },
     model: { ...tzOnly, bucket: 'all', groupBy: 'model' as const },
@@ -197,8 +187,6 @@ export const performanceOverview = async (c: Ctx) => {
     userId: { ...tzOnly, bucket: 'all', groupBy: 'userId' as const },
   }, keyToUser, ownedKeyIds);
 
-  // Per-user attribution exposes the username listing for By User, while key
-  // metadata remains actor-owned for By API Key and its filter.
   const userMetadata = users
     .map(u => ({ id: u.id, username: u.username }))
     .sort((a, b) => a.id - b.id);
@@ -210,7 +198,7 @@ export const performanceOverview = async (c: Ctx) => {
     series,
     axes: {
       ...axes,
-      userId: attributeUsers ? axes.userId : [],
+      userId: actor.isAdmin ? axes.userId : [],
     },
     dimensionValues,
     users: userMetadata,

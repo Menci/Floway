@@ -6,7 +6,7 @@
 -- statement on tables in the older on-disk format (see migration 0051); the
 -- rebuild works regardless. Column definitions and the partial unique index are
 -- carried over verbatim from migration 0028, minus the dropped column. No table
--- declares a foreign key, so replacing this one strands nothing.
+-- declares a foreign key to `users`, so replacing it strands nothing.
 
 CREATE TABLE users_new (
   id INTEGER PRIMARY KEY,

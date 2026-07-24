@@ -8,7 +8,7 @@ import { aggregateUsageByUserForDisplay, aggregateUsageForDisplay } from './aggr
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageQuery } from '../schemas.ts';
-import { buildKeyToUserMap, loadTelemetryKeys, resolveTelemetryView } from '../telemetry-view.ts';
+import { buildKeyToUserMap, resolveTelemetryView } from '../telemetry-view.ts';
 
 export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const query = c.req.valid('query');
@@ -28,7 +28,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     const [rawRecords, users, keys] = await Promise.all([
       repo.usage.query({ start, end }),
       repo.users.listIncludingDeleted(),
-      loadTelemetryKeys(repo, resolved),
+      repo.apiKeys.listIncludingDeleted(),
     ]);
     const records = aggregateUsageByUserForDisplay(rawRecords, buildKeyToUserMap(keys));
 
@@ -40,7 +40,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   }
 
   // Sequential so an invalid key_id short-circuits to 404 before spending the usage.query read.
-  const keys = await loadTelemetryKeys(repo, resolved);
+  const keys = await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
   const ownedSet = new Set(keys.map(k => k.id));
   const explicitKeyId = query.key_id === '' ? undefined : query.key_id;
   if (explicitKeyId !== undefined && !ownedSet.has(explicitKeyId)) {

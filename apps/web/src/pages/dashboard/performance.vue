@@ -8,6 +8,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import {
   buildOverviewQuery,
+  clampToPermissions,
   emptyDisplayRecord,
   emptyOverview,
   parseUrlState,
@@ -33,8 +34,7 @@ import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 export const usePerformancePageData = defineBasicLoader('/dashboard/performance', async route => {
   const api = useApi();
-  const auth = useAuthStore();
-  const initial = parseUrlState(route.query);
+  const initial = clampToPermissions(parseUrlState(route.query), useAuthStore().isAdmin);
   const query = buildOverviewQuery(initial, Date.now());
   // Load upstream names in parallel with the perf overview so By-Upstream tables
   // and chart legends can resolve upstream ids to human-readable names. Store is
@@ -53,10 +53,6 @@ export const usePerformancePageData = defineBasicLoader('/dashboard/performance'
         }),
   ]);
   return {
-    // Per-user breakdowns are administrator-only. The backend rejects
-    // group_by=userId and filter_user_id for everyone else and returns no
-    // By-User rows, so the page must not offer either control.
-    attributeUsers: auth.isAdmin,
     overview: overviewRes.data ?? emptyOverview(),
     error: overviewRes.error ? overviewRes.error.message : null,
   };
@@ -70,15 +66,15 @@ const route = useRoute();
 const router = useRouter();
 const initialOverview = usePerformancePageData();
 
-// Resolved once from the caller's permissions: naming the users behind the
-// rows is administrator-only, so both the By-User grouping and the user filter
-// disappear for everyone else.
-const attributeUsers: boolean = initialOverview.data.value.attributeUsers;
+// The backend returns no By-User rows to a non-administrator, so the page
+// offers neither the By-User breakdown nor the user filter. Read once: the page
+// is never kept alive, so every entry to the route re-reads the store.
+const attributeUsers = useAuthStore().isAdmin;
 
 // Initialize every ref from the URL so the page opens in the same state that
 // was captured when the URL was minted (bookmark / share). The URL-sync
 // watchEffect below writes changes back so refreshing preserves them.
-const initial = parseUrlState(route.query);
+const initial = clampToPermissions(parseUrlState(route.query), attributeUsers);
 const filterModel = ref<string>(initial.filterModel);
 const filterUpstream = ref<string>(initial.filterUpstream);
 const filterOperation = ref<string>(initial.filterOperation);
@@ -188,8 +184,7 @@ watchEffect(() => {
 });
 
 // The breakdown doubles as the scope selector: By API Key narrows the whole
-// page to the actor's own traffic, every other one spans all users. By User is
-// administrator-only.
+// page to the actor's own traffic, every other one spans all users.
 const groupByOptions: { value: GroupBy; label: string }[] = [
   { value: 'model', label: 'By Model' },
   { value: 'upstream', label: 'By Upstream' },

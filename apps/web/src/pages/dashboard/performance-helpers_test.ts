@@ -3,6 +3,7 @@ import type { LocationQuery } from 'vue-router';
 
 import {
   buildOverviewQuery,
+  clampToPermissions,
   emptyDisplayRecord,
   emptyOverview,
   parseUrlState,
@@ -175,6 +176,30 @@ describe('emptyOverview + emptyDisplayRecord', () => {
       tpotUsP95: null,
       tpotUsP99: null,
     });
+  });
+});
+
+describe('clampToPermissions', () => {
+  it('leaves an administrator\'s state untouched', () => {
+    const admin = state({ groupBy: 'userId', filterUserId: '42', hidden: ['3'] });
+    expect(clampToPermissions(admin, true)).toEqual(state({ groupBy: 'userId', filterUserId: '42', hidden: ['3'] }));
+  });
+
+  it('drops the By-User grouping, its hidden series, and the user filter for everyone else', () => {
+    const clamped = clampToPermissions(state({ groupBy: 'userId', filterUserId: '42', hidden: ['3', '7'] }), false);
+    expect(clamped.groupBy).toBe('model');
+    expect(clamped.filterUserId).toBe('');
+    // Those ids were user ids on the discarded axis; they would silently hide
+    // unrelated groups on the fallback one.
+    expect(clamped.hidden).toEqual([]);
+  });
+
+  it('leaves every other breakdown and filter alone', () => {
+    const clamped = clampToPermissions(state({ groupBy: 'keyId', filterKeyId: 'k-1', filterModel: 'gpt-5', hidden: ['k-9'] }), false);
+    expect(clamped.groupBy).toBe('keyId');
+    expect(clamped.filterKeyId).toBe('k-1');
+    expect(clamped.filterModel).toBe('gpt-5');
+    expect(clamped.hidden).toEqual(['k-9']);
   });
 });
 

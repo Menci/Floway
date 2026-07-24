@@ -97,7 +97,7 @@ test('admin password reset on another user revokes that user\'s sessions', async
   expect(await repo.sessions.getByIdAndTouch(bobSession.id)).toBeNull();
 });
 
-test('PATCH /api/users/:id can demote and revoke global-telemetry on a non-self admin', async () => {
+test('PATCH /api/users/:id can demote a non-self admin', async () => {
   const { adminSession, repo } = await setupAppTest();
   await repo.users.save({
     id: 3,

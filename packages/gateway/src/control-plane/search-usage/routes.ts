@@ -11,7 +11,7 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import type { searchUsageQuery } from '../schemas.ts';
-import { loadTelemetryKeys, resolveTelemetryView, buildKeyToUserMap } from '../telemetry-view.ts';
+import { resolveTelemetryView, buildKeyToUserMap } from '../telemetry-view.ts';
 
 export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   const query = c.req.valid('query');
@@ -36,7 +36,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     const [rawRecords, users, keys] = await Promise.all([
       queryWebSearchUsage({ provider, start, end }),
       repo.users.listIncludingDeleted(),
-      loadTelemetryKeys(repo, resolved),
+      repo.apiKeys.listIncludingDeleted(),
     ]);
     const records = aggregateSearchUsageByUser(rawRecords, buildKeyToUserMap(keys));
 
@@ -53,7 +53,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   }
 
   // self-by-key: scope rows to the actor's keys (active + soft-deleted).
-  const keys = await loadTelemetryKeys(repo, resolved);
+  const keys = await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
   const ownedSet = new Set(keys.map(k => k.id));
   const explicitKeyId = query.key_id === '' ? undefined : query.key_id;
   if (explicitKeyId !== undefined && !ownedSet.has(explicitKeyId)) {

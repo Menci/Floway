@@ -72,6 +72,7 @@ export const emptyDisplayRecord = (bucket: string, group: string): PerformanceDi
 // so refreshing / copying the URL restores the same view. Only non-default
 // values are written so pristine URLs stay clean.
 export const GROUP_BY_VALUES = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'] as const;
+const DEFAULT_GROUP_BY = 'model';
 export const METRIC_VALUES = ['ttft', 'tokPerSec'] as const;
 export const PERCENTILE_VALUES = ['p50', 'p95', 'p99'] as const;
 export const RANGE_VALUES = ['today', '7d', '30d'] as const;
@@ -131,7 +132,7 @@ const listField = (urlKey: string): UrlField<string[]> => ({
 export const URL_FIELDS = {
   metric: enumField('m', METRIC_VALUES, 'ttft'),
   percentile: enumField('pct', PERCENTILE_VALUES, 'p95'),
-  groupBy: enumField('g', GROUP_BY_VALUES, 'model'),
+  groupBy: enumField('g', GROUP_BY_VALUES, DEFAULT_GROUP_BY),
   range: enumField('r', RANGE_VALUES, 'today'),
   filterModel: stringField('fm'),
   filterUpstream: stringField('fu'),
@@ -165,6 +166,23 @@ export const serializeUrlState = (state: UrlState): Record<string, string> => {
   }
   return out;
 };
+
+// The backend answers 403 to `group_by=userId` and `filter_user_id` from a
+// non-administrator, and the page renders neither control for them — so a
+// shared or bookmarked URL carrying either would strand them on an error with
+// nothing to click. Drop that state on read; the URL-sync watcher then rewrites
+// the address clean. Dropping the By-User axis takes the hidden-series set with
+// it, since those ids were captured against that axis and mean nothing on the
+// one we fall back to.
+export const clampToPermissions = (state: UrlState, canAttributeUsers: boolean): UrlState =>
+  canAttributeUsers
+    ? state
+    : {
+        ...state,
+        groupBy: state.groupBy === 'userId' ? DEFAULT_GROUP_BY : state.groupBy,
+        hidden: state.groupBy === 'userId' ? [] : state.hidden,
+        filterUserId: '',
+      };
 
 export const buildOverviewQuery = (state: UrlState, at: number): Record<string, string> => {
   const { start, end, bucket } = dashboardRangeQuery(state.range, at);
