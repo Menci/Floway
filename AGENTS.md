@@ -250,12 +250,12 @@ the response snapshot commits at the successful terminal event. Repository
 writes treat exact item/private-payload reuse as idempotent and reject a
 different live row under the same API-key-scoped ID.
 
-Large Responses payloads and dump bodies use immutable nonce-owned objects.
-The generic `spilled_files` ledger stages each object before its file write,
-atomically adopts it with its owner row, and retires it when that row is
-replaced or deleted. One exact-file collector claims staged or retired objects
-regardless of which domain owned them; owner-specific code never scans or
-deletes file prefixes.
+Large Responses payloads and dump bodies use immutable objects with per-write
+unique keys. The shared `spilled_files` registry records each object as staged
+before its file write, atomically adopts it with its owner row, and retires it
+when that row is replaced or deleted. One collector claims staged or retired
+records regardless of which domain owned them and deletes only their registered
+object keys; owner-specific code never scans or deletes file prefixes.
 
 Responses and dump reads both apply their API key's current rolling retention
 before physical cleanup. One `expiration_sweeps` due queue orders work across

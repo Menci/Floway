@@ -184,7 +184,7 @@ test('partial completion yields even when a concurrent owner bumps the revision'
   ).first<{ due_at: number; claim_token: string | null }>()).toEqual({ due_at: now + 1, claim_token: null });
 });
 
-test('migration 0066 leaves owner discovery bounded and retires pre-ledger dump files on deletion', async () => {
+test('migration 0066 bounds existing-row discovery and tracks older dump files on deletion', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {

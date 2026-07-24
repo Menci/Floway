@@ -37,7 +37,7 @@ test('large Responses payloads use an external file whose key is not embedded in
     .rejects.toThrow('file key missing');
 });
 
-test('each prepared spill has exclusive cleanup ownership', async () => {
+test('each prepared spill uses a unique object key', async () => {
   initFileProvider(new MemoryFileProvider());
   const expected = payload(largeContent());
   const first = await prepareStoredResponsesPayload('msg_payload', 'key-a', expected);

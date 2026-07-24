@@ -144,9 +144,10 @@ provider restores the raw ID and original blob; a blob without that layer, or
 an item whose blob was stripped by affinity routing, remains foreign and passes
 through unchanged. Neither layer buffers visible stream deltas.
 
-Responses persistence is a separate membrane. It stores the first complete
-client-facing item verbatim under its producer-owned ID; a later done or
-terminal frame remains wire-visible but does not replace that durable item.
+Responses persistence runs separately at the client-facing boundary. It stores
+the first complete item verbatim under the exact ID emitted on that item; a
+later done or terminal frame remains wire-visible but does not replace that
+durable item.
 Full items and `item_reference`s hydrate by arbitrary exact ID with no format
 validation or candidate-specific rewrite. When state is written, idless input
 items use internal storage keys only inside snapshots; stateless HTTP requests

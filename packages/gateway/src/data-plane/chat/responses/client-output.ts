@@ -5,9 +5,9 @@ import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// Affinity wraps routing metadata first. The client-output membrane then stores
-// each complete client-facing projection under its producer-owned item id and
-// owns the response envelope id shared by the downstream stream and snapshot.
+// Affinity wraps routing metadata first. The client-output boundary then stores
+// each complete emitted item under its exact ID and applies one generated
+// response ID to the downstream stream and snapshot.
 export const wrapNativeResponsesClientOutput = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   ctx: GatewayCtx,

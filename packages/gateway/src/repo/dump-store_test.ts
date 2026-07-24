@@ -251,7 +251,7 @@ test('FileDumpStore retires every disabled owner and collects its exact files', 
   assertEquals((await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>())?.count, 0);
 });
 
-test('a losing dump write leaves only its nonce-owned staged files collectible', async () => {
+test('a record-ID race leaves only the losing write\'s uniquely keyed files collectible', async () => {
   const db = await openDb();
   const repo = new SqlRepo(db);
   initRepo(repo);

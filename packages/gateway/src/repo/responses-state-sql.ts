@@ -294,7 +294,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     await runStatements(this.db, statements);
     const persisted = await this.lookupCurrentPolicyItems(items, activeAfter, policyAt);
     const missing = items.find(item => !persisted.has(scopedResponsesKey(item.apiKeyId, item.id)));
-    if (missing !== undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${missing.id}`);
+    if (missing !== undefined) throw new Error(`Responses item disappeared before retention refresh: ${missing.id}`);
     for (const item of items) {
       assertSameStoredResponsesItem(item, persisted.get(scopedResponsesKey(item.apiKeyId, item.id))!);
     }

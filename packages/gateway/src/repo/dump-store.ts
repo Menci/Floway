@@ -15,9 +15,9 @@ import type {
 } from '../dump/types.ts';
 import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 
-// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{nonce}.{req|resp}.gz`.
+// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{req|resp}.gz`.
 // The hour segment remains useful for operator inspection; lifecycle and
-// collection are driven by the shared spilled_files ledger.
+// collection are driven by the shared spilled_files registry.
 
 const HOUR_MS = 60 * 60 * 1000;
 

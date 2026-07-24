@@ -726,7 +726,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
         || item.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds);
     });
     if (missingIndex !== -1) {
-      throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
+      throw new Error(`Responses item disappeared before retention refresh: ${items[missingIndex].id}`);
     }
     const dueByApiKey = new Map<string, number>();
     for (let index = 0; index < existing.length; index += 1) {
