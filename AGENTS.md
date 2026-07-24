@@ -243,12 +243,17 @@ of days with a one-day minimum; zero disables every durable lookup and write.
 reuse. Reuse within that same day performs no refresh write. Visibility and
 cleanup apply the configured rolling window plus one fixed day of expiration
 grace, so quantization never expires state early and may retain it for up to one
-extra day. Increasing the configured duration may expose a row that cleanup has
-not deleted yet. A completed output item becomes reusable at its first
+extra day. Each HTTP request and WebSocket turn snapshots the API key's
+retention and request-start time, then derives one `earliestVisibleCutoff` used
+by every durable lookup, identity check, and refresh in that request. Retention
+changes affect later requests but never recalculate an in-flight request's
+cutoff. Physical cleanup remains independent and uses the latest stored policy.
+Increasing the configured duration may expose a row that cleanup has not
+deleted yet. A completed output item becomes reusable at its first
 `response.output_item.done`, so its row commits before that event is published;
 the response snapshot commits at the successful terminal event. Repository
 writes treat exact item/private-payload reuse as idempotent and reject a
-different live row under the same API-key-scoped ID.
+different visible row under the same API-key-scoped ID.
 
 Large Responses payloads and dump bodies use immutable objects with per-write
 unique keys. The shared `spilled_files` registry records each object as staged
@@ -257,21 +262,23 @@ when that row is replaced or deleted. One collector claims staged or retired
 records regardless of their source domain and deletes only their registered
 object keys; domain-specific code never scans or deletes file prefixes.
 
-Responses and dump reads both apply their API key's current rolling retention
-before physical cleanup. One `expiration_sweeps` due queue orders work across
-both domains. Its single bounded driver claims a key, dispatches either the
-Responses or dump adapter, and completes through a revision check. A drained
-completion preserves concurrent earlier work; partial and error completions set
-a bounded retry so a hot or failing key yields to other due keys. The adapters
-only define their indexed stored-row deletion and oldest-row probe; scheduling,
-fairness, claim recovery, and retries are shared. New stored rows schedule
-their API key directly. A bounded, monotonic cursor per source table backfills
-the due queue and exact dump-file registry entries for existing stored rows; it
-never pre-seeds API keys without stored state or scans file storage.
+Responses reads apply the request's captured retention cutoff; dump reads and
+physical cleanup apply the API key's latest rolling retention. One
+`expiration_sweeps` due queue orders cleanup across both domains. Its single
+bounded driver claims a key, dispatches either the Responses or dump adapter,
+and completes through a revision check. A drained completion preserves
+concurrent earlier work; partial and error completions set a bounded retry so a
+hot or failing key yields to other due keys. The adapters only define their
+indexed stored-row deletion and oldest-row probe; scheduling, fairness, claim
+recovery, and retries are shared. New stored rows schedule their API key
+directly. A bounded, monotonic cursor per source table backfills the due queue
+and exact dump-file registry entries for existing stored rows; it never
+pre-seeds API keys without stored state or scans file storage.
 
-HTTP `store: false` can read enabled durable Responses state but never writes or
-refreshes it. WebSocket state is always session-local; `store: true`
-additionally writes durable state when the key has opted in.
+HTTP `store: false` can read durable Responses state when the request's captured
+policy enables it, but never writes or refreshes it. WebSocket state is always
+session-local; `store: true` additionally writes durable state when the turn's
+captured policy enables it.
 
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in

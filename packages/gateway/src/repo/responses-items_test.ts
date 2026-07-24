@@ -63,7 +63,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const old = storedItem('msg-old', atDay(1), 'same');
     const current = storedItem('msg-current', atDay(2), 'same');
     const foreign = storedItem('msg-foreign', atDay(2), 'same', 'key-b');
-    await repo.responsesItems.insertMany([old, current, foreign], 0, Date.now());
+    await repo.responsesItems.insertMany([old, current, foreign], 0);
 
     expect(await repo.responsesItems.lookupMany('key-a', [old.id, current.id], atDay(1, 1))).toEqual([current]);
     expect(await repo.responsesItems.lookupMany('key-b', [current.id], 0)).toEqual([]);
@@ -78,11 +78,11 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.save(apiKey());
     const original = storedItem('msg-collision', atDay(10), 'original');
     const replacement = storedItem('msg-collision', atDay(12), 'replacement');
-    await repo.responsesItems.insertMany([original], 0, Date.now());
+    await repo.responsesItems.insertMany([original], 0);
 
-    await expect(repo.responsesItems.insertMany([replacement], atDay(9), Date.now())).rejects.toThrow('id collision');
+    await expect(repo.responsesItems.insertMany([replacement], atDay(9))).rejects.toThrow('id collision');
     vi.setSystemTime(atDay(12, 1));
-    await expect(repo.responsesItems.insertMany([replacement], atDay(10, 1), Date.now())).resolves.toBeUndefined();
+    await expect(repo.responsesItems.insertMany([replacement], atDay(10, 1))).resolves.toBeUndefined();
     expect(await repo.responsesItems.lookupMany('key-a', [original.id], atDay(10, 1))).toEqual([replacement]);
   });
 
@@ -93,12 +93,12 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const repo = await makeRepo();
     await repo.apiKeys.save(apiKey());
     const item = storedItem('msg-refresh', atDay(10));
-    await repo.responsesItems.insertMany([item], 0, Date.now());
+    await repo.responsesItems.insertMany([item], 0);
 
-    await repo.responsesItems.refreshMany([item], atDay(11, 1_000), atDay(9), Date.now());
-    await repo.responsesItems.refreshMany([item], atDay(11, DAY_MS - 1), atDay(9), Date.now());
+    await repo.responsesItems.refreshMany([item], atDay(11, 1_000), atDay(9));
+    await repo.responsesItems.refreshMany([item], atDay(11, DAY_MS - 1), atDay(9));
     expect((await repo.responsesItems.lookupMany('key-a', [item.id], 0))[0].refreshedAt).toBe(atDay(11));
-    await expect(repo.responsesItems.refreshMany([item], atDay(12), atDay(11, 1), Date.now())).rejects.toThrow('disappeared');
+    await expect(repo.responsesItems.refreshMany([item], atDay(12), atDay(11, 1))).rejects.toThrow('disappeared');
   });
 
   test('deletes rows outside each key current rolling policy', async () => {
@@ -110,7 +110,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
     const expired = storedItem('msg-expired', responsesStateCutoff(now, RETENTION_SECONDS) - 1);
     const current = storedItem('msg-current', responsesStateCutoff(now, RETENTION_SECONDS));
-    await repo.responsesItems.insertMany([expired, current], 0, Date.now());
+    await repo.responsesItems.insertMany([expired, current], 0);
     await repo.responsesSnapshots.insert({ id: 'resp-expired', apiKeyId: 'key-a', itemIds: [expired.id], refreshedAt: expired.refreshedAt });
     await repo.responsesSnapshots.insert({ id: 'resp-current', apiKeyId: 'key-a', itemIds: [current.id], refreshedAt: current.refreshedAt });
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
@@ -143,7 +143,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp-a', atDay(3, 1))).toBeNull();
   });
 
-  test('a concurrent shrink prevents an old request from refreshing excluded state', async () => {
+  test('a concurrent shrink does not change an in-flight request retention snapshot', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = Date.now();
@@ -151,16 +151,16 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const sevenDays = 7 * 24 * 60 * 60;
     await repo.apiKeys.save(apiKey(thirtyDays));
     const old = storedItem('msg-shrink-race', now - 20 * 24 * 60 * 60_000);
-    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays), Date.now());
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
 
-    await expect(repo.responsesItems.refreshMany([old], now, responsesStateCutoff(now, thirtyDays), Date.now()))
-      .rejects.toThrow('disappeared');
+    await expect(repo.responsesItems.refreshMany([old], now, responsesStateCutoff(now, thirtyDays)))
+      .resolves.toBeUndefined();
     expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt)
-      .toBe(quantizeResponsesRefreshedAt(old.refreshedAt));
+      .toBe(quantizeResponsesRefreshedAt(now));
   });
 
-  test('a concurrent grow protects a newly-live producer ID from replacement', async () => {
+  test('a concurrent grow does not widen an in-flight request retention snapshot', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = Date.now();
@@ -168,17 +168,17 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const sevenDays = 7 * 24 * 60 * 60;
     await repo.apiKeys.save(apiKey(thirtyDays));
     const old = storedItem('msg-grow-race', now - 20 * 24 * 60 * 60_000, 'old');
-    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays), Date.now());
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
     const replacement = storedItem(old.id, now, 'replacement');
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: thirtyDays });
 
-    await expect(repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, sevenDays), Date.now()))
-      .rejects.toThrow('id collision');
-    expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].payload).toEqual(old.payload);
+    await expect(repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, sevenDays)))
+      .resolves.toBeUndefined();
+    expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].payload).toEqual(replacement.payload);
   });
 
-  test('a concurrent grow refreshes an identical newly-live item', async () => {
+  test('an in-flight request reuses its narrower retention snapshot after a concurrent grow', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = atDay(40, DAY_MS / 2);
@@ -188,12 +188,12 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const sevenDays = 7 * RETENTION_SECONDS;
     await repo.apiKeys.save(apiKey(thirtyDays));
     const old = storedItem('msg-grow-refresh', now - 20 * DAY_MS);
-    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays), Date.now());
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
     const reused = { ...old, refreshedAt: now };
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: thirtyDays });
 
-    await repo.responsesItems.insertMany([reused], responsesStateCutoff(now, sevenDays), Date.now());
+    await repo.responsesItems.insertMany([reused], responsesStateCutoff(now, sevenDays));
 
     expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt)
       .toBe(quantizeResponsesRefreshedAt(now));
@@ -207,7 +207,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const sevenDays = 7 * 24 * 60 * 60;
     await repo.apiKeys.save(apiKey(thirtyDays));
     const old = storedItem('msg-grow-visible', now - 20 * 24 * 60 * 60_000);
-    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays), Date.now());
+    await repo.responsesItems.insertMany([old], responsesStateCutoff(now, thirtyDays));
 
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
     expect(await repo.responsesItems.lookupMany('key-a', [old.id], responsesStateCutoff(now, sevenDays))).toEqual([]);
@@ -216,7 +216,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
       { ...old, refreshedAt: quantizeResponsesRefreshedAt(old.refreshedAt) },
     ]);
   });
-  test('a concurrent disable prevents a captured durable writer from inserting', async () => {
+  test('a concurrent disable does not cancel a captured durable writer', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = Date.now();
@@ -224,11 +224,13 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
     const item = storedItem('msg-disabled-race', now);
 
-    await expect(repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS), Date.now())).rejects.toThrow();
-    expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
+    await expect(repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS))).resolves.toBeUndefined();
+    expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([
+      { ...item, refreshedAt: quantizeResponsesRefreshedAt(item.refreshedAt) },
+    ]);
   });
 
-  test('a concurrent disable rejects same-day reuse without relying on a refresh write', async () => {
+  test('same-day reuse keeps the request snapshot after a concurrent disable', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = atDay(10, DAY_MS / 2);
@@ -236,14 +238,13 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     vi.setSystemTime(now);
     await repo.apiKeys.save(apiKey());
     const item = storedItem('msg-disabled-same-day', now);
-    await repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS), Date.now());
+    await repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS));
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
 
     await expect(repo.responsesItems.insertMany(
       [{ ...item, refreshedAt: now + 1_000 }],
       responsesStateCutoff(now, RETENTION_SECONDS),
-      Date.now(),
-    )).rejects.toThrow();
+    )).resolves.toBeUndefined();
   });
 
   test('an old request cannot refresh a replacement payload under a reused ID', async () => {
@@ -254,12 +255,12 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     vi.setSystemTime(now);
     await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
     const original = storedItem('msg-reused', now - 2.5 * DAY_MS, 'original');
-    await repo.responsesItems.insertMany([original], responsesStateCutoff(now, 2 * RETENTION_SECONDS), Date.now());
+    await repo.responsesItems.insertMany([original], responsesStateCutoff(now, 2 * RETENTION_SECONDS));
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
     const replacement = storedItem(original.id, now, 'replacement');
-    await repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, RETENTION_SECONDS), Date.now());
+    await repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, RETENTION_SECONDS));
 
-    await expect(repo.responsesItems.refreshMany([original], now + 1, responsesStateCutoff(now, 2 * RETENTION_SECONDS), Date.now()))
+    await expect(repo.responsesItems.refreshMany([original], now + 1, responsesStateCutoff(now, 2 * RETENTION_SECONDS)))
       .rejects.toThrow('id collision');
     expect((await repo.responsesItems.lookupMany('key-a', [original.id], 0))[0]).toEqual({
       ...replacement,
@@ -267,18 +268,20 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     });
   });
 
-  test('missing and soft-deleted keys reject captured writes consistently', async () => {
+  test('missing keys reject writes while soft-deleted keys preserve captured requests', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = Date.now();
     const missing = storedItem('msg-missing-key', now);
-    await expect(repo.responsesItems.insertMany([missing], 0, Date.now())).rejects.toThrow();
+    await expect(repo.responsesItems.insertMany([missing], 0)).rejects.toThrow();
 
     await repo.apiKeys.save(apiKey());
     const existing = storedItem('msg-deleted-key', now);
-    await repo.responsesItems.insertMany([existing], 0, Date.now());
+    await repo.responsesItems.insertMany([existing], 0);
     await repo.apiKeys.softDelete('key-a');
-    await expect(repo.responsesItems.refreshMany([existing], now + 1, 0, Date.now())).rejects.toThrow('disappeared');
+    await expect(repo.responsesItems.refreshMany([existing], now + DAY_MS, 0)).resolves.toBeUndefined();
+    expect((await repo.responsesItems.lookupMany('key-a', [existing.id], 0))[0].refreshedAt)
+      .toBe(quantizeResponsesRefreshedAt(now + DAY_MS));
   });
 });
 
@@ -293,7 +296,7 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   vi.setSystemTime(now);
   await repo.apiKeys.save(apiKey(2 * RETENTION_SECONDS));
   const item = storedItem('msg-spilled', now - 2.5 * DAY_MS, largeContent());
-  await repo.responsesItems.insertMany([item], 0, Date.now());
+  await repo.responsesItems.insertMany([item], 0);
   await repo.apiKeys.update('key-a', { responsesRetentionSeconds: RETENTION_SECONDS });
 
   const owned = await db.prepare(
@@ -323,7 +326,7 @@ test('SQL performs no item or snapshot mutation after an earlier refresh in the 
   await repo.apiKeys.save(apiKey());
   const item = storedItem('msg-daily-refresh', atDay(10, 1_000));
   const snapshot = { id: 'resp-daily-refresh', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: atDay(10, 1_000) };
-  await repo.responsesItems.insertMany([item], 0, Date.now());
+  await repo.responsesItems.insertMany([item], 0);
   await repo.responsesSnapshots.insert(snapshot);
 
   const totalChanges = async (): Promise<number> => {
@@ -332,12 +335,12 @@ test('SQL performs no item or snapshot mutation after an earlier refresh in the 
     return row.value;
   };
   const beforeSameDayReuse = await totalChanges();
-  await repo.responsesItems.refreshMany([item], atDay(10, DAY_MS - 1), 0, Date.now());
+  await repo.responsesItems.refreshMany([item], atDay(10, DAY_MS - 1), 0);
   await repo.responsesSnapshots.insert({ ...snapshot, refreshedAt: atDay(10, DAY_MS - 1) });
   expect(await totalChanges()).toBe(beforeSameDayReuse);
 
   vi.setSystemTime(atDay(11, 1_000));
-  await repo.responsesItems.refreshMany([item], atDay(11, 1_000), 0, Date.now());
+  await repo.responsesItems.refreshMany([item], atDay(11, 1_000), 0);
   await repo.responsesSnapshots.insert({ ...snapshot, refreshedAt: atDay(11, 1_000) });
   expect(await totalChanges()).toBe(beforeSameDayReuse + 2);
 });
@@ -352,7 +355,7 @@ test('SQL hydration retries with every current item identity column after a repl
   await repo.apiKeys.save(apiKey());
   const original = storedItem('msg-hydration-race', atDay(10), largeContent());
   const replacement = storedItem(original.id, atDay(11), 'replacement');
-  await repo.responsesItems.insertMany([original], 0, Date.now());
+  await repo.responsesItems.insertMany([original], 0);
   const prepared = await prepareStoredResponsesPayload(replacement.id, replacement.apiKeyId, replacement.payload);
   if (prepared.file !== null) throw new Error('replacement payload unexpectedly spilled');
   const payloadHash = await hashResponsesJson(replacement.payload);

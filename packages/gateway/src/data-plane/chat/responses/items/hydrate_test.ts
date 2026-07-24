@@ -28,7 +28,7 @@ describe('Responses stored-item hydration', () => {
       itemHash: 'hash',
       refreshedAt: Date.now(),
     };
-    await repo.responsesItems.insertMany([row], 0, Date.now());
+    await repo.responsesItems.insertMany([row], 0);
     const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
     const payload = { model: 'model', input: [{ type: 'item_reference' as const, id: row.id }] };
     await store.loadInputItems(payload.input, payload.input);

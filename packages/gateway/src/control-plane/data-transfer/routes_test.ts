@@ -427,7 +427,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.searchUsage.set(SEARCH_USAGE_1);
-  await repo.responsesItems.insertMany([STORED_RESPONSES_ITEM], 0, Date.now());
+  await repo.responsesItems.insertMany([STORED_RESPONSES_ITEM], 0);
   await repo.searchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'old' },

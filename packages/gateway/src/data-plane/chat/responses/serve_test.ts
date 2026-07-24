@@ -394,7 +394,7 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
     itemHash: 'previous-message-hash',
     payload: { item: { type: 'message', id: previousMessageId, role: 'user', content: 'first turn' } },
     refreshedAt: Date.now(),
-  }], 0, Date.now());
+  }], 0);
   const snapshot: StoredResponsesSnapshot = {
     id: 'resp_prev',
     apiKeyId: API_KEY_ID,

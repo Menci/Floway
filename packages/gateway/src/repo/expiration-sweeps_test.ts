@@ -82,9 +82,8 @@ test('one fair driver drains bounded Responses and dump backlogs', async () => {
   await repo.responsesItems.insertMany(
     Array.from({ length: 150 }, (_, index) => responseItem(`msg-expired-${index}`, responsesExpiredAt)),
     0,
-    now,
   );
-  await repo.responsesItems.insertMany([responseItem('msg-current', now)], 0, now);
+  await repo.responsesItems.insertMany([responseItem('msg-current', now)], 0);
   for (let index = 0; index < 150; index += 1) {
     await dumps.put('key-a', dumpRecord(`01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt));
   }
@@ -117,9 +116,8 @@ test('a partial hot key yields the current tick to another due key', async () =>
   await repo.responsesItems.insertMany(
     Array.from({ length: 450 }, (_, index) => responseItem(`msg-hot-${index}`, expiredAt, 'a-hot')),
     0,
-    now,
   );
-  await repo.responsesItems.insertMany([responseItem('msg-small', expiredAt, 'b-small')], 0, now);
+  await repo.responsesItems.insertMany([responseItem('msg-small', expiredAt, 'b-small')], 0);
   await repo.apiKeys.update('a-hot', { responsesRetentionSeconds: RESPONSES_RETENTION_SECONDS });
   await repo.apiKeys.update('b-small', { responsesRetentionSeconds: RESPONSES_RETENTION_SECONDS });
 
@@ -157,7 +155,7 @@ test('a later Responses row inserted during a claim prevents queue deletion', as
   const claim = await repo.expirationSweeps.claim('claim-row-race', now, 0);
   if (claim === null) throw new Error('expected expiration claim');
 
-  await repo.responsesItems.insertMany([responseItem('msg-later', now)], 0, now);
+  await repo.responsesItems.insertMany([responseItem('msg-later', now)], 0);
   await repo.expirationSweeps.complete('claim-row-race', claim.revision, { kind: 'drained', nextDueAt: null });
 
   const row = await db.prepare(
@@ -177,7 +175,7 @@ test('partial completion yields even when a concurrent Responses row bumps the r
   await repo.expirationSweeps.schedule('responses', 'key-a', 0);
   const claim = await repo.expirationSweeps.claim('claim-partial-race', now, 0);
   if (claim === null) throw new Error('expected expiration claim');
-  await repo.responsesItems.insertMany([responseItem('msg-concurrent', now)], 0, now);
+  await repo.responsesItems.insertMany([responseItem('msg-concurrent', now)], 0);
 
   await repo.expirationSweeps.complete('claim-partial-race', claim.revision, { kind: 'partial', retryAt: now + 1 });
 
@@ -352,7 +350,7 @@ test('bounded cleanup backfill skips API keys without stored state', async () =>
   initFileProvider(new MemoryFileProvider());
   await repo.apiKeys.save(key(now));
   await repo.apiKeys.save({ ...key(now), id: 'key-empty', key: 'raw-empty', serverSecret: '99'.repeat(32) });
-  await repo.responsesItems.insertMany([responseItem('msg-owned', now)], 0, now);
+  await repo.responsesItems.insertMany([responseItem('msg-owned', now)], 0);
   await repo.responsesSnapshots.insert({ id: 'resp-owned', apiKeyId: 'key-a', itemIds: ['msg-owned'], refreshedAt: now });
   await db.prepare("UPDATE expiration_sweeps SET due_at = ? WHERE domain = 'responses' AND key_id = 'key-a'")
     .bind(now + 3600_000)
@@ -375,7 +373,7 @@ test('in-memory Responses rows enter the same expiration driver', async () => {
   initFileProvider(new MemoryFileProvider());
   await repo.apiKeys.save(key(now));
   const item = responseItem('msg-memory', now);
-  await repo.responsesItems.insertMany([item], 0, now);
+  await repo.responsesItems.insertMany([item], 0);
   await repo.responsesSnapshots.insert({ id: 'resp-memory', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: now });
 
   const expiresAt = quantizeResponsesRefreshedAt(now)

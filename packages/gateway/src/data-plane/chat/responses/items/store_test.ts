@@ -118,7 +118,7 @@ describe('StatefulResponsesStore', () => {
       itemHash: 'old-hash',
       refreshedAt: initialRefreshedAt,
     };
-    await repo.responsesItems.insertMany([item], 0, Date.now());
+    await repo.responsesItems.insertMany([item], 0);
     await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: initialRefreshedAt });
     const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
     expect(await store.loadSnapshot('resp_old')).not.toBeNull();
@@ -143,7 +143,7 @@ describe('StatefulResponsesStore', () => {
       itemHash: 'current-day-hash',
       refreshedAt: TEST_DAY + 1_000,
     };
-    await repo.responsesItems.insertMany([item], 0, Date.now());
+    await repo.responsesItems.insertMany([item], 0);
     await repo.responsesSnapshots.insert({ id: 'resp_current_day', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: item.refreshedAt });
     const refreshItems = vi.spyOn(repo.responsesItems, 'refreshMany');
 
@@ -175,7 +175,7 @@ describe('StatefulResponsesStore', () => {
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_after_midnight', 0))?.refreshedAt).toBe(TEST_DAY + DAY_MS);
   });
 
-  test('a request keeps an item visible when its retention window ends mid-request', async () => {
+  test('a request keeps its retention snapshot when the visibility window ends mid-request', async () => {
     vi.useFakeTimers();
     const retentionSeconds = 24 * 60 * 60;
     const requestStartedAt = TEST_DAY + 2 * DAY_MS - 1_000;
@@ -189,7 +189,7 @@ describe('StatefulResponsesStore', () => {
       itemHash: 'cutoff-edge-hash',
       refreshedAt: TEST_DAY + DAY_MS,
     };
-    await repo.responsesItems.insertMany([item], 0, requestStartedAt);
+    await repo.responsesItems.insertMany([item], 0);
     const store = createResponsesHttpStore({ id: 'key-a', responsesRetentionSeconds: retentionSeconds }, requestStartedAt, true);
 
     vi.setSystemTime(TEST_DAY + 3 * DAY_MS + 1_000);
@@ -224,7 +224,7 @@ describe('StatefulResponsesStore', () => {
       itemHash: await hashResponsesItemContent(hashedInput),
       refreshedAt: initialRefreshedAt,
     };
-    await repo.responsesItems.insertMany([directRow, hashedRow], 0, Date.now());
+    await repo.responsesItems.insertMany([directRow, hashedRow], 0);
     await store.loadInputItems([directInput, hashedInput], [directInput, hashedInput]);
     await store.stageInputItems([directInput, hashedInput]);
     await store.commitSnapshot('resp_reused', 'append', []);
@@ -249,7 +249,7 @@ describe('StatefulResponsesStore', () => {
       itemHash: await hashResponsesItemContent(input),
       refreshedAt: futureRefreshedAt,
     };
-    await repo.responsesItems.insertMany([row], 0, Date.now());
+    await repo.responsesItems.insertMany([row], 0);
     await store.loadInputItems([input], [input]);
     await store.stageInputItems([input]);
     await store.commitSnapshot('resp_future', 'append', []);
@@ -258,7 +258,7 @@ describe('StatefulResponsesStore', () => {
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_future', 0))?.refreshedAt).toBe(quantizedFutureRefreshedAt);
   });
 
-  test('disable between output-item done and terminal skips durable snapshot creation', async () => {
+  test('disable between output-item done and terminal preserves the in-flight request snapshot', async () => {
     const repo = installRepo();
     const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
     const output = {
@@ -272,7 +272,7 @@ describe('StatefulResponsesStore', () => {
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
     await store.commitSnapshot('resp-after-disable', 'append', [output.id]);
 
-    expect(await repo.responsesSnapshots.lookup('key-a', 'resp-after-disable', 0)).toBeNull();
+    expect(await repo.responsesSnapshots.lookup('key-a', 'resp-after-disable', 0)).not.toBeNull();
   });
 
   test('WebSocket store=false retains socket-local state only', async () => {

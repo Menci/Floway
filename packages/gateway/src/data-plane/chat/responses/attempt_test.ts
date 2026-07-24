@@ -103,7 +103,7 @@ const insertStoredItem = async (repo: InMemoryRepo, overrides: Partial<StoredRes
     refreshedAt: Date.now(),
     ...itemOverrides,
   };
-  await repo.responsesItems.insertMany([row], 0, Date.now());
+  await repo.responsesItems.insertMany([row], 0);
   return row;
 };
 
