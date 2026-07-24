@@ -10,15 +10,18 @@ CREATE TABLE usage_new (
   unit_price TEXT
 );
 
-WITH formatted_usage AS (
+WITH distinct_prices AS MATERIALIZED (
+  SELECT unit_price, typeof(unit_price) AS decimal_type
+  FROM usage
+  WHERE unit_price IS NOT NULL
+  GROUP BY unit_price, typeof(unit_price)
+), formatted_prices AS (
   SELECT
-    key_id, model, upstream, model_key, hour, pricing_selector,
-    dimension, tokens, typeof(tokens) AS quantity_type, unit_price,
-    typeof(unit_price) AS decimal_type,
+    unit_price,
+    decimal_type,
     CASE
-      WHEN unit_price IS NULL THEN NULL
-      WHEN typeof(unit_price) = 'integer' THEN CAST(unit_price AS TEXT)
-      WHEN typeof(unit_price) != 'real' THEN NULL
+      WHEN decimal_type = 'integer' THEN CAST(unit_price AS TEXT)
+      WHEN decimal_type != 'real' THEN NULL
       ELSE (
         WITH RECURSIVE precisions(digit_count) AS (
           VALUES (1)
@@ -32,8 +35,8 @@ WITH formatted_usage AS (
         LIMIT 1
       )
     END AS decimal_text
-  FROM usage
-), usage_mantissas AS (
+  FROM distinct_prices
+), price_mantissas AS (
   SELECT
     *,
     CASE
@@ -44,14 +47,14 @@ WITH formatted_usage AS (
       WHEN instr(lower(decimal_text), 'e') > 0 THEN CAST(substr(decimal_text, instr(lower(decimal_text), 'e') + 1) AS INTEGER)
       ELSE 0
     END AS source_exponent
-  FROM formatted_usage
-), usage_decimal_parts AS (
+  FROM formatted_prices
+), price_decimal_parts AS (
   SELECT
     *,
     CASE WHEN substr(mantissa, 1, 1) = '-' THEN '-' ELSE '' END AS sign,
     CASE WHEN substr(mantissa, 1, 1) = '-' THEN substr(mantissa, 2) ELSE mantissa END AS unsigned_mantissa
-  FROM usage_mantissas
-), shifted_usage AS (
+  FROM price_mantissas
+), shifted_prices AS (
   SELECT
     *,
     rtrim(replace(unsigned_mantissa, '.', ''), '0') AS digits,
@@ -59,20 +62,31 @@ WITH formatted_usage AS (
       WHEN instr(unsigned_mantissa, '.') > 0 THEN instr(unsigned_mantissa, '.') - 1
       ELSE length(unsigned_mantissa)
     END) + source_exponent - 6 AS decimal_position
-  FROM usage_decimal_parts
+  FROM price_decimal_parts
+), canonical_prices AS MATERIALIZED (
+  SELECT
+    unit_price,
+    CASE
+      WHEN decimal_type NOT IN ('integer', 'real') OR unit_price < 0 OR decimal_text IS NULL THEN json('invalid legacy usage unit price')
+      WHEN unit_price = 0 THEN '0'
+      WHEN decimal_position <= 0 THEN sign || '0.' || printf('%0*d', -decimal_position, 0) || digits
+      WHEN decimal_position >= length(digits) THEN sign || digits || printf('%0*d', decimal_position - length(digits), 0)
+      ELSE sign || substr(digits, 1, decimal_position) || '.' || substr(digits, decimal_position + 1)
+    END AS canonical_unit_price
+  FROM shifted_prices
 )
 INSERT INTO usage_new (
   key_id, model, upstream, model_key, hour, pricing_selector,
   metric, quantity, unit_price
 )
 SELECT
-  key_id,
-  model,
-  upstream,
-  model_key,
-  hour,
-  pricing_selector,
-  CASE dimension
+  usage.key_id,
+  usage.model,
+  usage.upstream,
+  usage.model_key,
+  usage.hour,
+  usage.pricing_selector,
+  CASE usage.dimension
     WHEN 'input' THEN 'input_tokens'
     WHEN 'input_cache_read' THEN 'input_cache_read_tokens'
     WHEN 'input_cache_write' THEN 'input_cache_write_tokens'
@@ -82,18 +96,15 @@ SELECT
     WHEN 'output_image' THEN 'output_image_tokens'
   END,
   CASE
-    WHEN quantity_type = 'integer' AND tokens >= 0 THEN CAST(tokens AS TEXT)
+    WHEN typeof(usage.tokens) = 'integer' AND usage.tokens >= 0 THEN CAST(usage.tokens AS TEXT)
     ELSE json('invalid legacy usage quantity')
   END,
   CASE
-    WHEN unit_price IS NULL THEN NULL
-    WHEN decimal_type NOT IN ('integer', 'real') OR unit_price < 0 OR decimal_text IS NULL THEN json('invalid legacy usage unit price')
-    WHEN unit_price = 0 THEN '0'
-    WHEN decimal_position <= 0 THEN sign || '0.' || printf('%0*d', -decimal_position, 0) || digits
-    WHEN decimal_position >= length(digits) THEN sign || digits || printf('%0*d', decimal_position - length(digits), 0)
-    ELSE sign || substr(digits, 1, decimal_position) || '.' || substr(digits, decimal_position + 1)
+    WHEN usage.unit_price IS NULL THEN NULL
+    ELSE canonical_prices.canonical_unit_price
   END
-FROM shifted_usage;
+FROM usage
+LEFT JOIN canonical_prices ON canonical_prices.unit_price = usage.unit_price;
 
 DROP TABLE usage;
 ALTER TABLE usage_new RENAME TO usage;
