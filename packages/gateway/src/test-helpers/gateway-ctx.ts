@@ -11,6 +11,7 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 // into the overrides.
 export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => ({
   apiKeyId: 'key_test',
+  requestStartedAt: 0,
   upstreamIds: null,
   wantsStream: false,
   runtimeLocation: 'TEST',
@@ -31,6 +32,6 @@ export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): Cha
   return {
     ...base,
     affinity,
-    store: overrides.store ?? createResponsesHttpStore({ id: base.apiKeyId, responsesRetentionSeconds: 0 }, false),
+    store: overrides.store ?? createResponsesHttpStore({ id: base.apiKeyId, responsesRetentionSeconds: 0 }, base.requestStartedAt, false),
   };
 };

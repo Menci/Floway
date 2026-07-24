@@ -143,7 +143,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp-a', atDay(3, 1))).toBeNull();
   });
 
-  test('a concurrent shrink prevents an old request from refreshing excluded state', async () => {
+  test('a concurrent shrink does not change an in-flight request retention snapshot', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = Date.now();
@@ -155,12 +155,12 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: sevenDays });
 
     await expect(repo.responsesItems.refreshMany([old], now, responsesStateCutoff(now, thirtyDays)))
-      .rejects.toThrow('disappeared');
+      .resolves.toBeUndefined();
     expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt)
-      .toBe(quantizeResponsesRefreshedAt(old.refreshedAt));
+      .toBe(quantizeResponsesRefreshedAt(now));
   });
 
-  test('a concurrent grow protects a newly-live producer ID from replacement', async () => {
+  test('a concurrent grow does not widen an in-flight request retention snapshot', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = Date.now();
@@ -174,11 +174,11 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: thirtyDays });
 
     await expect(repo.responsesItems.insertMany([replacement], responsesStateCutoff(now, sevenDays)))
-      .rejects.toThrow('id collision');
-    expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].payload).toEqual(old.payload);
+      .resolves.toBeUndefined();
+    expect((await repo.responsesItems.lookupMany('key-a', [old.id], 0))[0].payload).toEqual(replacement.payload);
   });
 
-  test('a concurrent grow refreshes an identical newly-live item', async () => {
+  test('an in-flight request reuses its narrower retention snapshot after a concurrent grow', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = atDay(40, DAY_MS / 2);
@@ -216,7 +216,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
       { ...old, refreshedAt: quantizeResponsesRefreshedAt(old.refreshedAt) },
     ]);
   });
-  test('a concurrent disable prevents a captured durable writer from inserting', async () => {
+  test('a concurrent disable does not cancel a captured durable writer', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = Date.now();
@@ -224,11 +224,13 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await repo.apiKeys.update('key-a', { responsesRetentionSeconds: 0 });
     const item = storedItem('msg-disabled-race', now);
 
-    await expect(repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS))).rejects.toThrow();
-    expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
+    await expect(repo.responsesItems.insertMany([item], responsesStateCutoff(now, RETENTION_SECONDS))).resolves.toBeUndefined();
+    expect(await repo.responsesItems.lookupMany('key-a', [item.id], 0)).toEqual([
+      { ...item, refreshedAt: quantizeResponsesRefreshedAt(item.refreshedAt) },
+    ]);
   });
 
-  test('a concurrent disable rejects same-day reuse without relying on a refresh write', async () => {
+  test('same-day reuse keeps the request snapshot after a concurrent disable', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = atDay(10, DAY_MS / 2);
@@ -242,7 +244,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     await expect(repo.responsesItems.insertMany(
       [{ ...item, refreshedAt: now + 1_000 }],
       responsesStateCutoff(now, RETENTION_SECONDS),
-    )).rejects.toThrow();
+    )).resolves.toBeUndefined();
   });
 
   test('an old request cannot refresh a replacement payload under a reused ID', async () => {
@@ -266,7 +268,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     });
   });
 
-  test('missing and soft-deleted keys reject captured writes consistently', async () => {
+  test('missing keys reject writes while soft-deleted keys preserve captured requests', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await makeRepo();
     const now = Date.now();
@@ -277,7 +279,9 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     const existing = storedItem('msg-deleted-key', now);
     await repo.responsesItems.insertMany([existing], 0);
     await repo.apiKeys.softDelete('key-a');
-    await expect(repo.responsesItems.refreshMany([existing], now + 1, 0)).rejects.toThrow('disappeared');
+    await expect(repo.responsesItems.refreshMany([existing], now + DAY_MS, 0)).resolves.toBeUndefined();
+    expect((await repo.responsesItems.lookupMany('key-a', [existing.id], 0))[0].refreshedAt)
+      .toBe(quantizeResponsesRefreshedAt(now + DAY_MS));
   });
 });
 

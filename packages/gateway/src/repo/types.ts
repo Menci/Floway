@@ -385,10 +385,10 @@ export interface StoredResponsesItemPayload {
 }
 
 export interface ResponsesItemsRepo {
-  lookupMany(apiKeyId: string, ids: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
-  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]>;
-  insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void>;
-  refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, activeAfter: number): Promise<void>;
+  lookupMany(apiKeyId: string, ids: readonly string[], earliestVisibleCutoff: number): Promise<StoredResponsesItem[]>;
+  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], earliestVisibleCutoff: number): Promise<StoredResponsesItem[]>;
+  insertMany(items: readonly StoredResponsesItem[], earliestVisibleCutoff: number): Promise<void>;
+  refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, earliestVisibleCutoff: number): Promise<void>;
   deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
   findOldestRefreshedAt(apiKeyId: string): Promise<number | null>;
   deleteAll(): Promise<void>;
@@ -402,7 +402,7 @@ export interface StoredResponsesSnapshot {
 }
 
 export interface ResponsesSnapshotsRepo {
-  lookup(apiKeyId: string, id: string, activeAfter: number): Promise<StoredResponsesSnapshot | null>;
+  lookup(apiKeyId: string, id: string, earliestVisibleCutoff: number): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
   deleteExpiredBatch(apiKeyId: string, now: number, limit: number): Promise<number>;
   findOldestRefreshedAt(apiKeyId: string): Promise<number | null>;

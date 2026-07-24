@@ -634,6 +634,18 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
   color: upstream.color ?? null,
 });
 
+const responsesCleanupDueAt = async (
+  apiKeys: ApiKeyRepo,
+  apiKeyId: string,
+  refreshedAt: number,
+): Promise<number> => {
+  const apiKey = (await apiKeys.listIncludingDeleted()).find(candidate => candidate.id === apiKeyId);
+  if (apiKey === undefined) throw new Error(`API key not found for Responses state: ${apiKeyId}`);
+  return apiKey.deletedAt !== null || apiKey.responsesRetentionSeconds === 0
+    ? 0
+    : refreshedAt + apiKey.responsesRetentionSeconds * 1000 + RESPONSES_REFRESH_GRANULARITY_MS + 1;
+};
+
 class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   private store = new Map<string, StoredResponsesItem>();
 
@@ -642,31 +654,31 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     private readonly expirationSweeps: ExpirationSweepsRepo,
   ) {}
 
-  lookupMany(apiKeyId: string, ids: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
+  lookupMany(apiKeyId: string, ids: readonly string[], earliestVisibleCutoff: number): Promise<StoredResponsesItem[]> {
     const rows: StoredResponsesItem[] = [];
     const seen = new Set<string>();
     for (const id of ids) {
       if (seen.has(id)) continue;
       seen.add(id);
       const row = this.store.get(scopedResponsesKey(apiKeyId, id));
-      if (row !== undefined && row.refreshedAt >= activeAfter) rows.push(cloneStoredResponsesItem(row));
+      if (row !== undefined && row.refreshedAt >= earliestVisibleCutoff) rows.push(cloneStoredResponsesItem(row));
     }
     return Promise.resolve(rows);
   }
 
-  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
+  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], earliestVisibleCutoff: number): Promise<StoredResponsesItem[]> {
     const wanted = new Set(hashes);
     if (wanted.size === 0) return Promise.resolve([]);
     const rows: StoredResponsesItem[] = [];
     for (const row of this.store.values()) {
-      if (row.apiKeyId === apiKeyId && row.refreshedAt >= activeAfter && wanted.has(row.itemHash)) {
+      if (row.apiKeyId === apiKeyId && row.refreshedAt >= earliestVisibleCutoff && wanted.has(row.itemHash)) {
         rows.push(cloneStoredResponsesItem(row));
       }
     }
     return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
   }
 
-  async insertMany(items: readonly StoredResponsesItem[], activeAfter: number): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[], earliestVisibleCutoff: number): Promise<void> {
     const quantizedItems = items.map(item => ({
       ...item,
       refreshedAt: quantizeResponsesRefreshedAt(item.refreshedAt),
@@ -676,20 +688,13 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     for (const item of quantizedItems) {
       const key = scopedResponsesKey(item.apiKeyId, item.id);
       const existing = pending.get(key) ?? this.store.get(key);
-      const policy = await this.apiKeys.getById(item.apiKeyId);
-      if (policy === null || policy.responsesRetentionSeconds === 0) {
-        throw new Error(`Responses persistence is disabled for API key: ${item.apiKeyId}`);
-      }
-      const currentActive = existing !== undefined
-        && policy !== null
-        && existing.refreshedAt >= responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds);
-      if (existing !== undefined && (existing.refreshedAt >= activeAfter || currentActive)) {
+      if (existing !== undefined && existing.refreshedAt >= earliestVisibleCutoff) {
         assertSameStoredResponsesItem(item, existing);
       } else {
         pending.set(key, item);
       }
       const refreshedAt = Math.max(existing?.refreshedAt ?? item.refreshedAt, item.refreshedAt);
-      const dueAt = refreshedAt + policy.responsesRetentionSeconds * 1000 + RESPONSES_REFRESH_GRANULARITY_MS + 1;
+      const dueAt = await responsesCleanupDueAt(this.apiKeys, item.apiKeyId, refreshedAt);
       dueByApiKey.set(item.apiKeyId, Math.min(dueByApiKey.get(item.apiKeyId) ?? dueAt, dueAt));
     }
     const previous = new Map<string, StoredResponsesItem | undefined>();
@@ -714,17 +719,11 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, activeAfter: number): Promise<void> {
+  async refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, earliestVisibleCutoff: number): Promise<void> {
     const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
     const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
-    const currentPolicies = await Promise.all(items.map(async item => await this.apiKeys.getById(item.apiKeyId)));
-    const missingIndex = existing.findIndex((item, index) => {
-      if (item === undefined || item.refreshedAt < activeAfter) return true;
-      const policy = currentPolicies[index];
-      return policy === null
-        || policy.responsesRetentionSeconds === 0
-        || item.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds);
-    });
+    const missingIndex = existing.findIndex(item =>
+      item === undefined || item.refreshedAt < earliestVisibleCutoff);
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before retention refresh: ${items[missingIndex].id}`);
     }
@@ -732,8 +731,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     for (let index = 0; index < existing.length; index += 1) {
       assertSameStoredResponsesItem(items[index], existing[index]!);
       const nextRefreshedAt = Math.max(existing[index]!.refreshedAt, quantizedRefreshedAt);
-      const policy = currentPolicies[index]!;
-      const dueAt = nextRefreshedAt + policy.responsesRetentionSeconds * 1000 + RESPONSES_REFRESH_GRANULARITY_MS + 1;
+      const dueAt = await responsesCleanupDueAt(this.apiKeys, items[index].apiKeyId, nextRefreshedAt);
       dueByApiKey.set(items[index].apiKeyId, Math.min(dueByApiKey.get(items[index].apiKeyId) ?? dueAt, dueAt));
     }
     const previous = new Map(existing.map(item => {
@@ -788,9 +786,9 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     private readonly expirationSweeps: ExpirationSweepsRepo,
   ) {}
 
-  lookup(apiKeyId: string, id: string, activeAfter: number): Promise<StoredResponsesSnapshot | null> {
+  lookup(apiKeyId: string, id: string, earliestVisibleCutoff: number): Promise<StoredResponsesSnapshot | null> {
     const snapshot = this.store.get(scopedResponsesKey(apiKeyId, id));
-    return Promise.resolve(snapshot !== undefined && snapshot.refreshedAt >= activeAfter ? cloneStoredResponsesSnapshot(snapshot) : null);
+    return Promise.resolve(snapshot !== undefined && snapshot.refreshedAt >= earliestVisibleCutoff ? cloneStoredResponsesSnapshot(snapshot) : null);
   }
 
   async insert(snapshot: StoredResponsesSnapshot): Promise<void> {
@@ -798,22 +796,16 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       ...snapshot,
       refreshedAt: quantizeResponsesRefreshedAt(snapshot.refreshedAt),
     };
-    const policy = await this.apiKeys.getById(quantized.apiKeyId);
-    if (
-      policy === null
-      || policy.responsesRetentionSeconds === 0
-      || quantized.refreshedAt < responsesStateCutoff(Date.now(), policy.responsesRetentionSeconds)
-    ) return;
     const key = scopedResponsesKey(quantized.apiKeyId, quantized.id);
     const existing = this.store.get(key);
     if (existing === undefined || quantized.refreshedAt > existing.refreshedAt) {
       this.store.set(key, cloneStoredResponsesSnapshot(quantized));
       try {
-        await this.expirationSweeps.schedule(
-          'responses',
+        await this.expirationSweeps.schedule('responses', quantized.apiKeyId, await responsesCleanupDueAt(
+          this.apiKeys,
           quantized.apiKeyId,
-          quantized.refreshedAt + policy.responsesRetentionSeconds * 1000 + RESPONSES_REFRESH_GRANULARITY_MS + 1,
-        );
+          quantized.refreshedAt,
+        ));
       } catch (error) {
         if (existing === undefined) this.store.delete(key);
         else this.store.set(key, existing);

@@ -33,7 +33,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
   const candidateA = modelCandidate('upstream-a');
   const candidateB = modelCandidate('upstream-b');
   const codec = new AffinityCodec('22'.repeat(32));
-  const store = createResponsesHttpStore(testResponsesStatePolicy(), true);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
   store.beginAttempt(new Map());
 
   const programOutput = {

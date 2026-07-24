@@ -29,6 +29,7 @@ export const stampUpstreamCallStart = (attempt: AttemptState) =>
 
 export interface GatewayCtx {
   readonly apiKeyId: string;
+  readonly requestStartedAt: number;
   readonly upstreamIds: readonly string[] | null;
   readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;
@@ -104,6 +105,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
     apiKeyId: apiKey.id,
+    requestStartedAt: Date.now(),
     upstreamIds,
     abortSignal: controller?.signal,
     wantsStream: opts.wantsStream,
@@ -131,12 +133,12 @@ export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Re
 export const createChatGatewayCtxFromHono = (
   c: AuthedContext,
   opts: CreateGatewayCtxOptions,
-  storeFactory: (apiKey: ApiKey) => StatefulResponsesStore,
+  storeFactory: (apiKey: ApiKey, requestStartedAt: number) => StatefulResponsesStore,
 ): ChatGatewayCtx => {
   const base = createGatewayCtxFromHono(c, opts);
   return {
     ...base,
     affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
-    store: storeFactory(apiKeyFromContext(c)),
+    store: storeFactory(apiKeyFromContext(c), base.requestStartedAt),
   };
 };

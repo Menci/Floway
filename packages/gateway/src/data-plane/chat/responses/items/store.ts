@@ -252,15 +252,20 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 }
 
 export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
+  private readonly earliestVisibleCutoff: number;
+
   constructor(
     private readonly getRepo: () => Repo,
-    private readonly activeAfter: number,
-  ) {}
+    requestStartedAt: number,
+    retentionSeconds: number,
+  ) {
+    this.earliestVisibleCutoff = responsesStateCutoff(requestStartedAt, retentionSeconds);
+  }
 
   async lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]> {
     const [byId, byContentHash] = await Promise.all([
-      this.getRepo().responsesItems.lookupMany(query.apiKeyId, query.ids, this.activeAfter),
-      this.getRepo().responsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.activeAfter),
+      this.getRepo().responsesItems.lookupMany(query.apiKeyId, query.ids, this.earliestVisibleCutoff),
+      this.getRepo().responsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.earliestVisibleCutoff),
     ]);
     const rows = new Map<string, StoredResponsesItem>();
     for (const row of [...byId, ...byContentHash]) rows.set(scopedResponsesKey(row.apiKeyId, row.id), row);
@@ -268,15 +273,15 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
   }
 
   async insertItems(items: readonly StoredResponsesItem[]): Promise<void> {
-    await this.getRepo().responsesItems.insertMany(items, this.activeAfter);
+    await this.getRepo().responsesItems.insertMany(items, this.earliestVisibleCutoff);
   }
 
   async refreshItems(items: readonly StoredResponsesItem[], refreshedAt: number): Promise<void> {
-    await this.getRepo().responsesItems.refreshMany(items, refreshedAt, this.activeAfter);
+    await this.getRepo().responsesItems.refreshMany(items, refreshedAt, this.earliestVisibleCutoff);
   }
 
   async lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
-    return await this.getRepo().responsesSnapshots.lookup(apiKeyId, id, this.activeAfter);
+    return await this.getRepo().responsesSnapshots.lookup(apiKeyId, id, this.earliestVisibleCutoff);
   }
 
   async insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
@@ -350,16 +355,13 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
 
 type ResponsesStatePolicy = Pick<ApiKey, 'id' | 'responsesRetentionSeconds'>;
 
-const createDurableBacking = (apiKey: ResponsesStatePolicy): RepoStatefulResponsesBacking | null =>
+const createDurableBacking = (apiKey: ResponsesStatePolicy, requestStartedAt: number): RepoStatefulResponsesBacking | null =>
   apiKey.responsesRetentionSeconds === 0
     ? null
-    : new RepoStatefulResponsesBacking(
-        getRepo,
-        responsesStateCutoff(Date.now(), apiKey.responsesRetentionSeconds),
-      );
+    : new RepoStatefulResponsesBacking(getRepo, requestStartedAt, apiKey.responsesRetentionSeconds);
 
-export const createResponsesHttpStore = (apiKey: ResponsesStatePolicy, store: boolean | undefined): StatefulResponsesStore => {
-  const durable = createDurableBacking(apiKey);
+export const createResponsesHttpStore = (apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore => {
+  const durable = createDurableBacking(apiKey, requestStartedAt);
   return new LayeredStatefulResponsesStore({
     apiKeyId: apiKey.id,
     reads: durable === null ? [] : [durable],
@@ -377,12 +379,12 @@ export const createNonResponsesSourceStore = (apiKeyId: string): StatefulRespons
   new LayeredStatefulResponsesStore({ apiKeyId, reads: [], writes: [] });
 
 export const createResponsesWsSession = (): {
-  createStore(apiKey: ResponsesStatePolicy, store: boolean | undefined): StatefulResponsesStore;
+  createStore(apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore;
 } => {
   const local = new MemoryStatefulResponsesBacking();
   return {
-    createStore(apiKey: ResponsesStatePolicy, store: boolean | undefined): StatefulResponsesStore {
-      const durable = createDurableBacking(apiKey);
+    createStore(apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore {
+      const durable = createDurableBacking(apiKey, requestStartedAt);
       // Session-local state is the first store:true collision gate. Writing it
       // first prevents a rejected local history from creating a durable row.
       const writes = store === false || durable === null ? [local] : [local, durable];

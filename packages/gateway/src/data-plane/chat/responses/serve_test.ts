@@ -74,7 +74,7 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']) =>
   mockChatGatewayCtx({
     apiKeyId: API_KEY_ID,
     wantsStream: true,
-    store: store ?? createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true),
+    store: store ?? createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), Date.now(), true),
   });
 
 const makePayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload => ({
@@ -403,7 +403,7 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
   };
   await repo.responsesSnapshots.insert(snapshot);
 
-  const store = createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true);
+  const store = createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), Date.now(), true);
   const expanded = await expandPreviousResponseId(
     makePayload({
       previous_response_id: 'resp_prev',
@@ -558,7 +558,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const payload = makePayload({ model: 'gpt-fast' });
   const result = await responsesServe.generate({
     payload,
-    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), Date.now(), true)),
     headers: new Headers(),
   });
 
@@ -584,7 +584,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'gpt-fast' }),
-    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), true)),
+    ctx: makeGatewayCtx(createResponsesHttpStore(testResponsesStatePolicy(API_KEY_ID), Date.now(), true)),
     headers: new Headers(),
   });
 

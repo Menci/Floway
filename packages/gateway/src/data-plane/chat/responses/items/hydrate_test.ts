@@ -29,7 +29,7 @@ describe('Responses stored-item hydration', () => {
       refreshedAt: Date.now(),
     };
     await repo.responsesItems.insertMany([row], 0);
-    const store = createResponsesHttpStore(testResponsesStatePolicy(), true);
+    const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
     const payload = { model: 'model', input: [{ type: 'item_reference' as const, id: row.id }] };
     await store.loadInputItems(payload.input, payload.input);
 
@@ -41,7 +41,7 @@ describe('Responses stored-item hydration', () => {
 
   test('rejects any missing item reference without an id-format prefilter', () => {
     initRepo(new InMemoryRepo());
-    const store = createResponsesHttpStore(testResponsesStatePolicy(), true);
+    const store = createResponsesHttpStore(testResponsesStatePolicy(), Date.now(), true);
     expect(() => hydrateResponsesPayload({
       model: 'model',
       input: [{ type: 'item_reference', id: 'arbitrary-missing-id' }],

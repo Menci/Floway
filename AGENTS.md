@@ -177,15 +177,14 @@ project public script URLs ahead of logger / CORS / auth middleware.
 runtime libraries (`@cloudflare/workers-types`; `sharp` +
 `@hono/node-server`); they are the only places runtime-specific symbols
 (D1, R2, Images, KV, ExecutionContext, sharp, node:sqlite, fs) appear.
-`apps/web` depends on `ui` + `proxy` (the
-latter only via its `/url`, `/url-kind`, `/proxy-config`, and `/constants`
-subpath exports — chosen so the dashboard's proxy editor reuses URI
-parse/format and config types without pulling dialers, userspace TLS, or
-Node `crypto` into the SPA bundle), and type-imports
-`@floway-dev/gateway/app-type` for Hono RPC client typing. It does not depend
-on `@floway-dev/agent-setup` — the dashboard derives the Agent Setup
-configuration type from the RPC client — and ESLint blocks a runtime import of
-that package from `apps/web`.
+`apps/web` depends on `ui` + `proxy` (the latter only via its `/url`,
+`/url-kind`, `/proxy-config`, and `/constants` subpath exports — chosen so
+the dashboard's proxy editor reuses URI parse/format and config types
+without pulling dialers, userspace TLS, or Node `crypto` into the SPA
+bundle), and type-imports `@floway-dev/gateway/app-type` for Hono RPC
+client typing. It does not depend on `@floway-dev/agent-setup` — the
+dashboard derives the Agent Setup configuration type from the RPC client —
+and ESLint blocks a runtime import of that package from `apps/web`.
 
 ESLint forbids any workspace file from importing `@floway-dev/platform-*`
 by package name, plus a `no-restricted-paths` zone forbidding the

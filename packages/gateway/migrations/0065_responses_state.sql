@@ -116,14 +116,15 @@ CREATE TRIGGER responses_items_validate_payload_insert
 BEFORE INSERT ON responses_items
 WHEN NEW.payload_file_key IS NOT NULL
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'Responses payload file was not staged for this item')
+  WHERE NOT EXISTS (
     SELECT 1 FROM spilled_files
     WHERE file_key = NEW.payload_file_key
       AND owner_kind = 'responses-item'
       AND owner_key = json_array(NEW.api_key_id, NEW.id)
       AND state = 'staged'
       AND claim_token IS NULL
-  ) THEN RAISE(ABORT, 'Responses payload file was not staged for this item') END;
+  );
 END;
 
 CREATE TRIGGER responses_items_adopt_payload_insert
@@ -143,21 +144,23 @@ CREATE TRIGGER responses_items_validate_payload_update
 BEFORE UPDATE OF payload_file_key ON responses_items
 WHEN OLD.payload_file_key IS NOT NEW.payload_file_key
 BEGIN
-  SELECT CASE WHEN OLD.payload_file_key IS NOT NULL AND NOT EXISTS (
+  SELECT RAISE(ABORT, 'Owned Responses payload file is missing')
+  WHERE OLD.payload_file_key IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM spilled_files
     WHERE file_key = OLD.payload_file_key
       AND owner_kind = 'responses-item'
       AND owner_key = json_array(OLD.api_key_id, OLD.id)
       AND state = 'owned'
-  ) THEN RAISE(ABORT, 'Owned Responses payload file is missing') END;
-  SELECT CASE WHEN NEW.payload_file_key IS NOT NULL AND NOT EXISTS (
+  );
+  SELECT RAISE(ABORT, 'Replacement Responses payload file was not staged for this item')
+  WHERE NEW.payload_file_key IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM spilled_files
     WHERE file_key = NEW.payload_file_key
       AND owner_kind = 'responses-item'
       AND owner_key = json_array(NEW.api_key_id, NEW.id)
       AND state = 'staged'
       AND claim_token IS NULL
-  ) THEN RAISE(ABORT, 'Replacement Responses payload file was not staged for this item') END;
+  );
 END;
 
 CREATE TRIGGER responses_items_replace_payload
@@ -180,13 +183,14 @@ CREATE TRIGGER responses_items_validate_payload_delete
 BEFORE DELETE ON responses_items
 WHEN OLD.payload_file_key IS NOT NULL
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'Owned Responses payload file is missing')
+  WHERE NOT EXISTS (
     SELECT 1 FROM spilled_files
     WHERE file_key = OLD.payload_file_key
       AND owner_kind = 'responses-item'
       AND owner_key = json_array(OLD.api_key_id, OLD.id)
       AND state = 'owned'
-  ) THEN RAISE(ABORT, 'Owned Responses payload file is missing') END;
+  );
 END;
 
 CREATE TRIGGER responses_items_retire_payload

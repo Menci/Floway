@@ -39,11 +39,11 @@ BEGIN
     'responses',
     NEW.api_key_id,
     COALESCE((
-      SELECT CASE
-        WHEN deleted_at IS NULL AND responses_retention_seconds > 0
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1
-        ELSE 0
-      END
+      SELECT iif(
+        deleted_at IS NULL AND responses_retention_seconds > 0,
+        NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1,
+        0
+      )
       FROM api_keys WHERE id = NEW.api_key_id
     ), 0)
   )
@@ -62,11 +62,11 @@ BEGIN
     'responses',
     NEW.api_key_id,
     COALESCE((
-      SELECT CASE
-        WHEN deleted_at IS NULL AND responses_retention_seconds > 0
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1
-        ELSE 0
-      END
+      SELECT iif(
+        deleted_at IS NULL AND responses_retention_seconds > 0,
+        NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1,
+        0
+      )
       FROM api_keys WHERE id = NEW.api_key_id
     ), 0)
   )
@@ -85,11 +85,11 @@ BEGIN
     'responses',
     NEW.api_key_id,
     COALESCE((
-      SELECT CASE
-        WHEN deleted_at IS NULL AND responses_retention_seconds > 0
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1
-        ELSE 0
-      END
+      SELECT iif(
+        deleted_at IS NULL AND responses_retention_seconds > 0,
+        NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1,
+        0
+      )
       FROM api_keys WHERE id = NEW.api_key_id
     ), 0)
   )
@@ -108,11 +108,11 @@ BEGIN
     'responses',
     NEW.api_key_id,
     COALESCE((
-      SELECT CASE
-        WHEN deleted_at IS NULL AND responses_retention_seconds > 0
-          THEN NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1
-        ELSE 0
-      END
+      SELECT iif(
+        deleted_at IS NULL AND responses_retention_seconds > 0,
+        NEW.refreshed_at + responses_retention_seconds * 1000 + 86400000 + 1,
+        0
+      )
       FROM api_keys WHERE id = NEW.api_key_id
     ), 0)
   )
@@ -126,18 +126,19 @@ END;
 CREATE TRIGGER dump_records_validate_spilled_files
 BEFORE INSERT ON dump_records
 BEGIN
-  SELECT CASE WHEN NEW.request_body_descriptor IS NOT NULL
-    AND json_type(NEW.request_body_descriptor, '$.key') IS NOT 'text'
-  THEN RAISE(ABORT, 'Dump request body file key must be text') END;
-  SELECT CASE WHEN NEW.response_body_descriptor IS NOT NULL
-    AND json_type(NEW.response_body_descriptor, '$.key') IS NOT 'text'
-  THEN RAISE(ABORT, 'Dump response body file key must be text') END;
+  SELECT RAISE(ABORT, 'Dump request body file key must be text')
+  WHERE NEW.request_body_descriptor IS NOT NULL
+    AND json_type(NEW.request_body_descriptor, '$.key') IS NOT 'text';
+  SELECT RAISE(ABORT, 'Dump response body file key must be text')
+  WHERE NEW.response_body_descriptor IS NOT NULL
+    AND json_type(NEW.response_body_descriptor, '$.key') IS NOT 'text';
 
   -- Migrations run before the new Worker is published, so an old writer may
   -- still insert its deterministic path without a staged registry row. Only
   -- the exact path derived from that row is accepted directly; per-write
   -- unique paths still require staging, and a collector claim always wins.
-  SELECT CASE WHEN NEW.request_body_descriptor IS NOT NULL AND NOT EXISTS (
+  SELECT RAISE(ABORT, 'Dump request body file was not staged')
+  WHERE NEW.request_body_descriptor IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM spilled_files
     WHERE file_key = json_extract(NEW.request_body_descriptor, '$.key')
       AND owner_kind = 'dump-request'
@@ -152,9 +153,9 @@ BEGIN
       WHERE file_key = json_extract(NEW.request_body_descriptor, '$.key')
         AND claim_token IS NOT NULL
     )
-  )
-  THEN RAISE(ABORT, 'Dump request body file was not staged') END;
-  SELECT CASE WHEN NEW.response_body_descriptor IS NOT NULL AND NOT EXISTS (
+  );
+  SELECT RAISE(ABORT, 'Dump response body file was not staged')
+  WHERE NEW.response_body_descriptor IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM spilled_files
     WHERE file_key = json_extract(NEW.response_body_descriptor, '$.key')
       AND owner_kind = 'dump-response'
@@ -169,8 +170,7 @@ BEGIN
       WHERE file_key = json_extract(NEW.response_body_descriptor, '$.key')
         AND claim_token IS NOT NULL
     )
-  )
-  THEN RAISE(ABORT, 'Dump response body file was not staged') END;
+  );
 END;
 
 CREATE TRIGGER dump_records_adopt_spilled_files
@@ -244,11 +244,11 @@ BEGIN
     'dumps',
     NEW.key_id,
     COALESCE((
-      SELECT CASE
-        WHEN deleted_at IS NULL AND dump_retention_seconds IS NOT NULL
-          THEN NEW.created_at + dump_retention_seconds * 1000 + 1
-        ELSE 0
-      END
+      SELECT iif(
+        deleted_at IS NULL AND dump_retention_seconds IS NOT NULL,
+        NEW.created_at + dump_retention_seconds * 1000 + 1,
+        0
+      )
       FROM api_keys WHERE id = NEW.key_id
     ), 0)
   )
