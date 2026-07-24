@@ -25,7 +25,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     return c.json({ error: "provider must be 'tavily' or 'microsoft-grounding'" }, 400);
   }
 
-  const resolved = resolveTelemetryView(c, 'usage', query.view, query.key_id);
+  const resolved = resolveTelemetryView(c, query.view, query.key_id);
   if ('error' in resolved) {
     return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
   }

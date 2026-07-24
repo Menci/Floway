@@ -2,16 +2,18 @@
 // six per-dimension breakdown tables, and dropdown menus, all built from a
 // single raw record query.
 //
-// View semantics mirror /api/token-usage and /api/search-usage:
-// - `self-by-key` scopes every axis to the actor's keys (active +
-//   soft-deleted).
-// - `all-by-user` uses every row for global and per-user axes, while API-key
-//   axes, metadata, and filters remain scoped to the actor's own keys.
+// There is no view parameter: the requested breakdown decides the scope.
+// `group_by=keyId` is inherently a question about the actor's own traffic, so
+// it aggregates the actor's keys (active + soft-deleted) alone; every other
+// breakdown aggregates all users' rows. Latency is not sensitive on its own,
+// so that global read is open to every user.
 //
-// Per-user attribution is a separate, administrator-only capability on top of
-// the global view: a user granted global telemetry sees everyone's latency in
-// aggregate, never who produced it. That covers the By-User rows, the username
-// listing, the userId dropdown, `group_by=userId`, and `filter_user_id`.
+// Per-user attribution is the administrator-only part — the By-User rows, the
+// username listing, the userId dropdown, `group_by=userId`, and
+// `filter_user_id`. A regular user sees the whole picture without learning who
+// produced which row. API-key axes, key metadata, and `filter_key_id` stay
+// scoped to the actor's own keys in every breakdown, so other users' key ids
+// never surface either.
 
 import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
 import { userFromContext } from '../../middleware/auth.ts';
@@ -19,7 +21,7 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { buildKeyToUserMap, loadTelemetryKeys, resolveTelemetryView, type ResolvedTelemetryView } from '../telemetry-view.ts';
+import { buildKeyToUserMap } from '../telemetry-view.ts';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
@@ -33,7 +35,6 @@ interface PerformanceFilters {
 }
 
 interface PerformanceQueryParams {
-  keyId: string | undefined;
   start: string;
   end: string;
   bucket: PerformanceBucketGranularity;
@@ -60,7 +61,6 @@ const readPerformanceQuery = (
   return {
     type: 'ok',
     value: {
-      keyId: blank(query.key_id),
       start: query.start,
       end: query.end,
       bucket: query.bucket ?? 'hour',
@@ -78,59 +78,12 @@ const readPerformanceQuery = (
   };
 };
 
-// The resolved view carrying the per-user attribution capability that rides on
-// top of it. Both the request gate (which query knobs are legal) and the
-// response shape (which axes and metadata are populated) read that flag.
-type PerformanceScope = ResolvedTelemetryView & { attributeUsers: boolean };
-
-const resolveScope = (
-  c: Ctx,
-  params: PerformanceQueryParams,
-): PerformanceScope | { error: 'forbidden' | 'bad_request'; message: string } => {
-  const resolved = resolveTelemetryView(c, 'performance', c.req.valid('query').view, params.keyId);
-  if ('error' in resolved) return resolved;
-
-  // Both knobs below name a user dimension. In self-by-key every row already
-  // belongs to the actor, so the dimension is meaningless rather than
-  // privileged — administrators are refused there too.
-  const attributeUsers = resolved.view === 'all-by-user' && userFromContext(c).isAdmin;
-  if (!attributeUsers) {
-    const knob = params.groupBy === 'userId'
-      ? 'group_by=userId'
-      : params.filters.userId !== undefined
-        ? 'filter_user_id'
-        : null;
-    if (knob !== null) {
-      return resolved.view === 'self-by-key'
-        ? { error: 'bad_request', message: `${knob} is not allowed in self-by-key mode` }
-        : { error: 'forbidden', message: `${knob} requires administrator privileges` };
-    }
-  }
-  return { ...resolved, attributeUsers };
-};
-
-const queryRecordsForView = async (
-  resolved: ResolvedTelemetryView,
-  params: PerformanceQueryParams,
-  ownedKeyIds: ReadonlySet<string>,
-): Promise<readonly PerformanceTelemetryRecord[] | null> => {
-  const repo = getRepo();
-  if (resolved.view === 'all-by-user') {
-    return await repo.performance.query({
-      start: params.start,
-      end: params.end,
-    });
-  }
-
-  if (params.keyId !== undefined && !ownedKeyIds.has(params.keyId)) {
-    return null;
-  }
-  const rows = await repo.performance.query({
-    keyId: params.keyId,
-    start: params.start,
-    end: params.end,
-  });
-  return params.keyId !== undefined ? rows : rows.filter(r => ownedKeyIds.has(r.keyId));
+// The two user-dimension knobs, refused for non-administrators. Named so the
+// rejection quotes the exact parameter the caller passed.
+const userDimensionKnob = (params: PerformanceQueryParams): string | null => {
+  if (params.groupBy === 'userId') return 'group_by=userId';
+  if (params.filters.userId !== undefined) return 'filter_user_id';
+  return null;
 };
 
 // Distinct values per dimension observed in the UNFILTERED record set so the
@@ -205,24 +158,31 @@ export const performanceOverview = async (c: Ctx) => {
   const params = readPerformanceQuery(c);
   if (params.type === 'error') return c.json({ error: params.error }, 400);
 
-  const scope = resolveScope(c, params.value);
-  if ('error' in scope) return c.json({ error: scope.message }, scope.error === 'forbidden' ? 403 : 400);
+  const attributeUsers = userFromContext(c).isAdmin;
+  if (!attributeUsers) {
+    const knob = userDimensionKnob(params.value);
+    if (knob !== null) return c.json({ error: `${knob} requires administrator privileges` }, 403);
+  }
 
   const repo = getRepo();
-  const allKeys = await loadTelemetryKeys(repo, scope);
+  const allKeys = await repo.apiKeys.listIncludingDeleted();
   const actorUserId = userFromContext(c).id;
   const ownedKeys = allKeys.filter(key => key.userId === actorUserId);
   const ownedKeyIds = new Set(ownedKeys.map(key => key.id));
-  if (scope.view === 'all-by-user' && params.value.filters.keyId !== undefined && !ownedKeyIds.has(params.value.filters.keyId)) {
+  if (params.value.filters.keyId !== undefined && !ownedKeyIds.has(params.value.filters.keyId)) {
     return c.json({ error: 'Unknown filter_key_id' }, 404);
   }
 
-  const rawRecords = await queryRecordsForView(scope, params.value, ownedKeyIds);
-  if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
+  const rawRecords = await repo.performance.query({ start: params.value.start, end: params.value.end });
+  // By API Key asks about the actor's own traffic, so it narrows the whole
+  // aggregate — summary and every other axis included — to the actor's rows.
+  const scopedRecords = params.value.groupBy === 'keyId'
+    ? rawRecords.filter(r => ownedKeyIds.has(r.keyId))
+    : rawRecords;
 
-  const users = scope.attributeUsers ? await repo.users.listIncludingDeleted() : [];
+  const users = attributeUsers ? await repo.users.listIncludingDeleted() : [];
   const keyToUser = buildKeyToUserMap(allKeys);
-  const { filtered, dimensionValues } = partitionRecords(rawRecords, params.value.filters, keyToUser, ownedKeyIds, scope.attributeUsers);
+  const { filtered, dimensionValues } = partitionRecords(scopedRecords, params.value.filters, keyToUser, ownedKeyIds, attributeUsers);
 
   const tzOnly = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   const { series, ...axes } = aggregatePerformanceForDisplay(filtered, {
@@ -250,7 +210,7 @@ export const performanceOverview = async (c: Ctx) => {
     series,
     axes: {
       ...axes,
-      userId: scope.attributeUsers ? axes.userId : [],
+      userId: attributeUsers ? axes.userId : [],
     },
     dimensionValues,
     users: userMetadata,

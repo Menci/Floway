@@ -31,7 +31,6 @@ const loginResult = {
     id: 1,
     username: 'admin',
     isAdmin: true,
-    canViewGlobalTelemetry: true,
     upstreamIds: null,
   },
 };

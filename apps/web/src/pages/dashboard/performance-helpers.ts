@@ -7,7 +7,6 @@ import type { PerformanceDisplayRecord } from '@floway-dev/gateway/control-plane
 // .vue so they can be exercised by Vitest without mounting Vue, the auth
 // store, or chart libs.
 
-export type PerformanceView = 'all-by-user' | 'self-by-key';
 export type GroupBy = 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 export type MetricView = 'ttft' | 'tokPerSec';
 export type PercentileKey = 'p50' | 'p95' | 'p99';
@@ -167,17 +166,11 @@ export const serializeUrlState = (state: UrlState): Record<string, string> => {
   return out;
 };
 
-// The optional filters make this a plain string map, but the backend requires
-// `view`, so it is pinned in the type rather than dissolving into the map —
-// otherwise the RPC client rejects the call.
-export type OverviewQuery = Record<string, string> & { view: PerformanceView };
-
-export const buildOverviewQuery = (state: UrlState, view: PerformanceView, at: number): OverviewQuery => {
+export const buildOverviewQuery = (state: UrlState, at: number): Record<string, string> => {
   const { start, end, bucket } = dashboardRangeQuery(state.range, at);
-  const q: OverviewQuery = {
+  const q: Record<string, string> = {
     start, end, bucket,
     timezone_offset_minutes: String(new Date().getTimezoneOffset()),
-    view,
     group_by: state.groupBy,
   };
   if (state.filterModel !== '') q.filter_model = state.filterModel;

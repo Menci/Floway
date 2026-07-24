@@ -3,6 +3,5 @@ export interface WireUser {
   username: string;
   isAdmin: boolean;
   upstreamIds: string[] | null;
-  canViewGlobalTelemetry: boolean;
   createdAt: string;
 }

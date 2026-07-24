@@ -55,7 +55,6 @@ test('session token for a deleted user is invalidated', async () => {
     passwordHash: 'pbkdf2-sha256$600000$YQ==$YQ==',
     isAdmin: false,
     upstreamIds: null,
-    canViewGlobalTelemetry: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
@@ -81,7 +80,6 @@ test('API key whose owner was deleted is rejected', async () => {
     passwordHash: null,
     isAdmin: false,
     upstreamIds: null,
-    canViewGlobalTelemetry: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });

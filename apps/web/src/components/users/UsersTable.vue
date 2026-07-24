@@ -30,7 +30,6 @@ const isProtected = (id: number) => id === 1 || id === props.actorUserId;
         <tr class="border-b border-white/5">
           <th class="text-left py-2 pr-4 pl-2 text-xs font-medium text-gray-500 uppercase tracking-widest">Username</th>
           <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Admin</th>
-          <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Global telemetry</th>
           <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Created</th>
           <th class="text-right py-2 pr-2 text-xs font-medium text-gray-500 uppercase tracking-widest">Actions</th>
         </tr>
@@ -47,11 +46,6 @@ const isProtected = (id: number) => id === 1 || id === props.actorUserId;
           <td class="py-3 pr-4">
             <span class="inline-block pointer-events-none" aria-hidden="true">
               <Switch :model-value="u.isAdmin" />
-            </span>
-          </td>
-          <td class="py-3 pr-4">
-            <span class="inline-block pointer-events-none" aria-hidden="true">
-              <Switch :model-value="u.canViewGlobalTelemetry || u.isAdmin" />
             </span>
           </td>
           <td class="py-3 pr-4">

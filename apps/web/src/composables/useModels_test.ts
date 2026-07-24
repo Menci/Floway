@@ -11,7 +11,6 @@ const authenticate = (token: string, id: number) => {
       id,
       username: `user-${id}`,
       isAdmin: id === 1,
-      canViewGlobalTelemetry: false,
       upstreamIds: null,
     },
   });

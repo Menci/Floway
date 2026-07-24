@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { grantGlobalTelemetry, requestApp, setupAppTest } from '../../test-helpers.ts';
+import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('/api/performance/overview modelRows carry backend-aggregated base-model percentiles', async () => {
@@ -26,7 +26,7 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
     await repo.performance.recordSample({ ...sample, ttftMs: 300 });
   }
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -49,10 +49,10 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
   ]);
 });
 
-test('/api/performance/overview scopes to actor\'s keys in self-by-key mode', async () => {
+test('/api/performance/overview narrows the whole aggregate to the actor under group_by=keyId', async () => {
   const { repo, apiKey } = await setupAppTest();
-  // A key owned by user 1 with usage in the same window — must NOT surface to
-  // the actor (user 2) under the self-by-key view.
+  // A key owned by user 1 with traffic in the same window. By API Key asks
+  // about the actor's own data, so neither its rows nor its id may surface.
   await repo.apiKeys.save({
     id: 'key_other',
     userId: 1,
@@ -79,13 +79,53 @@ test('/api/performance/overview scopes to actor\'s keys in self-by-key mode', as
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id, ttftMs: 50 });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other', ttftMs: 250 });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=keyId', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
   assertEquals(body.axes.keyId.map((r: { group: string }) => r.group), [apiKey.id]);
   assertEquals(body.dimensionValues.keyIds, [apiKey.id]);
   assertEquals(body.keys.map((key: { id: string }) => key.id), [apiKey.id]);
+  // Every other axis narrows with it — the summary counts one request, not two.
+  assertEquals(body.axes.none.map((r: { requests: number }) => r.requests), [1]);
+});
+
+test('/api/performance/overview keeps API-key axes actor-scoped under a cross-user breakdown', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.apiKeys.save({
+    id: 'key_other',
+    userId: 1,
+    name: 'Other key',
+    key: 'raw_other_key',
+    serverSecret: '00'.repeat(32),
+    createdAt: '2026-04-30T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+    dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
+  });
+
+  const sample = {
+    hour: '2026-04-30T10',
+    model: 'gpt-5',
+    upstream: 'copilot:1',
+    operation: 'chat' as const,
+    runtimeLocation: 'LOCAL',
+    tpotUs: 500,
+    success: true,
+  };
+  await repo.performance.recordSample({ ...sample, keyId: apiKey.id, ttftMs: 50 });
+  await repo.performance.recordSample({ ...sample, keyId: 'key_other', ttftMs: 250 });
+
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=model', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  // Both users' rows feed the model breakdown...
+  assertEquals(body.axes.model.map((r: { requests: number }) => r.requests), [2]);
+  // ...while the key dimension still names only the actor's own key.
+  assertEquals(body.axes.keyId.map((r: { group: string }) => r.group), [apiKey.id]);
+  assertEquals(body.dimensionValues.keyIds, [apiKey.id]);
 });
 
 test('/api/performance/overview always returns key metadata', async () => {
@@ -102,7 +142,7 @@ test('/api/performance/overview always returns key metadata', async () => {
     success: true,
   });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -115,10 +155,10 @@ test('/api/performance/overview always returns key metadata', async () => {
   ]);
 });
 
-test('/api/performance/overview all-by-user view aggregates over every key', async () => {
+test('/api/performance/overview aggregates over every user\'s keys', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   // Two users' rows in the same hour. Both must contribute to the same
-  // `model` group under the admin session's all-by-user view.
+  // `model` group, which spans every user's rows.
   await repo.apiKeys.save({
     id: 'key_other',
     userId: 1,
@@ -145,7 +185,7 @@ test('/api/performance/overview all-by-user view aggregates over every key', asy
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -154,15 +194,8 @@ test('/api/performance/overview all-by-user view aggregates over every key', asy
   assertEquals(body.axes.model[0].requests, 2);
 });
 
-test('/api/performance/overview rejects all-by-user from a user without canViewGlobalTelemetry', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(response.status, 403);
-});
-
-test('/api/performance/overview gives a non-admin holding canViewGlobalTelemetry the aggregate without per-user attribution', async () => {
+test('/api/performance/overview gives a non-admin the global aggregate without per-user attribution', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await grantGlobalTelemetry(repo, apiKey.userId);
   await repo.apiKeys.save({
     id: 'key_admin_owned',
     userId: 1,
@@ -189,7 +222,7 @@ test('/api/performance/overview gives a non-admin holding canViewGlobalTelemetry
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_admin_owned' });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=all-by-user', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -202,27 +235,25 @@ test('/api/performance/overview gives a non-admin holding canViewGlobalTelemetry
   assertEquals(body.dimensionValues.userIds, []);
 });
 
-test('/api/performance/overview rejects group_by=userId from a non-admin in all-by-user view', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await grantGlobalTelemetry(repo, apiKey.userId);
+test('/api/performance/overview rejects group_by=userId from a non-admin', async () => {
+  const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 403);
   assertEquals(await response.json(), { error: 'group_by=userId requires administrator privileges' });
 });
 
-test('/api/performance/overview rejects filter_user_id from a non-admin in all-by-user view', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await grantGlobalTelemetry(repo, apiKey.userId);
+test('/api/performance/overview rejects filter_user_id from a non-admin', async () => {
+  const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user&filter_user_id=1', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=1', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 403);
   assertEquals(await response.json(), { error: 'filter_user_id requires administrator privileges' });
 });
 
-test('/api/performance/overview keeps API-key data self-scoped in all-by-user view', async () => {
+test('/api/performance/overview narrows an administrator to their own keys under group_by=keyId too', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   await repo.apiKeys.save({
     id: 'key_admin',
@@ -250,7 +281,7 @@ test('/api/performance/overview keeps API-key data self-scoped in all-by-user vi
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_admin' });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user&group_by=keyId', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=keyId', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -262,31 +293,31 @@ test('/api/performance/overview keeps API-key data self-scoped in all-by-user vi
     name: 'Admin owned',
     createdAt: '2026-04-30T00:00:00.000Z',
   }]);
-  assertEquals(body.axes.model[0].requests, 2);
-  assertEquals(body.axes.userId.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort(), [['1', 1], ['2', 1]]);
+  // By API Key means "my data" for administrators as well: the other user's
+  // row is out of scope, so every cross-cutting axis counts one request.
+  assertEquals(body.axes.model[0].requests, 1);
+  assertEquals(body.axes.userId.map((r: { group: string; requests: number }) => [r.group, r.requests]), [['1', 1]]);
 });
 
-test('/api/performance/overview rejects another user\'s API-key filter in all-by-user view', async () => {
+test('/api/performance/overview rejects an API-key filter the actor does not own', async () => {
   const { adminSession, apiKey } = await setupAppTest();
 
-  const response = await requestApp(`/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user&filter_key_id=${apiKey.id}`, { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp(`/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_key_id=${apiKey.id}`, { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 404);
   assertEquals(await response.json(), { error: 'Unknown filter_key_id' });
 });
 
-test('/api/performance/overview treats an unknown self-view API-key filter as an empty selection', async () => {
+test('/api/performance/overview rejects an unknown API-key filter', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_key_id=unknown&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_key_id=unknown', { headers: { 'x-api-key': apiKey.key } });
 
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.series, []);
-  assertEquals(body.axes.none, []);
+  assertEquals(response.status, 404);
+  assertEquals(await response.json(), { error: 'Unknown filter_key_id' });
 });
 
-test('/api/performance/overview all-by-user userRows split rows per user', async () => {
+test('/api/performance/overview userRows split rows per user', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   await repo.apiKeys.save({
     id: 'key_other',
@@ -315,7 +346,7 @@ test('/api/performance/overview all-by-user userRows split rows per user', async
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -323,15 +354,7 @@ test('/api/performance/overview all-by-user userRows split rows per user', async
   assertEquals(groups, [['1', 1], ['2', 2]]);
 });
 
-test('/api/performance/overview rejects group_by=userId in self-by-key mode', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=userId&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(response.status, 400);
-  const body = await response.json();
-  assertEquals(body.error, 'group_by=userId is not allowed in self-by-key mode');
-});
-
-test('/api/performance/overview series stays per-model under all-by-user view', async () => {
+test('/api/performance/overview series stays per-model under a cross-user breakdown', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   await repo.apiKeys.save({
     id: 'key_other',
@@ -359,7 +382,7 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=model&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=model', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -373,7 +396,7 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
   assertEquals(body.dimensionValues.userIds.sort((a: number, b: number) => a - b), [1, 2]);
 });
 
-test('/api/performance/overview leaves dimensionValues.userIds empty under self-by-key view', async () => {
+test('/api/performance/overview leaves dimensionValues.userIds empty for a non-admin', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.performance.recordSample({
     hour: '2026-04-30T10',
@@ -387,7 +410,7 @@ test('/api/performance/overview leaves dimensionValues.userIds empty under self-
     success: true,
   });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -419,7 +442,7 @@ test('/api/performance/overview returns dashboard aggregates from one repo query
     success: true,
   });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -442,7 +465,7 @@ test('/api/performance/overview counts failed attempts in dashboard request tota
     runtimeLocation: 'SJC',
   });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -458,7 +481,7 @@ test('/api/performance/overview counts failed attempts in dashboard request tota
 test('/api/performance/overview rejects out-of-range timezone offsets', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=day&timezone_offset_minutes=100000000000000000000&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=day&timezone_offset_minutes=100000000000000000000', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -469,7 +492,7 @@ test('/api/performance/overview rejects out-of-range timezone offsets', async ()
 test('/api/performance/overview rejects non-numeric filter_user_id at the schema boundary', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=abc&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=abc', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -480,7 +503,7 @@ test('/api/performance/overview rejects non-numeric filter_user_id at the schema
 test('/api/performance/overview rejects negative filter_user_id', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=-5&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=-5', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -491,7 +514,7 @@ test('/api/performance/overview rejects negative filter_user_id', async () => {
 test('/api/performance/overview rejects filter_user_id=0 (user ids start at 1)', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=0&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=0', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -502,7 +525,7 @@ test('/api/performance/overview rejects filter_user_id=0 (user ids start at 1)',
 test('/api/performance/overview rejects filter_user_id with a leading zero', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=01&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=01', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -513,23 +536,12 @@ test('/api/performance/overview rejects filter_user_id with a leading zero', asy
 test('/api/performance/overview accepts numeric filter_user_id from an admin', async () => {
   const { adminSession } = await setupAppTest();
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=42&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=42', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
 });
 
-test('/api/performance/overview rejects filter_user_id in self-by-key mode', async () => {
-  const { adminSession } = await setupAppTest();
-
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=42&view=self-by-key', { headers: { 'x-floway-session': adminSession } });
-
-  assertEquals(response.status, 400);
-  assertEquals(await response.json(), {
-    error: 'filter_user_id is not allowed in self-by-key mode',
-  });
-});
-
-test('/api/performance/overview all-by-user attributes soft-deleted keys to their original owner', async () => {
+test('/api/performance/overview attributes soft-deleted keys to their original owner', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   // Latency sample on apiKey, then soft-delete the key. The aggregator must
   // still resolve the row to apiKey.userId rather than the synthetic userId 0
@@ -548,7 +560,7 @@ test('/api/performance/overview all-by-user attributes soft-deleted keys to thei
   await repo.apiKeys.softDelete(apiKey.id);
 
   const response = await requestApp(
-    '/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user',
+    '/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00',
     { headers: { 'x-floway-session': adminSession } },
   );
 
@@ -558,7 +570,7 @@ test('/api/performance/overview all-by-user attributes soft-deleted keys to thei
   assertEquals(groups, [[String(apiKey.userId), 1]]);
 });
 
-test('/api/performance/overview self-by-key surfaces soft-deleted keys metadata to their owner', async () => {
+test('/api/performance/overview surfaces soft-deleted keys metadata to their owner', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.performance.recordSample({
     hour: '2026-04-30T10',
@@ -588,7 +600,7 @@ test('/api/performance/overview self-by-key surfaces soft-deleted keys metadata 
   });
 
   const response = await requestApp(
-    '/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=self-by-key',
+    '/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00',
     { headers: { 'x-api-key': 'raw_fresh_key' } },
   );
 
@@ -633,7 +645,7 @@ test('/api/performance/overview returns operationRows grouped by operation value
     runtimeLocation: 'LOCAL',
   });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();

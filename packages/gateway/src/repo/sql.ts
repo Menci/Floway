@@ -250,12 +250,11 @@ interface UserRow {
   password_hash: string | null;
   is_admin: number;
   upstream_ids: string | null;
-  can_view_global_telemetry: number;
   created_at: string;
   deleted_at: string | null;
 }
 
-const USER_COLUMNS = 'id, username, password_hash, is_admin, upstream_ids, can_view_global_telemetry, created_at, deleted_at';
+const USER_COLUMNS = 'id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at';
 
 const toUser = (row: UserRow): User => ({
   id: row.id,
@@ -263,7 +262,6 @@ const toUser = (row: UserRow): User => ({
   passwordHash: row.password_hash,
   isAdmin: row.is_admin === 1,
   upstreamIds: parseUpstreamIds(row.upstream_ids, `users.id=${row.id}`),
-  canViewGlobalTelemetry: row.can_view_global_telemetry === 1,
   createdAt: row.created_at,
   deletedAt: row.deleted_at,
 });
@@ -307,8 +305,8 @@ class SqlUsersRepo implements UsersRepo {
     // pick distinct ids.
     const row = await this.db
       .prepare(
-        `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, can_view_global_telemetry, created_at, deleted_at)
-         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM users
+        `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, created_at, deleted_at)
+         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, ? FROM users
          RETURNING id`,
       )
       .bind(
@@ -316,7 +314,6 @@ class SqlUsersRepo implements UsersRepo {
         template.passwordHash,
         template.isAdmin ? 1 : 0,
         serializeUpstreamIds(template.upstreamIds),
-        template.canViewGlobalTelemetry ? 1 : 0,
         template.createdAt,
         template.deletedAt,
       )
@@ -328,13 +325,12 @@ class SqlUsersRepo implements UsersRepo {
   async save(user: User): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            username = excluded.username,
            password_hash = excluded.password_hash,
            is_admin = excluded.is_admin,
            upstream_ids = excluded.upstream_ids,
-           can_view_global_telemetry = excluded.can_view_global_telemetry,
            deleted_at = excluded.deleted_at`,
       )
       .bind(
@@ -343,7 +339,6 @@ class SqlUsersRepo implements UsersRepo {
         user.passwordHash,
         user.isAdmin ? 1 : 0,
         serializeUpstreamIds(user.upstreamIds),
-        user.canViewGlobalTelemetry ? 1 : 0,
         user.createdAt,
         user.deletedAt,
       )

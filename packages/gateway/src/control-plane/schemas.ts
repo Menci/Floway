@@ -242,7 +242,6 @@ export const createUserBody = z.object({
   password: passwordSchema,
   isAdmin: z.boolean().optional(),
   upstreamIds: upstreamIdsValueSchema.optional(),
-  canViewGlobalTelemetry: z.boolean().optional(),
 });
 
 export const updateUserBody = z.object({
@@ -250,7 +249,6 @@ export const updateUserBody = z.object({
   password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
   upstreamIds: upstreamIdsValueSchema.optional(),
-  canViewGlobalTelemetry: z.boolean().optional(),
 });
 
 export const changeOwnPasswordBody = z.object({
@@ -701,7 +699,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(16, { error: 'version must be 16 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(17, { error: 'version must be 17 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });
@@ -712,11 +710,12 @@ export const exportQuery = z.object({
 
 // --- query strings (token-usage, search-usage, performance) ---
 //
-// `view` is required. The two views return different payload shapes, so
-// deriving one from the caller's capability would make the same URL answer
-// differently per user — and silently widen as soon as someone is granted a
-// flag. Declaring it required in the schema also makes the RPC client demand
-// it at compile time.
+// `view` is required on the usage endpoints. The two views return different
+// payload shapes, so deriving one from the caller's capability would make the
+// same URL answer differently per user — and silently widen as soon as
+// someone's role changes. Declaring it required in the schema also makes the
+// RPC client demand it at compile time. Performance carries no view at all:
+// its scope follows `group_by` (see performance/routes.ts).
 //
 // start/end stay optional in the schema (rather than `.min(1)`) so the
 // handler can return the canonical "start and end query parameters are
@@ -724,9 +723,13 @@ export const exportQuery = z.object({
 // inform the RPC client of the available fields, not duplicate the
 // required-ness check.
 
-const usageBaseQuery = {
+const telemetryRangeQuery = {
   start: z.string().optional(),
   end: z.string().optional(),
+};
+
+const usageBaseQuery = {
+  ...telemetryRangeQuery,
   key_id: z.string().optional(),
   include_key_metadata: z.string().optional(),
   include_user_metadata: z.string().optional(),
@@ -751,7 +754,8 @@ export const searchUsageQuery = z.object({
   provider: z.string().optional(),
 });
 
-export const performanceQuery = z.object(usageBaseQuery).omit({ include_key_metadata: true, include_user_metadata: true }).extend({
+export const performanceQuery = z.object({
+  ...telemetryRangeQuery,
   group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).optional(),
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
   timezone_offset_minutes: z.string().optional(),

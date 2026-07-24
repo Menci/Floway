@@ -51,7 +51,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 16;
+  version: 17;
   exportedAt: string;
   data: {
     users: User[];
@@ -66,7 +66,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 16;
+const EXPORT_VERSION = 17;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -332,7 +332,6 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
         throw new Error(`passwordHash must be null or start with ${PASSWORD_HASH_SCHEME}$`);
       }
       if (typeof record.isAdmin !== 'boolean') throw new Error('isAdmin must be a boolean');
-      if (typeof record.canViewGlobalTelemetry !== 'boolean') throw new Error('canViewGlobalTelemetry must be a boolean');
 
       if (record.upstreamIds === undefined) throw new Error('upstreamIds must be present (null or array)');
       const upstreamIdsParsed = parseUpstreamIdsValue(record.upstreamIds);
@@ -347,7 +346,6 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
         passwordHash: record.passwordHash,
         isAdmin: record.isAdmin,
         upstreamIds: upstreamIdsParsed.value,
-        canViewGlobalTelemetry: record.canViewGlobalTelemetry,
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         deletedAt: record.deletedAt,
       });

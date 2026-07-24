@@ -90,7 +90,6 @@ const setup = () => {
       id: 1,
       username: 'op',
       isAdmin: true,
-      canViewGlobalTelemetry: true,
       upstreamIds: null,
     },
   });

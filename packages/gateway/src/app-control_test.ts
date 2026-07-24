@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { DEFAULT_SEARCH_CONFIG } from './data-plane/tools/web-search/search-config.ts';
 import { tokenUsageMetrics } from './repo/usage-metrics.ts';
-import { grantGlobalTelemetry, requestApp, setupAppTest } from './test-helpers.ts';
+import { requestApp, setupAppTest } from './test-helpers.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const displayQuantity = (record: { metrics: Array<{ metric: string; quantity: string }> }, tokenCategory: string) =>
@@ -211,12 +211,11 @@ test('/api/token-usage all-by-user view aggregates across keys per user', async 
   assertEquals(displayQuantity(body[0], 'input'), '10');
 });
 
-test('telemetry endpoints require an explicit view', async () => {
+test('usage endpoints require an explicit view', async () => {
   const { apiKey } = await setupAppTest();
   const paths = [
     '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00',
     '/api/search-usage?start=2026-03-15T00&end=2026-03-16T00',
-    '/api/performance/overview?start=2026-03-15T00&end=2026-03-16T00',
   ];
   for (const path of paths) {
     const response = await requestApp(path, { headers: { 'x-api-key': apiKey.key } });
@@ -232,49 +231,6 @@ test('/api/token-usage rejects all-by-user from a non-admin user', async () => {
     { headers: { 'x-api-key': apiKey.key } },
   );
   assertEquals(response.status, 403);
-});
-
-test('/api/token-usage stays admin-only for a non-admin holding canViewGlobalTelemetry', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await grantGlobalTelemetry(repo, apiKey.userId);
-  await repo.apiKeys.save({
-    id: 'key_admin_owned',
-    userId: 1,
-    name: 'Admin owned',
-    key: 'raw_admin_owned',
-    serverSecret: '00'.repeat(32),
-    createdAt: '2026-03-15T00:00:00.000Z',
-    upstreamIds: null,
-    deletedAt: null,
-    dumpRetentionSeconds: null,
-    responsesRetentionSeconds: 0,
-  });
-  const shared = {
-    model: 'gpt-5',
-    upstream: null,
-    modelKey: 'gpt-5',
-    hour: '2026-03-15T10',
-    pricingSelector: {},
-    requests: 1,
-    metrics: tokenUsageMetrics({ input: 10, output: 5 }, null),
-  };
-  await repo.usage.set({ ...shared, keyId: apiKey.id });
-  await repo.usage.set({ ...shared, keyId: 'key_admin_owned' });
-
-  const explicit = await requestApp(
-    '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user',
-    { headers: { 'x-api-key': apiKey.key } },
-  );
-  assertEquals(explicit.status, 403);
-
-  // Nor may the flag widen what a self-by-key request returns.
-  const selfView = await requestApp(
-    '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00&view=self-by-key',
-    { headers: { 'x-api-key': apiKey.key } },
-  );
-  assertEquals(selfView.status, 200);
-  const body = await selfView.json();
-  assertEquals(body.map((r: { keyId: string }) => r.keyId), [apiKey.id]);
 });
 
 test('/api/token-usage merges Claude variants into backend base model records', async () => {

@@ -11,7 +11,6 @@ const sampleUser = (over: Partial<User> = {}): User => ({
   passwordHash: 'pbkdf2-sha256$600000$YQ==$YQ==',
   isAdmin: false,
   upstreamIds: null,
-  canViewGlobalTelemetry: false,
   createdAt: '2026-06-07T00:00:00.000Z',
   deletedAt: null,
   ...over,

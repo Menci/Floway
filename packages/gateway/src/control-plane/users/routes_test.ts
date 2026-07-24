@@ -87,7 +87,6 @@ test('admin password reset on another user revokes that user\'s sessions', async
     passwordHash: await hashPassword('old-pw'),
     isAdmin: false,
     upstreamIds: null,
-    canViewGlobalTelemetry: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
@@ -106,16 +105,14 @@ test('PATCH /api/users/:id can demote and revoke global-telemetry on a non-self 
     passwordHash: await hashPassword('pw'),
     isAdmin: true,
     upstreamIds: null,
-    canViewGlobalTelemetry: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
 
-  const response = await adminPatch(adminSession, 3, { isAdmin: false, canViewGlobalTelemetry: false });
+  const response = await adminPatch(adminSession, 3, { isAdmin: false });
   assertEquals(response.status, 200);
   const bob = await repo.users.getById(3);
   expect(bob?.isAdmin).toBe(false);
-  expect(bob?.canViewGlobalTelemetry).toBe(false);
 });
 
 test('DELETE /api/users/:id cascades to api_keys (soft) + sessions', async () => {
@@ -158,7 +155,6 @@ test('PATCH /api/users/me/password requires session and a correct current passwo
     passwordHash: await hashPassword('old-pw'),
     isAdmin: false,
     upstreamIds: null,
-    canViewGlobalTelemetry: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });

@@ -154,7 +154,6 @@ test('/auth/login with username + matching password issues a session', async () 
     passwordHash: await hashPassword('hunter2'),
     isAdmin: false,
     upstreamIds: null,
-    canViewGlobalTelemetry: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
@@ -178,7 +177,6 @@ test('/auth/login matches the username case-insensitively', async () => {
     passwordHash: await hashPassword('hunter2'),
     isAdmin: false,
     upstreamIds: null,
-    canViewGlobalTelemetry: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
@@ -201,7 +199,6 @@ test('/auth/login with wrong password is rejected', async () => {
     passwordHash: await hashPassword('hunter2'),
     isAdmin: false,
     upstreamIds: null,
-    canViewGlobalTelemetry: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
@@ -222,7 +219,6 @@ test('/auth/login refuses a user with no password set (must use admin reset path
     passwordHash: null,
     isAdmin: false,
     upstreamIds: null,
-    canViewGlobalTelemetry: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
   });
@@ -260,10 +256,9 @@ test('/auth/me returns the current user shape with viaApiKey:false for sessions'
   });
 
   assertEquals(response.status, 200);
-  const body = (await response.json()) as { user: { id: number; isAdmin: boolean; canViewGlobalTelemetry: boolean }; viaApiKey: boolean; apiKey: unknown };
+  const body = (await response.json()) as { user: { id: number; isAdmin: boolean }; viaApiKey: boolean; apiKey: unknown };
   assertEquals(body.user.id, 1);
   assertEquals(body.user.isAdmin, true);
-  assertEquals(body.user.canViewGlobalTelemetry, true);
   assertEquals(body.viaApiKey, false);
   assertEquals(body.apiKey, null);
 });

@@ -68,7 +68,6 @@ const SEED_ADMIN_USER: User = {
   passwordHash: null,
   isAdmin: true,
   upstreamIds: null,
-  canViewGlobalTelemetry: true,
   createdAt: new Date(0).toISOString(),
   deletedAt: null,
 };

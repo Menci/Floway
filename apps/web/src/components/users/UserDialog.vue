@@ -25,7 +25,6 @@ const api = useApi();
 const username = ref('');
 const password = ref('');
 const isAdmin = ref(false);
-const canViewGlobalTelemetry = ref(false);
 const upstreamSelection = ref<UpstreamPickerValue>({ override: false, ids: [] });
 const saving = ref(false);
 const error = ref<string | null>(null);
@@ -35,13 +34,11 @@ const reset = () => {
     username.value = '';
     password.value = '';
     isAdmin.value = false;
-    canViewGlobalTelemetry.value = false;
     upstreamSelection.value = { override: false, ids: [] };
   } else {
     username.value = props.user.username;
     password.value = '';
     isAdmin.value = props.user.isAdmin;
-    canViewGlobalTelemetry.value = props.user.canViewGlobalTelemetry;
     upstreamSelection.value = props.user.upstreamIds === null
       ? { override: false, ids: [] }
       : { override: true, ids: props.user.upstreamIds };
@@ -54,7 +51,6 @@ watch(open, v => { if (v) reset(); }, { immediate: true });
 const isUserOne = computed(() => props.mode === 'edit' && props.user.id === 1);
 const isSelf = computed(() => props.mode === 'edit' && props.user.id === props.actorUserId);
 const adminLocked = computed(() => isUserOne.value || isSelf.value);
-const globalTelemetryLocked = computed(() => isAdmin.value);
 const usernameValid = computed(() => /^[a-zA-Z0-9_.\-]{1,64}$/.test(username.value.trim()));
 
 const titleText = computed(() => props.mode === 'create' ? 'New user' : `Edit — ${props.user.username}`);
@@ -83,7 +79,6 @@ const submit = async () => {
           username: username.value.trim(),
           password: password.value,
           isAdmin: isAdmin.value,
-          canViewGlobalTelemetry: canViewGlobalTelemetry.value,
           upstreamIds,
         },
       }),
@@ -96,10 +91,9 @@ const submit = async () => {
   }
 
   const target = props.user;
-  const body: { username?: string; isAdmin?: boolean; canViewGlobalTelemetry?: boolean; upstreamIds: string[] | null } = { upstreamIds };
+  const body: { username?: string; isAdmin?: boolean; upstreamIds: string[] | null } = { upstreamIds };
   if (username.value.trim() !== target.username) body.username = username.value.trim();
   if (!adminLocked.value && isAdmin.value !== target.isAdmin) body.isAdmin = isAdmin.value;
-  if (canViewGlobalTelemetry.value !== target.canViewGlobalTelemetry) body.canViewGlobalTelemetry = canViewGlobalTelemetry.value;
   const { error: err } = await callApi(
     () => api.api.users[':id'].$patch({ param: { id: String(target.id) }, json: body }),
   );
@@ -124,33 +118,17 @@ const submit = async () => {
         <SecretInput v-model="password" />
       </div>
 
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="flex items-center justify-between rounded-md border border-white/[0.06] bg-surface-800/40 px-3 py-2.5">
-          <span>
-            <p class="text-sm text-white">Administrator</p>
-            <p class="text-xs text-gray-500">
-              <template v-if="isUserOne">User 1 cannot be demoted.</template>
-              <template v-else-if="isSelf">You cannot demote yourself.</template>
-              <template v-else>Manages users, upstreams, search config, import/export.</template>
-            </p>
-          </span>
-          <Switch v-model="isAdmin" :disabled="adminLocked" />
-        </label>
-        <label class="flex items-center justify-between rounded-md border border-white/[0.06] bg-surface-800/40 px-3 py-2.5">
-          <span>
-            <p class="text-sm text-white">Global telemetry visibility</p>
-            <p class="text-xs text-gray-500">
-              <template v-if="globalTelemetryLocked">Admins always see global telemetry.</template>
-              <template v-else>Allow viewing other users' performance. Usage stays admin-only.</template>
-            </p>
-          </span>
-          <Switch
-            :model-value="isAdmin || canViewGlobalTelemetry"
-            :disabled="globalTelemetryLocked"
-            @update:model-value="v => canViewGlobalTelemetry = !!v"
-          />
-        </label>
-      </div>
+      <label class="flex items-center justify-between rounded-md border border-white/[0.06] bg-surface-800/40 px-3 py-2.5">
+        <span>
+          <p class="text-sm text-white">Administrator</p>
+          <p class="text-xs text-gray-500">
+            <template v-if="isUserOne">User 1 cannot be demoted.</template>
+            <template v-else-if="isSelf">You cannot demote yourself.</template>
+            <template v-else>Manages users, upstreams, search config, import/export. Also the only role that can read usage across users and break performance down by user.</template>
+          </p>
+        </span>
+        <Switch v-model="isAdmin" :disabled="adminLocked" />
+      </label>
 
       <UpstreamPicker
         v-model="upstreamSelection"

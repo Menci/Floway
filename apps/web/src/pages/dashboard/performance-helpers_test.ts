@@ -181,10 +181,9 @@ describe('emptyOverview + emptyDisplayRecord', () => {
 describe('buildOverviewQuery', () => {
   const fixedNow = Date.UTC(2026, 6, 12, 12, 0, 0);
 
-  it('always emits start/end/bucket/view/group_by/timezone_offset_minutes', () => {
-    const q = buildOverviewQuery(state(), 'all-by-user', fixedNow);
+  it('always emits start/end/bucket/group_by/timezone_offset_minutes', () => {
+    const q = buildOverviewQuery(state(), fixedNow);
     expect(q).toMatchObject({
-      view: 'all-by-user',
       group_by: 'model',
       bucket: 'hour',
     });
@@ -194,14 +193,14 @@ describe('buildOverviewQuery', () => {
   });
 
   it('bucket tracks the range: today=hour, 7d=4h, 30d=day', () => {
-    expect(buildOverviewQuery(state({ range: 'today' }), 'self-by-key', fixedNow).bucket).toBe('hour');
-    expect(buildOverviewQuery(state({ range: '7d' }), 'self-by-key', fixedNow).bucket).toBe('4h');
-    expect(buildOverviewQuery(state({ range: '30d' }), 'self-by-key', fixedNow).bucket).toBe('day');
+    expect(buildOverviewQuery(state({ range: 'today' }), fixedNow).bucket).toBe('hour');
+    expect(buildOverviewQuery(state({ range: '7d' }), fixedNow).bucket).toBe('4h');
+    expect(buildOverviewQuery(state({ range: '30d' }), fixedNow).bucket).toBe('day');
   });
 
   it('every empty filter is elided; every non-empty filter reaches the query with its backend key', () => {
     // Empty baseline: none of the filter_* keys appear.
-    const empty = buildOverviewQuery(state(), 'all-by-user', fixedNow);
+    const empty = buildOverviewQuery(state(), fixedNow);
     expect(empty.filter_model).toBeUndefined();
     expect(empty.filter_upstream).toBeUndefined();
     expect(empty.filter_operation).toBeUndefined();
@@ -216,7 +215,7 @@ describe('buildOverviewQuery', () => {
       filterRuntime: 'sfo',
       filterUserId: '42',
       filterKeyId: 'k-1',
-    }), 'all-by-user', fixedNow);
+    }), fixedNow);
     expect(populated.filter_model).toBe('gpt-5');
     expect(populated.filter_upstream).toBe('copilot');
     expect(populated.filter_operation).toBe('chat');

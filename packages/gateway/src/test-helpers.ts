@@ -131,7 +131,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     passwordHash: null,
     isAdmin: false,
     upstreamIds: null,
-    canViewGlobalTelemetry: false,
     createdAt: '2026-03-15T00:00:00.000Z',
     deletedAt: null,
   });
@@ -172,14 +171,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   const adminSession = (await repo.sessions.create(1)).id;
 
   return { repo, adminKey: adminKey ?? '', adminSession, apiKey, githubAccount, copilotUpstream };
-}
-
-// Raises the seeded non-admin user to a global-telemetry holder, so a test can
-// pin down exactly how far that flag reaches.
-export async function grantGlobalTelemetry(repo: InMemoryRepo, userId: number): Promise<void> {
-  const user = await repo.users.getById(userId);
-  if (!user) throw new Error(`grantGlobalTelemetry: no user ${userId}`);
-  await repo.users.save({ ...user, canViewGlobalTelemetry: true });
 }
 
 export function sseResponse(chunks: SSEChunk[], status = 200): Response {

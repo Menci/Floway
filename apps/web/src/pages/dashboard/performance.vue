@@ -17,7 +17,6 @@ import {
   type MetricView,
   type PercentileKey,
   type PerformanceOverviewResponse,
-  type PerformanceView,
   type SortDir,
   type TableSortKey,
   type UrlState,
@@ -35,9 +34,8 @@ import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 export const usePerformancePageData = defineBasicLoader('/dashboard/performance', async route => {
   const api = useApi();
   const auth = useAuthStore();
-  const view: PerformanceView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const initial = parseUrlState(route.query);
-  const query = buildOverviewQuery(initial, view, Date.now());
+  const query = buildOverviewQuery(initial, Date.now());
   // Load upstream names in parallel with the perf overview so By-Upstream tables
   // and chart legends can resolve upstream ids to human-readable names. Store is
   // module-scoped, so this is a no-op when the user has already visited Settings.
@@ -55,7 +53,6 @@ export const usePerformancePageData = defineBasicLoader('/dashboard/performance'
         }),
   ]);
   return {
-    view,
     // Per-user breakdowns are administrator-only. The backend rejects
     // group_by=userId and filter_user_id for everyone else and returns no
     // By-User rows, so the page must not offer either control.
@@ -73,12 +70,9 @@ const route = useRoute();
 const router = useRouter();
 const initialOverview = usePerformancePageData();
 
-// View and per-user attribution are both resolved once from the caller's
-// permissions — global telemetry opens every user's rows in aggregate, while
-// naming the users behind them stays administrator-only. The dashboard doesn't
-// expose a toggle; the underlying backend `view` param is still threaded
-// through.
-const performanceView: PerformanceView = initialOverview.data.value.view;
+// Resolved once from the caller's permissions: naming the users behind the
+// rows is administrator-only, so both the By-User grouping and the user filter
+// disappear for everyone else.
 const attributeUsers: boolean = initialOverview.data.value.attributeUsers;
 
 // Initialize every ref from the URL so the page opens in the same state that
@@ -133,7 +127,7 @@ const load = async () => {
   const requestedRange = performanceRange.value;
   const requestedAt = Date.now();
   performanceLoading.value = true;
-  const query = buildOverviewQuery(currentUrlState(), performanceView, requestedAt);
+  const query = buildOverviewQuery(currentUrlState(), requestedAt);
   const { data, error: err } = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({ query }));
   if (requestId !== performanceRequestId) return;
   performanceLoading.value = false;
@@ -193,8 +187,9 @@ watchEffect(() => {
   void router.replace({ query: serializeUrlState(currentUrlState()) });
 });
 
-// By User is administrator-only. By API Key is always scoped to the actor's
-// own keys, including inside the global view.
+// The breakdown doubles as the scope selector: By API Key narrows the whole
+// page to the actor's own traffic, every other one spans all users. By User is
+// administrator-only.
 const groupByOptions: { value: GroupBy; label: string }[] = [
   { value: 'model', label: 'By Model' },
   { value: 'upstream', label: 'By Upstream' },

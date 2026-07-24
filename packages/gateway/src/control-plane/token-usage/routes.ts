@@ -17,7 +17,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   }
   const { start, end } = query;
 
-  const resolved = resolveTelemetryView(c, 'usage', query.view, query.key_id);
+  const resolved = resolveTelemetryView(c, query.view, query.key_id);
   if ('error' in resolved) {
     return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
   }

@@ -1,4 +1,4 @@
-import { userToRawWire } from './wire.ts';
+import { userToAdminWire } from './wire.ts';
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -24,7 +24,7 @@ const parseUserId = (raw: string): number | null => {
 
 export const listUsers = async (c: AuthedContext) => {
   const users = await getRepo().users.list();
-  return c.json(users.map(userToRawWire));
+  return c.json(users.map(userToAdminWire));
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
@@ -44,7 +44,6 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     passwordHash: await hashPassword(body.password),
     isAdmin: body.isAdmin ?? false,
     upstreamIds: body.upstreamIds ?? null,
-    canViewGlobalTelemetry: body.canViewGlobalTelemetry ?? false,
     createdAt: new Date().toISOString(),
     deletedAt: null,
   });
@@ -63,7 +62,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   };
   await repo.apiKeys.save(defaultKey);
 
-  return c.json({ user: userToRawWire(user) }, 201);
+  return c.json({ user: userToAdminWire(user) }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -94,7 +93,6 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);
   if (body.isAdmin !== undefined) overrides.isAdmin = body.isAdmin;
   if (body.upstreamIds !== undefined) overrides.upstreamIds = body.upstreamIds;
-  if (body.canViewGlobalTelemetry !== undefined) overrides.canViewGlobalTelemetry = body.canViewGlobalTelemetry;
   const next: User = { ...existing, ...overrides };
   await repo.users.save(next);
 
@@ -104,7 +102,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     else await repo.sessions.deleteByUserId(id);
   }
 
-  return c.json(userToRawWire(next));
+  return c.json(userToAdminWire(next));
 };
 
 export const deleteUser = async (c: AuthedContext) => {

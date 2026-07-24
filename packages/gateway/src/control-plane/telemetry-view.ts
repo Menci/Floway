@@ -1,15 +1,9 @@
 import { type AuthedContext, userFromContext } from '../middleware/auth.ts';
-import type { ApiKey, Repo, User } from '../repo/types.ts';
+import type { ApiKey, Repo } from '../repo/types.ts';
 
+// The two shapes the usage endpoints answer in. Performance carries no view:
+// its scope follows the requested breakdown instead.
 export type TelemetryView = 'all-by-user' | 'self-by-key';
-
-// The telemetry surface a cross-user view is being asked for. Usage exposes
-// other users' request volume and spend, so it stays an administrator
-// privilege; the per-user flag opens global visibility for performance only.
-export type TelemetryDomain = 'usage' | 'performance';
-
-export const canViewGlobalTelemetry = (user: User, domain: TelemetryDomain): boolean =>
-  user.isAdmin || (domain === 'performance' && user.canViewGlobalTelemetry);
 
 // Discriminated union so callers narrow scopeUserId without non-null assertions.
 export type ResolvedTelemetryView =
@@ -18,7 +12,6 @@ export type ResolvedTelemetryView =
 
 export const resolveTelemetryView = (
   c: AuthedContext,
-  domain: TelemetryDomain,
   view: TelemetryView,
   rawKeyId: string | undefined,
 ): ResolvedTelemetryView | { error: 'forbidden' | 'bad_request'; message: string } => {
@@ -26,12 +19,11 @@ export const resolveTelemetryView = (
 
   if (view === 'self-by-key') return { view: 'self-by-key', scopeUserId: user.id };
 
-  if (!canViewGlobalTelemetry(user, domain)) {
+  // Cross-user usage exposes other users' request volume and spend.
+  if (!user.isAdmin) {
     return {
       error: 'forbidden',
-      message: domain === 'usage'
-        ? 'Viewing usage across users requires administrator privileges'
-        : 'You do not have permission to view global telemetry',
+      message: 'Viewing usage across users requires administrator privileges',
     };
   }
   if (rawKeyId !== undefined && rawKeyId !== '') {
@@ -50,7 +42,7 @@ export const loadTelemetryKeys = async (
   ? await repo.apiKeys.listIncludingDeleted()
   : await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
 
-// Only callers that fan telemetry rows out across users (all-by-user views,
+// Only callers that fan telemetry rows out across users (all-by-user usage,
 // or performance's cross-cutting group_by=userId) need this map. self-by-key
 // callers pay nothing since every row's user is fixed by construction.
 export const buildKeyToUserMap = (

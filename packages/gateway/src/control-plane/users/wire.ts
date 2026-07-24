@@ -1,22 +1,17 @@
 import type { User } from '../../repo/types.ts';
-import { canViewGlobalTelemetry } from '../telemetry-view.ts';
 
-// The effective shape reports what the actor may actually see. The stored flag
-// only reaches performance, so that is the capability projected here; global
-// usage follows `isAdmin`, which the dashboard reads directly.
-export const userToEffectiveWire = (user: User) => ({
+// What an authenticated actor is told about itself on login and /auth/me:
+// identity plus the two facts the dashboard branches on.
+export const userToSessionWire = (user: User) => ({
   id: user.id,
   username: user.username,
   isAdmin: user.isAdmin,
-  canViewGlobalTelemetry: canViewGlobalTelemetry(user, 'performance'),
   upstreamIds: user.upstreamIds,
 });
 
-export const userToRawWire = (user: User) => ({
-  id: user.id,
-  username: user.username,
-  isAdmin: user.isAdmin,
-  canViewGlobalTelemetry: user.canViewGlobalTelemetry,
-  upstreamIds: user.upstreamIds,
+// The admin user-management listing row — the session shape plus the account's
+// creation time, which only that table shows.
+export const userToAdminWire = (user: User) => ({
+  ...userToSessionWire(user),
   createdAt: user.createdAt,
 });

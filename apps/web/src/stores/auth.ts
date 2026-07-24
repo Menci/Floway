@@ -6,22 +6,19 @@ export interface AuthUser {
   id: number;
   username: string;
   isAdmin: boolean;
-  canViewGlobalTelemetry: boolean;
   upstreamIds: string[] | null;
 }
 
-// Only the session token is persisted. Everything else (admin flag, telemetry
-// visibility, upstream cap) is server-authoritative and must be re-fetched
-// from /auth/me on every app boot — caching it in localStorage lets stale
-// permissions linger after an admin promotes/demotes the actor or rotates
-// their upstream cap.
+// Only the session token is persisted. Everything else (admin flag, upstream
+// cap) is server-authoritative and must be re-fetched from /auth/me on every
+// app boot — caching it in localStorage lets stale permissions linger after an
+// admin promotes/demotes the actor or rotates their upstream cap.
 export const useAuthStore = defineStore('auth', () => {
   const token = useLocalStorage<string | null>('floway-token', null);
   const user = ref<AuthUser | null>(null);
 
   const isAuthenticated = computed(() => token.value !== null && user.value !== null);
   const isAdmin = computed(() => user.value?.isAdmin === true);
-  const canViewGlobalTelemetry = computed(() => user.value?.canViewGlobalTelemetry === true);
   const currentUser = computed(() => user.value);
   const authToken = computed(() => token.value);
 
@@ -43,7 +40,6 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     authToken,
     currentUser,
-    canViewGlobalTelemetry,
     setAuth,
     setUser,
     clearAuth,
