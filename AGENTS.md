@@ -11,6 +11,10 @@
   without running any test, lint, or typecheck first. Verification belongs to
   the completion and merge-to-main gate, not to each in-flight worktree
   commit.
+- When investigating Copilot upstream quirks, compare at least one other
+  Copilot gateway implementation before inventing a policy. For generic
+  adapter behavior, compare at least one Copilot gateway and one general
+  LLM gateway. Do not cargo-cult from a single project.
 - This file describes only the current system. Removed concepts must not
   appear anywhere in the repo — code, comments, tests, docs, this file
   included. Migrations are the only place an old name is allowed to survive.
@@ -87,6 +91,13 @@ Allowed:
   picker by the same pattern. Mirroring the CLI's own expectation, not
   Floway asserting an endpoint mapping. Scope must be the CLI setup
   helper; general model pickers still read `endpoints` from the DTO.
+- **Per-provider pricing tables** (`pricing.ts`) — return null for
+  unknown keys.
+- **Provider config discriminators naming the OWN kind** —
+  `kind: 'claude-code'`.
+- **Vendor-locked provider packages** (`provider-claude-code`,
+  `provider-codex`) doing fixed-catalog request/header mimicry captured
+  verbatim from a live wire probe with a reference URL.
 
 Forbidden — silent narrowing at wire / translate / control-plane
 boundaries. Open-string fields declared `| (string & {})` or bare
@@ -105,14 +116,6 @@ budget bin edges, canonical enum values, header sets, protocol quirks.
 Prose like "per Anthropic's vision docs" without a permalink doesn't
 count.
 
-Beyond the allowed patterns above, three carve-outs also fall outside
-the prohibition: per-provider pricing tables (`pricing.ts` — return
-null for unknown keys); provider config discriminators naming the OWN
-kind (`kind: 'claude-code'`); and vendor-locked provider packages
-(`provider-claude-code`, `provider-codex`) doing fixed-catalog
-request/header mimicry captured verbatim from a live wire probe with a
-reference URL.
-
 ## Architecture
 
 Stack: Hono on Web APIs, TypeScript, pnpm, Vitest. The dashboard is a
@@ -123,29 +126,6 @@ SQL. The `@floway-dev/platform` package owns the abstract runtime
 contracts (`FileProvider`, `ImageProcessor`, `ExternalResourceFetcher`,
 `SqlDatabase`, `BackgroundScheduler`, `EnvGetter`, `SocketDial`); each
 `apps/platform-*` app supplies the concrete impls and its own entry.
-
-Audio transcription is a buffered OpenAI-compatible multipart passthrough.
-The full body is parsed before routing because `model` may follow `file`; an
-ordered semantic form preserves duplicate text fields and uploaded file
-bytes/name/type while each candidate replaces only the upstream model id.
-Models use kind `transcription` and declare `audioTranscriptions`. Custom
-catalogs may publish that kind, fall back to standard transcription model-id
-inference, or use an operator-authored row. Azure and Ollama transcription rows
-are operator-authored.
-All three providers implement the call. Azure selects the configured deployment
-in its dated operation URL and omits the multipart `model`; the same route
-serves Whisper and GPT transcription deployments. Successful bodies remain raw
-across JSON, verbose JSON, text, SRT, and VTT. Streaming responses
-reuse the shared SSE writer and terminate on `transcript.text.done` without a
-Chat `[DONE]` sentinel. Usage records always count the request. Token details
-split known audio tokens into `input_audio_tokens` and leave the remaining
-input on `input_tokens`; without details, the aggregate remains general input.
-Output maps to `output_tokens`, while duration maps to `input_audio_seconds`.
-Malformed usage never replaces or truncates a successful upstream response; it
-is logged and the request is recorded without a metric breakdown.
-Rates are canonical decimal strings per one token or second, and a model may
-price all metrics simultaneously. Missing measurements remain request-only,
-while measured metrics without configured rates remain unpriced.
 
 ## Workspace Layout
 
@@ -165,7 +145,7 @@ Floway/
 │   ├── provider-copilot/     # @floway-dev/provider-copilot — GitHub Copilot provider
 │   ├── provider-custom/      # @floway-dev/provider-custom — configurable multi-protocol HTTP provider
 │   ├── provider-ollama/      # @floway-dev/provider-ollama — Ollama (ollama.com or self-hosted)
-│   ├── proxy/                # @floway-dev/proxy — proxy URI parsing + per-protocol byte-stream dialers
+│   ├── proxy/                # @floway-dev/proxy — proxy URI parsing, per-protocol byte-stream dialers, proxy-backed and direct request runners
 │   ├── test-utils/           # @floway-dev/test-utils — shared Vitest fixtures and stubs (test-only)
 │   ├── translate/            # @floway-dev/translate — cross-protocol translation pairs
 │   └── ui/                   # @floway-dev/ui — internal Vue component library
@@ -176,38 +156,28 @@ Floway/
 ```
 
 Dependency direction is strict. The leaf-most packages are `protocols`,
-`interceptor`, and `http` (HTTP/1.1 over a duplex byte stream + userspace
-TLS + WebSocket upgrade, no runtime dependencies). `translate` depends on
-`protocols`. `agent-setup` is the self-contained Agent Setup domain —
-configuration schema, language-native installer prefix rendering, canonical
-Bash/PowerShell common fragments plus per-agent fragments, dependency-injected
-Hono public and control route factories, and the lease
-`AgentSetupRepository` contract — and depends only on `hono` / `zod` /
-`@hono/zod-validator`; it never imports the gateway or any app, and knows
-nothing of databases, HTTP auth/CORS/logging, host mount paths, or runtimes.
-`proxy` depends on `http`; it parses subscription-style proxy URIs,
-dispatches to per-protocol byte-stream dialers, and exposes request runners
-for both proxy-backed and direct TCP streams. Both compose dial → optional
-userspace TLS → fetch-on-stream. All dialers — including `vless-ws`, which layers
-`wsUpgradeAndFrame` over the runtime's TLS-wrapped duplex — stay
-runtime-agnostic by taking the raw TCP `socketDial` primitive through
-`DialOptions`, so they never import `@floway-dev/platform`. `provider`
-depends on `platform` + `protocols` + `interceptor`; the per-vendor
-`provider-*` packages depend on `provider`.
+`interceptor`, and `http`, none of which have runtime dependencies.
+`translate` depends on `protocols`. `agent-setup` depends only on
+`hono` / `zod` / `@hono/zod-validator`; it never imports the gateway or any
+app, and knows nothing of databases, HTTP auth/CORS/logging, host mount
+paths, or runtimes. `proxy` depends on `http`; all its dialers — including
+`vless-ws`, which layers `wsUpgradeAndFrame` over the runtime's TLS-wrapped
+duplex — stay runtime-agnostic by taking the raw TCP `socketDial` primitive
+through `DialOptions`, so they never import `@floway-dev/platform`.
+`provider` depends on `platform` + `protocols` + `interceptor`; the
+per-vendor `provider-*` packages depend on `provider`.
 `gateway` depends on `platform` + `protocols` + `translate` + `http` +
 `proxy` + `agent-setup` + all `provider-*`, and is the runtime-agnostic
 gateway core; it threads `getSocketDial()` from `@floway-dev/platform` into
 the proxy library at the dial-layer composition root, and supplies the SQL /
-in-memory `AgentSetupRepository` implementations. A successful Agent Setup
-insert stores the replacement lease before pruning only that user's
-already-expired siblings. The gateway also supplies the auth-derived user id
-and the single host-owned route path used to mount both setup surfaces and
-project public script URLs. The public routes sit ahead of logger / CORS / auth
-middleware. `apps/platform-*` depend on
-`platform` + `gateway` plus their target's runtime libraries
-(`@cloudflare/workers-types`; `sharp` + `@hono/node-server`); they are the
-only places runtime-specific symbols (D1, R2, Images, KV, ExecutionContext,
-sharp, node:sqlite, fs) appear. `apps/web` depends on `ui` + `proxy` (the
+in-memory `AgentSetupRepository` implementations, the auth-derived user id,
+and the single host-owned route path that mounts both setup surfaces and
+project public script URLs ahead of logger / CORS / auth middleware.
+`apps/platform-*` depend on `platform` + `gateway` plus their target's
+runtime libraries (`@cloudflare/workers-types`; `sharp` +
+`@hono/node-server`); they are the only places runtime-specific symbols
+(D1, R2, Images, KV, ExecutionContext, sharp, node:sqlite, fs) appear.
+`apps/web` depends on `ui` + `proxy` (the
 latter only via its `/url`, `/url-kind`, `/proxy-config`, and `/constants`
 subpath exports — chosen so the dashboard's proxy editor reuses URI
 parse/format and config types without pulling dialers, userspace TLS, or
@@ -235,44 +205,6 @@ and request context live under `data-plane/chat/shared/affinity`; each source
 protocol owns its `affinity/ingress.ts` and `affinity/egress.ts`. Wire behavior
 lives in `docs/AFFINITY.md`, and candidate ordering lives in `docs/RESOLUTION.md`.
 
-Native Responses persistence is independent from affinity and opt-in per API
-key. Retention is stored and transferred in seconds so it shares the same
-duration representation as dumps, but every positive value is a whole number
-of days with a one-day minimum; zero disables every durable lookup and write.
-`refreshed_at` is the start of the UTC day containing the latest successful
-reuse. Reuse within that same day performs no refresh write. Visibility and
-cleanup apply the configured rolling window plus one fixed day of expiration
-grace, so quantization never expires state early and may retain it for up to one
-extra day. Increasing the configured duration may expose a row that cleanup has
-not deleted yet. A completed output item becomes reusable at its first
-`response.output_item.done`, so its row commits before that event is published;
-the response snapshot commits at the successful terminal event. Repository
-writes treat exact item/private-payload reuse as idempotent and reject a
-different live row under the same API-key-scoped ID.
-
-Large Responses payloads and dump bodies use immutable objects with per-write
-unique keys. The shared `spilled_files` registry records each object as staged
-before its file write, atomically adopts it with its owner row, and retires it
-when that row is replaced or deleted. One collector claims staged or retired
-records regardless of their source domain and deletes only their registered
-object keys; domain-specific code never scans or deletes file prefixes.
-
-Responses and dump reads both apply their API key's current rolling retention
-before physical cleanup. One `expiration_sweeps` due queue orders work across
-both domains. Its single bounded driver claims a key, dispatches either the
-Responses or dump adapter, and completes through a revision check. A drained
-completion preserves concurrent earlier work; partial and error completions set
-a bounded retry so a hot or failing key yields to other due keys. The adapters
-only define their indexed stored-row deletion and oldest-row probe; scheduling,
-fairness, claim recovery, and retries are shared. New stored rows schedule
-their API key directly. A bounded, monotonic cursor per source table backfills
-the due queue and exact dump-file registry entries for existing stored rows; it
-never pre-seeds API keys without stored state or scans file storage.
-
-HTTP `store: false` can read enabled durable Responses state but never writes or
-refreshes it. WebSocket state is always session-local; `store: true`
-additionally writes durable state when the key has opted in.
-
 Everything else — provider interfaces, request execution flow, interceptor
 shapes, control-plane route surface, flag resolution, pricing — lives in
 the code and its comments. Translation pair layout, model resolution, and
@@ -290,7 +222,6 @@ pnpm run test:agent-setup-installers  # assembled Agent Setup scripts vs. fake C
 To work on a single package, use pnpm filters (e.g.
 `pnpm --filter @floway-dev/translate run typecheck`). Wrangler commands
 go through the local dependency with `pnpm wrangler` or package scripts.
-When deploying, do not pass `--dry-run`.
 
 ## Development
 
@@ -315,14 +246,13 @@ backend-only `assets.run_worker_first` route list in the gitignored
 
 `dev:node` boots the Node deployment target. Configure via
 `FLOWAY_DB_PATH` (sqlite file path), `FLOWAY_FILES_DIR` (filesystem
-store root), `ADMIN_KEY` (admin secret; optional on dev, mandatory when
-`NODE_ENV=production`), `PORT`, and optionally `RUNTIME_LOCATION`
-(instance tag used as the perf-telemetry `runtimeLocation` dimension and
-the dial-time colo-whitelist key — uppercased on read, defaults to
-`LOCAL` when unset). The Node entry runs `applyMigrations` against
-`packages/gateway/migrations/*.sql` at boot, then serves the same Hono
-app through `@hono/node-server`. Static-asset serving is Workers-only;
-the Node target serves no SPA.
+store root), `ADMIN_KEY` (admin secret; see below), `PORT`, and
+optionally `RUNTIME_LOCATION` (instance tag used as the perf-telemetry
+`runtimeLocation` dimension and the dial-time colo-whitelist key —
+uppercased on read, defaults to `LOCAL` when unset). The Node entry runs
+`applyMigrations` against `packages/gateway/migrations/*.sql` at boot,
+then serves the same Hono app through `@hono/node-server`. Static-asset
+serving is Workers-only; the Node target serves no SPA.
 
 The public Agent Setup installers are composed from the checked-in
 `packages/agent-setup/installers/{bash,powershell}/common/` fragments
@@ -340,19 +270,13 @@ entry refuses to boot under `NODE_ENV=production` with an empty
 `ADMIN_KEY`, and the Cloudflare-side request handler refuses passwordless
 logins whenever the request carries a `CF-Ray` header (workerd's local
 inbound used by `wrangler dev` never writes CF-Ray; only Cloudflare's
-edge does).
+edge does). It is not a data-plane credential; its only purpose is to let
+an operator who lost the admin password log in via `POST /auth/login`.
 
 For manual data-plane validation, log into the dashboard with the
 `ADMIN_KEY` backdoor (or, on a dev instance, the passwordless shortcut)
 or with your own user, then create or pick an API key under your account
-and use it as `x-api-key`. `ADMIN_KEY` is not a data-plane credential;
-its only purpose is to let an operator who lost the admin password log
-in via `POST /auth/login`.
-
-When investigating Copilot upstream quirks, compare at least one other
-Copilot gateway implementation before inventing a policy. For generic
-adapter behavior, compare at least one Copilot gateway and one general
-LLM gateway. Do not cargo-cult from a single project.
+and use it as `x-api-key`.
 
 ## Deployment
 
@@ -486,7 +410,8 @@ deploy stops halfway they can rerun the same command to recover —
 `wrangler d1 migrations apply --remote` is idempotent on already-applied
 migrations and `wrangler deploy` always publishes the current code. When
 there are no pending migrations, the command reduces to
-`pnpm run deploy -- --message "$(git rev-parse --short HEAD)"`.
+`pnpm run deploy -- --message "$(git rev-parse --short HEAD)"`. Never pass
+`--dry-run`.
 
 After the Worker is live, report every recommended operation collected from
 the new Deployment Notes. Perform read-only checks directly when they are
