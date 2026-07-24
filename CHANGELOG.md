@@ -19,6 +19,20 @@ need a separate advisory entry.
 
 ---
 
+## 2026-07-24 · advisory
+
+**Audit pre-ledger dump files after the expiration migration.**
+
+Before the shared spill ledger existed, an interrupted dump write could leave
+an unreferenced object under `dumps/v1/`. Runtime maintenance deliberately does
+not scan file prefixes. After the rolling deployment has settled and no request
+served by the pre-migration Worker remains in flight, an operator may reclaim
+that historical storage by listing `dumps/v1/` and deleting only exact keys
+that are neither referenced by a `dump_records` request/response body
+descriptor nor present in `spilled_files`. Do not delete the prefix or any
+other files. If an AI agent performs this audit, it must explain the safety
+conditions and ask the user before deleting anything.
+
 ## 2026-07-24 · minor
 
 **Replace imports allocate new internal API-key IDs.**
