@@ -712,7 +712,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     const location = apiKeysResult.index >= 0 ? ` at index ${apiKeysResult.index}` : '';
     return c.json({ error: `invalid apiKeys${location}: ${apiKeysResult.error}` }, 400);
   }
-  let apiKeys = apiKeysResult.records;
+  const apiKeys = apiKeysResult.records;
 
   const usersResult = parseUserRecords(data.users);
   if (usersResult.type === 'invalid') {
@@ -735,7 +735,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     const location = usageResult.index >= 0 ? ` at index ${usageResult.index}` : '';
     return c.json({ error: `invalid usage${location}: ${usageResult.error}` }, 400);
   }
-  let usage = usageResult.records;
+  const usage = usageResult.records;
 
   const upstreamsResult = parseUpstreamRecords(data.upstreams);
   if (upstreamsResult.type === 'invalid') {
@@ -759,7 +759,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     const location = searchUsageResult.index >= 0 ? ` at index ${searchUsageResult.index}` : '';
     return c.json({ error: `invalid searchUsage${location}: ${searchUsageResult.error}` }, 400);
   }
-  let searchUsage = searchUsageResult.records;
+  const searchUsage = searchUsageResult.records;
 
   const searchConfigResult = parseSearchConfig(data.searchConfig);
   if (searchConfigResult.type === 'invalid') {
@@ -776,7 +776,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   if (performanceResult.type === 'invalid') {
     return c.json({ error: performanceResult.index >= 0 ? `invalid performance record at index ${performanceResult.index}: ${performanceResult.error}` : `invalid performance: ${performanceResult.error}` }, 400);
   }
-  let performance = performanceResult.records;
+  const performance = performanceResult.records;
 
   const repo = getRepo();
   // Merge mode needs each key's prior dump policy to identify transitions that
@@ -784,15 +784,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const preImportKeys = await repo.apiKeys.listIncludingDeleted();
   const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? preImportKeys : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
-  if (mode === 'replace') {
-    const remappedIds = new Map<string, string>();
-    for (const key of apiKeys) remappedIds.set(key.id, crypto.randomUUID());
-    const remap = (keyId: string): string => remappedIds.get(keyId) ?? keyId;
-    apiKeys = apiKeys.map(key => ({ ...key, id: remap(key.id) }));
-    usage = usage.map(record => ({ ...record, keyId: remap(record.keyId) }));
-    searchUsage = searchUsage.map(record => ({ ...record, keyId: remap(record.keyId) }));
-    performance = performance.map(record => ({ ...record, keyId: remap(record.keyId) }));
-  }
   const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(k => [k.id, k.dumpRetentionSeconds]));
 
   // In merge mode an imported upstream's proxy_fallback_list may reference an
@@ -804,8 +795,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
 
   if (mode === 'replace') {
     // Disconnect subscribers before the API-key deletion atomically schedules
-    // existing owners for bounded reclamation. Imported keys use fresh ids,
-    // so late old accumulators remain isolated on the retired ids.
+    // existing owners for bounded reclamation.
     for (const k of preImportKeys) {
       await notifyDisabledBestEffort(k.id, 'replace-mode import');
     }

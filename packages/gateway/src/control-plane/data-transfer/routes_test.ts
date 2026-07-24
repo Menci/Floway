@@ -456,10 +456,10 @@ test('import replace writes upstreams and clears replaced collections', async ()
   assertEquals(result.body.imported, { users: 1, apiKeys: 1, upstreams: 1, proxies: 0, usage: 1, searchUsage: 1, performance: 0 });
   const restoredKey = await repo.apiKeys.findByRawKey(KEY_B.key);
   if (restoredKey === null) throw new Error('restored key missing');
-  assertEquals(restoredKey, { ...KEY_B, id: restoredKey.id });
+  assertEquals(restoredKey, KEY_B);
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
-  assertEquals(await repo.usage.listAll(), [{ ...USAGE_2, keyId: restoredKey.id }]);
-  assertEquals(await repo.searchUsage.listAll(), [{ ...SEARCH_USAGE_2, keyId: restoredKey.id }]);
+  assertEquals(await repo.usage.listAll(), [USAGE_2]);
+  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_2]);
   assertEquals(await repo.responsesItems.lookupMany('key-a', [STORED_RESPONSES_ITEM.id], 0), []);
   assertEquals(await repo.searchConfig.get(), {
     provider: 'microsoft-grounding',
@@ -470,7 +470,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   });
 });
 
-test('replace import remaps colliding key IDs and every imported reference', async () => {
+test('replace import preserves API-key IDs and imported references', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   const result = await doImport(app, 'replace', latestImportData({
@@ -484,10 +484,10 @@ test('replace import remaps colliding key IDs and every imported reference', asy
 
   const restored = await repo.apiKeys.findByRawKey(KEY_A.key);
   if (restored === null) throw new Error('restored key missing');
-  expect(restored.id).not.toBe(KEY_A.id);
-  assertEquals((await repo.usage.listAll())[0].keyId, restored.id);
-  assertEquals((await repo.searchUsage.listAll())[0].keyId, restored.id);
-  assertEquals((await repo.performance.listAll())[0].keyId, restored.id);
+  assertEquals(restored.id, KEY_A.id);
+  assertEquals((await repo.usage.listAll())[0].keyId, KEY_A.id);
+  assertEquals((await repo.searchUsage.listAll())[0].keyId, KEY_A.id);
+  assertEquals((await repo.performance.listAll())[0].keyId, KEY_A.id);
 });
 
 test('import merge upserts by repository key without clearing unrelated rows', async () => {
