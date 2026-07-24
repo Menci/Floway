@@ -330,9 +330,9 @@ diff this deploy would apply.
 
 **Step 2 — declare breaking changes and collect recommended actions.**
 Extract the deploy message of the currently active deployment from Step 1's
-output. The message is a short commit revision (recorded by the previous
-deploy's `--message` flag). Use it to diff `CHANGELOG.md` between that revision
-and the current working tree:
+output. The message is the short commit revision the deploy script stamped.
+Use it to diff `CHANGELOG.md` between that revision and the current working
+tree:
 
 ```bash
 git diff <PREVIOUS_COMMIT_REV> -- CHANGELOG.md
@@ -397,20 +397,22 @@ proceed straight to Step 4.
 
 **Step 4 — deploy with one chained command.** Migrate (when needed) and
 publish in the same command so the system spends as little time as
-possible in an inconsistent state. The deploy message is the short commit
-revision of HEAD at deploy time (`git rev-parse --short HEAD`):
+possible in an inconsistent state. `pnpm run deploy` stamps the deploy
+message itself with the short commit revision of HEAD, so there is no
+message to pass and none to forget:
 
 ```bash
-pnpm run db:migrate:remote && pnpm run deploy -- --message "$(git rev-parse --short HEAD)"
+pnpm run db:migrate:remote && pnpm run deploy
 ```
 
 Print this exact command before running it, and tell the user that if the
 deploy stops halfway they can rerun the same command to recover —
 `wrangler d1 migrations apply --remote` is idempotent on already-applied
 migrations and `wrangler deploy` always publishes the current code. When
-there are no pending migrations, the command reduces to
-`pnpm run deploy -- --message "$(git rev-parse --short HEAD)"`. Never pass
-`--dry-run`.
+there are no pending migrations, the command reduces to `pnpm run deploy`.
+Never pass `--dry-run`, and never append `--message` through `pnpm run` —
+pnpm forwards the `--` separator, which turns the flag into a positional
+argument that wrangler silently ignores.
 
 After the Worker is live, report every recommended operation collected from
 the new Deployment Notes. Perform read-only checks directly when they are
