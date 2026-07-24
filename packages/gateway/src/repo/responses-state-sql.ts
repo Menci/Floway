@@ -75,21 +75,21 @@ interface PreparedResponsesItem {
 export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   constructor(private readonly db: SqlDatabase) {}
 
-  async lookupMany(apiKeyId: string, ids: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
-    const rows = await this.lookupByColumn(apiKeyId, 'id', ids, activeAfter);
+  async lookupMany(apiKeyId: string, ids: readonly string[], minimumRefreshedAt: number): Promise<StoredResponsesItem[]> {
+    const rows = await this.lookupByColumn(apiKeyId, 'id', ids, minimumRefreshedAt);
     const order = new Map([...new Set(ids)].map((id, index) => [id, index]));
     return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
   }
 
-  async lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
-    return await this.lookupByColumn(apiKeyId, 'item_hash', hashes, activeAfter);
+  async lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], minimumRefreshedAt: number): Promise<StoredResponsesItem[]> {
+    return await this.lookupByColumn(apiKeyId, 'item_hash', hashes, minimumRefreshedAt);
   }
 
   private async lookupByColumn(
     apiKeyId: string,
     column: 'id' | 'item_hash',
     values: readonly string[],
-    activeAfter: number,
+    minimumRefreshedAt: number,
   ): Promise<StoredResponsesItem[]> {
     const unique = [...new Set(values)];
     if (unique.length === 0) return [];
@@ -103,11 +103,11 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           `SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items
            WHERE api_key_id = ? AND refreshed_at >= ? AND ${column} IN (${placeholders})${orderSql}`,
         )
-        .bind(apiKeyId, activeAfter, ...chunk)
+        .bind(apiKeyId, minimumRefreshedAt, ...chunk)
         .all<ResponsesItemRow>());
     }
     const rows = (await Promise.all(queries)).flatMap(result => result.results);
-    const hydrated = await mapSequentially(rows, async row => await this.hydrateCurrentItem(row, activeAfter));
+    const hydrated = await mapSequentially(rows, async row => await this.hydrateCurrentItem(row, minimumRefreshedAt));
     const wanted = new Set(unique);
     return hydrated.flatMap(item =>
       item !== null && (column === 'id' ? wanted.has(item.id) : wanted.has(item.itemHash))
@@ -115,7 +115,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         : []);
   }
 
-  private async hydrateCurrentItem(initialRow: ResponsesItemRow, activeAfter: number): Promise<StoredResponsesItem | null> {
+  private async hydrateCurrentItem(initialRow: ResponsesItemRow, minimumRefreshedAt: number): Promise<StoredResponsesItem | null> {
     let row = initialRow;
     for (;;) {
       try {
@@ -126,7 +126,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
             `SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items
              WHERE id = ? AND api_key_id = ? AND refreshed_at >= ?`,
           )
-          .bind(row.id, row.api_key_id, activeAfter)
+          .bind(row.id, row.api_key_id, minimumRefreshedAt)
           .first<ResponsesItemRow>();
         if (current === null) return null;
         if (current.payload_json === row.payload_json && current.payload_file_key === row.payload_file_key) throw error;
@@ -135,9 +135,9 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async insertMany(items: readonly StoredResponsesItem[], activeAfter: number, policyAt: number): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[], minimumRefreshedAt: number, requestStartedAt: number): Promise<void> {
     const unique = uniqueResponsesItems(items);
-    const existing = await this.lookupExistingItems(unique, activeAfter);
+    const existing = await this.lookupExistingItems(unique, minimumRefreshedAt);
     for (const item of unique) {
       const actual = existing.get(scopedResponsesKey(item.apiKeyId, item.id));
       if (actual !== undefined) assertSameStoredResponsesItem(item, actual);
@@ -190,13 +190,13 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
             payload.file?.key ?? null,
             item.refreshedAt,
           ]),
-          activeAfter,
-          policyAt - RESPONSES_REFRESH_GRANULARITY_MS,
+          minimumRefreshedAt,
+          requestStartedAt - RESPONSES_REFRESH_GRANULARITY_MS,
         ));
     }
     await runStatements(this.db, statements);
 
-    const persisted = await this.lookupCurrentPolicyItems(unique, 0, policyAt);
+    const persisted = await this.lookupCurrentPolicyItems(unique, 0, requestStartedAt);
     for (const item of unique) {
       const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id));
       if (actual === undefined) throw new Error(`Responses item disappeared after insert: ${item.id}`);
@@ -207,7 +207,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       return actual.refreshedAt < item.refreshedAt;
     }), item => item.refreshedAt);
     for (const [refreshedAt, group] of refreshGroups) {
-      await this.refreshMany(group, refreshedAt, 0, policyAt);
+      await this.refreshMany(group, refreshedAt, 0, requestStartedAt);
     }
   }
 
@@ -233,19 +233,19 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
 
   private async lookupExistingItems(
     items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[],
-    activeAfter: number,
+    minimumRefreshedAt: number,
   ): Promise<Map<string, StoredResponsesItem>> {
     const idsByApiKey = Map.groupBy(items, item => item.apiKeyId);
     const rows = (await Promise.all([...idsByApiKey].map(async ([apiKeyId, scoped]) =>
-      await this.lookupMany(apiKeyId, scoped.map(item => item.id), activeAfter)))).flat();
+      await this.lookupMany(apiKeyId, scoped.map(item => item.id), minimumRefreshedAt)))).flat();
     return new Map(rows.map(item => [scopedResponsesKey(item.apiKeyId, item.id), item]));
   }
 
   async refreshMany(
     items: readonly StoredResponsesItem[],
     refreshedAt: number,
-    activeAfter: number,
-    policyAt: number,
+    minimumRefreshedAt: number,
+    requestStartedAt: number,
   ): Promise<void> {
     const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
     const idsByApiKey = Map.groupBy(
@@ -285,14 +285,14 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
             ...chunk.flatMap(({ item, payloadHash }) => [item.id, payloadHash]),
             quantizedRefreshedAt,
             apiKeyId,
-            activeAfter,
+            minimumRefreshedAt,
             quantizedRefreshedAt,
-            policyAt - RESPONSES_REFRESH_GRANULARITY_MS,
+            requestStartedAt - RESPONSES_REFRESH_GRANULARITY_MS,
           ));
       }
     }
     await runStatements(this.db, statements);
-    const persisted = await this.lookupCurrentPolicyItems(items, activeAfter, policyAt);
+    const persisted = await this.lookupCurrentPolicyItems(items, minimumRefreshedAt, requestStartedAt);
     const missing = items.find(item => !persisted.has(scopedResponsesKey(item.apiKeyId, item.id)));
     if (missing !== undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${missing.id}`);
     for (const item of items) {
@@ -302,8 +302,8 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
 
   private async lookupCurrentPolicyItems(
     items: readonly StoredResponsesItem[],
-    activeAfter: number,
-    policyAt: number,
+    minimumRefreshedAt: number,
+    requestStartedAt: number,
   ): Promise<Map<string, StoredResponsesItem>> {
     const idsByApiKey = Map.groupBy(items, item => item.apiKeyId);
     const rows: StoredResponsesItem[] = [];
@@ -330,7 +330,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
                AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
                AND responses_items.id IN (${chunk.map(() => '?').join(', ')})`,
           )
-          .bind(apiKeyId, activeAfter, policyAt - RESPONSES_REFRESH_GRANULARITY_MS, ...chunk)
+          .bind(apiKeyId, minimumRefreshedAt, requestStartedAt - RESPONSES_REFRESH_GRANULARITY_MS, ...chunk)
           .all<ResponsesItemRow>();
         rows.push(...await mapSequentially(results, async row => await toStoredResponsesItem(row)));
       }
@@ -383,13 +383,13 @@ const toStoredResponsesSnapshot = (row: ResponsesSnapshotRow): StoredResponsesSn
 export class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   constructor(private readonly db: SqlDatabase) {}
 
-  async lookup(apiKeyId: string, id: string, activeAfter: number): Promise<StoredResponsesSnapshot | null> {
+  async lookup(apiKeyId: string, id: string, minimumRefreshedAt: number): Promise<StoredResponsesSnapshot | null> {
     const row = await this.db
       .prepare(
         `SELECT id, api_key_id, item_ids_json, refreshed_at FROM responses_snapshots
          WHERE id = ? AND api_key_id = ? AND refreshed_at >= ?`,
       )
-      .bind(id, apiKeyId, activeAfter)
+      .bind(id, apiKeyId, minimumRefreshedAt)
       .first<ResponsesSnapshotRow>();
     return row === null ? null : toStoredResponsesSnapshot(row);
   }

@@ -582,31 +582,31 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
 
   constructor(private readonly apiKeys: ApiKeyRepo) {}
 
-  lookupMany(apiKeyId: string, ids: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
+  lookupMany(apiKeyId: string, ids: readonly string[], minimumRefreshedAt: number): Promise<StoredResponsesItem[]> {
     const rows: StoredResponsesItem[] = [];
     const seen = new Set<string>();
     for (const id of ids) {
       if (seen.has(id)) continue;
       seen.add(id);
       const row = this.store.get(scopedResponsesKey(apiKeyId, id));
-      if (row !== undefined && row.refreshedAt >= activeAfter) rows.push(cloneStoredResponsesItem(row));
+      if (row !== undefined && row.refreshedAt >= minimumRefreshedAt) rows.push(cloneStoredResponsesItem(row));
     }
     return Promise.resolve(rows);
   }
 
-  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], activeAfter: number): Promise<StoredResponsesItem[]> {
+  lookupManyByItemHash(apiKeyId: string, hashes: readonly string[], minimumRefreshedAt: number): Promise<StoredResponsesItem[]> {
     const wanted = new Set(hashes);
     if (wanted.size === 0) return Promise.resolve([]);
     const rows: StoredResponsesItem[] = [];
     for (const row of this.store.values()) {
-      if (row.apiKeyId === apiKeyId && row.refreshedAt >= activeAfter && wanted.has(row.itemHash)) {
+      if (row.apiKeyId === apiKeyId && row.refreshedAt >= minimumRefreshedAt && wanted.has(row.itemHash)) {
         rows.push(cloneStoredResponsesItem(row));
       }
     }
     return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
   }
 
-  async insertMany(items: readonly StoredResponsesItem[], activeAfter: number, policyAt: number): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[], minimumRefreshedAt: number, requestStartedAt: number): Promise<void> {
     const quantizedItems = items.map(item => ({
       ...item,
       refreshedAt: quantizeResponsesRefreshedAt(item.refreshedAt),
@@ -621,8 +621,8 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       }
       const currentActive = existing !== undefined
         && policy !== null
-        && existing.refreshedAt >= responsesStateCutoff(policyAt, policy.responsesRetentionSeconds);
-      if (existing !== undefined && (existing.refreshedAt >= activeAfter || currentActive)) {
+        && existing.refreshedAt >= responsesStateCutoff(requestStartedAt, policy.responsesRetentionSeconds);
+      if (existing !== undefined && (existing.refreshedAt >= minimumRefreshedAt || currentActive)) {
         assertSameStoredResponsesItem(item, existing);
       } else {
         pending.set(key, item);
@@ -635,16 +635,16 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, activeAfter: number, policyAt: number): Promise<void> {
+  async refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, minimumRefreshedAt: number, requestStartedAt: number): Promise<void> {
     const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
     const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const currentPolicies = await Promise.all(items.map(async item => await this.apiKeys.getById(item.apiKeyId)));
     const missingIndex = existing.findIndex((item, index) => {
-      if (item === undefined || item.refreshedAt < activeAfter) return true;
+      if (item === undefined || item.refreshedAt < minimumRefreshedAt) return true;
       const policy = currentPolicies[index];
       return policy === null
         || policy.responsesRetentionSeconds === 0
-        || item.refreshedAt < responsesStateCutoff(policyAt, policy.responsesRetentionSeconds);
+        || item.refreshedAt < responsesStateCutoff(requestStartedAt, policy.responsesRetentionSeconds);
     });
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);
@@ -682,9 +682,9 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
 
   constructor(private readonly apiKeys: ApiKeyRepo) {}
 
-  lookup(apiKeyId: string, id: string, activeAfter: number): Promise<StoredResponsesSnapshot | null> {
+  lookup(apiKeyId: string, id: string, minimumRefreshedAt: number): Promise<StoredResponsesSnapshot | null> {
     const snapshot = this.store.get(scopedResponsesKey(apiKeyId, id));
-    return Promise.resolve(snapshot !== undefined && snapshot.refreshedAt >= activeAfter ? cloneStoredResponsesSnapshot(snapshot) : null);
+    return Promise.resolve(snapshot !== undefined && snapshot.refreshedAt >= minimumRefreshedAt ? cloneStoredResponsesSnapshot(snapshot) : null);
   }
 
   async insert(snapshot: StoredResponsesSnapshot): Promise<void> {

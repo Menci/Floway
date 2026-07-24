@@ -100,10 +100,10 @@ test('client output waits for persistence before publishing output_item.done', a
   const insertStarted = new Promise<void>(resolve => { resolveInsertStarted = resolve; });
   let releaseInsert!: () => void;
   const insertReleased = new Promise<void>(resolve => { releaseInsert = resolve; });
-  vi.spyOn(repo.responsesItems, 'insertMany').mockImplementation(async (items, activeAfter) => {
+  vi.spyOn(repo.responsesItems, 'insertMany').mockImplementation(async (items, minimumRefreshedAt) => {
     resolveInsertStarted();
     await insertReleased;
-    await insert(items, activeAfter, Date.now());
+    await insert(items, minimumRefreshedAt, Date.now());
   });
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });

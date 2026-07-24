@@ -174,7 +174,7 @@ describe('StatefulResponsesStore', () => {
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_after_midnight', 0))?.refreshedAt).toBe(TEST_DAY + DAY_MS);
   });
 
-  test('a store crossing its visibility cutoff keeps the request-start policy clock', async () => {
+  test('a request keeps an item visible when its retention window ends mid-request', async () => {
     vi.useFakeTimers();
     const retentionSeconds = 24 * 60 * 60;
     const requestStartedAt = TEST_DAY + 2 * DAY_MS - 1_000;

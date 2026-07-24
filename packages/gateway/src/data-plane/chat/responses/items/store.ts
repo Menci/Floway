@@ -252,20 +252,20 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 }
 
 export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
-  private readonly activeAfter: number;
+  private readonly minimumRefreshedAt: number;
 
   constructor(
     private readonly getRepo: () => Repo,
     private readonly requestStartedAt: number,
     retentionSeconds: number,
   ) {
-    this.activeAfter = responsesStateCutoff(requestStartedAt, retentionSeconds);
+    this.minimumRefreshedAt = responsesStateCutoff(requestStartedAt, retentionSeconds);
   }
 
   async lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]> {
     const [byId, byContentHash] = await Promise.all([
-      this.getRepo().responsesItems.lookupMany(query.apiKeyId, query.ids, this.activeAfter),
-      this.getRepo().responsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.activeAfter),
+      this.getRepo().responsesItems.lookupMany(query.apiKeyId, query.ids, this.minimumRefreshedAt),
+      this.getRepo().responsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.minimumRefreshedAt),
     ]);
     const rows = new Map<string, StoredResponsesItem>();
     for (const row of [...byId, ...byContentHash]) rows.set(scopedResponsesKey(row.apiKeyId, row.id), row);
@@ -273,15 +273,15 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
   }
 
   async insertItems(items: readonly StoredResponsesItem[]): Promise<void> {
-    await this.getRepo().responsesItems.insertMany(items, this.activeAfter, this.requestStartedAt);
+    await this.getRepo().responsesItems.insertMany(items, this.minimumRefreshedAt, this.requestStartedAt);
   }
 
   async refreshItems(items: readonly StoredResponsesItem[], refreshedAt: number): Promise<void> {
-    await this.getRepo().responsesItems.refreshMany(items, refreshedAt, this.activeAfter, this.requestStartedAt);
+    await this.getRepo().responsesItems.refreshMany(items, refreshedAt, this.minimumRefreshedAt, this.requestStartedAt);
   }
 
   async lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
-    return await this.getRepo().responsesSnapshots.lookup(apiKeyId, id, this.activeAfter);
+    return await this.getRepo().responsesSnapshots.lookup(apiKeyId, id, this.minimumRefreshedAt);
   }
 
   async insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {

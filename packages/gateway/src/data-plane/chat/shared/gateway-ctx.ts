@@ -29,9 +29,9 @@ export const stampUpstreamCallStart = (attempt: AttemptState) =>
 
 export interface GatewayCtx {
   readonly apiKeyId: string;
-  // Wall-clock stamp taken once when the request context is created, so all
-  // request-scoped Responses retention visibility and collision checks share
-  // one instant. Lifetime refreshes still record when reuse actually occurs.
+  // Reference timestamp captured when the request context is created.
+  // Responses retention eligibility and item-collision checks use this same
+  // timestamp; retention refreshes still record when reuse actually occurs.
   readonly requestStartedAt: number;
   readonly upstreamIds: readonly string[] | null;
   readonly abortSignal?: AbortSignal;

@@ -23,7 +23,7 @@ export const quantizeResponsesRefreshedAt = (timestamp: number): number => {
   return timestamp - timestamp % RESPONSES_REFRESH_GRANULARITY_MS;
 };
 
-export const responsesStateCutoff = (activeAt: number, retentionSeconds: number): number => {
+export const responsesStateCutoff = (evaluatedAt: number, retentionSeconds: number): number => {
   if (!isResponsesRetentionSeconds(retentionSeconds) || retentionSeconds === 0) {
     throw new RangeError(
       `Responses retention must be a whole-day integer from ${RESPONSES_RETENTION_MIN_SECONDS} to ${RESPONSES_RETENTION_MAX_SECONDS} seconds`,
@@ -32,5 +32,5 @@ export const responsesStateCutoff = (activeAt: number, retentionSeconds: number)
   // Stored refresh times are floored to UTC day boundaries. Extending the
   // cutoff by that same bucket prevents quantization from expiring state
   // before its exact last access plus the configured retention.
-  return activeAt - retentionSeconds * 1000 - RESPONSES_REFRESH_GRANULARITY_MS;
+  return evaluatedAt - retentionSeconds * 1000 - RESPONSES_REFRESH_GRANULARITY_MS;
 };
