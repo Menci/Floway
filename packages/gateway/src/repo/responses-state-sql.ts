@@ -160,6 +160,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           `WITH incoming (${RESPONSES_ITEM_COLUMNS}) AS (VALUES ${values})
            INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS})
            SELECT incoming.* FROM incoming
+           JOIN api_keys ON api_keys.id = incoming.api_key_id
            WHERE true
            ON CONFLICT (id, api_key_id) DO UPDATE SET
              payload_json = excluded.payload_json,
