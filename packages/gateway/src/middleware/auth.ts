@@ -122,11 +122,6 @@ export const userFromContext = (c: AuthedContext): User => {
 
 export const sessionIdFromContext = (c: AuthedContext): string | undefined => c.get('sessionId');
 
-// Pure derivation off the User row — admins inherit global-telemetry
-// access, regular users carry the explicit flag. Lives next to the auth
-// helpers so the rule has one home.
-export const canViewGlobalTelemetry = (user: User): boolean => user.isAdmin || user.canViewGlobalTelemetry;
-
 // Per-user upstream cap. null = unrestricted at the user level.
 export const userUpstreamIdsFromContext = (c: AuthedContext): readonly string[] | null =>
   c.get('user')?.upstreamIds ?? null;

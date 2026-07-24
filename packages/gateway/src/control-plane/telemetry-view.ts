@@ -1,7 +1,15 @@
-import { type AuthedContext, canViewGlobalTelemetry, userFromContext } from '../middleware/auth.ts';
-import type { ApiKey, Repo } from '../repo/types.ts';
+import { type AuthedContext, userFromContext } from '../middleware/auth.ts';
+import type { ApiKey, Repo, User } from '../repo/types.ts';
 
 export type TelemetryView = 'all-by-user' | 'self-by-key';
+
+// The telemetry surface a cross-user view is being asked for. Usage exposes
+// other users' request volume and spend, so it stays an administrator
+// privilege; the per-user flag opens global visibility for performance only.
+export type TelemetryDomain = 'usage' | 'performance';
+
+export const canViewGlobalTelemetry = (user: User, domain: TelemetryDomain): boolean =>
+  user.isAdmin || (domain === 'performance' && user.canViewGlobalTelemetry);
 
 // Discriminated union so callers narrow scopeUserId without non-null assertions.
 export type ResolvedTelemetryView =
@@ -10,18 +18,21 @@ export type ResolvedTelemetryView =
 
 export const resolveTelemetryView = (
   c: AuthedContext,
+  domain: TelemetryDomain,
   rawView: TelemetryView | undefined,
   rawKeyId: string | undefined,
 ): ResolvedTelemetryView | { error: 'forbidden' | 'bad_request'; message: string } => {
   const user = userFromContext(c);
-  const canViewGlobal = canViewGlobalTelemetry(user);
+  const canViewGlobal = canViewGlobalTelemetry(user, domain);
 
   const view = rawView ?? (canViewGlobal ? 'all-by-user' : 'self-by-key');
 
   if (view === 'all-by-user' && !canViewGlobal) {
     return {
       error: 'forbidden',
-      message: 'You do not have permission to view global telemetry',
+      message: domain === 'usage'
+        ? 'Viewing usage across users requires administrator privileges'
+        : 'You do not have permission to view global telemetry',
     };
   }
   if (view === 'all-by-user' && rawKeyId !== undefined && rawKeyId !== '') {

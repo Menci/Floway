@@ -1,8 +1,8 @@
 import { describe, test } from 'vitest';
 
-import { buildKeyToUserMap, loadTelemetryKeys } from './telemetry-view.ts';
+import { buildKeyToUserMap, canViewGlobalTelemetry, loadTelemetryKeys } from './telemetry-view.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
-import type { ApiKey } from '../repo/types.ts';
+import type { ApiKey, User } from '../repo/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // Zero-value ApiKey defaults so a case only names what it exercises.
@@ -16,6 +16,38 @@ const stubKey = (overrides: Partial<ApiKey> & Pick<ApiKey, 'id' | 'userId'>): Ap
   dumpRetentionSeconds: null,
   responsesRetentionSeconds: 0,
   ...overrides,
+});
+
+const stubUser = (overrides: Partial<User>): User => ({
+  id: 7,
+  username: 'tester',
+  passwordHash: null,
+  isAdmin: false,
+  upstreamIds: null,
+  canViewGlobalTelemetry: false,
+  createdAt: '2026-04-30T00:00:00.000Z',
+  deletedAt: null,
+  ...overrides,
+});
+
+describe('canViewGlobalTelemetry', () => {
+  test('the per-user flag opens performance without opening usage', () => {
+    const flagged = stubUser({ canViewGlobalTelemetry: true });
+    assertEquals(canViewGlobalTelemetry(flagged, 'performance'), true);
+    assertEquals(canViewGlobalTelemetry(flagged, 'usage'), false);
+  });
+
+  test('admins reach both domains without the flag', () => {
+    const admin = stubUser({ isAdmin: true });
+    assertEquals(canViewGlobalTelemetry(admin, 'performance'), true);
+    assertEquals(canViewGlobalTelemetry(admin, 'usage'), true);
+  });
+
+  test('a plain user reaches neither domain', () => {
+    const plain = stubUser({});
+    assertEquals(canViewGlobalTelemetry(plain, 'performance'), false);
+    assertEquals(canViewGlobalTelemetry(plain, 'usage'), false);
+  });
 });
 
 const seedKeys = async (repo: InMemoryRepo, keys: readonly ApiKey[]): Promise<void> => {

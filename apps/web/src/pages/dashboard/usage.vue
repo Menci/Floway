@@ -93,7 +93,7 @@ const fetchUsageForView = async (
 export const useUsagePageData = defineBasicLoader(async () => {
   const api = useApi();
   const auth = useAuthStore();
-  const view: UsageView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
+  const view: UsageView = auth.isAdmin ? 'all-by-user' : 'self-by-key';
   const { start, end } = dashboardRangeQuery('today', Date.now());
   const [{ usage, search }] = await Promise.all([
     fetchUsageForView(api, view, start, end),
@@ -651,7 +651,7 @@ const formatChartCost = (v: number | null) => {
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div class="flex items-center gap-3">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Token Usage</span>
-          <div v-if="auth.canViewGlobalTelemetry" class="inline-flex rounded-md bg-surface-800 p-0.5" role="tablist">
+          <div v-if="auth.isAdmin" class="inline-flex rounded-md bg-surface-800 p-0.5" role="tablist">
             <button
               type="button"
               class="px-2 py-1 text-[11px] font-medium rounded transition-colors"

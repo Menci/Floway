@@ -141,7 +141,7 @@ const submit = async () => {
             <p class="text-sm text-white">Global telemetry visibility</p>
             <p class="text-xs text-gray-500">
               <template v-if="globalTelemetryLocked">Admins always see global telemetry.</template>
-              <template v-else>Allow viewing other users' usage and performance.</template>
+              <template v-else>Allow viewing other users' performance. Usage stays admin-only.</template>
             </p>
           </span>
           <Switch

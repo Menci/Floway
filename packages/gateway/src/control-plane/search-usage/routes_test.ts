@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { requestApp, setupAppTest } from '../../test-helpers.ts';
+import { grantGlobalTelemetry, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const seedSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryRepo, primaryKeyId: string) => {
@@ -111,12 +111,31 @@ test('/api/search-usage all-by-user view with include_user_metadata=1 includes u
   assertEquals(body.users.find((u: { id: number }) => u.id === 2).username, 'tester');
 });
 
-test('/api/search-usage rejects all-by-user from a user without canViewGlobalTelemetry', async () => {
+test('/api/search-usage rejects all-by-user from a non-admin user', async () => {
   const { apiKey } = await setupAppTest();
   const response = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user', {
     headers: { 'x-api-key': apiKey.key },
   });
   assertEquals(response.status, 403);
+});
+
+test('/api/search-usage stays admin-only for a non-admin holding canViewGlobalTelemetry', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await seedSearchUsage(repo, apiKey.id);
+  await grantGlobalTelemetry(repo, apiKey.userId);
+
+  const explicit = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user', {
+    headers: { 'x-api-key': apiKey.key },
+  });
+  assertEquals(explicit.status, 403);
+
+  // The flag must not flip the default view to the global shape either.
+  const defaulted = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00', {
+    headers: { 'x-api-key': apiKey.key },
+  });
+  assertEquals(defaulted.status, 200);
+  const body = await defaulted.json();
+  assertEquals([...new Set(body.map((r: { keyId: string }) => r.keyId))], [apiKey.id]);
 });
 
 test('/api/search-usage filters by provider and rejects invalid provider', async () => {

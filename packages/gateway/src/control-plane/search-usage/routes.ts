@@ -1,9 +1,8 @@
 // GET /api/search-usage — query per-key or per-user web search usage records.
 //
 // Mirrors the token-usage endpoint: the `view` query parameter selects between
-// `self-by-key` (the actor's own keys) and `all-by-user` (cross-user aggregate
-// for callers with `canViewGlobalTelemetry`). Default view is determined by
-// capability.
+// `self-by-key` (the actor's own keys) and `all-by-user` (cross-user aggregate,
+// administrators only). Default view is determined by capability.
 
 import { aggregateSearchUsageByKey, aggregateSearchUsageByUser } from './aggregate.ts';
 import { loadSearchConfig } from '../../data-plane/tools/web-search/search-config.ts';
@@ -26,7 +25,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     return c.json({ error: "provider must be 'tavily' or 'microsoft-grounding'" }, 400);
   }
 
-  const resolved = resolveTelemetryView(c, query.view, query.key_id);
+  const resolved = resolveTelemetryView(c, 'usage', query.view, query.key_id);
   if ('error' in resolved) {
     return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
   }

@@ -174,6 +174,14 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   return { repo, adminKey: adminKey ?? '', adminSession, apiKey, githubAccount, copilotUpstream };
 }
 
+// Raises the seeded non-admin user to a global-telemetry holder, so a test can
+// pin down exactly how far that flag reaches.
+export async function grantGlobalTelemetry(repo: InMemoryRepo, userId: number): Promise<void> {
+  const user = await repo.users.getById(userId);
+  if (!user) throw new Error(`grantGlobalTelemetry: no user ${userId}`);
+  await repo.users.save({ ...user, canViewGlobalTelemetry: true });
+}
+
 export function sseResponse(chunks: SSEChunk[], status = 200): Response {
   const text = `${chunks
     .map(chunk => {

@@ -35,6 +35,8 @@ export interface User {
   // null = unrestricted at the user level; an array intersects with the
   // per-key whitelist when both are present.
   upstreamIds: string[] | null;
+  // Grants cross-user telemetry visibility for performance only. Usage is
+  // administrator-only, so this flag never widens it.
   canViewGlobalTelemetry: boolean;
   createdAt: string;
   deletedAt: string | null;

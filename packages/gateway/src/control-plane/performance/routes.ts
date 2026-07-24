@@ -78,7 +78,7 @@ const resolveView = (
   c: Ctx,
   params: PerformanceQueryParams,
 ): ResolvedTelemetryView | { error: 'forbidden' | 'bad_request'; message: string } => {
-  const resolved = resolveTelemetryView(c, c.req.valid('query').view, params.keyId);
+  const resolved = resolveTelemetryView(c, 'performance', c.req.valid('query').view, params.keyId);
   if ('error' in resolved) return resolved;
   if (resolved.view === 'self-by-key' && params.groupBy === 'userId') {
     return { error: 'bad_request', message: 'group_by=userId is not allowed in self-by-key mode' };

@@ -1,8 +1,8 @@
 // GET /api/token-usage — query per-key or per-user usage records.
 //
 // The `view` query parameter selects between two shapes: `self-by-key` returns
-// the actor's own keys, while `all-by-user` aggregates across users for admins
-// and users granted the `canViewGlobalTelemetry` flag.
+// the actor's own keys, while `all-by-user` aggregates across users and is
+// reserved for administrators.
 
 import { aggregateUsageByUserForDisplay, aggregateUsageForDisplay } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
@@ -17,7 +17,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   }
   const { start, end } = query;
 
-  const resolved = resolveTelemetryView(c, query.view, query.key_id);
+  const resolved = resolveTelemetryView(c, 'usage', query.view, query.key_id);
   if ('error' in resolved) {
     return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
   }

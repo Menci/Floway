@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { requestApp, setupAppTest } from '../../test-helpers.ts';
+import { grantGlobalTelemetry, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('/api/performance/overview modelRows carry backend-aggregated base-model percentiles', async () => {
@@ -159,6 +159,43 @@ test('/api/performance/overview rejects all-by-user from a user without canViewG
   const { apiKey } = await setupAppTest();
   const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(response.status, 403);
+});
+
+test('/api/performance/overview grants all-by-user to a non-admin holding canViewGlobalTelemetry', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await grantGlobalTelemetry(repo, apiKey.userId);
+  await repo.apiKeys.save({
+    id: 'key_admin_owned',
+    userId: 1,
+    name: 'Admin owned',
+    key: 'raw_admin_owned',
+    serverSecret: '00'.repeat(32),
+    createdAt: '2026-04-30T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+    dumpRetentionSeconds: null,
+    responsesRetentionSeconds: 0,
+  });
+
+  const sample = {
+    hour: '2026-04-30T10',
+    model: 'gpt-5',
+    upstream: 'copilot:1',
+    operation: 'chat' as const,
+    runtimeLocation: 'LOCAL',
+    ttftMs: 100,
+    tpotUs: 500,
+    success: true,
+  };
+  await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordSample({ ...sample, keyId: 'key_admin_owned' });
+
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=all-by-user', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.axes.model.length, 1);
+  assertEquals(body.axes.model[0].requests, 2);
 });
 
 test('/api/performance/overview keeps API-key data self-scoped in all-by-user view', async () => {
