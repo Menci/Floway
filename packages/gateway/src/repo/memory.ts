@@ -606,7 +606,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
   }
 
-  async insertMany(items: readonly StoredResponsesItem[], minimumRefreshedAt: number, requestStartedAt: number): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[], minimumRefreshedAt: number, policyAt: number): Promise<void> {
     const quantizedItems = items.map(item => ({
       ...item,
       refreshedAt: quantizeResponsesRefreshedAt(item.refreshedAt),
@@ -621,7 +621,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       }
       const currentActive = existing !== undefined
         && policy !== null
-        && existing.refreshedAt >= responsesStateCutoff(requestStartedAt, policy.responsesRetentionSeconds);
+        && existing.refreshedAt >= responsesStateCutoff(policyAt, policy.responsesRetentionSeconds);
       if (existing !== undefined && (existing.refreshedAt >= minimumRefreshedAt || currentActive)) {
         assertSameStoredResponsesItem(item, existing);
       } else {
@@ -635,7 +635,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, minimumRefreshedAt: number, requestStartedAt: number): Promise<void> {
+  async refreshMany(items: readonly StoredResponsesItem[], refreshedAt: number, minimumRefreshedAt: number, policyAt: number): Promise<void> {
     const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
     const existing = items.map(item => this.store.get(scopedResponsesKey(item.apiKeyId, item.id)));
     const currentPolicies = await Promise.all(items.map(async item => await this.apiKeys.getById(item.apiKeyId)));
@@ -644,7 +644,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       const policy = currentPolicies[index];
       return policy === null
         || policy.responsesRetentionSeconds === 0
-        || item.refreshedAt < responsesStateCutoff(requestStartedAt, policy.responsesRetentionSeconds);
+        || item.refreshedAt < responsesStateCutoff(policyAt, policy.responsesRetentionSeconds);
     });
     if (missingIndex !== -1) {
       throw new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`);

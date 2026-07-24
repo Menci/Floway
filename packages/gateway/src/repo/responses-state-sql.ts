@@ -135,7 +135,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
   }
 
-  async insertMany(items: readonly StoredResponsesItem[], minimumRefreshedAt: number, requestStartedAt: number): Promise<void> {
+  async insertMany(items: readonly StoredResponsesItem[], minimumRefreshedAt: number, policyAt: number): Promise<void> {
     const unique = uniqueResponsesItems(items);
     const existing = await this.lookupExistingItems(unique, minimumRefreshedAt);
     for (const item of unique) {
@@ -191,12 +191,12 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
             item.refreshedAt,
           ]),
           minimumRefreshedAt,
-          requestStartedAt - RESPONSES_REFRESH_GRANULARITY_MS,
+          policyAt - RESPONSES_REFRESH_GRANULARITY_MS,
         ));
     }
     await runStatements(this.db, statements);
 
-    const persisted = await this.lookupCurrentPolicyItems(unique, 0, requestStartedAt);
+    const persisted = await this.lookupCurrentPolicyItems(unique, 0, policyAt);
     for (const item of unique) {
       const actual = persisted.get(scopedResponsesKey(item.apiKeyId, item.id));
       if (actual === undefined) throw new Error(`Responses item disappeared after insert: ${item.id}`);
@@ -207,7 +207,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       return actual.refreshedAt < item.refreshedAt;
     }), item => item.refreshedAt);
     for (const [refreshedAt, group] of refreshGroups) {
-      await this.refreshMany(group, refreshedAt, 0, requestStartedAt);
+      await this.refreshMany(group, refreshedAt, 0, policyAt);
     }
   }
 
@@ -245,7 +245,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     items: readonly StoredResponsesItem[],
     refreshedAt: number,
     minimumRefreshedAt: number,
-    requestStartedAt: number,
+    policyAt: number,
   ): Promise<void> {
     const quantizedRefreshedAt = quantizeResponsesRefreshedAt(refreshedAt);
     const idsByApiKey = Map.groupBy(
@@ -287,12 +287,12 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
             apiKeyId,
             minimumRefreshedAt,
             quantizedRefreshedAt,
-            requestStartedAt - RESPONSES_REFRESH_GRANULARITY_MS,
+            policyAt - RESPONSES_REFRESH_GRANULARITY_MS,
           ));
       }
     }
     await runStatements(this.db, statements);
-    const persisted = await this.lookupCurrentPolicyItems(items, minimumRefreshedAt, requestStartedAt);
+    const persisted = await this.lookupCurrentPolicyItems(items, minimumRefreshedAt, policyAt);
     const missing = items.find(item => !persisted.has(scopedResponsesKey(item.apiKeyId, item.id)));
     if (missing !== undefined) throw new Error(`Responses item disappeared before lifetime refresh: ${missing.id}`);
     for (const item of items) {
@@ -303,7 +303,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   private async lookupCurrentPolicyItems(
     items: readonly StoredResponsesItem[],
     minimumRefreshedAt: number,
-    requestStartedAt: number,
+    policyAt: number,
   ): Promise<Map<string, StoredResponsesItem>> {
     const idsByApiKey = Map.groupBy(items, item => item.apiKeyId);
     const rows: StoredResponsesItem[] = [];
@@ -330,7 +330,7 @@ export class SqlResponsesItemsRepo implements ResponsesItemsRepo {
                AND responses_items.refreshed_at >= ? - api_keys.responses_retention_seconds * 1000
                AND responses_items.id IN (${chunk.map(() => '?').join(', ')})`,
           )
-          .bind(apiKeyId, minimumRefreshedAt, requestStartedAt - RESPONSES_REFRESH_GRANULARITY_MS, ...chunk)
+          .bind(apiKeyId, minimumRefreshedAt, policyAt - RESPONSES_REFRESH_GRANULARITY_MS, ...chunk)
           .all<ResponsesItemRow>();
         rows.push(...await mapSequentially(results, async row => await toStoredResponsesItem(row)));
       }
