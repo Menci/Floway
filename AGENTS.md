@@ -398,8 +398,7 @@ proceed straight to Step 4.
 **Step 4 — deploy with one chained command.** Migrate (when needed) and
 publish in the same command so the system spends as little time as
 possible in an inconsistent state. `pnpm run deploy` stamps the deploy
-message itself with the short commit revision of HEAD, so there is no
-message to pass and none to forget:
+message with the short commit revision of HEAD:
 
 ```bash
 pnpm run db:migrate:remote && pnpm run deploy
@@ -410,9 +409,7 @@ deploy stops halfway they can rerun the same command to recover —
 `wrangler d1 migrations apply --remote` is idempotent on already-applied
 migrations and `wrangler deploy` always publishes the current code. When
 there are no pending migrations, the command reduces to `pnpm run deploy`.
-Never pass `--dry-run`, and never append `--message` through `pnpm run` —
-pnpm forwards the `--` separator, which turns the flag into a positional
-argument that wrangler silently ignores.
+Never pass `--dry-run`.
 
 After the Worker is live, report every recommended operation collected from
 the new Deployment Notes. Perform read-only checks directly when they are
