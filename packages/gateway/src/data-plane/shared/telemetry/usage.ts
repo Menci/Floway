@@ -141,20 +141,20 @@ interface ImagesUsageShape {
 }
 
 const splitModalityCounts = (
-  textDimension: Exclude<keyof TokenUsage, 'tier'>,
-  imageDimension: Exclude<keyof TokenUsage, 'tier'>,
+  textUsageKey: Exclude<keyof TokenUsage, 'tier'>,
+  imageUsageKey: Exclude<keyof TokenUsage, 'tier'>,
   total: number | undefined,
   details: unknown,
 ): TokenUsage | null => {
   if (total === undefined) return {};
-  if (details === undefined) return { [textDimension]: total };
+  if (details === undefined) return { [textUsageKey]: total };
   if (!details || typeof details !== 'object') return null;
   const { text_tokens: text, image_tokens: image } = details as { text_tokens?: unknown; image_tokens?: unknown };
   if (text !== undefined && typeof text !== 'number') return null;
   if (image !== undefined && typeof image !== 'number') return null;
   // A details object that carries neither split is as good as absent.
-  if (text === undefined && image === undefined) return { [textDimension]: total };
-  return { [textDimension]: text ?? 0, [imageDimension]: image ?? 0 };
+  if (text === undefined && image === undefined) return { [textUsageKey]: total };
+  return { [textUsageKey]: text ?? 0, [imageUsageKey]: image ?? 0 };
 };
 
 export const recordUsage = async (

@@ -81,7 +81,6 @@ export const prepareResponsesServePlan = async (args: {
 }): Promise<ResponsesServePlan> => {
   const { payload, ctx } = args;
   const store = ctx.store;
-  if (store === undefined) throw new Error('Native Responses serve requires a state store');
   const prepared = await expandPreviousResponseId(payload, store);
   const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
     upstreamIds: ctx.upstreamIds,

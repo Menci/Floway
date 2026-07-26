@@ -36,9 +36,9 @@ the password. Then:
 3. Give that key to a client as a bearer token or `x-api-key`, or use **Agent
    Setup** to configure Claude Code or Codex.
 
-The data-plane API is also exposed directly at <http://localhost:8788>. SQLite,
-file-backed dump bodies, and oversized Stateful Responses item payloads persist
-in the `floway-data` volume.
+The data-plane and control-plane APIs are also exposed directly at
+<http://localhost:8788>. SQLite, file-backed dump bodies, and oversized
+Stateful Responses item payloads persist in the `floway-data` volume.
 
 The dashboard uses Floway's control plane to manage users, keys, upstreams,
 routing, and telemetry. Coding agents and API clients call the data plane,

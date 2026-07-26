@@ -105,7 +105,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
 
       const claude = body.data.find(m => m.id === 'claude-sonnet-4')!;
       // Superset DTO: OpenAI's object + Anthropic's type + Anthropic's display_name
-      // + our extras. Slim ModelMetadata fields only.
+      // + our extras. Only `PublicModel` fields reach the wire.
       assertEquals(claude.object, 'model');
       assertEquals(claude.type, 'model');
       assertEquals(claude.display_name, 'Claude Sonnet 4');

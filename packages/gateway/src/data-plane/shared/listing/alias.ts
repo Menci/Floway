@@ -256,8 +256,8 @@ const synthesizeOne = (
   narrowTargets: boolean,
 ): InternalModel | null => {
   // Gateway-wide kind-matched targets — the basis for stable metadata.
-  // A target reachable only via a prefix-addressable alternate or a
-  // provider-side redirect (Copilot variant id) still counts.
+  // A target reachable only through a prefix-addressable alternate still
+  // counts.
   const gatewayById = new Map(gatewayAddressableModelIds.map(entry => [entry.id, entry.model] as const));
   const gatewayAvailable = alias.targets
     .map(target => ({ target, real: gatewayById.get(target.target_model_id) }))

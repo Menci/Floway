@@ -17,8 +17,10 @@ branch_flag="$3"
 [ "$prev_head" = "$new_head" ] && exit 0
 
 # A linked worktree's per-worktree git dir sits under the main repo's
-# .git/worktrees/<name>/, so --git-dir and --git-common-dir differ. In the
-# main worktree they point at the same .git directory.
+# .git/worktrees/<name>/, so --absolute-git-dir and --git-common-dir
+# differ. In the main worktree they point at the same .git directory —
+# but --git-common-dir answers relative to the cwd there, so it is
+# normalized before the comparison.
 git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
 common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 case "$common_dir" in

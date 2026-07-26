@@ -3,73 +3,8 @@ import { expect, it } from 'vitest';
 
 import { app as gatewayApp } from '../../app.ts';
 import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-utils/app.ts';
+import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../test-utils/worker-websocket.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
-
-type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
-
-class TestWorkerWebSocket extends EventTarget {
-  peer?: TestWorkerWebSocket;
-  readyState: number = WebSocket.OPEN;
-
-  accept(): void {}
-
-  send(data: string): void {
-    this.peer?.dispatchEvent(new MessageEvent('message', { data }));
-  }
-
-  close(): void {
-    this.readyState = WebSocket.CLOSED;
-    if (this.peer) {
-      this.peer.readyState = WebSocket.CLOSED;
-      this.peer.dispatchEvent(new Event('close'));
-    }
-  }
-}
-
-const installWorkerWebSocketRuntime = (): {
-  readonly pairs: Array<{ readonly client: TestWorkerWebSocket; readonly server: TestWorkerWebSocket }>;
-  restore(): void;
-} => {
-  const globals = globalThis as typeof globalThis & {
-    WebSocketPair?: unknown;
-    Response: typeof Response;
-  };
-  const originalWebSocketPair = globals.WebSocketPair;
-  const OriginalResponse = globals.Response;
-  const pairs: Array<{ readonly client: TestWorkerWebSocket; readonly server: TestWorkerWebSocket }> = [];
-
-  globals.WebSocketPair = class {
-    constructor() {
-      const client = new TestWorkerWebSocket();
-      const server = new TestWorkerWebSocket();
-      client.peer = server;
-      server.peer = client;
-      pairs.push({ client, server });
-      return { 0: client, 1: server };
-    }
-  };
-
-  globals.Response = class extends OriginalResponse {
-    constructor(body?: BodyInit | null, init?: WorkerResponseInit) {
-      if (init?.status === 101) {
-        const { webSocket, status: _status, ...rest } = init;
-        super(null, { ...rest, status: 200 });
-        Object.defineProperty(this, 'status', { value: 101 });
-        Object.defineProperty(this, 'webSocket', { value: webSocket });
-        return;
-      }
-      super(body, init);
-    }
-  };
-
-  return {
-    pairs,
-    restore: () => {
-      globals.WebSocketPair = originalWebSocketPair;
-      globals.Response = OriginalResponse;
-    },
-  };
-};
 
 const waitForMessages = async (
   socket: TestWorkerWebSocket,

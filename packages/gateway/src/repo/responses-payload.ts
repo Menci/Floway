@@ -19,7 +19,7 @@ type StoredResponsesPayloadJson =
 // Caps the JSON descriptor written into D1's `payload_json` column. Compressing
 // the body before this check trades a little CPU for a meaningful cut in D1
 // storage on the JSON-heavy gpt-5 transcripts the gateway stores, and the
-// cap pushes large tool outputs out to the file provider where per-byte
+// cap pushes large tool outputs out to the file store where per-byte
 // storage is dramatically cheaper than D1.
 const INLINE_PAYLOAD_LIMIT_BYTES = 64 * 1024;
 const RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v2/objects/';

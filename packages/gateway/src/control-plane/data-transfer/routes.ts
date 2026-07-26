@@ -23,7 +23,7 @@ import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.ts';
-import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
+import { isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
@@ -32,6 +32,7 @@ import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parse
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
+import { parseCopilotUpstreamConfig } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { parseProxyUri } from '@floway-dev/proxy';
 
@@ -90,16 +91,16 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
     assertClaudeCodeUpstreamRecord(record);
     return record.config;
   }
-  return copilotConfigField(record.config, importErrorBuilder);
+  return parseCopilotUpstreamConfig(record.config, importErrorBuilder);
 };
 
-// State is persisted only for providers that own autonomous runtime state.
-// Codex rotates a refresh_token and tracks credential health; Claude Code
-// holds per-account refresh tokens, OAuth-minted access tokens, and quota
-// snapshots; Custom/Azure/Copilot have no such state and serialize to null.
-// Round-trip the stateful providers through the same shape assertion the
-// runtime uses so a corrupt or hand-edited import can't smuggle unknown
-// fields onto the column.
+// Only Codex and Claude Code carry state across an import: their per-account
+// refresh tokens and credential health cannot be re-derived, so they
+// round-trip through the same shape assertion the runtime uses and a corrupt
+// or hand-edited payload can't smuggle unknown fields onto the column.
+// Copilot's state is a cached model catalog plus a short-lived exchanged
+// token, both re-minted on demand, so it lands as null; Custom, Azure, and
+// Ollama own no state at all.
 const normalizeUpstreamState = (provider: UpstreamProviderKind, value: unknown): unknown => {
   if (provider !== 'codex' && provider !== 'claude-code') return null;
   if (value === null || value === undefined) {

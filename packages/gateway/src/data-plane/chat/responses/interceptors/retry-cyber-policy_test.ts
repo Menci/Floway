@@ -143,7 +143,6 @@ const performanceFor = (model: string) => ({
   stream: true,
   runtimeLocation: 'TEST',
   dump: null,
-  responseHeaders: new Headers(),
 });
 
 const upstreamCyberPolicyError = (message: string): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => ({

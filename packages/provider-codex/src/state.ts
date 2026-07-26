@@ -24,7 +24,7 @@ export interface CodexQuotaSnapshotEntry {
   data: CodexQuotaSnapshot;
 }
 
-export type CodexQuotaSnapshotMapEntry = Record<string, CodexQuotaSnapshotEntry>;
+export type CodexQuotaSnapshotEntryMap = Record<string, CodexQuotaSnapshotEntry>;
 
 // One account's autonomous credential state, joined back to its identity in
 // CodexUpstreamConfig.accounts via `chatgptAccountId`.
@@ -52,7 +52,7 @@ export interface CodexAccountCredential {
   // normalizes absent → `null` on a shallow copy, so consumers can rely on
   // the typed `null` slot here.
   accessToken: CodexAccessTokenEntry | null;
-  quotaSnapshot: CodexQuotaSnapshotMapEntry | null;
+  quotaSnapshot: CodexQuotaSnapshotEntryMap | null;
 }
 
 // Account-pool state. v1 always carries exactly one entry; the asserter
@@ -144,7 +144,7 @@ const assertCodexQuotaSnapshotEntry = (value: unknown, where: string): void => {
 
 const isUnsafeMapKey = (key: string): boolean => key === '' || key === '__proto__' || key === 'constructor' || key === 'prototype';
 
-const assertCodexQuotaSnapshotMapEntry = (value: unknown, where: string): void => {
+const assertCodexQuotaSnapshotEntryMap = (value: unknown, where: string): void => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${where} must be a plain object`);
   }
@@ -196,7 +196,7 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
     assertCodexAccessTokenEntry(obj.accessToken, `${where}.accessToken`);
   }
   if (obj.quotaSnapshot !== undefined && obj.quotaSnapshot !== null) {
-    assertCodexQuotaSnapshotMapEntry(obj.quotaSnapshot, `${where}.quotaSnapshot`);
+    assertCodexQuotaSnapshotEntryMap(obj.quotaSnapshot, `${where}.quotaSnapshot`);
   }
 };
 

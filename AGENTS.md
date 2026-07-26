@@ -85,8 +85,12 @@ Allowed:
   for a CLI which itself expects a name family (Claude Code CLI expects
   `claude-*`, Codex CLI expects `gpt-5-*`) MAY filter that picker by the same
   pattern. Mirroring the CLI's own expectation is not Floway asserting an
-  endpoint mapping. Scope must be the CLI setup helper; general model pickers
-  still read `endpoints` from the DTO.
+  endpoint mapping. Scope must be the CLI setup helper. The Agent Setup picker
+  does not use the allowance: it keeps the whole addressable chat catalog and
+  only re-orders it by family. Model selection everywhere reads `kind`, which
+  `kindForEndpoints` (`packages/protocols/src/common/endpoints.ts`) derives
+  from the endpoint map and an operator can override per model
+  (`packages/provider/src/model-config.ts`).
 - **Per-provider pricing tables** (`pricing.ts`) — return null for unknown
   keys.
 - **Provider config discriminators naming the OWN kind** —
@@ -145,6 +149,7 @@ The `@floway-dev/platform` package owns abstract runtime contracts
 
 ```text
 Floway/
+├── .agents/skills/           # operator procedures for upstream probing and pricing upkeep
 ├── packages/
 │   ├── agent-setup/          # @floway-dev/agent-setup — setup config, installers, route factories, lease repository contract
 │   ├── gateway/              # @floway-dev/gateway — Hono app, control/data planes, repositories, migrations
@@ -171,12 +176,15 @@ Floway/
 
 Dependency direction is strict. `protocols` and `interceptor` have no runtime
 workspace dependencies. `http` is also independent of other workspace
-packages; it owns HTTP/1.1 framing and userspace TLS. `translate` depends on
-`protocols`. `agent-setup` depends only on Hono and Zod at runtime; it knows
-nothing of gateway databases, auth/CORS/logging, mount paths, or deployment
-runtimes. `platform` owns runtime-neutral contracts and helpers. `proxy`
-depends on `http`; its dialers take raw socket primitives through
-`DialOptions`, so the package never imports `@floway-dev/platform`.
+packages; it owns HTTP/1.1 framing, userspace TLS, and WebSocket upgrade and
+frame handling. `translate` depends on `protocols`. `agent-setup` depends only
+on Hono and Zod at runtime; it knows nothing of gateway databases,
+auth/CORS/logging, mount paths, or deployment runtimes. `platform` owns
+runtime-neutral contracts and helpers. `proxy` depends on `http`; its dialers
+receive the byte-stream dial primitive through `DialOptions` — a `connect`
+that opens a duplex and can also wrap it in the runtime's native TLS —
+declared structurally in `proxy` itself, so the package never imports
+`@floway-dev/platform`.
 
 The base `provider` package depends only on `protocols`. Azure, Custom, and
 Ollama depend on `provider` + `protocols`; Claude Code and Codex add
@@ -232,7 +240,9 @@ Tests are co-located as `*_test.ts`. Every tested package owns a
 projects include their Vitest configs. Root `scripts/**/*.ts` and
 `packages/agent-setup/scripts/**/*.ts` have Node-typed script projects; the
 base config sets `types: []` so ambient types enter only projects that request
-them. ESLint checks both script trees and all Vitest configs.
+them. ESLint checks both script trees and every package Vitest config; the
+workspace-root `eslint.config.ts` and `vitest.config.ts` sit outside every
+checked TypeScript project and are ignored.
 
 Client-carried affinity is a source-protocol membrane. Shared codec, candidate
 narrowing, and affinity request context live under
@@ -246,9 +256,14 @@ Candidate resolution, target selection, and iteration live in
 `docs/TRANSLATION.md`.
 
 Everything else — provider interfaces, route details, flag resolution, and
-wire workarounds — lives in the owning code and its comments. The
-`audit-copilot-workarounds` skill builds the Copilot inventory from provider
-registrations, defaults, model/auth/item-id modules, and their reference URLs.
+wire workarounds — lives in the owning code and its comments. `.agents/skills/`
+carries the recurring operator procedures: `audit-copilot-workarounds` builds
+the Copilot inventory from provider registrations, defaults,
+model/auth/item-id modules, and their reference URLs, then re-tests each entry
+against live upstream; `probing-copilot` calls Copilot directly with a stored
+credential; `fetching-models-pricing` refreshes the rate cards of providers
+whose upstream publishes no token prices; and `backfill-model-pricing` rewrites
+recorded `usage.unit_price` after a rate change.
 
 ## Verification
 
@@ -262,6 +277,10 @@ pnpm run test:agent-setup-installers  # assembled Agent Setup scripts vs. fake C
 To work on a single package, use pnpm filters (e.g.
 `pnpm --filter @floway-dev/translate run typecheck`). Wrangler commands go
 through the local dependency with `pnpm wrangler` or package scripts.
+
+Run lint and test through the scripts rather than a bare `eslint` or `vitest`:
+a workspace-wide pass exhausts Node's default heap, so the scripts raise the
+ceiling — 12 GiB for `lint` and `lint:fix`, 8 GiB for `test`.
 
 ## Development
 
@@ -306,20 +325,22 @@ prejoined served bodies in `src/script-assets.generated.ts`. Regenerate with
 fail on drift) after editing a source fragment.
 
 `ADMIN_KEY` is optional on dev instances so a fresh checkout is usable without
-any secret setup: with the env var unset (which is the default once `.dev.vars`
-is deleted), the login page grants seed-admin access to a blank username + any
-password. Real deployments must set it — the Node entry refuses to boot under
-`NODE_ENV=production` with an empty `ADMIN_KEY`, and the Cloudflare-side
-request handler refuses passwordless logins whenever the request carries a
-`CF-Ray` header (workerd's local inbound used by `wrangler dev` never writes
-CF-Ray; only Cloudflare's edge does). It is not a data-plane credential; its
-only purpose is to let an operator who lost the admin password log in via
-`POST /auth/login`.
+any secret setup: with the env var unset — the default for a fresh clone,
+which carries no `.dev.vars` — the login page grants seed-admin access to a
+blank username + any password. Real deployments must set it — the Node entry
+refuses to boot under `NODE_ENV=production` with an empty `ADMIN_KEY`, and the
+Cloudflare-side request handler refuses passwordless logins whenever the
+request carries a `CF-Ray` header (workerd's local inbound used by `wrangler
+dev` never writes CF-Ray; only Cloudflare's edge does). It is not a data-plane
+credential; it is the control plane's bootstrap and recovery credential. The
+seed admin (user 1) ships with no password hash and username login rejects any
+user that has none, so on a deployment that sets it, a blank username plus
+`ADMIN_KEY` at `POST /auth/login` is both the first way in and the way back in
+after an admin password is lost.
 
-For manual data-plane validation, log into the dashboard with the `ADMIN_KEY`
-backdoor (or, on a dev instance, the passwordless shortcut) or with your own
-user, then create or pick an API key under your account and use it as
-`x-api-key`.
+For manual data-plane validation, log into the dashboard with `ADMIN_KEY` (or,
+on a dev instance, the passwordless shortcut) or with your own user, then
+create or pick an API key under your account and use it as `x-api-key`.
 
 ## Deployment
 

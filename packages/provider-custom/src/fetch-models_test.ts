@@ -56,7 +56,7 @@ test('fetchCustomModels accepts an Anthropic-shape response with no top-level `o
   );
 });
 
-test('fetchCustomModels reads superset fields (display_name, limits, pricing) from our own /models', async () => {
+test('fetchCustomModels reads superset fields (display_name, limits, pricing) from Floway-shaped upstreams', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
     () => jsonResponse({

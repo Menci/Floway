@@ -8,6 +8,8 @@
 // × 2 (1-hour write). Fast mode is an explicit `serviceTier: 'fast'` entry
 // priced as a flat multiple of base: 6× on Opus 4.6/4.7, lowered to 2× from
 // Opus 4.8 onward (Opus 4.8, Opus 5); each entry records its own cache rates.
+//
+// Refresh procedure: .agents/skills/fetching-models-pricing/.
 
 import { modelPricing, tokenBasePricing, tokenPricingEntry, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
 

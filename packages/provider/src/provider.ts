@@ -105,9 +105,12 @@ export interface UpstreamCallOptions {
   // runs synchronously and stamps `attempt.upstreamCallStartedAt` before
   // invoking the factory, so the stamp fires ahead of dial + TLS + CONNECT
   // (which live inside the returned promise's async body under a proxied
-  // fetcher). The pre-dial anchor is deliberate: TTFT from the user's
-  // viewpoint includes proxy handshake time, so keeping it in the interval
-  // matches observed client latency.
+  // fetcher). The interval anchored here therefore includes the gateway's
+  // own egress work — proxy-backoff lookup, dial, TLS, CONNECT — and
+  // excludes everything the gateway does before dispatch (routing,
+  // translation, interceptor entry). Candidate iteration clears the anchors
+  // per candidate, so after a failover the recorded interval is shorter
+  // than the latency the client observed.
   wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }
 

@@ -1,26 +1,26 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { validateUpstreamPath } from './join.ts';
-import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceVector, type PricingSelector, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
-
-export type { Modality } from '@floway-dev/protocols/common';
-
-export interface UpstreamModelLimits {
-  max_context_window_tokens?: number;
-  max_prompt_tokens?: number;
-  max_output_tokens?: number;
-}
+import { BILLING_METRICS, canonicalizePricingSelector, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, RERANK_PROTOCOLS, type BillingMetric, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PriceVector, type PricingSelector, type PublicModelLimits, type RerankProtocol, type RerankTarget, validateModelPricing } from '@floway-dev/protocols/common';
 
 // The catalog-side name for the wire chat metadata. Shape lives in
 // @floway-dev/protocols/common so PublicModel.chat and the upstream catalog
 // share a single declaration.
 export type UpstreamChatModelConfig = ChatModelInfo;
 
+// One model row on an upstream. A row's kind names the source of its config,
+// not its shape — both kinds are this interface:
+//   • Manual — an entry of the upstream's persisted `config.models[]`. The
+//     operator authored it, PATCH persists it, and `modelsField` below is its
+//     validator.
+//   • Auto — the live projection of a provider's own emission, rendered by
+//     `POST /api/upstreams/list-models` from the `ProviderModel` the provider
+//     returned. Read-only; it never persists.
 export interface UpstreamModelConfig {
   // Mirrors of fields that flow through to PublicModel (snake_case for parity).
   kind: ModelKind;
   endpoints: ModelEndpoints;
   display_name?: string;
-  limits?: UpstreamModelLimits;
+  limits?: PublicModelLimits;
   pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   rerankTarget?: RerankTarget;
@@ -31,9 +31,8 @@ export interface UpstreamModelConfig {
   // per-model override, applied on top of the upstream default +
   // operator upstream override. Absent / `{}` = no per-model override
   // (pure inherit). The auto-row counterpart is
-  // `ProviderModel.flagOverrides` — same field name, occupies the same
-  // layer-3 slot, but sourced from the provider's per-model rule
-  // rather than an operator-authored config row.
+  // `ProviderModel.flagOverrides`, sourced from the provider's per-model
+  // rule rather than an operator-authored config row.
   flagOverrides?: FlagOverrides;
 }
 
@@ -92,7 +91,7 @@ const optionalMetadataRecord = (value: unknown, label: string): Record<string, u
   return value;
 };
 
-const limitsField = (value: unknown, label: string): UpstreamModelLimits | undefined => {
+const limitsField = (value: unknown, label: string): PublicModelLimits | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
   return {

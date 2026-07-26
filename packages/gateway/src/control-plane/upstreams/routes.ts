@@ -8,7 +8,7 @@ import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
-import { copilotConfigField, isRecord } from '../shared/field-validators.ts';
+import { isRecord } from '../shared/field-validators.ts';
 import { nextSortOrder } from '../shared/sort-order.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
 import {
@@ -23,7 +23,7 @@ import {
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { type CodexQuotaSnapshotMap, assertCodexUpstreamRecord, assertCodexUpstreamState, getCodexQuota } from '@floway-dev/provider-codex';
-import { readCopilotUpstreamState } from '@floway-dev/provider-copilot';
+import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
@@ -89,7 +89,7 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
     }
     return {
       ok: true,
-      value: copilotConfigField(
+      value: parseCopilotUpstreamConfig(
         record.config,
         (field, expected) => new Error(`Malformed copilot upstream config: ${field} must be ${expected}`),
       ),

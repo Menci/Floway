@@ -43,17 +43,17 @@ test('provider flags: every catalog entry has id, label, description string fiel
   }
 });
 
-test('flags-resolve: no layers → empty set', () => {
+test('provider flags: resolveEffectiveFlags — no layers → empty set', () => {
   const set = resolveEffectiveFlags([]);
   assertEquals([...set].sort(), []);
 });
 
-test('flags-resolve: a layer with a true flag adds it', () => {
+test('provider flags: resolveEffectiveFlags — a layer with a true flag adds it', () => {
   const set = resolveEffectiveFlags([{ 'retry-cyber-policy': true }]);
   assertEquals([...set].sort(), ['retry-cyber-policy']);
 });
 
-test('flags-resolve: a later layer can force-off an earlier true', () => {
+test('provider flags: resolveEffectiveFlags — a later layer can force-off an earlier true', () => {
   const set = resolveEffectiveFlags([
     { 'retry-cyber-policy': true },
     { 'retry-cyber-policy': false },
@@ -61,7 +61,7 @@ test('flags-resolve: a later layer can force-off an earlier true', () => {
   assertEquals([...set].sort(), []);
 });
 
-test('flags-resolve: a still-later layer can force-on again', () => {
+test('provider flags: resolveEffectiveFlags — a still-later layer can force-on again', () => {
   const set = resolveEffectiveFlags([
     { 'retry-cyber-policy': true },
     { 'retry-cyber-policy': false },
@@ -70,12 +70,12 @@ test('flags-resolve: a still-later layer can force-on again', () => {
   assertEquals([...set].sort(), ['retry-cyber-policy']);
 });
 
-test('flags-resolve: upstream layer force-on adds a flag', () => {
+test('provider flags: resolveEffectiveFlags — upstream layer force-on adds a flag', () => {
   const set = resolveEffectiveFlags([{ 'vendor-deepseek': true }]);
   assertEquals([...set].sort(), ['vendor-deepseek']);
 });
 
-test('flags-resolve: model layer force-off wins over upstream force-on', () => {
+test('provider flags: resolveEffectiveFlags — model layer force-off wins over upstream force-on', () => {
   const set = resolveEffectiveFlags([
     { 'vendor-deepseek': true },
     { 'vendor-deepseek': false },
@@ -83,7 +83,7 @@ test('flags-resolve: model layer force-off wins over upstream force-on', () => {
   assertEquals([...set].sort(), []);
 });
 
-test('flags-resolve: later layer wins when both set the same flag', () => {
+test('provider flags: resolveEffectiveFlags — later layer wins when both set the same flag', () => {
   const set = resolveEffectiveFlags([
     { 'vendor-qwen': false },
     { 'vendor-qwen': true },
@@ -91,7 +91,7 @@ test('flags-resolve: later layer wins when both set the same flag', () => {
   assertEquals([...set].sort(), ['vendor-qwen']);
 });
 
-test('flags-resolve: undefined layers are skipped', () => {
+test('provider flags: resolveEffectiveFlags — undefined layers are skipped', () => {
   const set = resolveEffectiveFlags([undefined, { 'retry-cyber-policy': true }, undefined]);
   assertEquals([...set].sort(), ['retry-cyber-policy']);
 });

@@ -101,7 +101,7 @@ test('enumerateModelCandidates does not retry when the inbound id has no dated s
 });
 
 test('enumerateModelCandidates prefers the literal dated id over the stripped base when the catalog lists both', async () => {
-  // The dated suffix fallback is a SECOND attempt, gated on the first
+  // The dated-suffix retry is a SECOND attempt, gated on the first
   // attempt finding nothing. When the upstream catalog already lists the
   // dated id verbatim, the first attempt wins and the stripped form
   // never enters the candidate list.

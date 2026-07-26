@@ -243,7 +243,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
   headers.set('x-interaction-type', 'conversation-agent');
 
   // Provider-attached invocation headers (vision, initiator, anthropic-beta,
-  // ...) flow through unchanged. The provider's target interceptors decide
+  // ...) flow through unchanged. The provider's boundary interceptors decide
   // which headers each upstream call needs; this layer only knows how to ship
   // them. Setting them last lets workaround interceptors override the static
   // VSCode identification block when a future workaround needs to.

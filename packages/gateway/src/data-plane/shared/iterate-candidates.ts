@@ -40,12 +40,11 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 // per-candidate *failure result* falls through so a transient 5xx/429 on
 // one upstream rolls over to the next; a thrown error leaves the loop and
 // surfaces to the caller, so a dial failure does not advance. When the
-// list is exhausted the
-// most recent failure is returned so callers can forward it verbatim and
-// clients still see real upstream telemetry rather than a synthetic
-// gateway envelope. Callers are contractually required to hand in a
-// non-empty candidate list — the empty-candidate branch renders each
-// caller's own protocol-shaped "no viable candidate" envelope at the
+// list is exhausted the most recent failure is returned so callers can
+// forward it verbatim and clients still see real upstream telemetry rather
+// than a synthetic gateway envelope. Callers are contractually required to
+// hand in a non-empty candidate list — the empty-candidate branch renders
+// each caller's own protocol-shaped "no viable candidate" envelope at the
 // serve site.
 //
 // Owns per-attempt AttemptState: clears the two timing slots and stamps

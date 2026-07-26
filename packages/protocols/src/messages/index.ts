@@ -4,7 +4,7 @@ import type { MessagesUsage, MessagesUsageServerToolUse } from './usage.ts';
  * Messages requires `max_tokens`, but the Chat Completions, Responses, and
  * Gemini sources may omit their output-token cap. When we translate one of
  * those sources to a Messages target, the data-plane prefers the model's
- * advertised `/models` output cap (`capabilities.maxOutputTokens`); this
+ * advertised `/models` output cap (`limits.max_output_tokens`); this
  * constant is the last-resort gateway policy default when both the source
  * payload and the model capability are silent.
  *

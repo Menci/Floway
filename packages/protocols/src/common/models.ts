@@ -25,9 +25,11 @@ export interface RerankTarget {
 
 export type Modality = 'text' | 'image';
 
-// Operator-configured chat capability metadata. Lives in protocols because it
-// flows verbatim onto PublicModel.chat (the wire DTO) and is also re-exported
-// by @floway-dev/provider as UpstreamChatModelConfig for the catalog side; one
+// Chat capability metadata for one model. Providers that can read it off the
+// raw upstream catalog fill it themselves; elsewhere it comes from the
+// operator's model config. Lives in protocols because it flows verbatim onto
+// PublicModel.chat (the wire DTO) and is also re-exported by
+// @floway-dev/provider as UpstreamChatModelConfig for the catalog side; one
 // definition serves both surfaces.
 export interface ChatModelInfo {
   modalities?: {
@@ -49,10 +51,9 @@ export interface ChatModelInfo {
 
 // Alias provenance attached to a `/v1/models` entry that the gateway
 // synthesized from an operator-defined alias rather than fetched from an
-// upstream catalog. `targets` carries every configured target — including
-// targets the live catalog currently can not serve — so the dashboard can
-// show the full configuration and warn about unavailable ones without a
-// second control-plane round trip. The alias's `kind` and `name` live on
+// upstream catalog. `targets` is the configured target list — projected
+// as-is on admin surfaces and filtered to the caller-reachable subset on
+// data-plane / non-admin surfaces. The alias's `kind` and `name` live on
 // the enclosing `PublicModel` (`kind`, `id`); every alias-synthesized row
 // puts the alias name on its outer `id` and the alias kind on its outer
 // `kind`, so the sidecar avoids duplicating them.
@@ -86,19 +87,16 @@ export interface PublicModel {
   // Non-standard extra fields below.
   limits: PublicModelLimits;
   kind: ModelKind;
-  // Public-facing endpoint surface. Mirrors the upstream-side ModelEndpoints
-  // verbatim — by the time a model reaches this DTO, the provider layer
-  // (e.g. provider-ollama, provider-copilot) has already projected the raw
-  // upstream catalog into the public-facing shape: the three chat endpoints
-  // (chatCompletions / messages / responses) appear together because the
-  // gateway translates between them, while `completions`, `embeddings`,
-  // `imagesGenerations`, `imagesEdits`, `rerank`, and `audioTranscriptions`
-  // only appear when the upstream
-  // natively serves them. Alias entries surface the UNION of every
-  // currently-available target's endpoint map — at request time the
-  // resolver narrows the pool to targets that serve the inbound endpoint,
-  // so any endpoint advertised here is reachable through at least one
-  // target.
+  // The merged upstream wire surface: the union of the endpoint keys the
+  // contributing upstreams expose natively, and on an alias-synthesized row
+  // the union across the alias's currently-available targets, so every key
+  // advertised here is served natively by at least one of them. It is not a
+  // list of client-callable Floway routes. Translation widens the callable
+  // chat surface past the listed keys — a chat source protocol reaches any
+  // candidate carrying one of its preferred chat targets, and Gemini has no
+  // key of its own at all. The non-chat keys (`completions`, `embeddings`,
+  // `imagesGenerations`, `imagesEdits`, `rerank`, `audioTranscriptions`) are
+  // callable exactly where they appear.
   endpoints: ModelEndpoints;
   pricing?: ModelPricing;
   chat?: ChatModelInfo;

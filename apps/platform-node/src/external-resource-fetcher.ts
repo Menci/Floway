@@ -3,6 +3,7 @@ import { BlockList, isIP, type LookupFunction } from 'node:net';
 
 import { Agent, fetch as undiciFetch } from 'undici';
 
+import { normalizeDialHost } from '@floway-dev/platform';
 import type { ExternalResourceFetcher } from '@floway-dev/platform';
 
 const blockedAddresses = new BlockList();
@@ -98,10 +99,8 @@ export const createNodeExternalResourceFetcher = (): ExternalResourceFetcher => 
   const dispatcher = new Agent({ connect: { lookup: createPublicAddressLookup() } });
   return async (url, signal) => {
     // Undici bypasses `lookup` for IP literals, so validate them before the
-    // dispatcher sees the request. URL.hostname retains brackets on IPv6.
-    const hostname = url.hostname.startsWith('[') && url.hostname.endsWith(']')
-      ? url.hostname.slice(1, -1)
-      : url.hostname;
+    // dispatcher sees the request.
+    const hostname = normalizeDialHost(url.hostname);
     if (isIP(hostname) !== 0 && !isPublicIpAddress(hostname)) throw nonPublicTargetError();
     const response = await undiciFetch(url, { dispatcher, redirect: 'manual', signal });
     const body = response.body === null

@@ -34,13 +34,6 @@ interface ResponsesWebSocketSocket {
 
 const UTF8_ENCODER = new TextEncoder();
 
-export interface ResponsesWebSocketEvents {
-  onOpen?(event: Event, socket: ResponsesWebSocketSocket): void;
-  onMessage?(event: { readonly data: unknown }, socket: ResponsesWebSocketSocket): void;
-  onClose?(event: unknown, socket: ResponsesWebSocketSocket): void;
-  onError?(event: unknown, socket: ResponsesWebSocketSocket): void;
-}
-
 interface ResponsesWebSocketHandlers {
   onMessage(event: { readonly data: unknown }, socket: ResponsesWebSocketSocket): void;
   onClose(event: unknown, socket: ResponsesWebSocketSocket): void;

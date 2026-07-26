@@ -157,14 +157,14 @@ const buildChatCompletionsResponseFormat = (text: ResponsesPayload['text']): Cha
   return format;
 };
 
-/**
- * Names of Responses `custom` tools the request translator wrapped as
- * single-string function tools. Returned alongside the translated payload so
- * the trip's events translator can project wrapped function calls back into
- * `custom_tool_call` outputs.
- */
 export interface TargetRequestResult {
   target: ChatCompletionsPayload;
+  /**
+   * Names of Responses `custom` tools the request translator wrapped as
+   * single-string function tools. Returned alongside the translated payload so
+   * the trip's events translator can project wrapped function calls back into
+   * `custom_tool_call` outputs.
+   */
   customToolNames: Set<string>;
 }
 

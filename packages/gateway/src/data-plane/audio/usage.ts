@@ -1,6 +1,6 @@
 import type { UsageQuantities } from '../../repo/types.ts';
 import { requestOnlyUsageMeasurement, tokenUsage, type UsageMeasurement } from '../shared/telemetry/usage.ts';
-import { canonicalDecimalString } from '@floway-dev/protocols/common';
+import { parseDecimalString } from '@floway-dev/protocols/common';
 
 // OpenAI transcription responses discriminate usage by `type`. Token-based
 // models split input_token_details into text and audio metrics; without that
@@ -14,7 +14,7 @@ const audioDurationMeasurement = (seconds: unknown, label: string): UsageMeasure
     throw new Error(`Audio transcription ${label} must be a finite non-negative number`);
   }
   return {
-    quantities: { input_audio_seconds: canonicalDecimalString(String(seconds)) },
+    quantities: { input_audio_seconds: parseDecimalString(String(seconds)) },
     pricingFacts: {},
     dumpTokenUsage: null,
   };
@@ -53,7 +53,7 @@ export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurem
     throw new Error('Audio transcription token usage.total_tokens must equal input_tokens plus output_tokens');
   }
 
-  let inputQuantities: UsageQuantities = { input_tokens: canonicalDecimalString(String(inputTokens)) };
+  let inputQuantities: UsageQuantities = { input_tokens: parseDecimalString(String(inputTokens)) };
   if (metric.input_token_details !== undefined) {
     if (!metric.input_token_details || typeof metric.input_token_details !== 'object' || Array.isArray(metric.input_token_details)) {
       throw new Error('Audio transcription token usage.input_token_details must be an object');
@@ -73,21 +73,21 @@ export const audioTranscriptionUsageMeasurement = (body: unknown): UsageMeasurem
       throw new Error('Audio transcription token usage.input_token_details must not exceed input_tokens');
     }
     inputQuantities = {
-      input_tokens: canonicalDecimalString(String(inputTokens - (audioTokens ?? 0))),
-      ...(audioTokens === undefined ? {} : { input_audio_tokens: canonicalDecimalString(String(audioTokens)) }),
+      input_tokens: parseDecimalString(String(inputTokens - (audioTokens ?? 0))),
+      ...(audioTokens === undefined ? {} : { input_audio_tokens: parseDecimalString(String(audioTokens)) }),
     };
   }
   return {
     quantities: {
       ...inputQuantities,
-      output_tokens: canonicalDecimalString(String(outputTokens)),
+      output_tokens: parseDecimalString(String(outputTokens)),
     },
     pricingFacts: { inputTokens },
     dumpTokenUsage: tokenUsage({ input: inputTokens, output: outputTokens }),
   };
 };
 
-export const measureAudioUsage = (value: unknown, sourceApi: string): UsageMeasurement => {
+export const measureAudioTranscriptionUsage = (value: unknown, sourceApi: string): UsageMeasurement => {
   try {
     return audioTranscriptionUsageMeasurement(value);
   } catch (error) {

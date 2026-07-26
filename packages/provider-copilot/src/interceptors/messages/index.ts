@@ -83,9 +83,11 @@ export const COPILOT_MESSAGES_BOUNDARY = [
 // WebP-recompressed payload the chat path sends, keeping the estimate
 // consistent with the real request. withContextManagementBetaAligned follows
 // withAnthropicBetaHeaderFiltered so any surviving `context_management` field
-// remains paired with its required header token. Event-stream and chat-only
-// payload mutators are intentionally absent because count_tokens returns a raw
-// Response and never used those transformations.
+// remains paired with its required header token. The chat boundary's other
+// entries stay out: its post-`run()` inspectors cannot be expressed against a
+// raw Response at all, and the remaining payload mutators and header setters
+// each answer something we observed on the generation endpoint, with no
+// equivalent need seen on count_tokens.
 export const COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY = [
   withInlineImagesCompressed,
   withVisionHeaderSet,

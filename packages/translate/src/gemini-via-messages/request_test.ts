@@ -63,7 +63,7 @@ test('buildTargetRequest maps system, default max tokens, and multimodal user co
   });
 });
 
-test('buildTargetRequest prefers capabilities.maxOutputTokens over the gateway default when payload omits maxOutputTokens', () => {
+test('buildTargetRequest prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', () => {
   const request = buildTargetRequest({}, 'claude-test', withMaxOutputTokens(6144));
   assertEquals(request.max_tokens, 6144);
 });

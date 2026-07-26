@@ -11,7 +11,29 @@ const affinity: AffinityTarget = {
   modelId: 'model-a',
 };
 
+// A carrier this codec issued for SECRET and DOMAIN. It is a frozen wire
+// contract, not a fixture: carriers already held by clients are decrypted by
+// whatever ships next, so the HKDF salt and info, the AAD layout, the
+// plaintext property names, and the trailer framing all have to survive.
+// Changing any of them fails here, and re-recording the literal is the same
+// act as invalidating every conversation in flight.
+const FROZEN_CARRIER = 'AQIDBAWDP9gwaNMPLCk0oQ+usEVivj9ZICVyL3fu4x8gkOodb/vEU6189ANDLBtP1EXGNZgndPVyP96bDlZSoRj0YjhY8AoD+3/H71+8hcKBW/GSaV0w7FiF2KM8wk70DuHUIi3AW6CvFXHjzpj0+kpy5J1oYWqpTuzqLLydXk0QCTDAvV7rEGaeayaWFfS1mp3j6ScS51X0wCa9niXtm/iMSQCe';
+
 describe('AffinityCodec', () => {
+  test('unwraps a frozen carrier', async () => {
+    expect(await new AffinityCodec(SECRET).unwrap(FROZEN_CARRIER, DOMAIN)).toEqual({
+      kind: 'owned',
+      value: 'AQIDBAU=',
+      version: 1,
+      origin: 'base64',
+      affinity: {
+        upstreamId: 'upstream-a',
+        modelId: 'model-a',
+        rules: { reasoning: { effort: 'high' } },
+      },
+    });
+  });
+
   test.each([
     ['raw', 'not base64!'],
     ['base64', btoa('upstream opaque bytes')],

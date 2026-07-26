@@ -1,6 +1,6 @@
 import { streamSSE } from 'hono/streaming';
 
-import { measureAudioUsage } from './usage.ts';
+import { measureAudioTranscriptionUsage } from './usage.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import type { PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/sse.ts';
@@ -25,7 +25,7 @@ const respondNonStreaming = async ({ ctx, sourceApi, response, performance, iden
       );
     }
     if (parsed !== undefined) {
-      measurement = measureAudioUsage(parsed, sourceApi);
+      measurement = measureAudioTranscriptionUsage(parsed, sourceApi);
     }
   }
   ctx.dump?.success(identity, measurement.dumpTokenUsage);
@@ -59,7 +59,7 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
           ctx.dump?.frame(eventFrame(event));
           if (isAudioTranscriptionDoneEvent(event)) {
             terminalEventSeen = true;
-            measurement = measureAudioUsage(event, sourceApi);
+            measurement = measureAudioTranscriptionUsage(event, sourceApi);
             yield frame;
             return;
           }

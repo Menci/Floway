@@ -8,8 +8,10 @@
 // single-bucket concentration below ~15% and give meaningful percentiles.
 //
 // TPOT edges anchor exactly on the human-facing tok/s SLO points (100, 50,
-// 20, 10 tok/s) so a dashboard alert reads as "p95 speed >= 20 tok/s" and
-// hits a real edge, not a factor-1.5 estimate.
+// 20, 10 tok/s) so a percentile reading lands on a real edge rather than a
+// factor-1.5 estimate. The direction is inverted against speed: a p95 TPOT of
+// 50 000 µs is the slow tail — the slowest 5% of samples — and reads as
+// "95% of samples generated at 20 tok/s or faster".
 
 export const TTFT_UPPER_EDGES_MS = [
   100, 200, 300, 500, 700, 1_000, 1_400, 2_000, 2_800, 4_000,

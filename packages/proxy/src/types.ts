@@ -102,8 +102,9 @@ export interface DialOptions {
    *  DEFAULT_DIAL_DEADLINE_MS when absent. */
   dialTimeoutMs?: number;
   /**
-   * Platform-injected raw TCP dial primitive. Required — every dialer
-   * needs to open at least one TCP connection.
+   * Platform-injected byte-stream dial primitive: a `connect` that opens a
+   * duplex to a host:port and can also wrap it in the runtime's native TLS.
+   * Required — every dialer needs to open at least one connection.
    */
   socketDial: SocketDial;
 }

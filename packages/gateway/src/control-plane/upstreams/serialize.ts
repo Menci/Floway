@@ -162,7 +162,8 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
   case 'custom':
   case 'azure':
   case 'ollama':
-    // These providers have no autonomous state.
+    // These kinds carry no state at all — no credential rotation, quota
+    // snapshot, or OAuth account slot to keep server-side.
     return null;
   default: {
     const exhaustive: never = upstream.kind;
@@ -199,13 +200,15 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): SerializedUpstre
 export const upstreamRecordToFullJson = (upstream: UpstreamRecord): SerializedUpstreamRecord =>
   serializeBase(upstream, clone(upstream.config), clone(upstream.state));
 
-// Shape-complete UpstreamRecord blank for `kind`, never persisted. Serves the
+// Shape-complete per-kind UpstreamRecord default, never persisted. Serves the
 // GET /api/upstreams/blueprint endpoint so the create page consumes the same
 // SerializedUpstreamRecord shape edit does — the front-end draft variable is
 // uniform across create and edit, and no write-path invariants have to be
-// satisfied. Field values are true blanks (empty strings, empty arrays),
-// matching what an editor sees before typing anything or completing any
-// OAuth flow.
+// satisfied. Operator-typed text starts empty; every other slot takes the
+// kind's own default rather than a blank (`authStyle: 'bearer'`,
+// `modelsFetch: { enabled: false }`, a zero-value Copilot `user` object), so
+// the draft is a well-formed record before anything is typed or any OAuth
+// flow completes.
 export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRecord => {
   const base = {
     id: '',

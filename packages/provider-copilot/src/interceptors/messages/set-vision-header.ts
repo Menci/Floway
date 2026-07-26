@@ -4,7 +4,7 @@ import type { MessagesAssistantMessage, MessagesUserMessage } from '@floway-dev/
 /**
  * Copilot rejects Anthropic `image` blocks as plain text unless the private
  * `copilot-vision-request: true` header is set. Detection must scan the final
- * post-mutation payload (after other Messages target interceptors have run)
+ * post-mutation payload (after other Messages boundary interceptors have run)
  * and cover both the top-level `message.content` and the nested
  * `tool_result.content[]` shape; Anthropic allows images in both positions.
  *

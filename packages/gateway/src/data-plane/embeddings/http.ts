@@ -6,47 +6,13 @@ import type { Context } from 'hono';
 import { tokenUsageFromEmbeddingsBody } from './usage.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
+import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 
-interface EmbeddingsRequestBody {
-  model?: unknown;
-  input?: unknown;
-  [key: string]: unknown;
-}
-
-const prepareEmbeddingsRequest = (bytes: Uint8Array): { type: 'ok'; body: Record<string, unknown>; model: string } | { type: 'invalid'; message: string } => {
-  let request: EmbeddingsRequestBody;
-
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return {
-        type: 'invalid',
-        message: 'Embeddings request body must be an object.',
-      };
-    }
-    request = parsed as EmbeddingsRequestBody;
-  } catch {
-    return {
-      type: 'invalid',
-      message: 'Embeddings request body must be valid JSON.',
-    };
-  }
-
-  if (typeof request.model !== 'string' || request.model.length === 0) {
-    return {
-      type: 'invalid',
-      message: 'Embeddings request body must include a model string.',
-    };
-  }
-
-  return { type: 'ok', body: request, model: request.model };
-};
-
 export const embeddings = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const request = prepareEmbeddingsRequest(requestBody.bytes);
+  const request = prepareJsonModelRequest(requestBody.bytes, 'Embeddings');
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');

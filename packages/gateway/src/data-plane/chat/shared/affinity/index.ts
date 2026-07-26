@@ -7,8 +7,6 @@ import type { ChatGatewayCtx } from '../gateway-ctx.ts';
 import { appendOpaqueTrailer, concatBytes, decodeOpaqueValue, encodeOpaqueValue, MAX_OPAQUE_TRAILER_BYTES, splitOpaqueTrailer, uint16be, type AliasRules, type OpaqueValueOrigin } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
-type AffinityOrigin = OpaqueValueOrigin;
-
 export interface AffinityTarget {
   upstreamId: string;
   modelId: string;
@@ -22,7 +20,7 @@ export interface AffinityEvidence {
 
 interface AffinityData {
   version: 1;
-  origin?: AffinityOrigin;
+  origin?: OpaqueValueOrigin;
   affinity: AffinityTarget;
 }
 
@@ -264,8 +262,8 @@ export class AffinityRequestContext {
   readonly codec: AffinityCodec;
   #selectedCandidate: ModelCandidate | undefined;
 
-  constructor(secret: string) {
-    this.codec = new AffinityCodec(secret);
+  constructor(serverSecret: string) {
+    this.codec = new AffinityCodec(serverSecret);
   }
 
   select(candidate: ModelCandidate): void {

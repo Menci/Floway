@@ -32,7 +32,9 @@ interface CreateFetcherInput {
     options: RunDirectConnectRequestOptions,
   ) => Promise<Response>;
   /**
-   * Platform-injected raw TCP dial primitive, threaded into runProxied.
+   * Platform-injected byte-stream dial, threaded into runProxied. Each dialer
+   * asks through `SocketDialOptions` for either a raw connection or one
+   * wrapped in the runtime's native TLS.
    * Lazily evaluated — only invoked when a socket-backed fallback entry is
    * actually attempted, so direct-fetch-only call sites can run without an
    * installed SocketDial impl.

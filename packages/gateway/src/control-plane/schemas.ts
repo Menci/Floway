@@ -138,8 +138,8 @@ const limitsSchema = z.object({
 });
 
 // Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
-// Azure and custom upstreams share this per-model entry; the canonical
-// per-model endpoint validation lives in the runtime validator.
+// Azure, custom, and ollama upstreams share this per-model entry; the
+// canonical per-model endpoint validation lives in the runtime validator.
 const upstreamModelSchema = z.object({
   upstreamModelId: z.string().min(1),
   publicModelId: z.string().optional(),
@@ -736,9 +736,8 @@ export const tokenUsageQuery = z.object(usageBaseQuery);
 // Dashboard `/api/models` accepts two query knobs. `aliases=false` skips the
 // alias-merge pass — the alias edit dialog and shadow detection need the
 // raw real-model set. `include_unlisted=true` extends the payload with the
-// addressable-but-not-listed surface (prefix-form alternates, Copilot
-// variant ids, provider-side redirects), so the alias dialog combobox sees
-// every id the data-plane resolver would accept.
+// addressable-but-not-listed surface (prefix-form alternates), so the alias
+// dialog combobox sees every id the data-plane resolver would accept.
 export const modelsQuery = z.object({
   aliases: z.enum(['true', 'false']).optional(),
   include_unlisted: z.enum(['true', 'false']).optional(),

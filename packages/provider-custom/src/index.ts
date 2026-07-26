@@ -7,6 +7,5 @@ export const customProviderModule: ProviderModule = {
   defaultFlags: CUSTOM_DEFAULT_FLAGS,
 };
 
-export { createCustomProvider } from './provider.ts';
 export { assertCustomUpstreamRecord } from './config.ts';
 export { fetchCustomModels } from './fetch-models.ts';

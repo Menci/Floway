@@ -12,56 +12,19 @@ import { tokenUsageFromCompletionsUsage } from './usage.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
+import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
 
-interface CompletionsRequestBody {
-  model?: unknown;
-  stream?: unknown;
-  stream_options?: { include_usage?: unknown } | null;
-  [key: string]: unknown;
-}
-
-type PreparedRequest =
-  | {
-    type: 'ok';
-    body: Record<string, unknown>;
-    model: string;
-    wantsStream: boolean;
-    clientWantsUsageChunk: boolean;
-  }
-  | { type: 'invalid'; message: string };
-
-// `model` must be a non-empty string because gateway routing depends on
-// it; every other field on the body flows through to the upstream
-// unchanged.
-const prepareCompletionsRequest = (bytes: Uint8Array): PreparedRequest => {
-  let request: CompletionsRequestBody;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { type: 'invalid', message: 'Completions request body must be an object.' };
-    }
-    request = parsed as CompletionsRequestBody;
-  } catch {
-    return { type: 'invalid', message: 'Completions request body must be valid JSON.' };
-  }
-
-  if (typeof request.model !== 'string' || request.model.length === 0) {
-    return { type: 'invalid', message: 'Completions request body must include a model string.' };
-  }
-
-  const wantsStream = request.stream === true;
-  const clientWantsUsageChunk = request.stream_options?.include_usage === true;
-  return { type: 'ok', body: request, model: request.model, wantsStream, clientWantsUsageChunk };
-};
-
 export const completions = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const request = prepareCompletionsRequest(requestBody.bytes);
+  const request = prepareJsonModelRequest(requestBody.bytes, 'Completions');
+  // `stream` decides the response shape, so the gateway context has to learn
+  // it before the invalid branch — which has no body to read it from.
+  const wantsStream = request.type === 'ok' && request.body.stream === true;
   const ctx = createGatewayCtxFromHono(c, {
-    wantsStream: request.type === 'ok' ? request.wantsStream : false,
+    wantsStream,
     requestBody: takeRequestBody(requestBody),
     backgroundScheduler: backgroundSchedulerFromContext(c),
   });
@@ -71,13 +34,15 @@ export const completions = async (c: Context): Promise<Response> => {
   }
 
   ctx.dump?.requestedModel(request.model);
+  const streamOptions = request.body.stream_options as { include_usage?: unknown } | null | undefined;
+  const clientWantsUsageChunk = streamOptions?.include_usage === true;
   // Strip the inbound model; the provider re-stamps the upstream-resolved
   // model id. For streaming requests we force `stream_options.include_usage`
   // on so billing always sees the usage chunk — sibling keys on
   // stream_options (if any) ride through unchanged.
   const { model: _model, ...upstreamBodyBase } = request.body;
-  const upstreamBody = request.wantsStream
-    ? { ...upstreamBodyBase, stream_options: { ...(request.body.stream_options ?? {}), include_usage: true } }
+  const upstreamBody = wantsStream
+    ? { ...upstreamBodyBase, stream_options: { ...(streamOptions ?? {}), include_usage: true } }
     : upstreamBodyBase;
 
   // Streaming closure: track the usage block (only on the usage-only
@@ -92,7 +57,7 @@ export const completions = async (c: Context): Promise<Response> => {
     if (eventRoot.service_tier !== undefined) streamingServiceTier = eventRoot.service_tier;
     if (!isOpenAIUsageOnlyEventShape(frame.event)) return frame;
     streamingUsageBlock = eventRoot.usage;
-    return request.clientWantsUsageChunk ? frame : null;
+    return clientWantsUsageChunk ? frame : null;
   };
   const settleUsage = (): TokenUsage | null =>
     streamingUsageBlock === null ? null : tokenUsageFromCompletionsUsage(streamingUsageBlock, streamingServiceTier);
@@ -107,7 +72,7 @@ export const completions = async (c: Context): Promise<Response> => {
     modelServesEndpoint: model => model.endpoints.completions !== undefined,
     call: (provider, model, opts) =>
       provider.instance.callCompletions(model, upstreamBody, ctx.abortSignal, opts),
-    response: request.wantsStream
+    response: wantsStream
       ? { format: 'sse', transformFrame, settleUsage }
       : {
           format: 'json',

@@ -13,11 +13,12 @@ export const upstreamPerformanceContext = (
   runtimeLocation: ctx.runtimeLocation,
 });
 
-// `model` is the upstream-facing bare id (`candidate.model.id`,
-// e.g. `gpt-4o`) regardless of which surface form the client called
-// (`or/gpt-4o` or `gpt-4o`). Usage and performance aggregates therefore key on
-// the canonical upstream id, and a dashboard slice over `model` rolls up both
-// surfaces of the same upstream model under one row.
+// `model` is the public catalog id the candidate resolved under, before any
+// per-upstream name prefix — the operator's `publicModelId` override when set,
+// otherwise the id the upstream published. The genuinely upstream-facing value
+// is `modelKey`, the id that went out on the wire. Usage and performance
+// aggregates key on `model`, so a dashboard slice over it rolls up both the
+// prefixed and the bare surface of the same model under one row.
 export const telemetryModelIdentity = (candidate: ModelCandidate, modelKey: string): TelemetryModelIdentity => ({
   model: candidate.model.id,
   upstream: candidate.provider.upstreamId,

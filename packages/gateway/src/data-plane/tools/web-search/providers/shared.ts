@@ -9,14 +9,13 @@ const RETRYABLE_HTTP_STATUS: ReadonlySet<number> = new Set([429, 500, 502, 503, 
 export const fetchWithRetry = async (
   doFetch: () => Promise<Response>,
   signal?: AbortSignal,
-  retryDelaysMs: readonly number[] = RETRY_DELAYS_MS,
 ): Promise<Response> => {
   let attempt = 0;
   while (true) {
     const response = await doFetch();
     if (!RETRYABLE_HTTP_STATUS.has(response.status)) return response;
-    if (attempt >= retryDelaysMs.length) return response;
-    await sleep(retryDelaysMs[attempt], signal);
+    if (attempt >= RETRY_DELAYS_MS.length) return response;
+    await sleep(RETRY_DELAYS_MS[attempt], signal);
     attempt += 1;
   }
 };

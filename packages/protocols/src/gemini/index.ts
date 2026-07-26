@@ -44,7 +44,7 @@ export interface GeminiGenerationConfig {
 
 export interface GeminiThinkingConfig {
   thinkingBudget?: number;
-  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | string;
+  thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | (string & {});
   includeThoughts?: boolean;
 }
 

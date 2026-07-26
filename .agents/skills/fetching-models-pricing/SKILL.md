@@ -53,30 +53,30 @@ subset for a model.
      type PriceVector,
    } from '@floway-dev/protocols/common';
 
-   const PUBLISHED_BASE_RATES = {
-     input_tokens: '2.5',
-     input_cache_read_tokens: '0.25',
-     output_tokens: '15',
+   const EXAMPLE_BASE_RATES = {
+     input_tokens: '1',
+     input_cache_read_tokens: '0.1',
+     output_tokens: '10',
    } satisfies PriceVector;
 
-   const PUBLISHED_PRIORITY_RATES = {
-     input_tokens: '5',
-     input_cache_read_tokens: '0.5',
-     output_tokens: '30',
+   const EXAMPLE_PRIORITY_RATES = {
+     input_tokens: '2',
+     input_cache_read_tokens: '0.2',
+     output_tokens: '20',
    } satisfies PriceVector;
 
-   export const BASE_ONLY_PRICING = tokenBasePricing(PUBLISHED_BASE_RATES);
+   export const BASE_ONLY_PRICING = tokenBasePricing(EXAMPLE_BASE_RATES);
 
    export const TIERED_PRICING = modelPricing(
-     tokenPricingEntry(PUBLISHED_BASE_RATES),
-     tokenPricingEntry(PUBLISHED_PRIORITY_RATES, { serviceTier: 'priority' }),
+     tokenPricingEntry(EXAMPLE_BASE_RATES),
+     tokenPricingEntry(EXAMPLE_PRIORITY_RATES, { serviceTier: 'priority' }),
    );
    ```
 
-   Published token rate cards are normally USD per million tokens.
-   `tokenPricingEntry` and `tokenBasePricing` apply the existing
-   `perMillionTokenRates` conversion, so their resulting `PriceVector` values
-   are USD per base token. Do not divide manually or pass number literals.
+   The numbers above are placeholders. Published token rate cards are normally
+   USD per million tokens. `tokenPricingEntry` and `tokenBasePricing` apply the
+   existing `perMillionTokenRates` conversion, so their resulting `PriceVector`
+   values are USD per base token. Do not divide manually or pass number literals.
    Follow `packages/provider-codex/src/pricing.ts` for a complete production
    example instead of copying a rate vector into this skill.
 
@@ -128,7 +128,10 @@ ineligible.
 ## Provider Identity
 
 - Copilot usage stores raw variant suffixes such as `-high`, `-xhigh`, and
-  `-1m` in `model_key`; its pricing lookup normalizes them to the public id.
+  `-1m` in `model_key`. Its pricing table is keyed by the public id that survives
+  variant merging: catalog projection merges the raw variants first, and
+  `pricingForCopilotPublicModelId` is a plain table match over anchored keys that
+  normalizes nothing itself.
 - Claude Code resolves pricing from the dated raw upstream id before catalog
   aliases are merged into public ids.
 - Codex and Ollama use the raw upstream slug directly.

@@ -14,7 +14,7 @@ top level of `shared/`.
 3. **Target-locked, `via-<Y>/`** — only `*-via-Y` pairs may import the helper.
    A helper does not need to serve every pair within that ceiling.
 4. **One-protocol-bidirectional, `<P>/`** — only pairs with `P` as either source
-   or target may import the helper.
+   or target may import the helper. No helper currently occupies this ceiling.
 5. **Two-protocol-bidirectional, `<A>-and-<B>/`** — only the `A-via-B` and
    `B-via-A` pairs may import the helper. For example,
    `chat-completions-and-responses/reasoning.ts` runs both directions of the
@@ -37,7 +37,11 @@ top level of `shared/`.
 ## Rules
 
 - Shallow wrappers that only rename or stringify must be inlined at every call
-  site, not extracted. Delete the wrapper rather than retaining a shim.
+  site, not extracted. Delete the wrapper rather than retaining a shim. A
+  one-liner that *defines* a format two or more pairs must agree on is not such
+  a wrapper: `via-responses/responses-stream.ts` owns the composite stream-part
+  key both Responses-target pairs build and compare, and inlining it would let
+  the copies drift apart.
 - Flat `.ts` files at the top level of `shared/` are forbidden. Every shared
   helper lives in one of the categories above.
 - Helpers that fit no category stay in their pair directories. Do not invent a

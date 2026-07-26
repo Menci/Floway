@@ -125,9 +125,10 @@ const collectProviderModels = async (
     // dropped before they reach the catalog map, so they appear in no /models
     // listing and resolve to nothing for routing. The disable is per-upstream,
     // so the same id can still surface from another upstream that allows it.
-    // The disable matches against the bare upstream id, so a disabled `gpt-4o`
-    // hides both `gpt-4o` and `<prefix>gpt-4o` from this upstream's
-    // contribution.
+    // The disable matches the pre-prefix public id — the id the provider's
+    // own catalog projection publishes, before this loop surfaces it in each
+    // listed form — so a disabled `gpt-4o` hides both `gpt-4o` and
+    // `<prefix>gpt-4o` from this upstream's contribution.
     const disabled = new Set(instance.disabledPublicModelIds);
     for (const providerModel of providedModels) {
       if (!providerModel.id) continue;

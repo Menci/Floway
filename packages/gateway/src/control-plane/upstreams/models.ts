@@ -12,10 +12,12 @@ import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provi
 import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
 // `upstreamModelId` is the wire-side identifier the provider will send when
-// a caller invokes the public `model.id` — claude-code exposes
+// a caller invokes the public `model.id` — Claude Code exposes
 // `claude-sonnet-4-5` publicly while sending `claude-sonnet-4-5-20250929`
-// on the wire, and other providers may distinguish similarly through their
-// opaque `providerData` blob.
+// on the wire. `providerData` is opaque provider-private invocation data,
+// not a universal upstream-id field: only the providers that shape it as
+// `{ upstreamModelId }` surface a distinct wire id here, and the rest
+// (Copilot carries its raw variant list there) report the public id.
 const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown> => {
   const providerData = typeof model.providerData === 'object' && model.providerData !== null ? model.providerData as { upstreamModelId?: unknown } : null;
   const wireId = typeof providerData?.upstreamModelId === 'string' && providerData.upstreamModelId.length > 0 ? providerData.upstreamModelId : model.id;

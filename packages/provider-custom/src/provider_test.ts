@@ -322,7 +322,7 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
   );
 });
 
-test('Custom provider projects display_name / created / limits / pricing from a Floway-style /models response', async () => {
+test('Custom provider projects display_name / created / limits / pricing from a Floway-shaped /models response', async () => {
   await withMockedFetch(
     () => jsonResponse({
       object: 'list',
@@ -416,6 +416,72 @@ test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the up
       model: 'gpt-search',
     },
   });
+});
+
+test('Custom provider with modelsFetch disabled serves only manual models and never fetches', async () => {
+  const provider = createCustomProvider(buildCustomUpstream({
+    modelsFetchEnabled: false,
+    models: [{
+      upstreamModelId: 'pinned-chat',
+      publicModelId: 'pinned',
+      kind: 'chat',
+      endpoints: { chatCompletions: {} },
+      display_name: 'Pinned Chat',
+      limits: { max_output_tokens: 4096 },
+      pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
+    }],
+  })).instance;
+
+  await withMockedFetch(
+    () => { throw new Error('upstream /models must not be fetched when modelsFetch is disabled'); },
+    async () => {
+      const models = await provider.getProvidedModels(directFetcher);
+      assertEquals(models.length, 1);
+      assertEquals(models[0].id, 'pinned');
+      assertEquals(models[0].kind, 'chat');
+      assertEquals(models[0].endpoints, { chatCompletions: {} });
+      assertEquals(models[0].display_name, 'Pinned Chat');
+      assertEquals(models[0].limits.max_output_tokens, 4096);
+      assertEquals(models[0].pricing?.entries[0]?.rates.input_tokens, '1');
+    },
+  );
+});
+
+test('Custom provider with a manual override sharing an upstream id wins over the auto copy', async () => {
+  const provider = createCustomProvider(buildCustomUpstream({
+    models: [{
+      upstreamModelId: 'shared',
+      kind: 'chat',
+      endpoints: { chatCompletions: {} },
+      display_name: 'Manual Shared',
+      pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: '2' } }] },
+    }],
+  })).instance;
+
+  await withMockedFetch(
+    request => {
+      if (new URL(request.url).pathname === '/v1/models') {
+        return jsonResponse({
+          object: 'list',
+          data: [
+            { id: 'shared', pricing: { entries: [{ rates: { input_tokens: '9', output_tokens: '9' } }] } },
+            { id: 'auto-only' },
+          ],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await provider.getProvidedModels(directFetcher);
+      assertEquals(models.map(model => model.id), ['shared', 'auto-only']);
+      const shared = models.find(model => model.id === 'shared');
+      assertExists(shared);
+      assertEquals(shared.display_name, 'Manual Shared');
+      assertEquals(shared.pricing?.entries[0]?.rates.input_tokens, '1');
+      assertEquals(shared.pricing?.entries[0]?.rates.output_tokens, '2');
+      assertEquals(models.find(model => model.id === 'auto-only')?.pricing, undefined);
+    },
+  );
 });
 
 test('Custom provider forwards inbound anthropic-beta header through opts.headers', async () => {

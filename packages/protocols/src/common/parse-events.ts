@@ -1,4 +1,4 @@
-import type { SseFrame } from '../sse.ts';
+import type { SseFrame } from './sse.ts';
 
 export interface ParseTargetStreamFramesOptions {
   protocol: string;

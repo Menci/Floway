@@ -31,8 +31,10 @@ surface:
 - With a prefix policy, each listed `unprefixed` or `prefixed` form becomes a
   row. A prefixed row gets the public id `<prefix><provider-id>` and display name
   `<upstream name>: <provider display name>`.
-- Operator-disabled public ids are removed before either form is emitted. The
-  disable is per upstream and does not hide the same id from other upstreams.
+- The operator's disable list is matched against the provider-emitted id before
+  any prefix is applied, so a disabled id removes both its unprefixed and
+  prefixed forms. The disable is per upstream and does not hide the same id from
+  other upstreams.
 
 The prefixed row is a shallow `ProviderModel` clone. `providerData` is preserved
 as opaque provider-private invocation data; it is not a universal upstream-id
@@ -101,8 +103,9 @@ pointing them back to their canonical listed row.
 `enumerateModelCandidates` receives:
 
 - the inbound `model` string unchanged;
-- the effective upstream cap (`null` means unrestricted, an empty list means no
-  provider is visible); the cap is the intersection of user and API-key scopes;
+- `upstreamIds` — the intersection of the user's and the API key's own
+  `upstreamIds`, naming the upstreams this request may reach (`null` means
+  unrestricted, an empty list means no provider is visible);
 - `kind`, derived from the source route: `chat`, `embedding`, `image`, `rerank`,
   or `transcription`;
 - the background scheduler and runtime-location tag needed by catalog fetch and
@@ -144,7 +147,7 @@ providers again. This supports dated client ids such as
 match suppresses the retry because changing the spelling cannot change its
 kind. Failure names from the two walks are deduplicated.
 
-The inbound request body is never mutated by this fallback. Candidates carry
+The inbound request body is never mutated by this retry. Candidates carry
 the real matched model id.
 
 ### Alias walk
@@ -194,7 +197,9 @@ interface ModelCandidate {
   `ProviderModel`, including opaque `providerData`, resolved `enabledFlags`,
   optional per-model flag overrides, rerank target, and pricing schedule.
   `providerModelOf(candidate)` is the only dispatch accessor.
-- `fetcher` is the request's proxy-chain-bound fetcher for this upstream.
+- `fetcher` runs this upstream's proxy fallback chain, collapsing to direct
+  fetch when the configured list is empty or fully excluded by the request's
+  runtime location.
 - `rules` is absent on direct candidates and present on alias candidates,
   including `{}` for an alias target with no overlay.
 
@@ -239,7 +244,10 @@ Completions is the passthrough exception in alias-rule handling. It resolves as
 wire has no rule-application step and ignores them. Embeddings, Images, Audio
 Transcriptions, and Rerank use non-chat alias kinds whose schemas require empty
 rules. Chat source routes apply rules after target selection, on the selected
-target protocol's native fields.
+target protocol's native fields: `data-plane/chat/shared/alias-rules.ts` owns
+those overlays, and each attempt's terminal wire call runs the matching
+`applyRulesToUpstream{ChatCompletions,Responses,Messages}` over the target
+payload, dropping any rule the chosen protocol has no native slot for.
 
 Audio Transcriptions buffers and normalizes multipart input before iteration,
 then rebuilds it with each attempted provider model id. Its successful media
@@ -251,7 +259,11 @@ it never translates through a chat protocol.
 Before affinity, candidates are ordered:
 
 1. alias target order, when the source id is an alias;
-2. configured provider `sort_order` within each target/real-id walk;
+2. upstream order within each target/real-id walk: a request with a non-null
+   `upstreamIds` walks that array in its own order — the intersection filters
+   the API key's array by the user's set, so the key's order wins whenever the
+   key restricts anything — while an unrestricted request walks every enabled
+   upstream in configured `sort_order`;
 3. addressable-form order within one provider (normally unprefixed before
    prefixed when configured that way).
 
@@ -293,12 +305,12 @@ models.
 
 Each iteration clears `upstreamCallStartedAt` and `firstOutputTokenAt`.
 Providers receive `wrapUpstreamCall`; invoking it stamps
-`upstreamCallStartedAt` synchronously immediately before the outbound fetcher
-runs. This is a pre-dial anchor: proxy selection already happened when the
-candidate fetcher was constructed, but proxy connect/TLS/CONNECT handshakes
-inside that fetcher are included because the client waits for them. Gateway
-parsing, model resolution, affinity, translation, and interceptor work before
-the provider dispatch are outside TTFT.
+`upstreamCallStartedAt` synchronously immediately before dispatch, so the
+interval includes the gateway's own egress work — the proxy-backoff lookup,
+dial, TLS, and CONNECT — and excludes gateway pre-dispatch work: parsing,
+model resolution, affinity, translation, and interceptor entry. Because the
+anchors are cleared per candidate, after a failover the recorded interval is
+shorter than the one the client observed.
 
 The first emitted output token stamps `firstOutputTokenAt`. Chat TTFT is their
 monotonic difference. A represented failure with no output records a zero-output

@@ -1,7 +1,7 @@
 import type { FlagId, FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing, PublicModelLimits, RerankTarget } from '@floway-dev/protocols/common';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
@@ -85,10 +85,12 @@ export interface UpstreamRecord {
   // null when a provider has no runtime state.
   state: unknown;
   flagOverrides: FlagOverrides;
-  // Public model ids the operator switched off for this upstream. Orthogonal to
-  // every per-model metadata field and uniform across provider kinds: a disabled
-  // id is hidden from the catalog and unroutable, but its row metadata stays
-  // editable. Entries may reference ids no longer present in the live model list.
+  // Model ids the operator switched off for this upstream, matched against the
+  // provider-emitted id before any model prefix is applied — so one entry hides
+  // both the bare and the prefixed surface. Orthogonal to every per-model
+  // metadata field and uniform across provider kinds: a disabled id is hidden
+  // from the catalog and unroutable, but its row metadata stays editable.
+  // Entries may reference ids no longer present in the live model list.
   disabledPublicModelIds: string[];
   proxyFallbackList: ProxyFallbackEntry[];
   // Per-upstream model name prefix policy. `null` keeps the bare-id behavior
@@ -108,24 +110,23 @@ export interface UpstreamRecord {
 // `endpoints` and recomputes `kind`. Kept internal so callers can only touch
 // the wrapper types — this base has no meaning on its own.
 //
-// `kind` is the high-level endpoint-family discriminator; `endpoints` is the
-// precise per-protocol availability map. They are linked invariants enforced
-// at the producer boundary:
-//   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
-//   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
-//   `kind === 'rerank'`    ⇔ `endpoints === { rerank: {} }`
-//   `kind === 'transcription'` ⇔ `endpoints === { audioTranscriptions: {} }`
-//   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
+// `endpoints` is the precise per-protocol availability map; `kind` is always
+// `kindForEndpoints(endpoints)`, a lossy first-match projection of it onto the
+// endpoint-family discriminator. Only `kind === 'chat'` says anything about the
+// whole map — it means no non-chat family key is present, since each of those
+// short-circuits ahead of it. Every other value says only that its own key is
+// present; the map may carry any other endpoint alongside, and no producer
+// checks otherwise. `data-plane/providers/catalog.ts`'s union merge
+// manufactures exactly such mixed sets on purpose when several upstreams
+// contribute one public id, then recomputes `kind` from the union. Dispatch is
+// unaffected: every serve path narrows on the endpoint key it needs, never on
+// `kind`.
 interface ModelMetadata {
   id: string;
   display_name?: string;
   owned_by?: string;
   created?: number;
-  limits: {
-    max_output_tokens?: number;
-    max_context_window_tokens?: number;
-    max_prompt_tokens?: number;
-  };
+  limits: PublicModelLimits;
   kind: ModelKind;
   pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
@@ -172,13 +173,15 @@ export interface InternalAliasedFrom {
 
 // Per-upstream projection returned by every provider's `getProvidedModels` and
 // the shape every provider's `callXxx(model, ...)` takes at dispatch time.
-// Carries the same metadata as `InternalModel` plus `providerData` (the opaque
-// per-provider wire carrier — Copilot's raw variant list, Claude Code's dated
-// upstream id, ...), `enabledFlags` (the effective flag set for the model
-// on the emitting upstream, already resolved through every layer), and
-// `flagOverrides` (optional dashboard-only view of the per-model layer
-// that fed into `enabledFlags`). Providers only ever see their own emission —
-// the surrounding `InternalModel` map is assembled by the registry.
+// Carries the same metadata as `InternalModel` plus `providerData` (opaque
+// provider-private invocation data, not a universal upstream-id field —
+// Copilot uses it for raw variants, Claude Code for a dated wire id, and other
+// providers may omit it or carry a different private shape), `enabledFlags`
+// (the effective flag set for the model on the emitting upstream, already
+// resolved through every layer), and `flagOverrides` (optional dashboard-only
+// view of the per-model layer that fed into `enabledFlags`). Providers only
+// ever see their own emission — the surrounding `InternalModel` map is
+// assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
   providerData?: unknown;
   rerankTarget?: RerankTarget;
@@ -197,8 +200,8 @@ export interface ProviderModel extends ModelMetadata {
   // the provider itself calls on this specific model —
   // reshapeModelForDashboard projects it onto the wire as the auto-row
   // counterpart to the operator-authored
-  // `UpstreamModelConfig.flagOverrides` on manual rows. The two
-  // occupy the same layer-3 slot; the source is carried by the
-  // enclosing row type (auto vs manual), not by the field name.
+  // `UpstreamModelConfig.flagOverrides` on manual rows. Both occupy the
+  // same layer-3 slot; which one a row carries follows from where the row
+  // came from, not from anything on the field itself.
   flagOverrides?: FlagOverrides;
 }

@@ -1,4 +1,4 @@
-// One enumeration per (effective upstream cap) of every inbound model id the
+// One enumeration per `upstreamIds` set of every inbound model id the
 // gateway accepts — the union of the listed catalog surface and the
 // addressable-but-not-listed surface contributed by `modelPrefix.addressable`
 // alternates. Listing-side availability checks (this module's alias helper,
@@ -99,8 +99,8 @@ export const enumerateAddressableModelIds = async (
     const out: AddressableIdEntry[] = [];
 
     // The canonical listed form for this upstream — the row the listing
-    // surface emitted, and the row a redirect-only addressable id should
-    // resolve back into so consumers find one consistent `InternalModel`.
+    // surface emitted, and the row an addressable-only prefix alternate
+    // resolves back into so consumers find one consistent `InternalModel`.
     const canonicalForm = cfg.listed.includes('prefixed') ? 'prefixed' : 'unprefixed';
 
     for (const upstreamModel of upstreamModels) {

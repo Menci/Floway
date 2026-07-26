@@ -1,7 +1,9 @@
 import type { UpstreamRecord } from './model.ts';
 
-// Slim upstream-state surface for providers that own autonomous runtime state
-// (e.g. Codex's rotated tokens). Structurally compatible with the full
+// Slim upstream-state surface for providers that own runtime state (e.g.
+// Codex's rotated tokens). Reached from the data plane as a request runs and
+// from operator-triggered control-plane actions alike, so every write goes
+// through the same read-modify-CAS. Structurally compatible with the full
 // UpstreamRepo in packages/gateway, so the wiring stays a single accessor.
 export interface UpstreamsRepoSlim {
   getById(id: string): Promise<UpstreamRecord | null>;

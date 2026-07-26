@@ -3,9 +3,11 @@
 //
 // Engagement is the OR of two conditions:
 //   1. The per-upstream `responses-compact-shim` flag is on. This is the
-//      operator-controlled opt-in for Responses-target upstreams (codex /
-//      copilot / azure / custom) that natively support compaction but where
-//      we still want shim-synthesized envelopes.
+//      operator-controlled opt-in for Responses-target upstreams that
+//      already answer a compact request themselves — natively through
+//      `/responses/compact` (codex / azure / custom), or by replaying
+//      `RemoteCompactionV2` over `/responses` (copilot) — but where we still
+//      want shim-synthesized envelopes.
 //   2. The candidate's `targetApi` is not `responses`. When the upstream is
 //      Messages or Chat Completions, the translation layer has no concept
 //      of a `compaction` output item or a `compaction_trigger` input item.
@@ -47,8 +49,8 @@
 //
 // Foreign-upstream blobs (opaque strings that fail base64url+JSON decoding
 // or fail the array-of-objects-with-string-types schema below) round-trip
-// untouched, so the operator can selectively turn the flag off for codex /
-// copilot / azure / custom upstreams that natively support compaction.
+// untouched, so the operator can selectively turn the flag off for the
+// codex / copilot / azure / custom upstreams that answer compact themselves.
 
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';

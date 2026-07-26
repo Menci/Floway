@@ -12,7 +12,7 @@ const ownerPatch = (id: string, body: unknown, rawKey: string) =>
     body: JSON.stringify(body),
   });
 
-test('GET /api/keys never exposes the server-side server secret', async () => {
+test('GET /api/keys never exposes the server secret', async () => {
   const { apiKey } = await setupAppTest();
   const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(response.status, 200);

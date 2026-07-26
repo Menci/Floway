@@ -176,9 +176,10 @@ export const parseFlagOverridesWire = (value: unknown): FlagOverrides =>
 // Canonical layer order across every provider:
 //   1. Provider upstream default (per-kind constant)
 //   2. Operator upstream override (`UpstreamRecord.flagOverrides`)
-//   3. Per-model layer — provider's per-model default for auto rows
-//      (`defaultFlagsForCopilotModel(model)`), operator's per-model
-//      override for manual rows (`UpstreamModelConfig.flagOverrides`).
+//   3. Per-model layer — the provider's per-model default
+//      (`defaultFlagsForCopilotModel(model)`) for an auto row, the operator's
+//      `UpstreamModelConfig.flagOverrides` for a manual row; the two row
+//      kinds are defined on `UpstreamModelConfig` in `model-config.ts`.
 //      Never both, since an auto/manual row cannot be the other.
 //
 // Placing per-model last lets provider-declared technical necessities

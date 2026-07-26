@@ -14,4 +14,3 @@ export * from './constants.ts';
 export * from './config.ts';
 export * from './state.ts';
 export * from './quota.ts';
-export { createCodexProvider } from './provider.ts';

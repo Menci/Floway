@@ -75,15 +75,12 @@ export {
 export type { Flag, FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
 export {
   OPTIONAL_FLAGS,
-  isKnownFlagId,
   parseFlagOverridesWire,
   resolveEffectiveFlags,
 } from './flags.ts';
 
 export type {
   UpstreamModelConfig,
-  UpstreamModelLimits,
-  Modality,
   UpstreamChatModelConfig,
 } from './model-config.ts';
 export {
@@ -110,4 +107,3 @@ export {
   isBase64ImageDataUrl,
   parseBase64ImageDataUrl,
 } from './image-helpers.ts';
-export { uuidV7 } from './ids.ts';

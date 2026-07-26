@@ -22,10 +22,11 @@ export const createProvider = (record: UpstreamRecord): Provider =>
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
 
-// The upstream scope is a required argument across the provider-listing boundary
-// this so a caller can never omit it and silently receive the
-// full, unscoped catalog — a missing scope is a compile error, not a runtime
-// leak. Pass `null` to deliberately request every enabled upstream.
+// The upstream scope is a required argument across the catalog-assembly chain
+// (this, `enumerateAddressableModelIds`, `enumerateModelCandidates`) so a
+// caller can never omit it and silently receive the full, unscoped catalog —
+// a missing scope is a compile error, not a runtime leak. Pass `null` to
+// deliberately request every enabled upstream.
 //
 // `preFetchedUpstreams` lets a caller reuse a list it already loaded on
 // this request instead of paying a second `upstreams.list()` round-trip.

@@ -16,52 +16,63 @@ already own.
 
 1. Read `<DB_NAME>` from `wrangler.jsonc`
    (`d1_databases[0].database_name`).
-2. Query enabled Copilot upstreams against production
-   (`pnpm wrangler d1 execute <DB_NAME> --remote --command "..."`). Production
-   is the default because the probe must mirror the real account and its ordered
-   proxy fallback list. Only fall back to local D1 when production is
-   unreachable or the probe is specifically validating a local-only seed.
-
-   Return one row per fallback entry instead of selecting the first proxy row
-   that happens to join. An empty persisted list is expanded to the runtime's
-   implicit `direct_fetch` candidate so direct egress is always visible:
-
-   ```sql
-   SELECT u.id,
-          u.name,
-          json_extract(u.config_json, '$.githubToken') AS github_token,
-          CAST(j.key AS INTEGER) AS fallback_index,
-          json_extract(j.value, '$.id') AS fallback_id,
-          json_extract(j.value, '$.colos') AS fallback_colos,
-          p.url AS proxy_url,
-          b.expires_at AS active_backoff_expires_at
-   FROM upstreams u
-   JOIN json_each(
-     CASE
-       WHEN json_array_length(u.proxy_fallback_list_json) = 0
-         THEN '[{"id":"direct_fetch"}]'
-       ELSE u.proxy_fallback_list_json
-     END
-   ) AS j
-   LEFT JOIN proxies p
-     ON p.id = json_extract(j.value, '$.id')
-   LEFT JOIN proxy_upstream_backoffs b
-     ON b.proxy_id = json_extract(j.value, '$.id')
-    AND b.upstream_id = u.id
-    AND b.expires_at > CAST(strftime('%s', 'now') AS INTEGER)
-   WHERE u.provider = 'copilot' AND u.enabled = 1
-   ORDER BY u.sort_order, u.id, CAST(j.key AS INTEGER);
-   ```
-
+2. Run the fallback inventory query below against production. Production is the
+   default because the probe must mirror the real account and its ordered proxy
+   fallback list. Only fall back to local D1 when production is unreachable or
+   the probe is specifically validating a local-only seed.
 3. Pick any returned upstream unless the probe needs a specific one, in which
    case select it by `id` or `name`. For the runtime location being mirrored,
-   discard entries whose `fallback_colos` excludes that location. Production
-   attempts the remaining rows with NULL `active_backoff_expires_at` in fallback
-   order, then retries the active-backoff rows in fallback order. If every
-   persisted entry is excluded, record that production collapses the list to an
-   implicit `direct_fetch` before probing.
+   discard only the entries whose non-NULL `fallback_colos` omits that location.
+   A NULL `fallback_colos` is an unrestricted entry that runs in every colo, and
+   those are the entries production normally carries. Stored colo codes are
+   uppercased on write and the dial-time location is uppercased on read, so
+   uppercase both sides before comparing by hand. Production attempts the
+   remaining rows with NULL `active_backoff_expires_at` in fallback order, then
+   retries the active-backoff rows in fallback order. If every persisted entry is
+   excluded, record that production collapses the list to an implicit
+   `direct_fetch` before probing.
 4. Treat the PAT as a secret: do not echo it into commit messages, code comments,
    or the chat transcript.
+
+### Fallback inventory query
+
+Return one row per fallback entry instead of selecting the first proxy row that
+happens to join. An empty persisted list is expanded to the runtime's implicit
+`direct_fetch` candidate so direct egress is always visible.
+
+The query carries both single-quoted SQL literals and a double-quoted JSON
+literal, so no inline shell quoting survives it. Feed it to `--command` through a
+quoted heredoc, which passes the bytes through unexpanded:
+
+```bash
+pnpm wrangler d1 execute <DB_NAME> --remote --command "$(cat <<'SQL'
+SELECT u.id,
+       u.name,
+       json_extract(u.config_json, '$.githubToken') AS github_token,
+       CAST(j.key AS INTEGER) AS fallback_index,
+       json_extract(j.value, '$.id') AS fallback_id,
+       json_extract(j.value, '$.colos') AS fallback_colos,
+       p.url AS proxy_url,
+       b.expires_at AS active_backoff_expires_at
+FROM upstreams u
+JOIN json_each(
+  CASE
+    WHEN json_array_length(u.proxy_fallback_list_json) = 0
+      THEN '[{"id":"direct_fetch"}]'
+    ELSE u.proxy_fallback_list_json
+  END
+) AS j
+LEFT JOIN proxies p
+  ON p.id = json_extract(j.value, '$.id')
+LEFT JOIN proxy_upstream_backoffs b
+  ON b.proxy_id = json_extract(j.value, '$.id')
+ AND b.upstream_id = u.id
+ AND b.expires_at > CAST(strftime('%s', 'now') AS INTEGER)
+WHERE u.provider = 'copilot' AND u.enabled = 1
+ORDER BY u.sort_order, u.id, CAST(j.key AS INTEGER);
+SQL
+)"
+```
 
 ## Route through the selected fallback
 
@@ -77,8 +88,10 @@ unless the selected entry is explicitly `direct_fetch` or `direct_connect`.
 - `ss://`, `trojan://`, `vless://` — curl cannot speak these. Use a throwaway
   script outside the repository with the current `@floway-dev/proxy` dialer, or
   report that a faithful probe is blocked. Do not go direct.
-- A non-built-in `fallback_id` with NULL `proxy_url` is a missing proxy record;
-  stop and report it rather than going direct.
+- A non-built-in `fallback_id` with NULL `proxy_url` is a dangling reference to a
+  deleted proxy row. Production records it as a dial failure for that entry alone
+  and advances to the next entry in the list, so do the same, and report the
+  dangling reference.
 
 ## Exchange the PAT
 

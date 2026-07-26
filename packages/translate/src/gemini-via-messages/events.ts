@@ -46,6 +46,11 @@ interface MessagesToGeminiStreamState extends GeminiThoughtSignatureState {
   toolUses: Record<number, MessagesToolUseDraft>;
 }
 
+// Gemini's `promptTokenCount` is an inclusive total that already contains the
+// cached prefix, and `cachedContentTokenCount` is the breakdown of that share
+// rather than an extra bucket — so the folded Anthropic total goes out whole
+// and cache reads are re-surfaced alongside it, not subtracted from it.
+// https://github.com/googleapis/js-genai/blob/86d4bfa5b8d026b6d9fae46f0069e7b7972beb80/src/types.ts#L7594-L7597
 const mapUsage = (state: MessagesToGeminiStreamState, hasTerminalUsage: boolean): GeminiUsageMetadata | undefined => {
   const { cacheRead, cacheWrite, cacheWrite1h, inclusiveInput: promptTokenCount } = inclusiveMessagesInputUsage(state.usage);
   const cacheWriteTotal = cacheWrite + cacheWrite1h;

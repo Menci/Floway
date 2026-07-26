@@ -14,6 +14,7 @@ export {
 export { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from './github-device-flow.ts';
 export { fetchCopilotUsage, type CopilotUsageResponse } from './quota.ts';
 export {
+  parseCopilotUpstreamConfig,
   type CopilotUpstreamConfig,
   type CopilotUpstreamUser,
 } from './config.ts';

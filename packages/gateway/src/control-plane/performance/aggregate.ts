@@ -4,6 +4,10 @@ import { type HistogramBucket, percentileFromBuckets } from '../../shared/perfor
 export type PerformanceBucketGranularity = 'hour' | '4h' | '8h' | 'day' | 'all';
 export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 
+// One aggregated row in the shape the dashboard consumes. `ttftMs*` render as
+// milliseconds directly; `tpotUs*` render as tok/s via `1_000_000 / tpotUs`,
+// and that reciprocal inverts percentile direction — the p95 microsecond
+// figure is the 5th percentile of the tok/s figure.
 export interface PerformanceDisplayRecord {
   bucket: string;
   group: string;
@@ -55,7 +59,8 @@ const displayGroup = (record: PerformanceTelemetryRecord, options: AggregateOpti
   if (options.groupBy === 'none') return 'all';
   if (options.groupBy === 'userId') {
     const userId = keyToUser.get(record.keyId);
-    // Drop, don't collapse — userId 0 is a valid real user.
+    // A keyToUser miss means the key row was hard-deleted, so the row has no
+    // owner at all; the by-user axis drops it instead of inventing a bucket.
     if (userId === undefined) return null;
     return String(userId);
   }

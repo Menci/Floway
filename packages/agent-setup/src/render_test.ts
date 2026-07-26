@@ -62,7 +62,7 @@ describe('renderShellPrefix', () => {
   });
 
   test('flattens control characters in the API key label before it reaches terminal metadata', () => {
-    const prefix = renderShellPrefix({ agent: 'claude', apiKey: 'key', apiKeyName: 'CI\n[2J', configuration: fullConfiguration });
+    const prefix = renderShellPrefix({ agent: 'claude', apiKey: 'key', apiKeyName: 'CI\n\x1b[2J', configuration: fullConfiguration });
     expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J'");
   });
 

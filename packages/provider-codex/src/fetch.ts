@@ -8,7 +8,7 @@ import {
   CODEX_RESPONSES_PATH,
   CODEX_USER_AGENT,
 } from './constants.ts';
-import { sha256Uuid } from './ids.ts';
+import { sha256Uuid, uuidV7 } from './ids.ts';
 import {
   parseCodexQuotaHeaders,
   putCodexQuota,
@@ -16,7 +16,7 @@ import {
 import type { CodexAccountCredential } from './state.ts';
 import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, uuidV7, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
   | { ok: true; result: ResponsesResult; modelKey: string }

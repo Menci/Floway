@@ -1,11 +1,18 @@
 // Interceptors wrap a single typed call. Each interceptor receives the call's
-// context, its invocation envelope, and a `run` to delegate to the next
-// interceptor (the innermost run executes the call itself). Interceptors may
-// inspect or mutate the envelope before `run`, await `run` and transform the
-// result, short-circuit by returning without calling `run`, or retry by
-// invoking `run` again. The shape is intentionally generic in Ctx/Env/Result so
-// it works for any kind of call — provider-side wire shaping, source-side
-// translation, retry policy — wired by the caller into concrete chains.
+// own invocation state, the ambient environment around it, and a `run` to
+// delegate to the next interceptor (the innermost run executes the call
+// itself). Interceptors may inspect or mutate that invocation state before
+// `run`, await `run` and transform the result, short-circuit by returning
+// without calling `run`, or retry by invoking `run` again. The shape is
+// intentionally generic in Ctx/Env/Result so it works for any kind of call —
+// provider-side wire shaping, source-side translation, retry policy — wired by
+// the caller into concrete chains.
+//
+// `Ctx` carries the call itself — payload, headers, chosen target — and is the
+// slot interceptors write to. `Env` carries what surrounds the call and does
+// not belong to it: the gateway's chat chains pass the request-scoped gateway
+// context there, while the provider-boundary chains have nothing ambient to
+// hand down and pass `{}`.
 //
 // ## Mutation convention
 //

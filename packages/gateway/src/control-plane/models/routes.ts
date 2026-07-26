@@ -70,7 +70,7 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     // have self-restricted out of their own data-plane access, and the
     // dashboard filters the result client-side for surfaces that should
     // respect the restriction (Models page, playground). Non-admin
-    // sessions stay scoped to their effective upstream cap so the
+    // sessions stay scoped to their effective `upstreamIds` so the
     // dashboard cannot leak models from upstreams their account has no
     // data-plane access to.
     const isAdmin = userFromContext(c).isAdmin;

@@ -1,5 +1,5 @@
-export const CLAUDE_VARIANT_SUFFIX = /-(?:high|xhigh|1m(?:-internal)?|fast)$/;
-export const CLAUDE_DATE_SUFFIX = /-\d{8}$/;
+const CLAUDE_VARIANT_SUFFIX = /-(?:high|xhigh|1m(?:-internal)?|fast)$/;
+const CLAUDE_DATE_SUFFIX = /-\d{8}$/;
 
 export const stripClaudeDateSuffix = (id: string): string =>
   id.startsWith('claude-') ? id.replace(CLAUDE_DATE_SUFFIX, '') : id;

@@ -467,7 +467,7 @@ esac
 `, { mode: 0o755 });
 };
 
-type InstallerTestConfiguration = AgentSetupConfiguration & { readonly testAgent: 'claude' | 'codex' };
+type InstallerTestConfiguration = AgentSetupConfiguration & { readonly testAgent: ScriptAgent };
 
 const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> = {}): InstallerTestConfiguration => ({
   testAgent: 'claude',
@@ -505,7 +505,7 @@ const bothConfig = (
 interface RunOptions {
   workspace: Workspace;
   configuration: InstallerTestConfiguration;
-  agent?: 'claude' | 'codex';
+  agent?: ScriptAgent;
   baseUrl: string;
   // The wrapping one-line command injects the gateway origin into the executing
   // shell (Bash exports SETUP_ENDPOINT; PowerShell assigns $SetupEndpoint in the
@@ -556,7 +556,7 @@ interface RunOptions {
   failRestore?: boolean;
 }
 
-const targetAgent = (configuration: InstallerTestConfiguration, agent?: 'claude' | 'codex'): 'claude' | 'codex' =>
+const targetAgent = (configuration: InstallerTestConfiguration, agent?: ScriptAgent): ScriptAgent =>
   agent ?? configuration.testAgent;
 interface RunResult { code: number; stdout: string; stderr: string; combined: string }
 
@@ -2510,7 +2510,7 @@ test('codex', 'PowerShell rollback restore failure preserves the Codex provider-
 
 // --- run --------------------------------------------------------------------
 
-const parseAgentFilter = (): 'claude' | 'codex' | 'all' => {
+const parseAgentFilter = (): ScriptAgent | 'all' => {
   const index = process.argv.indexOf('--agent');
   if (index === -1) return 'all';
   const value = process.argv[index + 1];

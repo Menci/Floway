@@ -68,9 +68,9 @@ interface ResponseSnapshot {
 // `requestedModel`-set model survives across both error variants so even an
 // outright-failed turn carries model attribution.
 
-// Anthropic-style disjoint per-dimension counts: input excludes cache reads
+// Anthropic-style disjoint per-category counts: input excludes cache reads
 // and cache writes; sum the present ones onto the dump's single inputTokens
-// column. Missing dimensions stay null (not measured) instead of zero so a
+// column. Missing categories stay null (not measured) instead of zero so a
 // recorded zero genuinely means "upstream said zero".
 const tokenUsageInput = (usage: TokenUsage | null): number | null => {
   if (!usage) return null;

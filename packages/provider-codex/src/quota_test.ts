@@ -9,7 +9,7 @@ import {
   putCodexQuota,
   type CodexQuotaSnapshot,
 } from './quota.ts';
-import type { CodexQuotaSnapshotMapEntry, CodexUpstreamState } from './state.ts';
+import type { CodexQuotaSnapshotEntryMap, CodexUpstreamState } from './state.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
@@ -39,7 +39,7 @@ const baseAccount = {
   state_updated_at: '2026-06-01T00:00:00.000Z',
   openaiDeviceId: '11111111-2222-4333-8444-555555555555',
   accessToken: null,
-  quotaSnapshot: null as CodexQuotaSnapshotMapEntry | null,
+  quotaSnapshot: null as CodexQuotaSnapshotEntryMap | null,
 };
 
 let current: UpstreamRecord | null;

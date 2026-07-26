@@ -1,5 +1,6 @@
-// Errors raised when an HTTP/1.1 message is malformed or smuggling-shaped.
-// Transport errors propagate as the underlying error.
+// Errors raised when an HTTP/1.1 message, a WebSocket handshake, or a WebSocket
+// frame is malformed, smuggling-shaped, or over a DoS cap. Transport errors
+// propagate as the underlying error.
 
 /**
  * Stable discriminator for an HttpProtocolError. Lets callers branch on

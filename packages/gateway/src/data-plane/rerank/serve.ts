@@ -12,7 +12,7 @@ import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
-import { canonicalDecimalString, type RerankSourceProtocol } from '@floway-dev/protocols/common';
+import { parseDecimalString, type RerankSourceProtocol } from '@floway-dev/protocols/common';
 import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -36,8 +36,8 @@ const settleRerank = (
   failed: boolean,
 ): void => {
   const quantities: UsageQuantities = {};
-  if (usage?.searchUnits !== undefined) quantities.rerank_searches = canonicalDecimalString(String(usage.searchUnits));
-  if (usage?.totalTokens !== undefined) quantities.input_tokens = canonicalDecimalString(String(usage.totalTokens));
+  if (usage?.searchUnits !== undefined) quantities.rerank_searches = parseDecimalString(String(usage.searchUnits));
+  if (usage?.totalTokens !== undefined) quantities.input_tokens = parseDecimalString(String(usage.totalTokens));
   const pricingFacts = usage?.totalTokens === undefined ? {} : { inputTokens: usage.totalTokens };
   ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, pricingFacts).catch(error => {
     console.error('Failed to record rerank usage:', error);

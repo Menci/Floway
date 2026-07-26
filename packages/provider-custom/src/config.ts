@@ -33,16 +33,19 @@ export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
 // unless overridden — the lookup table is the key itself. Kept
 // package-internal because outside callers reach the upstream through
 // the typed `customFetchXxx` transports, not by naming an endpoint key.
-export type CustomPathOverrideKey =
-  | '/completions'
-  | '/chat/completions'
-  | '/responses'
-  | '/messages'
-  | '/embeddings'
-  | '/alpha/search'
-  | '/images/generations'
-  | '/images/edits'
-  | '/audio/transcriptions';
+const CUSTOM_PATH_OVERRIDE_KEYS = [
+  '/completions',
+  '/chat/completions',
+  '/responses',
+  '/messages',
+  '/embeddings',
+  '/alpha/search',
+  '/images/generations',
+  '/images/edits',
+  '/audio/transcriptions',
+] as const;
+
+export type CustomPathOverrideKey = typeof CUSTOM_PATH_OVERRIDE_KEYS[number];
 
 export interface CustomModelsFetch {
   enabled: boolean;
@@ -98,17 +101,7 @@ const baseUrlField = (value: unknown): string => {
   return baseUrl;
 };
 
-const PATH_OVERRIDE_KEYS = new Set<CustomPathOverrideKey>([
-  '/completions',
-  '/chat/completions',
-  '/responses',
-  '/messages',
-  '/embeddings',
-  '/alpha/search',
-  '/images/generations',
-  '/images/edits',
-  '/audio/transcriptions',
-]);
+const PATH_OVERRIDE_KEYS: ReadonlySet<string> = new Set(CUSTOM_PATH_OVERRIDE_KEYS);
 
 const pathOverridesField = (value: unknown): CustomUpstreamConfigBase['pathOverrides'] => {
   if (value === undefined) return undefined;
@@ -116,7 +109,7 @@ const pathOverridesField = (value: unknown): CustomUpstreamConfigBase['pathOverr
 
   const pathOverrides: NonNullable<CustomUpstreamConfigBase['pathOverrides']> = {};
   for (const [key, path] of Object.entries(value)) {
-    if (!PATH_OVERRIDE_KEYS.has(key as CustomPathOverrideKey)) {
+    if (!PATH_OVERRIDE_KEYS.has(key)) {
       throw new Error(`Malformed custom upstream config: unsupported pathOverrides key ${key}`);
     }
     const validPath = validateUpstreamPath(path, `pathOverrides.${key}`);

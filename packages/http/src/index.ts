@@ -1,4 +1,5 @@
-// @floway-dev/http — HTTP/1.1 over a duplex byte stream + userspace TLS.
+// @floway-dev/http — HTTP/1.1, userspace TLS, and WebSocket framing over a
+// duplex byte stream.
 //
 // This package speaks HTTP/1.1 against any duplex transport — a raw TCP
 // socket, a userspace-TLS-wrapped stream, a CONNECT-tunnelled stream, etc.
@@ -13,6 +14,11 @@
 // negotiate the WebSocket Upgrade, return a frame-level duplex of
 // unmasked binary payloads. Lets WebSocket-tunnelled protocols stay
 // runtime-agnostic in the same way TCP+TLS protocols already are.
+//
+// We intend to extract and publish this package as an independent library,
+// so its export surface is the whole protocol layer rather than the subset
+// the rest of the workspace happens to call — a root export with no in-repo
+// consumer is deliberate public API, not dead surface.
 
 export type { DuplexStream, HttpRequest, RawHttpResponse } from './types.ts';
 

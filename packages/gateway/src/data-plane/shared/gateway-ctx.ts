@@ -16,8 +16,7 @@ export interface AttemptState {
 }
 
 // Stamps at dispatch entry — pre-dial by design. See
-// UpstreamCallOptions.wrapUpstreamCall for why the interval includes proxy
-// handshake time (the user waits for it too).
+// UpstreamCallOptions.wrapUpstreamCall for what the interval covers.
 export const stampUpstreamCallStart = (attempt: AttemptState) =>
   <T>(dispatch: () => Promise<T>): Promise<T> => {
     attempt.upstreamCallStartedAt = performance.now();
@@ -42,10 +41,6 @@ export interface GatewayCtx {
   // `finalizeGatewayResponse` short-circuits the dump tee and returns the
   // response untouched.
   readonly dump: DumpAccumulator | null;
-  // Headers staged during request processing and written onto the
-  // outbound response by `finalizeGatewayResponse`, regardless of how
-  // the responder built the body.
-  readonly responseHeaders: Headers;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -98,14 +93,11 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
     runtimeLocation: getRuntimeLocation(c.req.raw),
     dump,
-    responseHeaders: new Headers(),
   };
 };
 
 // Run the dump-accumulator's finalize tee on the outgoing Response. Every
 // inbound HTTP wrapper returns its response through this seam so the dump
 // pipeline applies uniformly across happy-path, error, and passthrough paths.
-export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response => {
-  for (const [name, value] of ctx.responseHeaders) response.headers.set(name, value);
-  return ctx.dump?.finalize(response) ?? response;
-};
+export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response =>
+  ctx.dump?.finalize(response) ?? response;

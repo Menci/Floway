@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from './constants.ts';
 import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
-import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotMapEntry, CodexUpstreamState } from './state.ts';
+import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntryMap, CodexUpstreamState } from './state.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
@@ -52,7 +52,7 @@ const seedAccountState = (overrides: Partial<CodexAccountCredential>): void => {
   currentRecord = makeRecord({ accounts: [{ ...activeAccount, ...overrides }] });
 };
 
-const readQuotaEntry = (): CodexQuotaSnapshotMapEntry | null =>
+const readQuotaEntry = (): CodexQuotaSnapshotEntryMap | null =>
   (currentRecord.state as CodexUpstreamState).accounts[0].quotaSnapshot;
 
 // putCodexQuota fires-and-forgets via .catch(() => {}); yield to the task

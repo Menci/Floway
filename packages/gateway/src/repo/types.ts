@@ -13,7 +13,9 @@ export interface ApiKey {
   serverSecret: string;
   createdAt: string;
   lastUsedAt?: string;
-  // null = inherit global upstream order; array = whitelist + priority order.
+  // null = inherit the user-level cap; array = whitelist in priority order.
+  // When both levels carry a list the effective list is their intersection
+  // taken in this order, so a key that sets one also decides the priority.
   upstreamIds: string[] | null;
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
@@ -32,7 +34,9 @@ export interface User {
   passwordHash: string | null;
   isAdmin: boolean;
   // null = unrestricted at the user level; an array intersects with the
-  // per-key whitelist when both are present.
+  // per-key whitelist when both are present. Membership only — the key's
+  // order carries the intersection, so this order applies only to requests
+  // whose key sets no list of its own.
   upstreamIds: string[] | null;
   createdAt: string;
   deletedAt: string | null;
@@ -92,6 +96,8 @@ export interface WebSearchUsageRecord {
   requests: number;
 }
 
+// `ttft_ms` is time to first token in milliseconds; `tpot_us` is time per
+// output token in microseconds.
 export type PerformanceMetric = 'ttft_ms' | 'tpot_us';
 
 // A performance-summary row is a `PerformanceTelemetryContext` (the provider-
@@ -262,10 +268,12 @@ export interface UpstreamRepo {
   save(upstream: UpstreamRecord): Promise<void>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
-  // Gateway autonomous state write with optimistic concurrency. Returns
-  // updated:true only if the row's state_json equals the serialized form of
-  // options.expectedState at write time. On updated:false the caller re-reads
-  // and decides whether to retry or drop the update.
+  // Upstream state write with optimistic concurrency, used both by the
+  // gateway's own token-rotation work and by the operator-triggered OAuth
+  // refresh / probe routes. Returns updated:true only if the row's
+  // state_json equals the serialized form of options.expectedState at write
+  // time. On updated:false the caller re-reads and decides whether to retry
+  // or drop the update.
   saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }>;
 }
 

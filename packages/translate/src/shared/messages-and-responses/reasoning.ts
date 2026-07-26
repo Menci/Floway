@@ -54,7 +54,7 @@ export const packReasoningSignature = (id: string, encryptedContent: string): st
  * base64/base64url (Anthropic, OpenAI), whose alphabet excludes `@`; only our
  * packing injects one, so the final `@` is always our delimiter.
  */
-export const unpackReasoningSignature = (signature: string): { id: string | null; encryptedContent: string } => {
+const unpackReasoningSignature = (signature: string): { id: string | null; encryptedContent: string } => {
   const splitIndex = signature.lastIndexOf('@');
   if (splitIndex === -1 || splitIndex === signature.length - 1) {
     return { id: null, encryptedContent: signature };
@@ -84,11 +84,12 @@ export const messagesReasoningBlockToResponsesReasoning = (block: MessagesReason
 
 /**
  * Project a Responses reasoning item into a Messages reasoning carrier bound
- * for a real Messages UPSTREAM. This sends the GENUINE signature only — the
- * upstream owns and validates that field, so we never wrap it in a gateway
- * envelope. The opaque
- * `encrypted_content` rides verbatim: as `thinking.signature` when there is
- * readable text, else as `redacted_thinking.data`.
+ * for a real Messages UPSTREAM. Unlike {@link packReasoningSignature}, which
+ * wraps the blob in a gateway envelope for a downstream Messages CLIENT, this
+ * sends the GENUINE signature only — the upstream owns and validates that
+ * field. The opaque `encrypted_content` rides verbatim: as
+ * `thinking.signature` when there is readable text, else as
+ * `redacted_thinking.data`.
  *
  * No-opaque sub-case: a Responses-origin reasoning with an id but no
  * `encrypted_content` (we never auto-request it) has nothing the upstream can
