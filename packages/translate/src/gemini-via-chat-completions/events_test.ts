@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
-import { assertEquals, assertRejects } from '../test-assert.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const chunk = (
   delta: ChatCompletionsStreamEvent['choices'][0]['delta'],

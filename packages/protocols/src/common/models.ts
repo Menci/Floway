@@ -1,6 +1,6 @@
 import type { AliasSelection, AliasTarget } from './aliases.ts';
-import type { ModelEndpoints } from './capabilities.ts';
 import { divideDecimalString, parseNonNegativeDecimalString, type DecimalString } from './decimal.ts';
+import type { ModelEndpoints } from './endpoints.ts';
 import { billableServiceTier } from './usage.ts';
 
 // Disjoint billing metrics a single request can be charged on. Every count
@@ -30,10 +30,6 @@ export const parseBillingMetric = (value: unknown, label = 'billing metric'): Bi
   if (typeof value === 'string' && (BILLING_METRICS as readonly string[]).includes(value)) return value as BillingMetric;
   throw new TypeError(`${label} is invalid: ${JSON.stringify(value)}`);
 };
-
-// The input-side token metrics. Their disjoint sum is a request's total prompt
-// size, which projects the request onto the declared inputTokens thresholds.
-export const INPUT_TOKEN_METRICS: readonly BillingMetric[] = ['input_tokens', 'input_cache_read_tokens', 'input_cache_write_tokens', 'input_cache_write_1h_tokens', 'input_image_tokens', 'input_audio_tokens'];
 
 // USD per one base metric unit for one pricing entry.
 export type PriceVector = Partial<Record<BillingMetric, DecimalString>>;

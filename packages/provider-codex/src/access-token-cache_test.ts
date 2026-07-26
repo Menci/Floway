@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import {
   ensureCodexAccessToken,
-  getCodexAccessToken,
   invalidateCodexAccessToken,
   putCodexAccessToken,
   type CodexAccessTokenEntry,
@@ -61,33 +60,6 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.restoreAllMocks());
-
-describe('getCodexAccessToken', () => {
-  test('returns null when the upstream row is missing', async () => {
-    current = null;
-    expect(await getCodexAccessToken(upstreamId, accountId)).toBeNull();
-  });
-
-  test('returns null when the account has no cached access token', async () => {
-    expect(await getCodexAccessToken(upstreamId, accountId)).toBeNull();
-  });
-
-  test('returns null when the cached token is within the refresh skew window', async () => {
-    const expiresSoon = Date.now() + 60 * 1000;
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: { token: 'at_old', expiresAt: expiresSoon, refreshedAt: '2026-06-01T00:00:00.000Z' } }] });
-    expect(await getCodexAccessToken(upstreamId, accountId)).toBeNull();
-  });
-
-  test('returns the cached token when still fresh', async () => {
-    const entry: CodexAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: '2026-06-01T00:00:00.000Z' };
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    expect(await getCodexAccessToken(upstreamId, accountId)).toEqual(entry);
-  });
-
-  test('returns null when the requested account is not in the pool', async () => {
-    expect(await getCodexAccessToken(upstreamId, 'acc_other')).toBeNull();
-  });
-});
 
 describe('putCodexAccessToken', () => {
   test('persists the entry into the account slot via saveState', async () => {

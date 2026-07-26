@@ -1,11 +1,13 @@
 import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInvocation } from './interceptors/types.ts';
-import { applyRulesToUpstreamChatCompletions } from '../../model-aliases/apply-rules.ts';
-import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../../shared/telemetry/attempt-helpers.ts';
+import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
+import { applyRulesToUpstreamChatCompletions } from '../shared/alias-rules.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
+import { chatTargetPicker } from '../shared/target-picker.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';

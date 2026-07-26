@@ -701,9 +701,10 @@ test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire
     },
   );
 
-  // The chat-completions wire defaults to `conversation-agent`
-  // (set by copilotFetch). The Messages-boundary `withClaudeAgentHeadersSet`
-  // would overwrite it to `messages-proxy` if it had run — its absence is the
+  // The chat-completions wire defaults to `conversation-agent` (set by
+  // `copilotAuthedFetch` in `packages/provider-copilot/src/auth.ts`). The
+  // Messages-boundary `withClaudeAgentHeadersSet` would overwrite it to
+  // `messages-proxy` if it had run — its absence is the
   // proof that the Messages boundary chain did NOT fire on this wire.
   assertEquals(observedInteractionType, ['conversation-agent']);
 });

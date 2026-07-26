@@ -1,6 +1,6 @@
 import { EventTargetChannelBroker } from './event-target-channel-broker.ts';
 import { createNodeExternalResourceFetcher } from './external-resource-fetcher.ts';
-import { FsFileProvider } from './fs-file-provider.ts';
+import { FsFileStore } from './fs-file-store.ts';
 import { createNodeSqliteDatabase } from './node-sqlite-database.ts';
 import { createSharpImageProcessor } from './sharp-image-processor.ts';
 import { nodeSocketDial } from './socket-dial.ts';
@@ -15,7 +15,7 @@ import {
   IMAGE_CACHE_POLICY,
   initEnv,
   initExternalResourceFetcher,
-  initFileProvider,
+  initFileStore,
   initImageCacheStore,
   initImageProcessor,
   initRuntimeKind,
@@ -31,8 +31,8 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   const filesDir = getEnvOptional('FLOWAY_FILES_DIR', './data/files');
   const dbPath = getEnvOptional('FLOWAY_DB_PATH', './data/floway.db');
 
-  const files = new FsFileProvider(filesDir);
-  initFileProvider(files);
+  const files = new FsFileStore(filesDir);
+  initFileStore(files);
   initSocketDial(nodeSocketDial);
   addTrustedRootCAs(nodeRuntimeRootCAs);
   const db = createNodeSqliteDatabase(dbPath);

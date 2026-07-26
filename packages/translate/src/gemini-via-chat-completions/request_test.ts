@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
-import { assertEquals, assertThrows } from '../test-assert.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   const request = buildTargetRequest({

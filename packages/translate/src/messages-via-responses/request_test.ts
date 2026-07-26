@@ -2,9 +2,9 @@ import { expect, test } from 'vitest';
 
 import { translateMessagesToResponses } from './request.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
-import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
 import type { MessagesAssistantContentBlock, MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 import type { ResponsesFunctionTool, ResponsesInputReasoning } from '@floway-dev/protocols/responses';
+import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 test('translateMessagesToResponses preserves a native thinking signature as encrypted_content with a synthesized id', () => {
   const result = translateMessagesToResponses({

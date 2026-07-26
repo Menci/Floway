@@ -1,10 +1,10 @@
-import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
+import { canonicalizeResponsesPayload } from '../canonicalize-responses-payload.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { type RemoteImageLoader, resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
-import { canonicalizeResponsesPayload } from '../shared/via-responses/responses-items.ts';
+import { parseToolArgumentsObject } from '../shared/via-messages/tool-arguments.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,

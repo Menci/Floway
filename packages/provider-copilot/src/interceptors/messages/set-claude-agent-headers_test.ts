@@ -35,7 +35,8 @@ test('Claude agent headers set for the legacy fingerprint with both halves', asy
   assertEquals(ctx.headers.get('x-interaction-type'), 'messages-proxy');
   assertEquals(ctx.headers.get('openai-intent'), 'messages-proxy');
   assertEquals(ctx.headers.get('user-agent'), CLAUDE_AGENT_USER_AGENT);
-  // Empty-string sentinel: copilotFetch deletes the base copilot-integration-id.
+  // Empty-string sentinel: `copilotAuthedFetch` in
+  // `packages/provider-copilot/src/auth.ts` deletes the base integration id.
   assertEquals(ctx.headers.get('copilot-integration-id'), '');
 });
 

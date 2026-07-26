@@ -4,7 +4,7 @@ import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
-import { createProviderInstance } from '../../data-plane/providers/registry.ts';
+import { createProvider } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -13,7 +13,6 @@ import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
-import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow, type GitHubUser } from '../auth/github-device-flow.ts';
 import type { claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, listModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
@@ -61,7 +60,20 @@ import {
   importCodexFromCallback,
   mintCodexAccessToken,
 } from '@floway-dev/provider-codex';
-import { clearInProcessCopilotTokenCache, emptyCopilotUpstreamState, exchangeCopilotToken, githubHeaders, readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
+import {
+  clearInProcessCopilotTokenCache,
+  emptyCopilotUpstreamState,
+  exchangeCopilotToken,
+  fetchCopilotUsage,
+  fetchGitHubUser,
+  pollGitHubDeviceFlow,
+  readCopilotUpstreamState,
+  startGitHubDeviceFlow,
+  type CopilotTokenEntry,
+  type CopilotUpstreamState,
+  type CopilotUpstreamUser,
+  type CopilotUsageResponse,
+} from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
@@ -179,10 +191,10 @@ const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefix
 // genuine misconfiguration that the operator must see.
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
-  const instance = createProviderInstance(record);
+  const provider = createProvider(record);
   const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);
   try {
-    await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
+    await fetchUpstreamModelsCached(provider, { scheduler, fetcher, force: true });
   } catch (e) {
     // runFetch persists upstream failures to the row's `lastError`; anything
     // reaching here is a Floway-side fault (lastError write itself failed,
@@ -425,7 +437,7 @@ export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   // unhealthy. DB ops below run OUTSIDE this catch so that a repo `.save()`
   // or scheduler failure surfaces as a 500 with a stack, not as a
   // misleading "upstream error" 502.
-  type UpstreamCred = { user: GitHubUser; tokenEntry: CopilotTokenEntry; accessToken: string };
+  type UpstreamCred = { user: CopilotUpstreamUser; tokenEntry: CopilotTokenEntry; accessToken: string };
   let cred: UpstreamCred;
   try {
     const data = await pollGitHubDeviceFlow(deviceCode, fetcher);
@@ -478,34 +490,6 @@ export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   });
 };
 
-interface CopilotQuotaDetail {
-  entitlement: number;
-  overage_count: number;
-  overage_permitted: boolean;
-  percent_remaining: number;
-  quota_id: string;
-  quota_remaining: number;
-  remaining: number;
-  unlimited: boolean;
-}
-
-interface CopilotUsageResponse {
-  access_type_sku: string;
-  analytics_tracking_id: string;
-  assigned_date: string;
-  can_signup_for_limited: boolean;
-  chat_enabled: boolean;
-  copilot_plan: string;
-  organization_login_list: unknown[];
-  organization_list: unknown[];
-  quota_reset_date: string;
-  quota_snapshots: {
-    chat: CopilotQuotaDetail;
-    completions: CopilotQuotaDetail;
-    premium_interactions: CopilotQuotaDetail;
-  };
-}
-
 // Look up GitHub Copilot quota for the draft's github token. Pure query —
 // no DB touch, no patch — because the response is a live snapshot that
 // the dashboard renders in place. Works uniformly in create and edit
@@ -519,7 +503,7 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
     if (!githubToken) return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
 
     const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
-    const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
+    const resp = await fetchCopilotUsage(githubToken, fetcher);
 
     if (!resp.ok) {
       const text = await resp.text();
@@ -1008,10 +992,10 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     // Force through the SWR cache when the record is persisted so the
     // side-effect refresh keeps the data-plane cache in step; otherwise
     // live-fetch without any caching.
-    const instance = createProviderInstance(synthRecord);
+    const provider = createProvider(synthRecord);
     const models = record.id !== ''
-      ? await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true })
-      : await instance.instance.getProvidedModels(fetcher);
+      ? await fetchUpstreamModelsCached(provider, { scheduler, fetcher, force: true })
+      : await provider.instance.getProvidedModels(fetcher);
     return c.json({ data: models.map(reshapeModelForDashboard) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {

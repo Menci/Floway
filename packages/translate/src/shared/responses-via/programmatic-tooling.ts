@@ -1,22 +1,6 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 
-export const requiresNativeResponses = (payload: ResponsesPayload): boolean => {
-  const toolChoice = payload.tool_choice;
-  return Array.isArray(payload.input) && payload.input.some(item =>
-    item.type === 'additional_tools'
-    || item.type === 'program'
-    || item.type === 'program_output'
-    || item.type === 'agent_message'
-    || item.type === 'multi_agent_call'
-    || item.type === 'multi_agent_call_output'
-    || item.type === 'context_compaction'
-    || isProgramCaller(item))
-    || payload.tools?.some(hasProgrammaticCaller) === true
-    || payload.tools?.some(hasDeferredTool) === true
-    || toolChoice !== null && typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling';
-};
-
 export const rejectProgrammaticResponsesPayload = (payload: ResponsesPayload, target: string): void => {
   const toolChoice = payload.tool_choice;
   if (payload.tools?.some(hasProgrammaticCaller) === true || (toolChoice !== null && typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {

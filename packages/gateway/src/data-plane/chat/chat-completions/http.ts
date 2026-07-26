@@ -27,7 +27,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
-  const { response } = await respondChatCompletions(c, result, false, false, effectiveCtx);
+  const response = await respondChatCompletions(c, result, false, false, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
@@ -37,7 +37,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
 const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const { response } = await respondChatCompletions(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, false, effectiveCtx);
+  const response = await respondChatCompletions(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, false, effectiveCtx);
   return (effectiveCtx.dump?.finalize(response) ?? response);
 };
 
@@ -56,7 +56,7 @@ export const chatCompletionsHttp = {
       const includeUsageChunk = payload.stream_options?.include_usage === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
       const result = await chatCompletionsServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
-      const { response } = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
+      const response = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);

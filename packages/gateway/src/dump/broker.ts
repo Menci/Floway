@@ -1,5 +1,5 @@
 import type { DumpMetadata } from './types.ts';
-import type { ChannelBroker } from '../runtime/channel-broker-contract.ts';
+import type { ChannelBroker } from '@floway-dev/platform';
 
 export type DumpBroker = ChannelBroker<DumpMetadata>;
 

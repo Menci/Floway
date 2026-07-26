@@ -21,31 +21,30 @@ type MessagesUsageLike = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['
 // Renders an upstream Messages result into the client HTTP/SSE response. An
 // error-typed result is a pre-stream failure and always answers as HTTP; an
 // events result drains to one JSON body (non-streaming) or is proxied frame by
-// frame (streaming). `success` reports whether a non-streaming body was
-// produced, so the orchestrator knows whether to flush stored items.
+// frame (streaming).
 export const respondMessages = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult,
   wantsStream: boolean,
   ctx: GatewayCtx,
-): Promise<{ success: boolean; response: Response }> => {
+): Promise<Response> => {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
-    return { success: false, response: apiErrorToResponse(result) };
+    return apiErrorToResponse(result);
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
+    return internalMessagesErrorResponse(result.status, result.error);
   }
 
   if (result.type === 'plain') {
     if (result.status >= 400) {
       ctx.dump?.error(result.upstream !== undefined ? 'upstream' : 'gateway', result.upstream);
     }
-    return { success: true, response: plainResultToResponse(result) };
+    return plainResultToResponse(result);
   }
 
   const state = new SourceStreamState();
@@ -60,16 +59,16 @@ export const respondMessages = async (
       const usage = tokenUsageFromMessagesUsage(response.usage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
-      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
+      return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
-      return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error)) };
+      return internalMessagesErrorResponse(502, toInternalDebugError(error));
     }
   }
 
   forwardUpstreamHeaders(c, result.headers);
-  const response = streamSSE(c, async stream => {
+  return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, messagesSseFrames(frames, state), {
@@ -87,8 +86,6 @@ export const respondMessages = async (
       settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
     }
   });
-
-  return { success: true, response };
 };
 
 // Anthropic already reports disjoint token counts: input_tokens excludes the

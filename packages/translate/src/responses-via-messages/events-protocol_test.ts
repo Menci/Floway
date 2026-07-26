@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
-import { assertEquals, assertRejects } from '../test-assert.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   for await (const _frame of frames) {

@@ -1,5 +1,5 @@
 import { getRepo } from './index.ts';
-import { getFileProvider } from '@floway-dev/platform';
+import { getFileStore } from '@floway-dev/platform';
 
 const CLAIM_TIMEOUT_MS = 60 * 60 * 1000;
 const FILE_DELETE_BATCH_SIZE = 1_000;
@@ -14,7 +14,7 @@ export const collectSpilledFiles = async (now: number): Promise<void> => {
     FILE_DELETE_BATCH_SIZE,
   );
   if (keys.length === 0) return;
-  await getFileProvider().deleteKeys(keys);
+  await getFileStore().deleteKeys(keys);
   const acknowledged = await repo.spilledFiles.acknowledge(token);
   if (acknowledged !== keys.length) {
     throw new Error(`Spilled-file collection acknowledged ${acknowledged} of ${keys.length} claimed files`);

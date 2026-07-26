@@ -2,7 +2,7 @@ import { DurableObjectChannelBroker, type BroadcastNamespace } from './do-channe
 import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCache, type KvNamespace } from './kv-image-cache.ts';
-import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
+import { R2FileStore, type R2BucketLike } from './r2-file-store.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
 import { cloudflareRuntimeRootCAs } from './tls-trust.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
@@ -13,7 +13,7 @@ import {
   IMAGE_CACHE_POLICY,
   initEnv,
   initExternalResourceFetcher,
-  initFileProvider,
+  initFileStore,
   initImageCacheStore,
   initImageProcessor,
   initRuntimeKind,
@@ -53,8 +53,8 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   });
   initRuntimeKind('cloudflare');
   initExternalResourceFetcher(createCloudflareExternalResourceFetcher());
-  const files = new R2FileProvider(env.FILES);
-  initFileProvider(files);
+  const files = new R2FileStore(env.FILES);
+  initFileStore(files);
   initImageCacheStore(new KvImageCache(env.KV, IMAGE_CACHE_POLICY));
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);

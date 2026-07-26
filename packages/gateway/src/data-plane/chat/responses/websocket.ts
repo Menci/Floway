@@ -21,8 +21,7 @@ import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/respon
 import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
-import { TranslatorInputError } from '@floway-dev/translate';
-import { canonicalizeResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
+import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;

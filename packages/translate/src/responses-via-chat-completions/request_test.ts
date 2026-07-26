@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { translateResponsesToChatCompletions } from './request.ts';
 import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
-import { assertEquals, assertThrows } from '../test-assert.ts';
 import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('translateResponsesToChatCompletions accepts an implicit message discriminator', () => {
   const result = translateResponsesToChatCompletions({

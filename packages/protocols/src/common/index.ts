@@ -1,5 +1,5 @@
 export * from './aliases.ts';
-export * from './capabilities.ts';
+export * from './endpoints.ts';
 export * from './decimal.ts';
 export * from './models.ts';
 export * from './usage.ts';

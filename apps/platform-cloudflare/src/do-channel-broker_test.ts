@@ -1,14 +1,14 @@
 import { test } from 'vitest';
 
 import { DurableObjectChannelBroker, type BroadcastNamespace } from './do-channel-broker.ts';
-import type { Codec } from '@floway-dev/gateway/channel-broker';
+import type { ChannelCodec } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // String codec: encode passes through, decode rejects payloads prefixed with
 // `bad:` so the parse-fail path has a deterministic trigger. Every test below
 // drives the generic broker through this codec, so the broker's typing flows
 // without any reference to a higher-level payload shape.
-const stringCodec: Codec<string> = {
+const stringCodec: ChannelCodec<string> = {
   encode: value => value,
   decode: payload => {
     if (payload.startsWith('bad:')) {

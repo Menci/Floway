@@ -601,7 +601,7 @@ const callRespond = async (wantsStream: boolean): Promise<Response> => {
       testTelemetryModelIdentity,
       { headers: forwardedHeadersFixture() },
     );
-    const { response } = await respondMessages(c, result, wantsStream, makeRespondCtx());
+    const response = await respondMessages(c, result, wantsStream, makeRespondCtx());
     captured = response;
     return response;
   });
@@ -700,7 +700,7 @@ test('respondMessages records the last observed message_delta usage when the cli
     );
     const downstreamAbortController = new AbortController();
     const ctx: ChatGatewayCtx = { ...makeRespondCtx(), wantsStream: true, downstreamAbortController };
-    return respondMessages(c, result, true, ctx).then(({ response }) => response);
+    return respondMessages(c, result, true, ctx);
   });
   const response = await app.request('/');
   const reader = response.body!.getReader();

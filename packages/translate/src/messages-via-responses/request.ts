@@ -1,6 +1,7 @@
-import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/structured-output.ts';
 import { messagesReasoningBlockToResponsesReasoning } from '../shared/messages-and-responses/reasoning.ts';
+import { filterMessagesClientTools } from '../shared/messages-via/client-tools.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
+import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages-via/structured-output.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
@@ -69,13 +70,6 @@ const toResponsesStructuredToolOutput = (block: MessagesWebSearchToolResultBlock
   output: JSON.stringify(block.content),
   status: Array.isArray(block.content) ? 'completed' : 'incomplete',
 });
-
-const getClientTools = (tools?: MessagesPayload['tools']): MessagesClientTool[] | undefined => {
-  if (!tools || tools.length === 0) return undefined;
-
-  const clientTools = tools.filter((tool): tool is MessagesClientTool => tool.type === undefined || tool.type === 'custom');
-  return clientTools.length > 0 ? clientTools : undefined;
-};
 
 const translateUserMessage = (message: MessagesUserMessage, messageIdx: number): ResponsesInputItem[] => {
   if (typeof message.content === 'string') {
@@ -235,7 +229,7 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Canonica
   // target-side validation to the selected upstream endpoint.
   const effort = resolveMessagesReasoningEffort(payload);
   const reasoning = effort ? { effort } : undefined;
-  const clientTools = getClientTools(payload.tools);
+  const clientTools = filterMessagesClientTools(payload.tools);
   const { instructions, prependItems } = placeMessagesSystem(payload.system);
   const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
   const text = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;

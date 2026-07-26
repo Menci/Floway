@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { addDecimalStrings, canonicalDecimalString, divideDecimalString, multiplyDecimalStrings, parseNonNegativeDecimalString } from './decimal.ts';
-import { assertEquals, assertThrows } from '../test-assert.ts';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('decimal strings canonicalize without floating-point conversion', () => {
   assertEquals(canonicalDecimalString('001.2300'), '1.23');

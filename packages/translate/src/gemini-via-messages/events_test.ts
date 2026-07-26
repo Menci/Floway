@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
-import { assertEquals, assertRejects } from '../test-assert.ts';
 import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const messageStart = (usage: MessagesResult['usage'] = { input_tokens: 0, output_tokens: 0 }): MessagesStreamEvent => ({
   type: 'message_start',

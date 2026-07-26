@@ -228,7 +228,7 @@ The rule overlay rides on the `ModelCandidate.rules` field. Dispatch
 reads it in each attempt's terminal wire call, right before destructuring
 `payload.model` out of the body, via
 `applyRulesToUpstream{ChatCompletions,Responses,Messages}` in
-`data-plane/model-aliases/apply-rules.ts`. Passthrough seams thread
+`data-plane/chat/shared/alias-rules.ts`. Passthrough seams thread
 alias-origin candidates through the same iteration but never observe
 non-empty rules (non-chat alias kinds — `embedding`, `image`, `rerank`,
 `transcription` — carry
@@ -249,8 +249,8 @@ The upstream response's `model` field
 reports the model that actually served the request, so a client that
 wants to attribute a response to a particular target can compare that
 against the id it sent. Alias listing behavior on `/v1/models`,
-`/v1beta/models`, and the Codex catalog is covered in the alias
-implementation notes under `data-plane/model-aliases/`.
+`/v1beta/models`, and the Codex catalog is implemented in
+`data-plane/shared/listing/alias.ts`.
 
 ## Candidate Shape
 

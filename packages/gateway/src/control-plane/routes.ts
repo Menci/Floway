@@ -111,5 +111,3 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .post('/search-config/test', zValidator('json', searchConfigSchema), testSearchConfigRoute)
     .get('/export', zValidator('query', exportQuery), exportData)
     .post('/import', zValidator('json', importBody), importData));
-
-export type ControlPlaneRoutes = typeof controlPlaneRoutes;

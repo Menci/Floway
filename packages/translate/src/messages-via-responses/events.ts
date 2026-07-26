@@ -1,9 +1,9 @@
-import { isContextExceededError, PROMPT_TOO_LONG_MESSAGE } from '../shared/messages/context-window-error.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
+import { isContextExceededError } from '../shared/messages-via/context-window-error.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesResult, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
+import { PROMPT_TOO_LONG_MESSAGE, type MessagesResult, type MessagesStreamEvent, type MessagesUsage } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const mapResponsesStopReason = (response: ResponsesResult): MessagesResult['stop_reason'] => {

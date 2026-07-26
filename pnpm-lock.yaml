@@ -55,9 +55,6 @@ importers:
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1
-      sql.js:
-        specifier: ^1.14.1
-        version: 1.14.1
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -82,9 +79,6 @@ importers:
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../../packages/platform
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../../packages/protocols
       hono:
         specifier: ^4
         version: 4.12.22
@@ -104,9 +98,6 @@ importers:
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../../packages/platform
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../../packages/protocols
       '@hono/node-server':
         specifier: ^2.0.4
         version: 2.0.4(hono@4.12.22)
@@ -324,6 +315,9 @@ importers:
       '@floway-dev/test-utils':
         specifier: workspace:*
         version: link:../test-utils
+      sql.js:
+        specifier: ^1.14.1
+        version: 1.14.1
 
   packages/http:
     dependencies:
@@ -334,9 +328,6 @@ importers:
         specifier: 0.1.2
         version: 0.1.2(patch_hash=8ed07af54e914cbcc2cea19ce7109635092cbbe35b9d2ad1bf55e3dfef1b8fd6)
     devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^4.20251215.0
-        version: 4.20260606.1
       '@types/node':
         specifier: ^22
         version: 22.19.19
@@ -368,9 +359,6 @@ importers:
 
   packages/provider:
     dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
@@ -384,9 +372,6 @@ importers:
 
   packages/provider-azure:
     dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -454,9 +439,6 @@ importers:
 
   packages/provider-custom:
     dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -496,9 +478,6 @@ importers:
         specifier: 0.1.2
         version: 0.1.2(patch_hash=8ed07af54e914cbcc2cea19ce7109635092cbbe35b9d2ad1bf55e3dfef1b8fd6)
     devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^4.20251215.0
-        version: 4.20260606.1
       '@types/node':
         specifier: ^22
         version: 22.19.19
@@ -508,9 +487,6 @@ importers:
 
   packages/test-utils:
     dependencies:
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
@@ -520,6 +496,10 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
 
   packages/ui:
     dependencies:
@@ -3996,7 +3976,8 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260405.1':
     optional: true
 
-  '@cloudflare/workers-types@4.20260606.1': {}
+  '@cloudflare/workers-types@4.20260606.1':
+    optional: true
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:

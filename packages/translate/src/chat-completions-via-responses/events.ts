@@ -1,4 +1,4 @@
-import { toChatCompletionsReasoningItem } from '../shared/chat-completions-and-responses/reasoning.ts';
+import { hasReadableSummary, toChatCompletionsReasoningItem } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsReasoningItem, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
@@ -67,8 +67,6 @@ export const createResponsesToChatCompletionsStreamState = (): ResponsesToChatCo
 });
 
 const trackReasoningOutputItem = (item: ResponsesOutputItem): boolean => item.type === 'reasoning';
-
-const hasReadableSummary = (item: ChatCompletionsReasoningItem): boolean => item.summary?.some(part => part.text) === true;
 
 const flushPendingReasoningChunks = (state: ResponsesToChatCompletionsStreamState): ChatCompletionsStreamEvent[] => {
   if (state.reasoningItems.length === 0) return [];

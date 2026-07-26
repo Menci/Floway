@@ -24,19 +24,6 @@ const replaceAccountAccessToken = (
   accounts: state.accounts.map((account, i) => (i === index ? { ...account, accessToken: entry } : account)),
 });
 
-export const getCodexAccessToken = async (
-  upstreamId: string,
-  accountId: string,
-): Promise<CodexAccessTokenEntry | null> => {
-  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) return null;
-  const state = readCodexUpstreamState(fresh.state);
-  const account = state.accounts.find(a => a.chatgptAccountId === accountId);
-  if (!account?.accessToken) return null;
-  if (!isAccessTokenFresh(account.accessToken)) return null;
-  return account.accessToken;
-};
-
 // A losing CAS is not an error — saveState reports it via `updated: false`,
 // and the next call re-reads state and refreshes if needed. Genuine storage
 // failures propagate so the request path surfaces them rather than silently

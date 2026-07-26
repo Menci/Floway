@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { toCompactPayloadShape } from './index.ts';
-import { assertEquals } from '../test-assert.ts';
+import { assertEquals } from '@floway-dev/test-utils';
 
 test('toCompactPayloadShape preserves compact cache controls', () => {
   assertEquals(toCompactPayloadShape({

@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import { translateChatCompletionsToMessages } from './request.ts';
 import type { RemoteImageLoader } from '../shared/via-messages/remote-images.ts';
-import { assertEquals, assertExists, assertFalse, assertRejects } from '../test-assert.ts';
 import type { ChatCompletionsMessage, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
@@ -16,6 +15,7 @@ import {
   type MessagesToolUseBlock,
   type MessagesUserContentBlock,
 } from '@floway-dev/protocols/messages';
+import { assertEquals, assertExists, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 // ── Helpers ──
 

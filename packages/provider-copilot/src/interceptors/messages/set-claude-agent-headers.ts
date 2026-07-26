@@ -14,10 +14,10 @@ import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
  * the messages-proxy intent to ordinary chat traffic that happens to share
  * one half of the legacy regex.
  *
- * Sentinel: an empty-string value tells `copilotFetch` to delete the named
- * base header — see the loop comment in shared/copilot.ts. We use it to clear
- * `copilot-integration-id` because VSCode Copilot Chat omits that header on
- * Claude Code SDK proxy traffic.
+ * Sentinel: an empty-string value tells `copilotAuthedFetch` in
+ * `packages/provider-copilot/src/auth.ts` to delete the named base header. We
+ * use it to clear `copilot-integration-id` because VSCode Copilot Chat omits
+ * that header on Claude Code SDK proxy traffic.
  *
  * Do not put this identity on translated Chat Completions / Responses targets.
  * The real VS Code path forces a Messages API request, and caozhiyuan's gateway

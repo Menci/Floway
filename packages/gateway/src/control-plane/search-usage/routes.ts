@@ -11,7 +11,8 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import type { searchUsageQuery } from '../schemas.ts';
-import { resolveTelemetryView, buildKeyToUserMap } from '../telemetry-view.ts';
+import { buildKeyToUserMap } from '../shared/key-to-user.ts';
+import { resolveUsageView } from '../usage-view.ts';
 
 export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   const query = c.req.valid('query');
@@ -25,7 +26,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     return c.json({ error: "provider must be 'tavily' or 'microsoft-grounding'" }, 400);
   }
 
-  const resolved = resolveTelemetryView(c, query.view, query.key_id);
+  const resolved = resolveUsageView(c, query.view, query.key_id);
   if ('error' in resolved) {
     return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
   }

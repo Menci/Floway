@@ -1,8 +1,7 @@
 import type { WebSearchProviderName } from './types.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { SearchUsageAction } from '../../../repo/types.ts';
-
-const currentHour = (): string => new Date().toISOString().slice(0, 13);
+import { currentHour } from '../../shared/telemetry/hour.ts';
 
 // Records a single usage row. Hour is computed at write time; `requests`
 // defaults to 1. Throws if the repo write fails — callers wrap this in

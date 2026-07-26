@@ -22,7 +22,7 @@ const ctx = () => mockChatGatewayCtx();
 
 const requestGeminiResponse = async (result: ExecuteResult<ProtocolFrame<GeminiErrorResponse>>): Promise<Response> => {
   const app = new Hono();
-  app.get('/', async c => (await respondGemini(c, result, false, ctx())).response);
+  app.get('/', async c => await respondGemini(c, result, false, ctx()));
   return await app.request('/');
 };
 

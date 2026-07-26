@@ -278,21 +278,6 @@ test('/auth/me reports viaApiKey:true and the API key metadata when authed via x
   assertEquals(body.apiKey.name, apiKey.name);
 });
 
-test('old /auth GitHub management routes are removed', async () => {
-  const { repo } = await setupAppTest();
-  const session = await repo.sessions.create(1);
-
-  const start = await requestApp('/auth/github', { method: 'GET', headers: { 'x-floway-session': session.id } });
-  const order = await requestApp('/auth/github/order', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-floway-session': session.id },
-    body: JSON.stringify({ user_ids: [1] }),
-  });
-
-  assertEquals(start.status, 404);
-  assertEquals(order.status, 404);
-});
-
 test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow', async () => {
   const { adminSession } = await setupAppTest();
 

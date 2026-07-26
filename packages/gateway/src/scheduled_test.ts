@@ -2,11 +2,11 @@ import { expect, test, vi } from 'vitest';
 
 import { runScheduledMaintenance } from './scheduled.ts';
 import { setupAppTest } from './test-helpers.ts';
-import { initFileProvider, initImageCacheStore, MemoryFileProvider } from '@floway-dev/platform';
+import { initFileStore, initImageCacheStore, MemoryFileStore } from '@floway-dev/platform';
 
 test('scheduled maintenance isolates the shared expiration driver from later collectors', async () => {
   const { repo } = await setupAppTest();
-  initFileProvider(new MemoryFileProvider());
+  initFileStore(new MemoryFileStore());
   let imageSwept = false;
   initImageCacheStore({
     async get() { return null; },
@@ -27,8 +27,8 @@ test('scheduled maintenance isolates the shared expiration driver from later col
 
 test('scheduled maintenance collects exact spilled files after expiration work', async () => {
   const { repo } = await setupAppTest();
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
+  const files = new MemoryFileStore();
+  initFileStore(files);
   initImageCacheStore({ async get() { return null; }, async put() {}, async sweepExpired() {} });
   vi.spyOn(repo.expirationSweeps, 'claim').mockResolvedValue(null);
   const key = 'spilled/retired.gz';

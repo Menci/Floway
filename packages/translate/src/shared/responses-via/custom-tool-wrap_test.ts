@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { buildCustomToolInputSchema, unwrapCustomToolInput } from './custom-tool-wrap.ts';
-import { assertEquals } from '../../test-assert.ts';
+import { assertEquals } from '@floway-dev/test-utils';
 
 // ── buildCustomToolInputSchema ──
 

@@ -10,8 +10,8 @@ import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import type { DumpWriteRecord } from '../dump/types.ts';
-import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
-import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
+import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
+import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const openDb = async (): Promise<SqlDatabase> => {
@@ -55,7 +55,7 @@ const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
 
 test('FileDumpStore prepares request gzip before terminal persistence', async () => {
   const db = await openDb();
-  const files = new MemoryFileProvider();
+  const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const raw = utf8(`{"content":"${'repeatable '.repeat(4096)}"}`);
   const prepared = await store.prepareRequestBody(raw);
@@ -82,7 +82,7 @@ test('FileDumpStore prepares request gzip before terminal persistence', async ()
 
 test('FileDumpStore round-trips a JSON record through gzip', async () => {
   const db = await openDb();
-  const files = new MemoryFileProvider();
+  const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const record = baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 12, 0, 0));
 
@@ -97,7 +97,7 @@ test('FileDumpStore round-trips a JSON record through gzip', async () => {
 
 test('FileDumpStore preserves the original content-type header on binary bodies', async () => {
   const db = await openDb();
-  const files = new MemoryFileProvider();
+  const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const pngMagic = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
   const record: DumpWriteRecord = {
@@ -120,7 +120,7 @@ test('FileDumpStore preserves the original content-type header on binary bodies'
 
 test('FileDumpStore preserves the bytes discriminator on an empty-body response', async () => {
   const db = await openDb();
-  const files = new MemoryFileProvider();
+  const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   // 204-style: real upstream response with status + headers but a zero-length
   // body. Persistence drops the body file (nothing to gzip), but headers are
@@ -144,7 +144,7 @@ test('FileDumpStore preserves the bytes discriminator on an empty-body response'
 
 test('FileDumpStore round-trips an SSE record as a stream events array', async () => {
   const db = await openDb();
-  const files = new MemoryFileProvider();
+  const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const record: DumpWriteRecord = {
     ...baseRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)),
@@ -170,7 +170,7 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
 
 test('FileDumpStore.list paginates newest-first with the (createdAt, id) cursor', async () => {
   const db = await openDb();
-  const files = new MemoryFileProvider();
+  const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const base = Date.UTC(2026, 5, 1, 12, 0, 0);
   for (let i = 0; i < 5; i++) {
@@ -186,8 +186,8 @@ test('FileDumpStore applies retention immediately and retires exact expired file
   const db = await openDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
+  const files = new MemoryFileStore();
+  initFileStore(files);
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12, 0, 0);
   // Old bucket 9:xx, current bucket 12:xx.
@@ -218,7 +218,7 @@ test('FileDumpStore applies retention immediately and retires exact expired file
 test('growing dump retention can reveal a row not yet physically deleted', async () => {
   const db = await openDb();
   const repo = new SqlRepo(db);
-  const files = new MemoryFileProvider();
+  const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12);
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A4', now - 3 * 3600_000));
@@ -238,8 +238,8 @@ test('FileDumpStore retires every dump record when retention is disabled and col
   const db = await openDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
+  const files = new MemoryFileStore();
+  initFileStore(files);
   const store = new FileDumpStore(db, files);
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
   await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)));
@@ -255,8 +255,8 @@ test('a record-ID race leaves only the losing write\'s uniquely keyed files coll
   const db = await openDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
+  const files = new MemoryFileStore();
+  initFileStore(files);
   const store = new FileDumpStore(db, files);
   const record = baseRecord('01HZZ0000000000000000000A3', Date.now());
   await store.put('key_x', record);
@@ -273,20 +273,20 @@ test('a record-ID race leaves only the losing write\'s uniquely keyed files coll
 
 test('FileDumpStore expiration against a never-written key resolves without throwing', async () => {
   const db = await openDb();
-  const files = new MemoryFileProvider();
+  const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
   assertEquals((await store.list('never_written_key', { limit: 10 })).length, 0);
   assertEquals(await store.deleteExpiredBatch('never_written_key', Date.now(), 100), 0);
   assertEquals((await db.prepare("SELECT COUNT(*) AS count FROM dump_records WHERE key_id = 'never_written_key'").first<{ count: number }>())?.count, 0);
 });
 
-// Smoke test: drive FileDumpStore against a real-filesystem FileProvider so a
-// regression where the store leans on MemoryFileProvider's stricter ordering /
-// instant durability surfaces here. The inline FileProvider mirrors the shape
-// of the Node platform-target app's `FsFileProvider` — keeping this test in
+// Smoke test: drive FileDumpStore against a real-filesystem FileStore so a
+// regression where the store leans on MemoryFileStore's stricter ordering /
+// instant durability surfaces here. The inline FileStore mirrors the shape
+// of the Node platform-target app's `FsFileStore` — keeping this test in
 // gateway, not in apps/platform-node, is what lets that app's src/ tree stay
 // free of business-domain knowledge.
-class TmpDirFileProvider implements FileProvider {
+class TmpDirFileStore implements FileStore {
   constructor(private readonly root: string) {}
   async put(key: string, body: Uint8Array): Promise<void> {
     const path = this.pathFor(key);
@@ -313,7 +313,7 @@ test('FileDumpStore: put + get round-trips through real-filesystem IO', async ()
   const root = await mkdtemp(join(tmpdir(), 'dump-store-'));
   try {
     const db = await openDb();
-    const store = new FileDumpStore(db, new TmpDirFileProvider(join(root, 'files')));
+    const store = new FileDumpStore(db, new TmpDirFileStore(join(root, 'files')));
     const record = baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 12, 0, 0));
 
     await store.put('key_x', record);

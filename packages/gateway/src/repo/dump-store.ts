@@ -13,7 +13,7 @@ import type {
   StoredDumpResponse,
   StoredDumpResponseBody,
 } from '../dump/types.ts';
-import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
+import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{req|resp}.gz`.
 // The hour segment remains useful for operator inspection; lifecycle and
@@ -81,7 +81,7 @@ const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
 };
 
 const putRawBody = async (
-  files: FileProvider,
+  files: FileStore,
   key: string,
   rawBytes: Uint8Array,
   type: 'bytes' | 'events',
@@ -92,7 +92,7 @@ const putRawBody = async (
 };
 
 const putPreparedBody = async (
-  files: FileProvider,
+  files: FileStore,
   key: string,
   prepared: PreparedDumpRequestBody,
 ): Promise<BodyDescriptor> => {
@@ -101,14 +101,14 @@ const putPreparedBody = async (
   return { key, type: 'bytes' };
 };
 
-const fetchBody = async (files: FileProvider, descriptor: BodyDescriptor): Promise<Uint8Array> => {
+const fetchBody = async (files: FileStore, descriptor: BodyDescriptor): Promise<Uint8Array> => {
   const gz = await files.get(descriptor.key);
   if (!gz) throw new Error(`dump body missing for key=${descriptor.key}`);
   return await gunzip(gz);
 };
 
 export class FileDumpStore implements DumpStore {
-  constructor(private readonly db: SqlDatabase, private readonly files: FileProvider) {}
+  constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {}
 
   async prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody> {
     return {

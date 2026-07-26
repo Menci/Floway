@@ -17,6 +17,13 @@ Maintain the notional per-token rate cards in:
 These providers are subscription-backed or self-hosted. Floway records
 notional API-equivalent value so the usage dashboard remains comparable.
 
+`ModelPricing.entries[].rates` stores decimal-string USD prices per one base
+`BillingMetric` unit. The token metrics established by
+`packages/gateway/migrations/0062_usage_billing_metrics.sql` are
+`input_tokens`, `input_cache_read_tokens`, `input_cache_write_tokens`,
+`input_cache_write_1h_tokens`, `input_image_tokens`, `output_tokens`, and
+`output_image_tokens`.
+
 ## Procedure
 
 1. Fetch the provider's live catalog and diff its ids against the table's
@@ -24,7 +31,7 @@ notional API-equivalent value so the usage dashboard remains comparable.
 2. Find a defensible rate source for every new id:
    - Prefer the model vendor's first-party API.
    - For open weights with no vendor API, use the cheapest credible commodity
-     host that publishes the required dimensions.
+     host that publishes the required metrics.
    - For retired versions, use a permalink or dated archive from when that
      version was current.
 3. Cross-check at least two sources. models.dev remains useful as an independent
@@ -36,25 +43,49 @@ notional API-equivalent value so the usage dashboard remains comparable.
 
    OpenRouter prices below first-party rates are usually mirror-host prices,
    not the canonical vendor rate.
-4. Author one `ModelPricing` with `modelPricing` and `pricingEntry`:
+4. Author pricing with the token helpers and decimal strings:
 
    ```ts
-   modelPricing(
-     pricingEntry({ input: 2.5, input_cache_read: 0.25, output: 15 }),
-     pricingEntry(
-       { input: 5, input_cache_read: 0.5, output: 22.5 },
-       { inputTokens: { operator: 'gt', value: 272000 } },
-     ),
-   )
+   import {
+     tokenBasePricing,
+     tokenModelPricing,
+     tokenPricingEntry,
+     type PriceVector,
+   } from '@floway-dev/protocols/common';
+
+   const PUBLISHED_BASE_RATES = {
+     input_tokens: '2.5',
+     input_cache_read_tokens: '0.25',
+     output_tokens: '15',
+   } satisfies PriceVector;
+
+   const PUBLISHED_PRIORITY_RATES = {
+     input_tokens: '5',
+     input_cache_read_tokens: '0.5',
+     output_tokens: '30',
+   } satisfies PriceVector;
+
+   export const BASE_ONLY_PRICING = tokenBasePricing(PUBLISHED_BASE_RATES);
+
+   export const TIERED_PRICING = tokenModelPricing(
+     tokenPricingEntry(PUBLISHED_BASE_RATES),
+     tokenPricingEntry(PUBLISHED_PRIORITY_RATES, { serviceTier: 'priority' }),
+   );
    ```
 
-   Every entry is one exact selector coordinate plus explicit USD-per-million-
-   token rates. Follow these invariants:
+   Published token rate cards are normally USD per million tokens.
+   `tokenPricingEntry` and `tokenBasePricing` use the existing
+   `perMillionTokenRates` conversion, so their resulting `PriceVector` values
+   are USD per base token. Do not divide manually or pass number literals.
+   Follow `packages/provider-codex/src/pricing.ts` for a complete production
+   example instead of copying a rate vector into this skill.
+
+   Follow these invariants:
 
    - Declare exactly one Base entry without a selector.
-   - Give every entry the same rate dimensions as Base.
+   - Give every entry the same metrics as Base.
    - Never merge entries or inherit individual cache/image rates from another
-     dimension. A dimension absent from Base is unpriced everywhere.
+     metric. A metric absent from Base is unpriced everywhere.
    - Treat `serviceTier` as an open-string equality coordinate.
    - Treat `inputTokens` `gt` / `gte` thresholds as whole-request bands, not
      marginal token buckets.
@@ -71,11 +102,12 @@ notional API-equivalent value so the usage dashboard remains comparable.
    is serialized inside cached `ProviderModel` rows; a mismatch makes every
    older row cold before TTL evaluation.
 6. Add boundary tests for exact ids, aliases, dated releases, RegExp coverage,
-   threshold edges, and Base fallback through `priceRequest`.
+   threshold edges, Base fallback, and the per-base-unit result through
+   `priceRequest`.
 7. Run all affected provider tests, typecheck, lint, and the full test suite.
 8. If an existing rate changed, use `backfill-model-pricing` for the intended
    historical usage slice. Catalog revisioning changes future snapshots; it
-   does not rewrite recorded unit prices.
+   does not rewrite recorded `unit_price` values.
 
 ## Catalog Revision Policy
 

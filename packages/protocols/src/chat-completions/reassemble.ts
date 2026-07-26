@@ -1,4 +1,4 @@
-import { chatCompletionsErrorPayloadMessage } from './index.ts';
+import { chatCompletionsErrorPayloadMessage } from './errors.ts';
 import type { ChatCompletionsChoiceNonStreaming, ChatCompletionsDelta, ChatCompletionsResult, ChatCompletionsStreamEvent, ChatCompletionsReasoningItem, ChatCompletionsToolCall } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 

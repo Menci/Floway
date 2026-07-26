@@ -54,7 +54,7 @@ import type { CopilotMessagesBoundaryInterceptor, CopilotMessagesCountTokensBoun
 // `withMessagesWebSearchShim` is intentionally NOT registered here. It runs
 // in the gateway's `messagesInterceptors` (filtered by enabled flags); the
 // Copilot provider opts in by listing `messages-web-search-shim` in its
-// default flag set (see COPILOT_DEFAULT_FLAGS in ../../provider.ts).
+// default flag set (see COPILOT_DEFAULT_FLAGS in ../../defaults.ts).
 export const COPILOT_MESSAGES_BOUNDARY = [
   rewriteContextWindowError,
   withCompactHeadersSet,

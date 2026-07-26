@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { createChatCompletionsToMessagesStreamState, flushChatCompletionsToMessagesEvents, mapChatCompletionsUsageToMessagesUsage, translateChatCompletionsChunkToMessagesEvents } from './events.ts';
-import { assertEquals, assertFalse } from '../test-assert.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
 const chunk = (delta: ChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): ChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',

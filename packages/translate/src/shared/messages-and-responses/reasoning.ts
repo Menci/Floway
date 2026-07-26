@@ -84,29 +84,9 @@ export const messagesReasoningBlockToResponsesReasoning = (block: MessagesReason
 
 /**
  * Project a Responses reasoning item into a Messages reasoning carrier bound
- * for a downstream Messages CLIENT. The id and opaque content are packed into
- * the carrier so they survive the round trip. Placement follows readable text:
- * readable summary text → `thinking` with the packed value in `signature`; no
- * readable text → `redacted_thinking` with the packed value in `data` (Copilot
- * rejects `thinking: null` / empty `thinking`).
- */
-export const responsesReasoningToMessagesBlock = (item: ResponsesReasoningItem): MessagesReasoningBlock => {
-  const thinking = item.summary?.length
-    ? item.summary
-        .map(part => part.text)
-        .join('')
-        .trim()
-    : '';
-  const packed = packReasoningSignature(item.id, item.encrypted_content ?? '');
-
-  return thinking ? { type: 'thinking', thinking, signature: packed } : { type: 'redacted_thinking', data: packed };
-};
-
-/**
- * Project a Responses reasoning item into a Messages reasoning carrier bound
- * for a real Messages UPSTREAM. Unlike {@link responsesReasoningToMessagesBlock}
- * this sends the GENUINE signature only — the upstream owns and validates that
- * field, so we never wrap it in a gateway envelope. The opaque
+ * for a real Messages UPSTREAM. This sends the GENUINE signature only — the
+ * upstream owns and validates that field, so we never wrap it in a gateway
+ * envelope. The opaque
  * `encrypted_content` rides verbatim: as `thinking.signature` when there is
  * readable text, else as `redacted_thinking.data`.
  *

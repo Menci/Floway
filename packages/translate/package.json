@@ -4,13 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": { "import": "./src/index.ts", "types": "./src/index.ts" },
-    "./via-responses/responses-items": { "import": "./src/shared/via-responses/responses-items.ts", "types": "./src/shared/via-responses/responses-items.ts" }
+    ".": { "import": "./src/index.ts", "types": "./src/index.ts" }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@floway-dev/protocols": "workspace:*"
+  },
+  "devDependencies": {
+    "@floway-dev/test-utils": "workspace:*"
   }
 }

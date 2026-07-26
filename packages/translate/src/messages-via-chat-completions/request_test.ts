@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { translateMessagesToChatCompletions } from './request.ts';
-import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
 import type { MessagesAssistantContentBlock, MessagesUserContentBlock } from '@floway-dev/protocols/messages';
+import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 test('translateMessagesToChatCompletions maps thinking.disabled to reasoning_effort none', () => {
   const result = translateMessagesToChatCompletions({

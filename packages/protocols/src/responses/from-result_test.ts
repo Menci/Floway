@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { responsesResultToEvents } from './from-result.ts';
 import type { ResponsesOutputItem, ResponsesResult } from './index.ts';
-import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
+import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 const completedResponse: ResponsesResult = {
   id: 'resp_completed',

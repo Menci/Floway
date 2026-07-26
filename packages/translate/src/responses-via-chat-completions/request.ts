@@ -1,8 +1,8 @@
+import { canonicalizeResponsesPayload } from '../canonicalize-responses-payload.ts';
 import { responsesContentToChatCompletionsContent, responsesContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsReasoningProjection, chatCompletionsReasoningProjectionFields, createChatCompletionsReasoningProjection } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
-import { canonicalizeResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsContentPart, ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesFunctionCallOutputItem, ResponsesInputImage, ResponsesInputText, ResponsesPayload, ResponsesRequestPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';

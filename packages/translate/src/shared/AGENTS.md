@@ -15,27 +15,29 @@ flat `.ts` files at the top level of `shared/`.
    as the target. Example: `via-messages/` is consumed only by
    `*-via-messages` pairs.
 4. **One-protocol-bidirectional, `<P>/`** — helpers used wherever protocol `P`
-   appears as either source or target. Example: `messages/tool-arguments.ts`
-   parses tool-call argument JSON wherever Messages appears.
+   appears as either source or target.
 5. **Two-protocol-bidirectional, `<A>-and-<B>/`** — helpers used by both
-   `A-via-B` AND `B-via-A`. Example: `chat-completions-and-responses/reasoning.ts`
-   runs both directions of the Chat Completions ↔ Responses reasoning round trip.
+   `A-via-B` and `B-via-A`. Example:
+   `chat-completions-and-responses/reasoning.ts` runs both directions of the
+   Chat Completions ↔ Responses reasoning round trip.
 
 ## Current subdirectories
 
-- `messages/` — helpers used wherever Messages appears (source or target).
 - `chat-completions-and-responses/` — helpers used by both
-  `chat-completions-via-responses` AND `responses-via-chat-completions`.
+  `chat-completions-via-responses` and `responses-via-chat-completions`.
 - `chat-completions-and-messages/` — helpers used by both
-  `chat-completions-via-messages` AND `messages-via-chat-completions`.
-- `messages-and-responses/` — helpers used by both `messages-via-responses` AND
+  `chat-completions-via-messages` and `messages-via-chat-completions`.
+- `messages-and-responses/` — helpers used by both `messages-via-responses` and
   `responses-via-messages`.
-- `via-responses/` — helpers used by all `*-via-responses` pairs
-  (target-locked).
-- `via-messages/` — helpers used by all `*-via-messages` pairs (target-locked).
+- `messages-via/` — helpers used by all `messages-via-*` pairs
+  (source-locked).
 - `responses-via/` — helpers used by all `responses-via-*` pairs
   (source-locked).
 - `gemini-via/` — helpers used by all `gemini-via-*` pairs (source-locked).
+- `via-messages/` — helpers used by all `*-via-messages` pairs
+  (target-locked).
+- `via-responses/` — helpers used by all `*-via-responses` pairs
+  (target-locked).
 
 ## Rules
 

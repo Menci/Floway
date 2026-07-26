@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
-import { assertEquals, assertRejects } from '../test-assert.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // Inlined copy of the gateway's chatCompletionsProtocolFrameToSSEFrame: kept here so this
 // translate-package test does not deep-import into packages/gateway. The behavior

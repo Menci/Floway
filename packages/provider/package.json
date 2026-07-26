@@ -13,7 +13,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@floway-dev/interceptor": "workspace:*",
     "@floway-dev/platform": "workspace:*",
     "@floway-dev/protocols": "workspace:*"
   },

@@ -1,5 +1,5 @@
 import type { StoredResponsesItemPayload } from './types.ts';
-import { getFileProvider, sha256Hex } from '@floway-dev/platform';
+import { getFileStore, sha256Hex } from '@floway-dev/platform';
 
 type StoredResponsesPayloadJson =
   | {
@@ -75,7 +75,7 @@ export const prepareStoredResponsesPayload = async (
 };
 
 export const writePreparedStoredResponsesPayload = async (prepared: PreparedStoredResponsesPayload): Promise<void> => {
-  if (prepared.file !== null) await getFileProvider().put(prepared.file.key, prepared.file.body);
+  if (prepared.file !== null) await getFileStore().put(prepared.file.key, prepared.file.body);
 };
 
 export const parseStoredResponsesPayload = async (
@@ -90,7 +90,7 @@ export const parseStoredResponsesPayload = async (
   }
 
   if (fileKey === null) throw new Error(`Stored Responses payload file key missing for id=${id}`);
-  const body = await getFileProvider().get(fileKey);
+  const body = await getFileStore().get(fileKey);
   if (body === null) throw new Error(`Stored Responses payload file missing for id=${id}`);
   if (body.byteLength !== descriptor.byteLength) {
     throw new Error(`Stored Responses payload file size mismatch for id=${id}`);

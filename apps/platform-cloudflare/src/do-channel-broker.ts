@@ -1,4 +1,4 @@
-import type { ChannelBroker, Codec } from '@floway-dev/gateway/channel-broker';
+import type { ChannelBroker, ChannelCodec } from '@floway-dev/platform';
 
 // Minimal namespace surface for BROADCAST_DO — declared locally so this
 // file stays off `@cloudflare/workers-types`.
@@ -16,7 +16,7 @@ interface BroadcastStub {
 export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
   constructor(
     private readonly namespace: BroadcastNamespace,
-    private readonly codec: Codec<T>,
+    private readonly codec: ChannelCodec<T>,
   ) {}
 
   private stub(channelId: string): BroadcastStub {
@@ -42,7 +42,7 @@ export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
 const iterateFromBroadcastSocket = <T>(
   stub: BroadcastStub,
   signal: AbortSignal,
-  codec: Codec<T>,
+  codec: ChannelCodec<T>,
 ): AsyncIterable<T> => {
   const queue: T[] = [];
   let resolveNext: ((value: IteratorResult<T>) => void) | null = null;

@@ -6,12 +6,13 @@ then routes each model through the API shape the client already speaks.
 
 ## Highlights
 
-- Use GitHub Copilot, ChatGPT subscriptions, Claude.ai subscriptions, Azure
-  OpenAI, custom OpenAI- or Anthropic-compatible providers, and Ollama from one
+- Use GitHub Copilot, ChatGPT subscriptions, Claude.ai subscriptions, Azure AI,
+  custom OpenAI- or Anthropic-compatible providers, and Ollama from one
   deployment.
 - Serve OpenAI, Anthropic, Gemini-compatible, audio transcription, and rerank
-  APIs with
-  cross-protocol translation where needed.
+  APIs with cross-protocol translation where needed.
+- Discover vendor model catalogs live while retaining manual model configuration
+  for providers that require or permit it.
 - Manage upstreams, routing order, model aliases, API keys, and web search from
   a dashboard.
 - Generate one-command Claude Code and Codex configurations from an API key.
@@ -36,8 +37,8 @@ the password. Then:
 3. Give that key to a client as a bearer token or `x-api-key`, or use **Agent
    Setup** to configure Claude Code or Codex.
 
-The gateway API is also exposed directly at <http://localhost:8788>. SQLite and
-uploaded files persist in the `floway-data` volume.
+The data-plane API is also exposed directly at <http://localhost:8788>. SQLite
+and uploaded files persist in the `floway-data` volume.
 
 ## Compatibility
 
@@ -69,14 +70,14 @@ responses retain their upstream wire shape.
 
 ### Upstreams
 
-| Provider | Authentication |
-| --- | --- |
-| GitHub Copilot | GitHub device OAuth |
-| Codex | ChatGPT subscription through the Codex CLI OAuth client |
-| Claude Code | Claude.ai Pro or Max subscription through the Claude Code CLI OAuth client |
-| Custom | OpenAI- or Anthropic-compatible endpoint and credential |
-| Azure | Azure OpenAI endpoint, API key, and deployments |
-| Ollama | ollama.com or a self-hosted Ollama-compatible server |
+| Provider | Connection | Model catalog |
+| --- | --- | --- |
+| GitHub Copilot | GitHub device OAuth | Fetched live from Copilot |
+| Codex | ChatGPT subscription through the Codex CLI OAuth client | Fetched live from the Codex backend |
+| Claude Code | Claude.ai Pro, Max, Team, or Enterprise subscription through the Claude Code CLI OAuth client | Fetched live from Anthropic |
+| Custom | OpenAI- or Anthropic-compatible endpoint and credential | Live `/models`, manual models, or both |
+| Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
+| Ollama | ollama.com or a self-hosted Ollama-compatible server | Fetched live from Ollama, with optional manual overrides |
 
 ## Other Deployment Options
 
@@ -114,8 +115,8 @@ pnpm install
 ADMIN_KEY='replace-with-a-secret' pnpm run dev:node
 ```
 
-It serves the gateway and control-plane APIs but not the dashboard. Use Docker
-Compose for the complete self-hosted UI, or serve the web app separately.
+It serves the data-plane and control-plane APIs but not the dashboard. Use
+Docker Compose for the complete self-hosted UI, or serve the web app separately.
 Production Node.js deployments must set both `NODE_ENV=production` and a
 non-empty `ADMIN_KEY`.
 
@@ -132,8 +133,8 @@ pnpm run lint
 pnpm run typecheck
 ```
 
-More detail lives in [AGENTS.md](./AGENTS.md) — architecture, workspace
-layout, verification, and contributor rules.
+More detail lives in [AGENTS.md](./AGENTS.md) — architecture, workspace layout,
+verification, and contributor rules.
 
 ## License
 

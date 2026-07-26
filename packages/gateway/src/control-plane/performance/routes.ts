@@ -21,7 +21,7 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { buildKeyToUserMap } from '../telemetry-view.ts';
+import { buildKeyToUserMap } from '../shared/key-to-user.ts';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 

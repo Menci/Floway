@@ -3,7 +3,6 @@ import type { MessagesAssistantContentBlock, MessagesRedactedThinkingBlock, Mess
 export interface ChatCompletionsScalarReasoning {
   reasoningText: string | null;
   reasoningOpaque: string | null;
-  hasReasoningOpaque: boolean;
 }
 
 export const messagesThinkingBlockFromChatCompletionsScalarReasoning = (
@@ -25,8 +24,7 @@ export const chatCompletionsScalarReasoningFromMessagesBlock = (block: MessagesA
   if (block.type === 'thinking') {
     return {
       reasoningText: block.thinking || null,
-      reasoningOpaque: Object.hasOwn(block, 'signature') ? block.signature ?? null : null,
-      hasReasoningOpaque: Object.hasOwn(block, 'signature'),
+      reasoningOpaque: block.signature ?? null,
     };
   }
 
@@ -34,7 +32,6 @@ export const chatCompletionsScalarReasoningFromMessagesBlock = (block: MessagesA
     ? {
         reasoningText: null,
         reasoningOpaque: block.data,
-        hasReasoningOpaque: true,
       }
     : null;
 };

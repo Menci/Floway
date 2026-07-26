@@ -1,6 +1,7 @@
 import { type ChatCompletionsScalarReasoning, chatCompletionsScalarReasoningFromMessagesBlock } from '../shared/chat-completions-and-messages/reasoning.ts';
-import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/structured-output.ts';
+import { filterMessagesClientTools } from '../shared/messages-via/client-tools.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
+import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages-via/structured-output.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
@@ -99,7 +100,7 @@ const flushPendingAssistantMessage = (messages: ChatCompletionsMessage[], pendin
     ...(reasoning
       ? {
           reasoning_text: reasoning.reasoningText,
-          reasoning_opaque: reasoning.hasReasoningOpaque ? reasoning.reasoningOpaque : null,
+          reasoning_opaque: reasoning.reasoningOpaque,
         }
       : {}),
   });
@@ -107,11 +108,6 @@ const flushPendingAssistantMessage = (messages: ChatCompletionsMessage[], pendin
   pending.textParts.length = 0;
   pending.toolCalls.length = 0;
   pending.scalarReasoning = null;
-};
-
-const getClientTools = (tools?: MessagesPayload['tools']): MessagesClientTool[] | undefined => {
-  const clientTools = tools?.filter((tool): tool is MessagesClientTool => tool.type === undefined || tool.type === 'custom');
-  return clientTools?.length ? clientTools : undefined;
 };
 
 const translateMessagesUser = (message: MessagesUserMessage, messageIdx: number): ChatCompletionsMessage[] => {
@@ -278,7 +274,7 @@ const translateMessagesToolChoice = (toolChoice?: MessagesPayload['tool_choice']
 };
 
 export const translateMessagesToChatCompletions = (payload: MessagesPayload): ChatCompletionsPayload => {
-  const clientTools = getClientTools(payload.tools);
+  const clientTools = filterMessagesClientTools(payload.tools);
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
   const reasoningEffort = resolveMessagesReasoningEffort(payload);

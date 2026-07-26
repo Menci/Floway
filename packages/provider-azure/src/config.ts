@@ -1,4 +1,3 @@
-import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import { type UpstreamModelConfig, type UpstreamRecord, isRecord, modelsField, nonEmptyStringField } from '@floway-dev/provider';
 
 export interface AzureUpstreamConfig {
@@ -83,10 +82,3 @@ export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstream
     config,
   };
 };
-
-// The union of every model's declared endpoints. Azure always carries explicit
-// per-model endpoints, so this upstream-level map is informational only (the
-// per-model fallback never fires); sub-capabilities are dropped since only
-// presence matters here.
-export const configuredEndpoints = (config: AzureUpstreamConfig): ModelEndpoints =>
-  config.models.reduce<ModelEndpoints>((acc, model) => ({ ...acc, ...model.endpoints }), {});

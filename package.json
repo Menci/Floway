@@ -32,7 +32,6 @@
     "husky": "^9.1.7",
     "jiti": "2.6.1",
     "jsonc-parser": "^3.3.1",
-    "sql.js": "^1.14.1",
     "typescript": "^5.9.3",
     "vitest": "4.0.18",
     "vue-eslint-parser": "^10.4.0",

@@ -11,7 +11,7 @@ import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ApiKey, StoredResponsesItem } from './types.ts';
 import { initDumpStore } from '../dump/registry.ts';
 import type { DumpWriteRecord } from '../dump/types.ts';
-import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
+import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());
 
@@ -71,8 +71,8 @@ test('one fair driver drains bounded Responses and dump backlogs', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
+  const files = new MemoryFileStore();
+  initFileStore(files);
   const dumps = new FileDumpStore(db, files);
   initDumpStore(dumps);
   await repo.apiKeys.save({ ...key(now), dumpRetentionSeconds: 7200, responsesRetentionSeconds: 2 * RESPONSES_RETENTION_SECONDS });
@@ -109,7 +109,7 @@ test('a partial hot key yields the current tick to another due key', async () =>
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
-  initFileProvider(new MemoryFileProvider());
+  initFileStore(new MemoryFileStore());
   await repo.apiKeys.save({ ...key(now), id: 'a-hot', key: 'raw-a-hot', serverSecret: '77'.repeat(32), responsesRetentionSeconds: 2 * RESPONSES_RETENTION_SECONDS });
   await repo.apiKeys.save({ ...key(now), id: 'b-small', key: 'raw-b-small', serverSecret: '88'.repeat(32), responsesRetentionSeconds: 2 * RESPONSES_RETENTION_SECONDS });
   const expiredAt = now - 2 * RESPONSES_REFRESH_GRANULARITY_MS - 1;
@@ -149,7 +149,7 @@ test('a later Responses row inserted during a claim prevents queue deletion', as
   vi.setSystemTime(now);
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
-  initFileProvider(new MemoryFileProvider());
+  initFileStore(new MemoryFileStore());
   await repo.apiKeys.save(key(now));
   await repo.expirationSweeps.schedule('responses', 'key-a', 0);
   const claim = await repo.expirationSweeps.claim('claim-row-race', now, 0);
@@ -170,7 +170,7 @@ test('partial completion yields even when a concurrent Responses row bumps the r
   vi.setSystemTime(now);
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
-  initFileProvider(new MemoryFileProvider());
+  initFileStore(new MemoryFileStore());
   await repo.apiKeys.save(key(now));
   await repo.expirationSweeps.schedule('responses', 'key-a', 0);
   const claim = await repo.expirationSweeps.claim('claim-partial-race', now, 0);
@@ -347,7 +347,7 @@ test('bounded cleanup backfill skips API keys without stored state', async () =>
   vi.setSystemTime(now);
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
-  initFileProvider(new MemoryFileProvider());
+  initFileStore(new MemoryFileStore());
   await repo.apiKeys.save(key(now));
   await repo.apiKeys.save({ ...key(now), id: 'key-empty', key: 'raw-empty', serverSecret: '99'.repeat(32) });
   await repo.responsesItems.insertMany([responseItem('msg-owned', now)], 0);
@@ -370,7 +370,7 @@ test('in-memory Responses rows enter the same expiration driver', async () => {
   vi.setSystemTime(now);
   const repo = new InMemoryRepo();
   initRepo(repo);
-  initFileProvider(new MemoryFileProvider());
+  initFileStore(new MemoryFileStore());
   await repo.apiKeys.save(key(now));
   const item = responseItem('msg-memory', now);
   await repo.responsesItems.insertMany([item], 0);

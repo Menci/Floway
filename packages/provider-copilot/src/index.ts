@@ -13,6 +13,8 @@ export {
   exchangeCopilotToken,
   githubHeaders,
 } from './auth.ts';
+export { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from './github-device-flow.ts';
+export { fetchCopilotUsage, type CopilotQuotaDetail, type CopilotUsageResponse } from './quota.ts';
 export {
   assertCopilotUpstreamRecord,
   type CopilotUpstreamConfig,

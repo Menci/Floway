@@ -12,8 +12,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/re
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { CanonicalResponsesPayload, ResponsesRequestPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
-import { TranslatorInputError } from '@floway-dev/translate';
-import { canonicalizeResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
+import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on

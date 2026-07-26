@@ -2,9 +2,9 @@ import { expect, test } from 'vitest';
 
 import { translateChatCompletionsToResponses } from './request.ts';
 import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents } from '../responses-via-chat-completions/events.ts';
-import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
 import type { ChatCompletionsMessage, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesInputReasoning, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 type ResponsesOutputItemDoneEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>;
 

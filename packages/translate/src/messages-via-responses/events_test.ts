@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { createResponsesToMessagesStreamState, translateResponsesStreamEventToMessagesEvents } from './events.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
-import { assertEquals, assertThrows } from '../test-assert.ts';
 import type { MessagesMessageDeltaEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('Responses reasoning stream without readable summary emits a redacted_thinking carrier', () => {
   const state = createResponsesToMessagesStreamState();

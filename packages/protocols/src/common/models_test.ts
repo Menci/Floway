@@ -15,7 +15,7 @@ import {
   type ModelPricing,
   type PricingSelector,
 } from './models.ts';
-import { assertEquals, assertThrows } from '../test-assert.ts';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('parseModelKind accepts the current model families and rejects unknown storage values', () => {
   for (const kind of ['chat', 'embedding', 'image', 'rerank', 'transcription'] as const) assertEquals(parseModelKind(kind), kind);

@@ -5,7 +5,7 @@ import {
   prepareStoredResponsesPayload,
   writePreparedStoredResponsesPayload,
 } from './responses-payload.ts';
-import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
+import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 const payload = (content: string) => ({
   item: { type: 'message', id: 'msg_payload', role: 'assistant', content },
@@ -15,7 +15,7 @@ const payload = (content: string) => ({
 const largeContent = (): string => Array.from({ length: 4_096 }, () => crypto.randomUUID()).join('');
 
 test('small Responses payloads stay inline without a file relation', async () => {
-  initFileProvider(new MemoryFileProvider());
+  initFileStore(new MemoryFileStore());
   const expected = payload('small');
   const prepared = await prepareStoredResponsesPayload('msg_payload', 'key-a', expected);
 
@@ -24,8 +24,8 @@ test('small Responses payloads stay inline without a file relation', async () =>
 });
 
 test('large Responses payloads use an external file whose key is not embedded in payload JSON', async () => {
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
+  const files = new MemoryFileStore();
+  initFileStore(files);
   const expected = payload(largeContent());
   const prepared = await prepareStoredResponsesPayload('msg_payload', 'key-a', expected);
   if (prepared.file === null) throw new Error('expected payload to spill');
@@ -38,7 +38,7 @@ test('large Responses payloads use an external file whose key is not embedded in
 });
 
 test('each prepared spill uses a unique object key', async () => {
-  initFileProvider(new MemoryFileProvider());
+  initFileStore(new MemoryFileStore());
   const expected = payload(largeContent());
   const first = await prepareStoredResponsesPayload('msg_payload', 'key-a', expected);
   const second = await prepareStoredResponsesPayload('msg_payload', 'key-a', expected);
@@ -48,8 +48,8 @@ test('each prepared spill uses a unique object key', async () => {
 });
 
 test('spilled payload reads verify file integrity', async () => {
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
+  const files = new MemoryFileStore();
+  initFileStore(files);
   const prepared = await prepareStoredResponsesPayload(
     'msg_payload',
     'key-a',

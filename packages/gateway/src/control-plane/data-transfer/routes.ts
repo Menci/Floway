@@ -11,7 +11,7 @@
 import type { Context } from 'hono';
 
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
-import { createProviderInstance } from '../../data-plane/providers/registry.ts';
+import { createProvider } from '../../data-plane/providers/registry.ts';
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -658,10 +658,10 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 // genuine misconfiguration and are not swallowed.
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
-  const instance = createProviderInstance(record);
+  const provider = createProvider(record);
   const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);
   try {
-    await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
+    await fetchUpstreamModelsCached(provider, { scheduler, fetcher, force: true });
   } catch {}
 };
 

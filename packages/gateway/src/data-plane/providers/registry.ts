@@ -39,7 +39,7 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   ollama: ollamaProvider,
 };
 
-export const createProviderInstance = (record: UpstreamRecord): Provider =>
+export const createProvider = (record: UpstreamRecord): Provider =>
   providersByKind[record.kind].create(record);
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
@@ -82,7 +82,7 @@ export const listModelProviders = async (
     selection = [...enabledById.values()];
   }
 
-  return selection.map(createProviderInstance);
+  return selection.map(createProvider);
 };
 
 // Lift a provider-emitted `ProviderModel` into an `InternalModel`, seeding

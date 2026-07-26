@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
 
 import { createMessagesToResponsesStreamState, translateMessagesEventToResponsesEvents } from './events.ts';
-import { assertEquals } from '../test-assert.ts';
 import { USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { assertEquals } from '@floway-dev/test-utils';
 
 type ResponsesOutputItemAddedEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>;
 

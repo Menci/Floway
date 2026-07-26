@@ -39,10 +39,3 @@ export const runInterceptors = async <Ctx, Req, Result>(
   const run = (index: number): Promise<Result> => (index < interceptors.length ? interceptors[index](ctx, request, () => run(index + 1)) : terminal());
   return await run(0);
 };
-
-// The minimal context shape interceptors read. Concrete invocation types in
-// the consuming application structurally satisfy this — interceptors never
-// require more than this baseline.
-export interface InterceptorContext {
-  readonly enabledFlags: ReadonlySet<string>;
-}

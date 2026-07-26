@@ -14,7 +14,9 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'messages-web-search-shim': true,
   'responses-web-search-shim': true,
   'responses-image-generation-shim': true,
-  // Copilot exposes a native /responses/compact wire.
+  // Copilot has no native compact endpoint. The provider replays
+  // `RemoteCompactionV2` through `/responses` with `stream: false` and a
+  // trailing `compaction_trigger`, so the gateway compact shim stays disabled.
   'responses-compact-shim': false,
   'disable-reasoning-on-forced-tool-choice': false,
   // Upstream default is off; Claude models below 4.8 flip it on via the

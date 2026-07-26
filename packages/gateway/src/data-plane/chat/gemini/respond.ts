@@ -19,32 +19,30 @@ import { type ExecuteResult, type PlainResult, type ApiErrorResult, type Interna
 // Renders an upstream Gemini result into the client HTTP/SSE response, in the
 // Google-RPC error envelope. An error-typed result is a pre-stream failure and
 // always answers as HTTP; an events result drains to one JSON body
-// (non-streaming) or is proxied frame by frame (streaming). `success` reports
-// whether a non-streaming body was produced, so the orchestrator knows whether
-// to flush stored items.
+// (non-streaming) or is proxied frame by frame (streaming).
 export const respondGemini = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult,
   wantsStream: boolean,
   ctx: GatewayCtx,
-): Promise<{ success: boolean; response: Response }> => {
+): Promise<Response> => {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
-    return { success: false, response: geminiApiErrorResponse(result) };
+    return geminiApiErrorResponse(result);
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    return { success: false, response: geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error)) };
+    return geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error));
   }
 
   if (result.type === 'plain') {
     if (result.status >= 400) {
       ctx.dump?.error(result.upstream !== undefined ? 'upstream' : 'gateway', result.upstream);
     }
-    return { success: true, response: plainResultToResponse(result) };
+    return plainResultToResponse(result);
   }
 
   const state = new SourceStreamState();
@@ -58,16 +56,16 @@ export const respondGemini = async (
       const usage = tokenUsageFromGeminiResponse(response);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
-      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
+      return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
-      return { success: false, response: geminiCollectErrorResponse(error) };
+      return geminiCollectErrorResponse(error);
     }
   }
 
   forwardUpstreamHeaders(c, result.headers);
-  const response = streamSSE(c, async stream => {
+  return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, geminiSseFrames(frames, state), {
@@ -85,8 +83,6 @@ export const respondGemini = async (
       settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
     }
   });
-
-  return { success: true, response };
 };
 
 const tokenUsageFromGeminiResponse = (r: GeminiResult) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);

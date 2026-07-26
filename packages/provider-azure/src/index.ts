@@ -8,7 +8,4 @@ export const azureProvider: ProviderModule = {
 };
 
 export { createAzureProvider } from './provider.ts';
-export {
-  assertAzureUpstreamRecord,
-  configuredEndpoints,
-} from './config.ts';
+export { assertAzureUpstreamRecord } from './config.ts';
