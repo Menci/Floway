@@ -1100,7 +1100,7 @@ test('claude', 'PowerShell installer body parses without syntax errors', async t
   const body = powerShellBody('claude');
   const entry = powerShellEntry('claude');
   t.ok(body.trimEnd().endsWith(entry), 'the downloaded script starts execution only from its final line');
-  t.ok(body.lastIndexOf(entry) > body.indexOf('function Set-ScriptAgent {'), 'the entry call follows every agent function');
+  t.ok(body.lastIndexOf(entry) > body.indexOf('function Set-SetupAgent {'), 'the entry call follows every agent function');
   const script = renderPowerShellPrefix({
     agent: 'claude',
     apiKey: SENTINEL_KEY,
