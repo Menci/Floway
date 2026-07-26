@@ -39,7 +39,7 @@ const createChoiceAccumulator = (index: number): ChoiceAccumulator => ({
 });
 
 const accumulateToolCalls = (choice: ChoiceAccumulator, value: ChatCompletionsDelta['tool_calls']): void => {
-  if (value === undefined) return;
+  if (value == null) return;
 
   for (const toolCall of value) {
     const fn = toolCall.function;
