@@ -1,8 +1,10 @@
 import {
+  CODEX_AUTHORIZE_URL,
   CODEX_CLIENT_ID,
   CODEX_OAUTH_SCOPE,
   CODEX_OAUTH_TOKEN_URL,
   CODEX_OAUTH_USER_AGENT,
+  CODEX_ORIGINATOR,
   CODEX_REDIRECT_URI,
 } from '../constants.ts';
 import type { Fetcher } from '@floway-dev/provider';
@@ -15,11 +17,26 @@ export interface CodexOAuthTokens {
   expires_in: number;
 }
 
+export const buildCodexAuthorizeUrl = (input: { state: string; codeChallenge: string }): string => {
+  const url = new URL(CODEX_AUTHORIZE_URL);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('client_id', CODEX_CLIENT_ID);
+  url.searchParams.set('redirect_uri', CODEX_REDIRECT_URI);
+  url.searchParams.set('scope', CODEX_OAUTH_SCOPE);
+  url.searchParams.set('state', input.state);
+  url.searchParams.set('code_challenge', input.codeChallenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set('id_token_add_organizations', 'true');
+  url.searchParams.set('codex_cli_simplified_flow', 'true');
+  url.searchParams.set('originator', CODEX_ORIGINATOR);
+  return url.toString();
+};
+
 // Terminal error: refresh_token is dead, operator must re-import. Distinct
 // from generic OAuth 4xx so callers can react to session-termination
 // separately from a transient upstream message. `code` carries the raw OAuth
 // `error` value (`invalid_grant`, `app_session_terminated`, etc.) so the
-// refresh-race recovery in the access-token cache can single out
+// refresh-race recovery in the access-token module can single out
 // `invalid_grant` — the only terminal code that might mean "a sibling
 // worker just rotated the refresh token, and our copy is stale" — from
 // codes that signal genuine credential death under any race scenario.
@@ -52,7 +69,7 @@ const EXCHANGE_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
 // (backend/internal/service/token_refresh_service.go:429-451), which shares
 // the same list across OpenAI/Claude/Gemini OAuth — Codex is OpenAI OAuth,
 // so the set carries over verbatim. `invalid_grant` is included even though
-// the refresh-race recovery in access-token-cache.ts may re-classify it
+// the refresh-race recovery in access-token.ts may re-classify it
 // when a sibling rotation is detected; from the OAuth wire's perspective
 // it is still a terminal signal.
 const REFRESH_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
@@ -162,7 +179,7 @@ export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fet
   // OAuth `invalid_grant` on the refresh path is ambiguous on its own — it
   // can mean a genuinely revoked/expired refresh_token, *or* that a sibling
   // worker raced us, won the rotation, and our copy is now stale. The
-  // access-token cache's `recoverFromRefreshRace` distinguishes by re-reading
+  // access-token module's `recoverFromRefreshRace` distinguishes by re-reading
   // upstream state; the other codes here always mean credential death.
   return await codexTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
 };

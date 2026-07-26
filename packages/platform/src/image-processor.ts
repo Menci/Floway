@@ -20,10 +20,10 @@ export type ImageSizeCalculator = (source: ImageDimensions) => ImageDimensions;
 
 export interface ImageProcessor {
   // Re-encodes arbitrary raster image bytes to WebP at a fixed internal
-  // quality, scaled to fit `target` (or untransformed when target is null —
-  // i.e. when the source dimensions could not be read locally). The target
-  // is pre-resolved by the caller so each impl stays a pure encoder; the
-  // "read source dimensions" step lives in compressBytesToWebp below.
+  // quality, scaled to fit `target` (or encoded at source dimensions when target
+  // is null, i.e. when the source dimensions could not be read locally). The target
+  // is pre-resolved by the caller so implementations own only runtime encoding
+  // and caching, not source inspection or model-specific sizing.
   compressToWebp(input: Uint8Array, target: ImageDimensions | null): Promise<Uint8Array>;
 }
 
@@ -67,8 +67,7 @@ export const getImageProcessor = (): ImageProcessor => {
 };
 
 // Caller-side convenience that owns the "read source dims → run calculator →
-// hand resolved target to the processor" responsibility chain. Each
-// ImageProcessor impl stays a pure encoder.
+// hand resolved target to the processor" responsibility chain.
 export const compressBytesToWebp = async (
   bytes: Uint8Array,
   calculator: ImageSizeCalculator,

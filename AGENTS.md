@@ -92,8 +92,9 @@ Allowed:
 - **Provider config discriminators naming the OWN kind** —
   `kind: 'claude-code'`.
 - **Vendor-locked provider packages** (`provider-claude-code`,
-  `provider-codex`) doing request/header mimicry captured verbatim from a live
-  wire probe while fetching their model catalogs live from the vendor.
+  `provider-codex`) owning request/header mimicry grounded in captured client
+  traffic and pinned upstream or prior-art references, while fetching their
+  model catalogs live from the vendor.
 
 Forbidden — silent narrowing at wire / translate / control-plane boundaries.
 Open-string fields declared `| (string & {})` or bare `string` in
@@ -114,121 +115,147 @@ bin edges, canonical enum values, header sets, protocol quirks. Prose like
 
 Stack: Hono on Web APIs, TypeScript, pnpm, Vitest. The dashboard is a Vue +
 Vite SPA. Cloudflare Workers is the production deployment target; Node.js
-(`node:sqlite` + `sharp` + filesystem) is a parallel deployment target with
-the same Hono app and the same `packages/gateway/migrations` SQL. The
-`@floway-dev/platform` package owns the abstract runtime contracts
+(`node:sqlite` + `sharp` + filesystem) is a parallel target running the same
+Hono app and the same `packages/gateway/migrations` SQL.
+
+The gateway has two HTTP planes. The **control plane** is the dashboard and
+operator surface for authentication, users, API keys, upstreams, aliases,
+proxies, Agent Setup, telemetry views, and data transfer. Its routes live under
+`packages/gateway/src/control-plane/`, principally at `/api/*` and `/auth/*`.
+The **data plane** is the client-facing inference and model-discovery surface;
+it resolves public model ids, selects and calls upstreams, translates protocol
+shapes, and returns client-protocol responses. Its routes live under
+`packages/gateway/src/data-plane/`.
+
+Hono middleware is the HTTP request boundary: logger, CORS, authentication,
+validation, and top-level error shaping live under `packages/gateway/src/middleware/`
+or are registered on the Hono app. `@floway-dev/interceptor` is different: its
+`Interceptor<Ctx, Env, Result>` callbacks receive `(ctx, env, run)` around a
+typed invocation inside chat protocol and provider calls. Interceptors can
+transform typed payloads, events, headers, and results; they are not Hono
+middleware and do not receive a Hono `Context`/`Next` pair.
+
+The `@floway-dev/platform` package owns abstract runtime contracts
 (`FileStore`, `ChannelBroker`, `ImageCacheStore`, `RuntimeKind`,
 `ImageProcessor`, `ExternalResourceFetcher`, `SqlDatabase`,
-`BackgroundScheduler`, `EnvGetter`, `SocketDial`); each `apps/platform-*` app
-supplies the concrete implementations and its own entry.
+`BackgroundScheduler`, `EnvGetter`, `SocketDial`) and portable helpers. Each
+`apps/platform-*` app supplies concrete implementations and its own entry.
 
 ## Workspace Layout
 
 ```text
 Floway/
 ├── packages/
-│   ├── agent-setup/          # @floway-dev/agent-setup — Agent Setup domain: config schema, installers, route factories, lease repository contract
-│   ├── gateway/              # @floway-dev/gateway — Hono app, control/data planes, repo, migrations
-│   ├── http/                 # @floway-dev/http — HTTP/1.1 + userspace TLS + WebSocket upgrade over a duplex byte stream
-│   ├── interceptor/          # @floway-dev/interceptor — generic interceptor framework
-│   ├── platform/             # @floway-dev/platform — runtime contracts + portable helpers
-│   ├── protocols/            # @floway-dev/protocols — protocol types, codecs, stream helpers, pricing and decimal utilities
-│   ├── provider/             # @floway-dev/provider — upstream provider contracts
+│   ├── agent-setup/          # @floway-dev/agent-setup — setup config, installers, route factories, lease repository contract
+│   ├── gateway/              # @floway-dev/gateway — Hono app, control/data planes, repositories, migrations
+│   ├── http/                 # @floway-dev/http — HTTP/1.1, userspace TLS, WebSocket framing over duplex byte streams
+│   ├── interceptor/          # @floway-dev/interceptor — typed around-call interceptor envelopes
+│   ├── platform/             # @floway-dev/platform — runtime contracts and portable helpers
+│   ├── protocols/            # @floway-dev/protocols — protocol types, codecs, stream helpers, pricing and decimals
+│   ├── provider/             # @floway-dev/provider — provider, model, invocation, and result contracts
 │   ├── provider-azure/       # @floway-dev/provider-azure — Azure AI resource and Foundry project provider
-│   ├── provider-claude-code/ # @floway-dev/provider-claude-code — Claude Code (Claude.ai subscription) provider
-│   ├── provider-codex/       # @floway-dev/provider-codex — ChatGPT Codex (subscription) provider
-│   ├── provider-copilot/     # @floway-dev/provider-copilot — GitHub Copilot provider, device OAuth, and quota wire helpers
+│   ├── provider-claude-code/ # @floway-dev/provider-claude-code — Claude Code subscription provider
+│   ├── provider-codex/       # @floway-dev/provider-codex — ChatGPT Codex subscription provider
+│   ├── provider-copilot/     # @floway-dev/provider-copilot — GitHub Copilot provider
 │   ├── provider-custom/      # @floway-dev/provider-custom — configurable multi-protocol HTTP provider
-│   ├── provider-ollama/      # @floway-dev/provider-ollama — Ollama (ollama.com or self-hosted)
-│   ├── proxy/                # @floway-dev/proxy — proxy URI parsing, per-protocol byte-stream dialers, proxy-backed and direct request runners
-│   ├── test-utils/           # @floway-dev/test-utils — shared Vitest fixtures and stubs (test-only)
-│   ├── translate/            # @floway-dev/translate — cross-protocol translation pairs
+│   ├── provider-ollama/      # @floway-dev/provider-ollama — Ollama-compatible provider
+│   ├── proxy/                # @floway-dev/proxy — proxy URIs, protocol dialers, request runners
+│   ├── test-utils/           # @floway-dev/test-utils — shared Vitest fixtures and stubs
+│   ├── translate/            # @floway-dev/translate — direct cross-protocol translation pairs
 │   └── ui/                   # @floway-dev/ui — internal Vue component library
 └── apps/
-    ├── platform-cloudflare/  # @floway-dev/platform-cloudflare — Cloudflare implementations + Worker entry
-    ├── platform-node/        # @floway-dev/platform-node — Node implementations + node-server entry
-    └── web/                  # @floway-dev/web — Vue + Vite SPA dashboard
+    ├── platform-cloudflare/  # Cloudflare runtime implementations and Worker entry
+    ├── platform-node/        # Node runtime implementations and node-server entry
+    └── web/                  # Vue + Vite dashboard SPA
 ```
 
-Dependency direction is strict. The leaf-most packages are `protocols`,
-`interceptor`, and `http`, none of which have runtime dependencies.
-`translate` depends on `protocols`. `agent-setup` depends only on `hono` /
-`zod` / `@hono/zod-validator`; it never imports the gateway or any app, and
-knows nothing of databases, HTTP auth/CORS/logging, host mount paths, or
-runtimes. `platform` owns runtime-neutral contracts and portable helpers.
-`proxy` depends on `http`; all its dialers — including `vless-ws`, which
-layers `wsUpgradeAndFrame` over the runtime's TLS-wrapped duplex — stay
-runtime-agnostic by taking the raw TCP `socketDial` primitive through
-`DialOptions`, so they never import `@floway-dev/platform`.
+Dependency direction is strict. `protocols` and `interceptor` have no runtime
+workspace dependencies. `http` is also independent of other workspace
+packages; it owns HTTP/1.1 framing and userspace TLS. `translate` depends on
+`protocols`. `agent-setup` depends only on Hono and Zod at runtime; it knows
+nothing of gateway databases, auth/CORS/logging, mount paths, or deployment
+runtimes. `platform` owns runtime-neutral contracts and helpers. `proxy`
+depends on `http`; its dialers take raw socket primitives through
+`DialOptions`, so the package never imports `@floway-dev/platform`.
 
-The base `provider` package depends on `platform` + `protocols`. Azure, Custom,
-and Ollama depend on `provider` + `protocols`; Claude Code and Codex add
-`interceptor`; Copilot adds both `interceptor` and `platform`. `test-utils`
-depends on `provider` and is consumed only as a test dependency.
+The base `provider` package depends only on `protocols`. Azure, Custom, and
+Ollama depend on `provider` + `protocols`; Claude Code and Codex add
+`interceptor`; Copilot adds `interceptor` + `platform`. `test-utils` depends on
+`provider` and is consumed as a test dependency by the rest of the workspace.
+Vendor credentials, catalog projection, and wire behavior stay in the vendor
+packages. The gateway owns the control-plane handlers that call those vendor
+APIs and maps their results onto Floway HTTP responses.
 
 `gateway` depends on `agent-setup` + `http` + `interceptor` + `platform` +
 `protocols` + `provider` + every `provider-*` package + `proxy` + `translate`.
-It is the runtime-agnostic gateway core: it threads `getSocketDial()` from
-`@floway-dev/platform` into the proxy library at the dial-layer composition
-root, supplies the SQL / in-memory `AgentSetupRepository` implementations and
-the auth-derived user id, and owns the single route path that mounts both setup
-surfaces and public script URLs ahead of logger / CORS / auth middleware.
-Vendor credential and wire knowledge stays in the vendor package: for example,
-`provider-copilot` owns GitHub device-flow and quota fetch helpers, while the
-gateway owns the control-plane routes and maps their results onto Floway HTTP
-responses.
+It is the runtime-agnostic application core and composition root for providers,
+repositories, model catalog/resolution, proxy-bound fetchers, protocol routes,
+Stateful Responses, affinity, telemetry, and scheduled work. Shared data-plane
+request context and candidate iteration live under `data-plane/shared/`;
+provider composition, catalog assembly, and request-time resolution live under
+`data-plane/providers/{registry,catalog,resolution}.ts`; scheduled expiration
+and spilled-file workers live under `scheduled/`. The package exports the
+migration corpus location through `@floway-dev/gateway/migrations-dir` and the
+dashboard's dump contracts through the types-only `./dump-types` subpath.
 
 Both `apps/platform-*` apps depend on `gateway` + `http` + `platform`. The
-Cloudflare app declares only the runtime surfaces it uses in local ambient
-files (`apps/platform-cloudflare/src/cloudflare-workers.d.ts`,
-`cloudflare-sockets.d.ts`, and `cf-websocket.d.ts`) instead of depending on
-`@cloudflare/workers-types`. The Node app supplies `node:sqlite`, filesystem,
-`sharp`, WebSocket, and `@hono/node-server` implementations. These apps are the
-composition roots for runtime-specific bindings and services.
+Cloudflare app declares only the workerd surfaces it uses in local ambient
+files (`cloudflare-workers.d.ts`, `cloudflare-sockets.d.ts`, and
+`cf-websocket.d.ts`) and supplies D1, R2, Images, KV, Durable Object, socket,
+and runtime-root-CA implementations. The Node app supplies `node:sqlite`,
+filesystem, `sharp`, WebSocket, socket, and runtime-root-CA implementations;
+its migrator consumes the gateway's exported migration directory. These apps
+are the only deployment-target composition roots.
 
 `apps/web` depends at runtime on `ui`, `protocols`, `provider`, and `proxy`.
 Its protocol imports use `/common`, `/chat-completions`, `/completions`,
 `/messages`, `/responses`, `/gemini`, and `/rerank`; its provider imports use
-the root, `/flags`, `/model`, and `/model-prefix`; and its proxy imports are
-restricted to `/url`, `/url-kind`, `/proxy-config`, and `/constants` so the
-SPA does not pull dialers, userspace TLS, or Node `crypto` into its bundle. It
-type-imports gateway contracts through `/app-type`, `/dump-types`,
+the root, `/flags`, `/model`, and `/model-prefix`; its proxy imports are
+restricted to `/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA
+does not pull in dialers, userspace TLS, or Node `crypto`. It type-imports
+gateway contracts through `/app-type`, `/dump-types`,
 `/control-plane/performance/aggregate`, and
 `/control-plane/proxies/serialize`. It does not depend on
-`@floway-dev/agent-setup` — the dashboard derives the Agent Setup configuration
-type from the RPC client — and ESLint blocks a runtime import of that package
-from `apps/web`.
+`@floway-dev/agent-setup`; the dashboard derives Agent Setup types from the RPC
+client, and ESLint blocks a runtime import of that package from `apps/web`.
 
-ESLint forbids any workspace file from importing `@floway-dev/platform-*` by
-package name, plus a `no-restricted-paths` zone forbidding the platform-target
-apps from reaching into each other via relative paths. Each `apps/platform-*`
-ships with no `exports`/`main` field, so deep imports also fail at module
-resolution. Each platform-target app's `entry.ts` reaches its implementations
-only via local relative imports.
+ESLint forbids workspace imports of `@floway-dev/platform-*` by package name
+and relative cross-imports between platform-target apps. Each
+`apps/platform-*` package has no `exports` or `main`, and its `entry.ts` reaches
+implementations only through local relative imports. Every cross-package
+runtime import must use a declared `exports` entry; deep
+`@floway-dev/<pkg>/src/...` imports are banned.
 
-Each package's public surface is its `exports` map. Deep imports
-(`@floway-dev/<pkg>/src/...`) are banned by ESLint; cross-package code must use
-declared subpath exports. Tests are co-located as `*_test.ts`; each tested
-package has its own `vitest.config.ts`, and the root config discovers projects
-with `packages/*/vitest.config.ts` and `apps/*/vitest.config.ts`.
+Tests are co-located as `*_test.ts`. Every tested package owns a
+`vitest.config.ts`, and the root Vitest config discovers
+`packages/*/vitest.config.ts` and `apps/*/vitest.config.ts`. Package TypeScript
+projects include their Vitest configs. Root `scripts/**/*.ts` and
+`packages/agent-setup/scripts/**/*.ts` have Node-typed script projects; the
+base config sets `types: []` so ambient types enter only projects that request
+them. ESLint checks both script trees and all Vitest configs.
 
-Client-carried affinity is a source-protocol membrane. Shared codec, routing,
-and request context live under `data-plane/chat/shared/affinity`; each source
-protocol owns its `affinity/ingress.ts` and `affinity/egress.ts`. Wire behavior
-lives in `docs/AFFINITY.md`, and candidate ordering lives in
-`docs/RESOLUTION.md`.
+Client-carried affinity is a source-protocol membrane. Shared codec, candidate
+narrowing, and affinity request context live under
+`data-plane/chat/shared/affinity/`; each chat source protocol owns
+`affinity/ingress.ts` and `affinity/egress.ts`. Native Responses state is a
+separate source-edge membrane under `data-plane/chat/responses/items/`.
+Affinity wire behavior and its relationship to Stateful Responses and
+Copilot's provider-private item-id membrane live in `docs/AFFINITY.md`.
+Candidate resolution, target selection, and iteration live in
+`docs/RESOLUTION.md`; direct chat-family pairs and rerank translation live in
+`docs/TRANSLATION.md`.
 
-Everything else — provider interfaces, request execution flow, interceptor
-shapes, control-plane route surface, flag resolution, pricing — lives in the
-code and its comments. Translation pair layout, model resolution, and affinity
-wire behavior have dedicated specs under `docs/`.
+Everything else — provider interfaces, route details, flag resolution, and
+wire workarounds — lives in the owning code and its comments. The
+`audit-copilot-workarounds` skill builds the Copilot inventory from provider
+registrations, defaults, model/auth/item-id modules, and their reference URLs.
 
 ## Verification
 
 ```bash
 pnpm run test                # vitest across all packages
 pnpm run lint                # eslint across the workspace
-pnpm run typecheck           # tsc --noEmit per package
+pnpm run typecheck           # tsc --noEmit per package and root script project
 pnpm run test:agent-setup-installers  # assembled Agent Setup scripts vs. fake CLIs/installers (not in `test`)
 ```
 
@@ -262,18 +289,21 @@ built `apps/web/dist` via Workers Static Assets; direct SPA routes (e.g.
 (admin secret; see below), `PORT`, and optionally `RUNTIME_LOCATION` (instance
 tag used as the perf-telemetry `runtimeLocation` dimension and the dial-time
 colo-whitelist key — uppercased on read, defaults to `LOCAL` when unset). The
-Node entry runs `applyMigrations` against
-`packages/gateway/migrations/*.sql` at boot, then serves the same Hono app
-through `@hono/node-server`. It exposes Floway's data-plane and control-plane
+Node entry runs `applyMigrations` at boot against the gateway-exported
+`packages/gateway/migrations/*.sql` corpus, then serves the same Hono app through
+`@hono/node-server`. It exposes Floway's data-plane and control-plane
 APIs but no SPA; static-asset serving is Workers-only.
 
-The public Agent Setup installers are composed from the checked-in
-`packages/agent-setup/installers/{bash,powershell}/common/` fragments and the
-adjacent `{claude,codex}.{sh,ps1}` agent fragments. Each source fragment is
-embedded verbatim into `packages/agent-setup/src/script-assets.generated.ts`;
-regenerate with
+The public Agent Setup installers are composed from checked-in source files.
+Bash common responsibilities live in `output.sh`, `main.sh`, `process.sh`,
+`jq.sh`, `cli.sh`, and `managed-file.sh`; PowerShell uses `output.ps1`,
+`main.ps1`, `platform.ps1`, `process.ps1`, `cli.ps1`, `managed-file.ps1`, and
+`json-document.ps1`. The adjacent `{claude,codex}.{sh,ps1}` files supply the
+agent-specific bodies. Fragment inventory, section boundaries, and byte order
+live only in `packages/agent-setup/scripts/generate-assets.ts`, which embeds the
+prejoined served bodies in `src/script-assets.generated.ts`. Regenerate with
 `pnpm --filter @floway-dev/agent-setup run generate-assets` (pass `--check` to
-fail on drift) after editing any fragment.
+fail on drift) after editing a source fragment.
 
 `ADMIN_KEY` is optional on dev instances so a fresh checkout is usable without
 any secret setup: with the env var unset (which is the default once `.dev.vars`

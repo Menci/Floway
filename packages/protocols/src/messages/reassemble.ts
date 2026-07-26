@@ -1,5 +1,3 @@
-import { isJsonObject } from '../common/json.ts';
-import { captureExtras } from '../common/reassemble-extras.ts';
 import type {
   MessagesAssistantContentBlock,
   MessagesRedactedThinkingBlock,
@@ -11,7 +9,9 @@ import type {
   MessagesToolUseBlock,
   MessagesUsage,
   MessagesWebSearchToolResultBlock,
-} from '@floway-dev/protocols/messages';
+} from './index.ts';
+import { isJsonObject } from '../common/json.ts';
+import { captureExtras } from '../common/reassemble-extras.ts';
 
 const normalizeMessagesTextCitation = (value: unknown): MessagesTextCitation | null => {
   if (!isJsonObject(value) || typeof value.type !== 'string') {

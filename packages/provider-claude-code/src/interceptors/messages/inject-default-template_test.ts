@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { injectDefaultTemplate } from './inject-default-template.ts';
-import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
-import { DEFAULT_TEMPLATE_BLOCK, IDENTITY_BLOCK } from '../../system-blocks.ts';
+import { DEFAULT_TEMPLATE_BLOCK, IDENTITY_BLOCK } from './system-blocks.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import type { MessagesClientTool, MessagesPayload, MessagesStreamEvent, MessagesTextBlock } from '@floway-dev/protocols/messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
@@ -10,7 +10,7 @@ import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 const okEvents = (): Promise<ProviderStreamResult<MessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: MessagesPayload): ClaudeCodeMessagesBoundaryCtx => ({
+const invocation = (payload: MessagesPayload): MessagesBoundaryCtx => ({
   payload,
   model: stubProviderModel({ endpoints: { messages: {} } }),
   upstreamId: 'up_test',

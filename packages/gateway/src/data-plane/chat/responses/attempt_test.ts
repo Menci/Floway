@@ -9,7 +9,7 @@ import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from './te
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
-import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -60,7 +60,7 @@ const makeCandidate = (
   const upstream = 'up_test';
   return {
     provider: {
-      upstream,
+      upstreamId: upstream,
       kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
@@ -168,7 +168,7 @@ test('generate treats a translated Responses payload as opaque to native affinit
   const carrier = await ctx.affinity.codec.wrap(
     undefined,
     {
-      upstreamId: candidate.provider.upstream,
+      upstreamId: candidate.provider.upstreamId,
       modelId: candidate.model.id,
     },
     'responses.reasoning.encrypted_content',
@@ -285,7 +285,7 @@ test('generate defers role promotion until after translation to Chat Completions
   const endpoints = { chatCompletions: {} };
   const candidate: ModelCandidate = {
     provider: {
-      upstream,
+      upstreamId: upstream,
       kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
@@ -440,7 +440,7 @@ test('generate inherits headers and injects external image loading across transl
   });
   const candidate: ModelCandidate = {
     provider: {
-      upstream: 'up_test', kind: 'custom', name: 'up_test',
+      upstreamId: 'up_test', kind: 'custom', name: 'up_test',
       disabledPublicModelIds: [], modelPrefix: null, instance: messagesProvider,
     },
     model: upstreamModel,
@@ -541,7 +541,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   const carrier = await ctx.affinity.codec.wrap(
     undefined,
     {
-      upstreamId: candidate.provider.upstream,
+      upstreamId: candidate.provider.upstreamId,
       modelId: candidate.model.id,
     },
     'responses.reasoning.encrypted_content',

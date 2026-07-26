@@ -92,7 +92,7 @@ const optionalMetadataRecord = (value: unknown, label: string): Record<string, u
   return value;
 };
 
-export const limitsField = (value: unknown, label: string): UpstreamModelLimits | undefined => {
+const limitsField = (value: unknown, label: string): UpstreamModelLimits | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
   return {
@@ -102,7 +102,7 @@ export const limitsField = (value: unknown, label: string): UpstreamModelLimits 
   };
 };
 
-export const flagOverridesField = (value: unknown, label: string): FlagOverrides | undefined => {
+const flagOverridesField = (value: unknown, label: string): FlagOverrides | undefined => {
   if (value === undefined) return undefined;
   return validateFlagOverridesRecord(value, {
     notObject: `Malformed ${label}: must be an object`,

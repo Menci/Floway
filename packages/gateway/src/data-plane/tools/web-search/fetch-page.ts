@@ -1,5 +1,5 @@
 import type { WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderName } from './types.ts';
-import { recordSearchUsage } from './usage.ts';
+import { recordWebSearchUsage } from './usage.ts';
 
 export const fetchPageAndRecordUsage = async (args: {
   provider: WebSearchProvider;
@@ -13,7 +13,7 @@ export const fetchPageAndRecordUsage = async (args: {
     // Telemetry must never mask the provider result; log and swallow
     // recording failures.
     try {
-      await recordSearchUsage({
+      await recordWebSearchUsage({
         provider: args.providerName,
         keyId: args.keyId,
         action: 'fetch_page',

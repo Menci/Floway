@@ -1,40 +1,12 @@
 import { expect, test } from 'vitest';
 
-import { translateChatCompletionsToResponses } from './request.ts';
-import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents } from '../responses-via-chat-completions/events.ts';
-import type { ChatCompletionsMessage, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import type { ResponsesInputReasoning, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { buildTargetRequest } from './request.ts';
+import type { ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
+import type { ResponsesInputReasoning } from '@floway-dev/protocols/responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
-type ResponsesOutputItemDoneEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>;
-
-type ResponsesOutputItemAddedEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>;
-
-type ResponsesCompletedEvent = Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
-
-const chunk = (delta: ChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): ChatCompletionsStreamEvent => ({
-  id: 'chatcmpl_stream_test',
-  object: 'chat.completion.chunk',
-  created: 1,
-  model: 'gpt-test',
-  choices: [{ index: 0, delta, finish_reason: finishReason }],
-});
-
-const assertEveryAddedOutputItemIsDone = (events: ResponsesStreamEvent[]): void => {
-  const added = events
-    .filter((event): event is ResponsesOutputItemAddedEvent => event.type === 'response.output_item.added')
-    .map(event => event.output_index)
-    .sort((a, b) => a - b);
-  const done = events
-    .filter((event): event is ResponsesOutputItemDoneEvent => event.type === 'response.output_item.done')
-    .map(event => event.output_index)
-    .sort((a, b) => a - b);
-
-  assertEquals(done, added);
-};
-
-test('translateChatCompletionsToResponses uses rs-prefixed ids for reasoning input items', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [
       {
@@ -52,8 +24,8 @@ test('translateChatCompletionsToResponses uses rs-prefixed ids for reasoning inp
   expect(reasoning.id).toMatch(/^rs_[0-9a-f]{32}$/);
 });
 
-test('translateChatCompletionsToResponses preserves text-only scalar reasoning', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest preserves text-only scalar reasoning', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [
       {
@@ -72,8 +44,8 @@ test('translateChatCompletionsToResponses preserves text-only scalar reasoning',
   });
 });
 
-test('translateChatCompletionsToResponses prefers reasoning_items over scalar reasoning', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest prefers reasoning_items over scalar reasoning', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [
       {
@@ -106,10 +78,10 @@ test('translateChatCompletionsToResponses prefers reasoning_items over scalar re
   ]);
 });
 
-test('translateChatCompletionsToResponses rejects tool messages without tool_call_id', () => {
+test('buildTargetRequest rejects tool messages without tool_call_id', () => {
   assertThrows(
     () =>
-      translateChatCompletionsToResponses({
+      buildTargetRequest({
         model: 'gpt-test',
         messages: [{ role: 'tool', content: 'result' }],
       }),
@@ -118,8 +90,8 @@ test('translateChatCompletionsToResponses rejects tool messages without tool_cal
   );
 });
 
-test('translateChatCompletionsToResponses preserves translated OpenAI request fields', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest preserves translated OpenAI request fields', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     response_format: { type: 'json_schema', json_schema: { name: 'shape' } },
@@ -143,8 +115,8 @@ test('translateChatCompletionsToResponses preserves translated OpenAI request fi
   assertFalse('include' in result);
 });
 
-test('translateChatCompletionsToResponses never invents reasoning.context from reasoning_effort', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest never invents reasoning.context from reasoning_effort', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning_effort: 'high',
@@ -155,8 +127,8 @@ test('translateChatCompletionsToResponses never invents reasoning.context from r
   assertFalse('context' in (result.reasoning ?? {}));
 });
 
-test('translateChatCompletionsToResponses omits store when Chat omits store', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest omits store when Chat omits store', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
   });
@@ -164,8 +136,8 @@ test('translateChatCompletionsToResponses omits store when Chat omits store', ()
   assertFalse('store' in result);
 });
 
-test('translateChatCompletionsToResponses preserves explicit null prompt cache and safety fields', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest preserves explicit null prompt cache and safety fields', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     prompt_cache_key: null,
@@ -178,8 +150,8 @@ test('translateChatCompletionsToResponses preserves explicit null prompt cache a
   assertEquals(result.safety_identifier, null);
 });
 
-test('translateChatCompletionsToResponses hoists only the initial contiguous system prefix', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest hoists only the initial contiguous system prefix', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [
       { role: 'system', content: 'sys-1' },
@@ -204,8 +176,8 @@ test('translateChatCompletionsToResponses hoists only the initial contiguous sys
   ]);
 });
 
-test('translateChatCompletionsToResponses preserves explicit tool strict and defaults omission to false', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest preserves explicit tool strict and defaults omission to false', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hello' }],
     tools: [
@@ -243,199 +215,10 @@ test('translateChatCompletionsToResponses preserves explicit tool strict and def
   ]);
 });
 
-test('translateChatCompletionsChunkToResponsesEvents keeps late opaque with prior scalar reasoning text', () => {
-  const state = createChatCompletionsToResponsesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ content: 'answer' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ reasoning_opaque: 'sig' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({}, 'stop'), state),
-    ...flushChatCompletionsToResponsesEvents(state),
-  ];
-
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as ResponsesOutputItemDoneEvent).item.type === 'reasoning') as ResponsesOutputItemDoneEvent[];
-
-  assertEquals(reasoningDoneEvents.length, 1);
-  assertEquals(reasoningDoneEvents[0].output_index, 0);
-  assertEquals(reasoningDoneEvents[0].item, {
-    type: 'reasoning',
-    id: expect.stringMatching(/^rs_[0-9a-f]{32}$/),
-    summary: [{ type: 'summary_text', text: 'trace' }],
-  });
-});
-
-test('translateChatCompletionsChunkToResponsesEvents prefers reasoning_items over scalar reasoning in streaming composition', () => {
-  const state = createChatCompletionsToResponsesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ role: 'assistant' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ reasoning_text: 'trace' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ content: 'answer' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(
-      chunk({
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_carrier',
-            summary: [{ type: 'summary_text', text: 'trace' }],
-          },
-        ],
-      }),
-      state,
-    ),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({}, 'stop'), state),
-    ...flushChatCompletionsToResponsesEvents(state),
-  ];
-
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as ResponsesOutputItemDoneEvent).item.type === 'reasoning') as ResponsesOutputItemDoneEvent[];
-  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
-
-  assertEveryAddedOutputItemIsDone(events);
-  assertEquals(reasoningDoneEvents.length, 1);
-  assertEquals(reasoningDoneEvents[0].item, {
-    type: 'reasoning',
-    id: 'rs_carrier',
-    summary: [{ type: 'summary_text', text: 'trace' }],
-  });
-  assertEquals(completed?.response.output, [
-    {
-      type: 'reasoning',
-      id: 'rs_carrier',
-      summary: [{ type: 'summary_text', text: 'trace' }],
-    },
-    {
-      type: 'message',
-      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
-      role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer' }],
-    },
-  ]);
-});
-
-test('translateChatCompletionsChunkToResponsesEvents keeps terminal output ordered by output_index', () => {
-  const state = createChatCompletionsToResponsesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ role: 'assistant' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(
-      chunk({
-        tool_calls: [
-          {
-            index: 0,
-            id: 'call_1',
-            type: 'function',
-            function: { name: 'lookup', arguments: '{"q":"x"}' },
-          },
-        ],
-      }),
-      state,
-    ),
-    ...translateChatCompletionsChunkToResponsesEvents(
-      chunk({
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_after_tool',
-            summary: [{ type: 'summary_text', text: 'trace' }],
-          },
-        ],
-      }),
-      state,
-    ),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({}, 'tool_calls'), state),
-    ...flushChatCompletionsToResponsesEvents(state),
-  ];
-
-  const added = events.filter(event => event.type === 'response.output_item.added') as ResponsesOutputItemAddedEvent[];
-  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
-
-  assertEquals(
-    added.map(event => [event.output_index, event.item.type]),
-    [
-      [0, 'function_call'],
-      [1, 'reasoning'],
-    ],
-  );
-  assertEquals(
-    completed?.response.output.map(item => item.type),
-    ['function_call', 'reasoning'],
-  );
-});
-
-test('translateChatCompletionsChunkToResponsesEvents discards scalar reasoning when carrier arrives after opaque', () => {
-  const state = createChatCompletionsToResponsesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ role: 'assistant' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ reasoning_text: 'trace' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ content: 'answer' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({ reasoning_opaque: 'sig' }), state),
-    ...translateChatCompletionsChunkToResponsesEvents(
-      chunk({
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_carrier',
-            summary: [{ type: 'summary_text', text: 'trace' }],
-          },
-        ],
-      }),
-      state,
-    ),
-    ...translateChatCompletionsChunkToResponsesEvents(chunk({}, 'stop'), state),
-    ...flushChatCompletionsToResponsesEvents(state),
-  ];
-
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as ResponsesOutputItemDoneEvent).item.type === 'reasoning') as ResponsesOutputItemDoneEvent[];
-  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
-
-  assertEveryAddedOutputItemIsDone(events);
-  assertEquals(reasoningDoneEvents.length, 1);
-  assertEquals(reasoningDoneEvents[0].item, {
-    type: 'reasoning',
-    id: 'rs_carrier',
-    summary: [{ type: 'summary_text', text: 'trace' }],
-  });
-  assertEquals(completed?.response.output, [
-    {
-      type: 'reasoning',
-      id: 'rs_carrier',
-      summary: [{ type: 'summary_text', text: 'trace' }],
-    },
-    {
-      type: 'message',
-      id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
-      role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer' }],
-    },
-  ]);
-});
-
-test('translateChatCompletionsChunkToResponsesEvents ignores empty tool_calls arrays', () => {
-  const state = createChatCompletionsToResponsesStreamState();
-  // Before the fix, empty tool_calls [] was truthy and entered the
-  // tool-calls branch, prematurely closing the text item. After the fix
-  // (choice.delta.tool_calls?.length), empty arrays are treated as absent.
-  const events1 = translateChatCompletionsChunkToResponsesEvents(chunk({ role: 'assistant', tool_calls: [] }), state);
-  // role + empty tool_calls should only emit response.created + response.in_progress.
-  // No tool-call events should be emitted.
-  assertEquals(events1.length, 2);
-  assertEquals(events1[0].type, 'response.created');
-  assertEquals(events1[1].type, 'response.in_progress');
-
-  // Content delta should create a message item and emit text delta — not a new
-  // output item for empty tool_calls.
-  const events2 = translateChatCompletionsChunkToResponsesEvents(chunk({ content: 'hello' }), state);
-  const addedEvents = events2.filter(e => e.type === 'response.output_item.added') as ResponsesOutputItemAddedEvent[];
-  assertEquals(addedEvents.length, 1, 'content delta should create one message output item');
-  assertEquals(addedEvents[0].item.type, 'message');
-
-  const deltaEvents = events2.filter(e => e.type === 'response.output_text.delta');
-  assertEquals(deltaEvents.length, 1);
-  assertEquals((deltaEvents[0] as { delta: string }).delta, 'hello');
-});
-
-test('translateChatCompletionsToResponses rejects an unknown message role', () => {
+test('buildTargetRequest rejects an unknown message role', () => {
   assertThrows(
     () =>
-      translateChatCompletionsToResponses({
+      buildTargetRequest({
         model: 'gpt-test',
         messages: [{ role: 'function', content: 'hi' } as unknown as ChatCompletionsMessage],
       }),
@@ -444,8 +227,8 @@ test('translateChatCompletionsToResponses rejects an unknown message role', () =
   );
 });
 
-test('translateChatCompletionsToResponses forwards reasoning_effort and service_tier onto the native slots', () => {
-  const result = translateChatCompletionsToResponses({
+test('buildTargetRequest forwards reasoning_effort and service_tier onto the native slots', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hi' }],
     reasoning_effort: 'medium',
@@ -456,8 +239,8 @@ test('translateChatCompletionsToResponses forwards reasoning_effort and service_
   assertEquals(result.service_tier, 'priority');
 });
 
-test("translateChatCompletionsToResponses drops reasoning_effort='none' since Responses has no equivalent", () => {
-  const result = translateChatCompletionsToResponses({
+test("buildTargetRequest drops reasoning_effort='none' since Responses has no equivalent", () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hi' }],
     reasoning_effort: 'none',

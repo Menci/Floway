@@ -81,8 +81,8 @@ export interface UpstreamRecord {
   createdAt: string;
   updatedAt: string;
   config: unknown;
-  // Runtime state managed by the gateway autonomous flows; null when a
-  // provider has no autonomous state.
+  // Gateway-written state that can change without an operator editing config;
+  // null when a provider has no runtime state.
   state: unknown;
   flagOverrides: FlagOverrides;
   // Public model ids the operator switched off for this upstream. Orthogonal to
@@ -100,45 +100,6 @@ export interface UpstreamRecord {
   // default. Otherwise: a preset key from `UPSTREAM_COLOR_PRESETS`, or a raw
   // `#RRGGBB` string. Wire validation lives in the control-plane Zod schema.
   color: UpstreamColor | null;
-}
-
-// Model identity attached to every provider result at the provider boundary
-// so the identity is decided once.
-export interface TelemetryModelIdentity {
-  model: string;
-  upstream: string;
-  modelKey: string;
-  pricing: ModelPricing | null;
-}
-
-// `chat`, `text_completion`, and `embeddings` are the OTel `gen_ai.operation.name`
-// well-known values we route; `image_generation`, `image_edit`, `rerank`, and
-// `audio_transcription` are gateway-defined extensions for concrete endpoints
-// not covered by OTel. Extend only when a new route lands — no wildcard string.
-// OTel canonical set:
-// https://github.com/open-telemetry/semantic-conventions/blob/v1.37.0/docs/gen-ai/gen-ai-spans.md#gen_aioperationname
-export const PERFORMANCE_OPERATIONS = [
-  'chat',
-  'text_completion',
-  'embeddings',
-  'image_generation',
-  'image_edit',
-  'rerank',
-  'audio_transcription',
-] as const;
-export type PerformanceOperation = typeof PERFORMANCE_OPERATIONS[number];
-
-export const parsePerformanceOperation = (value: unknown): PerformanceOperation => {
-  if (typeof value === 'string' && (PERFORMANCE_OPERATIONS as readonly string[]).includes(value)) return value as PerformanceOperation;
-  throw new TypeError(`Invalid performance operation: ${JSON.stringify(value)}`);
-};
-
-export interface PerformanceTelemetryContext {
-  keyId: string;
-  model: string;
-  upstream: string;
-  operation: PerformanceOperation;
-  runtimeLocation: string;
 }
 
 // Public identity + capability surface shared by `InternalModel` (the merged,
@@ -181,8 +142,8 @@ interface ModelMetadata {
 //     dispatch reads the chosen upstream's `ProviderModel` off this map via
 //     `providerModelOf(candidate)`. A per-candidate row (from
 //     `enumerateRealModelCandidates`) narrows the map to the single dispatched
-//     upstream; the merged catalog row from `getModels` aggregates every
-//     contributing upstream.
+//     upstream; the merged catalog row from `getModelsFromProviders`
+//     aggregates every contributing upstream.
 //   • Alias row — carries `aliasedFrom`, the operator-defined alias record.
 //     Alias rows appear in listings but never dispatch directly; the resolver
 //     walks the alias's targets and yields real-row candidates instead.

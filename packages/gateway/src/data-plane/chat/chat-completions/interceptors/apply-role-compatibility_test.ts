@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { ChatCompletionsMessage, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';

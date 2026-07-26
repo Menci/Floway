@@ -12,7 +12,7 @@ export const prepareChatCompletionsAffinity = async (
   }
 
   return {
-    routingEvidence: preferredAffinityEvidence(decoded.values()),
+    narrowingEvidence: preferredAffinityEvidence(decoded.values()),
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
       for (const [index, blob] of decoded) {

@@ -14,8 +14,8 @@ import {
 } from './web-search-shim.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
-import { DEFAULT_SEARCH_CONFIG } from '../../../tools/web-search/search-config.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../tools/web-search/config.ts';
 import type { WebSearchProvider, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/messages';
@@ -568,14 +568,14 @@ test('prepareMessagesWebSearchShimRequest creates a separate user tool_result me
 const initDisabledSearchRepo = async (): Promise<void> => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
+  await repo.webSearchConfig.save(DEFAULT_WEB_SEARCH_CONFIG);
 };
 
 const initEnabledSearchRepo = async (): Promise<void> => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  await repo.searchConfig.save({
-    ...DEFAULT_SEARCH_CONFIG,
+  await repo.webSearchConfig.save({
+    ...DEFAULT_WEB_SEARCH_CONFIG,
     provider: 'tavily',
     tavily: { apiKey: 'test-key' },
   });

@@ -1,6 +1,7 @@
-import type { CustomUpstreamConfig } from './config.ts';
+import type { CustomPathOverrideKey, CustomUpstreamConfig } from './config.ts';
 import { type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
+// https://docs.anthropic.com/en/api/versioning
 const ANTHROPIC_VERSION = '2023-06-01';
 
 // Endpoint key is the OpenAI-canonical path fragment (`/chat/completions`,
@@ -9,9 +10,7 @@ const ANTHROPIC_VERSION = '2023-06-01';
 // messages count-tokens and responses compact endpoints append a suffix
 // to their parent's resolved path so an override of the parent ripples
 // down to both.
-type EndpointKey = keyof NonNullable<CustomUpstreamConfig['pathOverrides']>;
-
-const resolveOverridable = (config: CustomUpstreamConfig, key: EndpointKey): string =>
+const pathOverrideFor = (config: CustomUpstreamConfig, key: CustomPathOverrideKey): string =>
   config.pathOverrides?.[key] ?? `/v1${key}`;
 
 const customFetchInternal = async (
@@ -43,27 +42,27 @@ export const customFetchRerank = (config: CustomUpstreamConfig, path: string, in
   customFetchInternal(config, path, init, options);
 
 export const customFetchChatCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, resolveOverridable(config, '/chat/completions'), init, options);
+  customFetchInternal(config, pathOverrideFor(config, '/chat/completions'), init, options);
 export const customFetchResponses = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, resolveOverridable(config, '/responses'), init, options);
+  customFetchInternal(config, pathOverrideFor(config, '/responses'), init, options);
 export const customFetchResponsesCompact = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, `${resolveOverridable(config, '/responses')}/compact`, init, options);
+  customFetchInternal(config, `${pathOverrideFor(config, '/responses')}/compact`, init, options);
 export const customFetchMessages = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, resolveOverridable(config, '/messages'), init, options);
+  customFetchInternal(config, pathOverrideFor(config, '/messages'), init, options);
 export const customFetchMessagesCountTokens = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, `${resolveOverridable(config, '/messages')}/count_tokens`, init, options);
+  customFetchInternal(config, `${pathOverrideFor(config, '/messages')}/count_tokens`, init, options);
 export const customFetchEmbeddings = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, resolveOverridable(config, '/embeddings'), init, options);
+  customFetchInternal(config, pathOverrideFor(config, '/embeddings'), init, options);
 export const customFetchCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, resolveOverridable(config, '/completions'), init, options);
+  customFetchInternal(config, pathOverrideFor(config, '/completions'), init, options);
 export const customFetchImagesGenerations = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, resolveOverridable(config, '/images/generations'), init, options);
+  customFetchInternal(config, pathOverrideFor(config, '/images/generations'), init, options);
 export const customFetchImagesEdits = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, resolveOverridable(config, '/images/edits'), init, options);
+  customFetchInternal(config, pathOverrideFor(config, '/images/edits'), init, options);
 export const customFetchAudioTranscriptions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, resolveOverridable(config, '/audio/transcriptions'), init, options);
+  customFetchInternal(config, pathOverrideFor(config, '/audio/transcriptions'), init, options);
 export const customFetchAlphaSearch = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, resolveOverridable(config, '/alpha/search'), init, options);
+  customFetchInternal(config, pathOverrideFor(config, '/alpha/search'), init, options);
 // /models lives on its own fetch toggle (see config.modelsFetch.endpoint),
 // not in pathOverrides.
 export const customFetchModels = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

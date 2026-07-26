@@ -20,7 +20,7 @@ const translateChatTools = (tools?: ChatCompletionsTool[] | null): ResponsesTool
 const translateChatToolChoice = (choice?: ChatCompletionsPayload['tool_choice']): ResponsesToolChoice =>
   choice == null ? 'auto' : typeof choice === 'string' ? choice : { type: 'function', name: choice.function.name };
 
-export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayload): CanonicalResponsesPayload => {
+export const buildTargetRequest = (payload: ChatCompletionsPayload): CanonicalResponsesPayload => {
   const instructions: string[] = [];
   const input: ResponsesInputItem[] = [];
   let hoistSystemPrefix = true;
@@ -148,5 +148,3 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
     ...(payload.service_tier !== undefined ? { service_tier: payload.service_tier } : {}),
   };
 };
-
-export const buildTargetRequest = translateChatCompletionsToResponses;

@@ -1,14 +1,14 @@
 import type { ExecutionContext } from 'hono';
 import { test, vi } from 'vitest';
 
-import { hashResponsesItemContent } from './items/identity.ts';
+import { hashResponsesItem } from './items/identity.ts';
 import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
 import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
-import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
+import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/sse.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
@@ -768,7 +768,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       assert(firstOutput.item.id !== 'assistant_ws_store_false_1', 'expected Copilot to replace the raw message id');
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id], 0), []);
       assertEquals(
-        await repo.responsesItems.lookupManyByItemHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })], 0),
+        await repo.responsesItems.lookupManyByItemHash(apiKey.id, [await hashResponsesItem({ type: 'message', role: 'user', content: 'first question' })], 0),
         [],
       );
 
@@ -1159,8 +1159,7 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
 });
 
 // The four chat HTTP transports render a mid-attempt throw (interceptor
-// bug, translation error, provider-layer JS exception that bypassed
-// tryCatchChatServeFailure) through an
+// bug, translation error, provider-layer JS exception not represented as a ChatServeFailure) through an
 // `internalErrorResult(..., ctx.attempt.telemetry)` envelope,
 // which internally reaches `recordFailedRequest` and lands an error row
 // attributed to the throwing candidate. The WS transport's outer catch

@@ -12,26 +12,25 @@ NULL or a canonical non-negative decimal string containing USD per one base
 unit of that metric. `pricing_selector` is canonical selector JSON; `{}` is the
 Base coordinate.
 
-The seven metrics established by
-`packages/gateway/migrations/0062_usage_billing_metrics.sql` are:
+`BILLING_METRICS` in `packages/protocols/src/common/pricing.ts` owns the
+complete metric domain, and `BillingMetric` is derived from it. Read that array
+before every operation and enumerate the metrics present in the
+selected database slice; do not maintain another metric list in this procedure.
+The repository read path rejects stored metric values outside that domain.
 
-- `input_tokens`
-- `input_cache_read_tokens`
-- `input_cache_write_tokens`
-- `input_cache_write_1h_tokens`
-- `input_image_tokens`
-- `output_tokens`
-- `output_image_tokens`
-
-Realized cost is `SUM(quantity * unit_price)`. Both operands are decimal
-strings in storage, and there is no additional scaling step.
+Realized cost is the sum of `quantity * unit_price` for priced metric rows. Both
+operands are decimal strings in storage, and there is no additional scaling
+step. Aggregation skips NULL-price rows: cost is NULL only when no metric row was
+priced, while a non-NULL cost may still be partial when other metric rows remain
+unpriced.
 
 ## Procedure
 
 1. Announce the environment. Default to production (`--remote`).
 2. Before planning or running an UPDATE, re-read the current implementations in
-   `packages/gateway/src/repo/sql.ts` (`SqlUsageRepo` and usage row assembly)
-   and `packages/gateway/src/control-plane/token-usage/aggregate.ts` (cost
+   `packages/gateway/src/repo/sql.ts` (`SqlUsageRepo` and usage row assembly),
+   `packages/gateway/src/repo/types.ts` (the usage contracts), and
+   `packages/gateway/src/control-plane/token-usage/aggregate.ts` (cost
    aggregation). They are the authority if this procedure and the runtime ever
    diverge.
 3. Establish the exact model, upstream, hour range, timezone, metrics, and write
@@ -46,24 +45,30 @@ strings in storage, and there is no additional scaling step.
    `(upstream, model_key)`.
 6. Match the stored `pricing_selector` exactly against `ModelPricing.entries`
    using canonical selector JSON.
-   - Current runtime selector misses are stored as `{}` with Base rates.
-   - A historical non-Base selector absent from today's catalog indicates
-     catalog drift; stop and investigate rather than guessing its old rates.
-   - Read only `entry.rates[metric]`. These runtime rates are already USD per
-     base metric unit.
-   - When a provider source uses `tokenPricingEntry` or `tokenBasePricing`, its
-     source literals are published token rates and the helper applies
-     `perMillionTokenRates`; apply the same conversion rather than copying a
-     source literal into `unit_price`.
-   - A missing metric is unpriced; there is no cache, image, or other
-     field-by-field fallback.
+   - An exact selector hit uses that entry. A selector miss in a catalog with a
+     Base entry is recorded as `{}` with the whole Base vector.
+   - A non-Base selector on an unpriced row is ordinary when no `ModelPricing`
+     existed: runtime facts form the selector before rate lookup, and it is
+     retained when no Base rates exist. It is not catalog drift by itself.
+   - A priced sibling row for the same `(upstream, model_key)` proves that a
+     catalog existed. If such a slice also contains an unpriced non-Base selector
+     absent from today's catalog, stop and investigate historical catalog drift.
+     Without a priced sibling, resolve today's catalog normally but never infer
+     historical rates.
+   - Read only the evaluated `entry.rates[metric]`; those values are already USD
+     per base metric unit. Never transcribe a numeric literal from a provider
+     `pricing.ts` into `unit_price`.
+   - A missing metric is unpriced; there is no cache, image, audio, rerank, or
+     other field-by-field fallback.
 7. Preview the affected count and representative rows, including the current
    and proposed decimal-string `unit_price`.
 8. Execute one UPDATE per exact `(slice, pricing_selector, metric)`. Include
    `unit_price IS NULL` only in fill mode, preserve NULL upstream matching with
    `COALESCE(upstream, '')`, and bind the new rate as a decimal string.
 9. Re-query every slice and report the selector, metric, rate, rows updated, and
-   remaining NULL count. Independently validate the realized-cost expression on
+   remaining NULL count per metric. Compare those NULL counts with the expected
+   metric set; a non-NULL aggregate cost does not prove the slice is fully
+   priced. Independently validate decimal-string multiplication on
    representative rows.
 
 Use the local Wrangler dependency and read the D1 database name from

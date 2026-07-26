@@ -18,11 +18,11 @@ These providers are subscription-backed or self-hosted. Floway records
 notional API-equivalent value so the usage dashboard remains comparable.
 
 `ModelPricing.entries[].rates` stores decimal-string USD prices per one base
-`BillingMetric` unit. The token metrics established by
-`packages/gateway/migrations/0062_usage_billing_metrics.sql` are
-`input_tokens`, `input_cache_read_tokens`, `input_cache_write_tokens`,
-`input_cache_write_1h_tokens`, `input_image_tokens`, `output_tokens`, and
-`output_image_tokens`.
+`BillingMetric` unit. The ten-member `BILLING_METRICS` array in
+`packages/protocols/src/common/pricing.ts` owns the complete metric domain, and
+`BillingMetric` is derived from it. Read the array rather than copying its
+members into this procedure; each provider table may price only the defensible
+subset for a model.
 
 ## Procedure
 
@@ -43,12 +43,12 @@ notional API-equivalent value so the usage dashboard remains comparable.
 
    OpenRouter prices below first-party rates are usually mirror-host prices,
    not the canonical vendor rate.
-4. Author pricing with the token helpers and decimal strings:
+4. Author pricing with the token-rate conversion helpers and decimal strings:
 
    ```ts
    import {
+     modelPricing,
      tokenBasePricing,
-     tokenModelPricing,
      tokenPricingEntry,
      type PriceVector,
    } from '@floway-dev/protocols/common';
@@ -67,20 +67,24 @@ notional API-equivalent value so the usage dashboard remains comparable.
 
    export const BASE_ONLY_PRICING = tokenBasePricing(PUBLISHED_BASE_RATES);
 
-   export const TIERED_PRICING = tokenModelPricing(
+   export const TIERED_PRICING = modelPricing(
      tokenPricingEntry(PUBLISHED_BASE_RATES),
      tokenPricingEntry(PUBLISHED_PRIORITY_RATES, { serviceTier: 'priority' }),
    );
    ```
 
    Published token rate cards are normally USD per million tokens.
-   `tokenPricingEntry` and `tokenBasePricing` use the existing
+   `tokenPricingEntry` and `tokenBasePricing` apply the existing
    `perMillionTokenRates` conversion, so their resulting `PriceVector` values
    are USD per base token. Do not divide manually or pass number literals.
    Follow `packages/provider-codex/src/pricing.ts` for a complete production
    example instead of copying a rate vector into this skill.
 
-   Follow these invariants:
+   `collectModelPricingIssues` in
+   `packages/protocols/src/common/pricing.ts` enforces the structural invariants
+   below, including Base count, matching rate metrics, selector uniqueness, and
+   threshold-operator consistency. The source-quality rules still require
+   human judgment.
 
    - Declare exactly one Base entry without a selector.
    - Give every entry the same metrics as Base.

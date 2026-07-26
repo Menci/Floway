@@ -1,4 +1,4 @@
-import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './types.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import { parseAnthropicBetaHeader } from '@floway-dev/protocols/messages';
 
 /**
@@ -21,8 +21,8 @@ import { parseAnthropicBetaHeader } from '@floway-dev/protocols/messages';
  * not have interleaved auto-added even with non-adaptive budget thinking —
  * matching VSCode Copilot Chat.
  *
- * Generic in the run-result type because pre-Path A the equivalent filter
- * ran on every Copilot Messages HTTP exchange (chat AND count_tokens).
+ * Generic in the run-result type because the Copilot provider historically
+ * applied this filter to every Messages HTTP exchange (chat AND count_tokens).
  * Keeping a single generic interceptor lets both the streaming Messages
  * boundary chain (`ExecuteResult<...>`) and the count_tokens chain
  * (`Response`) share one definition.
@@ -33,16 +33,18 @@ import { parseAnthropicBetaHeader } from '@floway-dev/protocols/messages';
  * - https://github.com/caozhiyuan/copilot-api/commit/b2dbf9d57612bdf75e87f71993567bd5315b22b5
  * - https://github.com/caozhiyuan/copilot-api/blob/main/src/services/copilot/create-messages.ts (buildAnthropicBetaHeader)
  */
+export const CONTEXT_MANAGEMENT_BETA = 'context-management-2025-06-27';
+
 const ALLOWED_ANTHROPIC_BETAS = new Set([
   'interleaved-thinking-2025-05-14',
-  'context-management-2025-06-27',
+  CONTEXT_MANAGEMENT_BETA,
   'advanced-tool-use-2025-11-20',
 ]);
 const INTERLEAVED_THINKING_BETA = 'interleaved-thinking-2025-05-14';
 
 export const withAnthropicBetaHeaderFiltered = async <TResult>(
-  ctx: MessagesBoundaryCtx | MessagesCountTokensBoundaryCtx,
-  _request: object,
+  ctx: MessagesBoundaryCtx,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   // Read the caller's untouched intent before deleting the raw header —

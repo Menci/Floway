@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, test } from 'vitest';
 
 import { recordPerformance } from './performance.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { mockGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
-import type { AttemptState } from '../../chat/shared/gateway-ctx.ts';
-import { mockPerfTelemetryContext } from '@floway-dev/test-utils';
+import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
+import type { AttemptState } from '../gateway-ctx.ts';
+import { assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
 const telemetry = mockPerfTelemetryContext({
   keyId: 'key_a',
@@ -209,4 +209,90 @@ describe('recordPerformance', () => {
     expect(() => recordPerformance(ctx, telemetry, false, -1, 400))
       .toThrow(/negative outputTokens=-1/);
   });
+});
+
+const movedTelemetry = mockPerfTelemetryContext({
+  keyId: '',
+  model: 'claude-test',
+  upstream: 'copilot:1',
+  runtimeLocation: 'SJC',
+});
+
+let movedRepo: InMemoryRepo;
+let movedBackground: Promise<unknown>[];
+const movedCtx = ({ firstOutputTokenAt = null, upstreamCallStartedAt = null }: {
+  firstOutputTokenAt?: number | null;
+  upstreamCallStartedAt?: number | null;
+} = {}) => mockGatewayCtx({
+  apiKeyId: 'key_a',
+  backgroundScheduler: promise => { movedBackground.push(promise); },
+  attempt: { firstOutputTokenAt, upstreamCallStartedAt, telemetry: undefined },
+});
+
+beforeEach(() => {
+  movedRepo = new InMemoryRepo();
+  initRepo(movedRepo);
+  movedBackground = [];
+});
+
+// ── recordPerformance ──
+
+test('recordPerformance records a full sample when success with upstreamCallStartedAt, firstOutputTokenAt, and outputTokens>=2', async () => {
+  recordPerformance(movedCtx({ upstreamCallStartedAt: 50, firstOutputTokenAt: 100 }), movedTelemetry, false, 50, 200);
+  await Promise.all(movedBackground);
+
+  const rows = await movedRepo.performance.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].ttftSamplesOk, 1);
+  assertEquals(rows[0].tpotSamples, 1);
+  assertEquals(rows[0].errorsWithOutput, 0);
+  assertEquals(rows[0].errorsNoOutput, 0);
+  assertEquals(rows[0].requests, 1);
+});
+
+test('recordPerformance records TTFT-only sample when outputTokens is zero but first-token stamp fired', async () => {
+  recordPerformance(movedCtx({ upstreamCallStartedAt: 50, firstOutputTokenAt: 100 }), movedTelemetry, false, 0, 200);
+  await Promise.all(movedBackground);
+
+  const rows = await movedRepo.performance.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].ttftSamplesOk, 1);
+  assertEquals(rows[0].tpotSamples, 0);
+  assertEquals(rows[0].errorsWithOutput, 0);
+  assertEquals(rows[0].errorsNoOutput, 0);
+  assertEquals(rows[0].requests, 1);
+});
+
+test('recordPerformance records neutral when success but firstOutputTokenAt is null', async () => {
+  recordPerformance(movedCtx({ firstOutputTokenAt: null }), movedTelemetry, false, 50, 200);
+  await Promise.all(movedBackground);
+
+  const rows = await movedRepo.performance.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].ttftSamplesOk, 0);
+  assertEquals(rows[0].tpotSamples, 0);
+  assertEquals(rows[0].neutral, 1);
+  assertEquals(rows[0].errorsWithOutput, 0);
+  assertEquals(rows[0].errorsNoOutput, 0);
+  assertEquals(rows[0].requests, 1);
+});
+
+test('recordPerformance records a zero-output error when failed without a real TTFT stamp', async () => {
+  recordPerformance(movedCtx({ firstOutputTokenAt: 100 }), movedTelemetry, true, 50, 200);
+  await Promise.all(movedBackground);
+
+  const rows = await movedRepo.performance.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].ttftSamplesOk, 0);
+  assertEquals(rows[0].tpotSamples, 0);
+  assertEquals(rows[0].errorsNoOutput, 1);
+  assertEquals(rows[0].errorsWithOutput, 0);
+  assertEquals(rows[0].requests, 1);
+});
+
+test('recordPerformance skips when performance context is absent', async () => {
+  recordPerformance(movedCtx(), undefined, true, 0, 200);
+  await Promise.all(movedBackground);
+
+  assertEquals(await movedRepo.performance.listAll(), []);
 });

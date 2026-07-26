@@ -1,4 +1,4 @@
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';

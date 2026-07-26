@@ -48,7 +48,7 @@ const isWhitespaceExceeded = (
   return false;
 };
 
-export const withToolArgumentWhitespaceAborted: CopilotChatCompletionsBoundaryInterceptor = async (_invocation, _request, run) => {
+export const withToolArgumentWhitespaceAborted: CopilotChatCompletionsBoundaryInterceptor = async (_invocation, _env, run) => {
   const result = await run();
   if (result.type !== 'events') return result;
 

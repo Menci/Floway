@@ -16,7 +16,7 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 const modelCandidate = (upstream: string) => {
   const base = stubModelCandidate();
   return stubModelCandidate({
-    provider: { ...base.provider, upstream },
+    provider: { ...base.provider, upstreamId: upstream },
     model: { id: 'model-a' },
   });
 };
@@ -59,7 +59,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
   };
   const withAffinity = wrapResponsesAffinityEgress(source(), {
     codec,
-    affinity: { upstreamId: candidateA.provider.upstream, modelId: candidateA.model.id },
+    affinity: { upstreamId: candidateA.provider.upstreamId, modelId: candidateA.model.id },
   });
   const client = wrapResponsesClientOutput(withAffinity, {
     store,
@@ -79,7 +79,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
   await store.loadInputItems(input, input);
   const hydrated = hydrateResponsesPayload({ model: 'model-a', input }, store);
   const affinity = await prepareResponsesAffinity(hydrated.payload, codec);
-  expect(affinity.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
+  expect(affinity.narrowingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
 
   expect(affinity.payloadForCandidate(candidateA).input).toEqual([programOutput]);
   expect(affinity.payloadForCandidate(candidateB).input).toEqual([programOutput]);
@@ -111,7 +111,7 @@ test('agent-message natural and originless nested carriers round-trip without ch
   let clientResponse: ResponsesResult | undefined;
   for await (const frame of wrapResponsesAffinityEgress(source(), {
     codec,
-    affinity: { upstreamId: candidate.provider.upstream, modelId: candidate.model.id },
+    affinity: { upstreamId: candidate.provider.upstreamId, modelId: candidate.model.id },
   })) if (frame.type === 'event' && frame.event.type === 'response.completed') clientResponse = frame.event.response;
   if (clientResponse === undefined) throw new Error('Expected completed client response');
 
@@ -145,7 +145,7 @@ test('compaction_summary carrier authenticates after alias canonicalization with
   let wrapped: string | undefined;
   for await (const frame of wrapResponsesAffinityEgress(source(), {
     codec,
-    affinity: { upstreamId: candidate.provider.upstream, modelId: candidate.model.id },
+    affinity: { upstreamId: candidate.provider.upstreamId, modelId: candidate.model.id },
   })) {
     if (frame.type === 'event' && frame.event.type === 'response.completed') {
       wrapped = (frame.event.response.output[0] as { encrypted_content?: string }).encrypted_content;
@@ -155,7 +155,7 @@ test('compaction_summary carrier authenticates after alias canonicalization with
 
   const canonical = { type: 'compaction', id: 'cmp_public', encrypted_content: wrapped } as unknown as ResponsesInputItem;
   const prepared = await prepareResponsesAffinity({ model: 'model-a', input: [canonical] }, codec);
-  expect(prepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
+  expect(prepared.narrowingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
   expect(prepared.payloadForCandidate(candidate).input[0]).toMatchObject({
     type: 'compaction',
     id: 'cmp_public',

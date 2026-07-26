@@ -1,7 +1,6 @@
-import { extractWebSearchProviderErrorMessage, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import { sleep } from '../../../../shared/sleep.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
 import {
   DEFAULT_WEB_SEARCH_RESULT_COUNT,
@@ -9,7 +8,6 @@ import {
   type WebSearchFetchPageRequest,
   type WebSearchFetchPageResult,
   type WebSearchProvider,
-  type WebSearchProviderErrorCode,
   type WebSearchProviderRequest,
   type WebSearchProviderResult,
 } from '../types.ts';
@@ -31,14 +29,6 @@ const JINA_SEARCH_MAX_TOKENS_PER_RESULT = 500;
 
 // Hard cap on Jina's `count` query param (validated server-side as 0..20).
 const JINA_SEARCH_MAX_COUNT = 20;
-
-// Per-URL retry policy for the Reader endpoint. Matches the Microsoft
-// Grounding browse retry shape because the failure modes are the same —
-// 429 / 5xx are transient, everything else is structural. Each URL retries
-// independently, so the worst-case wall clock for a 5-URL batch is still
-// `sum(delays)` ≈ 15s, not 5× that.
-const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000] as const;
-const RETRYABLE_HTTP_STATUS: ReadonlySet<number> = new Set([429, 500, 502, 503, 504]);
 
 interface JinaEnvelope {
   code: number;
@@ -72,24 +62,6 @@ const isAssertionEmptyResults = (envelope: JinaEnvelope): boolean =>
   envelope.name === 'AssertionFailureError'
   && typeof envelope.message === 'string'
   && /no search results/i.test(envelope.message);
-
-const httpStatusToErrorCode = (status: number): WebSearchProviderErrorCode => {
-  if (status === 429) return 'too_many_requests';
-  if (status === 413) return 'request_too_large';
-  if (status === 400) return 'invalid_tool_input';
-  return 'unavailable';
-};
-
-const fetchWithRetry = async (doFetch: () => Promise<Response>, signal?: AbortSignal): Promise<Response> => {
-  let attempt = 0;
-  while (true) {
-    const response = await doFetch();
-    if (!RETRYABLE_HTTP_STATUS.has(response.status)) return response;
-    if (attempt >= RETRY_DELAYS_MS.length) return response;
-    await sleep(RETRY_DELAYS_MS[attempt], signal);
-    attempt += 1;
-  }
-};
 
 // Jina accepts a single hostname per `X-Site` header, or multiple via the
 // literal `", "` separator (comma + space). Anything else collapses to a

@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
 import { runScheduledMaintenance } from './scheduled.ts';
-import { setupAppTest } from './test-helpers.ts';
+import { setupAppTest } from './test-utils/app.ts';
 import { initFileStore, initImageCacheStore, MemoryFileStore } from '@floway-dev/platform';
 
 test('scheduled maintenance isolates the shared expiration driver from later collectors', async () => {

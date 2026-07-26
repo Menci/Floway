@@ -21,34 +21,29 @@ import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import type { AgentSetupConfiguration } from '../src/configuration.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
+import {
+  SETUP_BASH_CLAUDE,
+  SETUP_BASH_CODEX,
+  SETUP_BASH_COMMON,
+  SETUP_POWERSHELL_CLAUDE,
+  SETUP_POWERSHELL_CODEX,
+  SETUP_POWERSHELL_COMMON,
+} from '../src/script-assets.generated.ts';
+import { type ScriptAgent, SETUP_SCRIPT_BODIES } from '../src/script-assets.ts';
 
 const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const INSTALLERS_DIR = join(HERE, '..', 'installers');
-const BASH_COMMON = ['output.sh', 'helpers.sh', 'main.sh']
-  .map(file => readFileSync(join(INSTALLERS_DIR, 'bash/common', file), 'utf8'))
-  .join('');
-const BASH_CLAUDE = readFileSync(join(INSTALLERS_DIR, 'bash/claude.sh'), 'utf8');
-const BASH_CODEX = readFileSync(join(INSTALLERS_DIR, 'bash/codex.sh'), 'utf8');
-const POWERSHELL_COMMON = ['output.ps1', 'helpers.ps1', 'main.ps1']
-  .map(file => readFileSync(join(INSTALLERS_DIR, 'powershell/common', file), 'utf8'))
-  .join('');
-const POWERSHELL_CLAUDE = readFileSync(join(INSTALLERS_DIR, 'powershell/claude.ps1'), 'utf8');
-const POWERSHELL_CODEX = readFileSync(join(INSTALLERS_DIR, 'powershell/codex.ps1'), 'utf8');
-type SetupAgent = 'claude' | 'codex';
-const AGENT_NAMES: Record<SetupAgent, string> = { claude: 'Claude Code', codex: 'Codex' };
-const shellEntry = (agent: SetupAgent): string => `main '${AGENT_NAMES[agent]}' "$@"`;
-const powerShellEntry = (agent: SetupAgent): string => `$global:LASTEXITCODE = Main '${AGENT_NAMES[agent]}'`;
-const shellBody = (agent: SetupAgent): string => BASH_COMMON + (agent === 'claude' ? BASH_CLAUDE : BASH_CODEX);
-const powerShellBody = (agent: SetupAgent): string => POWERSHELL_COMMON + (agent === 'claude' ? POWERSHELL_CLAUDE : POWERSHELL_CODEX);
-const ALL_BASH_FRAGMENTS = BASH_COMMON + BASH_CLAUDE + BASH_CODEX;
-const ALL_POWERSHELL_FRAGMENTS = POWERSHELL_COMMON + POWERSHELL_CLAUDE + POWERSHELL_CODEX;
+const AGENT_NAMES: Record<ScriptAgent, string> = { claude: 'Claude Code', codex: 'Codex' };
+const shellEntry = (agent: ScriptAgent): string => `main '${AGENT_NAMES[agent]}' "$@"`;
+const powerShellEntry = (agent: ScriptAgent): string => `$global:LASTEXITCODE = Main '${AGENT_NAMES[agent]}'`;
+const shellBody = (agent: ScriptAgent): string => SETUP_SCRIPT_BODIES[agent].sh;
+const powerShellBody = (agent: ScriptAgent): string => SETUP_SCRIPT_BODIES[agent].ps1;
+const ALL_BASH_FRAGMENTS = SETUP_BASH_COMMON + SETUP_BASH_CLAUDE + SETUP_BASH_CODEX;
+const ALL_POWERSHELL_FRAGMENTS = SETUP_POWERSHELL_COMMON + SETUP_POWERSHELL_CLAUDE + SETUP_POWERSHELL_CODEX;
 
 // A fixed, highly greppable fake credential. Every test asserts this string
 // never reaches the installer's stdout/stderr, so a real leak is unmistakable.
@@ -57,7 +52,7 @@ const SENTINEL_KEY = 'sk-floway-SENTINEL-Do-Not-Log-9f3c1a7b2e4d6058';
 // --- tiny test runner -------------------------------------------------------
 
 class SkipError extends Error {}
-const skip = (reason: string): never => { throw new SkipError(reason); };
+const skip: (reason: string) => never = reason => { throw new SkipError(reason); };
 
 interface Assert {
   ok(cond: boolean, message: string): void;
@@ -80,9 +75,9 @@ const makeAssert = (): Assert => ({
 });
 
 type TestFn = (t: Assert) => void | Promise<void>;
-interface Case { agent: SetupAgent; name: string; fn: TestFn; }
+interface Case { agent: ScriptAgent; name: string; fn: TestFn }
 const cases: Case[] = [];
-const test = (agent: SetupAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn }); };
+const test = (agent: ScriptAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn }); };
 
 // --- shared fixtures --------------------------------------------------------
 
@@ -429,7 +424,7 @@ const startModelServer = async (): Promise<ModelServer> => {
 
 // --- workspace + runner -----------------------------------------------------
 
-interface Workspace { root: string; home: string; binDir: string; }
+interface Workspace { root: string; home: string; binDir: string }
 const makeWorkspace = (): Workspace => {
   const root = mkdtempSync(join(HARNESS_ROOT, 'ws.'));
   const home = join(root, 'home');
@@ -563,7 +558,7 @@ interface RunOptions {
 
 const targetAgent = (configuration: InstallerTestConfiguration, agent?: 'claude' | 'codex'): 'claude' | 'codex' =>
   agent ?? configuration.testAgent;
-interface RunResult { code: number; stdout: string; stderr: string; combined: string; }
+interface RunResult { code: number; stdout: string; stderr: string; combined: string }
 
 // Environment shared by the shell run helpers: Codex fake-binary knobs, the
 // install hook, and CODEX_HOME. Callers merge this over the Claude environment
@@ -654,7 +649,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   }
 
   const signal = options.signalDuringInstall;
-  return new Promise<RunResult>((resolve) => {
+  return new Promise<RunResult>(resolve => {
     const child = spawn('/bin/bash', [scriptPath], { env, detached: signal !== undefined });
     let stdout = '';
     let stderr = '';
@@ -698,7 +693,7 @@ const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult
     FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
     AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT: FAKE_INSTALLER_SCRIPT,
   };
-  return new Promise<RunResult>((resolve) => {
+  return new Promise<RunResult>(resolve => {
     const child = spawn('/bin/bash', [scriptPath], { env });
     let stdout = '';
     let stderr = '';
@@ -807,7 +802,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.noColor) env.NO_COLOR = '1';
   if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
 
-  return new Promise<RunResult>((resolve) => {
+  return new Promise<RunResult>(resolve => {
     const child = spawn(hostPwsh!, ['-NoProfile', '-File', invocationPath], { env });
     let stdout = '';
     let stderr = '';
@@ -1105,7 +1100,7 @@ test('claude', 'PowerShell installer body parses without syntax errors', async t
   const body = powerShellBody('claude');
   const entry = powerShellEntry('claude');
   t.ok(body.trimEnd().endsWith(entry), 'the downloaded script starts execution only from its final line');
-  t.ok(body.lastIndexOf(entry) > body.indexOf('function Set-SetupAgent {'), 'the entry call follows every agent function');
+  t.ok(body.lastIndexOf(entry) > body.indexOf('function Set-ScriptAgent {'), 'the entry call follows every agent function');
   const script = renderPowerShellPrefix({
     agent: 'claude',
     apiKey: SENTINEL_KEY,
@@ -1300,9 +1295,11 @@ test('claude', 'PowerShell stages secret data only after protection and hardens 
 });
 
 test('claude', 'PowerShell Windows file protection writes only an owner DACL', t => {
-  const helperStart = POWERSHELL_COMMON.indexOf('function Protect-SetupFile');
-  const helperEnd = POWERSHELL_COMMON.indexOf('function Stop-SetupProcessTree', helperStart);
-  const helper = POWERSHELL_COMMON.slice(helperStart, helperEnd);
+  const helperStart = SETUP_POWERSHELL_COMMON.indexOf('function Protect-SetupFile');
+  const helperEnd = SETUP_POWERSHELL_COMMON.indexOf('\nfunction ', helperStart);
+  t.ok(helperStart >= 0, 'Protect-SetupFile function marker exists');
+  t.ok(helperEnd >= 0, 'the next function marker exists after Protect-SetupFile');
+  const helper = SETUP_POWERSHELL_COMMON.slice(helperStart, helperEnd);
   t.includes(helper, 'New-Object System.Security.AccessControl.FileSecurity', 'a fresh descriptor carries no prior access rules');
   t.includes(helper, "FileSystemAccessRule($identity, 'FullControl', 'Allow')", 'the current user receives the sole allow rule');
   t.includes(helper, '[System.IO.File]::SetAccessControl($Path, $acl)', 'Windows PowerShell 5.1 writes the descriptor directly');
@@ -1429,7 +1426,6 @@ test('claude', 'PowerShell claude --version is bounded', async t => {
   t.ok(!existsSync(settingsPathFor(ws)), 'configuration does not begin after a version timeout');
 });
 
-
 test('claude', 'PowerShell removes an ambient exported API key before installer and CLI subprocesses', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
@@ -1457,23 +1453,23 @@ test('claude', 'PowerShell keeps the API key out of output and performs no gatew
 
 test('claude', 'platform installers prefer Homebrew then npm on macOS and npm then direct scripts elsewhere', t => {
   t.includes(ALL_BASH_FRAGMENTS, 'brew install --cask', 'the Bash installer uses Homebrew on macOS');
-  t.includes(ALL_BASH_FRAGMENTS, "npm install --global \"$_inp_package\"", 'the Bash installer can install global npm packages');
-  t.includes(BASH_CLAUDE, "'@anthropic-ai/claude-code'", 'the Claude fragment names its official npm package');
-  t.excludes(BASH_CLAUDE, '@openai/codex', 'the Claude fragment excludes Codex');
-  t.includes(BASH_CODEX, "'@openai/codex'", 'the Codex fragment names its official npm package');
-  t.excludes(BASH_CODEX, '@anthropic-ai/claude-code', 'the Codex fragment excludes Claude Code');
-  t.includes(BASH_CLAUDE, 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh', 'Claude Linux uses the direct release bootstrap');
-  t.includes(BASH_CODEX, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh', 'Codex Linux uses the GitHub source installer');
-  const shClaude = BASH_CLAUDE.slice(BASH_CLAUDE.indexOf('claude_ensure_installed()'), BASH_CLAUDE.indexOf('claude_write_settings()'));
+  t.includes(ALL_BASH_FRAGMENTS, 'npm install --global "$_inp_package"', 'the Bash installer can install global npm packages');
+  t.includes(SETUP_BASH_CLAUDE, "'@anthropic-ai/claude-code'", 'the Claude fragment names its official npm package');
+  t.excludes(SETUP_BASH_CLAUDE, '@openai/codex', 'the Claude fragment excludes Codex');
+  t.includes(SETUP_BASH_CODEX, "'@openai/codex'", 'the Codex fragment names its official npm package');
+  t.excludes(SETUP_BASH_CODEX, '@anthropic-ai/claude-code', 'the Codex fragment excludes Claude Code');
+  t.includes(SETUP_BASH_CLAUDE, 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh', 'Claude Linux uses the direct release bootstrap');
+  t.includes(SETUP_BASH_CODEX, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh', 'Codex Linux uses the GitHub source installer');
+  const shClaude = SETUP_BASH_CLAUDE.slice(SETUP_BASH_CLAUDE.indexOf('claude_ensure_installed()'), SETUP_BASH_CLAUDE.indexOf('claude_write_settings()'));
   t.ok(shClaude.indexOf('command -v brew') < shClaude.indexOf('command -v npm'), 'Claude on macOS checks Homebrew before npm');
   t.ok(shClaude.indexOf('command -v npm') < shClaude.indexOf('bootstrap.sh'), 'Claude checks npm before the direct script');
-  const shCodex = BASH_CODEX.slice(BASH_CODEX.indexOf('codex_ensure_installed()'), BASH_CODEX.indexOf('codex_backup_files()'));
+  const shCodex = SETUP_BASH_CODEX.slice(SETUP_BASH_CODEX.indexOf('codex_ensure_installed()'), SETUP_BASH_CODEX.indexOf('codex_backup_files()'));
   t.ok(shCodex.indexOf('command -v brew') < shCodex.indexOf('command -v npm'), 'Codex on macOS checks Homebrew before npm');
   t.ok(shCodex.indexOf('command -v npm') < shCodex.indexOf('install.sh'), 'Codex checks npm before the direct script');
-  t.includes(POWERSHELL_CLAUDE, "Install-SetupNpmPackage -Package '@anthropic-ai/claude-code'", 'PowerShell can install Claude Code with npm');
-  t.includes(POWERSHELL_CODEX, "Install-SetupNpmPackage -Package '@openai/codex'", 'PowerShell can install Codex with npm');
-  t.includes(POWERSHELL_CLAUDE, 'https://downloads.claude.ai/claude-code-releases/bootstrap.ps1', 'Claude Windows uses the direct release bootstrap');
-  t.includes(POWERSHELL_CODEX, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1', 'Codex Windows uses the GitHub source installer');
+  t.includes(SETUP_POWERSHELL_CLAUDE, "Install-SetupNpmPackage -Package '@anthropic-ai/claude-code'", 'PowerShell can install Claude Code with npm');
+  t.includes(SETUP_POWERSHELL_CODEX, "Install-SetupNpmPackage -Package '@openai/codex'", 'PowerShell can install Codex with npm');
+  t.includes(SETUP_POWERSHELL_CLAUDE, 'https://downloads.claude.ai/claude-code-releases/bootstrap.ps1', 'Claude Windows uses the direct release bootstrap');
+  t.includes(SETUP_POWERSHELL_CODEX, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1', 'Codex Windows uses the GitHub source installer');
   t.includes(ALL_POWERSHELL_FRAGMENTS, 'Get-Command pwsh', 'downloaded PowerShell scripts prefer pwsh when it is installed');
 });
 
@@ -1514,7 +1510,7 @@ test('claude', 'a download that ends before the final main call performs no setu
 // `export SETUP_ENDPOINT` / `$SetupEndpoint` injection and the `| bash` / `| iex`
 // pipeline scoping are verified end to end rather than assumed.
 const runCommandLine = (exe: string, args: string[], command: string): Promise<RunResult> =>
-  new Promise<RunResult>((resolve) => {
+  new Promise<RunResult>(resolve => {
     const child = spawn(exe, [...args, command], { env: { PATH: `${SHIM_BIN}:${process.env.PATH ?? ''}` } });
     let stdout = '';
     let stderr = '';
@@ -2100,11 +2096,10 @@ test('codex', 'PowerShell: okOverridden counts as success and reports non-secret
   t.excludes(run.combined, 'shadow-model', 'the overridden effective value is not echoed');
 });
 
-
 test('codex', 'PowerShell: Windows provider-token replacement and rollback preserve owner-only ACL ordering', async t => {
-  const tokenFnStart = POWERSHELL_CODEX.indexOf('function Write-SetupCodexToken');
-  const tokenFnEnd = POWERSHELL_CODEX.indexOf('function Write-SetupCodexVersion', tokenFnStart);
-  const tokenBody = POWERSHELL_CODEX.slice(tokenFnStart, tokenFnEnd);
+  const tokenFnStart = SETUP_POWERSHELL_CODEX.indexOf('function Write-SetupCodexToken');
+  const tokenFnEnd = SETUP_POWERSHELL_CODEX.indexOf('function Write-SetupCodexVersion', tokenFnStart);
+  const tokenBody = SETUP_POWERSHELL_CODEX.slice(tokenFnStart, tokenFnEnd);
   const createStage = tokenBody.indexOf('[System.IO.File]::Create($stage).Dispose()');
   const protectStage = tokenBody.indexOf('Protect-SetupFile $stage', createStage);
   const writeSecret = tokenBody.indexOf('[System.IO.File]::WriteAllText($stage, $SetupApiKey', protectStage);
@@ -2121,17 +2116,17 @@ test('codex', 'PowerShell: Windows provider-token replacement and rollback prese
   t.ok(protectStage < writeSecret, 'Codex provider-token stage is protected before the secret is written');
   t.ok(protectTarget < replaceTarget, 'existing Windows provider-token target is hardened before File.Replace');
 
-  const restoreHelperStart = POWERSHELL_COMMON.indexOf('function Restore-SetupManagedFile');
-  const restoreHelperEnd = POWERSHELL_COMMON.indexOf('# --- run', restoreHelperStart);
-  const restoreHelperBody = POWERSHELL_COMMON.slice(restoreHelperStart, restoreHelperEnd);
+  const restoreHelperStart = SETUP_POWERSHELL_COMMON.indexOf('function Restore-SetupManagedFile');
+  const restoreHelperEnd = SETUP_POWERSHELL_COMMON.indexOf('# --- run', restoreHelperStart);
+  const restoreHelperBody = SETUP_POWERSHELL_COMMON.slice(restoreHelperStart, restoreHelperEnd);
   const restoreMove = restoreHelperBody.indexOf('Move-Item -LiteralPath $Backup -Destination $Path -Force');
   t.ok(restoreHelperStart >= 0, 'Restore-SetupManagedFile marker exists');
   t.ok(restoreHelperEnd >= 0, 'common run marker exists after restore helper');
   t.ok(restoreMove >= 0, 'managed rollback move marker exists');
   t.excludes(restoreHelperBody, 'Protect-SetupFile $Path', 'rollback keeps the already-protected backup inode instead of adding a fallible post-move step');
 
-  const restoreStart = POWERSHELL_CODEX.indexOf('function Restore-SetupCodexFiles');
-  const restoreEnd = POWERSHELL_CODEX.indexOf('function Invoke-SetupCodexAppServerBatchWrite', restoreStart);
+  const restoreStart = SETUP_POWERSHELL_CODEX.indexOf('function Restore-SetupCodexFiles');
+  const restoreEnd = SETUP_POWERSHELL_CODEX.indexOf('function Invoke-SetupCodexAppServerBatchWrite', restoreStart);
   t.ok(restoreStart >= 0, 'Restore-SetupCodexFiles marker exists');
   t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
 });
@@ -2493,7 +2488,6 @@ test('claude', 'PowerShell surfaces one primary error without a double wrapper',
   t.equal(errorCount, 1, 'the primary error is printed exactly once');
   t.excludes(run.stdout, 'is not valid JSON', 'the error stays off stdout');
 });
-
 
 test('codex', 'PowerShell rollback restore failure preserves the Codex provider-token backup', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');

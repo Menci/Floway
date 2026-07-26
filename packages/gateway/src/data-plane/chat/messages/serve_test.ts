@@ -2,7 +2,7 @@ import { afterEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -18,8 +18,8 @@ interface QueuedResolution {
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
-vi.mock('../../providers/registry.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
+vi.mock('../../providers/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
@@ -142,7 +142,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream, kind, name: upstream,
+      upstreamId: upstream, kind, name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
     model: stubInternalModel({
@@ -632,7 +632,7 @@ test('countTokens failover preserves billing blocks for a strip-off candidate', 
   assertEquals(payload.messages, expectedMessages);
 });
 
-test('alias resolution swaps the inbound model id for the target and overlays rules onto the Messages IR', async () => {
+test('alias resolution swaps the inbound model id for the target and overlays rules onto the Messages payload', async () => {
   installRepo();
   const capturedBodies: MessagesPayload[] = [];
   const observedModelIds: string[] = [];
@@ -689,7 +689,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 });
 
 // A mid-attempt throw (interceptor bug / translation error / provider-layer JS
-// exception bypassing tryCatchChatServeFailure) must attribute the perf error
+// exception not represented as a ChatServeFailure) must attribute the perf error
 // row to the throwing candidate, not the previous one. The serve stamps
 // `ctx.attempt.telemetry` synchronously in the iterateCandidates
 // callback so the http.ts catch can build an internal-error result carrying

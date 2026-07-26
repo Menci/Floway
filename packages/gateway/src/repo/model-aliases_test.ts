@@ -2,13 +2,14 @@
 // scenarios by default; the SQL backend (sql.js applying every migration)
 // catches schema drift, JSON-column round-trips, and rename atomicity.
 
+import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
-import { createSqliteTestDb } from './test-sqlite.ts';
+import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ModelAliasRecord, Repo } from './types.ts';
-import { assertEquals, assertExists, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
 const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
   ['memory', async () => new InMemoryRepo()],
@@ -197,4 +198,58 @@ test('[sql] rejects an unknown kind stored under the open database constraint', 
 
   const repo = new SqlRepo(db);
   await assertRejects(() => repo.modelAliases.getByName('future-alias'), Error, 'model_aliases.kind for future-alias is invalid');
+});
+
+type SqlJsDatabase = {
+  run(sql: string): void;
+  exec(sql: string): Array<{ columns: string[]; values: unknown[][] }>;
+  close(): void;
+};
+
+const migrationFilenames = migrationSqlByFilename.map(([filename]) => filename);
+
+const createPreUpstreamsMigrationDatabase = async (): Promise<SqlJsDatabase> => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database() as SqlJsDatabase;
+  for (const filename of migrationFilenames.filter(filename => filename < '0010_unified_upstreams.sql')) {
+    applyMigration(db, filename);
+  }
+  return db;
+};
+
+const applyMigration = (db: SqlJsDatabase, filename: string): void => {
+  const sql = migrationSqlByFilename.find(([candidate]) => candidate === filename)?.[1];
+  if (sql === undefined) throw new Error(`Missing migration SQL fixture: ${filename}`);
+  db.run(sql);
+};
+
+const sqlRows = <T>(db: SqlJsDatabase, sql: string): T[] => {
+  const [result] = db.exec(sql);
+  if (!result) return [];
+  return result.values.map(values => Object.fromEntries(result.columns.map((column, index) => [column, values[index] ?? null])) as T);
+};
+
+test('migration 0062 opens model alias kind while preserving existing aliases', async () => {
+  const db = await createPreUpstreamsMigrationDatabase();
+  try {
+    for (const filename of migrationFilenames.filter(filename => filename >= '0010_unified_upstreams.sql' && filename < '0063_model_alias_kind.sql').toSorted()) {
+      applyMigration(db, filename);
+    }
+
+    applyMigration(db, '0063_model_alias_kind.sql');
+    db.run(`INSERT INTO model_aliases (name, kind, selection, visible_in_models_list, targets, sort_order, created_at, updated_at)
+            VALUES ('rerank-alias', 'rerank', 'first-available', 1, '[]', 1, '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z')`);
+
+    assertEquals(sqlRows<{ name: string; kind: string }>(db, 'SELECT name, kind FROM model_aliases ORDER BY sort_order, created_at'), [
+      { name: 'codex-auto-review', kind: 'chat' },
+      { name: 'rerank-alias', kind: 'rerank' },
+    ]);
+    assertThrows(
+      () => db.run(`INSERT INTO model_aliases (name, kind, selection, visible_in_models_list, targets, sort_order, created_at, updated_at)
+                    VALUES ('empty-kind', '', 'first-available', 1, '[]', 2, '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z')`),
+      Error,
+    );
+  } finally {
+    db.close();
+  }
 });

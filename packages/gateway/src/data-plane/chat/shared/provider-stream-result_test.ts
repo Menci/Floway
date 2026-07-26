@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { providerStreamResultToExecuteResult } from './provider-stream-result.ts';
-import { mockGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';

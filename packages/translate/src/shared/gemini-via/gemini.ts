@@ -25,8 +25,6 @@ export type GeminiSupportedImageMimeType = (typeof GEMINI_SUPPORTED_IMAGE_MIME_T
 
 export const geminiToolCallId = (turnIndex: number, partIndex: number): string => `gemini_call_${turnIndex}_${partIndex}`;
 
-export const geminiReasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
-
 export type GeminiPartKind = 'text' | 'inline_data' | 'function_call' | 'function_response' | 'file_data' | 'executable_code' | 'code_execution_result';
 
 type GeminiPartDataField = keyof Omit<GeminiPart, 'thought' | 'thoughtSignature'>;

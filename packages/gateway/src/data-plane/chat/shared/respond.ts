@@ -1,5 +1,5 @@
-import type { StreamCompletion } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
+import type { StreamCompletion } from '../../shared/sse.ts';
 import { hasTokenUsage } from '../../shared/telemetry/usage.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { plainResult } from '@floway-dev/provider';

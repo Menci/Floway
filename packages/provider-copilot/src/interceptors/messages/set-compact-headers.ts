@@ -105,7 +105,7 @@ const classifyCompact = (payload: { messages: MessagesMessage[]; system?: string
   return null;
 };
 
-export const withCompactHeadersSet: CopilotMessagesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withCompactHeadersSet: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {
   const kind = classifyCompact(ctx.payload);
   if (kind === 'compact-request') {
     ctx.headers.set('x-initiator', 'agent');

@@ -223,7 +223,7 @@ const providerResponsesResultToExecuteResult = async (
   }
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');
   if (!providerResult.ok) {
-    return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstream)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
   }
   return eventResult(
     syntheticEventsFromResult(providerResult.result),

@@ -2,9 +2,9 @@
 import type { MessagesCountTokensInterceptor, MessagesInterceptor, MessagesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
+import { loadWebSearchConfig } from '../../../tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
-import { loadSearchConfig } from '../../../tools/web-search/search-config.ts';
-import { searchWebAndRecordUsage } from '../../../tools/web-search/search.ts';
+import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts';
 import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -681,7 +681,7 @@ const runWebSearchStopHandler = async function* (
         blockedDomains: state.blockedDomains,
         userLocation: state.userLocation,
       };
-      const providerResult = await searchWebAndRecordUsage({ provider: provider.impl, providerName: provider.providerName, keyId: provider.apiKeyId, request });
+      const providerResult = await runWebSearchAndRecordUsage({ provider: provider.impl, providerName: provider.providerName, keyId: provider.apiKeyId, request });
       return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
     } catch {
       // TODO: Add gateway-side recent web-search error-log storage so operators can inspect detailed provider/runtime failures even though the client-visible native error intentionally collapses them to `unavailable`.
@@ -858,8 +858,8 @@ const buildInvalidRequestResponse = (message: string): Response =>
   Response.json(messagesWebSearchInvalidRequestBody(message), { status: 400 });
 
 const resolveActiveMessagesWebSearchProvider = async (apiKeyId: string): Promise<{ type: 'ok'; provider: ActiveMessagesWebSearchProvider } | ReturnType<typeof internalErrorResult>> => {
-  const searchConfig = await loadSearchConfig();
-  const configuredProvider = resolveConfiguredWebSearchProvider(searchConfig);
+  const webSearchConfig = await loadWebSearchConfig();
+  const configuredProvider = resolveConfiguredWebSearchProvider(webSearchConfig);
 
   if (configuredProvider.type === 'enabled') {
     return {

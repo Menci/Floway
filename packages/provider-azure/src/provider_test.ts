@@ -49,7 +49,7 @@ test('createAzureProvider projects configured models into upstream models', asyn
   const instance = createAzureProvider(azureRecord({ flagOverrides: { 'vendor-kimi': true } }));
   const models = await instance.instance.getProvidedModels(directFetcher);
 
-  assertEquals(instance.upstream, 'up_azure');
+  assertEquals(instance.upstreamId, 'up_azure');
   assertEquals(instance.name, 'Azure Resource');
   assertEquals(models[0]?.enabledFlags.has('vendor-kimi'), true);
   assertEquals(

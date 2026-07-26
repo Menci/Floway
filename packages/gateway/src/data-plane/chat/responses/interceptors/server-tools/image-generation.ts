@@ -1,10 +1,10 @@
 import { sleep } from '../../../../../shared/sleep.ts';
-import { enumerateModelCandidates } from '../../../../providers/registry.ts';
+import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
+import { stampUpstreamCallStart, type AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
-import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
@@ -911,7 +911,7 @@ const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderM
   if (usage === null) return;
   const promise = recordTokenUsage(state.apiKeyId, {
     model: model.id,
-    upstream: provider.upstream,
+    upstream: provider.upstreamId,
     modelKey,
     pricing: model.pricing ?? null,
   }, usage).catch((error: unknown) => {
@@ -1250,7 +1250,7 @@ const streamImageGeneration = (
   const perfContext: PerformanceTelemetryContext = {
     keyId: state.apiKeyId,
     model: model.id,
-    upstream: provider.upstream,
+    upstream: provider.upstreamId,
     operation: isEdit ? 'image_edit' : 'image_generation',
     runtimeLocation: state.runtimeLocation,
   };

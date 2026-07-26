@@ -1,6 +1,6 @@
-import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
+import { buildBillingBlock, computeCcVersionFingerprint } from './system-blocks.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import { CLAUDE_CLI_VERSION } from '../../headers.ts';
-import { buildBillingBlock, computeCcVersionFingerprint } from '../../system-blocks.ts';
 
 // Drops the per-request `cc_version=${VERSION}.${FP}` billing block at the
 // head of `system`. This must run BEFORE inject-identity-block /
@@ -17,8 +17,8 @@ import { buildBillingBlock, computeCcVersionFingerprint } from '../../system-blo
 // reflect it — fingerprinting the pre-hoist shape would compute a different
 // value than what the request body settles to and break CC mimicry.
 export const injectBillingBlock = async <TResult>(
-  ctx: ClaudeCodeMessagesBoundaryCtx,
-  _request: object,
+  ctx: MessagesBoundaryCtx,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const fingerprint = computeCcVersionFingerprint(CLAUDE_CLI_VERSION, ctx.payload);

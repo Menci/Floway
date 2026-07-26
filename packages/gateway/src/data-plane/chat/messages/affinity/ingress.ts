@@ -25,7 +25,7 @@ export const prepareMessagesAffinity = async (
   }
 
   return {
-    routingEvidence: preferredAffinityEvidence(locations.map(location => location.decoded)),
+    narrowingEvidence: preferredAffinityEvidence(locations.map(location => location.decoded)),
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
       const byMessage = Map.groupBy(locations, location => location.messageIndex);

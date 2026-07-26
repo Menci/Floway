@@ -1,12 +1,11 @@
 import { test } from 'vitest';
 
-import { translateResponsesToChatCompletions } from './request.ts';
-import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
+import { buildTargetRequest } from './request.ts';
 import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-test('translateResponsesToChatCompletions accepts an implicit message discriminator', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest accepts an implicit message discriminator', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ role: 'system', content: 'rules' }],
   });
@@ -16,8 +15,8 @@ test('translateResponsesToChatCompletions accepts an implicit message discrimina
   ]);
 });
 
-test('translateResponsesToChatCompletions merges adjacent assistant reasoning text and tool calls', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest merges adjacent assistant reasoning text and tool calls', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [
       { type: 'message', role: 'user', content: 'Hi' },
@@ -116,8 +115,8 @@ test('translateResponsesToChatCompletions merges adjacent assistant reasoning te
   ]);
 });
 
-test('translateResponsesToChatCompletions preserves all reasoning items and projects only the first scalar group', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest preserves all reasoning items and projects only the first scalar group', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [
       {
@@ -164,8 +163,8 @@ test('translateResponsesToChatCompletions preserves all reasoning items and proj
   ]);
 });
 
-test('translateResponsesToChatCompletions preserves explicit null prompt cache and safety fields', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest preserves explicit null prompt cache and safety fields', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: 'hello',
     prompt_cache_key: null,
@@ -178,8 +177,8 @@ test('translateResponsesToChatCompletions preserves explicit null prompt cache a
   assertEquals(result.target.safety_identifier, null);
 });
 
-test('translateResponsesToChatCompletions omits response_format when Responses text.format is absent', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest omits response_format when Responses text.format is absent', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: {},
@@ -188,8 +187,8 @@ test('translateResponsesToChatCompletions omits response_format when Responses t
   assertEquals('response_format' in result.target, false);
 });
 
-test('translateResponsesToChatCompletions preserves explicit null text format', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest preserves explicit null text format', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: null,
@@ -198,13 +197,13 @@ test('translateResponsesToChatCompletions preserves explicit null text format', 
   assertEquals(result.target.response_format, null);
 });
 
-test('translateResponsesToChatCompletions reshapes flat json_schema text format into Chat Completions shape', () => {
+test('buildTargetRequest reshapes flat json_schema text format into Chat Completions shape', () => {
   const schema = {
     type: 'object',
     properties: { ok: { type: 'boolean' } },
     required: ['ok'],
   };
-  const result = translateResponsesToChatCompletions({
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: {
@@ -227,8 +226,8 @@ test('translateResponsesToChatCompletions reshapes flat json_schema text format 
   });
 });
 
-test('translateResponsesToChatCompletions passes through plain text format without wrapping', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest passes through plain text format without wrapping', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: { format: { type: 'text' } },
@@ -237,8 +236,8 @@ test('translateResponsesToChatCompletions passes through plain text format witho
   assertEquals(result.target.response_format, { type: 'text' });
 });
 
-test('translateResponsesToChatCompletions does not double-wrap an already-wrapped json_schema', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest does not double-wrap an already-wrapped json_schema', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: 'Hi',
     text: {
@@ -255,917 +254,12 @@ test('translateResponsesToChatCompletions does not double-wrap an already-wrappe
   });
 });
 
-test('translateResponsesEventToChatCompletionsChunks drops reasoning items without readable summary', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-
-  const created = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.created',
-      response: {
-        id: 'resp_single_opaque',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'in_progress',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-  assertEquals(created.length, 1);
-  assertEquals(created[0].choices[0].delta.role, 'assistant');
-
-  const during = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: {
-        type: 'reasoning',
-        id: 'rs_1',
-        summary: [],
-      },
-    },
-    state,
-  );
-  assertEquals(during, []);
-
-  const completed = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_single_opaque',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'completed',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-        usage: {
-          input_tokens: 1,
-          output_tokens: 2,
-          total_tokens: 3,
-        },
-      },
-    },
-    state,
-  );
-
-  assertEquals(completed.length, 2);
-  assertEquals(completed[0].choices[0].delta, {});
-  assertEquals(completed[0].choices[0].finish_reason, 'stop');
-  assertEquals(completed[0].usage, undefined);
-  assertEquals(completed[1].choices, []);
-  assertEquals(completed[1].usage, {
-    prompt_tokens: 1,
-    completion_tokens: 2,
-    total_tokens: 3,
-  });
-});
-
-test('translateResponsesEventToChatCompletionsChunks does not fill scalar opaque from later empty reasoning', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-
-  translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.created',
-      response: {
-        id: 'resp_stream_no_cross_pair',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'in_progress',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-
-  const chunks = [
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.reasoning_summary_text.delta',
-        item_id: 'rs_1',
-        output_index: 0,
-        summary_index: 0,
-        delta: 'first',
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.done',
-        output_index: 0,
-        item: {
-          type: 'reasoning',
-          id: 'rs_1',
-          summary: [{ type: 'summary_text', text: 'first' }],
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.done',
-        output_index: 1,
-        item: {
-          type: 'reasoning',
-          id: 'rs_2',
-          summary: [],
-        },
-      },
-      state,
-    ),
-  ].flatMap(result => result);
-
-  const completed = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_stream_no_cross_pair',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'completed',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-
-  assertEquals(
-    [...chunks, ...completed].some(chunk => chunk.choices[0]?.delta.reasoning_opaque !== undefined),
-    false,
-  );
-  assertEquals(completed[0].usage, undefined);
-});
-
-test('translateResponsesEventToChatCompletionsChunks drops multiple reasoning items without readable summaries', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-
-  translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.created',
-      response: {
-        id: 'resp_multi_opaque',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'in_progress',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-
-  const firstReasoning = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: {
-        type: 'reasoning',
-        id: 'rs_1',
-        summary: [],
-      },
-    },
-    state,
-  );
-  const secondReasoning = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.output_item.done',
-      output_index: 1,
-      item: {
-        type: 'reasoning',
-        id: 'rs_2',
-        summary: [],
-      },
-    },
-    state,
-  );
-
-  const completed = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_multi_opaque',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'completed',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-        usage: {
-          input_tokens: 1,
-          output_tokens: 2,
-          total_tokens: 3,
-        },
-      },
-    },
-    state,
-  );
-
-  assertEquals(firstReasoning, []);
-  assertEquals(secondReasoning, []);
-  assertEquals(completed.length, 2);
-  assertEquals(completed[0].choices[0].finish_reason, 'stop');
-  assertEquals(completed[0].usage, undefined);
-  assertEquals(completed[1].choices, []);
-  assertEquals(completed[1].usage, {
-    prompt_tokens: 1,
-    completion_tokens: 2,
-    total_tokens: 3,
-  });
-});
-
-test('translateResponsesEventToChatCompletionsChunks projects done-only summary text into scalar reasoning_text', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-
-  translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.created',
-      response: {
-        id: 'resp_done_only_summary',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'in_progress',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-  translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.reasoning_summary_text.done',
-      item_id: 'rs_1',
-      output_index: 0,
-      summary_index: 0,
-      text: 'done trace',
-    },
-    state,
-  );
-  const reasoning = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: {
-        type: 'reasoning',
-        id: 'rs_1',
-        summary: [{ type: 'summary_text', text: 'done trace' }],
-      },
-    },
-    state,
-  );
-
-  const completed = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_done_only_summary',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'completed',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-
-  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'done trace');
-  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
-    {
-      type: 'reasoning',
-      id: 'rs_1',
-      summary: [{ type: 'summary_text', text: 'done trace' }],
-    },
-  ]);
-  assertEquals(completed[0].choices[0].finish_reason, 'stop');
-});
-
-test('translateResponsesEventToChatCompletionsChunks projects output_item.done summary into scalar reasoning_text', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-
-  translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.created',
-      response: {
-        id: 'resp_output_done_summary',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'in_progress',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-  const reasoning = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: {
-        type: 'reasoning',
-        id: 'rs_1',
-        summary: [{ type: 'summary_text', text: 'output trace' }],
-      },
-    },
-    state,
-  );
-
-  const completed = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_output_done_summary',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'completed',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-
-  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'output trace');
-  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
-    {
-      type: 'reasoning',
-      id: 'rs_1',
-      summary: [{ type: 'summary_text', text: 'output trace' }],
-    },
-  ]);
-  assertEquals(completed[0].choices[0].finish_reason, 'stop');
-});
-
-test('translateResponsesEventToChatCompletionsChunks emits stream usage as a usage-only chunk', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-
-  translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.created',
-      response: {
-        id: 'resp_usage_only',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'in_progress',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-
-  const completed = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_usage_only',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'completed',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-        usage: {
-          input_tokens: 12,
-          output_tokens: 4,
-          total_tokens: 16,
-          input_tokens_details: { cached_tokens: 3 },
-        },
-      },
-    },
-    state,
-  );
-
-  assertEquals(completed.length, 2);
-  assertEquals(completed[0].choices[0].finish_reason, 'stop');
-  assertEquals(completed[0].usage, undefined);
-  assertEquals(completed[1].choices, []);
-  assertEquals(completed[1].usage, {
-    prompt_tokens: 12,
-    completion_tokens: 4,
-    total_tokens: 16,
-    prompt_tokens_details: { cached_tokens: 3 },
-  });
-});
-
-test('translateResponsesEventToChatCompletionsChunks preserves text order around empty reasoning', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-  const chunks = [
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.created',
-        response: {
-          id: 'resp_late_opaque_order',
-          object: 'response',
-          model: 'gpt-test',
-          status: 'in_progress',
-          output: [],
-          output_text: '',
-          error: null,
-          incomplete_details: null,
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.added',
-        output_index: 0,
-        item: { type: 'reasoning', id: 'rs_0', summary: [] },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_text.delta',
-        item_id: 'msg_1',
-        output_index: 1,
-        content_index: 0,
-        delta: 'answer',
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.done',
-        output_index: 0,
-        item: {
-          type: 'reasoning',
-          id: 'rs_0',
-          summary: [],
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.completed',
-        response: {
-          id: 'resp_late_opaque_order',
-          object: 'response',
-          model: 'gpt-test',
-          status: 'completed',
-          output: [
-            {
-              type: 'reasoning',
-              id: 'rs_0',
-              summary: [],
-            },
-            {
-              type: 'message',
-              role: 'assistant',
-              content: [{ type: 'output_text', text: 'answer' }],
-            },
-          ],
-          output_text: 'answer',
-          error: null,
-          incomplete_details: null,
-        },
-      },
-      state,
-    ),
-  ].flatMap(result => result);
-
-  assertEquals(
-    chunks.map(chunk => chunk.choices[0]?.delta),
-    [
-      { role: 'assistant' },
-      { content: 'answer' },
-      {},
-    ],
-  );
-});
-
-test('translateResponsesEventToChatCompletionsChunks preserves later text after empty reasoning is done', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-  const chunks = [
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.created',
-        response: {
-          id: 'resp_done_before_text',
-          object: 'response',
-          model: 'gpt-test',
-          status: 'in_progress',
-          output: [],
-          output_text: '',
-          error: null,
-          incomplete_details: null,
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.added',
-        output_index: 0,
-        item: { type: 'reasoning', id: 'rs_0', summary: [] },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.done',
-        output_index: 0,
-        item: {
-          type: 'reasoning',
-          id: 'rs_0',
-          summary: [],
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_text.delta',
-        item_id: 'msg_1',
-        output_index: 1,
-        content_index: 0,
-        delta: 'answer',
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.completed',
-        response: {
-          id: 'resp_done_before_text',
-          object: 'response',
-          model: 'gpt-test',
-          status: 'completed',
-          output: [
-            {
-              type: 'reasoning',
-              id: 'rs_0',
-              summary: [],
-            },
-            {
-              type: 'message',
-              role: 'assistant',
-              content: [{ type: 'output_text', text: 'answer' }],
-            },
-          ],
-          output_text: 'answer',
-          error: null,
-          incomplete_details: null,
-        },
-      },
-      state,
-    ),
-  ].flatMap(result => result);
-
-  assertEquals(
-    chunks.map(chunk => chunk.choices[0]?.delta),
-    [
-      { role: 'assistant' },
-      { content: 'answer' },
-      {},
-    ],
-  );
-});
-
-test('translateResponsesEventToChatCompletionsChunks emits output_text.done when no delta arrived', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-  const chunks = [
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.created',
-        response: {
-          id: 'resp_done_text',
-          object: 'response',
-          model: 'gpt-test',
-          status: 'in_progress',
-          output: [],
-          output_text: '',
-          error: null,
-          incomplete_details: null,
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_text.done',
-        item_id: 'msg_0',
-        output_index: 0,
-        content_index: 0,
-        text: 'answer',
-      },
-      state,
-    ),
-  ].flatMap(result => result);
-
-  assertEquals(
-    chunks.map(chunk => chunk.choices[0]?.delta),
-    [{ role: 'assistant' }, { content: 'answer' }],
-  );
-});
-
-test('translateResponsesEventToChatCompletionsChunks emits function_call_arguments.done when no delta arrived', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-  const chunks = [
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.created',
-        response: {
-          id: 'resp_done_args',
-          object: 'response',
-          model: 'gpt-test',
-          status: 'in_progress',
-          output: [],
-          output_text: '',
-          error: null,
-          incomplete_details: null,
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.added',
-        output_index: 0,
-        item: {
-          type: 'function_call',
-          call_id: 'call_0',
-          name: 'lookup',
-          arguments: '',
-          status: 'in_progress',
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.function_call_arguments.done',
-        item_id: 'fc_0',
-        output_index: 0,
-        arguments: '{"q":1}',
-      },
-      state,
-    ),
-  ].flatMap(result => result);
-
-  assertEquals(
-    chunks.map(chunk => chunk.choices[0]?.delta),
-    [
-      { role: 'assistant' },
-      {
-        tool_calls: [
-          {
-            index: 0,
-            id: 'call_0',
-            type: 'function',
-            function: { name: 'lookup', arguments: '' },
-          },
-        ],
-      },
-      {
-        tool_calls: [
-          {
-            index: 0,
-            function: { arguments: '{"q":1}' },
-          },
-        ],
-      },
-    ],
-  );
-});
-
-test('translateResponsesEventToChatCompletionsChunks emits all done-only reasoning summary parts', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-  const chunks = [
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.created',
-        response: {
-          id: 'resp_done_reasoning_parts',
-          object: 'response',
-          model: 'gpt-test',
-          status: 'in_progress',
-          output: [],
-          output_text: '',
-          error: null,
-          incomplete_details: null,
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.added',
-        output_index: 0,
-        item: { type: 'reasoning', id: 'rs_0', summary: [] },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.reasoning_summary_text.done',
-        item_id: 'rs_0',
-        output_index: 0,
-        summary_index: 0,
-        text: 'first',
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.reasoning_summary_text.done',
-        item_id: 'rs_0',
-        output_index: 0,
-        summary_index: 1,
-        text: 'second',
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.done',
-        output_index: 0,
-        item: {
-          type: 'reasoning',
-          id: 'rs_0',
-          summary: [
-            { type: 'summary_text', text: 'first' },
-            { type: 'summary_text', text: 'second' },
-          ],
-        },
-      },
-      state,
-    ),
-  ].flatMap(result => result);
-
-  assertEquals(
-    chunks.map(chunk => chunk.choices[0]?.delta.reasoning_text).filter(text => text !== undefined),
-    ['first', 'second'],
-  );
-});
-
-test('translateResponsesEventToChatCompletionsChunks flushes pending done-only reasoning summary at completion', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-
-  translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.created',
-      response: {
-        id: 'resp_terminal_reasoning_done',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'in_progress',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-  translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.reasoning_summary_text.done',
-      item_id: 'rs_0',
-      output_index: 0,
-      summary_index: 0,
-      text: 'terminal trace',
-    },
-    state,
-  );
-  const completed = translateResponsesEventToChatCompletionsChunks(
-    {
-      type: 'response.completed',
-      response: {
-        id: 'resp_terminal_reasoning_done',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'completed',
-        output: [],
-        output_text: '',
-        error: null,
-        incomplete_details: null,
-      },
-    },
-    state,
-  );
-
-  assertEquals(
-    completed.map(chunk => chunk.choices[0]?.delta),
-    [{ reasoning_text: 'terminal trace' }, {}],
-  );
-});
-
-test('translateResponsesEventToChatCompletionsChunks keeps first scalar reasoning by output order', () => {
-  const state = createResponsesToChatCompletionsStreamState();
-  const chunks = [
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.created',
-        response: {
-          id: 'resp_reasoning_order',
-          object: 'response',
-          model: 'gpt-test',
-          status: 'in_progress',
-          output: [],
-          output_text: '',
-          error: null,
-          incomplete_details: null,
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.added',
-        output_index: 0,
-        item: { type: 'reasoning', id: 'rs_0', summary: [] },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.added',
-        output_index: 1,
-        item: { type: 'reasoning', id: 'rs_1', summary: [] },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.done',
-        output_index: 1,
-        item: {
-          type: 'reasoning',
-          id: 'rs_1',
-          summary: [{ type: 'summary_text', text: 'second' }],
-        },
-      },
-      state,
-    ),
-    translateResponsesEventToChatCompletionsChunks(
-      {
-        type: 'response.output_item.done',
-        output_index: 0,
-        item: {
-          type: 'reasoning',
-          id: 'rs_0',
-          summary: [{ type: 'summary_text', text: 'first' }],
-        },
-      },
-      state,
-    ),
-  ].flatMap(result => result);
-
-  assertEquals(
-    chunks.map(chunk => chunk.choices[0]?.delta),
-    [
-      { role: 'assistant' },
-      { reasoning_text: 'first' },
-      {
-        reasoning_items: [
-          {
-            type: 'reasoning',
-            id: 'rs_0',
-            summary: [{ type: 'summary_text', text: 'first' }],
-          },
-          {
-            type: 'reasoning',
-            id: 'rs_1',
-            summary: [{ type: 'summary_text', text: 'second' }],
-          },
-        ],
-      },
-    ],
-  );
-});
-
-test('translateResponsesToChatCompletions filters out builtin tools that have no Chat Completions equivalent', () => {
+test('buildTargetRequest filters out builtin tools that have no Chat Completions equivalent', () => {
   // Responses exposes server-side builtin tools (web_search_preview,
   // file_search, image_generation, ...) that have no Chat Completions
   // analogue and no `name` field. These should be filtered out rather than
   // emitting `function: {}` which strict upstreams (vLLM) reject.
-  const result = translateResponsesToChatCompletions({
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
     instructions: null,
@@ -1214,8 +308,8 @@ test('translateResponsesToChatCompletions filters out builtin tools that have no
   assertEquals(result.target.tools![1].function.description, undefined);
 });
 
-test('translateResponsesToChatCompletions returns undefined tools when only builtin tools are present', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest returns undefined tools when only builtin tools are present', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
     instructions: null,
@@ -1233,10 +327,10 @@ test('translateResponsesToChatCompletions returns undefined tools when only buil
   assertEquals(result.target.tools, undefined);
 });
 
-test('translateResponsesToChatCompletions drops forced builtin tool_choice but keeps function tool_choice', () => {
+test('buildTargetRequest drops forced builtin tool_choice but keeps function tool_choice', () => {
   // Forced builtin tool choices have no Chat Completions analogue;
   // they should be dropped (falling back to auto/default).
-  const resultWithBuiltinChoice = translateResponsesToChatCompletions({
+  const resultWithBuiltinChoice = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
     instructions: null,
@@ -1257,7 +351,7 @@ test('translateResponsesToChatCompletions drops forced builtin tool_choice but k
   assertEquals(resultWithBuiltinChoice.target.tool_choice, undefined);
 
   // Forced function tool_choice should be preserved.
-  const resultWithFunctionChoice = translateResponsesToChatCompletions({
+  const resultWithFunctionChoice = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
     instructions: null,
@@ -1282,8 +376,8 @@ test('translateResponsesToChatCompletions drops forced builtin tool_choice but k
   });
 });
 
-test('translateResponsesToChatCompletions returns undefined tool_choice for string auto/required/none choices', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest returns undefined tool_choice for string auto/required/none choices', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'Hi' }],
     instructions: null,
@@ -1302,8 +396,8 @@ test('translateResponsesToChatCompletions returns undefined tool_choice for stri
   assertEquals(result.target.tool_choice, 'auto');
 });
 
-test('translateResponsesToChatCompletions wraps custom tools as single-string function tools and records their names', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest wraps custom tools as single-string function tools and records their names', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: 'hi',
     instructions: null,
@@ -1351,8 +445,8 @@ test('translateResponsesToChatCompletions wraps custom tools as single-string fu
   assertEquals(result.target.tool_choice, { type: 'function', function: { name: 'apply_patch' } });
 });
 
-test('translateResponsesToChatCompletions projects custom_tool_call history into wrapped tool_calls shape', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest projects custom_tool_call history into wrapped tool_calls shape', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [
       { type: 'message', role: 'user', content: 'apply this patch' },
@@ -1409,70 +503,38 @@ test.each([
   { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
-] as const)('translateResponsesToChatCompletions rejects Responses-only $name input', ({ name, input }) => {
+] as const)('buildTargetRequest rejects Responses-only $name input', ({ name, input }) => {
   assertThrows(
-    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [...input] }),
+    () => buildTargetRequest({ model: 'gpt-test', input: [...input] }),
     Error,
     `Invalid input item type '${name}'`,
   );
 });
 
-test.each([
-  { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed', caller: { type: 'program', caller_id: 'call_prog_1' } },
-  { type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
-  { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', input: 'run', caller: { type: 'program', caller_id: 'call_prog_1' } },
-  { type: 'custom_tool_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
-] as const)('translateResponsesToChatCompletions rejects $type program caller metadata', item => {
+test('buildTargetRequest wires Responses tooling guards', () => {
   assertThrows(
-    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [item] }),
+    () => buildTargetRequest({
+      model: 'gpt-test',
+      input: [{ type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } }],
+    }),
     Error,
     'program caller',
   );
+  assertThrows(
+    () => buildTargetRequest({ model: 'gpt-test', input: 'hi', tools: [{ type: 'programmatic_tool_calling' }] }),
+    Error,
+    'Programmatic',
+  );
 });
 
-test('translateResponsesToChatCompletions accepts null tool_choice', () => {
-  const result = translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', tool_choice: null });
+test('buildTargetRequest accepts null tool_choice', () => {
+  const result = buildTargetRequest({ model: 'gpt-test', input: 'hi', tool_choice: null });
   assertEquals(result.target.tool_choice, undefined);
 });
 
-test.each([
-  { name: 'programmatic tool', payload: { tools: [{ type: 'programmatic_tool_calling' as const }] } },
-  { name: 'programmatic allowed caller', payload: { tools: [{ type: 'function' as const, name: 'lookup', parameters: {}, strict: true, allowed_callers: ['programmatic' as const] }] } },
-  { name: 'programmatic tool choice', payload: { tool_choice: { type: 'programmatic_tool_calling' as const } } },
-])('translateResponsesToChatCompletions rejects $name', ({ payload }) => {
+test('buildTargetRequest rejects multimodal custom tool output', () => {
   assertThrows(
-    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', ...payload }),
-    Error,
-    'Programmatic',
-  );
-});
-
-test.each([
-  { type: 'function' as const, name: 'lookup', parameters: {}, strict: true, defer_loading: true },
-  { type: 'custom' as const, name: 'exec', defer_loading: true },
-])('translateResponsesToChatCompletions rejects deferred $type tools', tool => {
-  assertThrows(
-    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', tools: [tool] }),
-    Error,
-    'Deferred',
-  );
-});
-
-test('translateResponsesToChatCompletions rejects nested namespace programmatic callers', () => {
-  assertThrows(
-    () => translateResponsesToChatCompletions({
-      model: 'gpt-test',
-      input: 'hi',
-      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] } as unknown as ResponsesTool],
-    }),
-    Error,
-    'Programmatic',
-  );
-});
-
-test('translateResponsesToChatCompletions rejects multimodal custom tool output', () => {
-  assertThrows(
-    () => translateResponsesToChatCompletions({
+    () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
@@ -1481,9 +543,9 @@ test('translateResponsesToChatCompletions rejects multimodal custom tool output'
   );
 });
 
-test('translateResponsesToChatCompletions rejects file tool output', () => {
+test('buildTargetRequest rejects file tool output', () => {
   assertThrows(
-    () => translateResponsesToChatCompletions({
+    () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
@@ -1492,9 +554,9 @@ test('translateResponsesToChatCompletions rejects file tool output', () => {
   );
 });
 
-test('translateResponsesToChatCompletions rejects file assistant content', () => {
+test('buildTargetRequest rejects file assistant content', () => {
   assertThrows(
-    () => translateResponsesToChatCompletions({
+    () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
@@ -1503,9 +565,9 @@ test('translateResponsesToChatCompletions rejects file assistant content', () =>
   );
 });
 
-test('translateResponsesToChatCompletions rejects image assistant content', () => {
+test('buildTargetRequest rejects image assistant content', () => {
   assertThrows(
-    () => translateResponsesToChatCompletions({
+    () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
     }),
@@ -1514,9 +576,9 @@ test('translateResponsesToChatCompletions rejects image assistant content', () =
   );
 });
 
-test('translateResponsesToChatCompletions rejects file_id-only images', () => {
+test('buildTargetRequest rejects file_id-only images', () => {
   assertThrows(
-    () => translateResponsesToChatCompletions({
+    () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
     }),
@@ -1525,9 +587,9 @@ test('translateResponsesToChatCompletions rejects file_id-only images', () => {
   );
 });
 
-test('translateResponsesToChatCompletions rejects Responses-only original image detail', () => {
+test('buildTargetRequest rejects Responses-only original image detail', () => {
   assertThrows(
-    () => translateResponsesToChatCompletions({
+    () => buildTargetRequest({
       model: 'gpt-test',
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'original' }] }],
     }),
@@ -1536,14 +598,14 @@ test('translateResponsesToChatCompletions rejects Responses-only original image 
   );
 });
 
-test('translateResponsesToChatCompletions throws on a stray web_search_call input item (shim owns the reverse path)', () => {
+test('buildTargetRequest throws on a stray web_search_call input item (shim owns the reverse path)', () => {
   // The Responses web-search shim rewrites web_search_call input items into
   // upstream function_call + function_call_output pairs before this
   // translator runs. Reaching the translator with a raw web_search_call
   // means the shim regressed; the translator surfaces a loud error so the
   // bug is caught rather than silently dropping search context.
   assertThrows(
-    () => translateResponsesToChatCompletions({
+    () => buildTargetRequest({
       model: 'gpt-test',
       input: [
         { type: 'message', role: 'user', content: 'hi' },
@@ -1570,13 +632,13 @@ test('translateResponsesToChatCompletions throws on a stray web_search_call inpu
   );
 });
 
-test('translateResponsesToChatCompletions throws on a stray compaction_trigger input item (compact-shim owns the strip)', () => {
+test('buildTargetRequest throws on a stray compaction_trigger input item (compact-shim owns the strip)', () => {
   // The compact-shim is structurally required on non-responses targets and
   // strips compaction_trigger items before reaching this translator.
   // Reaching here with one in input means the shim disengaged; the
   // translator's catch-all guard surfaces the regression.
   assertThrows(
-    () => translateResponsesToChatCompletions({
+    () => buildTargetRequest({
       model: 'gpt-test',
       input: [
         { type: 'message', role: 'user', content: 'hi' },
@@ -1598,13 +660,13 @@ test('translateResponsesToChatCompletions throws on a stray compaction_trigger i
   );
 });
 
-test('translateResponsesToChatCompletions throws on a stray compaction input item (compact-shim owns the expansion)', () => {
+test('buildTargetRequest throws on a stray compaction input item (compact-shim owns the expansion)', () => {
   // The compact-shim expands its own shim-encoded compaction items inline
   // before reaching this translator and round-trips foreign compactions
   // back to the upstream as raw items. Either way the translator should
   // never see one.
   assertThrows(
-    () => translateResponsesToChatCompletions({
+    () => buildTargetRequest({
       model: 'gpt-test',
       input: [
         { type: 'message', role: 'user', content: 'hi' },
@@ -1626,8 +688,8 @@ test('translateResponsesToChatCompletions throws on a stray compaction input ite
   );
 });
 
-test('translateResponsesToChatCompletions lifts tool-output images into a following user message', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest lifts tool-output images into a following user message', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [
       { type: 'function_call', call_id: 'call_1', name: 'screenshot', arguments: '{}', status: 'completed' },
@@ -1673,8 +735,8 @@ test('translateResponsesToChatCompletions lifts tool-output images into a follow
   ]);
 });
 
-test('translateResponsesToChatCompletions keeps grouped tool results contiguous before lifted images', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest keeps grouped tool results contiguous before lifted images', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [
       { type: 'function_call', call_id: 'call_a', name: 'capture_a', arguments: '{}', status: 'completed' },
@@ -1713,12 +775,12 @@ test('translateResponsesToChatCompletions keeps grouped tool results contiguous 
   ]);
 });
 
-test('translateResponsesToChatCompletions places lifted images before a later source message', () => {
+test('buildTargetRequest places lifted images before a later source message', () => {
   for (const trailing of [
     { type: 'message' as const, role: 'user' as const, content: 'new user turn' },
     { type: 'message' as const, role: 'system' as const, content: 'new system turn' },
   ]) {
-    const result = translateResponsesToChatCompletions({
+    const result = buildTargetRequest({
       model: 'gpt-test',
       input: [
         { type: 'function_call', call_id: 'call_1', name: 'capture', arguments: '{}', status: 'completed' },
@@ -1738,8 +800,8 @@ test('translateResponsesToChatCompletions places lifted images before a later so
 
 // ── Native field forwarding ──
 
-test('translateResponsesToChatCompletions maps text.verbosity onto verbosity', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest maps text.verbosity onto verbosity', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     text: { verbosity: 'low' },
@@ -1748,8 +810,8 @@ test('translateResponsesToChatCompletions maps text.verbosity onto verbosity', (
   assertEquals(result.target.verbosity, 'low');
 });
 
-test('translateResponsesToChatCompletions co-emits reasoning.effort onto reasoning_effort and service_tier verbatim', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest co-emits reasoning.effort onto reasoning_effort and service_tier verbatim', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: 'xhigh' },
@@ -1760,8 +822,8 @@ test('translateResponsesToChatCompletions co-emits reasoning.effort onto reasoni
   assertEquals(result.target.service_tier, 'priority');
 });
 
-test('translateResponsesToChatCompletions drops reasoning.summary (Chat has no slot)', () => {
-  const result = translateResponsesToChatCompletions({
+test('buildTargetRequest drops reasoning.summary (Chat has no slot)', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: 'medium', summary: 'concise' },

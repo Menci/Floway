@@ -2,7 +2,7 @@ import type { ExecutionContext } from 'hono';
 import { expect, it } from 'vitest';
 
 import { app as gatewayApp } from '../../app.ts';
-import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-helpers.ts';
+import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };

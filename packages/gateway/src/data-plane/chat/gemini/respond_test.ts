@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { respondGemini } from './respond.ts';
-import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse } from '@floway-dev/protocols/gemini';

@@ -1,7 +1,8 @@
+import { memoizedDataUrlCompressor } from '../image-compression.ts';
 import { targetSizeForResponsesChat } from '../image-size.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesInputContent, ResponsesInputImage } from '@floway-dev/protocols/responses';
-import { isBase64ImageDataUrl, memoizedDataUrlCompressor } from '@floway-dev/provider';
+import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
 // A cyber-policy retry re-enters this boundary with the same nested image
 // part. Remember the exact generated URL on that request-owned object so the
@@ -78,7 +79,7 @@ const compressInlineImages = async (ctx: ResponsesBoundaryCtx): Promise<void> =>
 // compaction chain.
 export const withInlineImagesCompressed = async <TResult>(
   ctx: ResponsesBoundaryCtx,
-  _request: object,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   // Finish this nested activation before starting the upstream call. Its

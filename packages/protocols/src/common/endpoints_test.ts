@@ -1,7 +1,13 @@
 import { test } from 'vitest';
 
-import { kindForEndpoints } from './endpoints.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { kindForEndpoints, parseModelKind } from './endpoints.ts';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+
+test('parseModelKind accepts endpoint families and rejects unknown storage values', () => {
+  for (const kind of ['chat', 'embedding', 'image', 'rerank', 'transcription'] as const) assertEquals(parseModelKind(kind), kind);
+  assertThrows(() => parseModelKind('video'), Error, 'model kind is invalid: "video"');
+  assertThrows(() => parseModelKind(null), Error, 'model kind is invalid: null');
+});
 
 test('kindForEndpoints returns image when either images endpoint is present', () => {
   assertEquals(kindForEndpoints({ imagesGenerations: {} }), 'image');

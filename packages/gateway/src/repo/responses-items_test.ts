@@ -6,10 +6,10 @@ import { InMemoryRepo } from './memory.ts';
 import { hashResponsesJson } from './responses-hash.ts';
 import { prepareStoredResponsesPayload } from './responses-payload.ts';
 import { quantizeResponsesRefreshedAt, responsesStateCutoff } from './responses-retention.ts';
-import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ApiKey, Repo, StoredResponsesItem } from './types.ts';
+import { collectSpilledFiles } from '../scheduled/spilled-files.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 const RETENTION_SECONDS = 24 * 60 * 60;

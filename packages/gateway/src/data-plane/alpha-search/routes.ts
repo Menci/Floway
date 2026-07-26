@@ -24,9 +24,9 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
 import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
+import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
-import { loadSearchConfig } from '../tools/web-search/search-config.ts';
 import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
 
 const domainListSchema = z.array(z.string());
@@ -81,10 +81,10 @@ const filtersFromSettings = (settings: AlphaSearchRequest['settings']): WebSearc
 
 const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Promise<Response> => {
   const body = c.req.valid('json');
-  const searchConfig = await loadSearchConfig();
-  if (searchConfig.passthroughOpenAiSearch.enabled) {
+  const webSearchConfig = await loadWebSearchConfig();
+  if (webSearchConfig.passthroughOpenAiSearch.enabled) {
     const dispatcher = await resolveAlphaSearchDispatcher({
-      config: searchConfig.passthroughOpenAiSearch,
+      config: webSearchConfig.passthroughOpenAiSearch,
       upstreamIds: effectiveUpstreamIdsFromContext(c),
       scheduler: backgroundSchedulerFromContext(c),
       runtimeLocation: getRuntimeLocation(c.req.raw),
@@ -99,7 +99,7 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const session: WebSearchExecutionSession = {
     getProvider: () => {
-      configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(searchConfig));
+      configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(webSearchConfig));
       return configuredProvider;
     },
     filters: filtersFromSettings(body.settings),

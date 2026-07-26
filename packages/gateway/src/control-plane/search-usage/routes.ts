@@ -4,17 +4,16 @@
 // between `self-by-key` (the actor's own keys) and `all-by-user` (cross-user
 // aggregate, administrators only).
 
-import { aggregateSearchUsageByKey, aggregateSearchUsageByUser } from './aggregate.ts';
-import { loadSearchConfig } from '../../data-plane/tools/web-search/search-config.ts';
-import { queryWebSearchUsage } from '../../data-plane/tools/web-search/usage.ts';
+import { aggregateWebSearchUsageByKey, aggregateWebSearchUsageByUser } from './aggregate.ts';
+import { loadWebSearchConfig } from '../../data-plane/tools/web-search/config.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
-import type { searchUsageQuery } from '../schemas.ts';
+import type { webSearchUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
-import { resolveUsageView } from '../usage-view.ts';
+import { resolveUsageView } from '../shared/usage-view.ts';
 
-export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
+export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>) => {
   const query = c.req.valid('query');
   if (!query.start || !query.end) {
     return c.json({ error: 'start and end query parameters are required (e.g. 2026-03-09T00)' }, 400);
@@ -35,21 +34,21 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
 
   if (resolved.view === 'all-by-user') {
     const [rawRecords, users, keys] = await Promise.all([
-      queryWebSearchUsage({ provider, start, end }),
+      repo.webSearchUsage.query({ provider, start, end }),
       repo.users.listIncludingDeleted(),
       repo.apiKeys.listIncludingDeleted(),
     ]);
-    const records = aggregateSearchUsageByUser(rawRecords, buildKeyToUserMap(keys));
+    const records = aggregateWebSearchUsageByUser(rawRecords, buildKeyToUserMap(keys));
 
     if (query.include_user_metadata !== '1') return c.json(records);
     const userMetadata = users
       .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
-    const searchConfig = await loadSearchConfig();
+    const webSearchConfig = await loadWebSearchConfig();
     return c.json({
       records,
       users: userMetadata,
-      activeProvider: searchConfig.provider,
+      activeProvider: webSearchConfig.provider,
     });
   }
 
@@ -61,14 +60,14 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     return c.json({ error: 'Unknown key_id' }, 404);
   }
 
-  const rawRecords = await queryWebSearchUsage({
+  const rawRecords = await repo.webSearchUsage.query({
     provider,
     keyId: explicitKeyId,
     start,
     end,
   });
   const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
-  const aggregated = aggregateSearchUsageByKey(filtered);
+  const aggregated = aggregateWebSearchUsageByKey(filtered);
 
   // Aggregated-records-only callers (CI, automation) skip the active-provider
   // read and the sorted key-name/createdAt block via include_key_metadata=0.
@@ -76,7 +75,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   // rows and cannot be elided.
   if (query.include_key_metadata !== '1') return c.json(aggregated);
 
-  const searchConfig = await loadSearchConfig();
+  const webSearchConfig = await loadWebSearchConfig();
   const keyMap = new Map(keys.map(k => [k.id, k]));
   const recordsWithKeyMetadata = aggregated.map(r => {
     const k = keyMap.get(r.keyId);
@@ -88,6 +87,6 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   return c.json({
     records: recordsWithKeyMetadata,
     keys: keyMetadata,
-    activeProvider: searchConfig.provider,
+    activeProvider: webSearchConfig.provider,
   });
 };

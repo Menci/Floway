@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { stripUnsupportedPartFields } from './strip-unsupported-part-fields.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, eventResult, type GeminiInvocation } from '@floway-dev/provider';

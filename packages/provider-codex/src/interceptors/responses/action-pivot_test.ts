@@ -14,7 +14,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 // carry generate-only fields (tools/reasoning/temperature/...) — the
 // per-action narrowing through `toCompactPayloadShape` is what closes that
 // gap.
-const pivotGenerateToCompact: Interceptor<ResponsesBoundaryCtx, object, ProviderResponsesResult> = async (ctx, _request, run) => {
+const pivotGenerateToCompact: Interceptor<ResponsesBoundaryCtx, object, ProviderResponsesResult> = async (ctx, _env, run) => {
   ctx.action = 'compact';
   return await run();
 };

@@ -1,5 +1,5 @@
 import { isFirstOutputTokenFrame } from './first-output-token.ts';
-import type { GatewayCtx } from './gateway-ctx.ts';
+import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
@@ -12,7 +12,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
 ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');
   if (!providerResult.ok) {
-    return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstream)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
   }
   const stampedEvents = (async function* () {
     for await (const frame of providerResult.events) {

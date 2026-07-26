@@ -2,7 +2,7 @@ import { beforeEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
@@ -39,7 +39,7 @@ let repo: InMemoryRepo;
 
 const defaultCandidates = vi.hoisted(() => () => [{
   provider: {
-    upstream: 'u',
+    upstreamId: 'u',
     kind: 'custom',
     name: 'mock-image',
     disabledPublicModelIds: [],
@@ -74,7 +74,7 @@ const defaultCandidates = vi.hoisted(() => () => [{
   fetcher: (request: Request) => fetch(request),
 }]);
 
-vi.mock('../../../../providers/registry.ts', () => ({
+vi.mock('../../../../providers/resolution.ts', () => ({
   enumerateModelCandidates: vi.fn(async () => {
     const override = stub.nextResolutionOverride;
     if (override !== null) {

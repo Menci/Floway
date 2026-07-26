@@ -2,17 +2,17 @@ import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
-import type { SearchUsageRecord, SearchUsageRepo } from './types.ts';
+import type { WebSearchUsageRecord, WebSearchUsageRepo } from './types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-const sortSearchUsageRecords = (records: SearchUsageRecord[]) =>
+const sortWebSearchUsageRecords = (records: WebSearchUsageRecord[]) =>
   records.toSorted(
     (a, b) =>
       a.hour.localeCompare(b.hour) || a.provider.localeCompare(b.provider) || a.keyId.localeCompare(b.keyId) || a.action.localeCompare(b.action),
   );
 
-const exerciseSearchUsageRepo = async (repo: SearchUsageRepo) => {
+const exerciseWebSearchUsageRepo = async (repo: WebSearchUsageRepo) => {
   await repo.deleteAll();
   await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 });
   await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 2 });
@@ -104,7 +104,7 @@ const exerciseSearchUsageRepo = async (repo: SearchUsageRepo) => {
   assertEquals(await repo.listAll(), []);
 };
 
-const exerciseActionDimension = async (repo: SearchUsageRepo) => {
+const exerciseActionDimension = async (repo: WebSearchUsageRepo) => {
   await repo.deleteAll();
 
   // Distinct rows per action under the same (provider, keyId, hour).
@@ -114,7 +114,7 @@ const exerciseActionDimension = async (repo: SearchUsageRepo) => {
 
   const all = await repo.listAll();
   assertEquals(all.length, 2);
-  assertEquals(sortSearchUsageRecords(all), [
+  assertEquals(sortWebSearchUsageRecords(all), [
     {
       provider: 'tavily',
       keyId: 'key_a',
@@ -166,7 +166,7 @@ const exerciseActionDimension = async (repo: SearchUsageRepo) => {
     hour: '2026-05-01T10',
     requests: 99,
   });
-  const afterSet = sortSearchUsageRecords(await repo.listAll());
+  const afterSet = sortWebSearchUsageRecords(await repo.listAll());
   assertEquals(afterSet, [
     {
       provider: 'tavily',
@@ -187,15 +187,15 @@ const exerciseActionDimension = async (repo: SearchUsageRepo) => {
   await repo.deleteAll();
 };
 
-const assertRejectsInvalidProvider = async (repo: SearchUsageRepo) => {
+const assertRejectsInvalidProvider = async (repo: WebSearchUsageRepo) => {
   await repo.deleteAll();
 
-  await assertRejects(() => repo.record({ provider: 'disabled' as SearchUsageRecord['provider'], keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 }), TypeError, 'Invalid web search provider');
+  await assertRejects(() => repo.record({ provider: 'disabled' as WebSearchUsageRecord['provider'], keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 }), TypeError, 'Invalid web search provider');
 
   await assertRejects(
     () =>
       repo.set({
-        provider: 'disabled' as SearchUsageRecord['provider'],
+        provider: 'disabled' as WebSearchUsageRecord['provider'],
         keyId: 'key_a',
         action: 'search',
         hour: '2026-04-25T10',
@@ -207,15 +207,15 @@ const assertRejectsInvalidProvider = async (repo: SearchUsageRepo) => {
 };
 
 test('memory search usage repo records, queries, overwrites, and clears', async () => {
-  await exerciseSearchUsageRepo(new InMemoryRepo().searchUsage);
+  await exerciseWebSearchUsageRepo(new InMemoryRepo().webSearchUsage);
 });
 
 test('memory search usage repo distinguishes search vs fetch_page rows', async () => {
-  await exerciseActionDimension(new InMemoryRepo().searchUsage);
+  await exerciseActionDimension(new InMemoryRepo().webSearchUsage);
 });
 
 test('memory search usage repo rejects invalid provider names', async () => {
-  await assertRejectsInvalidProvider(new InMemoryRepo().searchUsage);
+  await assertRejectsInvalidProvider(new InMemoryRepo().webSearchUsage);
 });
 
 class FakeSqlPreparedStatement {
@@ -285,11 +285,11 @@ class FakeSqlDatabase implements SqlDatabase {
 
   select(query: string, binds: unknown[]) {
     if (!query.includes('WHERE')) {
-      return sortSearchUsageRecords(
+      return sortWebSearchUsageRecords(
         this.rows.map(r => ({
-          provider: r.provider as SearchUsageRecord['provider'],
+          provider: r.provider as WebSearchUsageRecord['provider'],
           keyId: r.key_id,
-          action: r.action as SearchUsageRecord['action'],
+          action: r.action as WebSearchUsageRecord['action'],
           hour: r.hour,
           requests: r.requests,
         })),
@@ -302,7 +302,7 @@ class FakeSqlDatabase implements SqlDatabase {
       }));
     }
 
-    // Predicate combinations matched by SqlSearchUsageRepo.query():
+    // Predicate combinations matched by SqlWebSearchUsageRepo.query():
     // - hour bounds always present (start, end)
     // - provider may be prepended (unshifted)
     // - keyId may be appended
@@ -331,15 +331,15 @@ class FakeSqlDatabase implements SqlDatabase {
 }
 
 test('SQL search usage repo records, queries, overwrites, and clears', async () => {
-  await exerciseSearchUsageRepo(new SqlRepo(new FakeSqlDatabase()).searchUsage);
+  await exerciseWebSearchUsageRepo(new SqlRepo(new FakeSqlDatabase()).webSearchUsage);
 });
 
 test('SQL search usage repo distinguishes search vs fetch_page rows', async () => {
-  await exerciseActionDimension(new SqlRepo(new FakeSqlDatabase()).searchUsage);
+  await exerciseActionDimension(new SqlRepo(new FakeSqlDatabase()).webSearchUsage);
 });
 
 test('SQL search usage repo rejects invalid provider names', async () => {
-  await assertRejectsInvalidProvider(new SqlRepo(new FakeSqlDatabase()).searchUsage);
+  await assertRejectsInvalidProvider(new SqlRepo(new FakeSqlDatabase()).webSearchUsage);
 });
 
 test('SQL search usage repo rejects invalid stored provider names', async () => {
@@ -352,7 +352,7 @@ test('SQL search usage repo rejects invalid stored provider names', async () => 
     requests: 1,
   });
 
-  await assertRejects(() => new SqlRepo(db).searchUsage.listAll(), TypeError, 'Invalid web search provider');
+  await assertRejects(() => new SqlRepo(db).webSearchUsage.listAll(), TypeError, 'Invalid web search provider');
 });
 
 test('SQL search usage repo rejects invalid stored action values', async () => {
@@ -365,5 +365,5 @@ test('SQL search usage repo rejects invalid stored action values', async () => {
     requests: 1,
   });
 
-  await assertRejects(() => new SqlRepo(db).searchUsage.listAll(), TypeError, 'Invalid search usage action');
+  await assertRejects(() => new SqlRepo(db).webSearchUsage.listAll(), TypeError, 'Invalid search usage action');
 });

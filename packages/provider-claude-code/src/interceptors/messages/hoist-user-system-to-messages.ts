@@ -1,4 +1,4 @@
-import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import type { MessagesMessage, MessagesTextBlock } from '@floway-dev/protocols/messages';
 
 // Synthetic assistant turn that closes the hoisted user/assistant pair so the
@@ -28,8 +28,8 @@ const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L4480-L4486
 export const hoistUserSystemToMessages = async <TResult>(
-  ctx: ClaudeCodeMessagesBoundaryCtx,
-  _request: object,
+  ctx: MessagesBoundaryCtx,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const system: string | MessagesTextBlock[] | undefined = ctx.payload.system;

@@ -1,7 +1,7 @@
 import { recordPerformance, type PerformanceTelemetryContext } from './performance.ts';
 import { recordTokenUsage, recordUsage, type UsageMeasurement } from './usage.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
+import type { GatewayCtx } from '../gateway-ctx.ts';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 // Terminal settle for a successful upstream call (or a partial-output

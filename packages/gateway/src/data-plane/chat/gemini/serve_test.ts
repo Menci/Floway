@@ -2,7 +2,7 @@ import { afterEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
@@ -20,8 +20,8 @@ interface QueuedResolution {
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
-vi.mock('../../providers/registry.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
+vi.mock('../../providers/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
@@ -138,7 +138,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream, kind: 'custom', name: upstream,
+      upstreamId: upstream, kind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
     model: stubInternalModel({ endpoints }, upstream),
@@ -259,7 +259,7 @@ test('generate falls through to the next candidate when the first yields an upst
 });
 
 // A mid-attempt throw (interceptor bug / translation error / provider-layer
-// JS exception bypassing tryCatchChatServeFailure) must attribute the perf
+// JS exception not represented as a ChatServeFailure) must attribute the perf
 // error row to the throwing candidate, not the previous one that already
 // failed cleanly with a 5xx.
 test('mid-attempt throw stamps telemetry with the throwing candidate, not the previous one', async () => {

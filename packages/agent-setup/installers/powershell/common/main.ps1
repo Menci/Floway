@@ -1,3 +1,9 @@
+# Redact every occurrence of the API key from text before it is surfaced.
+function Protect-SetupSecret {
+  param([string]$Text)
+  return ($Text -replace [regex]::Escape($SetupApiKey), '***')
+}
+
 # --- run --------------------------------------------------------------------
 
 function Main {

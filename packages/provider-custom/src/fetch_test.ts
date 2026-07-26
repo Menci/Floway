@@ -12,9 +12,10 @@ import {
   customFetchResponses,
   customFetchResponsesCompact,
 } from './fetch.ts';
+import { createCustomProvider } from './provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_test',
@@ -255,4 +256,87 @@ test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
   assertEquals(authHeader, null);
   assertEquals(xApiKey, null);
   assertEquals(anthropicVersion, null);
+});
+
+test('Custom provider callImagesEdits forwards multipart body with model field appended', async () => {
+  const record: UpstreamRecord = {
+    ...baseRecord,
+    config: {
+      baseUrl: 'https://custom.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-custom',
+      endpoints: { chatCompletions: {} },
+    },
+  };
+  let forwarded: { url: string; form: FormData } | undefined;
+  await withMockedFetch(
+    async request => {
+      const path = new URL(request.url).pathname;
+      if (path === '/v1/models') return jsonResponse({ data: [{ id: 'gpt-image-2' }] });
+      if (path === '/v1/images/edits') {
+        forwarded = { url: request.url, form: await request.formData() };
+        return jsonResponse({ data: [{ b64_json: 'abc' }], usage: { input_tokens: 5, output_tokens: 20 } });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const provider = createCustomProvider(record);
+      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const result = await provider.instance.callImagesEdits(model, {
+        parameters: { prompt: 'add a kite' },
+        images: [{
+          type: 'upload',
+          file: new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
+        }],
+      }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.modelKey, 'gpt-image-2');
+      assertEquals(result.response.status, 200);
+    },
+  );
+  assertExists(forwarded);
+  assertEquals(forwarded.form.get('model'), 'gpt-image-2');
+  assertEquals(forwarded.form.get('prompt'), 'add a kite');
+  assertEquals(forwarded.form.get('image') instanceof File, true);
+});
+
+test('Custom provider callAudioTranscriptions preserves multipart entries and honors the path override', async () => {
+  const record: UpstreamRecord = {
+    ...baseRecord,
+    config: {
+      baseUrl: 'https://custom.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-custom',
+      endpoints: {},
+      pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
+      modelsFetch: { enabled: false },
+      models: [{ upstreamModelId: 'whisper-upstream', kind: 'transcription', endpoints: { audioTranscriptions: {} } }],
+    },
+  };
+  let forwarded: { url: string; form: FormData } | undefined;
+  await withMockedFetch(
+    async request => {
+      forwarded = { url: request.url, form: await request.formData() };
+      return jsonResponse({ text: 'hello' });
+    },
+    async () => {
+      const provider = createCustomProvider(record);
+      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const result = await provider.instance.callAudioTranscriptions(model, {
+        entries: [
+          { name: 'file', value: new File([new Uint8Array([7, 8])], 'voice.ogg', { type: 'audio/ogg' }) },
+          { name: 'model', value: 'public-model' },
+          { name: 'language', value: 'en' },
+        ],
+      }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.modelKey, 'whisper-upstream');
+    },
+  );
+  assertExists(forwarded);
+  assertEquals(forwarded.url, 'https://custom.example.com/speech/to-text');
+  assertEquals(forwarded.form.get('model'), 'whisper-upstream');
+  assertEquals(forwarded.form.get('language'), 'en');
+  const file = forwarded.form.get('file');
+  assertEquals(file instanceof File, true);
+  assertEquals((file as File).name, 'voice.ogg');
+  assertEquals((file as File).type, 'audio/ogg');
 });

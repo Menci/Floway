@@ -20,8 +20,8 @@
 // 3. Run `pnpm wrangler d1 create <database_name>` and paste the returned
 //    `database_id` below; `database_name` is the same value you passed.
 // 4. Run `pnpm wrangler r2 bucket create <bucket_name>` for the FILES
-//    bucket (general-purpose spillover store), then put the name in the
-//    matching `bucket_name` below.
+//    bucket. It stores file-backed request/response dump bodies and oversized
+//    Stateful Responses item payloads. Put its name in `bucket_name` below.
 // 5. Run `pnpm wrangler kv namespace create <name>` and paste the returned
 //    id into `kv_namespaces[0].id`.
 {
@@ -29,9 +29,9 @@
   "name": "<YOUR_WORKER_NAME>",
   "main": "apps/platform-cloudflare/entry.ts",
   "compatibility_date": "2025-01-01",
-  // `@reclaimprotocol/tls/webcrypto` (used by packages/http for userspace
-  // TLS) still `import { webcrypto } from 'crypto'`, so the Worker won't
-  // resolve modules at cold start without the Node compat flag.
+  // `@reclaimprotocol/tls/webcrypto` (used by packages/http and the proxy
+  // REALITY dialer) still imports `webcrypto` from `crypto`, so the Worker
+  // cannot resolve those modules at cold start without the Node compat flag.
   "compatibility_flags": ["nodejs_compat"],
   "triggers": {
     "crons": ["17 * * * *"]

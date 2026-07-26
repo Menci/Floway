@@ -7,7 +7,7 @@ import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
 import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { ResponsesInterceptor } from './types.ts';
-import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
+import { withVendorDeepSeekResponsesNormalize } from './vendor-deepseek-normalize.ts';
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 
 // Unified Responses interceptor list. All entries are attached to every
@@ -50,6 +50,6 @@ export const responsesInterceptors: readonly ResponsesInterceptor[] = [
   withReasoningDisabledOnForcedToolChoice,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
-  withVendorDeepseekResponsesNormalize,
+  withVendorDeepSeekResponsesNormalize,
   withVendorQwenResponsesNormalize,
 ];

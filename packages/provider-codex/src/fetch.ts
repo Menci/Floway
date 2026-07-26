@@ -1,4 +1,4 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token-cache.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
@@ -39,7 +39,6 @@ interface CodexBackendCallBase {
   account: CodexAccountCredential;
   model: ProviderModel;
   headers: Headers;
-  turnMetadata?: CodexTurnMetadataOptions;
   signal?: AbortSignal;
   effects: CodexCallEffects;
   call: UpstreamCallOptions;
@@ -403,7 +402,7 @@ const performStreamingResponsesCall = async (
   const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
   const clientMetadata = clientCodexClientMetadata(opts.body);
   const identity = await buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
-  const metadata = opts.turnMetadata ?? (opts.body.input.some(item => item.type === 'compaction_trigger') ? CODEX_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' });
+  const metadata: CodexTurnMetadataOptions = opts.body.input.some(item => item.type === 'compaction_trigger') ? CODEX_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const upstreamFetch = dispatchCodexHttpCall(
     opts,
@@ -434,7 +433,7 @@ const performUnaryCompactCall = async (
   const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
   const clientMetadata = clientCodexClientMetadata(opts.body);
   const identity = await buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
-  const metadata = opts.turnMetadata ?? { requestKind: 'compaction' };
+  const metadata: CodexTurnMetadataOptions = { requestKind: 'compaction' };
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const response = await dispatchCodexHttpCall(
     opts,

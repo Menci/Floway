@@ -1,7 +1,25 @@
 // Protocol-level model endpoint types and their intrinsic kind projection.
 // Provider projection and endpoint dispatch live in packages/gateway/src/data-plane/.
 
-import type { ModelKind } from './models.ts';
+// High-level endpoint-family discriminator. A model belongs to exactly one
+// kind; cross-cutting features (vision, function calling, structured
+// outputs) are orthogonal and modeled separately when needed.
+//
+// The initial vocabulary is seeded from Together AI's model type catalog,
+// projected onto the endpoint families Floway routes. Together's list remains
+// open-ended and uses different names for some families (`transcribe` rather
+// than `transcription`, and `language` / `code` where Floway uses `chat`):
+// https://github.com/togethercomputer/together-python/blob/b294927e2a3efdd79f95123c630d0520d13ba528/src/together/types/models.py#L10-L20
+//
+// Add a value here only when we actually route that endpoint family — do not
+// pre-declare future capabilities.
+export const MODEL_KINDS = ['chat', 'embedding', 'image', 'rerank', 'transcription'] as const;
+export type ModelKind = typeof MODEL_KINDS[number];
+
+export const parseModelKind = (value: unknown, label = 'model kind'): ModelKind => {
+  if (typeof value === 'string' && (MODEL_KINDS as readonly string[]).includes(value)) return value as ModelKind;
+  throw new Error(`${label} is invalid: ${JSON.stringify(value)}`);
+};
 
 // Structured endpoint map. A key being present means the model is served by
 // that endpoint; its value object carries endpoint-specific metadata, if any.
@@ -29,14 +47,11 @@ export interface ModelEndpoints {
 // addressed by identity rather than as a presence map.
 export type ModelEndpointKey = keyof ModelEndpoints;
 
-// Derive the high-level model kind from the supported endpoints. Each model
-// belongs to exactly one kind. `embeddings` implies embedding,
-// `imagesGenerations`/`imagesEdits` implies image, `rerank` implies rerank,
-// `audioTranscriptions` implies transcription, and the generation protocols
-// imply chat.
-// Mixed endpoint sets (e.g. a model tagged with both `embeddings` and
-// `chatCompletions`) are configuration errors; the first matching branch wins.
-// `kind` is a pure projection of `endpoints`; the dispatch layer never reads it.
+// Derive the high-level model kind from the supported endpoints. `embeddings`
+// implies embedding, `imagesGenerations`/`imagesEdits` implies image, `rerank`
+// implies rerank, `audioTranscriptions` implies transcription, and generation
+// protocols imply chat. Mixed endpoint sets use this first-match order for the
+// single kind while dispatch continues to narrow on each endpoint's presence.
 export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
   if (endpoints.embeddings) return 'embedding';
   if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';

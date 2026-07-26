@@ -424,7 +424,7 @@ test('Copilot provider exposes its default flag set via ProviderModel.enabledFla
   });
   const instance = createCopilotProvider(copilotUpstream);
 
-  assertEquals(instance.upstream, 'up_copilot');
+  assertEquals(instance.upstreamId, 'up_copilot');
   assertEquals(instance.name, copilotUpstream.name);
 
   await withMockedFetch(
@@ -665,7 +665,7 @@ test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire
   // boundary chain. The Messages-only `withClaudeAgentHeadersSet` interceptor
   // would set x-interaction-type to 'messages-proxy' for Claude Code SDK
   // metadata, but it MUST NOT run when the translated path calls Copilot's
-  // chat-completions wire — that path runs `COPILOT_CHATCOMPLETIONS_BOUNDARY`,
+  // chat-completions wire — that path runs `COPILOT_CHAT_COMPLETIONS_BOUNDARY`,
   // which has no Messages-source headers in it.
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);

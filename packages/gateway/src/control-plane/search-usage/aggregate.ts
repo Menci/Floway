@@ -3,25 +3,25 @@
 // fetch_page into a single `requests` count per (provider, keyId, hour) or
 // (provider, userId, hour).
 
-import type { SearchUsageRecord } from '../../repo/types.ts';
+import type { WebSearchUsageRecord } from '../../repo/types.ts';
 import type { WebSearchProviderName } from '../../shared/web-search-providers.ts';
 
-export interface DisplaySearchUsageByKeyRecord {
+export interface DisplayWebSearchUsageByKeyRecord {
   provider: WebSearchProviderName;
   keyId: string;
   hour: string;
   requests: number;
 }
 
-export interface DisplaySearchUsageByUserRecord {
+export interface DisplayWebSearchUsageByUserRecord {
   provider: WebSearchProviderName;
   userId: number;
   hour: string;
   requests: number;
 }
 
-export const aggregateSearchUsageByKey = (records: readonly SearchUsageRecord[]): DisplaySearchUsageByKeyRecord[] => {
-  const grouped = new Map<string, DisplaySearchUsageByKeyRecord>();
+export const aggregateWebSearchUsageByKey = (records: readonly WebSearchUsageRecord[]): DisplayWebSearchUsageByKeyRecord[] => {
+  const grouped = new Map<string, DisplayWebSearchUsageByKeyRecord>();
   for (const r of records) {
     const key = JSON.stringify([r.provider, r.keyId, r.hour]);
     const existing = grouped.get(key);
@@ -38,11 +38,11 @@ export const aggregateSearchUsageByKey = (records: readonly SearchUsageRecord[])
 // deleted directly in the DB) collapse into a synthetic userId 0 so the
 // dashboard can still surface the lost rows; the keyToUser map is populated
 // from active + soft-deleted api_keys, so a normal soft delete still resolves.
-export const aggregateSearchUsageByUser = (
-  records: readonly SearchUsageRecord[],
+export const aggregateWebSearchUsageByUser = (
+  records: readonly WebSearchUsageRecord[],
   keyToUser: ReadonlyMap<string, number>,
-): DisplaySearchUsageByUserRecord[] => {
-  const grouped = new Map<string, DisplaySearchUsageByUserRecord>();
+): DisplayWebSearchUsageByUserRecord[] => {
+  const grouped = new Map<string, DisplayWebSearchUsageByUserRecord>();
   for (const r of records) {
     const userId = keyToUser.get(r.keyId) ?? 0;
     const key = JSON.stringify([r.provider, userId, r.hour]);

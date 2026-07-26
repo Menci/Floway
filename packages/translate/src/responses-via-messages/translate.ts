@@ -1,7 +1,6 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
-import type { RemoteImageLoader } from '../shared/via-messages/remote-images.ts';
-import type { TranslateTrip } from '../types.ts';
+import type { RemoteImageLoader, TranslateTrip } from '../types.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesRequestPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 

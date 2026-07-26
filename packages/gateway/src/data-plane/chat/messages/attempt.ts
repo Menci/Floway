@@ -102,6 +102,6 @@ export const messagesAttempt = {
       );
       return response;
     });
-    return await plainResultFromResponse(response, candidate.provider.upstream);
+    return await plainResultFromResponse(response, candidate.provider.upstreamId);
   },
 };

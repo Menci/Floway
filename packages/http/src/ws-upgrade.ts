@@ -11,9 +11,10 @@
 import { sha1 } from '@noble/hashes/legacy.js';
 
 import { signalAbortReason } from './abort.ts';
-import { base64EncodeBytes, concat, copy, findDoubleCrlfFrom, utf8Bytes } from './bytes.ts';
+import { base64EncodeBytes, concat, copy, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
-import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
+import { STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
+import { readHeadSection } from './read-head-section.ts';
 import type { DuplexStream } from './types.ts';
 
 export interface WsUpgradeOptions {
@@ -220,34 +221,18 @@ interface UpgradeResponseHead {
 const readUpgradeResponse = async (
   reader: ReadableStreamDefaultReader<Uint8Array>,
 ): Promise<UpgradeResponseHead> => {
-  let buffer = new Uint8Array(0);
-  let headerEnd = -1;
-  while (headerEnd < 0) {
-    // Resume from the last position where a partial terminator could have
-    // started straddling the seam — mirrors the parser.ts readResponseHead
-    // scan-from index so a drip-fed upgrade response stays O(n).
-    const scanFrom = Math.max(0, buffer.byteLength - 3);
-    const { value, done } = await reader.read();
-    if (done) {
-      throw new HttpProtocolError(
-        `WS upgrade: unexpected EOF before response head; got ${buffer.byteLength} bytes`,
-        'EOF',
-      );
-    }
-    buffer = concat(buffer, value);
-    headerEnd = findDoubleCrlfFrom(buffer, scanFrom);
-    if (headerEnd < 0 && buffer.byteLength > WS_HEAD_BUFFER_CAP) {
-      throw new HttpProtocolError(
-        `WS upgrade response head exceeded ${WS_HEAD_BUFFER_CAP} bytes without a terminator`,
-        'HEADER_BUFFER_OVERFLOW',
-      );
-    }
-  }
-  const headBytes = buffer.subarray(0, headerEnd);
-  const remainder = copy(buffer.subarray(headerEnd + 4));
-  const text = decodeAsciiHeaderSection(headBytes, 'WS upgrade response head');
-  const lines = text.split('\r\n');
-  const statusLine = lines.shift()!;
+  const { statusLine, lines, remainder } = await readHeadSection(reader, new Uint8Array(0), {
+    maxBytes: WS_HEAD_BUFFER_CAP,
+    decodeContext: 'WS upgrade response head',
+    eofError: receivedBytes => new HttpProtocolError(
+      `WS upgrade: unexpected EOF before response head; got ${receivedBytes} bytes`,
+      'EOF',
+    ),
+    overflowError: maxBytes => new HttpProtocolError(
+      `WS upgrade response head exceeded ${maxBytes} bytes without a terminator`,
+      'HEADER_BUFFER_OVERFLOW',
+    ),
+  });
   // RFC 6455 §4.1: the upgrade response is HTTP/1.1; its status code MUST
   // be 101. We surface non-101 verbatim so the caller can include the
   // server's reason phrase in a debug log.

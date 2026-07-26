@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import type { ResponsesInvocation } from './types.ts';
-import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { withVendorDeepSeekResponsesNormalize } from './vendor-deepseek-normalize.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult, type FlagId } from '@floway-dev/provider';
@@ -35,7 +35,7 @@ test("vendor-deepseek translates canonical reasoning.effort: 'none' into top-lev
     reasoning: { effort: 'none' },
   });
 
-  await withVendorDeepseekResponsesNormalize(input, stubCtx, okEvents);
+  await withVendorDeepSeekResponsesNormalize(input, stubCtx, okEvents);
 
   const out = input.payload as unknown as Record<string, unknown>;
   assertEquals(out.reasoning, undefined);
@@ -49,7 +49,7 @@ test('vendor-deepseek leaves a real reasoning.effort value untouched (only the n
     reasoning: { effort: 'high' },
   });
 
-  await withVendorDeepseekResponsesNormalize(input, stubCtx, okEvents);
+  await withVendorDeepSeekResponsesNormalize(input, stubCtx, okEvents);
 
   assertEquals(input.payload.reasoning, { effort: 'high' });
   const out = input.payload as unknown as Record<string, unknown>;
@@ -59,7 +59,7 @@ test('vendor-deepseek leaves a real reasoning.effort value untouched (only the n
 test('vendor-deepseek early-returns when its flag is not set on the candidate', async () => {
   const input = invocation({ model: 'deepseek-reasoner', input: [{ type: 'message', role: 'user', content: 'hi' }], reasoning: { effort: 'none' } }, new Set());
 
-  await withVendorDeepseekResponsesNormalize(input, stubCtx, okEvents);
+  await withVendorDeepSeekResponsesNormalize(input, stubCtx, okEvents);
 
   assertEquals(input.payload.reasoning, { effort: 'none' });
   const out = input.payload as unknown as Record<string, unknown>;

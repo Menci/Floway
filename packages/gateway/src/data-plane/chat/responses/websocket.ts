@@ -9,12 +9,12 @@ import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { takeRequestBody } from '../../shared/request-body.ts';
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { takeRequestBody } from '../shared/request-body.ts';
 import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
@@ -286,7 +286,7 @@ const handleClientMessage = async (
     sendError(socket, 500, serverErrorEnvelope(error), eventId, ctx?.dump);
     if (ctx !== undefined) {
       // Mid-attempt throws (interceptor bug, translation error, provider-layer JS
-      // exception that bypassed tryCatchChatServeFailure) never reach the
+      // exception not represented as a ChatServeFailure) never reach the
       // respondResponsesWebSocket result branches, so their `recordFailedRequest`
       // call would be skipped. Attribute the failure to the last upstream stamped
       // synchronously by `responsesServe.generate`, matching the HTTP transports.
@@ -336,7 +336,7 @@ const respondResponsesWebSocket = async (input: {
   const { socket, eventId, signal, isClosed, result, ctx } = input;
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
-    ctx.dump?.error(result.source, result.upstream);
+    ctx.dump?.error(result.source, result.upstreamId);
     sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId, ctx.dump);
     ctx.dump?.finalize(result.status, []);
     return;

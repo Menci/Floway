@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { hashResponsesItemContent } from './identity.ts';
+import { hashResponsesItem } from './identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -102,7 +102,7 @@ describe('StatefulResponsesStore', () => {
     await store.persistOutputItem(output);
     await store.commitSnapshot('resp_compact', 'replace', [output.id]);
 
-    expect(await repo.responsesItems.lookupManyByItemHash('key-a', [await hashResponsesItemContent(input)], 0)).toEqual([]);
+    expect(await repo.responsesItems.lookupManyByItemHash('key-a', [await hashResponsesItem(input)], 0)).toEqual([]);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact', 0))?.itemIds).toEqual([output.id]);
   });
 
@@ -214,14 +214,14 @@ describe('StatefulResponsesStore', () => {
       id: directInput.id,
       apiKeyId: 'key-a',
       payload: { item: directInput },
-      itemHash: await hashResponsesItemContent(directInput),
+      itemHash: await hashResponsesItem(directInput),
       refreshedAt: initialRefreshedAt,
     };
     const hashedRow = {
       id: 'msg_hashed',
       apiKeyId: 'key-a',
       payload: { item: hashedInput },
-      itemHash: await hashResponsesItemContent(hashedInput),
+      itemHash: await hashResponsesItem(hashedInput),
       refreshedAt: initialRefreshedAt,
     };
     await repo.responsesItems.insertMany([directRow, hashedRow], 0);
@@ -246,7 +246,7 @@ describe('StatefulResponsesStore', () => {
       id: 'msg_future',
       apiKeyId: 'key-a',
       payload: { item: input },
-      itemHash: await hashResponsesItemContent(input),
+      itemHash: await hashResponsesItem(input),
       refreshedAt: futureRefreshedAt,
     };
     await repo.responsesItems.insertMany([row], 0);

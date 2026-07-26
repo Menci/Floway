@@ -1,6 +1,8 @@
 import { shortId } from '../../../../../shared/short-id.ts';
+import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
 import { executeAlphaSearch } from '../../../../tools/web-search/alpha-search/execution.ts';
 import { resolveAlphaSearchDispatcher } from '../../../../tools/web-search/alpha-search/upstream.ts';
+import { loadWebSearchConfig } from '../../../../tools/web-search/config.ts';
 import { normalizeDomainEntry } from '../../../../tools/web-search/domain-normalize.ts';
 import {
   actionSearchQueries,
@@ -21,9 +23,7 @@ import {
   type WebSearchOperation,
 } from '../../../../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
-import { loadSearchConfig } from '../../../../tools/web-search/search-config.ts';
 import type { ConfiguredWebSearchProvider } from '../../../../tools/web-search/types.ts';
-import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
 import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction } from '@floway-dev/protocols/responses';
 import { createRandomResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
@@ -560,14 +560,14 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
   }
 
   const { filters } = prepared;
-  const searchConfig = await loadSearchConfig();
+  const webSearchConfig = await loadWebSearchConfig();
   const includeArray = Array.isArray(invocation.payload.include) ? invocation.payload.include : [];
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const state: ShimState = {
     filters,
     pageCache: new Map(),
     getProvider: () => {
-      configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(searchConfig));
+      configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(webSearchConfig));
       return configuredProvider;
     },
     apiKeyId: gatewayCtx.apiKeyId,
@@ -575,9 +575,9 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
     includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
     ...(gatewayCtx.abortSignal !== undefined ? { signal: gatewayCtx.abortSignal } : {}),
   };
-  if (searchConfig.passthroughOpenAiSearch.enabled) {
+  if (webSearchConfig.passthroughOpenAiSearch.enabled) {
     const dispatcher = resolveAlphaSearchDispatcher({
-      config: searchConfig.passthroughOpenAiSearch,
+      config: webSearchConfig.passthroughOpenAiSearch,
       upstreamIds: gatewayCtx.upstreamIds,
       scheduler: gatewayCtx.backgroundScheduler,
       runtimeLocation: gatewayCtx.runtimeLocation,

@@ -7,7 +7,6 @@ import {
   geminiPartKind,
   geminiPartText,
   geminiReasoningEffort,
-  geminiReasoningId,
   geminiText,
   geminiThoughtText,
   type GeminiToolCallIds,
@@ -16,6 +15,8 @@ import {
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiContent, GeminiPayload, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
 import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputItem, ResponsesTool } from '@floway-dev/protocols/responses';
+
+const geminiReasoningId = (turnIndex: number, partIndex: number): string => `gemini_reasoning_${turnIndex}_${partIndex}`;
 
 const flushPendingContent = (input: ResponsesInputItem[], pending: ResponsesInputContent[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;

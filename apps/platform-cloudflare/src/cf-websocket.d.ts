@@ -10,6 +10,10 @@ declare global {
     webSocket?: WebSocket;
   }
 
+  interface Response {
+    readonly webSocket?: WebSocket | null;
+  }
+
   interface WebSocket {
     // The server side of a WebSocketPair must opt into receiving frames.
     accept(): void;

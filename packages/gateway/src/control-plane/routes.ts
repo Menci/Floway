@@ -9,11 +9,15 @@ import { createAlias, deleteAlias, listAliases, updateAlias } from './model-alia
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { authLoginBody, changeOwnPasswordBody, claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createAliasBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, listModelsBody, modelsQuery, performanceQuery, resetBackoffBody, rotateKeyBody, searchConfigSchema, searchUsageQuery, testProxyBody, tokenUsageQuery, updateAliasBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
-import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
-import { searchUsage } from './search-usage/routes.ts';
+import { authLoginBody, changeOwnPasswordBody, claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOAuthAuthorizeUrlBody, codexOAuthExchangeBody, codexOAuthRefreshBody, copilotOAuthDeviceLoginPollBody, copilotQuotaBody, createAliasBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, listModelsBody, modelsQuery, performanceQuery, resetBackoffBody, rotateKeyBody, webSearchConfigSchema, webSearchUsageQuery, testProxyBody, tokenUsageQuery, updateAliasBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
+import { getWebSearchConfigRoute, putWebSearchConfigRoute, testWebSearchConfigRoute } from './search-config/routes.ts';
+import { webSearchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
-import { claudeCodeOauthAuthorizeUrl, claudeCodeOauthExchange, claudeCodeOauthRefresh, claudeCodeProbe, claudeCodeSetupTokenAuthorizeUrl, claudeCodeSetupTokenExchange, codexOauthAuthorizeUrl, codexOauthExchange, codexOauthRefresh, copilotOauthDeviceLoginPoll, copilotOauthDeviceLoginStart, copilotQuota, createUpstream, deleteUpstream, getUpstream, getUpstreamBlueprint, listModels, listOptionalFlags, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
+import { claudeCodeOAuthAuthorizeUrl, claudeCodeOAuthExchange, claudeCodeOAuthRefresh, claudeCodeProbe, claudeCodeSetupTokenAuthorizeUrl, claudeCodeSetupTokenExchange } from './upstreams/claude-code.ts';
+import { codexOAuthAuthorizeUrl, codexOAuthExchange, codexOAuthRefresh } from './upstreams/codex.ts';
+import { copilotOAuthDeviceLoginPoll, copilotOAuthDeviceLoginStart, copilotQuota } from './upstreams/copilot.ts';
+import { listModels } from './upstreams/models.ts';
+import { createUpstream, deleteUpstream, getUpstream, getUpstreamBlueprint, listOptionalFlags, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
 import { type AuthedContext, type AuthVars, userFromContext } from '../middleware/auth.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
@@ -46,7 +50,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .patch('/api/keys/:id', zValidator('json', updateKeyBody), updateKey)
   .delete('/api/keys/:id', deleteKey)
   .get('/api/token-usage', zValidator('query', tokenUsageQuery), tokenUsage)
-  .get('/api/search-usage', zValidator('query', searchUsageQuery), searchUsage)
+  .get('/api/search-usage', zValidator('query', webSearchUsageQuery), webSearchUsage)
   .get('/api/performance/overview', zValidator('query', performanceQuery), performanceOverview)
   .get('/api/models', zValidator('query', modelsQuery), controlPlaneModels)
   // Minimal upstream picker exposed to non-admin users so they can scope a key
@@ -73,15 +77,15 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .get('/upstreams', listUpstreams)
     .get('/upstreams/blueprint', getUpstreamBlueprint)
     .get('/upstreams/flags', listOptionalFlags)
-    .post('/upstreams/copilot/oauth/device-login/start', copilotOauthDeviceLoginStart)
-    .post('/upstreams/copilot/oauth/device-login/poll', zValidator('json', copilotOauthDeviceLoginPollBody), copilotOauthDeviceLoginPoll)
+    .post('/upstreams/copilot/oauth/device-login/start', copilotOAuthDeviceLoginStart)
+    .post('/upstreams/copilot/oauth/device-login/poll', zValidator('json', copilotOAuthDeviceLoginPollBody), copilotOAuthDeviceLoginPoll)
     .post('/upstreams/copilot/quota', zValidator('json', copilotQuotaBody), copilotQuota)
-    .post('/upstreams/codex/oauth/authorize-url', zValidator('json', codexOauthAuthorizeUrlBody), codexOauthAuthorizeUrl)
-    .post('/upstreams/codex/oauth/exchange', zValidator('json', codexOauthExchangeBody), codexOauthExchange)
-    .post('/upstreams/codex/oauth/refresh', zValidator('json', codexOauthRefreshBody), codexOauthRefresh)
-    .post('/upstreams/claude-code/oauth/authorize-url', zValidator('json', claudeCodeOauthAuthorizeUrlBody), claudeCodeOauthAuthorizeUrl)
-    .post('/upstreams/claude-code/oauth/exchange', zValidator('json', claudeCodeOauthExchangeBody), claudeCodeOauthExchange)
-    .post('/upstreams/claude-code/oauth/refresh', zValidator('json', claudeCodeOauthRefreshBody), claudeCodeOauthRefresh)
+    .post('/upstreams/codex/oauth/authorize-url', zValidator('json', codexOAuthAuthorizeUrlBody), codexOAuthAuthorizeUrl)
+    .post('/upstreams/codex/oauth/exchange', zValidator('json', codexOAuthExchangeBody), codexOAuthExchange)
+    .post('/upstreams/codex/oauth/refresh', zValidator('json', codexOAuthRefreshBody), codexOAuthRefresh)
+    .post('/upstreams/claude-code/oauth/authorize-url', zValidator('json', claudeCodeOAuthAuthorizeUrlBody), claudeCodeOAuthAuthorizeUrl)
+    .post('/upstreams/claude-code/oauth/exchange', zValidator('json', claudeCodeOAuthExchangeBody), claudeCodeOAuthExchange)
+    .post('/upstreams/claude-code/oauth/refresh', zValidator('json', claudeCodeOAuthRefreshBody), claudeCodeOAuthRefresh)
     .post('/upstreams/claude-code/setup-token/authorize-url', zValidator('json', claudeCodeSetupTokenAuthorizeUrlBody), claudeCodeSetupTokenAuthorizeUrl)
     .post('/upstreams/claude-code/setup-token/exchange', zValidator('json', claudeCodeSetupTokenExchangeBody), claudeCodeSetupTokenExchange)
     .post('/upstreams/claude-code/probe', zValidator('json', claudeCodeProbeBody), claudeCodeProbe)
@@ -106,8 +110,8 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .post('/aliases', zValidator('json', createAliasBody), createAlias)
     .put('/aliases/:name', zValidator('json', updateAliasBody), updateAlias)
     .delete('/aliases/:name', deleteAlias)
-    .get('/search-config', getSearchConfigRoute)
-    .put('/search-config', zValidator('json', searchConfigSchema), putSearchConfigRoute)
-    .post('/search-config/test', zValidator('json', searchConfigSchema), testSearchConfigRoute)
+    .get('/search-config', getWebSearchConfigRoute)
+    .put('/search-config', zValidator('json', webSearchConfigSchema), putWebSearchConfigRoute)
+    .post('/search-config/test', zValidator('json', webSearchConfigSchema), testWebSearchConfigRoute)
     .get('/export', zValidator('query', exportQuery), exportData)
     .post('/import', zValidator('json', importBody), importData));

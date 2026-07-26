@@ -1,4 +1,4 @@
-import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 // Real Claude Code always sends `max_tokens` and `temperature` on every
@@ -19,8 +19,8 @@ import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 // Positioned at the head of the chain so the rest of the re-mimicry steps
 // see a fully-formed payload. Caller-supplied values are never overwritten.
 export const backfillRequiredFields = async <TResult>(
-  ctx: ClaudeCodeMessagesBoundaryCtx,
-  _request: object,
+  ctx: MessagesBoundaryCtx,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const next = { ...ctx.payload };

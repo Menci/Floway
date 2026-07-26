@@ -73,7 +73,7 @@ describe('createCodexProvider', () => {
   test('returns an instance carrying provider kind and identity', async () => {
     const instance = createCodexProvider(baseRecord);
     expect(instance.kind).toBe('codex');
-    expect(instance.upstream).toBe('up_codex');
+    expect(instance.upstreamId).toBe('up_codex');
     expect(instance.name).toBe('Codex Plus');
   });
 

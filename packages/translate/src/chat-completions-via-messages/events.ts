@@ -1,6 +1,8 @@
+import { openAIServiceTierFromMessagesUsage } from '../shared/via-messages/service-tier.ts';
+import { inclusiveMessagesInputUsage } from '../shared/via-messages/usage.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens, type MessagesResult, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
+import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, type MessagesResult, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
 
 const mapMessagesStopReasonToChatCompletionsFinishReason = (stopReason: MessagesResult['stop_reason']): ChatCompletionsResult['choices'][0]['finish_reason'] => {
   switch (stopReason) {
@@ -69,13 +71,9 @@ const makeChunk = (state: MessagesToChatCompletionsStreamState, delta: ChatCompl
 });
 
 const makeUsageChunk = (state: MessagesToChatCompletionsStreamState): ChatCompletionsStreamEvent => {
-  const { cacheWrite, cacheWrite1h } = splitMessagesCacheCreationTokens(state.usage);
-  const cachedPromptTokens = state.usage.cache_read_input_tokens ?? 0;
+  const { cacheRead: cachedPromptTokens, cacheWrite, cacheWrite1h, inclusiveInput: promptTokens } = inclusiveMessagesInputUsage(state.usage);
   const cacheCreationPromptTokens = cacheWrite + cacheWrite1h;
-  const promptTokens = (state.usage.input_tokens ?? 0) + cachedPromptTokens + cacheCreationPromptTokens;
-  // Anthropic's `speed: 'fast'` surfaces as OpenAI `service_tier: 'fast'`;
-  // all other Anthropic service_tier values pass through directly.
-  const serviceTier = state.usage.speed === 'fast' ? 'fast' : state.usage.service_tier;
+  const serviceTier = openAIServiceTierFromMessagesUsage(state.usage);
 
   return {
     id: state.messageId,

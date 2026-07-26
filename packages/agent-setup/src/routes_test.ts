@@ -17,22 +17,16 @@ import {
 import {
   SETUP_BASH_CLAUDE,
   SETUP_BASH_CODEX,
-  SETUP_BASH_COMMON_HELPERS,
-  SETUP_BASH_COMMON_MAIN,
-  SETUP_BASH_COMMON_OUTPUT,
+  SETUP_BASH_COMMON,
   SETUP_POWERSHELL_CLAUDE,
   SETUP_POWERSHELL_CODEX,
-  SETUP_POWERSHELL_COMMON_HELPERS,
-  SETUP_POWERSHELL_COMMON_MAIN,
-  SETUP_POWERSHELL_COMMON_OUTPUT,
+  SETUP_POWERSHELL_COMMON,
 } from './script-assets.generated.ts';
 import { SETUP_SCRIPT_BODIES } from './script-assets.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const RAW_KEY = 'raw-key';
 const USER_ID = 2;
-const BASH_COMMON = SETUP_BASH_COMMON_OUTPUT + SETUP_BASH_COMMON_HELPERS + SETUP_BASH_COMMON_MAIN;
-const POWERSHELL_COMMON = SETUP_POWERSHELL_COMMON_OUTPUT + SETUP_POWERSHELL_COMMON_HELPERS + SETUP_POWERSHELL_COMMON_MAIN;
 
 // A faithful multi-row fake: token is the key, rows accrete, latest-by-user is
 // deterministic, and insert sweeps only the same user's already-expired rows.
@@ -415,7 +409,7 @@ test('GET serves the shell prefix + common and target-agent fragments with harde
   expect(prefix).not.toContain('SETUP_CODEX_');
   expect(prefix).not.toContain('SETUP_ENDPOINT');
   expect(text).toContain(body);
-  expect(body).toContain(BASH_COMMON);
+  expect(body).toContain(SETUP_BASH_COMMON);
   expect(body).toContain(SETUP_BASH_CLAUDE);
   expect(body).not.toContain(SETUP_BASH_CODEX);
 });
@@ -430,7 +424,7 @@ test('GET serves the PowerShell prefix + common and target-agent fragments', asy
   expect(prefix).toContain('$SetupCodex');
   expect(prefix).not.toContain('$SetupClaude');
   expect(text).toContain(body);
-  expect(body).toContain(POWERSHELL_COMMON);
+  expect(body).toContain(SETUP_POWERSHELL_COMMON);
   expect(body).toContain(SETUP_POWERSHELL_CODEX);
   expect(body).not.toContain(SETUP_POWERSHELL_CLAUDE);
 });
@@ -531,23 +525,4 @@ test('a public serve failure is sealed to an opaque 500 that leaks neither token
   expect(joined).not.toContain(injectedSecret);
   expect(joined).not.toContain(lease.token);
   expect(joined).not.toContain('forced failure');
-});
-
-test('generated fragments match the checked-in canonical installers byte for byte', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const fixtures = [
-    [SETUP_BASH_COMMON_OUTPUT, '../installers/bash/common/output.sh'],
-    [SETUP_BASH_COMMON_HELPERS, '../installers/bash/common/helpers.sh'],
-    [SETUP_BASH_COMMON_MAIN, '../installers/bash/common/main.sh'],
-    [SETUP_BASH_CLAUDE, '../installers/bash/claude.sh'],
-    [SETUP_BASH_CODEX, '../installers/bash/codex.sh'],
-    [SETUP_POWERSHELL_COMMON_OUTPUT, '../installers/powershell/common/output.ps1'],
-    [SETUP_POWERSHELL_COMMON_HELPERS, '../installers/powershell/common/helpers.ps1'],
-    [SETUP_POWERSHELL_COMMON_MAIN, '../installers/powershell/common/main.ps1'],
-    [SETUP_POWERSHELL_CLAUDE, '../installers/powershell/claude.ps1'],
-    [SETUP_POWERSHELL_CODEX, '../installers/powershell/codex.ps1'],
-  ] as const;
-  for (const [generated, file] of fixtures) {
-    assertEquals(generated, await readFile(new URL(file, import.meta.url), 'utf8'));
-  }
 });

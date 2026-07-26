@@ -1,14 +1,14 @@
-import type { Context } from 'hono';
-
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { type AddressableIdEntry, enumerateAddressableModelIds, listedRealModels } from '../../data-plane/shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../../data-plane/shared/listing/alias.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
+import type { CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import type { modelsQuery } from '../schemas.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { InternalModel, Provider, UpstreamColor, UpstreamProviderKind } from '@floway-dev/provider';
@@ -37,9 +37,9 @@ const toControlPlaneModel = (
   ...toPublicModel(model),
   upstreams: instances.map(instance => ({
     kind: instance.kind,
-    id: instance.upstream,
+    id: instance.upstreamId,
     name: instance.name,
-    color: colorByUpstream.get(instance.upstream) ?? null,
+    color: colorByUpstream.get(instance.upstreamId) ?? null,
   })),
 });
 
@@ -60,10 +60,11 @@ const toUnlistedControlPlaneModel = (
   unlisted: true,
 });
 
-export const controlPlaneModels = async (c: Context) => {
+export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) => {
   try {
-    const includeAliases = c.req.query('aliases') !== 'false';
-    const includeUnlisted = c.req.query('include_unlisted') === 'true';
+    const { aliases: aliasesValue, include_unlisted: includeUnlistedValue } = c.req.valid('query');
+    const includeAliases = aliasesValue !== 'false';
+    const includeUnlisted = includeUnlistedValue === 'true';
     // Admin sessions see the entire gateway: editor surfaces (alias edit,
     // upstream edit) need to configure models on upstreams the admin may
     // have self-restricted out of their own data-plane access, and the

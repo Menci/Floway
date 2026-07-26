@@ -1,4 +1,4 @@
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { Interceptor, InterceptorRun } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';

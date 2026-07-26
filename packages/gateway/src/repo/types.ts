@@ -1,4 +1,4 @@
-import type { SearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
+import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
@@ -82,12 +82,12 @@ export interface TokenUsage {
   tier?: string | null;
 }
 
-export type SearchUsageAction = 'search' | 'fetch_page';
+export type WebSearchUsageAction = 'search' | 'fetch_page';
 
-export interface SearchUsageRecord {
+export interface WebSearchUsageRecord {
   provider: WebSearchProviderName;
   keyId: string;
-  action: SearchUsageAction;
+  action: WebSearchUsageAction;
   hour: string;
   requests: number;
 }
@@ -205,11 +205,11 @@ export interface UsageRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface SearchUsageRepo {
-  record(args: { provider: WebSearchProviderName; keyId: string; action: SearchUsageAction; hour: string; requests: number }): Promise<void>;
-  query(opts: { provider?: WebSearchProviderName; keyId?: string; action?: SearchUsageAction; start: string; end: string }): Promise<SearchUsageRecord[]>;
-  listAll(): Promise<SearchUsageRecord[]>;
-  set(record: SearchUsageRecord): Promise<void>;
+export interface WebSearchUsageRepo {
+  record(args: { provider: WebSearchProviderName; keyId: string; action: WebSearchUsageAction; hour: string; requests: number }): Promise<void>;
+  query(opts: { provider?: WebSearchProviderName; keyId?: string; action?: WebSearchUsageAction; start: string; end: string }): Promise<WebSearchUsageRecord[]>;
+  listAll(): Promise<WebSearchUsageRecord[]>;
+  set(record: WebSearchUsageRecord): Promise<void>;
   deleteAll(): Promise<void>;
 }
 
@@ -237,7 +237,7 @@ export interface PerformanceRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface CachedModelsRow {
+export interface ModelsCacheRow {
   revision: number;
   fetchedAt: number;
   models: ProviderModel[];
@@ -245,15 +245,15 @@ export interface CachedModelsRow {
 }
 
 export interface ModelsCacheRepo {
-  get(upstreamId: string): Promise<CachedModelsRow | null>;
+  get(upstreamId: string): Promise<ModelsCacheRow | null>;
   put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void>;
   setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void>;
   delete(upstreamId: string): Promise<void>;
 }
 
-export interface SearchConfigRepo {
+export interface WebSearchConfigRepo {
   get(): Promise<unknown>;
-  save(config: SearchConfig): Promise<void>;
+  save(config: WebSearchConfig): Promise<void>;
 }
 
 export interface UpstreamRepo {
@@ -441,10 +441,10 @@ export interface Repo {
   users: UsersRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
-  searchUsage: SearchUsageRepo;
+  webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
-  searchConfig: SearchConfigRepo;
+  webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;

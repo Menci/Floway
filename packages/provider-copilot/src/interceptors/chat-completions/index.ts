@@ -14,7 +14,7 @@ import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
 // populate `ctx.headers` for the upstream call. Cache-control marker
 // attachment is a payload mutator, so it sits with the other payload mutators
 // and before any header derivation.
-export const COPILOT_CHATCOMPLETIONS_BOUNDARY = [
+export const COPILOT_CHAT_COMPLETIONS_BOUNDARY = [
   withInlineImagesCompressed,
   withToolArgumentWhitespaceAborted,
   withCacheControlMarkersAttached,

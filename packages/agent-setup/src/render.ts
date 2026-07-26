@@ -7,9 +7,10 @@
 // the executing shell, and the fixed installer body reads it from there.
 
 import type { AgentSetupConfiguration } from './configuration.ts';
+import type { ScriptAgent } from './script-assets.ts';
 
 export interface RenderPrefixInput {
-  agent: 'claude' | 'codex';
+  agent: ScriptAgent;
   apiKey: string;
   apiKeyName: string;
   configuration: AgentSetupConfiguration;

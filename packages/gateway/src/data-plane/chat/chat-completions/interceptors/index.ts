@@ -4,7 +4,7 @@ import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.t
 import { withUsageNormalized } from './normalize-usage.ts';
 import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { ChatCompletionsInterceptor } from './types.ts';
-import { withVendorDeepseekChatCompletionsNormalize } from './vendor-deepseek-normalize.ts';
+import { withVendorDeepSeekChatCompletionsNormalize } from './vendor-deepseek-normalize.ts';
 import { withVendorKimiChatCompletionsNormalize } from './vendor-kimi-normalize.ts';
 import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.ts';
 
@@ -43,7 +43,7 @@ export const chatCompletionsInterceptors: readonly ChatCompletionsInterceptor[] 
   withReasoningDisabledOnForcedToolChoice,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
-  withVendorDeepseekChatCompletionsNormalize,
+  withVendorDeepSeekChatCompletionsNormalize,
   withVendorQwenChatCompletionsNormalize,
   withVendorKimiChatCompletionsNormalize,
 ];

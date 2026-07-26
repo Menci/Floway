@@ -1,9 +1,9 @@
 import { prepareGeminiAffinity } from './affinity/ingress.ts';
 import { geminiAttempt, geminiCountTokensTarget, geminiGenerateTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
-import { enumerateModelCandidates } from '../../providers/registry.ts';
+import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
-import { routeCandidatesByAffinity } from '../shared/affinity/index.ts';
+import { narrowCandidatesByAffinity } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -39,14 +39,14 @@ export const geminiServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
-    if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
-    if (decision.candidates.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
+    const narrowed = narrowCandidatesByAffinity(viable, prepared.narrowingEvidence);
+    if ('kind' in narrowed) return renderGeminiFailure(narrowed, 'generate');
+    if (narrowed.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
 
     // Gemini carries the requested model in its URL, so affinity preparation
     // owns each candidate payload while dispatch uses the candidate's canonical model.
     return await iterateCandidates(
-      decision.candidates,
+      narrowed,
       'geminiServe.generate',
       ctx,
       'chat',
@@ -69,12 +69,12 @@ export const geminiServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
-    if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
-    if (decision.candidates.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'countTokens');
+    const narrowed = narrowCandidatesByAffinity(viable, prepared.narrowingEvidence);
+    if ('kind' in narrowed) return renderGeminiFailure(narrowed, 'countTokens');
+    if (narrowed.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'countTokens');
 
     return await iterateCandidates(
-      decision.candidates,
+      narrowed,
       'geminiServe.countTokens',
       ctx,
       'chat',

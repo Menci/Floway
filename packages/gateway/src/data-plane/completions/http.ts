@@ -11,9 +11,9 @@ import type { Context } from 'hono';
 import { tokenUsageFromCompletionsUsage } from './usage.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
-import { readRequestBody, takeRequestBody } from '../chat/shared/request-body.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
+import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 interface CompletionsRequestBody {

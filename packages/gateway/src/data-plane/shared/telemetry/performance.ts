@@ -1,7 +1,7 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { PerformanceDimensions } from '../../../repo/types.ts';
-import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
+import type { GatewayCtx } from '../gateway-ctx.ts';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
 export type { PerformanceTelemetryContext };

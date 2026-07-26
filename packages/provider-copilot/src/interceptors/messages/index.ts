@@ -75,19 +75,17 @@ export const COPILOT_MESSAGES_BOUNDARY = [
 ] as const satisfies readonly CopilotMessagesBoundaryInterceptor[];
 
 // /v1/messages/count_tokens is a one-shot HTTP exchange that returns the raw
-// upstream Response. Pre-Path A the Copilot provider's call helper applied
-// vision detection, x-initiator classification, and anthropic-beta allow-list
-// filtering to BOTH chat and count_tokens; only count_tokens stopped seeing
-// them when the headers moved onto the chat-planning target interceptor
-// chain. This list re-instates exactly those three header-shaping workarounds
-// at the Copilot count_tokens boundary so behavior matches pre-Path A.
+// upstream Response. The Copilot provider applies vision detection,
+// x-initiator classification, anthropic-beta allow-list filtering, and
+// context-management beta alignment to both chat and count_tokens.
 //
 // withInlineImagesCompressed runs first so count_tokens sizes the same
-// WebP-recompressed payload the chat path sends — and reuses its cached
-// transform — keeping the estimate consistent with the real request.
-// withThinkingDisplayPromoted / withTopLevelCacheControlApplied /
-// withCacheControlExtensionsStripped / withEagerInputStreamingStripped are
-// intentionally absent: pre-Path A they also never ran on count_tokens.
+// WebP-recompressed payload the chat path sends, keeping the estimate
+// consistent with the real request. withContextManagementBetaAligned follows
+// withAnthropicBetaHeaderFiltered so any surviving `context_management` field
+// remains paired with its required header token. Event-stream and chat-only
+// payload mutators are intentionally absent because count_tokens returns a raw
+// Response and never used those transformations.
 export const COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY = [
   withInlineImagesCompressed,
   withVisionHeaderSet,

@@ -1,10 +1,11 @@
-import { createFetcher, type ProxyEntry } from '../../dial/fetcher.ts';
+import { createFetcher } from '../../dial/fetcher.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { loadProxyCatalog } from '../../dial/proxy-catalog.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_CONNECT_ID, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { directFetcher, type Fetcher, type ProxyFallbackEntry } from '@floway-dev/provider';
-import { parseProxyUri, type ProxyUriError, runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
+import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
 // Fetcher resolution for control-plane operations that fire from the
 // dashboard edit form, where the in-progress proxy_fallback_list must take
@@ -37,20 +38,7 @@ const buildOverrideFetcher = async (
   }
 
   const repo = getRepo();
-  const proxies = await repo.proxies.list();
-  const proxyById = new Map<string, ProxyEntry>();
-  const parseErrors = new Map<string, ProxyUriError>();
-  for (const p of proxies) {
-    if (!referenced.has(p.id)) continue;
-    try {
-      proxyById.set(p.id, {
-        config: parseProxyUri(p.url),
-        dialTimeoutMs: p.dialTimeoutSeconds === null ? null : p.dialTimeoutSeconds * 1000,
-      });
-    } catch (err) {
-      parseErrors.set(p.id, err as ProxyUriError);
-    }
-  }
+  const { proxyById, parseErrors } = await loadProxyCatalog(repo, referenced);
 
   const unknown = list.find(entry => !isDirectFallbackId(entry.id) && !proxyById.has(entry.id) && !parseErrors.has(entry.id));
   if (unknown !== undefined) {

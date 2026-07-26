@@ -1,14 +1,14 @@
 import { test } from 'vitest';
 
 import type { ChatCompletionsInvocation } from './types.ts';
-import { withVendorDeepseekChatCompletionsNormalize } from './vendor-deepseek-normalize.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { withVendorDeepSeekChatCompletionsNormalize } from './vendor-deepseek-normalize.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-type DeepseekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['delta'] & {
+type DeepSeekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['delta'] & {
   reasoning_content?: string;
 };
 
@@ -57,7 +57,7 @@ test('renames outbound reasoning_text to reasoning_content on assistant messages
   const ctx = invocation(baseRequest());
 
   let observed: ChatCompletionsPayload | null = null;
-  await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () => {
+  await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -95,7 +95,7 @@ test('synthesizes reasoning_content from reasoning_items when reasoning_text is 
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () => {
+  await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -122,7 +122,7 @@ test('strips reasoning_items even when no summaries are available', async () => 
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () => {
+  await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -144,7 +144,7 @@ test("translates canonical reasoning_effort: 'none' into top-level thinking:{typ
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () => {
+  await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -162,7 +162,7 @@ test('leaves a real reasoning_effort value untouched (only the none sentinel tri
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () => {
+  await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -189,7 +189,7 @@ test('downgrades response_format json_schema to json_object (schema body dropped
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () => {
+  await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -205,7 +205,7 @@ test('leaves an already-json_object response_format untouched', async () => {
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () => {
+  await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -225,13 +225,13 @@ test('renames inbound protocol reasoning_content deltas to reasoning_text', asyn
     choices: [
       {
         index: 0,
-        delta: { reasoning_content: 'thinking...' } as DeepseekReasoningDelta,
+        delta: { reasoning_content: 'thinking...' } as DeepSeekReasoningDelta,
         finish_reason: null,
       },
     ],
   };
 
-  const result = await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () =>
+  const result = await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () =>
     Promise.resolve(eventResult(
       (async function* () { yield eventFrame(upstreamChunk); })(),
       testTelemetryModelIdentity,
@@ -258,7 +258,7 @@ test('preserves reasoning_content from non-stream JSON responses', async () => {
     choices: [{ index: 0, delta, finish_reason }],
   });
 
-  const result = await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () =>
+  const result = await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () =>
     Promise.resolve(eventResult(
       (async function* () {
         yield eventFrame(chunk({ role: 'assistant' }));
@@ -279,7 +279,7 @@ test('preserves reasoning_content from non-stream JSON responses', async () => {
 
 test('rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens into prompt_tokens_details.cached_tokens', async () => {
   const ctx = invocation(baseRequest());
-  const result = await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () =>
+  const result = await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () =>
     Promise.resolve(eventResult(
       (async function* () {
         yield eventFrame({
@@ -317,7 +317,7 @@ test('leaves protocol done frames untouched', async () => {
   const ctx = invocation(baseRequest());
   const done = doneFrame();
 
-  const result = await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () =>
+  const result = await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () =>
     Promise.resolve(eventResult(
       (async function* () { yield done; })(),
       testTelemetryModelIdentity,
@@ -337,7 +337,7 @@ test('early-returns when its flag is not set on the candidate', async () => {
   );
 
   let observed: ChatCompletionsPayload | null = null;
-  await withVendorDeepseekChatCompletionsNormalize(ctx, stubCtx, () => {
+  await withVendorDeepSeekChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from './serialize.ts';
 import { MODEL_CATALOG_REVISION } from '../../data-plane/providers/models-cache.ts';
-import { requestApp, setupAppTest } from '../../test-helpers.ts';
+import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 

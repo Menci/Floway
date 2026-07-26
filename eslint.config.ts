@@ -8,10 +8,12 @@ import vueParser from 'vue-eslint-parser';
 import type { Linter } from 'eslint';
 
 const projectList = [
+  './tsconfig.scripts.json',
   './apps/platform-cloudflare/tsconfig.json',
   './apps/platform-node/tsconfig.json',
   './apps/web/tsconfig.json',
   './packages/agent-setup/tsconfig.json',
+  './packages/agent-setup/tsconfig.scripts.json',
   './packages/gateway/tsconfig.json',
   './packages/http/tsconfig.json',
   './packages/interceptor/tsconfig.json',
@@ -274,13 +276,9 @@ const config: Linter.Config[] = [
       '**/dist/**',
       '**/build/**',
       '**/coverage/**',
-      // Workspace-root configs (live outside any package's TS project).
+      // Workspace-root configs (live outside any checked TS project).
       'eslint.config.ts',
       'vitest.config.ts',
-      'packages/*/vitest.config.ts',
-      'scripts/**',
-      // jiti-run build/test scripts, run outside any package's TS project.
-      'packages/agent-setup/scripts/**',
     ],
   },
 ];

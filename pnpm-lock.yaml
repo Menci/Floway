@@ -22,6 +22,9 @@ importers:
       '@stylistic/eslint-plugin':
         specifier: 5.6.1
         version: 5.6.1(eslint@9.39.1(jiti@2.6.1))
+      '@types/node':
+        specifier: ^22
+        version: 22.19.19
       '@typescript-eslint/eslint-plugin':
         specifier: 8.48.1
         version: 8.48.1(@typescript-eslint/parser@8.48.1(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3)
@@ -251,6 +254,9 @@ importers:
       '@floway-dev/test-utils':
         specifier: workspace:*
         version: link:../test-utils
+      '@types/node':
+        specifier: ^22
+        version: 22.19.19
 
   packages/gateway:
     dependencies:
@@ -327,13 +333,6 @@ importers:
       '@reclaimprotocol/tls':
         specifier: 0.1.2
         version: 0.1.2(patch_hash=8ed07af54e914cbcc2cea19ce7109635092cbbe35b9d2ad1bf55e3dfef1b8fd6)
-    devDependencies:
-      '@types/node':
-        specifier: ^22
-        version: 22.19.19
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/interceptor:
     devDependencies:
@@ -359,9 +358,6 @@ importers:
 
   packages/provider:
     dependencies:
-      '@floway-dev/platform':
-        specifier: workspace:*
-        version: link:../platform
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -477,13 +473,6 @@ importers:
       '@reclaimprotocol/tls':
         specifier: 0.1.2
         version: 0.1.2(patch_hash=8ed07af54e914cbcc2cea19ce7109635092cbbe35b9d2ad1bf55e3dfef1b8fd6)
-    devDependencies:
-      '@types/node':
-        specifier: ^22
-        version: 22.19.19
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
 
   packages/test-utils:
     dependencies:

@@ -1,9 +1,8 @@
-import { copilotRawModelId } from './model-name.ts';
+import { copilotRawModelId, stripClaudeDateSuffix } from './model-name.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 
 export const CONTEXT_1M_BETA = 'context-1m-2025-08-07';
 
-const CLAUDE_DATE_SUFFIX = /-\d{8}$/;
 const STANDARD_CLAUDE_BASE_ID = /^claude-[a-z0-9-]+-\d+(?:\.\d+)?$/;
 const KNOWN_CLAUDE_VARIANT_SUFFIXES = new Set(['high', 'xhigh', '1m', '1m-internal', 'fast']);
 
@@ -12,8 +11,6 @@ export interface ModelSelectionHints {
   reasoningEffort?: string;
   fast?: boolean;
 }
-
-const stripClaudeDateSuffix = (id: string): string => (id.startsWith('claude-') ? id.replace(CLAUDE_DATE_SUFFIX, '') : id);
 
 const normalizedClaudeLookupId = (id: string): string => copilotRawModelId(stripClaudeDateSuffix(id));
 

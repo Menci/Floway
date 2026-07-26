@@ -110,6 +110,7 @@ export interface GeminiErrorResponse {
 
 export type GeminiStreamEvent = GeminiResult | GeminiErrorResponse;
 
+export { GEMINI_CANDIDATE_KEYS, GEMINI_RESULT_KEYS } from './field-keys.ts';
 export { GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from './to-result.ts';
 export { reassembleGeminiEvents } from './reassemble.ts';
 export { geminiProtocolFrameToSSEFrame } from './to-sse.ts';

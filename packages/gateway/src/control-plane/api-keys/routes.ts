@@ -7,6 +7,7 @@ import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyOr404 } from '../shared/owned-key.ts';
+import { validateUpstreamIdsExist } from '../shared/upstream-ids.ts';
 
 const GENERATED_KEY_RETRIES = 5;
 
@@ -92,11 +93,9 @@ const validateUpstreamIdsAgainstUserCap = async (
   c: AuthedContext,
   proposed: readonly string[] | null,
 ): Promise<string | null> => {
+  const unknownUpstreamError = await validateUpstreamIdsExist(proposed);
+  if (unknownUpstreamError !== null) return unknownUpstreamError;
   if (proposed === null) return null;
-  const upstreams = await getRepo().upstreams.list();
-  const known = new Set(upstreams.map(u => u.id));
-  const unknown = proposed.filter(id => !known.has(id));
-  if (unknown.length) return `Unknown upstream(s): ${unknown.join(', ')}`;
 
   const userCap = userUpstreamIdsFromContext(c);
   if (userCap === null) return null;

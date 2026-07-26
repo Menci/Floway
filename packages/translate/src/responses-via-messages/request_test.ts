@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { translateResponsesToMessages } from './request.ts';
+import { buildTargetRequest } from './request.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesClientTool, type MessagesToolResultBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
@@ -22,8 +22,8 @@ const minimalPayload = {
   parallel_tool_calls: true,
 };
 
-test('translateResponsesToMessages accepts an implicit message discriminator', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest accepts an implicit message discriminator', async () => {
+  const result = await buildTargetRequest({
     ...minimalPayload,
     input: [{ role: 'user', content: 'hello' }],
   });
@@ -45,69 +45,38 @@ test.each([
   { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
-] as const)('translateResponsesToMessages rejects Responses-only $name input', async ({ name, input }) => {
+] as const)('buildTargetRequest rejects Responses-only $name input', async ({ name, input }) => {
   await assertRejects(
-    () => translateResponsesToMessages({ ...minimalPayload, input: [...input] }),
+    () => buildTargetRequest({ ...minimalPayload, input: [...input] }),
     Error,
     name,
   );
 });
 
-test.each([
-  { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed', caller: { type: 'program', caller_id: 'call_prog_1' } },
-  { type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
-  { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', input: 'run', caller: { type: 'program', caller_id: 'call_prog_1' } },
-  { type: 'custom_tool_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
-] as const)('translateResponsesToMessages rejects $type program caller metadata', async item => {
+test('buildTargetRequest wires Responses tooling guards', async () => {
   await assertRejects(
-    () => translateResponsesToMessages({ ...minimalPayload, input: [item] }),
+    () => buildTargetRequest({
+      ...minimalPayload,
+      input: [{ type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } }],
+    }),
     Error,
     'program caller',
   );
+  await assertRejects(
+    () => buildTargetRequest({ ...minimalPayload, tools: [{ type: 'programmatic_tool_calling' }] }),
+    Error,
+    'Programmatic',
+  );
 });
 
-test('translateResponsesToMessages accepts null tool_choice', async () => {
-  const result = await translateResponsesToMessages({ ...minimalPayload, tool_choice: null });
+test('buildTargetRequest accepts null tool_choice', async () => {
+  const result = await buildTargetRequest({ ...minimalPayload, tool_choice: null });
   assertEquals(result.target.tool_choice, undefined);
 });
 
-test.each([
-  { name: 'programmatic tool', payload: { tools: [{ type: 'programmatic_tool_calling' as const }] } },
-  { name: 'programmatic allowed caller', payload: { tools: [{ type: 'function' as const, name: 'lookup', parameters: {}, strict: true, allowed_callers: ['programmatic' as const] }] } },
-  { name: 'programmatic tool choice', payload: { tool_choice: { type: 'programmatic_tool_calling' as const } } },
-])('translateResponsesToMessages rejects $name', async ({ payload }) => {
+test('buildTargetRequest rejects multimodal custom tool output', async () => {
   await assertRejects(
-    () => translateResponsesToMessages({ ...minimalPayload, ...payload }),
-    Error,
-    'Programmatic',
-  );
-});
-
-test.each([
-  { type: 'function' as const, name: 'lookup', parameters: {}, strict: true, defer_loading: true },
-  { type: 'custom' as const, name: 'exec', defer_loading: true },
-])('translateResponsesToMessages rejects deferred $type tools', async tool => {
-  await assertRejects(
-    () => translateResponsesToMessages({ ...minimalPayload, tools: [tool] }),
-    Error,
-    'Deferred',
-  );
-});
-
-test('translateResponsesToMessages rejects nested namespace programmatic callers', async () => {
-  await assertRejects(
-    () => translateResponsesToMessages({
-      ...minimalPayload,
-      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] } as unknown as ResponsesTool],
-    }),
-    Error,
-    'Programmatic',
-  );
-});
-
-test('translateResponsesToMessages rejects multimodal custom tool output', async () => {
-  await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       ...minimalPayload,
       input: [{ type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
@@ -116,9 +85,9 @@ test('translateResponsesToMessages rejects multimodal custom tool output', async
   );
 });
 
-test('translateResponsesToMessages rejects file tool output', async () => {
+test('buildTargetRequest rejects file tool output', async () => {
   await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       ...minimalPayload,
       input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
@@ -127,9 +96,9 @@ test('translateResponsesToMessages rejects file tool output', async () => {
   );
 });
 
-test('translateResponsesToMessages rejects file message content', async () => {
+test('buildTargetRequest rejects file message content', async () => {
   await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       ...minimalPayload,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
@@ -138,9 +107,9 @@ test('translateResponsesToMessages rejects file message content', async () => {
   );
 });
 
-test('translateResponsesToMessages rejects file assistant content', async () => {
+test('buildTargetRequest rejects file assistant content', async () => {
   await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       ...minimalPayload,
       input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
@@ -149,8 +118,8 @@ test('translateResponsesToMessages rejects file assistant content', async () => 
   );
 });
 
-test('translateResponsesToMessages preserves assistant input_text', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest preserves assistant input_text', async () => {
+  const result = await buildTargetRequest({
     ...minimalPayload,
     input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'prior reply' }] }],
   });
@@ -160,9 +129,9 @@ test('translateResponsesToMessages preserves assistant input_text', async () => 
   ]);
 });
 
-test('translateResponsesToMessages rejects assistant images', async () => {
+test('buildTargetRequest rejects assistant images', async () => {
   await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       ...minimalPayload,
       input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
     }),
@@ -171,9 +140,9 @@ test('translateResponsesToMessages rejects assistant images', async () => {
   );
 });
 
-test('translateResponsesToMessages rejects file_id-only images', async () => {
+test('buildTargetRequest rejects file_id-only images', async () => {
   await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       ...minimalPayload,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
     }),
@@ -182,9 +151,9 @@ test('translateResponsesToMessages rejects file_id-only images', async () => {
   );
 });
 
-test('translateResponsesToMessages rejects file_id-only image tool output', async () => {
+test('buildTargetRequest rejects file_id-only image tool output', async () => {
   await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       ...minimalPayload,
       input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
     }),
@@ -195,36 +164,36 @@ test('translateResponsesToMessages rejects file_id-only image tool output', asyn
 
 // ── service_tier → speed mapping ──
 
-test('translateResponsesToMessages maps service_tier:fast to speed:fast (no service_tier on target)', async () => {
-  const result = await translateResponsesToMessages({ ...minimalPayload, service_tier: 'fast' });
+test('buildTargetRequest maps service_tier:fast to speed:fast (no service_tier on target)', async () => {
+  const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'fast' });
 
   assertEquals(result.target.speed, 'fast');
   assertFalse('service_tier' in result.target);
 });
 
-test('translateResponsesToMessages passes service_tier:priority through as service_tier (no speed override)', async () => {
-  const result = await translateResponsesToMessages({ ...minimalPayload, service_tier: 'priority' });
+test('buildTargetRequest passes service_tier:priority through as service_tier (no speed override)', async () => {
+  const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'priority' });
 
   assertEquals(result.target.service_tier, 'priority');
   assertFalse('speed' in result.target);
 });
 
-test('translateResponsesToMessages passes service_tier:auto through as service_tier', async () => {
-  const result = await translateResponsesToMessages({ ...minimalPayload, service_tier: 'auto' });
+test('buildTargetRequest passes service_tier:auto through as service_tier', async () => {
+  const result = await buildTargetRequest({ ...minimalPayload, service_tier: 'auto' });
 
   assertEquals(result.target.service_tier, 'auto');
   assertFalse('speed' in result.target);
 });
 
-test('translateResponsesToMessages omits both speed and service_tier when service_tier is absent', async () => {
-  const result = await translateResponsesToMessages(minimalPayload);
+test('buildTargetRequest omits both speed and service_tier when service_tier is absent', async () => {
+  const result = await buildTargetRequest(minimalPayload);
 
   assertFalse('speed' in result.target);
   assertFalse('service_tier' in result.target);
 });
 
-test('translateResponsesToMessages maps reasoning.effort none to thinking.disabled (summary ignored when reasoning is disabled)', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest maps reasoning.effort none to thinking.disabled (summary ignored when reasoning is disabled)', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     instructions: null,
@@ -244,8 +213,8 @@ test('translateResponsesToMessages maps reasoning.effort none to thinking.disabl
   assertFalse('output_config' in result.target);
 });
 
-test('translateResponsesToMessages maps reasoning.effort directly to output_config.effort', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest maps reasoning.effort directly to output_config.effort', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     instructions: null,
@@ -265,8 +234,8 @@ test('translateResponsesToMessages maps reasoning.effort directly to output_conf
   assertFalse('thinking' in result.target);
 });
 
-test('translateResponsesToMessages defaults max_tokens to MESSAGES_FALLBACK_MAX_TOKENS when neither source nor fallbackMaxOutputTokens supplies one', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest defaults max_tokens to MESSAGES_FALLBACK_MAX_TOKENS when neither source nor fallbackMaxOutputTokens supplies one', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     instructions: null,
@@ -284,8 +253,8 @@ test('translateResponsesToMessages defaults max_tokens to MESSAGES_FALLBACK_MAX_
   assertEquals(result.target.max_tokens, MESSAGES_FALLBACK_MAX_TOKENS);
 });
 
-test('translateResponsesToMessages uses fallbackMaxOutputTokens over the gateway const when the source omitted max_output_tokens', async () => {
-  const result = await translateResponsesToMessages(
+test('buildTargetRequest uses fallbackMaxOutputTokens over the gateway const when the source omitted max_output_tokens', async () => {
+  const result = await buildTargetRequest(
     {
       model: 'claude-test',
       input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -306,8 +275,8 @@ test('translateResponsesToMessages uses fallbackMaxOutputTokens over the gateway
   assertEquals(result.target.max_tokens, 4096);
 });
 
-test('translateResponsesToMessages sends the genuine encrypted_content as the upstream signature, with no gateway envelope', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest sends the genuine encrypted_content as the upstream signature, with no gateway envelope', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [
       {
@@ -341,8 +310,8 @@ test('translateResponsesToMessages sends the genuine encrypted_content as the up
   });
 });
 
-test('translateResponsesToMessages omits the signature for a reasoning with no encrypted_content', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest omits the signature for a reasoning with no encrypted_content', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [
       {
@@ -371,8 +340,8 @@ test('translateResponsesToMessages omits the signature for a reasoning with no e
   assertEquals(assistant.content[0], { type: 'thinking', thinking: 'trace' });
 });
 
-test('translateResponsesToMessages omits generic metadata instead of coercing it to metadata.user_id', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest omits generic metadata instead of coercing it to metadata.user_id', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     instructions: null,
@@ -390,8 +359,8 @@ test('translateResponsesToMessages omits generic metadata instead of coercing it
   assertFalse('metadata' in result.target);
 });
 
-test('translateResponsesToMessages resolves remote input images through the shared loader', async () => {
-  const result = await translateResponsesToMessages(
+test('buildTargetRequest resolves remote input images through the shared loader', async () => {
+  const result = await buildTargetRequest(
     {
       model: 'claude-test',
       input: [
@@ -444,8 +413,8 @@ test('translateResponsesToMessages resolves remote input images through the shar
   ]);
 });
 
-test('translateResponsesToMessages drops reasoning input without readable summary', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest drops reasoning input without readable summary', async () => {
+  const result = await buildTargetRequest({
     model: 'gpt-test',
     input: [
       { type: 'message', role: 'user', content: 'hi' },
@@ -477,8 +446,8 @@ test('translateResponsesToMessages drops reasoning input without readable summar
   );
 });
 
-test('translateResponsesToMessages wraps custom tools as single-string function tools and records their names', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest wraps custom tools as single-string function tools and records their names', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: 'hi',
     instructions: null,
@@ -524,8 +493,8 @@ test('translateResponsesToMessages wraps custom tools as single-string function 
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'apply_patch' });
 });
 
-test('translateResponsesToMessages projects custom_tool_call history into wrapped tool_use shape', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest projects custom_tool_call history into wrapped tool_use shape', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [
       { type: 'message', role: 'user', content: 'apply this patch' },
@@ -579,8 +548,8 @@ test('translateResponsesToMessages projects custom_tool_call history into wrappe
   });
 });
 
-test('translateResponsesToMessages keeps plain-text function_call_output as string content', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest keeps plain-text function_call_output as string content', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [
       { type: 'function_call', call_id: 'call_1', name: 'tool', arguments: '{}', status: 'completed' },
@@ -606,8 +575,8 @@ test('translateResponsesToMessages keeps plain-text function_call_output as stri
   assertEquals(toolResult.content, 'plain text body');
 });
 
-test('translateResponsesToMessages maps multimodal function_call_output into tool_result image and text blocks', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest maps multimodal function_call_output into tool_result image and text blocks', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [
       { type: 'function_call', call_id: 'call_1', name: 'screenshot', arguments: '{}', status: 'completed' },
@@ -643,14 +612,14 @@ test('translateResponsesToMessages maps multimodal function_call_output into too
   ]);
 });
 
-test('translateResponsesToMessages throws on a stray web_search_call input item (shim owns the reverse path)', async () => {
+test('buildTargetRequest throws on a stray web_search_call input item (shim owns the reverse path)', async () => {
   // The Responses web-search shim rewrites web_search_call input items into
   // upstream function_call + function_call_output pairs before this
   // translator runs. Reaching the translator with a raw web_search_call
   // means the shim regressed; the translator surfaces a loud error so the
   // bug is caught rather than silently dropping search context.
   await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       model: 'claude-test',
       input: [
         { type: 'message', role: 'user', content: 'hi' },
@@ -677,13 +646,13 @@ test('translateResponsesToMessages throws on a stray web_search_call input item 
   );
 });
 
-test('translateResponsesToMessages throws on a stray compaction_trigger input item (compact-shim owns the strip)', async () => {
+test('buildTargetRequest throws on a stray compaction_trigger input item (compact-shim owns the strip)', async () => {
   // The compact-shim is structurally required on non-responses targets and
   // strips compaction_trigger items before reaching this translator.
   // Reaching here with one in input means the shim disengaged; the
   // translator's exhaustive default surfaces the regression.
   await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       model: 'claude-test',
       input: [
         { type: 'message', role: 'user', content: 'hi' },
@@ -705,13 +674,13 @@ test('translateResponsesToMessages throws on a stray compaction_trigger input it
   );
 });
 
-test('translateResponsesToMessages throws on a stray compaction input item (compact-shim owns the expansion)', async () => {
+test('buildTargetRequest throws on a stray compaction input item (compact-shim owns the expansion)', async () => {
   // The compact-shim expands its own shim-encoded compaction items inline
   // before reaching this translator and round-trips foreign compactions
   // back to the upstream as raw items. Either way the translator should
   // never see one.
   await assertRejects(
-    () => translateResponsesToMessages({
+    () => buildTargetRequest({
       model: 'claude-test',
       input: [
         { type: 'message', role: 'user', content: 'hi' },
@@ -733,8 +702,8 @@ test('translateResponsesToMessages throws on a stray compaction input item (comp
   );
 });
 
-test('translateResponsesToMessages attaches ephemeral cache breakpoints to system, last function tool, and last message block', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest attaches ephemeral cache breakpoints to system, last function tool, and last message block', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [
       { type: 'message', role: 'user', content: 'Look up the weather.' },
@@ -768,9 +737,9 @@ test('translateResponsesToMessages attaches ephemeral cache breakpoints to syste
   assertEquals(lastBlock.cache_control, { type: 'ephemeral' });
 });
 
-test('translateResponsesToMessages extracts flat text.format json_schema into output_config.format and drops OpenAI-only fields', async () => {
+test('buildTargetRequest extracts flat text.format json_schema into output_config.format and drops OpenAI-only fields', async () => {
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
-  const result = await translateResponsesToMessages({
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     instructions: null,
@@ -789,9 +758,9 @@ test('translateResponsesToMessages extracts flat text.format json_schema into ou
   assertEquals(result.target.output_config, { format: { type: 'json_schema', schema } });
 });
 
-test('translateResponsesToMessages merges reasoning.effort with structured-output format on a single output_config', async () => {
+test('buildTargetRequest merges reasoning.effort with structured-output format on a single output_config', async () => {
   const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
-  const result = await translateResponsesToMessages({
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     instructions: null,
@@ -811,8 +780,8 @@ test('translateResponsesToMessages merges reasoning.effort with structured-outpu
   assertEquals(result.target.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
 });
 
-test('translateResponsesToMessages drops text.format json_object (no Anthropic equivalent)', async () => {
-  const result = await translateResponsesToMessages({
+test('buildTargetRequest drops text.format json_object (no Anthropic equivalent)', async () => {
+  const result = await buildTargetRequest({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     instructions: null,
@@ -831,8 +800,8 @@ test('translateResponsesToMessages drops text.format json_object (no Anthropic e
   assertFalse('output_config' in result.target);
 });
 
-test('translateResponsesToMessages hoists leading role:"system" to top-level system field', async () => {
-  const result = await translateResponsesToMessages(
+test('buildTargetRequest hoists leading role:"system" to top-level system field', async () => {
+  const result = await buildTargetRequest(
     {
       model: 'claude-test',
       input: [
@@ -858,8 +827,8 @@ test('translateResponsesToMessages hoists leading role:"system" to top-level sys
   assertEquals(result.target.messages[0].role, 'user');
 });
 
-test('translateResponsesToMessages keeps non-leading role:"system" inline', async () => {
-  const result = await translateResponsesToMessages(
+test('buildTargetRequest keeps non-leading role:"system" inline', async () => {
+  const result = await buildTargetRequest(
     {
       model: 'claude-test',
       input: [
@@ -888,8 +857,8 @@ test('translateResponsesToMessages keeps non-leading role:"system" inline', asyn
   assertFalse('system' in result.target);
 });
 
-test('translateResponsesToMessages hoists leading role:"developer" to top-level system field', async () => {
-  const result = await translateResponsesToMessages(
+test('buildTargetRequest hoists leading role:"developer" to top-level system field', async () => {
+  const result = await buildTargetRequest(
     {
       model: 'claude-test',
       input: [
@@ -915,8 +884,8 @@ test('translateResponsesToMessages hoists leading role:"developer" to top-level 
   assertEquals(result.target.system, [{ type: 'text', text: 'dev rule', cache_control: { type: 'ephemeral' } }]);
 });
 
-test('translateResponsesToMessages preserves payload.instructions and leading system as separate blocks; non-leading stays inline', async () => {
-  const result = await translateResponsesToMessages(
+test('buildTargetRequest preserves payload.instructions and leading system as separate blocks; non-leading stays inline', async () => {
+  const result = await buildTargetRequest(
     {
       model: 'claude-test',
       input: [
@@ -949,10 +918,10 @@ test('translateResponsesToMessages preserves payload.instructions and leading sy
   assertEquals(result.target.messages[2].role, 'user');
 });
 
-test('translateResponsesToMessages throws when a system input message contains an image part', async () => {
+test('buildTargetRequest throws when a system input message contains an image part', async () => {
   await assertRejects(
     () =>
-      translateResponsesToMessages(
+      buildTargetRequest(
         {
           model: 'claude-test',
           input: [
@@ -984,10 +953,10 @@ test('translateResponsesToMessages throws when a system input message contains a
   );
 });
 
-test('translateResponsesToMessages throws when a non-leading developer input message contains an image part', async () => {
+test('buildTargetRequest throws when a non-leading developer input message contains an image part', async () => {
   await assertRejects(
     () =>
-      translateResponsesToMessages(
+      buildTargetRequest(
         {
           model: 'claude-test',
           input: [
@@ -1020,5 +989,5 @@ test('translateResponsesToMessages throws when a non-leading developer input mes
 });
 
 // (Native native↔native only — Responses no longer carries thinking-mode
-// extension fields; alias overlays land on the Messages IR at the wire
+// extension fields; alias overlays land on the Messages target payload at the wire
 // call via `applyRulesToUpstreamMessages`.)

@@ -4,7 +4,6 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": { "import": "./src/index.ts", "types": "./src/index.ts" },
     "./common": { "import": "./src/common/index.ts", "types": "./src/common/index.ts" },
     "./completions": { "import": "./src/completions/index.ts", "types": "./src/completions/index.ts" },
     "./chat-completions": { "import": "./src/chat-completions/index.ts", "types": "./src/chat-completions/index.ts" },

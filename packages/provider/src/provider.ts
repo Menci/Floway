@@ -24,7 +24,7 @@ import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent }
 export type ResponsesAction = 'generate' | 'compact';
 
 export interface Provider {
-  upstream: string;
+  upstreamId: string;
   kind: UpstreamProviderKind;
   name: string;
   disabledPublicModelIds: readonly string[];

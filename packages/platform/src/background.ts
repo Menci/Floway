@@ -1,4 +1,4 @@
-// Per-request scheduler for fire-and-forget work. The resolver lives in
-// `@floway-dev/gateway` (it depends on Hono's `Context`); this type is just the
-// shape the resolver returns.
+// Accepts already-started work that may outlive its originating operation.
+// Gateway HTTP requests resolve the host implementation from their context;
+// transports with a longer lifetime can supply their own implementation.
 export type BackgroundScheduler = (promise: Promise<unknown>) => void;

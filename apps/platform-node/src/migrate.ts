@@ -1,14 +1,11 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { migrationsDir } from '@floway-dev/gateway/migrations-dir';
 import type { SqlDatabase } from '@floway-dev/platform';
 
-// Resolve packages/gateway/migrations/ relative to this file's location in the
-// workspace. The Node deployment target runs under tsx against the source
-// tree, so the workspace layout is the source of truth.
-const HERE = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_MIGRATIONS_DIR = join(HERE, '..', '..', '..', 'packages', 'gateway', 'migrations');
+const DEFAULT_MIGRATIONS_DIR = fileURLToPath(migrationsDir);
 
 // Applies every pending migration, recording each one's name in a
 // `_migrations` table so reruns are no-ops. Each file's full contents go

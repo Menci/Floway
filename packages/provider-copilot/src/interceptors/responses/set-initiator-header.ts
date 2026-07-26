@@ -24,7 +24,7 @@ import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
  */
 export const withInitiatorHeaderSet = async <TResult>(
   ctx: ResponsesBoundaryCtx,
-  _request: object,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const lastItem: ResponsesInputItem | undefined = ctx.payload.input.at(-1);

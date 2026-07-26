@@ -6,6 +6,7 @@ import {
   importClaudeCodeFromSetupTokenCallback,
 } from './import.ts';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
+import { jsonResponse } from '@floway-dev/test-utils';
 
 const profileResponse = {
   account: {
@@ -30,9 +31,6 @@ const tokenResponse = {
   refresh_token: 'rt',
   scope: 'user:inference',
 };
-
-const jsonResponse = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 afterEach(() => vi.restoreAllMocks());
 

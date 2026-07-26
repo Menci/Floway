@@ -4,7 +4,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*_test.ts'],
-    restoreMocks: false,
     // `setupAppTest` builds the full Hono app + memory D1 + admin session per
     // test; under workspace-parallel load that occasionally pushes past 10s.
     // 30s absorbs the contention without masking actual hangs.

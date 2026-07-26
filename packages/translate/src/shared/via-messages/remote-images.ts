@@ -1,13 +1,7 @@
+import type { RemoteImageLoader } from '../../types.ts';
 import type { MessagesImageBlock } from '@floway-dev/protocols/messages';
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
-
-export interface RemoteImageData {
-  mediaType: string | null;
-  data: Uint8Array;
-}
-
-export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>;
 
 // Pure translation has no runtime egress of its own. Direct callers that omit
 // a loader retain the existing "unavailable remote image is dropped" semantic;

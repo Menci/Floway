@@ -1,3 +1,27 @@
+export interface MessagesUsageServerToolUse {
+  web_search_requests?: number;
+}
+
+export interface MessagesUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  // Per-TTL split for cache writes introduced by extended-cache-ttl-2025-04-11.
+  // Each `ephemeral_*` field is a disjoint subset of `cache_creation_input_tokens`
+  // (the legacy flat field is the sum of both); upstreams that have not opted
+  // into the beta omit `cache_creation` entirely and emit only the flat field.
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  };
+  // https://docs.claude.com/en/api/service-tiers
+  service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
+  // https://docs.claude.com/en/build-with-claude/fast-mode
+  speed?: 'standard' | 'fast' | (string & {});
+  server_tool_use?: MessagesUsageServerToolUse;
+}
+
 export interface MessagesCacheCreationUsage {
   cache_creation_input_tokens?: number;
   cache_creation?: {

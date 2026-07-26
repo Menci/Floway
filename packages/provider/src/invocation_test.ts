@@ -58,7 +58,7 @@ test('providerModelOf throws the alias-row diagnostic when the candidate names a
   // candidate literally.
   const candidate: ModelCandidate = {
     provider: {
-      upstream: 'test-upstream',
+      upstreamId: 'test-upstream',
       kind: 'custom',
       name: 'Test Upstream',
       disabledPublicModelIds: [],

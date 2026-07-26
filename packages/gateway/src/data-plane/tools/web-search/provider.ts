@@ -1,8 +1,8 @@
+import { FIXED_WEB_SEARCH_CONFIG_TEST_QUERY } from './config.ts';
 import { createJinaWebSearchProvider } from './providers/jina.ts';
 import { createMicrosoftGroundingWebSearchProvider } from './providers/microsoft-grounding.ts';
 import { createTavilyWebSearchProvider } from './providers/tavily.ts';
-import { FIXED_SEARCH_CONFIG_TEST_QUERY } from './search-config.ts';
-import type { ConfiguredWebSearchProvider, SearchConfig, SearchConfigConnectionTestResult, WebSearchProvider, WebSearchProviderName } from './types.ts';
+import type { ConfiguredWebSearchProvider, WebSearchConfig, WebSearchConfigConnectionTestResult, WebSearchProvider, WebSearchProviderName } from './types.ts';
 
 const toPreviewText = (content: Array<{ type: 'text'; text: string }>): string =>
   content
@@ -14,13 +14,13 @@ const toPreviewText = (content: Array<{ type: 'text'; text: string }>): string =
 // that provider and constructs the impl. Keeps `resolveConfiguredWeb...`
 // data-driven so adding a fourth provider is one entry, not another
 // if-branch.
-const PROVIDER_FACTORIES: { [N in WebSearchProviderName]: (config: SearchConfig) => { apiKey: string; build: (apiKey: string) => WebSearchProvider } } = {
+const PROVIDER_FACTORIES: { [N in WebSearchProviderName]: (config: WebSearchConfig) => { apiKey: string; build: (apiKey: string) => WebSearchProvider } } = {
   tavily: config => ({ apiKey: config.tavily.apiKey, build: createTavilyWebSearchProvider }),
   'microsoft-grounding': config => ({ apiKey: config.microsoftGrounding.apiKey, build: createMicrosoftGroundingWebSearchProvider }),
   jina: config => ({ apiKey: config.jina.apiKey, build: createJinaWebSearchProvider }),
 };
 
-export const resolveConfiguredWebSearchProvider = (config: SearchConfig): ConfiguredWebSearchProvider => {
+export const resolveConfiguredWebSearchProvider = (config: WebSearchConfig): ConfiguredWebSearchProvider => {
   if (config.provider === 'disabled') {
     return { type: 'disabled' };
   }
@@ -37,14 +37,14 @@ export const resolveConfiguredWebSearchProvider = (config: SearchConfig): Config
   };
 };
 
-export const testSearchConfigConnection = async (config: SearchConfig): Promise<SearchConfigConnectionTestResult> => {
+export const testWebSearchConfigConnection = async (config: WebSearchConfig): Promise<WebSearchConfigConnectionTestResult> => {
   const resolved = resolveConfiguredWebSearchProvider(config);
 
   if (resolved.type === 'disabled') {
     return {
       ok: false,
       provider: 'disabled',
-      query: FIXED_SEARCH_CONFIG_TEST_QUERY,
+      query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
       error: {
         code: 'disabled',
         message: 'Search provider is disabled.',
@@ -56,7 +56,7 @@ export const testSearchConfigConnection = async (config: SearchConfig): Promise<
     return {
       ok: false,
       provider: resolved.provider,
-      query: FIXED_SEARCH_CONFIG_TEST_QUERY,
+      query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
       error: {
         code: 'missing_credential',
         message: `Missing API key for ${resolved.provider}.`,
@@ -64,13 +64,13 @@ export const testSearchConfigConnection = async (config: SearchConfig): Promise<
     };
   }
 
-  const result = await resolved.impl.search({ query: FIXED_SEARCH_CONFIG_TEST_QUERY });
+  const result = await resolved.impl.search({ query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY });
 
   if (result.type === 'error') {
     return {
       ok: false,
       provider: resolved.provider,
-      query: FIXED_SEARCH_CONFIG_TEST_QUERY,
+      query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
       error: {
         code: result.errorCode,
         message: result.message ?? 'Search test failed.',
@@ -89,7 +89,7 @@ export const testSearchConfigConnection = async (config: SearchConfig): Promise<
     return {
       ok: false,
       provider: resolved.provider,
-      query: FIXED_SEARCH_CONFIG_TEST_QUERY,
+      query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
       error: {
         code: 'no_results',
         message: 'Search returned no preview results.',
@@ -100,7 +100,7 @@ export const testSearchConfigConnection = async (config: SearchConfig): Promise<
   return {
     ok: true,
     provider: resolved.provider,
-    query: FIXED_SEARCH_CONFIG_TEST_QUERY,
+    query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
     results: previews,
   };
 };

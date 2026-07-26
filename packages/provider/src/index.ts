@@ -31,17 +31,16 @@ export {
 export type {
   InternalAliasedFrom,
   InternalModel,
-  PerformanceOperation,
-  PerformanceTelemetryContext,
   ProviderModel,
   ProxyFallbackEntry,
-  TelemetryModelIdentity,
   UpstreamColor,
   UpstreamColorPreset,
   UpstreamProviderKind,
   UpstreamRecord,
 } from './model.ts';
-export { ALL_PROVIDER_KINDS, assertUpstreamProviderKind, normalizeUpstreamColor, parsePerformanceOperation, PERFORMANCE_OPERATIONS, UPSTREAM_COLOR_HEX_REGEX, UPSTREAM_COLOR_PRESETS } from './model.ts';
+export { ALL_PROVIDER_KINDS, assertUpstreamProviderKind, normalizeUpstreamColor, UPSTREAM_COLOR_HEX_REGEX, UPSTREAM_COLOR_PRESETS } from './model.ts';
+export type { PerformanceOperation, PerformanceTelemetryContext, TelemetryModelIdentity } from './telemetry.ts';
+export { parsePerformanceOperation, PERFORMANCE_OPERATIONS } from './telemetry.ts';
 
 export type { AddressableForm, ModelPrefixConfig } from './model-prefix.ts';
 export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } from './model-prefix.ts';
@@ -90,13 +89,10 @@ export type {
 export {
   chatField,
   endpointsField,
-  flagOverridesField,
   isRecord,
-  limitsField,
   modelsField,
   nonEmptyStringField,
   optionalStringField,
-  pricingField,
   publicModelId,
 } from './model-config.ts';
 
@@ -109,10 +105,9 @@ export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall } from '
 export { isAbortError } from './abort.ts';
 
 export {
+  base64ToBytes,
+  bytesToBase64,
   isBase64ImageDataUrl,
-  memoizedBase64Compressor,
-  memoizedDataUrlCompressor,
+  parseBase64ImageDataUrl,
 } from './image-helpers.ts';
-
-export { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 export { uuidV7 } from './ids.ts';

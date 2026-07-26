@@ -22,8 +22,11 @@
       "types": "./src/dump/codec.ts"
     },
     "./dump-types": {
-      "import": "./src/dump/types.ts",
       "types": "./src/dump/types.ts"
+    },
+    "./migrations-dir": {
+      "import": "./src/migrations-dir.ts",
+      "types": "./src/migrations-dir.ts"
     }
   },
   "scripts": {

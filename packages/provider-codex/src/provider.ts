@@ -1,4 +1,4 @@
-import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token-cache.ts';
+import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
@@ -6,7 +6,7 @@ import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, ty
 import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
-import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
+import { assertCodexUpstreamState, findCodexAccountIndex, replaceCodexAccount } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
 import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
@@ -37,20 +37,16 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     if (!fresh) throw new Error(`Codex upstream ${record.id} disappeared mid-request`);
     assertCodexUpstreamState(fresh.state);
     const state = fresh.state;
-    const account = state.accounts.find(a => a.chatgptAccountId === accountIdentity.chatgptAccountId);
-    if (!account) {
+    const accountIndex = findCodexAccountIndex(state, accountIdentity.chatgptAccountId);
+    if (accountIndex < 0) {
       throw new Error(`Codex upstream ${record.id} state has no credential for account ${accountIdentity.chatgptAccountId}`);
     }
-    return { state, account };
+    return { state, accountIndex, account: state.accounts[accountIndex]! };
   };
 
-  const replaceActiveAccount = (state: CodexUpstreamState, next: CodexUpstreamState['accounts'][number]): CodexUpstreamState => ({
-    accounts: state.accounts.map(a => (a.chatgptAccountId === next.chatgptAccountId ? next : a)),
-  });
-
   const persistRefreshTokenRotation = async (newRefreshToken: string): Promise<void> => {
-    const { state, account } = await readActiveAccount();
-    const next = replaceActiveAccount(state, { ...account, refresh_token: newRefreshToken, state_updated_at: new Date().toISOString() });
+    const { state, accountIndex } = await readActiveAccount();
+    const next = replaceCodexAccount(state, accountIndex, account => ({ ...account, refresh_token: newRefreshToken, state_updated_at: new Date().toISOString() }));
     // CAS write keyed on the just-read state. A losing CAS means a concurrent
     // operator re-import (or another isolate's rotation) already advanced the
     // row; their write supersedes ours and no retry is needed.
@@ -58,11 +54,11 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
   };
 
   const persistTerminalState = async (newState: 'session_terminated' | 'refresh_failed', message: string): Promise<void> => {
-    const { state, account } = await readActiveAccount();
+    const { state, accountIndex } = await readActiveAccount();
     // Clear any cached access token on the terminal flip — once the credential
     // is dead the cached token is dead too, and leaving it would confuse the
     // dashboard's status panel.
-    const next = replaceActiveAccount(state, { ...account, state: newState, state_message: message, state_updated_at: new Date().toISOString(), accessToken: null });
+    const next = replaceCodexAccount(state, accountIndex, account => ({ ...account, state: newState, state_message: message, state_updated_at: new Date().toISOString(), accessToken: null }));
     await getProviderRepo().upstreams.saveState(record.id, next, { expectedState: state });
   };
 
@@ -156,7 +152,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
   };
 
   return {
-    upstream: record.id,
+    upstreamId: record.id,
     kind: 'codex',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,

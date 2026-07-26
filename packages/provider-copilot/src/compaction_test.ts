@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
+import { compactionResponse } from './compaction.ts';
 import type { ResponsesInputItem, ResponsesInputText, ResponsesResult } from '@floway-dev/protocols/responses';
-import { compactionResponse } from '@floway-dev/provider';
 
 const generatedResult = (output: unknown[]): ResponsesResult =>
   ({

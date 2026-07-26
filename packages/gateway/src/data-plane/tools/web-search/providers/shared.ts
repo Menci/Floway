@@ -1,7 +1,32 @@
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import type { WebSearchProviderResult } from '../types.ts';
+import { sleep } from '../../../../shared/sleep.ts';
+import type { WebSearchProviderErrorCode, WebSearchProviderResult } from '../types.ts';
 
 const MAX_WEB_SEARCH_QUERY_LENGTH = 1000;
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000] as const;
+const RETRYABLE_HTTP_STATUS: ReadonlySet<number> = new Set([429, 500, 502, 503, 504]);
+
+export const fetchWithRetry = async (
+  doFetch: () => Promise<Response>,
+  signal?: AbortSignal,
+  retryDelaysMs: readonly number[] = RETRY_DELAYS_MS,
+): Promise<Response> => {
+  let attempt = 0;
+  while (true) {
+    const response = await doFetch();
+    if (!RETRYABLE_HTTP_STATUS.has(response.status)) return response;
+    if (attempt >= retryDelaysMs.length) return response;
+    await sleep(retryDelaysMs[attempt], signal);
+    attempt += 1;
+  }
+};
+
+export const httpStatusToErrorCode = (status: number): WebSearchProviderErrorCode => {
+  if (status === 429) return 'too_many_requests';
+  if (status === 413) return 'request_too_large';
+  if (status === 400) return 'invalid_tool_input';
+  return 'unavailable';
+};
 
 export type ValidatedWebSearchQuery = { type: 'ok'; query: string } | { type: 'error'; result: WebSearchProviderResult };
 

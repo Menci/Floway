@@ -26,7 +26,7 @@ import { mountAlphaSearchRoute } from '../alpha-search/routes.ts';
 import { responsesHttp } from '../chat/responses/http.ts';
 import { responsesWebSocket } from '../chat/responses/websocket.ts';
 import { imagesEdits, imagesGenerations } from '../images/http.ts';
-import { serveModels } from '../models/serve.ts';
+import { serveModels } from '../models/http.ts';
 
 const CODEX_BASE_PATH = '/azure-api.codex';
 

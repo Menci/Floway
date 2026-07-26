@@ -22,7 +22,7 @@ const CODEX_UNSUPPORTED_BODY_FIELDS = [
 
 export const stripUnsupportedFields = async <TResult>(
   ctx: ResponsesBoundaryCtx,
-  _request: object,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const next: Record<string, unknown> = { ...(ctx.payload as unknown as Record<string, unknown>) };

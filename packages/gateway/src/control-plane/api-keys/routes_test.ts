@@ -2,7 +2,7 @@ import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
-import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
+import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const ownerPatch = (id: string, body: unknown, rawKey: string) =>

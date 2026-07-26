@@ -6,10 +6,10 @@ import { expect, test } from 'vitest';
 
 import { FileDumpStore } from './dump-store.ts';
 import { initRepo } from './index.ts';
-import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import type { DumpWriteRecord } from '../dump/types.ts';
+import { collectSpilledFiles } from '../scheduled/spilled-files.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';

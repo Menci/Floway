@@ -10,13 +10,13 @@ const codec = new AffinityCodec('22'.repeat(32));
 const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
-    provider: { ...base.provider, upstream },
+    provider: { ...base.provider, upstreamId: upstream },
     model: { id: 'model' },
   });
 };
 
 const targetFor = (value: ModelCandidate): AffinityTarget => ({
-  upstreamId: value.provider.upstream,
+  upstreamId: value.provider.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
 });
@@ -30,7 +30,7 @@ test('restores owned opaque state only for its exact candidate', async () => {
     messages: [{ role: 'assistant', content: 'answer', reasoning_opaque: carrier }],
   }, codec);
 
-  expect(prepared.routingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
+  expect(prepared.narrowingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
   expect(prepared.payloadForCandidate(candidateA).messages[0]).toMatchObject({ reasoning_opaque: 'upstream-signature' });
   expect(prepared.payloadForCandidate(candidateB).messages[0]).not.toHaveProperty('reasoning_opaque');
 });

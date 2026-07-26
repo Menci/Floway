@@ -8,7 +8,6 @@ const cases: readonly ChatServeFailure[] = [
   { kind: 'model-missing', model: 'gpt-9', failedUpstreams: ['Azure prod'] },
   { kind: 'model-unsupported', model: 'gpt-9', failedUpstreams: [] },
   { kind: 'model-unsupported', model: 'gpt-9', failedUpstreams: ['Azure prod', 'Custom'] },
-  { kind: 'item-not-found', itemId: 'msg_abc' },
   { kind: 'routing-unavailable', message: 'no upstream can serve this' },
 ];
 

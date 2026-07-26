@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { enumerateAddressableModelIds } from './addressable.ts';
-import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.ts';
+import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-utils/app.ts';
 import { clearInFlightForTesting } from '../../providers/models-cache.ts';
 import { directFetcher } from '@floway-dev/provider';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';

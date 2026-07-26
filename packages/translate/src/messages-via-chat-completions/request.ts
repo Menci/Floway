@@ -1,7 +1,9 @@
 import { type ChatCompletionsScalarReasoning, chatCompletionsScalarReasoningFromMessagesBlock } from '../shared/chat-completions-and-messages/reasoning.ts';
 import { filterMessagesClientTools } from '../shared/messages-via/client-tools.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
+import { openAIServiceTierFromMessages } from '../shared/messages-via/service-tier.ts';
 import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages-via/structured-output.ts';
+import { flattenMessagesToolResult } from '../shared/messages-via/tool-result.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
@@ -49,19 +51,6 @@ const toChatCompletionsContent = (content: string | MessagesUserContentBlock[] |
   }
 
   return parts;
-};
-
-const toChatCompletionsToolResultContent = (content: MessagesToolResultBlock['content']): string => {
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  const textBlocks = content.filter((block): block is MessagesTextBlock => block.type === 'text');
-  if (textBlocks.length === content.length) {
-    return textBlocks.map(block => block.text).join('\n\n');
-  }
-
-  return JSON.stringify(content);
 };
 
 const toChatCompletionsFunctionCall = (block: MessagesToolUseBlock | MessagesServerToolUseBlock): ChatCompletionsToolCall => ({
@@ -141,7 +130,7 @@ const translateMessagesUser = (message: MessagesUserMessage, messageIdx: number)
       messages.push({
         role: 'tool',
         tool_call_id: block.tool_use_id,
-        content: toChatCompletionsToolResultContent(block.content),
+        content: flattenMessagesToolResult(block.content),
       });
       continue;
     }
@@ -273,7 +262,7 @@ const translateMessagesToolChoice = (toolChoice?: MessagesPayload['tool_choice']
   }
 };
 
-export const translateMessagesToChatCompletions = (payload: MessagesPayload): ChatCompletionsPayload => {
+export const buildTargetRequest = (payload: MessagesPayload): ChatCompletionsPayload => {
   const clientTools = filterMessagesClientTools(payload.tools);
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
@@ -281,11 +270,7 @@ export const translateMessagesToChatCompletions = (payload: MessagesPayload): Ch
   const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
   const responseFormat = jsonSchema ? { type: 'json_schema' as const, json_schema: jsonSchema } : undefined;
 
-  // `speed: 'fast'` maps to Chat Completions `service_tier: 'fast'`; other
-  // non-fast `speed` values have no OpenAI equivalent and are dropped. When
-  // `speed` is absent, Anthropic's own `service_tier` ('auto'/'standard_only')
-  // is passed through verbatim for symmetry with the forward direction.
-  const serviceTier = payload.speed === 'fast' ? 'fast' : payload.speed === undefined ? payload.service_tier : undefined;
+  const serviceTier = openAIServiceTierFromMessages(payload);
 
   return {
     model: payload.model,
@@ -302,5 +287,3 @@ export const translateMessagesToChatCompletions = (payload: MessagesPayload): Ch
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
 };
-
-export const buildTargetRequest = translateMessagesToChatCompletions;

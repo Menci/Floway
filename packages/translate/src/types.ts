@@ -1,5 +1,12 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
+export interface RemoteImageData {
+  mediaType: string | null;
+  data: Uint8Array;
+}
+
+export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>;
+
 /**
  * Per-trip context. Carries the model name plus a per-pair-declared `TExtras`
  * shape that lists exactly the capability fields and runtime adapters the trip

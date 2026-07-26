@@ -10,9 +10,9 @@
 import type { Context } from 'hono';
 
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../chat/shared/request-body.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
+import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 import type { ImageEditReference } from '@floway-dev/protocols/images';
 import { isBase64ImageDataUrl, type ImagesEditsRequest, type ImagesEditsSource } from '@floway-dev/provider';

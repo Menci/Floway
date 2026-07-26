@@ -91,7 +91,7 @@ const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterabl
  * - https://github.com/anthropics/claude-code/issues/46987
  * - https://github.com/anthropics/claude-code/issues/50477
  */
-export const withThinkingDisplayPromoted: CopilotMessagesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withThinkingDisplayPromoted: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {
   const downstreamDisplay = resolveMessagesDownstreamThinkingDisplay(ctx);
   const thinking = ctx.payload.thinking;
   const hasActiveThinking = !!thinking && thinking.type !== 'disabled';

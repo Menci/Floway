@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
 import { chatTargetPicker } from './target-picker.ts';
-import { setupAppTest } from '../../../test-helpers.ts';
-import { enumerateModelCandidates } from '../../providers/registry.ts';
+import { setupAppTest } from '../../../test-utils/app.ts';
+import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';

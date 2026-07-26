@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { CodexOAuthSessionTerminatedError, exchangeCodexAuthorizationCode, refreshCodexAccessToken } from './oauth.ts';
+import { buildCodexAuthorizeUrl, CodexOAuthSessionTerminatedError, exchangeCodexAuthorizationCode, refreshCodexAccessToken } from './oauth.ts';
 import { directFetcher } from '@floway-dev/provider';
 
 const okResponse = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const errorResponse = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 afterEach(() => vi.restoreAllMocks());
+
+test('buildCodexAuthorizeUrl preserves the Codex CLI query surface and order', () => {
+  expect(buildCodexAuthorizeUrl({ state: 'STATE', codeChallenge: 'CHALLENGE' })).toBe(
+    'https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&scope=openid+profile+email+offline_access&state=STATE&code_challenge=CHALLENGE&code_challenge_method=S256&id_token_add_organizations=true&codex_cli_simplified_flow=true&originator=codex_cli_rs',
+  );
+});
 
 describe('exchangeCodexAuthorizationCode', () => {
   test('POSTs form data and returns parsed tokens', async () => {

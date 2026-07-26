@@ -9,6 +9,5 @@ export { translateGeminiViaResponses } from './gemini-via-responses/translate.ts
 export { translateGeminiViaChatCompletions } from './gemini-via-chat-completions/translate.ts';
 
 export { canonicalizeResponsesPayload } from './canonicalize-responses-payload.ts';
-export type { TranslatedApiError, TranslationContext } from './types.ts';
-export type { RemoteImageData, RemoteImageLoader } from './shared/via-messages/remote-images.ts';
+export type { RemoteImageData, RemoteImageLoader, TranslatedApiError, TranslationContext } from './types.ts';
 export { TranslatorInputError } from './translator-input-error.ts';

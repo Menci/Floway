@@ -4,8 +4,8 @@
 // variant inserts `wsUpgradeAndFrame` between the outer TLS and the VLESS
 // framing.
 
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
 import type { VlessTcpTlsProxyConfig, VlessWsTlsProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
 import { wsUpgradeAndFrame } from '@floway-dev/http';

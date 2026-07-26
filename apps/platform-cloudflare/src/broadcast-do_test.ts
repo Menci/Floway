@@ -133,7 +133,7 @@ test('BroadcastDO.fetch upgrades to a WebSocket and registers the server side', 
   class StubResponse {
     readonly status: number;
     readonly webSocket: WebSocket | undefined;
-    constructor(_body: BodyInit | null, init?: ResponseInit & { webSocket?: WebSocket }) {
+    constructor(_body: BodyInit | null, init?: ResponseInit) {
       this.status = init?.status ?? 200;
       this.webSocket = init?.webSocket;
     }
@@ -147,8 +147,7 @@ test('BroadcastDO.fetch upgrades to a WebSocket and registers the server side', 
     const response = await actor.fetch(new Request('https://broadcast.do/subscribe'));
 
     assertEquals(response.status, 101);
-    const responseWithSocket = response as Response & { webSocket?: WebSocket };
-    assertEquals(responseWithSocket.webSocket !== undefined, true);
+    assertEquals(response.webSocket !== undefined, true);
     assertEquals(state.sockets.length, 1);
   } finally {
     globalThis.Response = realResponse;

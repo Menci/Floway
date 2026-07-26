@@ -1,9 +1,9 @@
 import { prepareMessagesAffinity } from './affinity/ingress.ts';
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
-import { enumerateModelCandidates } from '../../providers/registry.ts';
+import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
-import { routeCandidatesByAffinity } from '../shared/affinity/index.ts';
+import { narrowCandidatesByAffinity } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -34,9 +34,9 @@ export const messagesServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
-    if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'generate');
-    if (decision.candidates.length === 0) return renderMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'generate');
+    const narrowed = narrowCandidatesByAffinity(viable, prepared.narrowingEvidence);
+    if ('kind' in narrowed) return renderMessagesFailure(narrowed, 'generate');
+    if (narrowed.length === 0) return renderMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'generate');
 
     // Try each narrowed candidate in order. A successful attempt (SSE
     // stream opened) is the final answer; an api-error or internal-error
@@ -45,7 +45,7 @@ export const messagesServe = {
     // most recent failure is forwarded verbatim. Each attempt stamps its
     // private payload clone with the candidate's canonical model id.
     return await iterateCandidates(
-      decision.candidates,
+      narrowed,
       'messagesServe.generate',
       ctx,
       'chat',
@@ -68,12 +68,12 @@ export const messagesServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
-    if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'countTokens');
-    if (decision.candidates.length === 0) return renderMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'countTokens');
+    const narrowed = narrowCandidatesByAffinity(viable, prepared.narrowingEvidence);
+    if ('kind' in narrowed) return renderMessagesFailure(narrowed, 'countTokens');
+    if (narrowed.length === 0) return renderMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'countTokens');
 
     return await iterateCandidates(
-      decision.candidates,
+      narrowed,
       'messagesServe.countTokens',
       ctx,
       'chat',

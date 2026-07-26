@@ -1,4 +1,4 @@
-import { extractWebSearchProviderErrorMessage, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { extractWebSearchProviderErrorMessage, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
@@ -93,7 +93,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
         if (response.status === 429) {
           return {
             type: 'error',
-            errorCode: 'too_many_requests',
+            errorCode: httpStatusToErrorCode(response.status),
             message: message ?? 'Tavily rate limited the request.',
           };
         }
@@ -101,7 +101,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
         if (response.status === 400) {
           return {
             type: 'error',
-            errorCode: 'invalid_tool_input',
+            errorCode: httpStatusToErrorCode(response.status),
             message: message ?? 'Tavily rejected the search query.',
           };
         }
@@ -109,14 +109,14 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
         if (response.status === 413) {
           return {
             type: 'error',
-            errorCode: 'request_too_large',
+            errorCode: httpStatusToErrorCode(response.status),
             message: message ?? 'Tavily rejected the request as too large.',
           };
         }
 
         return {
           type: 'error',
-          errorCode: 'unavailable',
+          errorCode: httpStatusToErrorCode(response.status),
           message: message ?? 'Tavily search failed.',
         };
       }
@@ -165,13 +165,7 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
 
       if (!response.ok) {
         const message = await extractWebSearchProviderErrorMessage(response);
-        const errorCode: WebSearchProviderErrorCode = response.status === 429
-          ? 'too_many_requests'
-          : response.status === 413
-            ? 'request_too_large'
-            : response.status === 400
-              ? 'invalid_tool_input'
-              : 'unavailable';
+        const errorCode: WebSearchProviderErrorCode = httpStatusToErrorCode(response.status);
         // Tavily extract is one batch call, so non-2xx applies to the
         // whole batch. Per-URL granularity only comes through
         // `failed_results` inside a 200.

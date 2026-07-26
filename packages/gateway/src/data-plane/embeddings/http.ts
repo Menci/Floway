@@ -3,11 +3,11 @@
 
 import type { Context } from 'hono';
 
+import { tokenUsageFromEmbeddingsBody } from './usage.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
-import { readRequestBody, takeRequestBody } from '../chat/shared/request-body.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { tokenUsageFromEmbeddingsBody } from '../shared/telemetry/usage.ts';
+import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 
 interface EmbeddingsRequestBody {
   model?: unknown;

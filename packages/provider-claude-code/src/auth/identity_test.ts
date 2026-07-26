@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { fetchClaudeCodeIdentity } from './identity.ts';
-
-const jsonResponse = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+import { jsonResponse } from '@floway-dev/test-utils';
 
 afterEach(() => vi.restoreAllMocks());
 

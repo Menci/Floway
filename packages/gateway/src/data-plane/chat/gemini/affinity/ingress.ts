@@ -26,7 +26,7 @@ export const prepareGeminiAffinity = async (
   }
 
   return {
-    routingEvidence: preferredAffinityEvidence(locations.map(location => location.decoded)),
+    narrowingEvidence: preferredAffinityEvidence(locations.map(location => location.decoded)),
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
       if (candidatePayload.contents === undefined) return candidatePayload;

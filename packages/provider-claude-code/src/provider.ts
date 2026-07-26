@@ -1,9 +1,9 @@
-import { ensureClaudeCodeAccessToken } from './access-token-cache.ts';
+import { ensureClaudeCodeAccessToken } from './access-token.ts';
 import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
-import { detectHaikuProbe, callClaudeCodeMessages } from './fetch.ts';
-import { claudeCodeMessagesChain, type ClaudeCodeMessagesBoundaryCtx } from './interceptors/messages/index.ts';
+import { callClaudeCodeMessages } from './fetch.ts';
+import { CLAUDE_CODE_MESSAGES_BOUNDARY, type MessagesBoundaryCtx } from './interceptors/messages/index.ts';
 import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -41,7 +41,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     },
 
     callMessages: async (model, body, signal: AbortSignal | undefined, opts) => {
-      const ctx: ClaudeCodeMessagesBoundaryCtx = {
+      const ctx: MessagesBoundaryCtx = {
         payload: { ...body, model: model.id },
         model,
         upstreamId: record.id,
@@ -51,12 +51,14 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
       // The re-mimicry chain would clobber operator-supplied `system` content
       // and overwrite the wire shape — exactly what a CC-shaped passthrough
       // needs to preserve. So the chain only runs on the unshaped path; the
-      // shaped path skips straight to the terminal call, which forwards the
-      // caller's headers and body byte-for-byte (Authorization swap only).
+      // shaped path skips straight to the terminal call, which preserves the
+      // caller's own system blocks, metadata and tool shape rather than
+      // re-deriving them. The call still rebuilds the header surface through
+      // the allowlist in `fetch.ts`, swaps Authorization for our cached OAuth
+      // token, and restamps the resolved model id.
       const looksShaped = isClaudeCodeShapedRequest({
         headers: opts.headers,
         body: ctx.payload,
-        isMaxTokensOneHaikuProbe: detectHaikuProbe(ctx.payload),
       });
 
       const terminal = async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
@@ -77,10 +79,10 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
 
       if (looksShaped) return await terminal();
 
-      return await runInterceptors<ClaudeCodeMessagesBoundaryCtx, object, ProviderStreamResult<MessagesStreamEvent>>(
+      return await runInterceptors<MessagesBoundaryCtx, object, ProviderStreamResult<MessagesStreamEvent>>(
         ctx,
         {},
-        claudeCodeMessagesChain<ProviderStreamResult<MessagesStreamEvent>>(),
+        CLAUDE_CODE_MESSAGES_BOUNDARY,
         terminal,
       );
     },
@@ -99,7 +101,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
   };
 
   return {
-    upstream: record.id,
+    upstreamId: record.id,
     kind: 'claude-code',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,

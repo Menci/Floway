@@ -21,8 +21,8 @@ interface QueuedResolution {
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastSeenModel: { value: string | null } = { value: null };
-vi.mock('../../providers/registry.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
+vi.mock('../../providers/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
@@ -131,7 +131,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream,
+      upstreamId: upstream,
       kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],

@@ -29,7 +29,7 @@
 //
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 
-import { tokenBasePricing, tokenModelPricing, tokenPricingEntry as pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
+import { modelPricing, tokenBasePricing, tokenPricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
 
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
@@ -99,9 +99,9 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // https://platform.minimax.io/docs/guides/pricing-paygo
   [/^minimax-m2(\.[15])?$/, tokenBasePricing({ input_tokens: '0.3', input_cache_read_tokens: '0.03', output_tokens: '1.2' })],
   ['minimax-m2.7', tokenBasePricing({ input_tokens: '0.3', input_cache_read_tokens: '0.06', output_tokens: '1.2' })],
-  ['minimax-m3', tokenModelPricing(
-    pricingEntry({ input_tokens: '0.3', input_cache_read_tokens: '0.06', output_tokens: '1.2' }),
-    pricingEntry({ input_tokens: '0.6', input_cache_read_tokens: '0.12', output_tokens: '2.4' }, { inputTokens: { operator: 'gt', value: 512000 } }),
+  ['minimax-m3', modelPricing(
+    tokenPricingEntry({ input_tokens: '0.3', input_cache_read_tokens: '0.06', output_tokens: '1.2' }),
+    tokenPricingEntry({ input_tokens: '0.6', input_cache_read_tokens: '0.12', output_tokens: '2.4' }, { inputTokens: { operator: 'gt', value: 512000 } }),
   )],
 
   // Mistral La Plateforme — Mistral Large 3 is the MoE flagship (41B

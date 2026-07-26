@@ -1,5 +1,5 @@
-import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
-import { stampUpstreamCallStart } from '../chat/shared/gateway-ctx.ts';
+import type { GatewayCtx } from './gateway-ctx.ts';
+import { stampUpstreamCallStart } from './gateway-ctx.ts';
 import type { ModelCandidate, UpstreamCallOptions } from '@floway-dev/provider';
 
 // See UpstreamCallOptions in `@floway-dev/provider` for the contract on each

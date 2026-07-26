@@ -9,7 +9,8 @@
 // Resolution runs above prefix routing and never re-enters itself, which
 // makes recursive aliasing impossible by construction.
 
-import type { ChatModelInfo, ModelKind, PublicModelLimits } from './models.ts';
+import type { ModelKind } from './endpoints.ts';
+import type { ChatModelInfo, PublicModelLimits } from './models.ts';
 
 // Target-picking strategy applied to the pool of currently-routable targets:
 //

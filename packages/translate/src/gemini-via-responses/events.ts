@@ -1,9 +1,7 @@
 import { geminiCandidateEvent, parseStrictJsonObject } from '../shared/gemini-via/gemini.ts';
 import { billableServiceTier, eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
-import type { ResponsesOutputFunctionCall, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-
-type ResponsesTerminalEvent = Extract<ResponsesStreamEvent, { type: 'response.completed' } | { type: 'response.incomplete' } | { type: 'response.failed' }>;
+import { isResponsesTerminalEvent, type ResponsesOutputFunctionCall, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Responses input_tokens already includes input_tokens_details.cached_tokens,
 // matching Gemini's inclusive promptTokenCount semantics. Pass both through
@@ -57,7 +55,7 @@ const isSafetyFailure = (response: ResponsesResult): boolean => {
   return text.includes('safety') || text.includes('content_filter') || text.includes('policy');
 };
 
-const mapTerminalFinishReason = (event: ResponsesTerminalEvent): GeminiFinishReason => {
+const mapTerminalFinishReason = (event: Extract<ResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>): GeminiFinishReason => {
   if (event.type === 'response.completed') return 'STOP';
   if (event.type === 'response.failed') {
     return isSafetyFailure(event.response) ? 'SAFETY' : 'OTHER';
@@ -73,15 +71,13 @@ const upstreamResponsesEventsUntilTerminal = async function* (frames: AsyncItera
     if (frame.type === 'done') continue;
 
     yield frame.event;
-    if (frame.event.type === 'response.completed' || frame.event.type === 'response.incomplete' || frame.event.type === 'response.failed' || frame.event.type === 'error') {
+    if (isResponsesTerminalEvent(frame.event)) {
       return;
     }
   }
 
   throw new Error(UPSTREAM_RESPONSES_MISSING_TERMINAL_MESSAGE);
 };
-
-type ResponsesEvent<T extends string> = Extract<ResponsesStreamEvent, { type: T }>;
 
 interface ResponsesFunctionCallDraft {
   id?: string;
@@ -137,7 +133,7 @@ const functionCallDoneFrame = (item: ResponsesOutputFunctionCall, outputIndex: n
   );
 };
 
-const handleTerminal = (event: ResponsesTerminalEvent, state: ResponsesToGeminiStreamState): ProtocolFrame<GeminiStreamEvent> => {
+const handleTerminal = (event: Extract<ResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>, state: ResponsesToGeminiStreamState): ProtocolFrame<GeminiStreamEvent> => {
   if (event.response.service_tier !== undefined) state.serviceTier = event.response.service_tier;
   return eventFrame(geminiCandidateEvent([], mapTerminalFinishReason(event), mapUsage(event.response, state.serviceTier)));
 };
@@ -152,14 +148,14 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
   for await (const event of upstreamResponsesEventsUntilTerminal(frames)) {
     switch (event.type) {
     case 'response.created': {
-      const response = (event as ResponsesEvent<'response.created'>).response;
+      const response = (event as Extract<ResponsesStreamEvent, { type: 'response.created' }>).response;
       if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
       break;
     }
 
     case 'response.reasoning_summary_text.delta':
     case 'response.reasoning_summary_text.done': {
-      const textEvent = event as ResponsesEvent<'response.reasoning_summary_text.delta'> | ResponsesEvent<'response.reasoning_summary_text.done'>;
+      const textEvent = event as Extract<ResponsesStreamEvent, { type: 'response.reasoning_summary_text.delta' }> | Extract<ResponsesStreamEvent, { type: 'response.reasoning_summary_text.done' }>;
       const text = textEvent.type === 'response.reasoning_summary_text.delta' ? textEvent.delta : textEvent.text;
       if (!text) break;
 
@@ -173,7 +169,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
 
     case 'response.output_text.delta':
     case 'response.output_text.done': {
-      const textEvent = event as ResponsesEvent<'response.output_text.delta'> | ResponsesEvent<'response.output_text.done'>;
+      const textEvent = event as Extract<ResponsesStreamEvent, { type: 'response.output_text.delta' }> | Extract<ResponsesStreamEvent, { type: 'response.output_text.done' }>;
       const text = textEvent.type === 'response.output_text.delta' ? textEvent.delta : textEvent.text;
       if (!text) break;
 
@@ -186,7 +182,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     }
 
     case 'response.output_item.added': {
-      const addedEvent = event as ResponsesEvent<'response.output_item.added'>;
+      const addedEvent = event as Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>;
       if (addedEvent.item.type === 'function_call') {
         state.functionCalls.set(addedEvent.output_index, {
           id: addedEvent.item.call_id,
@@ -198,21 +194,21 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     }
 
     case 'response.function_call_arguments.delta': {
-      const deltaEvent = event as ResponsesEvent<'response.function_call_arguments.delta'>;
+      const deltaEvent = event as Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>;
       const current = state.functionCalls.get(deltaEvent.output_index);
       if (current) current.argsJson += deltaEvent.delta;
       break;
     }
 
     case 'response.function_call_arguments.done': {
-      const doneEvent = event as ResponsesEvent<'response.function_call_arguments.done'>;
+      const doneEvent = event as Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>;
       const current = state.functionCalls.get(doneEvent.output_index);
       if (current) current.argsJson = doneEvent.arguments;
       break;
     }
 
     case 'response.output_item.done': {
-      const doneEvent = event as ResponsesEvent<'response.output_item.done'>;
+      const doneEvent = event as Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>;
       if (doneEvent.item.type === 'reasoning') {
         yield* reasoningItemDoneFrames(doneEvent.item, doneEvent.output_index, state);
       } else if (doneEvent.item.type === 'function_call') {
@@ -224,11 +220,11 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     case 'response.completed':
     case 'response.incomplete':
     case 'response.failed':
-      yield handleTerminal(event as ResponsesTerminalEvent, state);
+      yield handleTerminal(event as Extract<ResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>, state);
       break;
 
     case 'error': {
-      const errorEvent = event as ResponsesEvent<'error'>;
+      const errorEvent = event as Extract<ResponsesStreamEvent, { type: 'error' }>;
       throw new Error(`Upstream Responses stream error: ${errorEvent.message}`, { cause: errorEvent });
     }
 

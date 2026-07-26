@@ -1,9 +1,10 @@
-import { createFetcher, type ProxyEntry } from './fetcher.ts';
+import { createFetcher } from './fetcher.ts';
+import { loadProxyCatalog } from './proxy-catalog.ts';
 import { getRepo } from '../repo/index.ts';
 import { isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { directFetcher, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
-import { parseProxyUri, type ProxyUriError, runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
+import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
 // Parse failures on individual proxy rows are isolated to the upstreams that
 // actually reference them: a single malformed URL must not take down every
@@ -28,25 +29,7 @@ export const createPerRequestFetcher = async (
     }
   }
 
-  const proxyById = new Map<string, ProxyEntry>();
-  const proxyParseErrors = new Map<string, ProxyUriError>();
-  if (referencedProxyIds.size > 0) {
-    const proxies = await repo.proxies.list();
-    for (const p of proxies) {
-      if (!referencedProxyIds.has(p.id)) continue;
-      try {
-        proxyById.set(p.id, {
-          config: parseProxyUri(p.url),
-          // Carry the per-proxy timeout (seconds → ms) so the dial layer can
-          // honour an operator's override; null preserves the gateway default
-          // baked into the proxy library.
-          dialTimeoutMs: p.dialTimeoutSeconds === null ? null : p.dialTimeoutSeconds * 1000,
-        });
-      } catch (err) {
-        proxyParseErrors.set(p.id, err as ProxyUriError);
-      }
-    }
-  }
+  const { proxyById, parseErrors: proxyParseErrors } = await loadProxyCatalog(repo, referencedProxyIds);
 
   return upstreamId => {
     // Fail loud on an unknown upstream id. Silently substituting `[]`

@@ -3,10 +3,11 @@ import { respondMessages } from './respond.ts';
 import { messagesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
+import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
@@ -58,7 +59,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
   if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const response = await respondMessages(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
-  return (effectiveCtx.dump?.finalize(response) ?? response);
+  return finalizeGatewayResponse(effectiveCtx, response);
 };
 
 const parsePayload = (requestBody: RequestBody): MessagesPayload =>

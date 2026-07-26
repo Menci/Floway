@@ -1,5 +1,5 @@
 import type { InternalDebugError } from './error.ts';
-import type { PerformanceTelemetryContext, TelemetryModelIdentity } from './model.ts';
+import type { PerformanceTelemetryContext, TelemetryModelIdentity } from './telemetry.ts';
 
 export interface EventResult<T> {
   type: 'events';
@@ -23,10 +23,9 @@ export interface EventResultMetadata {
 // non-2xx from a gateway-synthesized envelope (model not routable, missing
 // stored item, server-tool input rejected, etc.) so observers like the
 // request dump can record the failure category truthfully rather than
-// labelling every 4xx as `upstream error N`. `upstream` is the id of the
-// upstream that produced the error — set on real upstream 4xx/5xx
-// (`source === 'upstream'`) so the dump row can attribute the failure to
-// the upstream it came from; absent on gateway-synthesized envelopes that
+// labelling every 4xx as `upstream error N`. `upstreamId` is set on real
+// upstream 4xx/5xx (`source === 'upstream'`) so the dump row can attribute the
+// failure to its source; it is absent on gateway-synthesized envelopes that
 // never reached an upstream.
 export interface ApiErrorResult {
   type: 'api-error';
@@ -35,7 +34,7 @@ export interface ApiErrorResult {
   headers: Headers;
   body: Uint8Array;
   performance?: PerformanceTelemetryContext;
-  upstream?: string;
+  upstreamId?: string;
 }
 
 // Gateway-side bug surface (parser crash, interceptor throw, etc.). The
@@ -53,15 +52,15 @@ export interface InternalErrorResult {
 // that measures rather than generates (count_tokens). It is NOT an
 // `ExecuteResult`: the target emit/interceptor layer never produces one. The
 // orchestrator passes it straight to `respond` without persistence, and
-// `respond` emits it verbatim. `upstream` is the responsible upstream id when
-// the body came from a real upstream call; absent for gateway-synthesized
-// envelopes (rewrite failures, internal-debug bodies).
+// `respond` emits it verbatim. `upstreamId` is present when the body came from
+// a real upstream call and absent for gateway-synthesized envelopes (rewrite
+// failures, internal-debug bodies).
 export interface PlainResult {
   type: 'plain';
   status: number;
   headers: Headers;
   body: Uint8Array;
-  upstream?: string;
+  upstreamId?: string;
 }
 
 export type ExecuteResult<T> = EventResult<T> | ApiErrorResult | InternalErrorResult;
@@ -91,21 +90,21 @@ export const internalErrorResult = (status: number, error: InternalDebugError, p
   ...(performance ? { performance } : {}),
 });
 
-export const plainResult = (status: number, headers: Headers, body: Uint8Array, upstream?: string): PlainResult => ({
+export const plainResult = (status: number, headers: Headers, body: Uint8Array, upstreamId?: string): PlainResult => ({
   type: 'plain',
   status,
   headers,
   body,
-  ...(upstream !== undefined ? { upstream } : {}),
+  ...(upstreamId !== undefined ? { upstreamId } : {}),
 });
 
-export const readUpstreamApiError = async (response: Response, upstream?: string): Promise<ApiErrorResult> => ({
+export const readUpstreamApiError = async (response: Response, upstreamId?: string): Promise<ApiErrorResult> => ({
   type: 'api-error',
   source: 'upstream',
   status: response.status,
   headers: new Headers(response.headers),
   body: new Uint8Array(await response.arrayBuffer()),
-  ...(upstream !== undefined ? { upstream } : {}),
+  ...(upstreamId !== undefined ? { upstreamId } : {}),
 });
 
 export const apiErrorToResponse = (error: ApiErrorResult): Response =>

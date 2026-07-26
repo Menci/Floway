@@ -7,8 +7,7 @@ then routes each model through the API shape the client already speaks.
 ## Highlights
 
 - Use GitHub Copilot, ChatGPT subscriptions, Claude.ai subscriptions, Azure AI,
-  custom OpenAI- or Anthropic-compatible providers, and Ollama from one
-  deployment.
+  configurable multi-protocol HTTP providers, and Ollama from one deployment.
 - Serve OpenAI, Anthropic, Gemini-compatible, audio transcription, and rerank
   APIs with cross-protocol translation where needed.
 - Discover vendor model catalogs live while retaining manual model configuration
@@ -37,8 +36,14 @@ the password. Then:
 3. Give that key to a client as a bearer token or `x-api-key`, or use **Agent
    Setup** to configure Claude Code or Codex.
 
-The data-plane API is also exposed directly at <http://localhost:8788>. SQLite
-and uploaded files persist in the `floway-data` volume.
+The data-plane API is also exposed directly at <http://localhost:8788>. SQLite,
+file-backed dump bodies, and oversized Stateful Responses item payloads persist
+in the `floway-data` volume.
+
+The dashboard uses Floway's control plane to manage users, keys, upstreams,
+routing, and telemetry. Coding agents and API clients call the data plane,
+which performs model resolution, upstream dispatch, and any required protocol
+translation. Both planes are served by the same gateway process.
 
 ## Compatibility
 
@@ -52,13 +57,17 @@ and uploaded files persist in the `floway-data` volume.
 | OpenAI Embeddings | `POST /v1/embeddings` |
 | OpenAI Images | `POST /v1/images/generations`, `POST /v1/images/edits` |
 | OpenAI Audio Transcriptions | `POST /v1/audio/transcriptions` |
-| OpenAI Models | `GET /v1/models` |
+| OpenAI Models | `GET /v1/models`, `GET /models` |
 | Anthropic Messages | `POST /v1/messages`, `POST /v1/messages/count_tokens` |
-| Google Gemini | `POST /v1beta/models/...` |
+| Google Gemini | `GET /v1beta/models`, `GET /v1beta/models/{model}`, `POST /v1beta/models/{model}:generateContent`, `POST /v1beta/models/{model}:streamGenerateContent`, `POST /v1beta/models/{model}:countTokens` |
 | Cohere Rerank v1 | `POST /v1/rerank` |
 | Cohere Rerank v2 | `POST /v2/rerank` |
 | Jina Rerank | `POST /jina/v1/rerank` |
 | Voyage Rerank | `POST /voyage/v1/rerank` |
+
+`/v1/models` and `/models` return Floway's public model superset to ordinary
+callers and select the Codex or Claude Code discovery shape for those clients'
+User-Agent.
 
 Rerank models are manual Custom models. Each model selects its outbound Cohere,
 Jina, Voyage, DashScope-compatible, or DashScope-native protocol and may
@@ -75,7 +84,7 @@ responses retain their upstream wire shape.
 | GitHub Copilot | GitHub device OAuth | Fetched live from Copilot |
 | Codex | ChatGPT subscription through the Codex CLI OAuth client | Fetched live from the Codex backend |
 | Claude Code | Claude.ai Pro, Max, Team, or Enterprise subscription through the Claude Code CLI OAuth client | Fetched live from Anthropic |
-| Custom | OpenAI- or Anthropic-compatible endpoint and credential | Live `/models`, manual models, or both |
+| Custom | Configurable multi-protocol HTTP endpoint and credential | Live OpenAI-compatible `/models`, manual models, or both |
 | Azure | Azure AI resource or Foundry project endpoint and API key | Configured models |
 | Ollama | ollama.com or a self-hosted Ollama-compatible server | Fetched live from Ollama, with optional manual overrides |
 

@@ -1,7 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import type { MessagesMessage, MessagesPayload } from '@floway-dev/protocols/messages';
 
 // Real CC includes `metadata.user_id` on every /v1/messages request: a JSON
@@ -28,8 +28,8 @@ import type { MessagesMessage, MessagesPayload } from '@floway-dev/protocols/mes
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/metadata_userid.go#L15
 
 export const synthesizeMetadataUserId = async <TResult>(
-  ctx: ClaudeCodeMessagesBoundaryCtx,
-  _request: object,
+  ctx: MessagesBoundaryCtx,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const existing = ctx.payload.metadata?.user_id;

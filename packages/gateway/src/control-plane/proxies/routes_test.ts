@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, test } from 'vitest';
 
 import type { SerializedBackoffRow, SerializedProxyRecord } from './serialize.ts';
-import { requestApp, setupAppTest } from '../../test-helpers.ts';
+import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 

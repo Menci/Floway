@@ -57,8 +57,6 @@ export const renderMessagesFailure = (
 ): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => {
   const endpointPath = endpoint === 'countTokens' ? '/messages/count_tokens' : '/messages';
   switch (failure.kind) {
-  case 'item-not-found':
-    return anthropicErrorResult(400, 'invalid_request_error', `Item with id '${failure.itemId}' not found.`);
   case 'routing-unavailable':
     return anthropicErrorResult(400, 'invalid_request_error', failure.message);
   case 'model-missing':

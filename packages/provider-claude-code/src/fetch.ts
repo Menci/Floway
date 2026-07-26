@@ -1,13 +1,13 @@
-import { ensureClaudeCodeAccessToken, invalidateClaudeCodeAccessToken, type EnsuredAccessToken } from './access-token-cache.ts';
+import { ensureClaudeCodeAccessToken, invalidateClaudeCodeAccessToken, type EnsuredAccessToken } from './access-token.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { pickClaudeCodeHeaders } from './headers.ts';
 import { logWarn, logInfo } from './log.ts';
+import type { ClaudeCodeProviderData } from './models.ts';
 import { parseClaudeCodeQuotaHeaders, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 import {
   readClaudeCodeUpstreamState,
   replaceSoleAccount,
 } from './state.ts';
-import type { ClaudeCodeProviderData } from './types.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import {
@@ -19,16 +19,6 @@ import {
 } from '@floway-dev/provider';
 
 const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
-
-// Detection helper: the periodic CC connectivity probe sends `max_tokens: 1`
-// against a haiku id (model name substring 'haiku') and never carries a
-// system block. Surfacing those as CC-shaped lets them pass through without
-// re-mimicry overhead, matching real CC's wire shape exactly.
-export const detectHaikuProbe = (body: { model?: unknown; max_tokens?: unknown }): boolean => {
-  return typeof body.model === 'string'
-    && body.model.includes('haiku')
-    && body.max_tokens === 1;
-};
 
 export interface CallClaudeCodeMessagesOptions {
   upstreamId: string;
@@ -237,7 +227,7 @@ const detectTerminalSentinel = (status: number, bodyText: string): string | null
 };
 
 // Terminal flip from the data-plane sentinel detector. Distinct from
-// access-token-cache.ts's `persistTerminalState`: this path runs in a
+// access-token.ts's `persistTerminalState`: this path runs in a
 // fire-and-forget context with no caller-side state, so we re-read; the
 // flip is body-sentinel-triggered (org disabled/banned), not oauth-error-
 // triggered, so the log carries `upstream_status` instead of `oauth_code`;

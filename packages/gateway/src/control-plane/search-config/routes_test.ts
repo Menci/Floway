@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-config.ts';
-import { requestApp, setupAppTest } from '../../test-helpers.ts';
+import { DEFAULT_WEB_SEARCH_CONFIG } from '../../data-plane/tools/web-search/config.ts';
+import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 test('/api/search-config GET returns the default disabled config for admin', async () => {
@@ -12,7 +12,7 @@ test('/api/search-config GET returns the default disabled config for admin', asy
   });
 
   assertEquals(response.status, 200);
-  assertEquals(await response.json(), DEFAULT_SEARCH_CONFIG);
+  assertEquals(await response.json(), DEFAULT_WEB_SEARCH_CONFIG);
 });
 
 test('/api/search-config PUT persists config and POST /test returns preview', async () => {

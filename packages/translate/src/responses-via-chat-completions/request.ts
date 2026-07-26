@@ -163,12 +163,12 @@ const buildChatCompletionsResponseFormat = (text: ResponsesPayload['text']): Cha
  * the trip's events translator can project wrapped function calls back into
  * `custom_tool_call` outputs.
  */
-export interface ResponsesToChatCompletionsResult {
+export interface TargetRequestResult {
   target: ChatCompletionsPayload;
   customToolNames: Set<string>;
 }
 
-export const translateResponsesToChatCompletions = (source: ResponsesRequestPayload): ResponsesToChatCompletionsResult => {
+export const buildTargetRequest = (source: ResponsesRequestPayload): TargetRequestResult => {
   const payload = canonicalizeResponsesPayload(source);
   rejectProgrammaticResponsesPayload(payload, 'Chat Completions');
   const customToolNames = new Set<string>();
@@ -306,5 +306,3 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
 
   return { target, customToolNames };
 };
-
-export const buildTargetRequest = translateResponsesToChatCompletions;

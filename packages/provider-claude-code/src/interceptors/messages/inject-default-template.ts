@@ -1,5 +1,5 @@
-import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
-import { DEFAULT_TEMPLATE_BLOCK } from '../../system-blocks.ts';
+import { DEFAULT_TEMPLATE_BLOCK } from './system-blocks.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 
 // Anthropic's prompt-caching API rejects requests that carry more than four
@@ -58,8 +58,8 @@ const countCacheBreakpoints = (payload: MessagesPayload): number => {
 // Chain order in ./index.ts guarantees `system` is already a fresh array
 // when this runs.
 export const injectDefaultTemplate = async <TResult>(
-  ctx: ClaudeCodeMessagesBoundaryCtx,
-  _request: object,
+  ctx: MessagesBoundaryCtx,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   if (!Array.isArray(ctx.payload.system)) {

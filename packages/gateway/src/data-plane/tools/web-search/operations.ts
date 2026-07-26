@@ -6,9 +6,9 @@
 
 import { normalizeDomainList } from './domain-normalize.ts';
 import { fetchPageAndRecordUsage } from './fetch-page.ts';
-import { searchWebAndRecordUsage } from './search.ts';
+import { runWebSearchAndRecordUsage } from './search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from './types.ts';
-import { truncatePreservingCodePoints } from '../../chat/shared/text.ts';
+import { truncatePreservingCodePoints } from '../../shared/text.ts';
 import type { ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { isAbortError } from '@floway-dev/provider';
 
@@ -507,7 +507,7 @@ const runOneSearchQuery = async (
       userLocation: session.filters.userLocation,
       ...(session.signal !== undefined ? { signal: session.signal } : {}),
     };
-    const result = await searchWebAndRecordUsage({
+    const result = await runWebSearchAndRecordUsage({
       provider: active.provider,
       providerName: active.providerName,
       keyId: session.apiKeyId,

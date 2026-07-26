@@ -14,10 +14,10 @@
 import { blake3 } from '@noble/hashes/blake3.js';
 
 import { base64DecodeBytes, concat, encodeAtypAddress, randomBytes, utf8Bytes } from '../bytes.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { type Aead, leNonce, makeAead } from './shadowsocks-aead.ts';
 

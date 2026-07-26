@@ -1,8 +1,9 @@
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
 import type { User } from '../../repo/types.ts';
-import { isProductionRequest } from '../../shared/is-production-request.ts';
+import { isProductionRequest } from '../../runtime/is-production-request.ts';
 import { dummyPasswordHash, timingSafeEqual, verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
 import { userToSessionWire } from '../users/wire.ts';
@@ -24,7 +25,7 @@ const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<U
       // per-runtime detection lives in isProductionRequest.
       return null;
     }
-    const user = await repo.users.getById(1);
+    const user = await repo.users.getById(SEED_ADMIN_USER_ID);
     if (!user) throw new Error('ADMIN_KEY login: seed admin (user 1) is missing');
     return user;
   }

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
-import { copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
+import { copilotModels, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';

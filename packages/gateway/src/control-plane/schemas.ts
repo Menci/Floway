@@ -418,7 +418,7 @@ export const upstreamRecordEnvelope = z.object({
 // beyond `record` (refresh, probe, quota, list-models) shares this shape.
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
 
-export const copilotOauthDeviceLoginPollBody = z.object({
+export const copilotOAuthDeviceLoginPollBody = z.object({
   record: upstreamRecordEnvelope,
   deviceCode: z.string().min(1),
 });
@@ -433,13 +433,13 @@ export const copilotQuotaBody = recordOnlyBody;
 // them into the upstream's authorize URL. The server never sees the
 // verifier until the callback comes back as `{code, verifier}` on exchange.
 
-export const codexOauthAuthorizeUrlBody = z.object({
+export const codexOAuthAuthorizeUrlBody = z.object({
   record: upstreamRecordEnvelope,
   challenge: z.string().min(1),
   state: z.string().min(1),
 });
 
-export const codexOauthExchangeBody = z.object({
+export const codexOAuthExchangeBody = z.object({
   record: upstreamRecordEnvelope,
   auth_json: z.string().min(1).optional(),
   callback: z.object({
@@ -451,7 +451,7 @@ export const codexOauthExchangeBody = z.object({
   { message: 'Provide exactly one of auth_json or callback' },
 );
 
-export const codexOauthRefreshBody = recordOnlyBody;
+export const codexOAuthRefreshBody = recordOnlyBody;
 
 // --- claude-code OAuth + setup-token + probe (record-body contract) ---
 
@@ -462,13 +462,13 @@ const oauthCallbackSchema = z.object({
   state: z.string().min(1),
 });
 
-export const claudeCodeOauthAuthorizeUrlBody = z.object({
+export const claudeCodeOAuthAuthorizeUrlBody = z.object({
   record: upstreamRecordEnvelope,
   challenge: z.string().min(1),
   state: z.string().min(1),
 });
 
-export const claudeCodeOauthExchangeBody = z.object({
+export const claudeCodeOAuthExchangeBody = z.object({
   record: upstreamRecordEnvelope,
   credentials_json: z.string().min(1).optional(),
   callback: oauthCallbackSchema.optional(),
@@ -477,7 +477,7 @@ export const claudeCodeOauthExchangeBody = z.object({
   { message: 'Provide exactly one of credentials_json or callback' },
 );
 
-export const claudeCodeOauthRefreshBody = recordOnlyBody;
+export const claudeCodeOAuthRefreshBody = recordOnlyBody;
 
 export const claudeCodeSetupTokenAuthorizeUrlBody = z.object({
   record: upstreamRecordEnvelope,
@@ -557,7 +557,7 @@ export const resetBackoffBody = z.object({
 
 // --- search config ---
 
-export const searchConfigSchema = z.object({
+export const webSearchConfigSchema = z.object({
   provider: z.enum(['disabled', 'tavily', 'microsoft-grounding', 'jina']),
   tavily: z.object({ apiKey: z.string() }),
   microsoftGrounding: z.object({ apiKey: z.string() }),
@@ -744,7 +744,7 @@ export const modelsQuery = z.object({
   include_unlisted: z.enum(['true', 'false']).optional(),
 });
 
-export const searchUsageQuery = z.object({
+export const webSearchUsageQuery = z.object({
   ...usageBaseQuery,
   provider: z.string().optional(),
 });

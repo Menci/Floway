@@ -1,14 +1,6 @@
-import type { GeminiCandidate, GeminiResult, GeminiPart, GeminiStreamEvent } from './index.ts';
+import { GEMINI_CANDIDATE_KEYS, GEMINI_RESULT_KEYS } from './field-keys.ts';
+import type { GeminiCandidate, GeminiPart, GeminiResult, GeminiStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
-
-// Field-fidelity contract — see {@link captureExtras}. We accumulate the
-// fields we understand on typed paths (parts, role, finishReason on
-// candidates; modelVersion / responseId / usageMetadata on the top-level
-// result); the key sets here name those known fields so anything else an
-// upstream emits — `safetyRatings`, `groundingMetadata`, `citationMetadata`,
-// future Gemini extensions, etc. — survives onto the assembled result.
-const KNOWN_RESULT_KEYS = new Set(['candidates', 'modelVersion', 'responseId', 'usageMetadata']);
-const KNOWN_CANDIDATE_KEYS = new Set(['index', 'content', 'finishReason']);
 
 const isMergeableTextPart = (part: GeminiPart): boolean =>
   part.text !== undefined
@@ -50,7 +42,7 @@ const mergeCandidate = (candidates: Map<number, GeminiCandidateWithExtras>, inco
       appendPart(candidate.content.parts, part);
     }
     const extras: Record<string, unknown> = {};
-    captureExtras(incoming as unknown as Record<string, unknown>, KNOWN_CANDIDATE_KEYS, extras);
+    captureExtras(incoming as unknown as Record<string, unknown>, GEMINI_CANDIDATE_KEYS, extras);
     if (Object.keys(extras).length > 0) candidate.__extras = extras;
     candidates.set(incoming.index, candidate);
     return;
@@ -66,7 +58,7 @@ const mergeCandidate = (candidates: Map<number, GeminiCandidateWithExtras>, inco
     existing.finishReason = incoming.finishReason;
   }
   const extras = existing.__extras ?? {};
-  captureExtras(incoming as unknown as Record<string, unknown>, KNOWN_CANDIDATE_KEYS, extras);
+  captureExtras(incoming as unknown as Record<string, unknown>, GEMINI_CANDIDATE_KEYS, extras);
   if (Object.keys(extras).length > 0) existing.__extras = extras;
 };
 
@@ -92,7 +84,7 @@ export async function reassembleGeminiEvents(events: AsyncIterable<GeminiStreamE
     if (event.modelVersion !== undefined) result.modelVersion = event.modelVersion;
     if (event.responseId !== undefined) result.responseId = event.responseId;
     if (event.usageMetadata !== undefined) result.usageMetadata = event.usageMetadata;
-    captureExtras(event as unknown as Record<string, unknown>, KNOWN_RESULT_KEYS, resultExtras);
+    captureExtras(event as unknown as Record<string, unknown>, GEMINI_RESULT_KEYS, resultExtras);
   }
 
   const mergedCandidates = [...candidates.values()].sort((a, b) => a.index - b.index).map(finalizeCandidate);
