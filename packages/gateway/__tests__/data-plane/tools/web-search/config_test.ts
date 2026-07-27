@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { DEFAULT_WEB_SEARCH_CONFIG, FIXED_WEB_SEARCH_CONFIG_TEST_QUERY, loadWebSearchConfig, parseWebSearchConfigDefault, parseWebSearchConfigStrict, saveWebSearchConfig } from '../../../../src/data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
 import { SqlRepo } from '../../../../src/repo/sql.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 

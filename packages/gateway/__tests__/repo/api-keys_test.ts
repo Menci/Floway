@@ -1,8 +1,8 @@
 import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
-import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import { InMemoryRepo } from './memory.ts';
+import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, Repo } from '../../src/repo/types.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';

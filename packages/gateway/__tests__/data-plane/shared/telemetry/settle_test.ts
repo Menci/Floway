@@ -2,8 +2,8 @@ import { beforeEach, expect, test } from 'vitest';
 
 import { settle } from '../../../../src/data-plane/shared/telemetry/settle.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 import { assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';

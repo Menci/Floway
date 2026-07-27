@@ -3,8 +3,8 @@ import { describe, expect, test } from 'vitest';
 import { hydrateResponsesPayload } from '../../../../../src/data-plane/chat/responses/items/hydrate.ts';
 import { createResponsesHttpStore } from '../../../../../src/data-plane/chat/responses/items/store.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../../src/repo/types.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 
 describe('Responses stored-item hydration', () => {

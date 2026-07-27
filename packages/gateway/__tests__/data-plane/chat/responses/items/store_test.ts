@@ -3,8 +3,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { hashResponsesItem } from '../../../../../src/data-plane/chat/responses/items/identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from '../../../../../src/data-plane/chat/responses/items/store.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { quantizeResponsesRefreshedAt } from '../../../../../src/repo/responses-retention.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
