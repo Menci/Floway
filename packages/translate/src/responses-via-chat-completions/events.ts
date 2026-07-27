@@ -297,7 +297,10 @@ const emitRefusalDelta = (refusal: string, state: ChatCompletionsToResponsesStre
   const events = closeText(state);
   const opened = openRefusal(state);
   opened.item.refusal += refusal;
-  events.push(...opened.events, ...responses.refusalDelta(state, opened.item.outputIndex, opened.item.itemId, refusal));
+  events.push(...opened.events);
+  if (refusal.length > 0) {
+    events.push(...responses.refusalDelta(state, opened.item.outputIndex, opened.item.itemId, refusal));
+  }
   return events;
 };
 
@@ -433,7 +436,7 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
       }
     }
 
-    if (choice.delta.refusal) {
+    if (choice.delta.refusal !== undefined && choice.delta.refusal !== null) {
       if (state.pendingScalarReasoning) {
         state.deferredAfterReasoning.push({
           type: 'refusal',

@@ -14,6 +14,7 @@ import type {
 } from './index.ts';
 import { isJsonObject } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
+import { cloneMessagesUsageIterations } from './usage.ts';
 
 const normalizeMessagesTextCitation = (value: unknown): MessagesTextCitation | null => {
   if (!isJsonObject(value) || typeof value.type !== 'string') {
@@ -110,12 +111,7 @@ const applyMessagesUsage = (usage: MessagesUsage, update: Partial<MessagesUsage>
     usage.server_tool_use = update.server_tool_use;
   }
   if (update.iterations !== undefined) {
-    usage.iterations = update.iterations?.map(iteration => ({
-      ...iteration,
-      ...(iteration.cache_creation === undefined || iteration.cache_creation === null
-        ? {}
-        : { cache_creation: { ...iteration.cache_creation } }),
-    })) ?? null;
+    usage.iterations = cloneMessagesUsageIterations(update.iterations);
   }
 };
 
