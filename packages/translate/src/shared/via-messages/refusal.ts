@@ -3,11 +3,14 @@ import type { ResponsesResult } from '@floway-dev/protocols/responses';
 
 const CODEX_BIO_POLICY_PREFIX = 'This content was flagged for possible biological risk.';
 
-const refusalCategoryLabel = (details: MessagesRefusalStopDetails | null | undefined): string =>
-  details?.category === null || details?.category === undefined ? 'an unspecified policy category' : `the ${details.category} policy category`;
+export const messagesRefusalExplanation = (details: MessagesRefusalStopDetails | null | undefined): string => {
+  if (details?.explanation !== null && details?.explanation !== undefined) return details.explanation;
 
-export const messagesRefusalExplanation = (details: MessagesRefusalStopDetails | null | undefined): string =>
-  details?.explanation ?? `Anthropic refused this request under ${refusalCategoryLabel(details)}.`;
+  const category = details?.category === null || details?.category === undefined
+    ? 'an unspecified policy category'
+    : `the ${details.category} policy category`;
+  return `Anthropic refused this request under ${category}.`;
+};
 
 export const messagesRefusalResponsesError = (
   details: MessagesRefusalStopDetails | null | undefined,
