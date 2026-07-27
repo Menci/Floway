@@ -207,7 +207,7 @@ export interface ResponsesFunctionCallOutputItem {
   call_id: string;
   // Multimodal tool outputs carry an array of content parts (e.g. a screenshot
   // tool returning `input_image` parts) in addition to the plain-string form.
-  output: string | ResponsesInputContent[];
+  output: string | ResponsesToolOutputContent[];
   status?: 'completed' | 'incomplete';
   caller?: ResponsesToolCaller | null;
 }

@@ -4,7 +4,7 @@ import { withInlineImagesCompressed } from '../../../src/interceptors/responses/
 import type { ResponsesBoundaryCtx } from '../../../src/interceptors/responses/types.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputImage, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputImage, ResponsesInputItem, ResponsesStreamEvent, ResponsesToolOutputContent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -27,8 +27,8 @@ const invocation = (payload: CanonicalResponsesPayload): ResponsesBoundaryCtx =>
 
 const contentContainers = {
   message: (content: ResponsesInputContent[]): ResponsesInputItem => ({ type: 'message', role: 'user', content }),
-  function_output: (output: ResponsesInputContent[]): ResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
-  custom_output: (output: ResponsesInputContent[]): ResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
+  function_output: (output: ResponsesToolOutputContent[]): ResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
+  custom_output: (output: ResponsesToolOutputContent[]): ResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
 };
 
 const imageUrlOf = (item: ResponsesInputItem): string | null | undefined => {
