@@ -1,0 +1,76 @@
+import { test } from 'vitest';
+
+import { withReasoningDisabledOnForcedToolChoice } from '../../../../../src/data-plane/chat/responses/interceptors/disable-reasoning-on-forced-tool-choice.ts';
+import type { ResponsesInvocation } from '../../../../../src/data-plane/chat/responses/interceptors/types.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { doneFrame } from '@floway-dev/protocols/common';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
+import { eventResult, type FlagId } from '@floway-dev/provider';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+
+const stubCtx = mockChatGatewayCtx();
+
+const okEvents = () =>
+  Promise.resolve(
+    eventResult(
+      (async function* () {
+        yield doneFrame();
+      })(),
+      testTelemetryModelIdentity,
+    ),
+  );
+
+const invocation = (
+  payload: CanonicalResponsesPayload,
+  enabledFlags: ReadonlySet<FlagId> = new Set(['disable-reasoning-on-forced-tool-choice']),
+): ResponsesInvocation => ({
+  payload,
+  candidate: stubModelCandidate({ enabledFlags }),
+  targetApi: 'responses',
+  headers: new Headers(),
+  action: 'generate',
+});
+
+test('responses required tool_choice sets reasoning.effort to none', async () => {
+  const input = invocation({
+    model: 'm',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    reasoning: { effort: 'high' },
+    tool_choice: 'required',
+  });
+
+  await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);
+
+  assertEquals(input.payload.reasoning, { effort: 'none' });
+  const out = input.payload as unknown as Record<string, unknown>;
+  assertEquals(out.thinking, undefined);
+  assertEquals(out.enable_thinking, undefined);
+});
+
+test('responses object tool_choice is forced', async () => {
+  const input = invocation({
+    model: 'm',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    reasoning: { effort: 'high' },
+    tool_choice: { type: 'custom', name: 'x' },
+  });
+
+  await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);
+
+  assertEquals(input.payload.reasoning, { effort: 'none' });
+});
+
+test('responses non-forced tool_choice leaves reasoning untouched', async () => {
+  for (const tool_choice of ['auto', 'none'] as const) {
+    const input = invocation({
+      model: 'm',
+      input: [{ type: 'message', role: 'user', content: 'hi' }],
+      reasoning: { effort: 'high' },
+      tool_choice,
+    });
+
+    await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);
+
+    assertEquals(input.payload.reasoning, { effort: 'high' });
+  }
+});

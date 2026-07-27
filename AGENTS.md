@@ -11,6 +11,16 @@
   without running any test, lint, or typecheck first. Verification belongs to
   the completion and merge-to-main gate, not to each in-flight worktree
   commit.
+- Test material lives outside `src/`. Every package keeps production source
+  under `src/` and everything only tests consume under `__tests__/`, at the
+  path that mirrors `src/`: the test for `src/<path>.ts` is
+  `__tests__/<path>_test.ts`, and a fixture, stub, helper, or ambient
+  declaration sits at the `__tests__/` position where it would have sat under
+  `src/`. Review every change against this. A file under `src/` whose only
+  consumers are tests is misplaced, and so is a test written anywhere but its
+  mirror position. `.gitattributes` marks the whole `__tests__/` tree as
+  generated so reviewers can collapse it in one move; anything left behind in
+  `src/` silently opts out of that.
 - When investigating Copilot upstream quirks, compare at least one other
   Copilot gateway implementation before inventing a policy. For generic
   adapter behavior, compare at least one Copilot gateway and one general
@@ -234,10 +244,11 @@ implementations only through local relative imports. Every cross-package
 runtime import must use a declared `exports` entry; deep
 `@floway-dev/<pkg>/src/...` imports are banned.
 
-Tests are co-located as `*_test.ts`. Every tested package owns a
-`vitest.config.ts`, and the root Vitest config discovers
-`packages/*/vitest.config.ts` and `apps/*/vitest.config.ts`. Package TypeScript
-projects include their Vitest configs. Root `scripts/**/*.ts` and
+Tests live in each package's `__tests__/` mirror of `src/`. Every tested
+package owns a `vitest.config.ts` including `__tests__/**/*_test.ts`, and the
+root Vitest config discovers `packages/*/vitest.config.ts` and
+`apps/*/vitest.config.ts`. Package TypeScript projects include their Vitest
+configs and their `__tests__/` tree. Root `scripts/**/*.ts` and
 `packages/agent-setup/scripts/**/*.ts` have Node-typed script projects; the
 base config sets `types: []` so ambient types enter only projects that request
 them. ESLint checks both script trees and every package Vitest config; the

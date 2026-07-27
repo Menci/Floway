@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["entry.ts", "dev-proxy-loader.ts", "vitest.config.ts", "src/**/*.ts"]
+  "include": ["entry.ts", "dev-proxy-loader.ts", "vitest.config.ts", "src/**/*.ts", "__tests__/**/*.ts"]
 }

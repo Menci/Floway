@@ -12,6 +12,6 @@ export default defineConfig({
     // a factory for injection, but that DI surface existed only for the
     // tests — switching env removes the need for it.
     environment: 'happy-dom',
-    include: ['src/**/*_test.ts'],
+    include: ['__tests__/**/*_test.ts'],
   },
 });
