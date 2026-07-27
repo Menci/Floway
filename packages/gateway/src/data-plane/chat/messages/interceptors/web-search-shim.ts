@@ -8,6 +8,7 @@ import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts'
 import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
+  MessagesAssistantContentBlock,
   MessagesAssistantInputContentBlock,
   MessagesClientTool,
   MessagesMessage,
