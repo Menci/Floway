@@ -38,9 +38,9 @@ surface:
 
 The prefixed row is a shallow `ProviderModel` clone. `providerData` is preserved
 as opaque provider-private invocation data; it is not a universal upstream-id
-field. Copilot uses it for raw variants, Claude Code for a dated wire id, and
-other providers may omit it or carry a different private shape. Dispatch always
-returns the exact provider's own emitted `ProviderModel` to its `call*` method.
+field. Each provider defines its own shape for it, and a provider that needs no
+private data omits it. Dispatch always returns the exact provider's own emitted
+`ProviderModel` to its `call*` method.
 
 Rows collide by public id. The first contribution wins ordinary display/limit/
 pricing metadata; later contributions union their `endpoints`, recompute `kind`
@@ -399,9 +399,7 @@ coordinate boundary.
 ## Known edges
 
 - Disabling an id on one upstream does not hide the same id on another.
-- The `-\d{8}` retry is the only request-time model-id normalization. Vendor
-  effort/context/speed variants must be advertised or sent through request
-  fields; arbitrary suffixes are not rewritten.
+- The `-\d{8}` retry is the only request-time model-id normalization.
 - Catalogs are SWR-cached per upstream. Soft-fresh reads do not block on refresh.
 - Dual-addressable forms intentionally remain separate candidates. Their order
   follows the configured `addressable` array.
