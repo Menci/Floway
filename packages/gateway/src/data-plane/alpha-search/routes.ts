@@ -25,35 +25,44 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
 import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
-import { executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
+import { assertLocalWebSearchSupport, executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
 
 const domainListSchema = z.array(z.string());
 
-// `filters` / `user_location` / `search_context_size` are the only settings
-// that steer command execution; `looseObject` keeps the request tolerant of
-// the settings a real backend would read but we don't (`image_settings`,
-// `allowed_callers`, `external_web_access`).
+// This is OpenAI Codex's complete SearchSettings shape. The loose object keeps
+// future fields intact for passthrough; local providers consume the routing
+// fields they implement while accepting Codex metadata such as allowed_callers.
+// https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L215-L295
 const searchSettingsSchema = z.looseObject({
   filters: z.looseObject({
     allowed_domains: domainListSchema.optional(),
     blocked_domains: domainListSchema.optional(),
   }).optional(),
   user_location: z.looseObject({
+    type: z.literal('approximate').optional(),
     city: z.string().optional(),
     region: z.string().optional(),
     country: z.string().optional(),
     timezone: z.string().optional(),
   }).optional(),
   search_context_size: z.enum(['low', 'medium', 'high']).optional(),
+  image_settings: z.looseObject({
+    max_results: z.number().int().nonnegative().optional(),
+    caption: z.boolean().optional(),
+  }).optional(),
+  allowed_callers: z.array(z.enum(['direct', 'shell', 'code_interpreter'])).optional(),
+  external_web_access: z.union([
+    z.boolean(),
+    z.enum(['cached', 'indexed', 'live']),
+  ]).optional(),
 });
 
 // `commands` is validated only as "an object" — the per-kind arrays are
-// parsed and diagnosed by `parseWebSearchOperations`, which already emits
-// deterministic text for missing args, non-URL refs, wrong-typed keys, and
-// unsupported command kinds. `looseObject` preserves the unimplemented keys
-// so they reach that parser as unsupported ops.
+// parsed by the shared command engine. `looseObject` preserves every OpenAI
+// command and nested parameter so passthrough stays lossless and the local
+// capability gate can reject unimplemented fields explicitly.
 const alphaSearchRequestSchema = z.looseObject({
   commands: z.looseObject({}).optional(),
   settings: searchSettingsSchema.optional(),
@@ -96,6 +105,8 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
     return relayFetchedResponse(response);
   }
 
+  assertLocalWebSearchSupport(body.commands ?? {});
+
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const session: WebSearchExecutionSession = {
     getProvider: () => {
@@ -121,8 +132,8 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
 
   // One batched provider.fetchPage covers every open/find URL; each op then
   // renders its own text block. The shared parser's canonical order is
-  // search_query → open → find → unsupported keys, preserving array order
-  // within each command kind.
+  // search_query → open → find, preserving array order within each command
+  // kind.
   const batch = await startBatchFetch(parsed, session);
   const blocks = await Promise.all(parsed.ops.map(op => executeOperationToText(op, session, batch)));
 

@@ -41,3 +41,22 @@ test('executeAlphaSearch exposes upstream failure without fallback', async () =>
     signal: undefined,
   })).rejects.toThrow('HTTP 503');
 });
+
+test('executeAlphaSearch preserves a cascaded Floway error message', async () => {
+  const message = 'The configured web search provider does not implement OpenAI search feature `commands.image_query`.';
+  await expect(executeAlphaSearch({
+    dispatcher: async () => new Response(JSON.stringify({
+      error: {
+        type: 'internal_error',
+        name: 'UnsupportedLocalWebSearchFeatureError',
+        message,
+      },
+    }), { status: 500, headers: { 'content-type': 'application/json' } }),
+    sessionId: 'session-search',
+    commands: { image_query: [{ q: 'cat' }] },
+    settings: {},
+    input: [],
+    action: { type: 'search', query: 'image_query' },
+    signal: undefined,
+  })).rejects.toThrow(message);
+});

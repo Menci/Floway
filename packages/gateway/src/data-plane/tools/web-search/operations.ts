@@ -123,6 +123,51 @@ const missingArgError = (field: string): string =>
 
 const SUPPORTED_KEYS: ReadonlySet<string> = new Set(['search_query', 'open', 'find']);
 
+const LOCAL_SUPPORTED_COMMAND_FIELDS: Readonly<Record<'search_query' | 'open' | 'find', ReadonlySet<string>>> = {
+  search_query: new Set(['q']),
+  open: new Set(['ref_id']),
+  find: new Set(['ref_id', 'pattern']),
+};
+
+export class UnsupportedLocalWebSearchFeatureError extends Error {
+  constructor(path: string) {
+    super(`The configured web search provider does not implement OpenAI search feature \`${path}\`.`);
+    this.name = 'UnsupportedLocalWebSearchFeatureError';
+  }
+}
+
+const assertObjectHasOnly = (
+  value: unknown,
+  allowed: ReadonlySet<string>,
+  path: string,
+): void => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return;
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) throw new UnsupportedLocalWebSearchFeatureError(`${path}.${key}`);
+  }
+};
+
+// The local Tavily, Jina, and Microsoft Grounding adapters implement the
+// common text-search/open/find subset. OpenAI's complete command object remains
+// valid for alpha-search passthrough; reaching a local adapter with any other
+// command or nested command parameter is an explicit error so no request field
+// disappears.
+//
+// OpenAI Codex source of truth for SearchCommands:
+// https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L31-L213
+export const assertLocalWebSearchSupport = (
+  commands: Record<string, unknown>,
+): void => {
+  for (const [key, value] of Object.entries(commands)) {
+    if (!SUPPORTED_KEYS.has(key)) throw new UnsupportedLocalWebSearchFeatureError(`commands.${key}`);
+    if (!Array.isArray(value)) continue;
+    const allowed = LOCAL_SUPPORTED_COMMAND_FIELDS[key as keyof typeof LOCAL_SUPPORTED_COMMAND_FIELDS];
+    for (let index = 0; index < value.length; index++) {
+      assertObjectHasOnly(value[index], allowed, `commands.${key}[${index}]`);
+    }
+  }
+};
+
 const stringField = (entry: unknown, key: string): string => {
   if (entry === null || typeof entry !== 'object') return '';
   const value = (entry as Record<string, unknown>)[key];
@@ -329,8 +374,8 @@ const searchFailedText = (providerMessage: string): string =>
 const openFailedText = (url: string, providerMessage: string): string =>
   `Error fetching URL \`${url}\`: ${providerMessage}`;
 
-const unsupportedOperationText = (subProperty: string): string =>
-  `Error: the \`${subProperty}\` sub-property is not supported by this gateway. Only \`search_query\`, \`open\`, and \`find\` are available.`;
+const unsupportedOperationError = (subProperty: string): UnsupportedLocalWebSearchFeatureError =>
+  new UnsupportedLocalWebSearchFeatureError(`commands.${subProperty}`);
 
 const wrongTypeOperationText = (subProperty: string, actualType: string): string =>
   `Error: the \`${subProperty}\` sub-property must be an array of objects; got ${actualType}.`;
@@ -793,9 +838,9 @@ const runBackendFind = async (
 };
 
 // Execute one operation into its `web_search_call` IR. `search`/`open`/
-// `find` hit the backend (open/find read the pre-issued batch map);
-// `unsupported`/`wrong-type` encode a diagnostic search IR so a Responses
-// wire item still parses.
+// `find` hit the backend (open/find read the pre-issued batch map). An
+// unsupported OpenAI command is a capability error; malformed supported
+// commands remain model-visible diagnostic IR.
 export const executeOperationToIr = (
   op: WebSearchOperation,
   session: WebSearchExecutionSession,
@@ -809,11 +854,7 @@ export const executeOperationToIr = (
   case 'find':
     return runBackendFind(op, batch);
   case 'unsupported':
-    return Promise.resolve(schemaErrorIr(
-      `unsupported action: ${op.subProperty}[${op.arrayIndex}]`,
-      'Unsupported action',
-      unsupportedOperationText(op.subProperty),
-    ));
+    return Promise.reject(unsupportedOperationError(op.subProperty));
   case 'wrong-type':
     return Promise.resolve(schemaErrorIr(
       `wrong-type sub-property: ${op.subProperty}`,
@@ -824,8 +865,8 @@ export const executeOperationToIr = (
 };
 
 // Execute one operation and render its model-visible text directly. The
-// Codex `/alpha/search` endpoint consumes only text, so `unsupported` /
-// `wrong-type` render as their bare diagnostic rather than the IR-wrapped
+// Codex `/alpha/search` endpoint consumes only text, so malformed supported
+// commands render as their bare diagnostic rather than the IR-wrapped
 // "Search results for …" form the Responses wire item needs.
 export const executeOperationToText = async (
   op: WebSearchOperation,
@@ -834,7 +875,7 @@ export const executeOperationToText = async (
 ): Promise<string> => {
   switch (op.kind) {
   case 'unsupported':
-    return unsupportedOperationText(op.subProperty);
+    throw unsupportedOperationError(op.subProperty);
   case 'wrong-type':
     return wrongTypeOperationText(op.subProperty, op.actualType);
   default: {
