@@ -1,5 +1,6 @@
 import { flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiCandidateEvent, parseStrictJsonObject, setGeminiThoughtSignature, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { inclusiveMessagesInputUsage } from '../shared/via-messages/usage.ts';
+import { messagesRefusalExplanation } from '../shared/via-messages/refusal.ts';
 import { billableServiceTier, eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
@@ -183,6 +184,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
         flushGeminiThoughtSignature(state),
         messagesStopReasonToGemini(event.delta.stop_reason),
         mapUsage(state, event.usage !== undefined),
+        event.delta.stop_reason === 'refusal' ? messagesRefusalExplanation(event.delta.stop_details) : undefined,
       ));
       break;
     }

@@ -1,5 +1,6 @@
 import { openAIServiceTierFromMessagesUsage } from '../shared/via-messages/service-tier.ts';
 import { inclusiveMessagesInputUsage } from '../shared/via-messages/usage.ts';
+import { messagesRefusalExplanation } from '../shared/via-messages/refusal.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, type MessagesResult, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
@@ -140,6 +141,9 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
     case 'server_tool_use':
     case 'web_search_tool_result':
       return [];
+    case 'fallback':
+      state.model = block.to.model;
+      return [];
     }
 
     return unexpectedMessagesVariant(block);
@@ -187,14 +191,18 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
     return [];
 
   case 'message_delta': {
-    const chunk = makeChunk(state, {}, mapMessagesStopReasonToChatCompletionsFinishReason(event.delta.stop_reason ?? null));
+    const chunks: ChatCompletionsStreamEvent[] = [];
+    if (event.delta.stop_reason === 'refusal') {
+      chunks.push(makeChunk(state, { refusal: messagesRefusalExplanation(event.delta.stop_details) }));
+    }
+    chunks.push(makeChunk(state, {}, mapMessagesStopReasonToChatCompletionsFinishReason(event.delta.stop_reason ?? null)));
 
     if (event.usage) {
       state.usage = mergeMessagesUsageSnapshot(state.usage, event.usage);
-      return [chunk, makeUsageChunk(state)];
+      chunks.push(makeUsageChunk(state));
     }
 
-    return [chunk];
+    return chunks;
   }
 
   case 'message_stop':

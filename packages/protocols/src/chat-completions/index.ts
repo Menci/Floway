@@ -126,6 +126,7 @@ export interface ChatCompletionsChoiceNonStreaming {
     reasoning_text?: string | null;
     reasoning_opaque?: string | null;
     reasoning_items?: ChatCompletionsReasoningItem[] | null;
+    refusal?: string | null;
   };
   finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter';
 }
@@ -152,6 +153,7 @@ export interface ChatCompletionsDelta {
   /** Opaque reasoning token/signature delta */
   reasoning_opaque?: string | null;
   reasoning_items?: ChatCompletionsReasoningItem[] | null;
+  refusal?: string | null;
 }
 
 export * from './errors.ts';

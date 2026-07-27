@@ -815,3 +815,67 @@ test('reassembleMessagesEvents preserves unknown fields on a content_block', asy
   assertEquals(block.thinking, 'hello');
   assertEquals(block.vendor_trace, 'opaque-trace-123');
 });
+
+test('reassembleMessagesEvents preserves refusal details, fallback boundaries, and iteration usage', async () => {
+  const result = await reassembleMessagesEvents(makeEvents([
+    {
+      data: {
+        type: 'message_start',
+        message: {
+          id: 'msg_refusal',
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-opus-5',
+          usage: { input_tokens: 5, output_tokens: 0 },
+        },
+      },
+    },
+    {
+      data: {
+        type: 'content_block_start',
+        index: 0,
+        content_block: {
+          type: 'fallback',
+          from: { model: 'claude-opus-5' },
+          to: { model: 'claude-opus-4-8' },
+          trigger: { type: 'refusal', category: 'future_policy' },
+        },
+      },
+    },
+    { data: { type: 'content_block_stop', index: 0 } },
+    {
+      data: {
+        type: 'message_delta',
+        delta: {
+          stop_reason: 'refusal',
+          stop_details: {
+            type: 'refusal',
+            category: 'future_policy',
+            explanation: null,
+            recommended_model: 'claude-opus-4-8',
+          },
+          stop_sequence: null,
+        },
+        usage: {
+          output_tokens: 0,
+          iterations: [{ type: 'fallback_message', model: 'claude-opus-4-8', input_tokens: 5, output_tokens: 0 }],
+        },
+      },
+    },
+    { data: { type: 'message_stop' } },
+  ]));
+
+  assertEquals(result.stop_details, {
+    type: 'refusal',
+    category: 'future_policy',
+    explanation: null,
+    recommended_model: 'claude-opus-4-8',
+  });
+  assertEquals(result.content, [{
+    type: 'fallback',
+    from: { model: 'claude-opus-5' },
+    to: { model: 'claude-opus-4-8' },
+    trigger: { type: 'refusal', category: 'future_policy' },
+  }]);
+  assertEquals(result.usage.iterations, [{ type: 'fallback_message', model: 'claude-opus-4-8', input_tokens: 5, output_tokens: 0 }]);
+});

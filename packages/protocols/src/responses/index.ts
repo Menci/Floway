@@ -922,7 +922,7 @@ interface ResponsesOutputText {
   text: string;
 }
 
-interface ResponsesOutputRefusal {
+export interface ResponsesOutputRefusal {
   type: 'refusal';
   refusal: string;
 }
@@ -1089,6 +1089,20 @@ type ResponsesStreamEventVariant =
     output_index: number;
     content_index: number;
     text: string;
+  }
+  | {
+    type: 'response.refusal.delta';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    delta: string;
+  }
+  | {
+    type: 'response.refusal.done';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    refusal: string;
   }
   | {
     type: 'response.output_text.annotation.added';

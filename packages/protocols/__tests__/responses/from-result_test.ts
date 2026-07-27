@@ -172,6 +172,37 @@ test('responsesResultToEvents propagates the real message item id to the added i
   for (const itemId of childItemIds) assertEquals(itemId, 'msg_real');
 });
 
+test('responsesResultToEvents expands refusal content with the native refusal lifecycle', () => {
+  const events = Array.from(responsesResultToEvents({
+    ...completedResponse,
+    output: [{
+      type: 'message',
+      id: 'msg_refusal',
+      role: 'assistant',
+      content: [{ type: 'refusal', refusal: 'Cannot help.' }],
+    }],
+  })).map(frame => frame.event);
+
+  assertEquals(events.filter(event => event.type.startsWith('response.refusal')), [
+    {
+      type: 'response.refusal.delta',
+      item_id: 'msg_refusal',
+      output_index: 0,
+      content_index: 0,
+      delta: 'Cannot help.',
+      sequence_number: 4,
+    },
+    {
+      type: 'response.refusal.done',
+      item_id: 'msg_refusal',
+      output_index: 0,
+      content_index: 0,
+      refusal: 'Cannot help.',
+      sequence_number: 5,
+    },
+  ]);
+});
+
 test('responsesResultToEvents propagates the real function_call item id to the added item and child frames', () => {
   const frames = Array.from(
     responsesResultToEvents({

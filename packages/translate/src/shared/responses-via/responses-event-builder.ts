@@ -14,11 +14,17 @@ export interface ResponsesSequenceState {
 }
 
 type OutputTextPart = Extract<ResponsesOutputContentBlock, { type: 'output_text' }>;
+type RefusalPart = Extract<ResponsesOutputContentBlock, { type: 'refusal' }>;
 type ResponsesUsage = NonNullable<ResponsesResult['usage']>;
 
 const textPart = (text: string): OutputTextPart => ({
   type: 'output_text',
   text,
+});
+
+const refusalPart = (refusal: string): RefusalPart => ({
+  type: 'refusal',
+  refusal,
 });
 
 const summaryPart = (text: string) => ({ type: 'summary_text' as const, text });
@@ -36,6 +42,15 @@ const outputTextEvent = (state: 'delta' | 'done', outputIndex: number, itemId: s
     output_index: outputIndex,
     content_index: 0,
     [state === 'delta' ? 'delta' : 'text']: text,
+  } as ResponsesStreamEvent);
+
+const refusalEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, refusal: string): ResponsesStreamEvent =>
+  ({
+    type: `response.refusal.${state}`,
+    item_id: itemId,
+    output_index: outputIndex,
+    content_index: 0,
+    [state === 'delta' ? 'delta' : 'refusal']: refusal,
   } as ResponsesStreamEvent);
 
 const functionCallArgumentsEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): ResponsesStreamEvent =>
@@ -91,6 +106,7 @@ export const result = (input: {
   status: ResponsesResult['status'];
   usage?: ResponsesUsage;
   incompleteDetails?: ResponsesResult['incomplete_details'];
+  error?: ResponsesResult['error'];
   serviceTier?: ResponsesResult['service_tier'];
 }): ResponsesResult => ({
   id: input.id,
@@ -102,7 +118,7 @@ export const result = (input: {
   // `error` and `incomplete_details` are spec-required on every
   // Response (both nullable). Default both to null; callers pass a
   // concrete value when the source carries one.
-  error: null,
+  error: input.error ?? null,
   incomplete_details: input.incompleteDetails ?? null,
   ...(input.usage !== undefined ? { usage: input.usage } : {}),
   ...(input.serviceTier !== undefined ? { service_tier: input.serviceTier } : {}),
@@ -115,6 +131,13 @@ export const messageItem = (id: string, text: string): ResponsesOutputMessage =>
   id,
   role: 'assistant',
   content: [textPart(text)],
+});
+
+export const refusalItem = (id: string, refusal: string): ResponsesOutputMessage => ({
+  type: 'message',
+  id,
+  role: 'assistant',
+  content: [refusalPart(refusal)],
 });
 
 export const reasoningItem = (id: string, summaryText: string, encryptedContent?: string): ResponsesOutputReasoning => ({
@@ -196,6 +219,34 @@ export const textDone = (state: ResponsesSequenceState, outputIndex: number, ite
       output_index: outputIndex,
       content_index: 0,
       part: textPart(text),
+    },
+    outputItemEvent('done', outputIndex, item),
+  ]);
+
+export const refusalStart = (state: ResponsesSequenceState, outputIndex: number, itemId: string) =>
+  seq(state, [
+    outputItemEvent('added', outputIndex, refusalItem(itemId, '')),
+    {
+      type: 'response.content_part.added',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: 0,
+      part: refusalPart(''),
+    },
+  ]);
+
+export const refusalDelta = (state: ResponsesSequenceState, outputIndex: number, itemId: string, delta: string) =>
+  seq(state, [refusalEvent('delta', outputIndex, itemId, delta)]);
+
+export const refusalDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, refusal: string, item: ResponsesOutputMessage) =>
+  seq(state, [
+    refusalEvent('done', outputIndex, itemId, refusal),
+    {
+      type: 'response.content_part.done',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: 0,
+      part: refusalPart(refusal),
     },
     outputItemEvent('done', outputIndex, item),
   ]);

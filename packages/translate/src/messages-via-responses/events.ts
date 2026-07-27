@@ -74,6 +74,8 @@ interface ResponsesToMessagesStreamState {
   emittedReasoningSummaryKeys: Set<string>;
   emittedReasoningSignatureOutputIndexes: Set<number>;
   emittedTextContentKeys: Set<string>;
+  refusalText: string;
+  sawRefusal: boolean;
   emittedFunctionArgumentOutputIndexes: Set<number>;
   outputOrder: ResponsesOutputOrderState;
   functionCallState: Map<
@@ -300,15 +302,24 @@ const handleContentPartDone = (event: Extract<ResponsesStreamEvent, { type: 'res
   const key = responsesPartKey(event.output_index, event.content_index);
   if (!event.part.refusal || state.emittedTextContentKeys.has(key)) return [];
 
-  const events: MessagesStreamEvent[] = [];
-  const blockIndex = openTextBlock(state, event.output_index, event.content_index, events);
-  events.push({
-    type: 'content_block_delta',
-    index: blockIndex,
-    delta: { type: 'text_delta', text: event.part.refusal },
-  });
+  state.sawRefusal = true;
+  state.refusalText = event.part.refusal;
   state.emittedTextContentKeys.add(key);
-  return events;
+  return [];
+};
+
+const handleRefusalDelta = (event: Extract<ResponsesStreamEvent, { type: 'response.refusal.delta' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  state.sawRefusal = true;
+  state.refusalText += event.delta;
+  state.emittedTextContentKeys.add(responsesPartKey(event.output_index, event.content_index));
+  return [];
+};
+
+const handleRefusalDone = (event: Extract<ResponsesStreamEvent, { type: 'response.refusal.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  state.sawRefusal = true;
+  state.refusalText = event.refusal;
+  state.emittedTextContentKeys.add(responsesPartKey(event.output_index, event.content_index));
+  return [];
 };
 
 const handleFunctionArgumentsDelta = (event: Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
@@ -357,7 +368,16 @@ const handleCompleted = (response: ResponsesResult, state: ResponsesToMessagesSt
     {
       type: 'message_delta',
       delta: {
-        stop_reason: mapResponsesStopReason(response),
+        stop_reason: state.sawRefusal ? 'refusal' : mapResponsesStopReason(response),
+        ...(state.sawRefusal
+          ? {
+              stop_details: {
+                type: 'refusal' as const,
+                category: null,
+                explanation: state.refusalText || null,
+              },
+            }
+          : {}),
         stop_sequence: null,
       },
       usage: responsesUsageToMessagesUsage(response, response.usage?.output_tokens ?? 0),
@@ -393,8 +413,35 @@ const handleStreamError = (
   return events;
 };
 
-const handleFailed = (response: ResponsesResult, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
-  handleStreamError(state, response.error ?? undefined, 'Response failed due to unknown error.');
+const handleFailed = (response: ResponsesResult, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  const category = response.error?.code === 'cyber_policy'
+    ? 'cyber' as const
+    : response.error?.code === 'bio_policy' ? 'bio' as const : undefined;
+  if (category === undefined) {
+    return handleStreamError(state, response.error ?? undefined, 'Response failed due to unknown error.');
+  }
+
+  const events: MessagesStreamEvent[] = [];
+  closeAllBlocks(state, events);
+  events.push(
+    {
+      type: 'message_delta',
+      delta: {
+        stop_reason: 'refusal',
+        stop_details: {
+          type: 'refusal',
+          category,
+          explanation: response.error?.message ?? null,
+        },
+        stop_sequence: null,
+      },
+      usage: responsesUsageToMessagesUsage(response, response.usage?.output_tokens ?? 0),
+    },
+    { type: 'message_stop' },
+  );
+  state.messageCompleted = true;
+  return events;
+};
 
 const handleError = (event: Extract<ResponsesStreamEvent, { type: 'error' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
   handleStreamError(state, { code: event.code, message: event.message }, 'An unexpected error occurred during streaming.');
@@ -407,6 +454,8 @@ export const createResponsesToMessagesStreamState = (): ResponsesToMessagesStrea
   emittedReasoningSummaryKeys: new Set(),
   emittedReasoningSignatureOutputIndexes: new Set(),
   emittedTextContentKeys: new Set(),
+  refusalText: '',
+  sawRefusal: false,
   emittedFunctionArgumentOutputIndexes: new Set(),
   outputOrder: createResponsesOutputOrderState(),
   functionCallState: new Map(),
@@ -430,6 +479,10 @@ const translateReadyResponsesEvent = (event: ResponsesStreamEvent, state: Respon
     return handleTextDelta(event as Extract<ResponsesStreamEvent, { type: 'response.output_text.delta' }>, state);
   case 'response.output_text.done':
     return handleTextDone(event as Extract<ResponsesStreamEvent, { type: 'response.output_text.done' }>, state);
+  case 'response.refusal.delta':
+    return handleRefusalDelta(event as Extract<ResponsesStreamEvent, { type: 'response.refusal.delta' }>, state);
+  case 'response.refusal.done':
+    return handleRefusalDone(event as Extract<ResponsesStreamEvent, { type: 'response.refusal.done' }>, state);
   case 'response.content_part.done':
     return handleContentPartDone(event as Extract<ResponsesStreamEvent, { type: 'response.content_part.done' }>, state);
   case 'response.function_call_arguments.delta':
