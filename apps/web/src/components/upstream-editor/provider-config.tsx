@@ -18,6 +18,7 @@ import type {
   UpstreamRecord,
 } from "../../api/types";
 import { authFetch, callApi } from "../../api/auth";
+import { api } from "../../api/client";
 import { fluentComponents } from "../../fluent";
 import { Dropdown, Input, Textarea } from "../ui/fluent-form-controls";
 import { ProviderIcon } from "../upstreams/provider-badge";
@@ -314,7 +315,7 @@ function CopilotConfig({ record, onPatch }: {
   };
   const start = async () => {
     stop(); setBusy(true); setError(null);
-    const result = await callApi<DeviceFlowStart>(() => authFetch("/api/upstreams/copilot/oauth/device-login/start", { method: "POST" }));
+    const result = await callApi<DeviceFlowStart>(() => api.api.upstreams.copilot.oauth["device-login"].start.$post());
     if (result.error) { setBusy(false); setError(result.error.message); return; }
     setFlow(result.data);
     timer.current = window.setTimeout(() => void poll(result.data.device_code, result.data.interval), result.data.interval * 1000);

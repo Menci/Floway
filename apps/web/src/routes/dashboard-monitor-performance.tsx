@@ -97,7 +97,7 @@ export default function DashboardMonitorPerformance() {
     setLoading(true);
     setError(null);
     const search = buildPerformanceQuery(view, range, groupBy, filters, requestedAt);
-    const result = await callApi<PerformanceOverviewResponse>(() => authFetch(`/api/performance/overview?${search}`));
+    const result = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({ query: Object.fromEntries(search) }));
     if (requestId !== requestIdRef.current) return;
     if (result.error) setError(result.error.message);
     else {

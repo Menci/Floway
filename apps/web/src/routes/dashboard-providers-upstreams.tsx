@@ -239,7 +239,7 @@ export default function DashboardProvidersUpstreams() {
     setMutation({ kind: "delete", id: record.id });
     setPageError(null);
     const result = await callApi<{ ok: true }>(() =>
-      authFetch(`/api/upstreams/${encodeURIComponent(record.id)}`, { method: "DELETE" }),
+      api.api.upstreams[":id"].$delete({ param: { id: record.id } }),
     );
     if (result.error) {
       setPageError(t("dashboard.upstreams.errors.delete", { message: result.error.message }));

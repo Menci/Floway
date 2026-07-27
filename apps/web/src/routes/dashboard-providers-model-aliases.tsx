@@ -68,7 +68,7 @@ export default function DashboardProvidersModelAliases() {
     if (!deleting) return;
     setMutating(true); setError(null);
     try {
-      const response = await authFetch(`/api/aliases/${encodeURIComponent(deleting.name)}`, { method: "DELETE" });
+      const response = await api.api.aliases[":name"].$delete({ param: { name: deleting.name } });
       if (!response.ok) {
         let message = `HTTP ${response.status}`;
         try { const body = await response.json() as { error?: string }; message = body.error ?? message; } catch { /* status fallback */ }

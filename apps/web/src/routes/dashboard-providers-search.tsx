@@ -3,9 +3,14 @@ import { redirect } from "react-router";
 import { useTranslation } from "react-i18next";
 
 import type { Route } from "./+types/dashboard-providers-search";
-import type { ControlPlaneModel, SearchConfig, SearchConfigTestResult, UpstreamRecord } from "../api/types";
+import type { InferResponseType } from "hono/client";
+
+import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
 import { api } from "../api/client";
+
+type SearchConfigTestResult = InferResponseType<typeof api.api["search-config"]["test"]["$post"], 200>;
+type SearchConfigTestFailure = Extract<SearchConfigTestResult, { ok: false }>;
 import { getSessionToken } from "../auth/session";
 import bingIconUrl from "../assets/bing.svg";
 import jinaIconUrl from "../assets/jina.svg";
@@ -227,11 +232,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     setSaveError(null);
     setSaveSuccess(false);
     const result = await callApi<SearchConfig>(() =>
-      authFetch("/api/search-config", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(draft),
-      }),
+      api.api["search-config"].$put({ json: draft }),
     );
     setSaving(false);
     if (result.error) {
@@ -245,13 +246,11 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     setTesting(true);
     setTestResult(null);
     try {
-      const response = await authFetch("/api/search-config/test", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(draft),
-      });
-      const body: SearchConfigTestResult = await response.json();
-      setTestResult(body);
+      const response = await api.api["search-config"].test.$post({ json: draft });
+      // A completed probe answers 200 whether or not the provider accepted it;
+      // any other status is a control-plane failure, not a probe result.
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setTestResult(await response.json());
     } catch (e) {
       setTestResult({
         ok: false,
@@ -512,7 +511,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                 ))}
               </div>
             )
-          ) : testResult.error ? (
+          ) : !testResult.ok ? (
             <div
               className="rounded-lg border border-solid p-[12px_14px] grid gap-[4px]"
               style={{
@@ -525,10 +524,10 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                 weight="semibold"
                 style={{ color: "light-dark(#c50f1f, #e37b84)" }}
               >
-                {testResult.error.code}
+                {(testResult as SearchConfigTestFailure).error.code}
               </Text>
               <Text size={200} className="text-fui-fg1">
-                {testResult.error.message}
+                {(testResult as SearchConfigTestFailure).error.message}
               </Text>
             </div>
           ) : null}

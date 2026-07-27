@@ -3,6 +3,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/dashboard-providers-upstreams-edit";
 import type { UpstreamRecord } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { getSessionToken } from "../auth/session";
 import { UpstreamEditorPage } from "../components/upstream-editor/upstream-editor-page";
 import { loadEditorAux, requireAdmin } from "../components/upstream-editor/editor-data";
@@ -11,7 +12,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   if (!getSessionToken()) throw redirect("/");
   if (!(await requireAdmin())) throw redirect("/dashboard/services/api-keys");
   const [recordResult, aux] = await Promise.all([
-    callApi<UpstreamRecord>(() => authFetch(`/api/upstreams/${encodeURIComponent(params.id)}`)),
+    callApi<UpstreamRecord>(() => api.api.upstreams[":id"].$get({ param: { id: params.id } })),
     loadEditorAux(),
   ]);
   if (recordResult.error?.status === 404) {

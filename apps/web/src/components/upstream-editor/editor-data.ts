@@ -10,9 +10,13 @@ import type {
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from "../../api/types";
+import type { InferRequestType } from "hono/client";
+
 import { authFetch, callApi } from "../../api/auth";
-import { getCurrentSession } from "../../api/client";
-import { api } from "../../api/client";
+import { api, getCurrentSession } from "../../api/client";
+
+type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>["json"];
+type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[":id"]["$patch"]>["json"];
 
 export interface RuntimeInfo {
   kind: "node" | "cloudflare";
@@ -137,11 +141,14 @@ export function valuesFromRecord(record: UpstreamRecord): UpstreamEditorValues {
   };
 }
 
+// The editor holds one flat form model for every provider kind, so the config
+// is assembled structurally and only becomes a specific union member here.
+// This is the single point where the two representations meet.
 export function configFromValues(
   record: UpstreamRecord,
   values: UpstreamEditorValues,
   options: { preserveStoredSecret?: boolean } = {},
-): unknown {
+): UpstreamRecord["config"] {
   const config = structuredClone(values.config) as unknown as Record<string, unknown>;
   if (record.kind === "custom" || record.kind === "azure" || record.kind === "ollama") {
     config.models = structuredClone(values.manualModels);
@@ -162,7 +169,7 @@ export function configFromValues(
       else delete custom.pathOverrides;
     }
   }
-  return config;
+  return config as unknown as UpstreamRecord["config"];
 }
 
 export function previewRecord(record: UpstreamRecord, values: UpstreamEditorValues): UpstreamRecordEnvelope {
@@ -180,7 +187,7 @@ export function previewRecord(record: UpstreamRecord, values: UpstreamEditorValu
   };
 }
 
-export function createBody(record: UpstreamRecord, values: UpstreamEditorValues, sortOrder: number) {
+export function createBody(record: UpstreamRecord, values: UpstreamEditorValues, sortOrder: number): CreateUpstreamBody {
   return {
     kind: record.kind,
     name: values.name.trim(),
@@ -195,10 +202,14 @@ export function createBody(record: UpstreamRecord, values: UpstreamEditorValues,
     ...((record.kind === "copilot" || record.kind === "codex" || record.kind === "claude-code")
       ? { state: values.state }
       : {}),
-  };
+    // The editor's form model is flat across provider kinds while the wire
+    // contract discriminates on `kind`; TypeScript cannot prove the two agree
+    // from a structurally assembled object. Field names, method and path stay
+    // checked against the route — only this correlation is asserted.
+  } as CreateUpstreamBody;
 }
 
-export function updateBody(record: UpstreamRecord, values: UpstreamEditorValues) {
+export function updateBody(record: UpstreamRecord, values: UpstreamEditorValues): UpdateUpstreamBody {
   return {
     name: values.name.trim(),
     enabled: values.enabled,
@@ -210,7 +221,7 @@ export function updateBody(record: UpstreamRecord, values: UpstreamEditorValues)
     ...((record.kind === "custom" || record.kind === "azure" || record.kind === "ollama")
       ? { config: configFromValues(record, values) }
       : {}),
-  };
+  } as UpdateUpstreamBody;
 }
 
 export function discoveredModelsFromResponse(

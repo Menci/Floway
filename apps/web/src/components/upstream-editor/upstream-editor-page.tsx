@@ -7,6 +7,7 @@ import { useBlocker, useNavigate } from "react-router";
 import type { CustomRawModel, UpstreamModelConfig, UpstreamRecord } from "../../api/types";
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from "@floway-dev/provider/model-prefix";
 import { authFetch, callApi } from "../../api/auth";
+import { api } from "../../api/client";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Panel } from "../ui/panel";
 import { ProviderBadge } from "../upstreams/provider-badge";
@@ -138,13 +139,13 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     if (data.mode === "create" && (record.kind === "codex" || record.kind === "claude-code") && (values.config as Extract<UpstreamRecord, { kind: "codex" | "claude-code" }>["config"]).accounts.length === 0) { setSaveError(t("dashboard.upstreamEditor.validation.credential")); return; }
     setSaving(true); setSaveError(null);
     const result = data.mode === "create"
-      ? await callApi<UpstreamRecord>(() => authFetch("/api/upstreams", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(createBody(record, values, data.nextSortOrder)) }))
-      : await callApi<UpstreamRecord>(() => authFetch(`/api/upstreams/${encodeURIComponent(record.id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(updateBody(record, values)) }));
+      ? await callApi<UpstreamRecord>(() => api.api.upstreams.$post({ json: createBody(record, values, data.nextSortOrder) }))
+      : await callApi<UpstreamRecord>(() => api.api.upstreams[":id"].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
     setSaving(false);
     if (result.error) { setSaveError(result.error.message); return; }
     let saved = result.data;
     if (data.mode === "edit") {
-      const full = await callApi<UpstreamRecord>(() => authFetch(`/api/upstreams/${encodeURIComponent(record.id)}`));
+      const full = await callApi<UpstreamRecord>(() => api.api.upstreams[":id"].$get({ param: { id: record.id } }));
       if (!full.error) saved = full.data;
     }
     setRecord(saved);

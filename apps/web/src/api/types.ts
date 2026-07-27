@@ -388,14 +388,6 @@ export interface SearchConfig {
   passthroughOpenAiSearch: { enabled: boolean; upstreamId: string; model: string };
 }
 
-export interface SearchConfigTestResult {
-  ok: boolean;
-  provider: string;
-  query: string;
-  results?: { title: string; url: string; previewText: string; pageAge?: string }[];
-  error?: { code: string; message: string };
-}
-
 export interface CopilotQuotaSnapshot {
   quota_snapshots?: {
     premium_interactions?: {

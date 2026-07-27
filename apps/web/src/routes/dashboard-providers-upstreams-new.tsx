@@ -3,6 +3,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/dashboard-providers-upstreams-new";
 import type { UpstreamProviderKind, UpstreamRecord } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { getSessionToken } from "../auth/session";
 import { UpstreamEditorPage } from "../components/upstream-editor/upstream-editor-page";
 import {
@@ -22,7 +23,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const provider = params.provider as UpstreamProviderKind;
   const [recordResult, aux] = await Promise.all([
     callApi<UpstreamRecord>(() =>
-      authFetch(`/api/upstreams/blueprint?kind=${encodeURIComponent(provider)}`),
+      api.api.upstreams.blueprint.$get({ query: { kind: provider } }),
     ),
     loadEditorAux(),
   ]);

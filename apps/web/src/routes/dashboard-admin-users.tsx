@@ -132,7 +132,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     setDeleting(true);
     setPageError(null);
     const result = await callApi<{ ok: true }>(() =>
-      authFetch(`/api/users/${target.id}`, { method: "DELETE" }),
+      api.api.users[":id"].$delete({ param: { id: String(target.id) } }),
     );
     setDeleting(false);
     if (result.error) {
