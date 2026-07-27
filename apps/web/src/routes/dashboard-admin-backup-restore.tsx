@@ -302,15 +302,6 @@ export default function DashboardAdminBackupRestore() {
   }, []);
 
   // ---- import submit ----
-  const handleImportClick = useCallback(() => {
-    if (!importParsedData) return;
-    if (importMode === 'replace') {
-      setConfirmOpen(true);
-      return;
-    }
-    void doImport();
-  }, [importParsedData, importMode]);
-
   const doImport = useCallback(async () => {
     if (!importParsedData) return;
     setImporting(true);
@@ -338,6 +329,15 @@ export default function DashboardAdminBackupRestore() {
     setImportFile(null);
     setImportParsedData(null);
     setImporting(false);
+  }, [importParsedData, importMode]);
+
+  const handleImportClick = useCallback(() => {
+    if (!importParsedData) return;
+    if (importMode === 'replace') {
+      setConfirmOpen(true);
+      return;
+    }
+    void doImport();
   }, [importParsedData, importMode]);
 
   // ---- render ----

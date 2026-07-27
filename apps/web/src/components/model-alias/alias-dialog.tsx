@@ -52,7 +52,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
     for (const value of [budget?.min, budget?.max]) if (value !== undefined && (!Number.isInteger(value) || value < 0)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataNumber', path: ['announcedMetadata'] });
     if (values.manualMetadata && budget?.min !== undefined && budget?.max !== undefined && budget.max < budget.min) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataRange', path: ['announcedMetadata'] });
   }), [aliases, record?.name]);
-  const { control, formState: { errors }, handleSubmit, reset, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: aliasDefaults(record) });
+  const { control, formState: { errors }, handleSubmit, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: aliasDefaults(record) });
   // Every field has a default and useFieldArray preserves complete target rows;
   // RHF still exposes useWatch as DeepPartial, so narrow at this form boundary.
   const values = useWatch({ control }) as AliasFormValues;

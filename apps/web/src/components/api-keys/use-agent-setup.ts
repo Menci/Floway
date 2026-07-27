@@ -92,6 +92,9 @@ export function useAgentSetup(apiKeyId: string | null) {
     queueRef.current = queueRef.current.then(task, task);
   }, []);
 
+  const runSaveRef = useRef<() => Promise<void>>(async () => {});
+  const retryRunSave = useCallback(() => runSaveRef.current(), []);
+
   const runSave = useCallback(async () => {
     const currentLease = leaseRef.current;
     const configuration = draftRef.current;
@@ -110,14 +113,14 @@ export function useAgentSetup(apiKeyId: string | null) {
         const current = leaseFromRaw({ ...(result.error.raw as object), status: 'ok' });
         if (current) {
           adoptLease(current);
-          enqueue(runSave);
+          enqueue(retryRunSave);
           return;
         }
       }
       setError(result.error.message);
       if (result.error.status === 0 || result.error.status === 408 || result.error.status === 429 || result.error.status >= 500) {
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = setTimeout(() => enqueue(runSave), RETRY_DELAY_MS);
+        retryTimerRef.current = setTimeout(() => enqueue(retryRunSave), RETRY_DELAY_MS);
       }
       return;
     }
@@ -128,6 +131,8 @@ export function useAgentSetup(apiKeyId: string | null) {
       setConfirmedGeneration(sentGeneration);
     }
   }, [adoptLease, enqueue, request, terminated]);
+
+  useEffect(() => { runSaveRef.current = runSave; }, [runSave]);
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;

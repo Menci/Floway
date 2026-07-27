@@ -131,7 +131,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setRecord(current => ({ ...current, ...(patch.config !== undefined ? { config: patch.config } : {}), ...(patch.state !== undefined ? { state: patch.state } : {}) } as UpstreamRecord));
   };
 
-  const save = handleSubmit(async values => {
+  const submitForm = () => handleSubmit(async values => {
     if (!values.name.trim()) { setSaveError(t('dashboard.upstreamEditor.validation.name')); return; }
     if (values.modelPrefix && (!MODEL_PREFIX_REGEX.test(values.modelPrefix.prefix) || values.modelPrefix.prefix.length > MODEL_PREFIX_MAX_LENGTH || values.modelPrefix.addressable.length === 0)) { setSaveError(t('dashboard.upstreamEditor.validation.prefix')); return; }
     if (!modelsAreValid(values.manualModels)) { setSaveError(t('dashboard.upstreamEditor.validation.models')); return; }
@@ -159,9 +159,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     } else {
       showSavedToast();
     }
-  });
+  })();
 
-  const leave = () => navigate('/dashboard/providers/upstreams');
+  const leave = () => void navigate('/dashboard/providers/upstreams');
 
   return <FormProvider {...form}>
     <Toaster toasterId={toasterId} position="top-end" />
@@ -172,7 +172,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         <Text size={500} weight="semibold" truncate className="min-w-0">{name || t('dashboard.upstreamEditor.new')}</Text>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
         <div className="ml-auto flex items-center gap-2">
-          <Button appearance="primary" disabled={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void save()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
+          <Button appearance="primary" disabled={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
         </div>
       </header>
       <div>{saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}</div>
