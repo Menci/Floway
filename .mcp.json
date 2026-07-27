@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "fluentui": {
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "fluentui-mcp",
+        "v9"
+      ]
+    }
+  }
+}

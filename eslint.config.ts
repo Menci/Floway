@@ -1,11 +1,31 @@
 import tsParser from '@typescript-eslint/parser';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import importPlugin from 'eslint-plugin-import';
+import reactPlugin from 'eslint-plugin-react';
+import reactHooksPlugin from 'eslint-plugin-react-hooks';
 import stylisticPlugin from '@stylistic/eslint-plugin';
-import vuePlugin from 'eslint-plugin-vue';
-import vueParser from 'vue-eslint-parser';
 
 import type { Linter } from 'eslint';
+
+// Every sibling of components/ui that carries domain knowledge. Listing the
+// domain component directories individually is deliberate: a bare
+// './apps/web/src/components' zone would also forbid components/ui from
+// importing itself.
+const UI_PRIMITIVE_FORBIDDEN_SOURCES = [
+  './apps/web/src/api',
+  './apps/web/src/auth',
+  './apps/web/src/stores',
+  './apps/web/src/routes',
+  './apps/web/src/components/api-keys',
+  './apps/web/src/components/model-alias',
+  './apps/web/src/components/performance',
+  './apps/web/src/components/playground',
+  './apps/web/src/components/proxy',
+  './apps/web/src/components/requests',
+  './apps/web/src/components/upstream-editor',
+  './apps/web/src/components/upstreams',
+  './apps/web/src/components/usage',
+];
 
 const projectList = [
   './tsconfig.scripts.json',
@@ -29,7 +49,6 @@ const projectList = [
   './packages/proxy/tsconfig.json',
   './packages/test-utils/tsconfig.json',
   './packages/translate/tsconfig.json',
-  './packages/ui/tsconfig.json',
 ];
 
 const commonConfig: Linter.Config = {
@@ -79,6 +98,14 @@ const commonConfig: Linter.Config = {
       zones: [
         { target: './apps/platform-cloudflare', from: './apps/platform-node', message: 'Platform-target apps cannot import each other; share via packages/.' },
         { target: './apps/platform-node', from: './apps/platform-cloudflare', message: 'Platform-target apps cannot import each other; share via packages/.' },
+        // components/ui holds generic primitives. `no-restricted-imports` only
+        // sees package specifiers, so the relative route into a domain module
+        // is closed here instead.
+        ...UI_PRIMITIVE_FORBIDDEN_SOURCES.map(from => ({
+          target: './apps/web/src/components/ui',
+          from,
+          message: 'components/ui holds generic primitives. A primitive that knows a Floway domain concept belongs in its own domain directory.',
+        })),
       ],
     }],
 
@@ -187,34 +214,30 @@ const config: Linter.Config[] = [
     },
   },
   {
-    ...commonConfig,
-    files: ['**/*.vue'],
+    // Custom hooks live in plain .ts files, so scoping the React rules to .tsx
+    // would leave rules-of-hooks unenforced exactly where it matters most.
+    files: ['apps/web/**/*.{ts,tsx}'],
     plugins: {
-      ...commonConfig.plugins,
-      vue: vuePlugin,
+      react: reactPlugin,
+      'react-hooks': reactHooksPlugin,
     },
     languageOptions: {
-      parser: vueParser,
-      ecmaVersion: 'latest',
-      sourceType: 'module',
       parserOptions: {
         ...parserOptions,
-        parser: tsParser,
-        extraFileExtensions: ['.vue'],
+        ecmaFeatures: { jsx: true },
       },
     },
+    settings: {
+      react: { version: 'detect' },
+    },
     rules: {
-      // `{ ...commonConfig, rules: {…} }` shadows the spread `rules` (plain
-      // JS object-spread within a single literal), and .vue files match no
-      // earlier block carrying the common rules — only the **/*.{ts,tsx}
-      // block above does. Re-spread commonConfig.rules so SFCs run
-      // import/order, stylistic, and async-safety alongside the four vue
-      // rules below.
-      ...commonConfig.rules,
-      'vue/block-order': ['error', { order: ['script', 'template', 'style'] }],
-      'vue/multi-word-component-names': 'off',
-      'vue/no-mutating-props': 'error',
-      'vue/require-explicit-emits': 'error',
+      ...reactHooksPlugin.configs.recommended.rules,
+      'react/jsx-key': 'error',
+      'react/jsx-no-target-blank': 'error',
+      'react/no-danger-with-children': 'error',
+      // The compiler handles JSX; importing React to use it is not required.
+      'react/react-in-jsx-scope': 'off',
+      'react/prop-types': 'off',
     },
   },
   {
@@ -224,7 +247,7 @@ const config: Linter.Config[] = [
     // must be re-listed here alongside the proxy-root ban. Other common
     // rules still apply to apps/web via flat-config's per-rule merge
     // across matching config objects.
-    files: ['apps/web/**/*.{ts,tsx,vue}'],
+    files: ['apps/web/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [

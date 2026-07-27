@@ -15,3 +15,9 @@ onlyBuiltDependencies:
 patchedDependencies:
   '@reclaimprotocol/tls@0.1.2': patches/@reclaimprotocol__tls@0.1.2.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
+
+# @react-router/dev pulls in a standalone HTTP server we never run — the SPA is
+# served by Workers Static Assets in production and by nginx in the
+# docker-compose topology.
+overrides:
+  '@react-router/dev>@react-router/serve': '-'

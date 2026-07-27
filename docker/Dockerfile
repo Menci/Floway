@@ -31,7 +31,7 @@ RUN set -eux; \
     rm /tmp/node.tar.xz; \
     corepack enable
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json LICENSE ./
 COPY patches ./patches
 COPY apps ./apps
 COPY packages ./packages
@@ -59,14 +59,19 @@ EXPOSE 8788
 CMD ["pnpm", "run", "dev:node"]
 
 # The web bundle is compiled with Vite (a devDependency), so this stage
-# takes the full install and only ships the built assets forward.
-FROM base AS web-build
+# takes the full install and only ships the built assets forward. It is pinned
+# to the build platform: the output is platform-independent static files, and
+# Rolldown and Lightning CSS publish no riscv64 binding, so compiling it under
+# the target architecture would both fail there and drag the whole frontend
+# build through QEMU everywhere else.
+FROM --platform=$BUILDPLATFORM base AS web-build
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm run build:web
 
 FROM nginx:1.27-alpine AS web
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=web-build /app/apps/web/dist /usr/share/nginx/html
+COPY LICENSE /usr/share/nginx/html/LICENSE
+COPY --from=web-build /app/apps/web/dist/client /usr/share/nginx/html
 
 EXPOSE 80

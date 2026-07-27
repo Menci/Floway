@@ -37,7 +37,7 @@
     "crons": ["17 * * * *"]
   },
   "assets": {
-    "directory": "apps/web/dist",
+    "directory": "apps/web/dist/client",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "single-page-application",
     // The path set that diverts to the Worker (rather than being served by

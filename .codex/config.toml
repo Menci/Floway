@@ -1,0 +1,6 @@
+[mcp_servers.fluentui]
+command = "pnpm"
+args = ["exec", "fluentui-mcp", "v9"]
+cwd = "."
+startup_timeout_sec = 20
+tool_timeout_sec = 60

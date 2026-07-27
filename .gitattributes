@@ -14,3 +14,6 @@ packages/test-utils/src/** linguist-generated=true linguist-vendored=true
 # pattern rather than a list of paths; output named anything else opts itself
 # out.
 **/*.generated.*           linguist-generated=true linguist-vendored=true
+
+# Brand marks Iconify does not carry, vendored from lobe-icons (MIT).
+apps/web/src/assets/icons/** linguist-vendored=true

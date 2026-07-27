@@ -29,13 +29,14 @@
     "eslint": "9.39.1",
     "eslint-import-resolver-typescript": "4.4.4",
     "eslint-plugin-import": "2.32.0",
-    "eslint-plugin-vue": "^10.9.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "fluentui-mcp": "^1.2.1",
     "husky": "^9.1.7",
     "jiti": "2.6.1",
     "jsonc-parser": "^3.3.1",
     "typescript": "^5.9.3",
     "vitest": "4.1.10",
-    "vue-eslint-parser": "^10.4.0",
     "wrangler": "^4.81.0"
   }
 }

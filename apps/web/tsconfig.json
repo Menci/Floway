@@ -2,10 +2,22 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "isolatedModules": true,
+    "verbatimModuleSyntax": true,
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
-    "types": ["vite/client", "unplugin-vue-router/client"]
+    "types": ["vite/client"],
+    "rootDirs": [".", "./.react-router/types"]
   },
-  "include": ["src/**/*.ts", "__tests__/**/*.ts", "src/**/*.vue", "vite.config.ts", "vitest.config.ts", "uno.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "__tests__/**/*.ts",
+    "__tests__/**/*.tsx",
+    ".react-router/types/**/*",
+    "react-router.config.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "uno.config.ts"
+  ]
 }

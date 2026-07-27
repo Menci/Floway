@@ -6,6 +6,7 @@ node_modules/
 docs/superpowers
 .superpowers
 apps/web/dist/
+apps/web/.react-router/
 .dev.vars
 .env
 .pnpm-store/
