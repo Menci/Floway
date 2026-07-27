@@ -47,9 +47,9 @@ const realModelReachable = (
 // resolved real model is reachable under the cap. A target whose
 // `target_model_id` does not appear in the catalog at all (e.g. operator
 // typo, model removed) is treated as unreachable. Addressable-but-not-
-// listed entries (Copilot variant ids, prefix alternates) carry their
-// canonical real model's `upstreams`, so they count as reachable through
-// the same predicate.
+// listed entries — the `modelPrefix` forms an upstream accepts but does
+// not publish — carry their canonical real model's `upstreams`, so they
+// count as reachable through the same predicate.
 export const reachableTargets = (
   alias: ControlPlaneModel,
   catalog: readonly ControlPlaneModel[],

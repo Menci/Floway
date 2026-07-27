@@ -118,9 +118,8 @@ export const computeModelWarnings = (
 // - `shadow` — the alias name exactly matches a listed real-model id AND
 //   no entry in `targets[].target_model_id` references that id. The
 //   suppression rule keeps the seed pattern (alias names itself as its
-//   own first target) quiet. Addressable-but-not-listed variant ids do
-//   not trigger this — the listing surface is the relevant collision
-//   space.
+//   own first target) quiet. Addressable-but-not-listed ids do not trigger
+//   this — the listing surface is the relevant collision space.
 // - `no-target` — every configured target falls outside the addressable
 //   surface, so the resolver would 404 on the alias name. The listing
 //   already hides the alias from `/v1/models` in this state; the warning
@@ -146,8 +145,8 @@ const computeShadowWarning = (
 ): AliasShadowWarning | null => {
   if (aliasName === '') return null;
   // Shadowing is scored against the listed surface only — an alias named
-  // after an addressable-but-not-listed variant id is a deliberate
-  // power-user pattern, not a collision worth warning on.
+  // after an addressable-but-not-listed id is a deliberate power-user
+  // pattern, not a collision worth warning on.
   const shadowed = (models ?? []).find(m => m.id === aliasName && m.aliasedFrom === undefined && m.unlisted !== true);
   if (!shadowed) return null;
   if (targets.some(t => t.target_model_id === aliasName)) return null;

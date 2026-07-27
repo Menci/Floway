@@ -101,8 +101,9 @@ describe('reachableTargets', () => {
 
   it('matches addressable-but-not-listed entries against the real-model surface', () => {
     // `buildUnlistedModel` carries `aliasedFrom === undefined` (it represents
-    // a real model's variant id), so the alias's target_model_id pointing
-    // at the variant id still matches the real-model lookup.
+    // a real model reachable under a second `modelPrefix` form), so the
+    // alias's target_model_id pointing at that form still matches the
+    // real-model lookup.
     const opus = buildUnlistedModel({
       id: 'claude-opus-4.7',
       upstreams: [{ id: 'up_1', name: 'UP1', kind: 'copilot', color: null }],

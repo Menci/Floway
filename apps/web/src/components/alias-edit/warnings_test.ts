@@ -141,12 +141,12 @@ describe('computeAliasLevelWarnings', () => {
       .toEqual([]);
   });
 
-  it('ignores collisions with addressable-but-not-listed variant ids (preserves today\'s scope)', () => {
+  it('ignores collisions with addressable-but-not-listed ids (preserves today\'s scope)', () => {
     const withUnlisted: ControlPlaneModel[] = [
       ...catalog,
-      unlistedModel({ id: 'claude-opus-4.7-high' }),
+      unlistedModel({ id: 'copilot/claude-opus-4.7' }),
     ];
-    expect(computeAliasLevelWarnings(view('claude-opus-4.7-high', ['gpt-5']), withUnlisted))
+    expect(computeAliasLevelWarnings(view('copilot/claude-opus-4.7', ['gpt-5']), withUnlisted))
       .toEqual([]);
   });
 
