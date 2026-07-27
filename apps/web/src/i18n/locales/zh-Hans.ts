@@ -444,6 +444,11 @@ const zhHansCN = {
             custom: "自定义十六进制",
             hex: "十六进制颜色",
             invalid: "请输入 #RRGGBB 格式的颜色。",
+            "label": "徽章颜色",
+            "hue": "色相",
+            "saturation": "饱和度",
+            "brightness": "明度",
+            "invalidHex": "请输入 #RRGGBB",
             preset: { amber: "琥珀", emerald: "翠绿", cyan: "青色", violet: "紫罗兰", rose: "玫红", orange: "橙色" },
           },
           fields: {

@@ -467,6 +467,11 @@ const en = {
             custom: "Custom hex",
             hex: "Hex color",
             invalid: "Enter a color in #RRGGBB format.",
+            label: "Badge color",
+            hue: "Hue",
+            saturation: "Saturation",
+            brightness: "Brightness",
+            invalidHex: "Enter #RRGGBB",
             preset: { amber: "Amber", emerald: "Emerald", cyan: "Cyan", violet: "Violet", rose: "Rose", orange: "Orange" },
           },
           fields: {
