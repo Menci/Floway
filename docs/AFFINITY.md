@@ -132,12 +132,6 @@ originless reasoning `output_item.added` + `output_item.done` pair before the
 original item's first event. Original output indexes and sequence numbers are
 shifted by that prefix.
 
-Candidate projection restores owned natural values, deletes incompatible or
-originless values, and preserves foreign bytes. After that projection, a
-remaining encrypted agent-message value restricts the candidate to a native
-Responses endpoint: Messages and Chat Completions have no equivalent opaque
-agent-content slot. The native provider receives the projected bytes unchanged.
-
 Only the first logical item receives synthetic affinity. Later program and
 program-output items inherit force from the latest earlier owned carrier; they
 do not receive additional blobs. Failed streams do not invent a missing first

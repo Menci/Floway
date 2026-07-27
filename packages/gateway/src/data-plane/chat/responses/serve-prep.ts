@@ -67,13 +67,6 @@ export type ResponsesServePlan =
     readonly candidates: readonly ModelCandidate[];
   };
 
-const requiresNativeResponsesTarget = (payload: CanonicalResponsesPayload): boolean =>
-  payload.input.some(item =>
-    item.type === 'agent_message'
-    && item.content.some(content =>
-      content.type === 'encrypted_content'
-      && typeof content.encrypted_content === 'string'));
-
 // Runs the native source preparation both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
 // expand any `previous_response_id`, load and hydrate stored items, prepare
@@ -107,16 +100,8 @@ export const prepareResponsesServePlan = async (args: {
     return { kind: 'failure', result: renderResponsesFailure(failure) };
   }
   const affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
-  const affinityNarrowed = narrowCandidatesByAffinity(viable, affinity.narrowingEvidence);
-  if ('kind' in affinityNarrowed) return { kind: 'failure', result: renderResponsesFailure(affinityNarrowed) };
-  // Candidate projection has already unwrapped owned affinity carriers,
-  // removed incompatible/originless carriers, and retained foreign values.
-  // Any encrypted agent content still present is provider-bound Responses state;
-  // translated targets have no faithful wire slot for it.
-  // https://github.com/openai/openai-node/blob/228c224393ef4bf3bda2a9d7eb40f387499299b5/src/resources/beta/responses/responses.ts#L6680-L6694
-  const narrowed = affinityNarrowed.filter(candidate =>
-    candidate.model.endpoints.responses !== undefined
-    || !requiresNativeResponsesTarget(affinity.payloadForCandidate(candidate)));
+  const narrowed = narrowCandidatesByAffinity(viable, affinity.narrowingEvidence);
+  if ('kind' in narrowed) return { kind: 'failure', result: renderResponsesFailure(narrowed) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks
   // up the new user items in addition to the prior snapshot history.

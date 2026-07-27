@@ -270,10 +270,8 @@ Before affinity, candidates are ordered:
 Chat-shaped ingress then calls `narrowCandidatesByAffinity`. Force evidence
 restricts the list to one required upstream/model pair; preference evidence
 moves the latest exact upstream/model/rules match to the front. Affinity never
-adds a candidate. Responses performs one payload-dependent compatibility check
-after projecting affinity for each candidate: encrypted agent-message content
-can continue only through that candidate's native Responses endpoint. Carrier
-placement and restoration are specified in [AFFINITY.md](./AFFINITY.md).
+adds a candidate. Carrier placement and restoration are specified in
+[AFFINITY.md](./AFFINITY.md).
 
 ## Sequential candidate iteration
 
