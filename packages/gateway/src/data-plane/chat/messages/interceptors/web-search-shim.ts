@@ -8,7 +8,7 @@ import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts'
 import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
-  MessagesAssistantContentBlock,
+  MessagesAssistantInputContentBlock,
   MessagesClientTool,
   MessagesMessage,
   MessagesNativeWebSearchTool,
@@ -212,7 +212,7 @@ const buildNativeWebSearchResultBlock = (result: Extract<WebSearchProviderResult
 // Error-only replay blocks do not carry our encoded payload marker, so the
 // safest replay rule is structural: only decode results that are paired with
 // a same-message `server_tool_use` we can turn back into upstream tool history.
-const collectOwnedReplayResultsByServerToolUseId = (content: MessagesAssistantContentBlock[]): Map<string, OwnedReplayToolResult> => {
+const collectOwnedReplayResultsByServerToolUseId = (content: MessagesAssistantInputContentBlock[]): Map<string, OwnedReplayToolResult> => {
   const pairedServerToolUseIds = new Set(content.flatMap(block => (block.type === 'server_tool_use' && block.name === WEB_SEARCH_TOOL_NAME ? [block.id] : [])));
   const ownedReplayResultsByServerToolUseId = new Map<string, OwnedReplayToolResult>();
 
@@ -270,7 +270,7 @@ const decodeOwnedReplayCitation = (citation: MessagesTextCitation): MessagesText
   };
 };
 
-const decodeOwnedReplayToolResult = (block: Extract<MessagesAssistantContentBlock, { type: 'web_search_tool_result' }>): OwnedReplayToolResult | null => {
+const decodeOwnedReplayToolResult = (block: Extract<MessagesAssistantInputContentBlock, { type: 'web_search_tool_result' }>): OwnedReplayToolResult | null => {
   if (Array.isArray(block.content)) {
     const decodedResults = block.content.map(result => ({
       result,
@@ -386,7 +386,7 @@ const prepareMessagesWebSearchReplay = (messages: MessagesMessage[]): PreparedMe
       pendingOwnedReplayToolResults.push(ownedReplayResult);
     }
 
-    const rewrittenContent = message.content.flatMap((block): MessagesAssistantContentBlock[] => {
+    const rewrittenContent = message.content.flatMap((block): MessagesAssistantInputContentBlock[] => {
       if (block.type === 'server_tool_use' && ownedReplayResultsByServerToolUseId.has(block.id)) {
         return [
           {
