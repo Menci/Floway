@@ -974,7 +974,12 @@ const zhHansCN = {
           },
           backoff: {
             label: "{{count}} 个退避",
+            title: "退避",
+            remaining: "{{duration}} 后恢复",
+            expiring: "正在恢复",
+            failures_other: "{{count}} 次失败",
             reset: "重置",
+            resetAll: "全部重置",
             resetting: "重置中…",
             none: "无",
           },

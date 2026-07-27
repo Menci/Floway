@@ -1,0 +1,88 @@
+import { ArrowResetRegular } from '@fluentui/react-icons';
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import type { BackoffRow } from '../../api/types';
+import { callApi } from '../../api/auth';
+import { api } from '../../api/client';
+import { fluentComponents } from '../../fluent';
+
+const { Button, MessageBar, MessageBarBody, Text, Tooltip } = fluentComponents;
+
+const formatCountdown = (seconds: number): string => {
+  if (seconds <= 0) return '0s';
+  const minutes = Math.floor(seconds / 60);
+  return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
+};
+
+// A proxy that has entered backoff is not routing, and the operator's first
+// question is how long that lasts. The countdown ticks locally so the panel
+// does not have to refetch once a second.
+export const ProxyBackoffPanel = ({ backoffs, onReset, proxyId }: {
+  backoffs: readonly BackoffRow[];
+  onReset: () => void;
+  proxyId: string;
+}) => {
+  const { t } = useTranslation();
+  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowSeconds(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // `>=` keeps a row visible through its expiry second, so the countdown's
+  // last tick can render the expiring label instead of the row vanishing
+  // before the delta reaches zero.
+  const active = backoffs
+    .filter(row => row.proxy_id === proxyId && row.expires_at >= nowSeconds)
+    .toSorted((left, right) => left.expires_at - right.expires_at);
+
+  if (active.length === 0) return null;
+
+  const reset = async (upstreamId?: string) => {
+    setResetError(null);
+    const { error } = await callApi(() => api.api.proxies[':id'].backoffs.reset.$post({
+      param: { id: proxyId },
+      json: upstreamId === undefined ? {} : { upstream_id: upstreamId },
+    }));
+    if (error) {
+      setResetError(error.message);
+      return;
+    }
+    onReset();
+  };
+
+  return <section className="grid gap-2" aria-label={t('dashboard.proxies.backoff.title')}>
+    <div className="flex items-center justify-between gap-2">
+      <Text weight="semibold">{t('dashboard.proxies.backoff.title')}</Text>
+      <Button appearance="subtle" icon={<ArrowResetRegular />} onClick={() => void reset()} size="small">
+        {t('dashboard.proxies.backoff.resetAll')}
+      </Button>
+    </div>
+
+    <ul className="m-0 grid gap-1 p-0 list-none">
+      {active.map(row => {
+        const remaining = row.expires_at - nowSeconds;
+        return <li className="flex items-center gap-3 rounded-md bg-fui-bg2 px-3 py-2" key={`${row.proxy_id}:${row.upstream_id}`}>
+          <span className="min-w-0 flex-1 truncate font-mono text-fui-base200" title={row.upstream_id}>{row.upstream_id}</span>
+          <Text size={200} className="text-fui-fg2">
+            {remaining <= 0
+              ? t('dashboard.proxies.backoff.expiring')
+              : t('dashboard.proxies.backoff.remaining', { duration: formatCountdown(remaining) })}
+          </Text>
+          <Text size={200} className="text-fui-fg3">{t('dashboard.proxies.backoff.failures', { count: row.fail_count })}</Text>
+          {row.last_error && <Tooltip content={row.last_error} relationship="description">
+            <Text size={200} className="max-w-[220px] truncate text-fui-fg3">{row.last_error}</Text>
+          </Tooltip>}
+          <Button appearance="subtle" onClick={() => void reset(row.upstream_id)} size="small">
+            {t('dashboard.proxies.backoff.reset')}
+          </Button>
+        </li>;
+      })}
+    </ul>
+
+    {resetError && <MessageBar intent="error"><MessageBarBody>{resetError}</MessageBarBody></MessageBar>}
+  </section>;
+};

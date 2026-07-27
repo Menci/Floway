@@ -1033,7 +1033,13 @@ const en = {
           },
           backoff: {
             label: "{{count}} backoff(s)",
+            title: "Backoff",
+            remaining: "resumes in {{duration}}",
+            expiring: "resuming",
+            failures_one: "{{count}} failure",
+            failures_other: "{{count}} failures",
             reset: "Reset",
+            resetAll: "Reset all",
             resetting: "Resetting…",
             none: "None",
           },

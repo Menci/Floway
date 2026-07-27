@@ -20,6 +20,17 @@ const leafStrings = (value: object, prefix = ""): Map<string, string> =>
     }),
   );
 
+// i18next appends a CLDR plural category to the key, and the categories a
+// language has are a fact about that language: English distinguishes one from
+// other, Chinese has only other. Comparing raw keys would demand every locale
+// carry English's categories, so structure is compared on the base key and
+// every plural is required to supply `other`.
+const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
+
+const pluralBase = (key: string): string => key.replace(PLURAL_SUFFIX, "");
+
+const isPlural = (key: string): boolean => PLURAL_SUFFIX.test(key);
+
 const interpolations = (value: string): string[] =>
   [...value.matchAll(/\{\{[^}]+\}\}/g)].map(([match]) => match).sort();
 
@@ -28,10 +39,20 @@ const tags = (value: string): string[] =>
 
 describe("translation resources", () => {
   it("keeps every locale structurally aligned with English", () => {
-    const expected = leafKeys(resources.en).sort();
+    const expected = [...new Set(leafKeys(resources.en).map(pluralBase))].sort();
 
-    for (const resource of Object.values(resources)) {
-      expect(leafKeys(resource).sort()).toEqual(expected);
+    for (const [language, resource] of Object.entries(resources)) {
+      expect([...new Set(leafKeys(resource).map(pluralBase))].sort(), language).toEqual(expected);
+    }
+  });
+
+  it("gives every plural key an `other` form in every locale", () => {
+    for (const [language, resource] of Object.entries(resources)) {
+      const keys = leafKeys(resource);
+      const plurals = new Set(keys.filter(isPlural).map(pluralBase));
+      for (const base of plurals) {
+        expect(keys, `${language}: ${base}`).toContain(`${base}_other`);
+      }
     }
   });
 
@@ -40,7 +61,8 @@ describe("translation resources", () => {
 
     for (const resource of Object.values(resources)) {
       for (const [key, value] of leafStrings(resource)) {
-        expect(interpolations(value), key).toEqual(interpolations(expected.get(key) ?? ""));
+        const reference = expected.get(key) ?? expected.get(`${pluralBase(key)}_other`) ?? "";
+        expect(interpolations(value), key).toEqual(interpolations(reference));
       }
     }
   });
@@ -50,7 +72,8 @@ describe("translation resources", () => {
 
     for (const resource of Object.values(resources)) {
       for (const [key, value] of leafStrings(resource)) {
-        expect(tags(value), key).toEqual(tags(expected.get(key) ?? ""));
+        const reference = expected.get(key) ?? expected.get(`${pluralBase(key)}_other`) ?? "";
+        expect(tags(value), key).toEqual(tags(reference));
       }
     }
   });

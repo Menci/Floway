@@ -4,7 +4,7 @@ import { redirect } from "react-router";
 import type { ProxyConfig } from "@floway-dev/proxy/proxy-config";
 import { formatProxyUri } from "@floway-dev/proxy/url";
 
-import type { ProxyConflictBody, ProxyRecord } from "../api/types";
+import type { ProxyConflictBody, ProxyRecord , BackoffRow } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
 import { api } from "../api/client";
 import { ConfirmDialog } from "../components/ui/confirm-dialog";
@@ -14,6 +14,7 @@ import { fluentComponents } from "../fluent";
 import { useDashboardOutletContext } from "./dashboard";
 import type { Route } from "./+types/dashboard-providers-proxy";
 import { getSessionToken } from "../auth/session";
+import { ProxyBackoffPanel } from "../components/proxy/proxy-backoff-panel";
 import { ProxyForm } from "../components/proxy/proxy-form";
 import { ProxyList } from "../components/proxy/proxy-list";
 import { defaultsFor, isValidPort, parseSavedUrl, type FormKind } from "../components/proxy/proxy-config";
@@ -43,6 +44,7 @@ export default function DashboardProvidersProxy() {
 
   // ---- form ----
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [backoffs, setBackoffs] = useState<BackoffRow[]>([]);
   const [formName, setFormName] = useState("");
   // Config is always set — defaults to HTTP so the structured form is always visible.
   const [config, setConfig] = useState<ProxyConfig>(
@@ -79,20 +81,28 @@ export default function DashboardProvidersProxy() {
 
   // ---- load data ----
   const refreshProxies = useCallback(async () => {
-    const proxiesRes = await callApi<ProxyRecord[]>(() => api.api.proxies.$get());
+    const [proxiesRes, backoffsRes] = await Promise.all([
+      callApi<ProxyRecord[]>(() => api.api.proxies.$get()),
+      callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
+    ]);
     if (proxiesRes.data) setProxies(proxiesRes.data);
+    if (backoffsRes.data) setBackoffs(backoffsRes.data);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const proxiesRes = await callApi<ProxyRecord[]>(() => api.api.proxies.$get());
+      const [proxiesRes, backoffsRes] = await Promise.all([
+        callApi<ProxyRecord[]>(() => api.api.proxies.$get()),
+        callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
+      ]);
       if (cancelled) return;
       if (proxiesRes.error) {
         setLoadError(proxiesRes.error.message);
       } else if (proxiesRes.data) {
         setProxies(proxiesRes.data);
       }
+      if (backoffsRes.data) setBackoffs(backoffsRes.data);
       setLoading(false);
     }
     load();
@@ -352,6 +362,12 @@ export default function DashboardProvidersProxy() {
 
       <div className="grid grid-cols-[minmax(0,1fr)_420px] gap-[18px] items-start min-w-0 max-[900px]:grid-cols-1">
         <ProxyList proxies={proxies} onAdd={clearForm} onDelete={setDeleteTarget} onEdit={handleEdit} onRefresh={() => void refreshProxies()} />
+        <div className="grid gap-[18px] min-w-0">
+        {editingId !== null && <ProxyBackoffPanel
+          backoffs={backoffs}
+          onReset={() => void refreshProxies()}
+          proxyId={editingId}
+        />}
         <ProxyForm
           canSave={canSave}
           config={config}
@@ -372,6 +388,7 @@ export default function DashboardProvidersProxy() {
           testResult={testResult}
           testing={testing}
         />
+        </div>
       </div>
 
       {/* Delete confirmation dialog */}
