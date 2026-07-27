@@ -264,9 +264,9 @@ Request mapping:
 - readable `agent_message` content uses the Messages user wire role, while
   an explicit non-user-source notice and XML-escaped `<agent-message>` wrapper
   keep it from acquiring user authority. The wrapper preserves `author` and
-  `recipient`; each source part retains its type and boundary in a nested XML
-  element, while image, screenshot, and file payloads follow ordinary user
-  content translation inside that boundary.
+  `recipient`. Ordinary text, image, and file payloads use their native target
+  carriers; summary, reasoning, refusal, and screenshot content retains a
+  typed XML boundary when projection would otherwise erase that distinction.
 - `reasoning` becomes a Messages thinking carrier bound for the real Messages
   upstream, which owns and validates the signature: the genuine
   `encrypted_content` is sent verbatim with no gateway envelope — as
@@ -490,7 +490,7 @@ Request mapping:
   though its image originated in tool output; no out-of-band provenance
   contradicts the wire role.
 - readable `agent_message` content uses one Chat user wire message with the
-  same non-user-source notice and XML-escaped, per-part typed wrapper as the
+  same non-user-source notice and selective typed XML boundaries as the
   Messages target.
 - `max_output_tokens`, `stream`, `temperature`, `top_p`, `metadata`, `store`,
   `parallel_tool_calls`, `prompt_cache_key`, `safety_identifier`,
