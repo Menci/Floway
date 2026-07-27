@@ -7,6 +7,7 @@ const fullConfiguration: AgentSetupConfiguration = {
   apiKeyId: 'key-a',
   claudeCode: {
     model: 'claude-opus-4-6[1m]',
+    defaultFableModel: 'claude-fable-5[1m]',
     defaultOpusModel: 'claude-opus-4-5',
     defaultSonnetModel: 'claude-sonnet-4-5',
     defaultHaikuModel: null,
@@ -34,6 +35,7 @@ describe('renderShellPrefix', () => {
       "SETUP_API_KEY='sk-raw-key'",
       "SETUP_API_KEY_NAME='Primary key'",
       "SETUP_CLAUDE_MODEL='claude-opus-4-6[1m]'",
+      "SETUP_CLAUDE_DEFAULT_FABLE_MODEL='claude-fable-5[1m]'",
       "SETUP_CLAUDE_DEFAULT_OPUS_MODEL='claude-opus-4-5'",
       "SETUP_CLAUDE_DEFAULT_SONNET_MODEL='claude-sonnet-4-5'",
       "SETUP_CLAUDE_DEFAULT_HAIKU_MODEL=''",
@@ -74,7 +76,7 @@ describe('renderShellPrefix', () => {
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
-          model: null, defaultOpusModel: null, defaultSonnetModel: null,
+          model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },
@@ -143,7 +145,7 @@ describe('renderPowerShellPrefix', () => {
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
-          model: null, defaultOpusModel: null, defaultSonnetModel: null,
+          model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
           defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
         },
         codex: { model: null, reasoningEffort: null },

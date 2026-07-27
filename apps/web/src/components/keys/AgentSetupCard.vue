@@ -44,6 +44,7 @@ const localDraft = ref<AgentSetupConfiguration>({
   apiKeyId: '',
   claudeCode: {
     model: null,
+    defaultFableModel: null,
     defaultOpusModel: null,
     defaultSonnetModel: null,
     defaultHaikuModel: null,

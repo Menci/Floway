@@ -31,7 +31,7 @@ let activeArg: boolean | null;
 const defaultConfig = (): AgentSetupConfiguration => ({
   apiKeyId: 'key-1',
   claudeCode: {
-    model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true,
+    model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: true,
   },
   codex: { model: null, reasoningEffort: null },
 });
@@ -171,12 +171,13 @@ describe('AgentSetupCard', () => {
     expect(codexEffortField.get('label').attributes('for')).toBe(codexEffortField.get('input').attributes('id'));
   });
 
-  it('starts the two new Claude preferences on a new row in the unchanged field grid', async () => {
+  it('starts the Claude settings-file preferences on a new row in the shared field grid', async () => {
     const w = mountCard();
     const fields = w.get('[data-testid="claude-fields"]');
     expect(fields.classes()).toContain('xl:grid-cols-5');
     expect([...fields.element.children].map(element => element.getAttribute('data-testid'))).toEqual([
       'claude-model',
+      'claude-fable',
       'claude-opus',
       'claude-sonnet',
       'claude-haiku',
@@ -225,6 +226,10 @@ describe('AgentSetupCard', () => {
 
     const opus = searchSelectIn(w, 'claude-opus').props().options;
     expect(opus.map(o => o.value)).toEqual(['claude-opus-4-8', 'claude-fable-4-6', 'claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
+
+    // The fable picker's family-first order already matches the default one.
+    const fable = searchSelectIn(w, 'claude-fable').props().options;
+    expect(fable.map(o => o.value)).toEqual(claude.map(o => o.value));
 
     await selectAgent(w, 'Codex');
     const codex = searchSelectIn(w, 'codex-model').props().options;

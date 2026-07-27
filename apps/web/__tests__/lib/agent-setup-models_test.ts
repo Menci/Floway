@@ -37,7 +37,7 @@ describe('rankAgentSetupModels', () => {
     ]);
   });
 
-  it.each(['opus', 'sonnet', 'haiku'] as const)('moves %s models to the front of the Claude default order', picker => {
+  it.each(['fable', 'opus', 'sonnet', 'haiku'] as const)('moves %s models to the front of the Claude default order', picker => {
     const models = [
       buildRealModel({ id: 'claude-haiku-4-5' }),
       buildRealModel({ id: 'claude-fable-4-6' }),

@@ -23,6 +23,7 @@ const claudeSnippet = computed(() => {
       ANTHROPIC_BASE_URL: baseUrl,
       ANTHROPIC_AUTH_TOKEN: props.apiKey.key,
       ...(settings.model === null ? {} : { ANTHROPIC_MODEL: settings.model }),
+      ...(settings.defaultFableModel === null ? {} : { ANTHROPIC_DEFAULT_FABLE_MODEL: settings.defaultFableModel }),
       ...(settings.defaultOpusModel === null ? {} : { ANTHROPIC_DEFAULT_OPUS_MODEL: settings.defaultOpusModel }),
       ...(settings.defaultSonnetModel === null ? {} : { ANTHROPIC_DEFAULT_SONNET_MODEL: settings.defaultSonnetModel }),
       ...(settings.defaultHaikuModel === null ? {} : { ANTHROPIC_DEFAULT_HAIKU_MODEL: settings.defaultHaikuModel }),

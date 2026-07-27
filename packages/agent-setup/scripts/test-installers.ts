@@ -473,7 +473,7 @@ const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> 
   testAgent: 'claude',
   apiKeyId: 'key-a',
   claudeCode: {
-    model: null, defaultOpusModel: null, defaultSonnetModel: null,
+    model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
     defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false, ...overrides,
   },
   codex: { model: null, reasoningEffort: null },
@@ -483,7 +483,7 @@ const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}):
   testAgent: 'codex',
   apiKeyId: 'key-a',
   claudeCode: {
-    model: null, defaultOpusModel: null, defaultSonnetModel: null,
+    model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
     defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false,
   },
   codex: { model: null, reasoningEffort: null, ...overrides },
@@ -496,7 +496,7 @@ const bothConfig = (
   testAgent: 'claude',
   apiKeyId: 'key-a',
   claudeCode: {
-    model: null, defaultOpusModel: null, defaultSonnetModel: null,
+    model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null,
     defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, modelDiscovery: false, ...claude,
   },
   codex: { model: null, reasoningEffort: null, ...codex },
@@ -861,7 +861,7 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   }));
   const run = await runShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', cleanupPeriodDays: 365, optOutAiAttribution: true, modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', cleanupPeriodDays: 365, optOutAiAttribution: true, modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   const settings = readSettings(settingsPathFor(ws)) as { theme: string; permissions: unknown; effortLevel: string; cleanupPeriodDays: number; attribution: Record<string, unknown>; env: Record<string, string> };
@@ -870,6 +870,7 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   t.equal(settings.env.OTHER_TOOL, 'keep-me', 'unrelated env key preserved');
   t.equal(settings.env.USE_BUILTIN_RIPGREP, '0', 'unrelated env key preserved');
   t.equal(settings.env.ANTHROPIC_MODEL, 'claude-opus-x[1m]', 'managed model written verbatim');
+  t.equal(settings.env.ANTHROPIC_DEFAULT_FABLE_MODEL, 'fable-x', 'managed fable default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'opus-x', 'managed opus default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'managed sonnet default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'haiku-x', 'managed haiku default written');
@@ -888,6 +889,7 @@ test('claude', 'optional keys are removed when unset', async t => {
     attribution: { commit: 'stale-commit', pr: 'stale-pr', sessionUrl: true, keep: 'yes' },
     env: {
       ANTHROPIC_MODEL: 'stale-model',
+      ANTHROPIC_DEFAULT_FABLE_MODEL: 'stale-fable',
       ANTHROPIC_DEFAULT_OPUS_MODEL: 'stale-opus',
       ANTHROPIC_DEFAULT_SONNET_MODEL: 'stale-sonnet',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: 'stale-haiku',
@@ -899,6 +901,7 @@ test('claude', 'optional keys are removed when unset', async t => {
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   const settings = readSettings(settingsPathFor(ws)) as { effortLevel?: string; cleanupPeriodDays?: number; attribution: Record<string, unknown>; env: Record<string, string> };
   t.ok(!('ANTHROPIC_MODEL' in settings.env), 'stale model removed');
+  t.ok(!('ANTHROPIC_DEFAULT_FABLE_MODEL' in settings.env), 'stale fable removed');
   t.ok(!('ANTHROPIC_DEFAULT_OPUS_MODEL' in settings.env), 'stale opus removed');
   t.ok(!('ANTHROPIC_DEFAULT_SONNET_MODEL' in settings.env), 'stale sonnet removed');
   t.ok(!('ANTHROPIC_DEFAULT_HAIKU_MODEL' in settings.env), 'stale haiku removed');
@@ -1123,7 +1126,7 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'dark', attribution: { keep: 'yes' }, env: { OTHER_TOOL: 'keep-me' } }));
   const run = await runPowerShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', cleanupPeriodDays: 180, optOutAiAttribution: true, modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultFableModel: 'fable-x', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', cleanupPeriodDays: 180, optOutAiAttribution: true, modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   t.ok(existsSync(powerShellCallerSurvivalPath(ws)), 'the IEX caller survives a successful setup');
@@ -1134,6 +1137,7 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   t.equal(settings.env.ANTHROPIC_BASE_URL, modelServer.url, 'base URL written');
   t.equal(settings.env.ANTHROPIC_AUTH_TOKEN, SENTINEL_KEY, 'auth token written');
   t.equal(settings.env.ANTHROPIC_MODEL, 'claude-opus-x[1m]', 'model written verbatim');
+  t.equal(settings.env.ANTHROPIC_DEFAULT_FABLE_MODEL, 'fable-x', 'fable default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'opus-x', 'opus default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'sonnet default written');
   t.equal(settings.effortLevel, 'high', 'effortLevel maps to the top-level key');

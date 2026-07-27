@@ -32,6 +32,7 @@ const configuration = (): AgentSetupConfiguration => ({
   apiKeyId: 'key-1',
   claudeCode: {
     model: 'claude-sonnet-4-5[1m]',
+    defaultFableModel: 'claude-fable-5[1m]',
     defaultOpusModel: 'claude-opus-4-8',
     defaultSonnetModel: 'claude-sonnet-4-5[1m]',
     defaultHaikuModel: 'claude-haiku-4-5',
@@ -58,6 +59,7 @@ describe('AgentConfigSnippets', () => {
         ANTHROPIC_BASE_URL: window.location.origin,
         ANTHROPIC_AUTH_TOKEN: 'floway-key',
         ANTHROPIC_MODEL: 'claude-sonnet-4-5[1m]',
+        ANTHROPIC_DEFAULT_FABLE_MODEL: 'claude-fable-5[1m]',
         ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-4-8',
         ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-5[1m]',
         ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
@@ -74,6 +76,7 @@ describe('AgentConfigSnippets', () => {
     const defaults = configuration();
     defaults.claudeCode = {
       model: null,
+      defaultFableModel: null,
       defaultOpusModel: null,
       defaultSonnetModel: null,
       defaultHaikuModel: null,

@@ -35,6 +35,7 @@ const updateCodex = <K extends keyof CodexConfiguration>(key: K, value: CodexCon
 
 const fieldIds = {
   claudeModel: useId(),
+  claudeFable: useId(),
   claudeOpus: useId(),
   claudeSonnet: useId(),
   claudeHaiku: useId(),
@@ -56,6 +57,7 @@ const toModelOptions = (options: ModelOption[]) => options.map(option => ({
 }));
 
 const claudeModelOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'claude', picker: 'default' })));
+const claudeFableOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'claude', picker: 'fable' })));
 const claudeOpusOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'claude', picker: 'opus' })));
 const claudeSonnetOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'claude', picker: 'sonnet' })));
 const claudeHaikuOptions = computed(() => toModelOptions(buildModelOptions(props.models, { family: 'claude', picker: 'haiku' })));
@@ -105,6 +107,10 @@ const codexEffortItems = computed(() => {
 const claudeModel = computed<string | null>({
   get: () => props.configuration.claudeCode.model,
   set: value => updateClaude('model', value),
+});
+const claudeFableModel = computed<string | null>({
+  get: () => props.configuration.claudeCode.defaultFableModel,
+  set: value => updateClaude('defaultFableModel', value),
 });
 const claudeOpusModel = computed<string | null>({
   get: () => props.configuration.claudeCode.defaultOpusModel,
@@ -164,6 +170,10 @@ const codexEffort = computed<string>({
       <div data-testid="claude-model">
         <label :for="fieldIds.claudeModel" class="mb-1.5 block text-xs text-gray-500">Default model</label>
         <SearchableSelect :id="fieldIds.claudeModel" v-model="claudeModel" :options="claudeModelOptions" />
+      </div>
+      <div data-testid="claude-fable">
+        <label :for="fieldIds.claudeFable" class="mb-1.5 block text-xs text-gray-500">Fable model</label>
+        <SearchableSelect :id="fieldIds.claudeFable" v-model="claudeFableModel" :options="claudeFableOptions" />
       </div>
       <div data-testid="claude-opus">
         <label :for="fieldIds.claudeOpus" class="mb-1.5 block text-xs text-gray-500">Opus model</label>

@@ -54,6 +54,7 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
     const { claudeCode } = configuration;
     assignments.push(
       ['SETUP_CLAUDE_MODEL', shellOptional(claudeCode.model)],
+      ['SETUP_CLAUDE_DEFAULT_FABLE_MODEL', shellOptional(claudeCode.defaultFableModel)],
       ['SETUP_CLAUDE_DEFAULT_OPUS_MODEL', shellOptional(claudeCode.defaultOpusModel)],
       ['SETUP_CLAUDE_DEFAULT_SONNET_MODEL', shellOptional(claudeCode.defaultSonnetModel)],
       ['SETUP_CLAUDE_DEFAULT_HAIKU_MODEL', shellOptional(claudeCode.defaultHaikuModel)],
@@ -97,6 +98,7 @@ export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
     const { claudeCode } = configuration;
     assignments.push(
       ['$SetupClaudeModel', powerShellOptional(claudeCode.model)],
+      ['$SetupClaudeDefaultFableModel', powerShellOptional(claudeCode.defaultFableModel)],
       ['$SetupClaudeDefaultOpusModel', powerShellOptional(claudeCode.defaultOpusModel)],
       ['$SetupClaudeDefaultSonnetModel', powerShellOptional(claudeCode.defaultSonnetModel)],
       ['$SetupClaudeDefaultHaikuModel', powerShellOptional(claudeCode.defaultHaikuModel)],

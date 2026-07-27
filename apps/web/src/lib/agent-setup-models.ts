@@ -5,7 +5,7 @@
 
 import type { PublicModel, PublicModelLimits } from '../api/types.ts';
 
-export type ClaudePicker = 'default' | 'opus' | 'sonnet' | 'haiku';
+export type ClaudePicker = 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku';
 type ClaudeTier = 'fable' | 'opus' | 'sonnet' | 'haiku' | 'other';
 export type AgentModelRanking =
   | { family: 'claude'; picker: ClaudePicker }

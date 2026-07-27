@@ -7,6 +7,7 @@ const fullConfiguration: AgentSetupConfiguration = {
   apiKeyId: 'key-a',
   claudeCode: {
     model: 'claude-opus-4-6[1m]',
+    defaultFableModel: 'claude-fable-5[1m]',
     defaultOpusModel: 'claude-opus-4-5',
     defaultSonnetModel: 'claude-sonnet-4-5',
     defaultHaikuModel: null,
