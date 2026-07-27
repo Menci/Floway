@@ -1,14 +1,14 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
-import { Controller, useForm } from "react-hook-form";
-import { Trans, useTranslation } from "react-i18next";
-import { useFetcher } from "react-router";
-import { z } from "zod";
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import { Trans, useTranslation } from 'react-i18next';
+import { useFetcher } from 'react-router';
+import { z } from 'zod';
 
-import { fluentComponents } from "../fluent";
-import { Input } from "./ui/fluent-form-controls";
-import { FlowayLogo } from "./logo";
-import { Panel } from "./ui/panel";
+import { fluentComponents } from '../fluent';
+import { FlowayLogo } from './logo';
+import { Input } from './ui/fluent-form-controls';
+import { Panel } from './ui/panel';
 
 const {
   Button,
@@ -21,13 +21,13 @@ const {
 export const loginSchema = z.object({
   username: z
     .string()
-    .regex(/^[a-zA-Z0-9_.-]{0,64}$/, "validation.usernamePattern"),
+    .regex(/^[a-zA-Z0-9_.-]{0,64}$/, 'validation.usernamePattern'),
   password: z
     .string()
-    .max(1024, "validation.passwordMax"),
+    .max(1024, 'validation.passwordMax'),
 }).superRefine((value, context) => {
   if (value.username.trim() && !value.password) {
-    context.addIssue({ code: "custom", message: "validation.passwordRequired", path: ["password"] });
+    context.addIssue({ code: 'custom', message: 'validation.passwordRequired', path: ['password'] });
   }
 });
 
@@ -35,14 +35,14 @@ export type LoginFormValues = z.infer<typeof loginSchema>;
 
 export interface LoginActionData {
   ok: false;
-  values: Pick<LoginFormValues, "username">;
+  values: Pick<LoginFormValues, 'username'>;
   error: string;
 }
 
 export function LoginForm() {
   const { t } = useTranslation();
   const fetcher = useFetcher<LoginActionData>();
-  const isSubmitting = fetcher.state !== "idle";
+  const isSubmitting = fetcher.state !== 'idle';
 
   const {
     control,
@@ -52,14 +52,14 @@ export function LoginForm() {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      username: "",
-      password: "",
+      username: '',
+      password: '',
     },
   });
 
   useEffect(() => {
     if (fetcher.data?.ok === false) {
-      setError("password", { type: "server", message: fetcher.data.error });
+      setError('password', { type: 'server', message: fetcher.data.error });
     }
   }, [fetcher.data, setError]);
 
@@ -69,7 +69,7 @@ export function LoginForm() {
         username: values.username.trim(),
         password: values.password,
       },
-      { method: "post" },
+      { method: 'post' },
     );
   };
 
@@ -86,13 +86,13 @@ export function LoginForm() {
       <header className="mb-9 grid justify-items-center gap-6 text-center">
         <FlowayLogo />
         <h1 className="m-0 text-fui-base600 font-fui-semibold leading-[1.15] tracking-normal">
-          {t("auth.login.title")}
+          {t('auth.login.title')}
         </h1>
       </header>
 
       <form
         className="mx-auto grid w-full max-w-full gap-5"
-        onSubmit={handleSubmit(onSubmit)}
+        onSubmit={event => void handleSubmit(onSubmit)(event)}
       >
         <Controller
           control={control}
@@ -100,16 +100,16 @@ export function LoginForm() {
           render={({ field }) => (
             <Field
               validationMessage={usernameError ? t(usernameError) : undefined}
-              validationState={usernameError ? "error" : undefined}
+              validationState={usernameError ? 'error' : undefined}
             >
               <Input
                 {...field}
-                aria-label={t("auth.login.username")}
+                aria-label={t('auth.login.username')}
                 autoComplete="username"
                 autoFocus
                 className="!min-h-[36px]"
                 disabled={isSubmitting}
-                placeholder={t("auth.login.usernamePlaceholder")}
+                placeholder={t('auth.login.usernamePlaceholder')}
               />
             </Field>
           )}
@@ -121,15 +121,15 @@ export function LoginForm() {
           render={({ field }) => (
             <Field
               validationMessage={passwordError ? t(passwordError) : undefined}
-              validationState={passwordError ? "error" : undefined}
+              validationState={passwordError ? 'error' : undefined}
             >
               <Input
                 {...field}
-                aria-label={t("auth.login.password")}
+                aria-label={t('auth.login.password')}
                 autoComplete="current-password"
                 className="!min-h-[36px]"
                 disabled={isSubmitting}
-                placeholder={t("auth.login.passwordPlaceholder")}
+                placeholder={t('auth.login.passwordPlaceholder')}
                 type="password"
               />
             </Field>
@@ -145,10 +145,10 @@ export function LoginForm() {
           {isSubmitting ? (
             <span className="inline-flex items-center gap-2">
               <Spinner size="tiny" />
-              {t("auth.login.submitting")}
+              {t('auth.login.submitting')}
             </span>
           ) : (
-            t("auth.login.submit")
+            t('auth.login.submit')
           )}
         </Button>
 

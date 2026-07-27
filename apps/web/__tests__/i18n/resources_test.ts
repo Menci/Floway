@@ -1,20 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 
-import { resources } from "../../src/i18n/resources";
+import { resources } from '../../src/i18n/resources';
 
-const leafKeys = (value: object, prefix = ""): string[] =>
+const leafKeys = (value: object, prefix = ''): string[] =>
   Object.entries(value).flatMap(([key, child]) => {
     const path = prefix ? `${prefix}.${key}` : key;
-    return typeof child === "object" && child !== null
+    return typeof child === 'object' && child !== null
       ? leafKeys(child, path)
       : [path];
   });
 
-const leafStrings = (value: object, prefix = ""): Map<string, string> =>
+const leafStrings = (value: object, prefix = ''): Map<string, string> =>
   new Map(
     Object.entries(value).flatMap(([key, child]) => {
       const path = prefix ? `${prefix}.${key}` : key;
-      return typeof child === "object" && child !== null
+      return typeof child === 'object' && child !== null
         ? [...leafStrings(child, path)]
         : [[path, String(child)] as const];
     }),
@@ -27,7 +27,7 @@ const leafStrings = (value: object, prefix = ""): Map<string, string> =>
 // every plural is required to supply `other`.
 const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 
-const pluralBase = (key: string): string => key.replace(PLURAL_SUFFIX, "");
+const pluralBase = (key: string): string => key.replace(PLURAL_SUFFIX, '');
 
 const isPlural = (key: string): boolean => PLURAL_SUFFIX.test(key);
 
@@ -37,8 +37,8 @@ const interpolations = (value: string): string[] =>
 const tags = (value: string): string[] =>
   [...value.matchAll(/<\/?[^>]+>/g)].map(([match]) => match).sort();
 
-describe("translation resources", () => {
-  it("keeps every locale structurally aligned with English", () => {
+describe('translation resources', () => {
+  it('keeps every locale structurally aligned with English', () => {
     const expected = [...new Set(leafKeys(resources.en).map(pluralBase))].sort();
 
     for (const [language, resource] of Object.entries(resources)) {
@@ -46,7 +46,7 @@ describe("translation resources", () => {
     }
   });
 
-  it("gives every plural key an `other` form in every locale", () => {
+  it('gives every plural key an `other` form in every locale', () => {
     for (const [language, resource] of Object.entries(resources)) {
       const keys = leafKeys(resource);
       const plurals = new Set(keys.filter(isPlural).map(pluralBase));
@@ -56,23 +56,23 @@ describe("translation resources", () => {
     }
   });
 
-  it("preserves interpolation variables in every locale", () => {
+  it('preserves interpolation variables in every locale', () => {
     const expected = leafStrings(resources.en);
 
     for (const resource of Object.values(resources)) {
       for (const [key, value] of leafStrings(resource)) {
-        const reference = expected.get(key) ?? expected.get(`${pluralBase(key)}_other`) ?? "";
+        const reference = expected.get(key) ?? expected.get(`${pluralBase(key)}_other`) ?? '';
         expect(interpolations(value), key).toEqual(interpolations(reference));
       }
     }
   });
 
-  it("preserves rich-text tags in every locale", () => {
+  it('preserves rich-text tags in every locale', () => {
     const expected = leafStrings(resources.en);
 
     for (const resource of Object.values(resources)) {
       for (const [key, value] of leafStrings(resource)) {
-        const reference = expected.get(key) ?? expected.get(`${pluralBase(key)}_other`) ?? "";
+        const reference = expected.get(key) ?? expected.get(`${pluralBase(key)}_other`) ?? '';
         expect(tags(value), key).toEqual(tags(reference));
       }
     }

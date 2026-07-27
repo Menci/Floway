@@ -1,60 +1,60 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 
-import type { ControlPlaneModel } from "../../../src/api/types";
-import { buildAgentClaudeSnippet, buildAgentCodexSnippet, filterModelOptions, modelOptions } from "../../../src/components/api-keys/agent-setup-card";
-import { agentSetupCommand } from "../../../src/components/api-keys/use-agent-setup";
+import type { ControlPlaneModel } from '../../../src/api/types';
+import { buildAgentClaudeSnippet, buildAgentCodexSnippet, filterModelOptions, modelOptions } from '../../../src/components/api-keys/agent-setup-card';
+import { agentSetupCommand } from '../../../src/components/api-keys/use-agent-setup';
 
 const model = (id: string, context: number): ControlPlaneModel => ({
   id,
-  object: "model",
-  type: "model",
+  object: 'model',
+  type: 'model',
   display_name: id,
-  kind: "chat",
+  kind: 'chat',
   limits: { max_context_window_tokens: context },
   endpoints: { responses: {} },
   upstreams: [],
 });
 
-describe("Agent Setup", () => {
-  it("builds origin-scoped Unix and Windows commands", () => {
-    expect(agentSetupCommand("https://floway.example", "/api/setup/token/claude.sh", "unix"))
+describe('Agent Setup', () => {
+  it('builds origin-scoped Unix and Windows commands', () => {
+    expect(agentSetupCommand('https://floway.example', '/api/setup/token/claude.sh', 'unix'))
       .toBe("export SETUP_ENDPOINT='https://floway.example'; curl -fsSL \"$SETUP_ENDPOINT/api/setup/token/claude.sh\" | bash");
-    expect(agentSetupCommand("https://floway.example", "/api/setup/token/codex.ps1", "windows"))
+    expect(agentSetupCommand('https://floway.example', '/api/setup/token/codex.ps1', 'windows'))
       .toBe("$SetupEndpoint = 'https://floway.example'; irm \"$SetupEndpoint/api/setup/token/codex.ps1\" | iex");
   });
 
-  it("offers the full chat catalog while ranking the requested family", () => {
+  it('offers the full chat catalog while ranking the requested family', () => {
     const options = modelOptions([
-      model("gpt-5.6", 400_000),
-      model("claude-opus-4.6", 1_000_000),
-      model("other-chat", 100_000),
-    ], "claude", "opus");
-    expect(options.map((option) => option.value)).toEqual([
-      "claude-opus-4.6[1m]",
-      "gpt-5.6",
-      "other-chat",
+      model('gpt-5.6', 400_000),
+      model('claude-opus-4.6', 1_000_000),
+      model('other-chat', 100_000),
+    ], 'claude', 'opus');
+    expect(options.map(option => option.value)).toEqual([
+      'claude-opus-4.6[1m]',
+      'gpt-5.6',
+      'other-chat',
     ]);
   });
 
-  it("searches model ids without adding a delisted stored value", () => {
+  it('searches model ids without adding a delisted stored value', () => {
     const options = modelOptions([
-      model("claude-opus-4.6", 1_000_000),
-      model("gpt-5.6", 400_000),
-    ], "codex", "default");
+      model('claude-opus-4.6', 1_000_000),
+      model('gpt-5.6', 400_000),
+    ], 'codex', 'default');
 
-    expect(filterModelOptions(options, "OPUS").map((option) => option.label))
-      .toEqual(["claude-opus-4.6"]);
-    expect(options.some((option) => option.value === "gpt-5-retired")).toBe(false);
+    expect(filterModelOptions(options, 'OPUS').map(option => option.label))
+      .toEqual(['claude-opus-4.6']);
+    expect(options.some(option => option.value === 'gpt-5-retired')).toBe(false);
   });
 
-  it("renders selected Codex model and reasoning effort", () => {
-    const snippet = buildAgentCodexSnippet("https://floway.example", { model: "gpt-5.6", reasoningEffort: "xhigh" });
+  it('renders selected Codex model and reasoning effort', () => {
+    const snippet = buildAgentCodexSnippet('https://floway.example', { model: 'gpt-5.6', reasoningEffort: 'xhigh' });
     expect(snippet).toContain('model = "gpt-5.6"');
     expect(snippet).toContain('model_reasoning_effort = "xhigh"');
     expect(snippet).toContain('base_url = "https://floway.example/azure-api.codex"');
   });
 
-  it("renders optional Claude cleanup and attribution preferences", () => {
+  it('renders optional Claude cleanup and attribution preferences', () => {
     const base = {
       model: null,
       defaultOpusModel: null,
@@ -66,18 +66,18 @@ describe("Agent Setup", () => {
       modelDiscovery: true,
     } as const;
 
-    expect(JSON.parse(buildAgentClaudeSnippet("https://floway.example", "key", base)))
-      .not.toHaveProperty("cleanupPeriodDays");
-    expect(JSON.parse(buildAgentClaudeSnippet("https://floway.example", "key", base)))
-      .not.toHaveProperty("attribution");
+    expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', base)))
+      .not.toHaveProperty('cleanupPeriodDays');
+    expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', base)))
+      .not.toHaveProperty('attribution');
 
-    expect(JSON.parse(buildAgentClaudeSnippet("https://floway.example", "key", {
+    expect(JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', {
       ...base,
       cleanupPeriodDays: 365,
       optOutAiAttribution: true,
     }))).toMatchObject({
       cleanupPeriodDays: 365,
-      attribution: { commit: "", pr: "", sessionUrl: false },
+      attribution: { commit: '', pr: '', sessionUrl: false },
     });
   });
 });

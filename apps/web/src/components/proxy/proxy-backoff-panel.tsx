@@ -2,9 +2,9 @@ import { ArrowResetRegular } from '@fluentui/react-icons';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { BackoffRow } from '../../api/types';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
+import type { BackoffRow } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 
 const { Button, MessageBar, MessageBarBody, Text, Tooltip } = fluentComponents;

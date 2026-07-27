@@ -1,17 +1,17 @@
-import type { DumpErrorMeta, DumpMetadata } from "@floway-dev/gateway/dump-types";
+import type { DumpErrorMeta, DumpMetadata } from '@floway-dev/gateway/dump-types';
 
-export type RequestSeverity = "success" | "warning" | "error";
+export type RequestSeverity = 'success' | 'warning' | 'error';
 
 export function requestSeverity(status: number | null, error: DumpErrorMeta | null): RequestSeverity {
-  if (status === null || error !== null || status >= 500) return "error";
-  if (status >= 400) return "warning";
-  return "success";
+  if (status === null || error !== null || status >= 500) return 'error';
+  if (status >= 400) return 'warning';
+  return 'success';
 }
 
 export function errorLabel(error: DumpErrorMeta | null, status: number | null): string | null {
   if (!error) return null;
-  if (error.kind === "failed") return error.reason;
-  return `${error.kind} error ${status || "???"}`;
+  if (error.kind === 'failed') return error.reason;
+  return `${error.kind} error ${status === undefined || status === 0 ? '???' : status}`;
 }
 
 export function totalTokens(meta: DumpMetadata): number | null {
@@ -41,7 +41,7 @@ export function formatTokens(value: number): string {
 
 export function formatRelativeTime(timestamp: number, now = Date.now()): string {
   const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));
-  if (seconds < 10) return "now";
+  if (seconds < 10) return 'now';
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m`;
@@ -52,7 +52,7 @@ export function formatRelativeTime(timestamp: number, now = Date.now()): string 
 
 export function formatFullTime(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "medium",
+    dateStyle: 'medium',
+    timeStyle: 'medium',
   }).format(timestamp);
 }

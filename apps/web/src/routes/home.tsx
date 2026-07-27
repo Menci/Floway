@@ -1,13 +1,13 @@
-import type { Route } from "./+types/home";
-import { redirect } from "react-router";
+import { redirect } from 'react-router';
 
-import { login as loginWithPassword } from "../api/auth";
-import { setSessionToken, getSessionToken } from "../auth/session";
-import { LoginForm, type LoginActionData } from "../components/login-form";
-import { useAuthStore } from "../stores/auth-store";
+import type { Route } from './+types/home';
+import { login as loginWithPassword } from '../api/auth';
+import { setSessionToken, getSessionToken } from '../auth/session';
+import { LoginForm, type LoginActionData } from '../components/login-form';
+import { useAuthStore } from '../stores/auth-store';
 
 export async function clientLoader() {
-  if (getSessionToken()) throw redirect("/dashboard/playground");
+  if (getSessionToken()) throw redirect('/dashboard/playground');
   return null;
 }
 
@@ -17,27 +17,27 @@ export async function clientAction({
   request,
 }: Route.ClientActionArgs): Promise<LoginActionData | Response> {
   const formData = await request.formData();
-  const username = String(formData.get("username") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
+  const username = String(formData.get('username') ?? '').trim();
+  const password = String(formData.get('password') ?? '');
 
   const result = await loginWithPassword({ username, password });
   if (result.error) {
     return {
       ok: false,
       values: { username },
-      error: result.error.message || "auth.login.genericError",
+      error: result.error.message || 'auth.login.genericError',
     };
   }
 
   setSessionToken(result.data.token);
   useAuthStore.getState().primeFromLogin(result.data);
-  throw redirect("/dashboard/playground");
+  throw redirect('/dashboard/playground');
 }
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Sign in | Floway" },
-    { name: "description", content: "Sign in to the Floway control plane." },
+    { title: 'Sign in | Floway' },
+    { name: 'description', content: 'Sign in to the Floway control plane.' },
   ];
 }
 

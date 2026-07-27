@@ -1,6 +1,6 @@
-import type { ApiKey, ControlPlaneModel, UpstreamOption } from "../../api/types";
+import type { ApiKey, ControlPlaneModel, UpstreamOption } from '../../api/types';
 
-export type { UpstreamOption } from "../../api/types";
+export type { UpstreamOption } from '../../api/types';
 
 export interface ApiKeysPageData {
   keys: ApiKey[];
@@ -9,7 +9,7 @@ export interface ApiKeysPageData {
   error: string | null;
 }
 
-export type ApiKeyMutation = "create" | "edit" | "rotate" | "delete";
+export type ApiKeyMutation = 'create' | 'edit' | 'rotate' | 'delete';
 export interface MutationToastController {
   start: (kind: ApiKeyMutation, name: string) => string;
   succeed: (toastId: string, kind: ApiKeyMutation, name: string) => void;

@@ -1,5 +1,8 @@
-import type { Flag, FlagOverrides } from "@floway-dev/provider/flags";
 
+import type { InferRequestType } from 'hono/client';
+
+import { callApi } from '../../api/auth';
+import { api, getCurrentSession } from '../../api/client';
 import type {
   BackoffRow,
   CustomRawModel,
@@ -9,17 +12,14 @@ import type {
   UpstreamProviderKind,
   UpstreamRecord,
   UpstreamRecordEnvelope,
-} from "../../api/types";
-import type { InferRequestType } from "hono/client";
+} from '../../api/types';
+import type { Flag, FlagOverrides } from '@floway-dev/provider/flags';
 
-import { authFetch, callApi } from "../../api/auth";
-import { api, getCurrentSession } from "../../api/client";
-
-type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>["json"];
-type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[":id"]["$patch"]>["json"];
+type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
+type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];
 
 export interface RuntimeInfo {
-  kind: "node" | "cloudflare";
+  kind: 'node' | 'cloudflare';
   runtimeLocation: string;
 }
 
@@ -32,7 +32,7 @@ export interface EditorAuxData {
 }
 
 export interface UpstreamEditorLoaderData extends EditorAuxData {
-  mode: "create" | "edit";
+  mode: 'create' | 'edit';
   record: UpstreamRecord;
   nextSortOrder: number;
 }
@@ -40,13 +40,13 @@ export interface UpstreamEditorLoaderData extends EditorAuxData {
 export interface UpstreamEditorValues {
   name: string;
   enabled: boolean;
-  color: UpstreamRecord["color"];
-  proxyFallbackList: UpstreamRecord["proxy_fallback_list"];
-  modelPrefix: UpstreamRecord["model_prefix"];
+  color: UpstreamRecord['color'];
+  proxyFallbackList: UpstreamRecord['proxy_fallback_list'];
+  modelPrefix: UpstreamRecord['model_prefix'];
   disabledPublicModelIds: string[];
-  flagOverrides: UpstreamRecord["flag_overrides"];
-  config: UpstreamRecord["config"];
-  state: UpstreamRecord["state"];
+  flagOverrides: UpstreamRecord['flag_overrides'];
+  config: UpstreamRecord['config'];
+  state: UpstreamRecord['state'];
   manualModels: UpstreamModelConfig[];
 }
 
@@ -57,7 +57,7 @@ export interface UpstreamEditorValues {
 // their stored upstream- and model-level overrides; do not turn it into a generic
 // unknown-flag filter, because silently dropping operator settings is unsafe.
 const LEGACY_FLAG_ID_ALIASES = {
-  "downgrade-developer-role": "demote-developer-to-system",
+  'downgrade-developer-role': 'demote-developer-to-system',
 } as const;
 
 export function migrateLegacyFlagOverrides(
@@ -72,16 +72,16 @@ export function migrateLegacyFlagOverrides(
 }
 
 export const providerKinds: readonly UpstreamProviderKind[] = [
-  "custom", "azure", "copilot", "codex", "claude-code", "ollama",
+  'custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama',
 ];
 
 export const providerDefaultName: Record<UpstreamProviderKind, string> = {
-  custom: "Custom upstream",
-  azure: "Azure AI",
-  copilot: "GitHub Copilot",
-  codex: "ChatGPT Codex",
-  "claude-code": "Claude Code",
-  ollama: "Ollama",
+  custom: 'Custom upstream',
+  azure: 'Azure AI',
+  copilot: 'GitHub Copilot',
+  codex: 'ChatGPT Codex',
+  'claude-code': 'Claude Code',
+  ollama: 'Ollama',
 };
 
 export async function requireAdmin() {
@@ -94,7 +94,7 @@ export async function loadEditorAux(): Promise<EditorAuxData> {
     callApi<Flag[]>(() => api.api.upstreams.flags.$get()),
     callApi<ProxyRecord[]>(() => api.api.proxies.$get()),
     callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
-    callApi<RuntimeInfo>(() => api.api["runtime-info"].$get()),
+    callApi<RuntimeInfo>(() => api.api['runtime-info'].$get()),
     callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
   ]);
   const error = flags.error ?? proxies.error ?? backoffs.error ?? runtime.error ?? upstreams.error;
@@ -109,23 +109,23 @@ export async function loadEditorAux(): Promise<EditorAuxData> {
 }
 
 export function valuesFromRecord(record: UpstreamRecord): UpstreamEditorValues {
-  const config: UpstreamRecord["config"] = record.kind === "custom"
+  const config: UpstreamRecord['config'] = record.kind === 'custom'
     ? {
         ...structuredClone(record.config),
-        apiKey: "",
-        ...(record.id === "" && Object.keys(record.config.endpoints).length === 0
+        apiKey: '',
+        ...(record.id === '' && Object.keys(record.config.endpoints).length === 0
           ? { endpoints: { chatCompletions: {} }, modelsFetch: { ...record.config.modelsFetch, enabled: true } }
           : {}),
       }
-    : record.kind === "azure"
-      ? { ...structuredClone(record.config), apiKey: "" }
-      : record.kind === "ollama"
-        ? { ...structuredClone(record.config), apiKey: "" }
+    : record.kind === 'azure'
+      ? { ...structuredClone(record.config), apiKey: '' }
+      : record.kind === 'ollama'
+        ? { ...structuredClone(record.config), apiKey: '' }
         : structuredClone(record.config);
-  const manualModels = record.kind === "custom" || record.kind === "azure" || record.kind === "ollama"
-    ? structuredClone(record.config.models).map((model) => model.flagOverrides
-      ? { ...model, flagOverrides: migrateLegacyFlagOverrides(model.flagOverrides) }
-      : model)
+  const manualModels = record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama'
+    ? structuredClone(record.config.models).map(model => model.flagOverrides
+        ? { ...model, flagOverrides: migrateLegacyFlagOverrides(model.flagOverrides) }
+        : model)
     : [];
   return {
     name: record.name,
@@ -148,28 +148,28 @@ export function configFromValues(
   record: UpstreamRecord,
   values: UpstreamEditorValues,
   options: { preserveStoredSecret?: boolean } = {},
-): UpstreamRecord["config"] {
+): UpstreamRecord['config'] {
   const config = structuredClone(values.config) as unknown as Record<string, unknown>;
-  if (record.kind === "custom" || record.kind === "azure" || record.kind === "ollama") {
+  if (record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama') {
     config.models = structuredClone(values.manualModels);
-    const apiKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
+    const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : '';
     if (apiKey) config.apiKey = apiKey;
-    else if (options.preserveStoredSecret && "apiKey" in record.config && record.config.apiKey) {
+    else if (options.preserveStoredSecret && 'apiKey' in record.config && record.config.apiKey) {
       config.apiKey = record.config.apiKey;
     } else delete config.apiKey;
   }
-  if (record.kind === "custom") {
+  if (record.kind === 'custom') {
     const custom = config as Record<string, unknown>;
-    if (custom.authStyle === "none") delete custom.apiKey;
-    if (custom.pathOverrides && typeof custom.pathOverrides === "object") {
+    if (custom.authStyle === 'none') delete custom.apiKey;
+    if (custom.pathOverrides && typeof custom.pathOverrides === 'object') {
       const entries = Object.entries(custom.pathOverrides as Record<string, string>)
-        .map(([key, value]) => [key, typeof value === "string" ? value.trim() : ""] as const)
+        .map(([key, value]) => [key, typeof value === 'string' ? value.trim() : ''] as const)
         .filter(([, value]) => value.length > 0);
       if (entries.length) custom.pathOverrides = Object.fromEntries(entries);
       else delete custom.pathOverrides;
     }
   }
-  return config as unknown as UpstreamRecord["config"];
+  return config as unknown as UpstreamRecord['config'];
 }
 
 export function previewRecord(record: UpstreamRecord, values: UpstreamEditorValues): UpstreamRecordEnvelope {
@@ -199,7 +199,7 @@ export function createBody(record: UpstreamRecord, values: UpstreamEditorValues,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
     config: configFromValues(record, values),
-    ...((record.kind === "copilot" || record.kind === "codex" || record.kind === "claude-code")
+    ...((record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code')
       ? { state: values.state }
       : {}),
     // The editor's form model is flat across provider kinds while the wire
@@ -218,7 +218,7 @@ export function updateBody(record: UpstreamRecord, values: UpstreamEditorValues)
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
-    ...((record.kind === "custom" || record.kind === "azure" || record.kind === "ollama")
+    ...((record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama')
       ? { config: configFromValues(record, values) }
       : {}),
   } as UpdateUpstreamBody;
@@ -229,17 +229,17 @@ export function discoveredModelsFromResponse(
   data: UpstreamModelConfig[] | CustomRawModel[],
   endpoints: ModelEndpoints,
 ): UpstreamModelConfig[] {
-  if (kind !== "custom") return data as UpstreamModelConfig[];
-  return (data as CustomRawModel[]).map((model) => {
-    const modelEndpoints: ModelEndpoints = model.kind === "embedding"
+  if (kind !== 'custom') return data as UpstreamModelConfig[];
+  return (data as CustomRawModel[]).map(model => {
+    const modelEndpoints: ModelEndpoints = model.kind === 'embedding'
       ? { embeddings: {} }
-      : model.kind === "image"
+      : model.kind === 'image'
         ? { imagesGenerations: {}, imagesEdits: {} }
         : Object.keys(endpoints).length ? structuredClone(endpoints) : { chatCompletions: {} };
     return {
       upstreamModelId: model.id,
       publicModelId: model.id,
-      kind: model.kind ?? "chat",
+      kind: model.kind ?? 'chat',
       endpoints: modelEndpoints,
       ...(model.display_name ?? model.name ? { display_name: model.display_name ?? model.name } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
@@ -249,7 +249,7 @@ export function discoveredModelsFromResponse(
 }
 
 export const publicModelId = (model: UpstreamModelConfig) => {
-  const publicId = typeof model.publicModelId === "string" ? model.publicModelId.trim() : "";
+  const publicId = typeof model.publicModelId === 'string' ? model.publicModelId.trim() : '';
   if (publicId) return publicId;
-  return typeof model.upstreamModelId === "string" ? model.upstreamModelId : "";
+  return typeof model.upstreamModelId === 'string' ? model.upstreamModelId : '';
 };

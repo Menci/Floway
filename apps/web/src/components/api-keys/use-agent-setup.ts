@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { authFetch, callApi } from "../../api/auth";
+import { authFetch, callApi } from '../../api/auth';
 
 export interface AgentSetupConfiguration {
   apiKeyId: string;
@@ -9,7 +9,7 @@ export interface AgentSetupConfiguration {
     defaultOpusModel: string | null;
     defaultSonnetModel: string | null;
     defaultHaikuModel: string | null;
-    effortLevel: "low" | "medium" | "high" | "xhigh" | null;
+    effortLevel: 'low' | 'medium' | 'high' | 'xhigh' | null;
     cleanupPeriodDays: 180 | 365 | 99999 | null;
     optOutAiAttribution: boolean;
     modelDiscovery: boolean;
@@ -18,7 +18,7 @@ export interface AgentSetupConfiguration {
 }
 
 interface AgentSetupLease {
-  status: "ok";
+  status: 'ok';
   token: string;
   configuration: AgentSetupConfiguration;
   configurationRevision: number;
@@ -34,18 +34,18 @@ const HEARTBEAT_INTERVAL_MS = 60_000;
 const RETRY_DELAY_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 20_000;
 
-const clone = <T,>(value: T): T => structuredClone(value);
-const rawStatus = (raw: unknown) => raw && typeof raw === "object" && typeof (raw as { status?: unknown }).status === "string"
+const clone = <T>(value: T): T => structuredClone(value);
+const rawStatus = (raw: unknown) => raw && typeof raw === 'object' && typeof (raw as { status?: unknown }).status === 'string'
   ? (raw as { status: string }).status : null;
 const leaseFromRaw = (raw: unknown): AgentSetupLease | null => {
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== 'object') return null;
   const lease = raw as Partial<AgentSetupLease>;
-  return lease.status === "ok" && typeof lease.token === "string" && typeof lease.configurationRevision === "number"
-    && typeof lease.expiresAt === "number" && lease.configuration && lease.scripts
+  return lease.status === 'ok' && typeof lease.token === 'string' && typeof lease.configurationRevision === 'number'
+    && typeof lease.expiresAt === 'number' && lease.configuration && lease.scripts
     ? lease as AgentSetupLease : null;
 };
 
-export const agentSetupCommand = (origin: string, path: string, platform: "unix" | "windows") => platform === "unix"
+export const agentSetupCommand = (origin: string, path: string, platform: 'unix' | 'windows') => platform === 'unix'
   ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash`
   : `$SetupEndpoint = '${origin.replaceAll("'", "''")}'; irm "$SetupEndpoint${path}" | iex`;
 
@@ -73,13 +73,13 @@ export function useAgentSetup(apiKeyId: string | null) {
     setNow(Date.now());
   }, []);
 
-  const request = useCallback(async <T,>(path: string, method: string, body: unknown) => {
+  const request = useCallback(async <T>(path: string, method: string, body: unknown) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       return await callApi<T>(() => authFetch(path, {
         method,
-        headers: { "content-type": "application/json" },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
         signal: controller.signal,
       }));
@@ -97,7 +97,7 @@ export function useAgentSetup(apiKeyId: string | null) {
     const configuration = draftRef.current;
     if (!currentLease || !configuration || terminated) return;
     const sentGeneration = generationRef.current;
-    const result = await request<AgentSetupLease>("/api/setup", "PUT", {
+    const result = await request<AgentSetupLease>('/api/setup', 'PUT', {
       token: currentLease.token,
       configuration: clone(configuration),
       expectedRevision: currentLease.configurationRevision,
@@ -105,9 +105,9 @@ export function useAgentSetup(apiKeyId: string | null) {
     if (leaseRef.current?.token !== currentLease.token) return;
     if (result.error) {
       const status = rawStatus(result.error.raw);
-      if (status === "missing") { setTerminated(true); return; }
-      if (status === "revision-conflict") {
-        const current = leaseFromRaw({ ...(result.error.raw as object), status: "ok" });
+      if (status === 'missing') { setTerminated(true); return; }
+      if (status === 'revision-conflict') {
+        const current = leaseFromRaw({ ...(result.error.raw as object), status: 'ok' });
         if (current) {
           adoptLease(current);
           enqueue(runSave);
@@ -148,10 +148,10 @@ export function useAgentSetup(apiKeyId: string | null) {
     setNoSelectableKey(false);
     if (!apiKeyId) return;
     void (async () => {
-      const result = await request<AgentSetupLease>("/api/setup", "POST", { apiKeyId });
+      const result = await request<AgentSetupLease>('/api/setup', 'POST', { apiKeyId });
       if (lifecycle !== lifecycleRef.current) return;
       if (result.error) {
-        if (rawStatus(result.error.raw) === "no-selectable-key") setNoSelectableKey(true);
+        if (rawStatus(result.error.raw) === 'no-selectable-key') setNoSelectableKey(true);
         else setError(result.error.message);
         return;
       }
@@ -173,11 +173,11 @@ export function useAgentSetup(apiKeyId: string | null) {
     if (!lease || terminated) return;
     const heartbeat = () => enqueue(async () => {
       const current = leaseRef.current;
-      if (!current || document.visibilityState === "hidden") return;
-      const result = await request<AgentSetupLease>("/api/setup/heartbeat", "POST", { token: current.token });
+      if (!current || document.visibilityState === 'hidden') return;
+      const result = await request<AgentSetupLease>('/api/setup/heartbeat', 'POST', { token: current.token });
       if (leaseRef.current?.token !== current.token) return;
       if (result.error) {
-        if (rawStatus(result.error.raw) === "missing") setTerminated(true);
+        if (rawStatus(result.error.raw) === 'missing') setTerminated(true);
         else setError(result.error.message);
         return;
       }
@@ -187,12 +187,12 @@ export function useAgentSetup(apiKeyId: string | null) {
     const interval = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
     const onVisibility = () => {
       setNow(Date.now());
-      if (document.visibilityState === "visible") heartbeat();
+      if (document.visibilityState === 'visible') heartbeat();
     };
-    document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [adoptLease, enqueue, lease?.token, request, terminated]);
 
@@ -218,7 +218,7 @@ export function useAgentSetup(apiKeyId: string | null) {
     setNoSelectableKey(false);
     setLease(null);
     setDraftState(null);
-    setCreateAttempt((value) => value + 1);
+    setCreateAttempt(value => value + 1);
   }, [apiKeyId]);
 
   const syncing = generation !== confirmedGeneration;

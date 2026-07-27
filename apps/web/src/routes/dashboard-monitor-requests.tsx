@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, redirect, useSearchParams } from "react-router";
-import { useTranslation } from "react-i18next";
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, redirect, useSearchParams } from 'react-router';
 
-import type { Route } from "./+types/dashboard-monitor-requests";
-import type { ApiKey } from "../api/types";
-import { authFetch, callApi } from "../api/auth";
-import { api } from "../api/client";
-import { getSessionToken } from "../auth/session";
-import { PageLoadingPanel } from "../components/ui/page-loading-panel";
-import { Panel } from "../components/ui/panel";
-import { RequestDetailPanel } from "../components/requests/request-detail";
-import { RequestListPanel } from "../components/requests/request-list";
-import { useDumpSubscription } from "../components/requests/use-dump-subscription";
-import { fluentComponents } from "../fluent";
+import type { Route } from './+types/dashboard-monitor-requests';
+import { callApi } from '../api/auth';
+import { api } from '../api/client';
+import type { ApiKey } from '../api/types';
+import { getSessionToken } from '../auth/session';
+import { RequestDetailPanel } from '../components/requests/request-detail';
+import { RequestListPanel } from '../components/requests/request-list';
+import { useDumpSubscription } from '../components/requests/use-dump-subscription';
+import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { Panel } from '../components/ui/panel';
+import { fluentComponents } from '../fluent';
 
 const { MessageBar, MessageBarBody, Text } = fluentComponents;
 
@@ -22,15 +22,15 @@ interface LoaderData {
 }
 
 export async function clientLoader(): Promise<LoaderData> {
-  if (!getSessionToken()) throw redirect("/");
+  if (!getSessionToken()) throw redirect('/');
   const result = await callApi<ApiKey[]>(() => api.api.keys.$get());
   return result.error
     ? { keys: null, error: result.error.message }
-    : { keys: result.data.filter((key) => key.dump_retention_seconds !== null), error: null };
+    : { keys: result.data.filter(key => key.dump_retention_seconds !== null), error: null };
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Requests | Floway" }];
+  return [{ title: 'Requests | Floway' }];
 }
 
 function RequestsPageHeader() {
@@ -38,11 +38,11 @@ function RequestsPageHeader() {
   return (
     <header className="grid gap-[6px] min-w-0">
       <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-        {t("dashboard.groups.monitor")}
+        {t('dashboard.groups.monitor')}
       </Text>
-      <Text size={700} weight="semibold">{t("dashboard.nav.requests")}</Text>
+      <Text size={700} weight="semibold">{t('dashboard.nav.requests')}</Text>
       <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-        {t("dashboard.pages.requests")}
+        {t('dashboard.pages.requests')}
       </Text>
     </header>
   );
@@ -53,17 +53,17 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const [searchParams, setSearchParams] = useSearchParams();
   const [keys, setKeys] = useState(loaderData.keys);
   const [keysError, setKeysError] = useState(loaderData.error);
-  const requestedKeyId = searchParams.get("key");
-  const selectedRecordId = searchParams.get("record");
-  const selectedKeyId = keys?.some((key) => key.id === requestedKeyId)
+  const requestedKeyId = searchParams.get('key');
+  const selectedRecordId = searchParams.get('record');
+  const selectedKeyId = keys?.some(key => key.id === requestedKeyId)
     ? requestedKeyId
     : keys?.[0]?.id ?? null;
   const subscription = useDumpSubscription(selectedKeyId);
 
   const updateSelection = useCallback((keyId: string, recordId?: string | null) => {
     const next = new URLSearchParams();
-    next.set("key", keyId);
-    if (recordId) next.set("record", recordId);
+    next.set('key', keyId);
+    if (recordId) next.set('record', recordId);
     setSearchParams(next, { replace: true });
   }, [setSearchParams]);
 
@@ -76,13 +76,13 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       const result = await callApi<ApiKey[]>(() => api.api.keys.$get());
       if (result.error) setKeysError(result.error.message);
       else {
-        setKeys(result.data.filter((key) => key.dump_retention_seconds !== null));
+        setKeys(result.data.filter(key => key.dump_retention_seconds !== null));
         setKeysError(null);
       }
     };
     const onFocus = () => { void refresh(); };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   return (
@@ -93,9 +93,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       ) : keys?.length === 0 ? (
         <Panel className="!p-[28px] grid place-items-center text-center">
           <div className="grid justify-items-center gap-2 max-w-[480px]">
-            <Text weight="semibold" className="!text-center">{t("dashboard.requests.noKeys")}</Text>
-            <Text size={300} className="text-fui-fg3 !text-center">{t("dashboard.requests.noKeysDescription")}</Text>
-            <Link to="/dashboard/services/api-keys" className="text-fui-fg2">{t("dashboard.requests.goToApiKeys")}</Link>
+            <Text weight="semibold" className="!text-center">{t('dashboard.requests.noKeys')}</Text>
+            <Text size={300} className="text-fui-fg3 !text-center">{t('dashboard.requests.noKeysDescription')}</Text>
+            <Link to="/dashboard/services/api-keys" className="text-fui-fg2">{t('dashboard.requests.goToApiKeys')}</Link>
           </div>
         </Panel>
       ) : selectedKeyId && keys ? (
@@ -111,9 +111,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
                 hasOlder={subscription.hasOlder}
                 loading={subscription.loading}
                 loadingOlder={subscription.loadingOlder}
-                onKeyChange={(keyId) => updateSelection(keyId)}
+                onKeyChange={keyId => updateSelection(keyId)}
                 onLoadOlder={() => void subscription.loadOlder()}
-                onRecordChange={(recordId) => updateSelection(selectedKeyId, recordId)}
+                onRecordChange={recordId => updateSelection(selectedKeyId, recordId)}
                 records={subscription.records}
                 selectedKeyId={selectedKeyId}
                 selectedRecordId={selectedRecordId}
@@ -122,7 +122,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </div>
         </div>
       ) : (
-        <PageLoadingPanel label={t("common.loading")} />
+        <PageLoadingPanel label={t('common.loading')} />
       )}
     </section>
   );

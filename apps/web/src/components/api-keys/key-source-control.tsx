@@ -1,13 +1,13 @@
-import { useId } from "react";
-import { useTranslation } from "react-i18next";
+import { useId } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { fluentComponents } from "../../fluent";
-import { Input } from "../ui/fluent-form-controls";
-import { SegmentedControl } from "../ui/segmented-control";
-import type { KeySource } from "./key-source";
+import type { KeySource } from './key-source';
+import { fluentComponents } from '../../fluent';
+import { Input } from '../ui/fluent-form-controls';
+import { SegmentedControl } from '../ui/segmented-control';
 
 const { Text, makeStyles } = fluentComponents;
-const useStyles = makeStyles({ fieldError: { color: "var(--colorPaletteRedForeground1)" } });
+const useStyles = makeStyles({ fieldError: { color: 'var(--colorPaletteRedForeground1)' } });
 
 export function KeySourceControl({
   customKey,
@@ -26,7 +26,7 @@ export function KeySourceControl({
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
-  const label = t("dashboard.apiKeys.form.customKey");
+  const label = t('dashboard.apiKeys.form.customKey');
   const errorId = useId();
 
   return (
@@ -39,18 +39,18 @@ export function KeySourceControl({
       <SegmentedControl
         ariaLabel={label}
         items={[
-          { value: "generate", label: t("dashboard.apiKeys.source.generate"), disabled },
-          { value: "custom", label: t("dashboard.apiKeys.source.custom"), disabled },
+          { value: 'generate', label: t('dashboard.apiKeys.source.generate'), disabled },
+          { value: 'custom', label: t('dashboard.apiKeys.source.custom'), disabled },
         ]}
-        onChange={(value) => onSourceChange(value as KeySource)}
+        onChange={value => onSourceChange(value as KeySource)}
         value={source}
       />
       <Input
         aria-invalid={Boolean(error)}
         aria-label={label}
-        disabled={disabled || source !== "custom"}
+        disabled={disabled || source !== 'custom'}
         onChange={(_, data) => onCustomKeyChange(data.value)}
-        placeholder={t("dashboard.apiKeys.form.customKeyPlaceholder")}
+        placeholder={t('dashboard.apiKeys.form.customKeyPlaceholder')}
         value={customKey}
       />
       {error && (

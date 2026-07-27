@@ -1,37 +1,37 @@
-import { useCallback, useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { redirect } from "react-router";
-import type { ProxyConfig } from "@floway-dev/proxy/proxy-config";
-import { formatProxyUri } from "@floway-dev/proxy/url";
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { redirect } from 'react-router';
 
-import type { ProxyConflictBody, ProxyRecord , BackoffRow } from "../api/types";
-import { authFetch, callApi } from "../api/auth";
-import { api } from "../api/client";
-import { ConfirmDialog } from "../components/ui/confirm-dialog";
-import { PageLoadingPanel } from "../components/ui/page-loading-panel";
-import { Panel } from "../components/ui/panel";
-import { fluentComponents } from "../fluent";
-import { useDashboardOutletContext } from "./dashboard";
-import type { Route } from "./+types/dashboard-providers-proxy";
-import { getSessionToken } from "../auth/session";
-import { ProxyBackoffPanel } from "../components/proxy/proxy-backoff-panel";
-import { ProxyForm } from "../components/proxy/proxy-form";
-import { ProxyList } from "../components/proxy/proxy-list";
-import { defaultsFor, isValidPort, parseSavedUrl, type FormKind } from "../components/proxy/proxy-config";
+import { authFetch, callApi } from '../api/auth';
+import { api } from '../api/client';
+import type { ProxyConflictBody, ProxyRecord, BackoffRow } from '../api/types';
+import type { Route } from './+types/dashboard-providers-proxy';
+import { defaultsFor, isValidPort, parseSavedUrl, type FormKind } from '../components/proxy/proxy-config';
+import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { Panel } from '../components/ui/panel';
+import { fluentComponents } from '../fluent';
+import { useDashboardOutletContext } from './dashboard';
+import { getSessionToken } from '../auth/session';
+import { ProxyBackoffPanel } from '../components/proxy/proxy-backoff-panel';
+import { ProxyForm } from '../components/proxy/proxy-form';
+import { ProxyList } from '../components/proxy/proxy-list';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
+import { formatProxyUri } from '@floway-dev/proxy/url';
 
 const { MessageBar, MessageBarBody, Text } = fluentComponents;
 
 function ProxyPageHeader() {
   const { t } = useTranslation();
-  return <header className="grid gap-[6px]"><Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">{t("dashboard.groups.providers")}</Text><Text size={700} weight="semibold">{t("dashboard.proxy.heading")}</Text><Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">{t("dashboard.proxy.description")}</Text></header>;
+  return <header className="grid gap-[6px]"><Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">{t('dashboard.groups.providers')}</Text><Text size={700} weight="semibold">{t('dashboard.proxy.heading')}</Text><Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">{t('dashboard.proxy.description')}</Text></header>;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export async function clientLoader() { if (!getSessionToken()) throw redirect("/"); return null; }
-export function meta({}: Route.MetaArgs) { return [{ title: "Proxy | Floway" }]; }
+export async function clientLoader() { if (!getSessionToken()) throw redirect('/'); return null; }
+export function meta({}: Route.MetaArgs) { return [{ title: 'Proxy | Floway' }]; }
 
 export default function DashboardProvidersProxy() {
   const { t } = useTranslation();
@@ -45,12 +45,12 @@ export default function DashboardProvidersProxy() {
   // ---- form ----
   const [editingId, setEditingId] = useState<string | null>(null);
   const [backoffs, setBackoffs] = useState<BackoffRow[]>([]);
-  const [formName, setFormName] = useState("");
+  const [formName, setFormName] = useState('');
   // Config is always set — defaults to HTTP so the structured form is always visible.
   const [config, setConfig] = useState<ProxyConfig>(
-    defaultsFor("http", { host: "", port: 0, name: "" }),
+    defaultsFor('http', { host: '', port: 0, name: '' }),
   );
-  const [dialTimeoutInput, setDialTimeoutInput] = useState("");
+  const [dialTimeoutInput, setDialTimeoutInput] = useState('');
 
   // ---- save ----
   const [saving, setSaving] = useState(false);
@@ -71,7 +71,7 @@ export default function DashboardProvidersProxy() {
   useEffect(() => {
     setSaveError(null);
     setSaveSuccess(false);
-    setTestResult((current) => current?.ok ? current : null);
+    setTestResult(current => current?.ok ? current : null);
   }, [config, dialTimeoutInput, formName]);
 
   // ---- delete ----
@@ -105,7 +105,7 @@ export default function DashboardProvidersProxy() {
       if (backoffsRes.data) setBackoffs(backoffsRes.data);
       setLoading(false);
     }
-    load();
+    void load();
     return () => {
       cancelled = true;
     };
@@ -117,13 +117,12 @@ export default function DashboardProvidersProxy() {
     (_: unknown, data: { optionValue?: string }) => {
       if (!data.optionValue) return;
       const next = data.optionValue as FormKind;
-      setConfig((prev) =>
+      setConfig(prev =>
         defaultsFor(next, {
           host: prev.host,
           port: prev.port,
           name: prev.name,
-        }),
-      );
+        }));
     },
     [],
   );
@@ -132,15 +131,15 @@ export default function DashboardProvidersProxy() {
 
   const setPort = useCallback((raw: string) => {
     const trimmed = raw.trim();
-    const n = trimmed === "" ? 0 : Number(trimmed);
-    setConfig((prev) => ({ ...prev, port: Number.isFinite(n) ? n : 0 } as ProxyConfig));
+    const n = trimmed === '' ? 0 : Number(trimmed);
+    setConfig(prev => ({ ...prev, port: Number.isFinite(n) ? n : 0 } as ProxyConfig));
   }, []);
 
   const clearForm = useCallback(() => {
     setEditingId(null);
-    setFormName("");
-    setConfig(defaultsFor("http", { host: "", port: 0, name: "" }));
-    setDialTimeoutInput("");
+    setFormName('');
+    setConfig(defaultsFor('http', { host: '', port: 0, name: '' }));
+    setDialTimeoutInput('');
     setSaveSuccess(false);
     setSaveError(null);
     setTestResult(null);
@@ -152,10 +151,10 @@ export default function DashboardProvidersProxy() {
     setDialTimeoutInput(
       proxy.dial_timeout_seconds != null
         ? String(proxy.dial_timeout_seconds)
-        : "",
+        : '',
     );
     const parsed = parseSavedUrl(proxy.url);
-    setConfig(parsed ?? defaultsFor("http", { host: "", port: 0, name: "" }));
+    setConfig(parsed ?? defaultsFor('http', { host: '', port: 0, name: '' }));
     setSaveSuccess(false);
     setSaveError(null);
     setTestResult(null);
@@ -170,7 +169,7 @@ export default function DashboardProvidersProxy() {
 
     const trimmedName = formName.trim();
     if (!trimmedName) {
-      setSaveError("Name is required");
+      setSaveError('Name is required');
       setSaving(false);
       return;
     }
@@ -180,14 +179,14 @@ export default function DashboardProvidersProxy() {
 
     const timeoutParsed = (() => {
       const raw = dialTimeoutInput.trim();
-      if (raw === "") return { value: null };
-      if (!/^[1-9][0-9]*$/.test(raw)) return { error: "Must be a positive integer" as const };
+      if (raw === '') return { value: null };
+      if (!/^[1-9][0-9]*$/.test(raw)) return { error: 'Must be a positive integer' as const };
       const n = Number(raw);
-      if (n > 600) return { error: "Must be at most 600 seconds" as const };
+      if (n > 600) return { error: 'Must be at most 600 seconds' as const };
       return { value: n };
     })();
 
-    if ("error" in timeoutParsed) {
+    if ('error' in timeoutParsed) {
       setSaveError(`Dial timeout: ${timeoutParsed.error}`);
       setSaving(false);
       return;
@@ -204,14 +203,13 @@ export default function DashboardProvidersProxy() {
       authFetch(
         isEdit
           ? `/api/proxies/${encodeURIComponent(editingId!)}`
-          : "/api/proxies",
+          : '/api/proxies',
         {
-          method: isEdit ? "PATCH" : "POST",
-          headers: { "content-type": "application/json" },
+          method: isEdit ? 'PATCH' : 'POST',
+          headers: { 'content-type': 'application/json' },
           body: JSON.stringify(body),
         },
-      ),
-    );
+      ));
 
     setSaving(false);
     if (result.error) {
@@ -234,7 +232,7 @@ export default function DashboardProvidersProxy() {
 
     const timeoutParsed = (() => {
       const raw = dialTimeoutInput.trim();
-      if (raw === "") return { value: null };
+      if (raw === '') return { value: null };
       const n = Number(raw);
       if (!isNaN(n) && n > 0 && n <= 600) return { value: n };
       return { value: null };
@@ -248,9 +246,9 @@ export default function DashboardProvidersProxy() {
     }
 
     try {
-      const response = await authFetch("/api/proxies/test", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+      const response = await authFetch('/api/proxies/test', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = (await response.json()) as {
@@ -278,9 +276,8 @@ export default function DashboardProvidersProxy() {
 
     const result = await callApi<{ ok: true }>(() =>
       authFetch(`/api/proxies/${encodeURIComponent(deleteTarget.id)}`, {
-        method: "DELETE",
-      }),
-    );
+        method: 'DELETE',
+      }));
 
     setDeleting(false);
     if (result.error) {
@@ -290,7 +287,7 @@ export default function DashboardProvidersProxy() {
         raw.referencing_upstream_ids.length > 0
       ) {
         setDeleteError(
-          `${t("dashboard.proxy.delete.conflict")} ${t("dashboard.proxy.delete.conflictWithIds", { ids: raw.referencing_upstream_ids.join(", ") })}`,
+          `${t('dashboard.proxy.delete.conflict')} ${t('dashboard.proxy.delete.conflictWithIds', { ids: raw.referencing_upstream_ids.join(', ') })}`,
         );
       } else {
         setDeleteError(result.error.message);
@@ -305,7 +302,7 @@ export default function DashboardProvidersProxy() {
 
   // ---- derived form state ----
 
-  const canSave = formName.trim() !== "" && config.host.trim() !== "" && isValidPort(config.port);
+  const canSave = formName.trim() !== '' && config.host.trim() !== '' && isValidPort(config.port);
 
   // ---- admin guard ----
   if (!user.isAdmin) {
@@ -317,12 +314,12 @@ export default function DashboardProvidersProxy() {
             <Text
               size={300}
               weight="semibold"
-              style={{ color: "light-dark(#0f6cbd, #75b6f7)" }}
+              style={{ color: 'light-dark(#0f6cbd, #75b6f7)' }}
             >
-              {t("dashboard.pages.adminOnly")}
+              {t('dashboard.pages.adminOnly')}
             </Text>
             <Text size={300} className="text-fui-fg3">
-              {t("dashboard.pages.adminOnlyDescription")}
+              {t('dashboard.pages.adminOnlyDescription')}
             </Text>
           </div>
         </Panel>
@@ -335,7 +332,7 @@ export default function DashboardProvidersProxy() {
     return (
       <section className="grid gap-[18px] min-w-0">
         <ProxyPageHeader />
-        <PageLoadingPanel label={t("common.loading")} />
+        <PageLoadingPanel label={t('common.loading')} />
       </section>
     );
   }
@@ -363,31 +360,31 @@ export default function DashboardProvidersProxy() {
       <div className="grid grid-cols-[minmax(0,1fr)_420px] gap-[18px] items-start min-w-0 max-[900px]:grid-cols-1">
         <ProxyList proxies={proxies} onAdd={clearForm} onDelete={setDeleteTarget} onEdit={handleEdit} onRefresh={() => void refreshProxies()} />
         <div className="grid gap-[18px] min-w-0">
-        {editingId !== null && <ProxyBackoffPanel
-          backoffs={backoffs}
-          onReset={() => void refreshProxies()}
-          proxyId={editingId}
-        />}
-        <ProxyForm
-          canSave={canSave}
-          config={config}
-          dialTimeoutInput={dialTimeoutInput}
-          editing={editingId !== null}
-          formName={formName}
-          onCancel={clearForm}
-          onConfigChange={setConfig}
-          onDialTimeoutChange={setDialTimeoutInput}
-          onKindChange={handleKindChange}
-          onNameChange={setFormName}
-          onPortChange={setPort}
-          onSave={() => void handleSave()}
-          onTest={() => void handleTest()}
-          saveError={saveError}
-          saveSuccess={saveSuccess}
-          saving={saving}
-          testResult={testResult}
-          testing={testing}
-        />
+          {editingId !== null && <ProxyBackoffPanel
+            backoffs={backoffs}
+            onReset={() => void refreshProxies()}
+            proxyId={editingId}
+          />}
+          <ProxyForm
+            canSave={canSave}
+            config={config}
+            dialTimeoutInput={dialTimeoutInput}
+            editing={editingId !== null}
+            formName={formName}
+            onCancel={clearForm}
+            onConfigChange={setConfig}
+            onDialTimeoutChange={setDialTimeoutInput}
+            onKindChange={handleKindChange}
+            onNameChange={setFormName}
+            onPortChange={setPort}
+            onSave={() => void handleSave()}
+            onTest={() => void handleTest()}
+            saveError={saveError}
+            saveSuccess={saveSuccess}
+            saving={saving}
+            testResult={testResult}
+            testing={testing}
+          />
         </div>
       </div>
 
@@ -396,18 +393,18 @@ export default function DashboardProvidersProxy() {
         <ConfirmDialog
           actionLabel={
             deleting
-              ? t("dashboard.proxy.actions.deleting")
-              : t("dashboard.proxy.actions.delete")
+              ? t('dashboard.proxy.actions.deleting')
+              : t('dashboard.proxy.actions.delete')
           }
-          message={t("dashboard.proxy.delete.message", {
+          message={t('dashboard.proxy.delete.message', {
             name: deleteTarget.name,
           })}
-          onConfirm={handleDeleteConfirm}
-          onOpenChange={(open) => {
+          onConfirm={() => void handleDeleteConfirm()}
+          onOpenChange={open => {
             if (!open && !deleting) setDeleteTarget(null);
           }}
           open
-          title={t("dashboard.proxy.delete.title")}
+          title={t('dashboard.proxy.delete.title')}
         />
       )}
     </section>

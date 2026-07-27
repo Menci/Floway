@@ -1,14 +1,13 @@
-import type { ChartProps } from "@fluentui/react-charts";
+import type { ChartProps } from '@fluentui/react-charts';
 
-import type { DecimalString } from "@floway-dev/protocols/common";
+import type { BillingMetric } from '../../api/types';
+import type { DecimalString } from '@floway-dev/protocols/common';
 
-import type { BillingMetric } from "../../api/types";
-
-export type UsageView = "all-by-user" | "self-by-key";
-export type UsageRange = "today" | "7d" | "30d";
+export type UsageView = 'all-by-user' | 'self-by-key';
+export type UsageRange = 'today' | '7d' | '30d';
 export type UsageMetric =
-  | "requests" | "cost" | "total" | "input" | "output" | "prefill"
-  | "cached" | "cachedRate" | "cacheCreation" | "cacheHitRate";
+  | 'requests' | 'cost' | 'total' | 'input' | 'output' | 'prefill'
+  | 'cached' | 'cachedRate' | 'cacheCreation' | 'cacheHitRate';
 
 export interface DisplayUsageRecord {
   keyId: string;
@@ -62,7 +61,7 @@ export interface UsageChartModel {
   data: ChartProps;
   details: Map<string, Map<string, TokenDetail>>;
   buckets: UsageBucket[];
-  kind: "token" | "search";
+  kind: 'token' | 'search';
   range: UsageRange;
   stacked: boolean;
 }

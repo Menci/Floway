@@ -1,10 +1,9 @@
 import { useTranslation } from 'react-i18next';
 
-import type { RerankProtocol, RerankTarget } from '@floway-dev/protocols/common';
-import { DEFAULT_RERANK_PATHS } from '@floway-dev/protocols/rerank';
-
 import { fluentComponents } from '../../fluent';
 import { Input, Select } from '../ui/fluent-form-controls';
+import type { RerankProtocol, RerankTarget } from '@floway-dev/protocols/common';
+import { DEFAULT_RERANK_PATHS } from '@floway-dev/protocols/rerank';
 
 const { Field } = fluentComponents;
 

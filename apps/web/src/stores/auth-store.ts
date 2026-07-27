@@ -1,11 +1,10 @@
-import { create } from "zustand";
+import { create } from 'zustand';
 
-import { type AuthUser, type LoginResponse } from "../api/auth";
-import { getCurrentSession } from "../api/client";
-import { api } from "../api/client";
-import { clearSessionToken, getSessionToken } from "../auth/session";
+import { type AuthUser, type LoginResponse } from '../api/auth';
+import { getCurrentSession, api } from '../api/client';
+import { clearSessionToken, getSessionToken } from '../auth/session';
 
-type AuthStatus = "idle" | "loading" | "authenticated" | "unauthenticated" | "error";
+type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'unauthenticated' | 'error';
 
 interface AuthStore {
   status: AuthStatus;
@@ -25,7 +24,7 @@ let sessionRequest: {
 } | null = null;
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
-  status: "idle",
+  status: 'idle',
   token: null,
   user: null,
   error: null,
@@ -34,7 +33,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     sessionRequest = null;
     clearSessionToken();
     set({
-      status: "unauthenticated",
+      status: 'unauthenticated',
       token: null,
       user: null,
       error: null,
@@ -62,7 +61,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
     const state = get();
     if (
-      state.status === "authenticated" &&
+      state.status === 'authenticated' &&
       state.token === token &&
       state.user
     ) {
@@ -72,18 +71,18 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     if (sessionRequest?.token === token) return sessionRequest.promise;
 
     set({
-      status: "loading",
+      status: 'loading',
       token,
       user: state.token === token ? state.user : null,
       error: null,
     });
 
-    const promise = getCurrentSession().then((result) => {
+    const promise = getCurrentSession().then(result => {
       if (sessionRequest?.token === token) sessionRequest = null;
 
       if (result.data) {
         set({
-          status: "authenticated",
+          status: 'authenticated',
           token,
           user: result.data.user,
           error: null,
@@ -97,7 +96,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       }
 
       set({
-        status: "error",
+        status: 'error',
         token,
         user: null,
         error: result.error.message,
@@ -109,17 +108,17 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     return promise;
   },
 
-  primeFromLogin: (session) => {
+  primeFromLogin: session => {
     sessionRequest = null;
     set({
-      status: "authenticated",
+      status: 'authenticated',
       token: session.token,
       user: session.user,
       error: null,
     });
   },
 
-  setUser: (user) => {
-    set({ status: "authenticated", user, error: null });
+  setUser: user => {
+    set({ status: 'authenticated', user, error: null });
   },
 }));

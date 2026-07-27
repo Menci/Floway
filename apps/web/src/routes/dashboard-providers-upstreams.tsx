@@ -8,26 +8,26 @@ import {
   DeleteRegular,
   EditRegular,
   WarningRegular,
-} from "@fluentui/react-icons";
-import { useEffect, useId, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { Link, Navigate, redirect, useLocation, useNavigate } from "react-router";
+} from '@fluentui/react-icons';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, Navigate, redirect, useLocation, useNavigate } from 'react-router';
 
-import type { Route } from "./+types/dashboard-providers-upstreams";
+import type { Route } from './+types/dashboard-providers-upstreams';
+import { useDashboardOutletContext } from './dashboard';
+import { authFetch, callApi } from '../api/auth';
+import { api } from '../api/client';
 import type {
   ControlPlaneModel,
   UpstreamProviderKind,
   UpstreamRecord,
-} from "../api/types";
-import { authFetch, callApi } from "../api/auth";
-import { api } from "../api/client";
-import { getSessionToken } from "../auth/session";
-import { ConfirmDialog } from "../components/ui/confirm-dialog";
-import { PageLoadingPanel } from "../components/ui/page-loading-panel";
-import { Panel } from "../components/ui/panel";
-import { ProviderBadge, ProviderIcon } from "../components/upstreams/provider-badge";
-import { fluentComponents } from "../fluent";
-import { useDashboardOutletContext } from "./dashboard";
+} from '../api/types';
+import { getSessionToken } from '../auth/session';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { Panel } from '../components/ui/panel';
+import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
+import { fluentComponents } from '../fluent';
 
 const {
   Button,
@@ -69,32 +69,32 @@ interface UpstreamsPageData {
 }
 
 type Mutation =
-  | { kind: "toggle"; id: string }
-  | { kind: "reorder"; id: string }
-  | { kind: "delete"; id: string }
-  | { kind: "reload" };
+  | { kind: 'toggle'; id: string }
+  | { kind: 'reorder'; id: string }
+  | { kind: 'delete'; id: string }
+  | { kind: 'reload' };
 
 const providers: readonly UpstreamProviderKind[] = [
-  "custom",
-  "azure",
-  "copilot",
-  "codex",
-  "claude-code",
-  "ollama",
+  'custom',
+  'azure',
+  'copilot',
+  'codex',
+  'claude-code',
+  'ollama',
 ];
 
 const useStyles = makeStyles({
-  ready: { color: "var(--colorPaletteGreenForeground1)" },
-  warning: { color: "var(--colorPaletteDarkOrangeForeground1)" },
+  ready: { color: 'var(--colorPaletteGreenForeground1)' },
+  warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
 });
 
 export async function clientLoader() {
-  if (!getSessionToken()) throw redirect("/");
+  if (!getSessionToken()) throw redirect('/');
   return null;
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Upstreams | Floway" }];
+  return [{ title: 'Upstreams | Floway' }];
 }
 
 export default function DashboardProvidersUpstreams() {
@@ -122,7 +122,7 @@ export default function DashboardProvidersUpstreams() {
     if (!user.isAdmin) return;
 
     let cancelled = false;
-    void loadUpstreamsPageData().then((next) => {
+    void loadUpstreamsPageData().then(next => {
       if (cancelled) return;
       setData(next);
       setPageError(next.loadError);
@@ -135,13 +135,13 @@ export default function DashboardProvidersUpstreams() {
 
   useEffect(() => {
     const search = new URLSearchParams(location.search);
-    if (search.get("missing") !== "1") return;
+    if (search.get('missing') !== '1') return;
 
     dispatchToast(
       <Toast>
-        <ToastTitle>{t("dashboard.upstreams.toast.missing")}</ToastTitle>
+        <ToastTitle>{t('dashboard.upstreams.toast.missing')}</ToastTitle>
       </Toast>,
-      { intent: "warning" },
+      { intent: 'warning' },
     );
     void navigate(location.pathname, { replace: true });
   }, [dispatchToast, location.pathname, location.search, navigate, t]);
@@ -170,7 +170,7 @@ export default function DashboardProvidersUpstreams() {
   };
 
   const handleReload = async () => {
-    setMutation({ kind: "reload" });
+    setMutation({ kind: 'reload' });
     setPageError(null);
     await reload();
     setMutation(null);
@@ -178,19 +178,18 @@ export default function DashboardProvidersUpstreams() {
 
   const setEnabled = async (record: UpstreamRecord, enabled: boolean) => {
     const snapshot = data.upstreams;
-    setMutation({ kind: "toggle", id: record.id });
+    setMutation({ kind: 'toggle', id: record.id });
     setPageError(null);
-    setData((current) => ({
+    setData(current => ({
       ...current,
-      upstreams: current.upstreams.map((item) =>
-        item.id === record.id ? { ...item, enabled } : item,
-      ),
+      upstreams: current.upstreams.map(item =>
+        item.id === record.id ? { ...item, enabled } : item),
     }));
 
     const result = await patchUpstream(record.id, { enabled });
     if (result.error) {
-      setData((current) => ({ ...current, upstreams: snapshot }));
-      setPageError(t("dashboard.upstreams.errors.toggle", { message: result.error.message }));
+      setData(current => ({ ...current, upstreams: snapshot }));
+      setPageError(t('dashboard.upstreams.errors.toggle', { message: result.error.message }));
       setMutation(null);
       return;
     }
@@ -201,7 +200,7 @@ export default function DashboardProvidersUpstreams() {
 
   const move = async (record: UpstreamRecord, direction: -1 | 1) => {
     const snapshot = data.upstreams;
-    const index = snapshot.findIndex((item) => item.id === record.id);
+    const index = snapshot.findIndex(item => item.id === record.id);
     const targetIndex = index + direction;
     if (index < 0 || targetIndex < 0 || targetIndex >= snapshot.length) return;
 
@@ -209,9 +208,9 @@ export default function DashboardProvidersUpstreams() {
     const next = [...snapshot];
     next[index] = target;
     next[targetIndex] = record;
-    setMutation({ kind: "reorder", id: record.id });
+    setMutation({ kind: 'reorder', id: record.id });
     setPageError(null);
-    setData((current) => ({ ...current, upstreams: next }));
+    setData(current => ({ ...current, upstreams: next }));
 
     const [first, second] = await Promise.all([
       patchUpstream(record.id, { sort_order: target.sort_order }),
@@ -219,12 +218,12 @@ export default function DashboardProvidersUpstreams() {
     ]);
     const error = first.error ?? second.error;
     if (error) {
-      setData((current) => ({ ...current, upstreams: snapshot }));
+      setData(current => ({ ...current, upstreams: snapshot }));
       const synced = await reload();
       setPageError(
-        t("dashboard.upstreams.errors.reorder", {
+        t('dashboard.upstreams.errors.reorder', {
           message: error.message,
-          sync: synced.loadError ? t("dashboard.upstreams.errors.syncFailed") : "",
+          sync: synced.loadError ? t('dashboard.upstreams.errors.syncFailed') : '',
         }),
       );
       setMutation(null);
@@ -236,13 +235,12 @@ export default function DashboardProvidersUpstreams() {
   };
 
   const deleteUpstream = async (record: UpstreamRecord) => {
-    setMutation({ kind: "delete", id: record.id });
+    setMutation({ kind: 'delete', id: record.id });
     setPageError(null);
     const result = await callApi<{ ok: true }>(() =>
-      api.api.upstreams[":id"].$delete({ param: { id: record.id } }),
-    );
+      api.api.upstreams[':id'].$delete({ param: { id: record.id } }));
     if (result.error) {
-      setPageError(t("dashboard.upstreams.errors.delete", { message: result.error.message }));
+      setPageError(t('dashboard.upstreams.errors.delete', { message: result.error.message }));
       setMutation(null);
       return;
     }
@@ -252,10 +250,10 @@ export default function DashboardProvidersUpstreams() {
     dispatchToast(
       <Toast>
         <ToastTitle>
-          {t("dashboard.upstreams.toast.deleted", { name: record.name })}
+          {t('dashboard.upstreams.toast.deleted', { name: record.name })}
         </ToastTitle>
       </Toast>,
-      { intent: "success" },
+      { intent: 'success' },
     );
   };
 
@@ -270,42 +268,42 @@ export default function DashboardProvidersUpstreams() {
       <header className="flex items-start gap-[18px] justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
         <div className="grid gap-1 min-w-0">
           <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">
-            {t("dashboard.groups.providers")}
+            {t('dashboard.groups.providers')}
           </Text>
           <Text as="h1" size={700} weight="semibold" className="!m-0">
-            {t("dashboard.nav.upstreams")}
+            {t('dashboard.nav.upstreams')}
           </Text>
           <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-            {t("dashboard.pages.upstreams")}
+            {t('dashboard.pages.upstreams')}
           </Text>
         </div>
         <div className="flex items-center gap-2 flex-none max-[900px]:justify-start">
-          <Tooltip content={t("dashboard.upstreams.actions.refresh")} relationship="label">
+          <Tooltip content={t('dashboard.upstreams.actions.refresh')} relationship="label">
             <Button
               appearance="subtle"
-              aria-label={t("dashboard.upstreams.actions.refresh")}
+              aria-label={t('dashboard.upstreams.actions.refresh')}
               disabled={initialLoading || busy}
-              icon={mutation?.kind === "reload" ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+              icon={mutation?.kind === 'reload' ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
               onClick={() => void handleReload()}
             />
           </Tooltip>
           <Menu positioning={{ autoSize: true }}>
             <MenuTrigger disableButtonEnhancement>
               <Button appearance="primary" disabled={initialLoading || busy} icon={<AddRegular />}>
-                {t("dashboard.upstreams.actions.create")}
+                {t('dashboard.upstreams.actions.create')}
                 <ChevronDownRegular className="ml-1.5" />
               </Button>
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                {providers.map((kind) => (
+                {providers.map(kind => (
                   <MenuItem
                     icon={{
                       children: <ProviderIcon kind={kind} className="h-5 w-5" />,
-                      className: "!self-center",
+                      className: '!self-center',
                     }}
                     key={kind}
-                    onClick={() => navigate(`/dashboard/providers/upstreams/new/${kind}`)}
+                    onClick={() => void navigate(`/dashboard/providers/upstreams/new/${kind}`)}
                     subText={t(`dashboard.upstreams.providers.${kind}`)}
                   >
                     {t(`provider.${kind}`)}
@@ -318,7 +316,7 @@ export default function DashboardProvidersUpstreams() {
       </header>
 
       {initialLoading ? (
-        <PageLoadingPanel label={t("common.loading")} />
+        <PageLoadingPanel label={t('common.loading')} />
       ) : (
         <>
           {pageError && (
@@ -326,7 +324,7 @@ export default function DashboardProvidersUpstreams() {
               <MessageBarBody>{pageError}</MessageBarBody>
               <MessageBarActions>
                 <Button appearance="transparent" disabled={busy} onClick={() => void handleReload()}>
-                  {t("dashboard.upstreams.actions.retry")}
+                  {t('dashboard.upstreams.actions.retry')}
                 </Button>
               </MessageBarActions>
             </MessageBar>
@@ -335,39 +333,39 @@ export default function DashboardProvidersUpstreams() {
           {data.modelsError && (
             <MessageBar intent="warning">
               <MessageBarBody>
-                {t("dashboard.upstreams.errors.models", { message: data.modelsError })}
+                {t('dashboard.upstreams.errors.models', { message: data.modelsError })}
               </MessageBarBody>
             </MessageBar>
           )}
 
-      <Panel className="grid gap-[14px] min-w-0 !p-[18px] !pt-[10px]">
-        <UpstreamsTable
-          busy={busy}
-          data={data}
-          mutation={mutation}
-          onDelete={setDeleteTarget}
-          onEdit={(record) => navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`)}
-          onMove={move}
-          onToggle={setEnabled}
-        />
-      </Panel>
+          <Panel className="grid gap-[14px] min-w-0 !p-[18px] !pt-[10px]">
+            <UpstreamsTable
+              busy={busy}
+              data={data}
+              mutation={mutation}
+              onDelete={setDeleteTarget}
+              onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`)}
+              onMove={(record, direction) => void move(record, direction)}
+              onToggle={(record, enabled) => void setEnabled(record, enabled)}
+            />
+          </Panel>
 
-      <ConfirmDialog
-        actionLabel={
-          mutation?.kind === "delete"
-            ? t("dashboard.upstreams.actions.deleting")
-            : t("dashboard.upstreams.actions.delete")
-        }
-        message={t("dashboard.upstreams.delete.message", { name: deleteTarget?.name ?? "" })}
-        onConfirm={() => {
-          if (deleteTarget && !busy) void deleteUpstream(deleteTarget);
-        }}
-        onOpenChange={(open) => {
-          if (!open && mutation?.kind !== "delete") setDeleteTarget(null);
-        }}
-        open={deleteTarget !== null}
-        title={t("dashboard.upstreams.delete.title")}
-      />
+          <ConfirmDialog
+            actionLabel={
+              mutation?.kind === 'delete'
+                ? t('dashboard.upstreams.actions.deleting')
+                : t('dashboard.upstreams.actions.delete')
+            }
+            message={t('dashboard.upstreams.delete.message', { name: deleteTarget?.name ?? '' })}
+            onConfirm={() => {
+              if (deleteTarget && !busy) void deleteUpstream(deleteTarget);
+            }}
+            onOpenChange={open => {
+              if (!open && mutation?.kind !== 'delete') setDeleteTarget(null);
+            }}
+            open={deleteTarget !== null}
+            title={t('dashboard.upstreams.delete.title')}
+          />
         </>
       )}
     </div>
@@ -397,22 +395,22 @@ function UpstreamsTable({
   if (data.upstreams.length === 0) {
     return (
       <div className="grid justify-items-center gap-3 text-center p-[28px_18px]">
-        <Text size={300} className="text-fui-fg3">{t("dashboard.upstreams.empty")}</Text>
+        <Text size={300} className="text-fui-fg3">{t('dashboard.upstreams.empty')}</Text>
       </div>
     );
   }
 
   return (
     <div className="min-w-0 overflow-x-auto">
-      <Table size="small" aria-label={t("dashboard.upstreams.table.title")} className="min-w-[930px]">
+      <Table size="small" aria-label={t('dashboard.upstreams.table.title')} className="min-w-[930px]">
         <TableHeader>
           <TableRow>
-            <TableHeaderCell className="!w-[130px]">{t("dashboard.upstreams.table.priority")}</TableHeaderCell>
-            <TableHeaderCell>{t("dashboard.upstreams.table.upstream")}</TableHeaderCell>
-            <TableHeaderCell className="!w-[150px]">{t("dashboard.upstreams.table.provider")}</TableHeaderCell>
-            <TableHeaderCell className="!w-[180px]">{t("dashboard.upstreams.table.models")}</TableHeaderCell>
-            <TableHeaderCell className="!w-[110px]">{t("dashboard.upstreams.table.enabled")}</TableHeaderCell>
-            <TableHeaderCell className="!w-[68px]">{t("dashboard.upstreams.table.actions")}</TableHeaderCell>
+            <TableHeaderCell className="!w-[130px]">{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[150px]">{t('dashboard.upstreams.table.provider')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[180px]">{t('dashboard.upstreams.table.models')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[110px]">{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[68px]">{t('dashboard.upstreams.table.actions')}</TableHeaderCell>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -424,13 +422,13 @@ function UpstreamsTable({
                   <IconButton
                     disabled={busy || index === 0}
                     icon={<ArrowUpRegular />}
-                    label={t("dashboard.upstreams.actions.moveUp", { name: record.name })}
+                    label={t('dashboard.upstreams.actions.moveUp', { name: record.name })}
                     onClick={() => onMove(record, -1)}
                   />
                   <IconButton
                     disabled={busy || index === data.upstreams.length - 1}
                     icon={<ArrowDownRegular />}
-                    label={t("dashboard.upstreams.actions.moveDown", { name: record.name })}
+                    label={t('dashboard.upstreams.actions.moveDown', { name: record.name })}
                     onClick={() => onMove(record, 1)}
                   />
                 </div>
@@ -455,7 +453,7 @@ function UpstreamsTable({
               </TableCell>
               <TableCell>
                 <Switch
-                  aria-label={t("dashboard.upstreams.actions.toggle", { name: record.name })}
+                  aria-label={t('dashboard.upstreams.actions.toggle', { name: record.name })}
                   checked={record.enabled}
                   disabled={busy}
                   onChange={(_, detail) => onToggle(record, detail.checked)}
@@ -467,13 +465,13 @@ function UpstreamsTable({
                   <IconButton
                     disabled={busy}
                     icon={<EditRegular />}
-                    label={t("dashboard.upstreams.actions.editNamed", { name: record.name })}
+                    label={t('dashboard.upstreams.actions.editNamed', { name: record.name })}
                     onClick={() => onEdit(record)}
                   />
                   <IconButton
                     disabled={busy}
-                    icon={mutation?.kind === "delete" && mutation.id === record.id ? <Spinner size="tiny" /> : <DeleteRegular />}
-                    label={t("dashboard.upstreams.actions.deleteNamed", { name: record.name })}
+                    icon={mutation?.kind === 'delete' && mutation.id === record.id ? <Spinner size="tiny" /> : <DeleteRegular />}
+                    label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })}
                     onClick={() => onDelete(record)}
                   />
                 </div>
@@ -498,28 +496,28 @@ function ModelStatus({
   const { t } = useTranslation();
   const s = useStyles();
   const cacheStatus = record.modelsCache.lastError
-    ? "failed"
-    : record.modelsCache.fetchedAt === null ? "empty" : "ready";
+    ? 'failed'
+    : record.modelsCache.fetchedAt === null ? 'empty' : 'ready';
   const healthy = modelsAvailable && count !== null && count > 0 && !record.modelsCache.lastError;
   const detail = record.modelsCache.lastError
-    ? t("dashboard.upstreams.cache.failedDetail", {
+    ? t('dashboard.upstreams.cache.failedDetail', {
         message: record.modelsCache.lastError.message,
         time: fullDateTime(record.modelsCache.lastError.at),
       })
     : record.modelsCache.fetchedAt !== null
-      ? t("dashboard.upstreams.cache.readyDetail", { time: fullDateTime(record.modelsCache.fetchedAt) })
-      : t("dashboard.upstreams.cache.emptyDetail");
+      ? t('dashboard.upstreams.cache.readyDetail', { time: fullDateTime(record.modelsCache.fetchedAt) })
+      : t('dashboard.upstreams.cache.emptyDetail');
 
   return (
     <Tooltip content={detail} relationship="description">
       <span className="inline-flex items-center gap-[6px] min-w-0 w-fit max-w-full">
         <Text size={200} weight="semibold" className="whitespace-nowrap">
-        {modelsAvailable && count !== null
-          ? t("dashboard.upstreams.models.count", { count })
-          : t("dashboard.upstreams.models.unavailable")}
+          {modelsAvailable && count !== null
+            ? t('dashboard.upstreams.models.count', { count })
+            : t('dashboard.upstreams.models.unavailable')}
         </Text>
         {healthy
-          ? <CheckmarkCircleRegular className={`${s.ready} flex-none`} aria-label={t("dashboard.upstreams.cache.ready")} />
+          ? <CheckmarkCircleRegular className={`${s.ready} flex-none`} aria-label={t('dashboard.upstreams.cache.ready')} />
           : <WarningRegular className={`${s.warning} flex-none`} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
       </span>
     </Tooltip>
@@ -547,7 +545,7 @@ function IconButton({
 async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
   const [upstreamsResult, modelsResult] = await Promise.all([
     callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
-    callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: "false", include_unlisted: "true" } })),
+    callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
   return {
     upstreams: [...(upstreamsResult.data ?? [])].sort(compareUpstreams),
@@ -560,11 +558,10 @@ async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
 const patchUpstream = (id: string, body: { enabled?: boolean; sort_order?: number }) =>
   callApi<UpstreamRecord>(() =>
     authFetch(`/api/upstreams/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-    }),
-  );
+    }));
 
 const compareUpstreams = (a: UpstreamRecord, b: UpstreamRecord) =>
   a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
@@ -573,32 +570,32 @@ const buildModelCounts = (
   upstreams: UpstreamRecord[],
   models: ControlPlaneModel[] | null,
 ): Map<string, number> => {
-  const counts = new Map(upstreams.map((record) => [record.id, record.kind === "azure" ? record.config.models.length : 0]));
+  const counts = new Map(upstreams.map(record => [record.id, record.kind === 'azure' ? record.config.models.length : 0]));
   if (!models) return counts;
   for (const model of models) {
     for (const binding of model.upstreams) {
-      const record = upstreams.find((item) => item.id === binding.id);
-      if (record && record.kind !== "azure") counts.set(record.id, (counts.get(record.id) ?? 0) + 1);
+      const record = upstreams.find(item => item.id === binding.id);
+      if (record && record.kind !== 'azure') counts.set(record.id, (counts.get(record.id) ?? 0) + 1);
     }
   }
   return counts;
 };
 
-const upstreamSummary = (record: UpstreamRecord, t: ReturnType<typeof useTranslation>["t"]): string => {
+const upstreamSummary = (record: UpstreamRecord, t: ReturnType<typeof useTranslation>['t']): string => {
   switch (record.kind) {
-    case "custom": return record.config.baseUrl;
-    case "azure": return record.config.endpoint;
-    case "ollama": return record.config.baseUrl || t("dashboard.upstreams.summary.ollama");
-    case "copilot": return record.config.user.login ? `@${record.config.user.login}` : t("dashboard.upstreams.summary.copilot");
-    case "codex": {
-      const account = record.config.accounts[0];
-      return account ? [account.email, account.planType].filter(Boolean).join(" - ") : t("dashboard.upstreams.summary.noAccount");
-    }
-    case "claude-code": {
-      const account = record.config.accounts[0];
-      if (!account) return t("dashboard.upstreams.summary.noAccount");
-      return account.email ?? account.accountUuid.slice(0, 8);
-    }
+  case 'custom': return record.config.baseUrl;
+  case 'azure': return record.config.endpoint;
+  case 'ollama': return record.config.baseUrl || t('dashboard.upstreams.summary.ollama');
+  case 'copilot': return record.config.user.login ? `@${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
+  case 'codex': {
+    const account = record.config.accounts[0];
+    return account ? [account.email, account.planType].filter(Boolean).join(' - ') : t('dashboard.upstreams.summary.noAccount');
+  }
+  case 'claude-code': {
+    const account = record.config.accounts[0];
+    if (!account) return t('dashboard.upstreams.summary.noAccount');
+    return account.email ?? account.accountUuid.slice(0, 8);
+  }
   }
 };
 

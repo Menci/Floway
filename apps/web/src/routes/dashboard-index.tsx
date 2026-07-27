@@ -1,5 +1,5 @@
-import { redirect } from "react-router";
+import { redirect } from 'react-router';
 
 export function clientLoader() {
-  throw redirect("/dashboard/playground");
+  throw redirect('/dashboard/playground');
 }

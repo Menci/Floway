@@ -1,5 +1,5 @@
-import { fluentComponents } from "../../fluent";
-import { Panel } from "./panel";
+import { Panel } from './panel';
+import { fluentComponents } from '../../fluent';
 
 const { Spinner, Text } = fluentComponents;
 

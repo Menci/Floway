@@ -2,9 +2,6 @@ import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
-import { fluentComponents } from '../../fluent';
-import { Input } from '../ui/fluent-form-controls';
 import {
   baseEntryOf,
   collectDraftIssues,
@@ -23,6 +20,9 @@ import {
   type PricingEntryDraft,
   type PricingField,
 } from './pricing-model';
+import { fluentComponents } from '../../fluent';
+import { Input } from '../ui/fluent-form-controls';
+import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
 const { Badge, Button, Field, MessageBar, MessageBarBody, Text, Tooltip } = fluentComponents;
 const TIGHT_STACK_CLASS = 'grid gap-1';
@@ -126,16 +126,16 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
   };
 
   const issueMessage = (issue: ModelPricingIssue): string => {
-    const key = `dashboard.upstreamEditor.models.pricingIssue.`;
+    const key = 'dashboard.upstreamEditor.models.pricingIssue.';
     switch (issue.code) {
-      case 'empty-catalog': return t(`${key}emptyCatalog`);
-      case 'empty-rates': return t(`${key}emptyRates`);
-      case 'invalid-rate': return t(`${key}invalidRate`, { metric: metricName(issue.metric) });
-      case 'invalid-selector': return t(`${key}invalidSelector`);
-      case 'base-count': return t(`${key}baseCount`);
-      case 'rate-metrics': return t(`${key}rateMetrics`);
-      case 'duplicate-selector': return t(`${key}duplicateSelector`);
-      case 'threshold-operator-conflict': return t(`${key}thresholdConflict`);
+    case 'empty-catalog': return t(`${key}emptyCatalog`);
+    case 'empty-rates': return t(`${key}emptyRates`);
+    case 'invalid-rate': return t(`${key}invalidRate`, { metric: metricName(issue.metric) });
+    case 'invalid-selector': return t(`${key}invalidSelector`);
+    case 'base-count': return t(`${key}baseCount`);
+    case 'rate-metrics': return t(`${key}rateMetrics`);
+    case 'duplicate-selector': return t(`${key}duplicateSelector`);
+    case 'threshold-operator-conflict': return t(`${key}thresholdConflict`);
     }
   };
 

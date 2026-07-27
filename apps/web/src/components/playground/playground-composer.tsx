@@ -3,12 +3,12 @@ import {
   ImageRegular,
   SendRegular,
   StopRegular,
-} from "@fluentui/react-icons";
-import { useEffect, useRef } from "react";
+} from '@fluentui/react-icons';
+import { useEffect, useRef } from 'react';
 
-import broomUrl from "../../assets/broom.svg";
-import { Input } from "../ui/fluent-form-controls";
-import { fluentComponents } from "../../fluent";
+import broomUrl from '../../assets/broom.svg';
+import { fluentComponents } from '../../fluent';
+import { Input } from '../ui/fluent-form-controls';
 
 const { Button, Tooltip, makeStyles, tokens } = fluentComponents;
 
@@ -17,9 +17,9 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground1,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     boxShadow: tokens.shadow4,
-    transitionProperty: "border-color, box-shadow",
+    transitionProperty: 'border-color, box-shadow',
     transitionDuration: tokens.durationFaster,
-    "&:focus-within": {
+    '&:focus-within': {
       boxShadow: tokens.shadow8,
     },
   },
@@ -28,45 +28,45 @@ const useStyles = makeStyles({
     fontFamily: tokens.fontFamilyBase,
     fontSize: tokens.fontSizeBase400,
     lineHeight: tokens.lineHeightBase400,
-    backgroundColor: "transparent",
+    backgroundColor: 'transparent',
     border: 0,
-    outlineStyle: "none",
-    resize: "none",
-    "&::placeholder": { color: tokens.colorNeutralForeground3 },
-    "&:disabled": {
+    outlineStyle: 'none',
+    resize: 'none',
+    '&::placeholder': { color: tokens.colorNeutralForeground3 },
+    '&:disabled': {
       color: tokens.colorNeutralForegroundDisabled,
-      cursor: "not-allowed",
+      cursor: 'not-allowed',
     },
   },
   imageButton: {
-    color: "light-dark(#2770ea, #244b8f)",
-    backgroundColor: "transparent",
+    color: 'light-dark(#2770ea, #244b8f)',
+    backgroundColor: 'transparent',
     border: 0,
-    "&:hover": {
-      color: "light-dark(#1b4aef, #203581)",
+    '&:hover': {
+      color: 'light-dark(#1b4aef, #203581)',
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
-    "&:disabled": {
+    '&:disabled': {
       color: tokens.colorNeutralForegroundDisabled,
-      cursor: "not-allowed",
+      cursor: 'not-allowed',
     },
   },
   newTopicButton: {
     color: tokens.colorNeutralForegroundOnBrand,
-    backgroundImage: "linear-gradient(to right, light-dark(#2770ea, #244b8f), light-dark(#1b4aef, #203581))",
+    backgroundImage: 'linear-gradient(to right, light-dark(#2770ea, #244b8f), light-dark(#1b4aef, #203581))',
     border: 0,
     boxShadow: tokens.shadow4,
-    transitionProperty: "filter, opacity, transform",
+    transitionProperty: 'filter, opacity, transform',
     transitionDuration: tokens.durationFaster,
-    "&:hover": { filter: "brightness(1.06)" },
-    "&:active": { transform: "translateY(1px)" },
-    "&:disabled": { opacity: 0.45, cursor: "not-allowed", boxShadow: "none" },
+    '&:hover': { filter: 'brightness(1.06)' },
+    '&:active': { transform: 'translateY(1px)' },
+    '&:disabled': { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' },
   },
   broomIcon: {
-    display: "block",
-    filter: "brightness(0) invert(1)",
-    height: "21px",
-    width: "23px",
+    display: 'block',
+    filter: 'brightness(0) invert(1)',
+    height: '21px',
+    width: '23px',
   },
 });
 
@@ -123,7 +123,7 @@ export function PlaygroundComposer({
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-    textarea.style.height = "0px";
+    textarea.style.height = '0px';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 144)}px`;
   }, [draft]);
 
@@ -171,9 +171,9 @@ export function PlaygroundComposer({
             placeholder={placeholder}
             rows={1}
             value={draft}
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+            onChange={event => onDraftChange(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 if (canSend) onSend();
               }

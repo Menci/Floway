@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ModelPricing } from '@floway-dev/protocols/common';
 import {
   PRICING_FIELDS_BY_KIND,
   pricingEntryDraftsFor,
@@ -12,6 +11,7 @@ import {
   withRate,
   withThresholdCoordinate,
 } from '../../../src/components/upstream-editor/pricing-model';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 
 const baseOnly = (rates: Record<string, string>): ModelPricing => ({ entries: [{ rates }] });
 

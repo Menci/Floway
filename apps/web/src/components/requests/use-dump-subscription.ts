@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { DumpMetadata } from "@floway-dev/gateway/dump-types";
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { authFetch } from "../../api/auth";
-import { getSessionToken } from "../../auth/session";
+import { authFetch } from '../../api/auth';
+import { getSessionToken } from '../../auth/session';
+import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 const PAGE_LIMIT = 100;
 
@@ -31,28 +31,28 @@ export function useDumpSubscription(keyId: string | null) {
     setLoading(true);
     const source = new EventSource(`/api/dump/keys/${encodeURIComponent(keyId)}/stream?session=${encodeURIComponent(token)}`);
 
-    source.addEventListener("snapshot", (raw) => {
+    source.addEventListener('snapshot', raw => {
       const snapshot = (JSON.parse((raw as MessageEvent).data) as { records: DumpMetadata[] }).records;
-      setRecords((current) => {
-        const ids = new Set(snapshot.map((record) => record.id));
+      setRecords(current => {
+        const ids = new Set(snapshot.map(record => record.id));
         const oldest = snapshot.at(-1)?.id;
-        const tail = oldest ? current.filter((record) => !ids.has(record.id) && record.id < oldest) : [];
+        const tail = oldest ? current.filter(record => !ids.has(record.id) && record.id < oldest) : [];
         const next = [...snapshot, ...tail];
-        seenRef.current = new Set(next.map((record) => record.id));
+        seenRef.current = new Set(next.map(record => record.id));
         return next;
       });
       setLoading(false);
       setError(null);
     });
-    source.addEventListener("appended", (raw) => {
+    source.addEventListener('appended', raw => {
       const record = JSON.parse((raw as MessageEvent).data) as DumpMetadata;
       if (seenRef.current.has(record.id)) return;
       seenRef.current.add(record.id);
-      setRecords((current) => [record, ...current]);
+      setRecords(current => [record, ...current]);
     });
-    source.addEventListener("error", (raw) => {
+    source.addEventListener('error', raw => {
       const data = (raw as MessageEvent).data as unknown;
-      if (typeof data === "string" && data) {
+      if (typeof data === 'string' && data) {
         try {
           setError((JSON.parse(data) as { message: string }).message);
         } catch {
@@ -61,7 +61,7 @@ export function useDumpSubscription(keyId: string | null) {
         setLoading(false);
         source.close();
       } else if (source.readyState === EventSource.CLOSED) {
-        setError("Stream disconnected");
+        setError('Stream disconnected');
         setLoading(false);
       }
     });
@@ -79,10 +79,10 @@ export function useDumpSubscription(keyId: string | null) {
       );
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const page = (await response.json() as { records: DumpMetadata[] }).records;
-      const fresh = page.filter((record) => !seenRef.current.has(record.id));
-      fresh.forEach((record) => seenRef.current.add(record.id));
+      const fresh = page.filter(record => !seenRef.current.has(record.id));
+      fresh.forEach(record => seenRef.current.add(record.id));
       if (page.length < PAGE_LIMIT) setHasOlder(false);
-      if (fresh.length) setRecords((current) => [...current, ...fresh]);
+      if (fresh.length) setRecords(current => [...current, ...fresh]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {

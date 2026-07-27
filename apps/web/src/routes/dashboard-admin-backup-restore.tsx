@@ -1,21 +1,21 @@
-import { useCallback, useRef, useState } from "react";
-import { redirect } from "react-router";
-import { useTranslation } from "react-i18next";
-import { ArrowDownloadRegular, ArrowUploadRegular } from "@fluentui/react-icons";
+import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons';
+import { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { redirect } from 'react-router';
 
-import type { Route } from "./+types/dashboard-admin-backup-restore";
+import type { Route } from './+types/dashboard-admin-backup-restore';
+import { authFetch, callApi } from '../api/auth';
 import type {
   BackupExportData,
   BackupExportResponse,
   BackupImportCounts,
   BackupImportResponse,
-} from "../api/types";
-import { authFetch, callApi } from "../api/auth";
-import { getSessionToken } from "../auth/session";
-import { ConfirmDialog } from "../components/ui/confirm-dialog";
-import { Panel } from "../components/ui/panel";
-import { fluentComponents } from "../fluent";
-import { useDashboardOutletContext } from "./dashboard";
+} from '../api/types';
+import { getSessionToken } from '../auth/session';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { Panel } from '../components/ui/panel';
+import { fluentComponents } from '../fluent';
+import { useDashboardOutletContext } from './dashboard';
 
 const {
   Button,
@@ -29,12 +29,12 @@ const {
 } = fluentComponents;
 
 export async function clientLoader() {
-  if (!getSessionToken()) throw redirect("/");
+  if (!getSessionToken()) throw redirect('/');
   return null;
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Backup and Restore | Floway" }];
+  return [{ title: 'Backup and Restore | Floway' }];
 }
 
 // ---------------------------------------------------------------------------
@@ -43,73 +43,73 @@ export function meta({}: Route.MetaArgs) {
 
 const useDropzoneStyles = makeStyles({
   root: {
-    alignItems: "center",
-    ...shorthands.border("2px", "dashed", "var(--colorNeutralStroke1)"),
-    ...shorthands.borderRadius("8px"),
-    cursor: "pointer",
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-    justifyContent: "center",
-    minHeight: "120px",
-    padding: "24px",
-    textAlign: "center",
-    transition: "border-color .15s, background-color .15s",
-    ":hover": {
-      ...shorthands.borderColor("var(--colorBrandForeground1)"),
-      backgroundColor: "var(--colorBrandBackground2)",
+    alignItems: 'center',
+    ...shorthands.border('2px', 'dashed', 'var(--colorNeutralStroke1)'),
+    ...shorthands.borderRadius('8px'),
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    justifyContent: 'center',
+    minHeight: '120px',
+    padding: '24px',
+    textAlign: 'center',
+    transition: 'border-color .15s, background-color .15s',
+    ':hover': {
+      ...shorthands.borderColor('var(--colorBrandForeground1)'),
+      backgroundColor: 'var(--colorBrandBackground2)',
     },
   },
   active: {
-    ...shorthands.borderColor("var(--colorBrandForeground1)"),
-    backgroundColor: "var(--colorBrandBackground2)",
+    ...shorthands.borderColor('var(--colorBrandForeground1)'),
+    backgroundColor: 'var(--colorBrandBackground2)',
   },
   disabled: {
-    cursor: "not-allowed",
-    opacity: ".6",
+    cursor: 'not-allowed',
+    opacity: '.6',
   },
 });
 
 const usePreviewGridStyles = makeStyles({
   grid: {
-    display: "grid",
-    gap: "10px",
-    gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+    display: 'grid',
+    gap: '10px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
   },
   cell: {
-    alignItems: "center",
-    backgroundColor: "var(--colorNeutralBackground2)",
-    ...shorthands.borderRadius("6px"),
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-    padding: "12px 10px",
-    textAlign: "center",
+    alignItems: 'center',
+    backgroundColor: 'var(--colorNeutralBackground2)',
+    ...shorthands.borderRadius('6px'),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    padding: '12px 10px',
+    textAlign: 'center',
   },
 });
 
 const useModeCardStyles = makeStyles({
   wrapper: {
-    display: "grid",
-    gap: "12px",
-    gridTemplateColumns: "1fr 1fr",
+    display: 'grid',
+    gap: '12px',
+    gridTemplateColumns: '1fr 1fr',
   },
   card: {
-    backgroundColor: "var(--colorNeutralBackground2)",
-    ...shorthands.borderRadius("8px"),
-    cursor: "pointer",
-    display: "grid",
-    gap: "4px",
-    padding: "14px 16px",
-    transition: "box-shadow .15s",
-    ":hover": {
-      boxShadow: "0 0 0 1px var(--colorNeutralStroke1)",
+    backgroundColor: 'var(--colorNeutralBackground2)',
+    ...shorthands.borderRadius('8px'),
+    cursor: 'pointer',
+    display: 'grid',
+    gap: '4px',
+    padding: '14px 16px',
+    transition: 'box-shadow .15s',
+    ':hover': {
+      boxShadow: '0 0 0 1px var(--colorNeutralStroke1)',
     },
   },
   cardSelected: {
-    boxShadow: "0 0 0 2px var(--colorBrandForeground1)",
-    ":hover": {
-      boxShadow: "0 0 0 2px var(--colorBrandForeground1)",
+    boxShadow: '0 0 0 2px var(--colorBrandForeground1)',
+    ':hover': {
+      boxShadow: '0 0 0 2px var(--colorBrandForeground1)',
     },
   },
 });
@@ -119,13 +119,13 @@ const useModeCardStyles = makeStyles({
 // ---------------------------------------------------------------------------
 
 const PREVIEW_LABEL_KEYS = [
-  "users",
-  "apiKeys",
-  "upstreams",
-  "proxies",
-  "usage",
-  "searchUsage",
-  "performance",
+  'users',
+  'apiKeys',
+  'upstreams',
+  'proxies',
+  'usage',
+  'searchUsage',
+  'performance',
 ] as const;
 const EXPORT_VERSION = 17;
 
@@ -151,22 +151,22 @@ function parseBackupFile(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { ok: false, error: "The selected file is not a valid Floway backup file." };
+    return { ok: false, error: 'The selected file is not a valid Floway backup file.' };
   }
 
   if (
     !parsed ||
-    typeof parsed !== "object" ||
-    !("version" in parsed) ||
-    !("data" in parsed) ||
-    !("exportedAt" in parsed)
+    typeof parsed !== 'object' ||
+    !('version' in parsed) ||
+    !('data' in parsed) ||
+    !('exportedAt' in parsed)
   ) {
-    return { ok: false, error: "The selected file is not a valid Floway backup file." };
+    return { ok: false, error: 'The selected file is not a valid Floway backup file.' };
   }
 
   const record = parsed as Record<string, unknown>;
   if (record.version !== EXPORT_VERSION) {
-    return { ok: false, error: "The selected file is not a valid Floway backup file." };
+    return { ok: false, error: 'The selected file is not a valid Floway backup file.' };
   }
 
   return { ok: true, payload: parsed as BackupExportResponse };
@@ -188,7 +188,7 @@ export default function DashboardAdminBackupRestore() {
   // Import state
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importParsedData, setImportParsedData] = useState<BackupExportResponse | null>(null);
-  const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<BackupImportCounts | null>(null);
@@ -206,37 +206,13 @@ export default function DashboardAdminBackupRestore() {
   const mc = useModeCardStyles();
 
   // ---- admin guard ----
-  if (!user.isAdmin) {
-    return (
-      <section className="grid gap-[18px] max-w-[960px] min-w-0">
-        <header className="grid gap-[6px]">
-          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-            {t("dashboard.groups.admin")}
-          </Text>
-          <Text size={700} weight="semibold">
-            {t("dashboard.backupRestore.heading")}
-          </Text>
-        </header>
-        <Panel className="!p-[22px_24px]">
-          <div className="grid gap-[10px] max-w-[680px]">
-            <Text size={300} weight="semibold" style={{ color: "light-dark(#0f6cbd, #75b6f7)" }}>
-              {t("dashboard.pages.adminOnly")}
-            </Text>
-            <Text size={300} className="text-fui-fg3">
-              {t("dashboard.pages.adminOnlyDescription")}
-            </Text>
-          </div>
-        </Panel>
-      </section>
-    );
-  }
 
   // ---- export handler ----
   const handleExport = useCallback(async () => {
     setExporting(true);
     setExportError(null);
 
-    const qs = includePerformance ? "?include_performance=1" : "";
+    const qs = includePerformance ? '?include_performance=1' : '';
     const result = await callApi<BackupExportResponse>(() => authFetch(`/api/export${qs}`));
 
     if (result.error) {
@@ -246,9 +222,9 @@ export default function DashboardAdminBackupRestore() {
     }
 
     const json = JSON.stringify(result.data, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
+    const anchor = document.createElement('a');
     anchor.href = url;
     const date = result.data.exportedAt.slice(0, 10);
     anchor.download = `floway-export-${date}.json`;
@@ -279,7 +255,7 @@ export default function DashboardAdminBackupRestore() {
         setImportParsedData(result.payload);
       };
       reader.onerror = () => {
-        setImportError("Failed to read the selected file.");
+        setImportError('Failed to read the selected file.');
       };
       reader.readAsText(file);
     },
@@ -291,7 +267,7 @@ export default function DashboardAdminBackupRestore() {
       const file = e.target.files?.[0];
       if (file) handleFile(file);
       // Reset so re-selecting the same file triggers onChange again
-      e.target.value = "";
+      e.target.value = '';
     },
     [handleFile],
   );
@@ -328,11 +304,11 @@ export default function DashboardAdminBackupRestore() {
   // ---- import submit ----
   const handleImportClick = useCallback(() => {
     if (!importParsedData) return;
-    if (importMode === "replace") {
+    if (importMode === 'replace') {
       setConfirmOpen(true);
       return;
     }
-    doImport();
+    void doImport();
   }, [importParsedData, importMode]);
 
   const doImport = useCallback(async () => {
@@ -342,16 +318,15 @@ export default function DashboardAdminBackupRestore() {
     setImportSuccess(null);
 
     const result = await callApi<BackupImportResponse>(() =>
-      authFetch("/api/import", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+      authFetch('/api/import', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           version: EXPORT_VERSION,
           mode: importMode,
           data: importParsedData.data,
         }),
-      }),
-    );
+      }));
 
     if (result.error) {
       setImportError(result.error.message);
@@ -368,34 +343,59 @@ export default function DashboardAdminBackupRestore() {
   // ---- render ----
   const previewCounts = importParsedData ? countRecords(importParsedData.data) : null;
 
+  if (!user.isAdmin) {
+    return (
+      <section className="grid gap-[18px] max-w-[960px] min-w-0">
+        <header className="grid gap-[6px]">
+          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
+            {t('dashboard.groups.admin')}
+          </Text>
+          <Text size={700} weight="semibold">
+            {t('dashboard.backupRestore.heading')}
+          </Text>
+        </header>
+        <Panel className="!p-[22px_24px]">
+          <div className="grid gap-[10px] max-w-[680px]">
+            <Text size={300} weight="semibold" style={{ color: 'light-dark(#0f6cbd, #75b6f7)' }}>
+              {t('dashboard.pages.adminOnly')}
+            </Text>
+            <Text size={300} className="text-fui-fg3">
+              {t('dashboard.pages.adminOnlyDescription')}
+            </Text>
+          </div>
+        </Panel>
+      </section>
+    );
+  }
+
   return (
     <section className="grid gap-[18px] max-w-[960px] min-w-0">
       {/* Page header */}
       <header className="grid gap-[6px]">
         <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-          {t("dashboard.groups.admin")}
+          {t('dashboard.groups.admin')}
         </Text>
         <Text size={700} weight="semibold">
-          {t("dashboard.backupRestore.heading")}
+          {t('dashboard.backupRestore.heading')}
         </Text>
       </header>
 
       {/* Export panel */}
       <Panel className="!p-[22px_24px] grid gap-[16px]">
         <Text size={400} weight="semibold">
-          {t("dashboard.backupRestore.export.heading")}
+          {t('dashboard.backupRestore.export.heading')}
         </Text>
         <Text size={300} className="text-fui-fg3">
-          {t("dashboard.backupRestore.export.description")}
+          {t('dashboard.backupRestore.export.description')}
         </Text>
 
         <Checkbox
-          label={t("dashboard.backupRestore.export.includePerformance")}
+          label={t('dashboard.backupRestore.export.includePerformance')}
           checked={includePerformance}
           onChange={(_, data) => setIncludePerformance(!!data.checked)}
         />
         <Text size={200} className="text-fui-fg3">
-          {t("dashboard.backupRestore.export.includePerformanceHint")}
+          {t('dashboard.backupRestore.export.includePerformanceHint')}
         </Text>
 
         {exportError && (
@@ -409,11 +409,11 @@ export default function DashboardAdminBackupRestore() {
             appearance="primary"
             disabled={exporting}
             icon={exporting ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
-            onClick={handleExport}
+            onClick={() => void handleExport()}
           >
             {exporting
-              ? t("dashboard.backupRestore.export.buttonExporting")
-              : t("dashboard.backupRestore.export.button")}
+              ? t('dashboard.backupRestore.export.buttonExporting')
+              : t('dashboard.backupRestore.export.button')}
           </Button>
         </div>
       </Panel>
@@ -421,25 +421,25 @@ export default function DashboardAdminBackupRestore() {
       {/* Import panel */}
       <Panel className="!p-[22px_24px] grid gap-[16px]">
         <Text size={400} weight="semibold">
-          {t("dashboard.backupRestore.import.heading")}
+          {t('dashboard.backupRestore.import.heading')}
         </Text>
         <Text size={300} className="text-fui-fg3">
-          {t("dashboard.backupRestore.import.description")}
+          {t('dashboard.backupRestore.import.description')}
         </Text>
 
         {/* Drop zone */}
         <div
-          className={`${dz.root} ${dragOver ? dz.active : ""} ${importing ? dz.disabled : ""}`}
+          className={`${dz.root} ${dragOver ? dz.active : ''} ${importing ? dz.disabled : ''}`}
           role="button"
           tabIndex={0}
           onClick={openFilePicker}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") openFilePicker();
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') openFilePicker();
           }}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          aria-label={t("dashboard.backupRestore.import.dropzone")}
+          aria-label={t('dashboard.backupRestore.import.dropzone')}
         >
           <input
             ref={fileInputRef}
@@ -450,12 +450,12 @@ export default function DashboardAdminBackupRestore() {
           />
           <ArrowUploadRegular
             className="text-fui-fg3"
-            style={{ fontSize: "28px" }}
+            style={{ fontSize: '28px' }}
           />
           <Text size={300} className="text-fui-fg3">
             {dragOver
-              ? t("dashboard.backupRestore.import.dropzoneActive")
-              : t("dashboard.backupRestore.import.dropzone")}
+              ? t('dashboard.backupRestore.import.dropzoneActive')
+              : t('dashboard.backupRestore.import.dropzone')}
           </Text>
         </div>
 
@@ -464,7 +464,7 @@ export default function DashboardAdminBackupRestore() {
           <>
             <div className="flex items-center gap-[12px]">
               <Text size={300} weight="semibold">
-                {t("dashboard.backupRestore.import.fileSelected", {
+                {t('dashboard.backupRestore.import.fileSelected', {
                   name: importFile.name,
                   size: formatFileSize(importFile.size),
                 })}
@@ -475,17 +475,17 @@ export default function DashboardAdminBackupRestore() {
                 onClick={handleChangeFile}
                 size="small"
               >
-                {t("dashboard.backupRestore.import.change")}
+                {t('dashboard.backupRestore.import.change')}
               </Button>
             </div>
 
             {/* Preview grid */}
             <div>
               <Text size={300} weight="semibold">
-                {t("dashboard.backupRestore.import.preview")}
+                {t('dashboard.backupRestore.import.preview')}
               </Text>
               <div className={`${pg.grid} mt-[8px]`}>
-                {PREVIEW_LABEL_KEYS.map((key) => (
+                {PREVIEW_LABEL_KEYS.map(key => (
                   <div key={key} className={pg.cell}>
                     <Text size={500} weight="semibold">
                       {previewCounts?.[key] ?? 0}
@@ -501,49 +501,49 @@ export default function DashboardAdminBackupRestore() {
             {/* Mode selector */}
             <div>
               <Text size={300} weight="semibold">
-                {t("dashboard.backupRestore.import.mode")}
+                {t('dashboard.backupRestore.import.mode')}
               </Text>
               <div className={`${mc.wrapper} mt-[8px]`}>
                 <div
-                  className={`${mc.card} ${importMode === "merge" ? mc.cardSelected : ""}`}
+                  className={`${mc.card} ${importMode === 'merge' ? mc.cardSelected : ''}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setImportMode("merge")}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") setImportMode("merge");
+                  onClick={() => setImportMode('merge')}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') setImportMode('merge');
                   }}
                 >
                   <Text size={300} weight="semibold">
-                    {t("dashboard.backupRestore.import.modeMerge")}
+                    {t('dashboard.backupRestore.import.modeMerge')}
                   </Text>
                   <Text size={200} className="text-fui-fg3">
-                    {t("dashboard.backupRestore.import.modeMergeDesc")}
+                    {t('dashboard.backupRestore.import.modeMergeDesc')}
                   </Text>
                 </div>
                 <div
-                  className={`${mc.card} ${importMode === "replace" ? mc.cardSelected : ""}`}
+                  className={`${mc.card} ${importMode === 'replace' ? mc.cardSelected : ''}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setImportMode("replace")}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") setImportMode("replace");
+                  onClick={() => setImportMode('replace')}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') setImportMode('replace');
                   }}
                 >
                   <Text size={300} weight="semibold">
-                    {t("dashboard.backupRestore.import.modeReplace")}
+                    {t('dashboard.backupRestore.import.modeReplace')}
                   </Text>
                   <Text size={200} className="text-fui-fg3">
-                    {t("dashboard.backupRestore.import.modeReplaceDesc")}
+                    {t('dashboard.backupRestore.import.modeReplaceDesc')}
                   </Text>
                 </div>
               </div>
             </div>
 
             {/* Replace warning */}
-            {importMode === "replace" && (
+            {importMode === 'replace' && (
               <MessageBar intent="warning">
                 <MessageBarBody>
-                  {t("dashboard.backupRestore.import.replaceWarning")}
+                  {t('dashboard.backupRestore.import.replaceWarning')}
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -551,14 +551,14 @@ export default function DashboardAdminBackupRestore() {
             {/* Import button */}
             <div>
               <Button
-                appearance={importMode === "replace" ? "primary" : "primary"}
+                appearance={importMode === 'replace' ? 'primary' : 'primary'}
                 disabled={importing}
                 icon={importing ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
                 onClick={handleImportClick}
               >
                 {importing
-                  ? t("dashboard.backupRestore.import.buttonImporting")
-                  : t("dashboard.backupRestore.import.button")}
+                  ? t('dashboard.backupRestore.import.buttonImporting')
+                  : t('dashboard.backupRestore.import.button')}
               </Button>
             </div>
           </>
@@ -568,7 +568,7 @@ export default function DashboardAdminBackupRestore() {
         {importError && (
           <MessageBar intent="error">
             <MessageBarBody>
-              {t("dashboard.backupRestore.import.error")} {importError}
+              {t('dashboard.backupRestore.import.error')} {importError}
             </MessageBarBody>
           </MessageBar>
         )}
@@ -576,7 +576,7 @@ export default function DashboardAdminBackupRestore() {
         {importSuccess && (
           <MessageBar intent="success">
             <MessageBarBody>
-              {t("dashboard.backupRestore.import.success")}
+              {t('dashboard.backupRestore.import.success')}
             </MessageBarBody>
           </MessageBar>
         )}
@@ -584,16 +584,16 @@ export default function DashboardAdminBackupRestore() {
 
       {/* Confirm dialog for replace mode */}
       <ConfirmDialog
-        actionLabel={t("dashboard.backupRestore.import.button")}
-        cancelLabel={t("common.cancel")}
-        message={t("dashboard.backupRestore.confirmMessage")}
+        actionLabel={t('dashboard.backupRestore.import.button')}
+        cancelLabel={t('common.cancel')}
+        message={t('dashboard.backupRestore.confirmMessage')}
         onConfirm={() => {
           setConfirmOpen(false);
-          doImport();
+          void doImport();
         }}
         onOpenChange={setConfirmOpen}
         open={confirmOpen}
-        title={t("dashboard.backupRestore.confirmTitle")}
+        title={t('dashboard.backupRestore.confirmTitle')}
       />
     </section>
   );

@@ -2,7 +2,7 @@ import {
   clearSessionToken,
   flowaySessionHeader,
   getSessionToken,
-} from "../auth/session";
+} from '../auth/session';
 
 export interface AuthUser {
   id: number;
@@ -87,7 +87,7 @@ export const callApi = async <T>(
       error: {
         status: response.status,
         message:
-          error instanceof Error ? error.message : "Invalid JSON response",
+          error instanceof Error ? error.message : 'Invalid JSON response',
       },
     };
   }
@@ -98,12 +98,11 @@ export const login = (body: {
   password: string;
 }): Promise<ApiResult<LoginResponse>> =>
   callApi<LoginResponse>(() =>
-    fetch("/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+    fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-    }),
-  );
+    }));
 
 // Mirrors PATCH /api/users/me/password in the Floway control plane.
 export const changeOwnPassword = (body: {
@@ -111,22 +110,21 @@ export const changeOwnPassword = (body: {
   newPassword: string;
 }): Promise<ApiResult<{ ok: true }>> =>
   callApi<{ ok: true }>(() =>
-    authFetch("/api/users/me/password", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
+    authFetch('/api/users/me/password', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-    }),
-  );
+    }));
 
 const errorMessageFromBody = (body: unknown): string | null => {
-  if (!body || typeof body !== "object") return null;
+  if (!body || typeof body !== 'object') return null;
 
   const record = body as Record<string, unknown>;
-  if (typeof record.error === "string") return record.error;
+  if (typeof record.error === 'string') return record.error;
   if (
     record.error &&
-    typeof record.error === "object" &&
-    typeof (record.error as Record<string, unknown>).message === "string"
+    typeof record.error === 'object' &&
+    typeof (record.error as Record<string, unknown>).message === 'string'
   ) {
     return (record.error as { message: string }).message;
   }

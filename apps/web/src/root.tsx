@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   isRouteErrorResponse,
   Links,
@@ -5,18 +6,17 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-} from "react-router";
-import { useEffect, useState } from "react";
+} from 'react-router';
 
-import type { Route } from "./+types/root";
-import { BrowserLanguageSync } from "./components/browser-language-sync";
-import { DocumentTitleSync } from "./components/document-title-sync";
-import { ErrorShell, ErrorStack } from "./components/ui/error-shell";
-import { GradientBackground } from "./components/gradient-background";
-import { fluentComponents } from "./fluent";
-import { flowayDarkTheme, flowayLightTheme } from "./theme";
-import "./i18n";
-import "virtual:uno.css";
+import type { Route } from './+types/root';
+import { BrowserLanguageSync } from './components/browser-language-sync';
+import { DocumentTitleSync } from './components/document-title-sync';
+import { GradientBackground } from './components/gradient-background';
+import { ErrorShell, ErrorStack } from './components/ui/error-shell';
+import { fluentComponents } from './fluent';
+import { flowayDarkTheme, flowayLightTheme } from './theme';
+import './i18n';
+import 'virtual:uno.css';
 
 const { FluentProvider } = fluentComponents;
 
@@ -25,17 +25,17 @@ export const links: Route.LinksFunction = () => [];
 function useSystemTheme() {
   const [dark, setDark] = useState(
     () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches,
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches,
   );
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = (e: MediaQueryListEvent) => setDark(e.matches);
-    mq.addEventListener("change", onChange);
+    mq.addEventListener('change', onChange);
     setReady(true);
-    return () => mq.removeEventListener("change", onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   const theme = dark ? flowayDarkTheme : flowayLightTheme;
@@ -61,7 +61,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         `}</style>
       </head>
       <body className="text-[14px] font-sans m-0">
-        <FluentProvider key={ready ? "ready" : "init"} theme={theme}>
+        <FluentProvider key={ready ? 'ready' : 'init'} theme={theme}>
           <BrowserLanguageSync />
           <GradientBackground>{children}</GradientBackground>
         </FluentProvider>
@@ -82,15 +82,15 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!";
-  let details = "An unexpected error occurred.";
+  let message = 'Oops!';
+  let details = 'An unexpected error occurred.';
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
+    message = error.status === 404 ? '404' : 'Error';
     details =
       error.status === 404
-        ? "The requested page could not be found."
+        ? 'The requested page could not be found.'
         : error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;

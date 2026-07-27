@@ -1,56 +1,57 @@
-import { curveMonotoneX } from "d3-shape";
-import type { DecimalString } from "@floway-dev/protocols/common";
+import { curveMonotoneX } from 'd3-shape';
 
-import type { ControlPlaneModel, BillingMetric } from "../../api/types";
-import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from "../../utils/decimal-display";
-import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenDetail, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from "./types";
+import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenDetail, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
+import type { ControlPlaneModel, BillingMetric } from '../../api/types';
+import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
+import type { DecimalString } from '@floway-dev/protocols/common';
+
 const palette = [
-  "#0f6cbd",
-  "#13a10e",
-  "#c50f1f",
-  "#ca5010",
-  "#8764b8",
-  "#038387",
-  "#8e562e",
-  "#0078d4",
-  "#498205",
-  "#881798",
+  '#0f6cbd',
+  '#13a10e',
+  '#c50f1f',
+  '#ca5010',
+  '#8764b8',
+  '#038387',
+  '#8e562e',
+  '#0078d4',
+  '#498205',
+  '#881798',
 ];
 
 export const metricConfig: Record<
   UsageMetric,
-  { labelKey: string; kind: "count" | "cost" | "tokens" | "percent" }
+  { labelKey: string; kind: 'count' | 'cost' | 'tokens' | 'percent' }
 > = {
-  requests: { labelKey: "dashboard.usage.metrics.requests", kind: "count" },
-  cost: { labelKey: "dashboard.usage.metrics.cost", kind: "cost" },
-  total: { labelKey: "dashboard.usage.metrics.total", kind: "tokens" },
-  input: { labelKey: "dashboard.usage.metrics.input", kind: "tokens" },
-  output: { labelKey: "dashboard.usage.metrics.output", kind: "tokens" },
-  prefill: { labelKey: "dashboard.usage.metrics.prefill", kind: "tokens" },
-  cached: { labelKey: "dashboard.usage.metrics.cached", kind: "tokens" },
+  requests: { labelKey: 'dashboard.usage.metrics.requests', kind: 'count' },
+  cost: { labelKey: 'dashboard.usage.metrics.cost', kind: 'cost' },
+  total: { labelKey: 'dashboard.usage.metrics.total', kind: 'tokens' },
+  input: { labelKey: 'dashboard.usage.metrics.input', kind: 'tokens' },
+  output: { labelKey: 'dashboard.usage.metrics.output', kind: 'tokens' },
+  prefill: { labelKey: 'dashboard.usage.metrics.prefill', kind: 'tokens' },
+  cached: { labelKey: 'dashboard.usage.metrics.cached', kind: 'tokens' },
   cachedRate: {
-    labelKey: "dashboard.usage.metrics.cachedRate",
-    kind: "percent",
+    labelKey: 'dashboard.usage.metrics.cachedRate',
+    kind: 'percent',
   },
   cacheCreation: {
-    labelKey: "dashboard.usage.metrics.cacheCreation",
-    kind: "tokens",
+    labelKey: 'dashboard.usage.metrics.cacheCreation',
+    kind: 'tokens',
   },
   cacheHitRate: {
-    labelKey: "dashboard.usage.metrics.cacheHitRate",
-    kind: "percent",
+    labelKey: 'dashboard.usage.metrics.cacheHitRate',
+    kind: 'percent',
   },
 };
 
 export const summaryMetrics: UsageMetric[][] = [
-  ["requests", "cost"],
-  ["total", "output"],
-  ["input", "prefill"],
-  ["cached", "cachedRate"],
-  ["cacheCreation", "cacheHitRate"],
+  ['requests', 'cost'],
+  ['total', 'output'],
+  ['input', 'prefill'],
+  ['cached', 'cachedRate'],
+  ['cacheCreation', 'cacheHitRate'],
 ];
 
-const pad2 = (n: number): string => String(n).padStart(2, "0");
+const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 const localHourKey = (date: Date): string =>
   `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}`;
@@ -68,15 +69,15 @@ const local4hBucketStart = (date: Date): Date => {
 const toUtcHourParam = (date: Date): string => date.toISOString().slice(0, 13);
 
 const shortMonthDay = (date: Date, locale: string): string =>
-  date.toLocaleDateString(locale, { month: "short", day: "numeric" });
+  date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 
 const bucketLabel = (date: Date, range: UsageRange, locale: string): string => {
-  if (range === "30d") return shortMonthDay(date, locale);
+  if (range === '30d') return shortMonthDay(date, locale);
 
   const start = date.getHours();
-  const end = range === "7d" ? (start + 4) % 24 : (start + 1) % 24;
+  const end = range === '7d' ? (start + 4) % 24 : (start + 1) % 24;
   const time = `${pad2(start)}:00 - ${pad2(end)}:00`;
-  return range === "7d" ? `${shortMonthDay(date, locale)} ${time}` : time;
+  return range === '7d' ? `${shortMonthDay(date, locale)} ${time}` : time;
 };
 
 export const dashboardBuckets = (
@@ -84,7 +85,7 @@ export const dashboardBuckets = (
   nowMs: number,
   locale: string,
 ): UsageBucket[] => {
-  if (range === "today") {
+  if (range === 'today') {
     const current = new Date(nowMs);
     current.setMinutes(0, 0, 0);
     return Array.from({ length: 24 }, (_, index) => {
@@ -93,7 +94,7 @@ export const dashboardBuckets = (
     });
   }
 
-  if (range === "7d") {
+  if (range === '7d') {
     const start = local4hBucketStart(new Date(nowMs));
     return Array.from({ length: 42 }, (_, index) => {
       const date = new Date(start.getTime() - (41 - index) * 4 * 3_600_000);
@@ -112,13 +113,13 @@ export const dashboardBuckets = (
 export const dashboardRangeQuery = (
   range: UsageRange,
   nowMs: number,
-): { start: string; end: string; bucket: "hour" | "4h" | "day" } => {
+): { start: string; end: string; bucket: 'hour' | '4h' | 'day' } => {
   const now = new Date(nowMs);
   const start = new Date(now);
-  if (range === "today") {
+  if (range === 'today') {
     start.setTime(now.getTime() - 23 * 3_600_000);
     start.setMinutes(0, 0, 0);
-  } else if (range === "7d") {
+  } else if (range === '7d') {
     start.setTime(local4hBucketStart(now).getTime() - 41 * 4 * 3_600_000);
   } else {
     start.setDate(start.getDate() - 29);
@@ -127,7 +128,7 @@ export const dashboardRangeQuery = (
   return {
     start: toUtcHourParam(start),
     end: toUtcHourParam(new Date(now.getTime() + 3_600_000)),
-    bucket: range === "today" ? "hour" : range === "7d" ? "4h" : "day",
+    bucket: range === 'today' ? 'hour' : range === '7d' ? '4h' : 'day',
   };
 };
 
@@ -135,8 +136,8 @@ const parseUtcHour = (hour: string): Date => new Date(`${hour}:00:00Z`);
 
 const bucketKeyForUtcHour = (range: UsageRange, hour: string): string => {
   const date = parseUtcHour(hour);
-  if (range === "today") return localHourKey(date);
-  if (range === "7d") return localHourKey(local4hBucketStart(date));
+  if (range === 'today') return localHourKey(date);
+  if (range === '7d') return localHourKey(local4hBucketStart(date));
   return localDateKey(date);
 };
 
@@ -153,9 +154,9 @@ export function buildTokenChart({
   buckets,
 }: {
   records: DisplayUsageRecord[];
-  metadata: UsageResponse["keys"];
+  metadata: UsageResponse['keys'];
   models: ControlPlaneModel[];
-  groupKey: "keyId" | "model";
+  groupKey: 'keyId' | 'model';
   hiddenOwn: Set<string>;
   hiddenOther: Set<string>;
   redactKeys: boolean;
@@ -163,37 +164,36 @@ export function buildTokenChart({
   range: UsageRange;
   buckets: UsageBucket[];
 }): UsageChartModel {
-  const otherKey = groupKey === "keyId" ? "model" : "keyId";
-  const valueRecords = records.filter((record) => !hiddenOther.has(record[otherKey]));
+  const otherKey = groupKey === 'keyId' ? 'model' : 'keyId';
+  const valueRecords = records.filter(record => !hiddenOther.has(record[otherKey]));
   const { values, details } = aggregateTokenRecords(valueRecords, groupKey, metric, range, buckets);
-  const presentGroups = new Set(records.map((record) => record[groupKey]));
+  const presentGroups = new Set(records.map(record => record[groupKey]));
   const entries =
-    groupKey === "keyId"
+    groupKey === 'keyId'
       ? keyChartEntries([...presentGroups], metadata, records, redactKeys)
       : modelChartEntries([...presentGroups], models);
 
-  const visibleEntries = entries.filter((entry) => !hiddenOwn.has(entry.id));
-  const isPercent = metricConfig[metric].kind === "percent";
+  const visibleEntries = entries.filter(entry => !hiddenOwn.has(entry.id));
+  const isPercent = metricConfig[metric].kind === 'percent';
   const series = visibleEntries
-    .map((entry) => ({
+    .map(entry => ({
       entry,
-      data: buckets.map((bucket) => values.get(bucket.key)?.get(entry.id) ?? 0),
+      data: buckets.map(bucket => values.get(bucket.key)?.get(entry.id) ?? 0),
     }))
     .filter(({ data, entry }) =>
       isPercent
-        ? data.some((value) => value > 0)
-        : data.some((value) => value > 0) || hasRequests(details, entry.id),
-    );
+        ? data.some(value => value > 0)
+        : data.some(value => value > 0) || hasRequests(details, entry.id));
 
   return {
     entries,
     buckets,
     details,
-    kind: "token",
+    kind: 'token',
     range,
     stacked: !isPercent,
     data: {
-      chartTitle: "",
+      chartTitle: '',
       lineChartData: series.map(({ entry, data }) => ({
         legend: entry.label,
         color: colorForSlot(entry.colorSlot),
@@ -243,11 +243,11 @@ export function buildSearchChart({
   const entries = keyChartEntries(
     [...presentGroups],
     search.keys,
-    search.records.map((record) => ({
+    search.records.map(record => ({
       keyId: record.keyId,
       keyName: record.keyName,
       keyCreatedAt: record.keyCreatedAt,
-      model: "",
+      model: '',
       hour: record.hour,
       requests: record.requests,
       metrics: {},
@@ -255,7 +255,7 @@ export function buildSearchChart({
     })),
     redactKeys,
   );
-  const visibleEntries = entries.filter((entry) => !hiddenKeys.has(entry.id));
+  const visibleEntries = entries.filter(entry => !hiddenKeys.has(entry.id));
   const details = new Map<string, Map<string, TokenDetail>>();
   for (const bucket of buckets) details.set(bucket.key, new Map());
 
@@ -263,16 +263,16 @@ export function buildSearchChart({
     entries,
     buckets,
     details,
-    kind: "search",
+    kind: 'search',
     range,
     stacked: true,
     data: {
-      chartTitle: "",
-      lineChartData: visibleEntries.map((entry) => ({
+      chartTitle: '',
+      lineChartData: visibleEntries.map(entry => ({
         legend: entry.label,
         color: colorForSlot(entry.colorSlot),
         lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
-        data: buckets.map((bucket) => ({
+        data: buckets.map(bucket => ({
           x: bucket.date,
           y: groups.get(entry.id)?.get(bucket.key) ?? 0,
           xAxisCalloutData: bucket.label,
@@ -284,7 +284,7 @@ export function buildSearchChart({
 
 function aggregateTokenRecords(
   records: DisplayUsageRecord[],
-  groupKey: "keyId" | "model",
+  groupKey: 'keyId' | 'model',
   metric: UsageMetric,
   range: UsageRange,
   buckets: UsageBucket[],
@@ -306,14 +306,14 @@ function aggregateTokenRecords(
     addRecordToDetail(detail, record);
     bucketDetails.set(group, detail);
 
-    if (metricConfig[metric].kind !== "percent") {
+    if (metricConfig[metric].kind !== 'percent') {
       const bucketValues = values.get(bucket);
       if (bucketValues === undefined) throw new RangeError(`Bucket is missing from the chart series: ${bucket}`);
       bucketValues.set(group, (bucketValues.get(group) ?? 0) + plottableMetricValue(record, metric));
     }
   }
 
-  if (metricConfig[metric].kind === "percent") {
+  if (metricConfig[metric].kind === 'percent') {
     for (const [bucket, bucketDetails] of details) {
       const bucketValues = values.get(bucket)!;
       for (const [group, detail] of bucketDetails) {
@@ -327,7 +327,7 @@ function aggregateTokenRecords(
 
 function keyChartEntries(
   presentKeyIds: string[],
-  metadata: UsageResponse["keys"],
+  metadata: UsageResponse['keys'],
   records: DisplayUsageRecord[],
   redactKeys: boolean,
 ): ChartEntry[] {
@@ -341,15 +341,15 @@ function keyChartEntries(
     });
   }
 
-  const orderedIds = metadata.map((key) => key.id);
+  const orderedIds = metadata.map(key => key.id);
   const slotById = new Map<string, number>(orderedIds.map((id, index) => [id, index]));
   [...new Set(presentKeyIds)]
-    .filter((id) => !slotById.has(id))
+    .filter(id => !slotById.has(id))
     .sort()
     .forEach((id, index) => slotById.set(id, orderedIds.length + index));
 
   return [...new Set(presentKeyIds)]
-    .map((id) => ({
+    .map(id => ({
       id,
       label: redactKeys ? id.slice(0, 6) : meta.get(id)?.name ?? id.slice(0, 8),
       colorSlot: slotById.get(id) ?? 0,
@@ -362,10 +362,10 @@ function modelChartEntries(
   models: ControlPlaneModel[],
 ): ChartEntry[] {
   const present = new Set(presentModelIds);
-  return [...new Set([...models.map((model) => model.id), ...presentModelIds])]
+  return [...new Set([...models.map(model => model.id), ...presentModelIds])]
     .sort()
     .map((id, colorSlot) => ({ id, label: id, colorSlot }))
-    .filter((entry) => present.has(entry.id));
+    .filter(entry => present.has(entry.id));
 }
 
 export function summarizeUsage(records: DisplayUsageRecord[]): TokenSummary {
@@ -386,12 +386,12 @@ export function summarizeUsage(records: DisplayUsageRecord[]): TokenSummary {
 function addRecordToDetail(detail: TokenDetail, record: DisplayUsageRecord) {
   detail.requests += record.requests;
   if (record.cost !== null) detail.cost = sumDecimalStrings(detail.cost ?? '0', record.cost);
-  detail.input = sumDecimalStrings(detail.input, dim(record, "input_tokens"));
-  detail.output = sumDecimalStrings(detail.output, dim(record, "output_tokens"));
-  detail.cacheRead = sumDecimalStrings(detail.cacheRead, dim(record, "input_cache_read_tokens"));
-  detail.cacheCreation = sumDecimalStrings(detail.cacheCreation, dim(record, "input_cache_write_tokens"), dim(record, "input_cache_write_1h_tokens"));
-  detail.inputImage = sumDecimalStrings(detail.inputImage, dim(record, "input_image_tokens"));
-  detail.outputImage = sumDecimalStrings(detail.outputImage, dim(record, "output_image_tokens"));
+  detail.input = sumDecimalStrings(detail.input, dim(record, 'input_tokens'));
+  detail.output = sumDecimalStrings(detail.output, dim(record, 'output_tokens'));
+  detail.cacheRead = sumDecimalStrings(detail.cacheRead, dim(record, 'input_cache_read_tokens'));
+  detail.cacheCreation = sumDecimalStrings(detail.cacheCreation, dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'));
+  detail.inputImage = sumDecimalStrings(detail.inputImage, dim(record, 'input_image_tokens'));
+  detail.outputImage = sumDecimalStrings(detail.outputImage, dim(record, 'output_image_tokens'));
 }
 
 function emptyDetail(): TokenDetail {
@@ -418,39 +418,39 @@ function dim(record: DisplayUsageRecord, key: BillingMetric): DecimalString {
 
 function metricValue(record: DisplayUsageRecord, metric: UsageMetric): DecimalString | number | null {
   switch (metric) {
-    case "requests":
-      return record.requests;
-    case "cost":
-      return record.cost;
-    case "total":
-      return sumDecimalStrings(
-        dim(record, "input_tokens"),
-        dim(record, "output_tokens"),
-        dim(record, "input_cache_read_tokens"),
-        dim(record, "input_cache_write_tokens"),
-        dim(record, "input_cache_write_1h_tokens"),
-        dim(record, "input_image_tokens"),
-        dim(record, "output_image_tokens"),
-      );
-    case "input":
-      return sumDecimalStrings(
-        dim(record, "input_tokens"),
-        dim(record, "input_cache_read_tokens"),
-        dim(record, "input_cache_write_tokens"),
-        dim(record, "input_cache_write_1h_tokens"),
-        dim(record, "input_image_tokens"),
-      );
-    case "output":
-      return sumDecimalStrings(dim(record, "output_tokens"), dim(record, "output_image_tokens"));
-    case "prefill":
-      return sumDecimalStrings(dim(record, "input_tokens"), dim(record, "input_cache_write_tokens"), dim(record, "input_cache_write_1h_tokens"), dim(record, "input_image_tokens"));
-    case "cached":
-      return dim(record, "input_cache_read_tokens");
-    case "cacheCreation":
-      return sumDecimalStrings(dim(record, "input_cache_write_tokens"), dim(record, "input_cache_write_1h_tokens"));
-    case "cachedRate":
-    case "cacheHitRate":
-      return null;
+  case 'requests':
+    return record.requests;
+  case 'cost':
+    return record.cost;
+  case 'total':
+    return sumDecimalStrings(
+      dim(record, 'input_tokens'),
+      dim(record, 'output_tokens'),
+      dim(record, 'input_cache_read_tokens'),
+      dim(record, 'input_cache_write_tokens'),
+      dim(record, 'input_cache_write_1h_tokens'),
+      dim(record, 'input_image_tokens'),
+      dim(record, 'output_image_tokens'),
+    );
+  case 'input':
+    return sumDecimalStrings(
+      dim(record, 'input_tokens'),
+      dim(record, 'input_cache_read_tokens'),
+      dim(record, 'input_cache_write_tokens'),
+      dim(record, 'input_cache_write_1h_tokens'),
+      dim(record, 'input_image_tokens'),
+    );
+  case 'output':
+    return sumDecimalStrings(dim(record, 'output_tokens'), dim(record, 'output_image_tokens'));
+  case 'prefill':
+    return sumDecimalStrings(dim(record, 'input_tokens'), dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'), dim(record, 'input_image_tokens'));
+  case 'cached':
+    return dim(record, 'input_cache_read_tokens');
+  case 'cacheCreation':
+    return sumDecimalStrings(dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'));
+  case 'cachedRate':
+  case 'cacheHitRate':
+    return null;
   }
 }
 
@@ -468,8 +468,8 @@ function tokenDetailMetricValue(detail: TokenDetail, metric: UsageMetric): numbe
     const bottom = decimalStringToPlottableNumber(denominator);
     return bottom > 0 ? (decimalStringToPlottableNumber(numerator) / bottom) * 100 : null;
   };
-  if (metric === "cacheHitRate") return ratio(detail.cacheRead, sumDecimalStrings(detail.cacheRead, detail.cacheCreation));
-  if (metric === "cachedRate") {
+  if (metric === 'cacheHitRate') return ratio(detail.cacheRead, sumDecimalStrings(detail.cacheRead, detail.cacheCreation));
+  if (metric === 'cachedRate') {
     return ratio(detail.cacheRead, sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage));
   }
   return null;
@@ -497,22 +497,22 @@ export function chartTickValues(buckets: UsageBucket[]): UsageBucket[] {
 }
 
 export function formatAxisDate(date: Date, range: UsageRange, locale: string): string {
-  if (range === "today") {
+  if (range === 'today') {
     return date.toLocaleTimeString(locale, {
-      hour: "2-digit",
-      minute: "2-digit",
+      hour: '2-digit',
+      minute: '2-digit',
     });
   }
-  if (range === "7d") {
+  if (range === '7d') {
     return date.toLocaleDateString(locale, {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
     });
   }
   return date.toLocaleDateString(locale, {
-    month: "2-digit",
-    day: "2-digit",
+    month: '2-digit',
+    day: '2-digit',
   });
 }
 
@@ -525,7 +525,7 @@ export function formatCalloutTitle(
   if (value instanceof Date) {
     return labelByTime.get(value.getTime()) ?? formatAxisDate(value, range, locale);
   }
-  if (typeof value === "number") return value.toLocaleString(locale);
+  if (typeof value === 'number') return value.toLocaleString(locale);
   return value;
 }
 
@@ -535,7 +535,7 @@ export function bucketKeyForCallout(
 ): string | null {
   if (value instanceof Date) {
     return (
-      buckets.find((bucket) => bucket.date.getTime() === value.getTime())?.key ??
+      buckets.find(bucket => bucket.date.getTime() === value.getTime())?.key ??
       null
     );
   }
@@ -562,13 +562,13 @@ export function formatDecimalCount(value: DecimalString): string {
 
 export function formatInputRate(cached: DecimalString, input: DecimalString): string {
   const denominator = decimalStringToPlottableNumber(input);
-  if (denominator <= 0) return "-";
+  if (denominator <= 0) return '-';
   return `${((decimalStringToPlottableNumber(cached) / denominator) * 100).toFixed(1)}%`;
 }
 
 export function formatHitRate(cached: DecimalString, created: DecimalString): string {
   const denominator = decimalStringToPlottableNumber(sumDecimalStrings(cached, created));
-  if (denominator <= 0) return "-";
+  if (denominator <= 0) return '-';
   return `${((decimalStringToPlottableNumber(cached) / denominator) * 100).toFixed(1)}%`;
 }
 
@@ -578,26 +578,26 @@ export function formatSummaryMetric(
   locale: string,
 ): string {
   switch (metric) {
-    case "requests":
-      return formatCount(summary.requests, locale);
-    case "cost":
-      return formatUsd(summary.cost);
-    case "total":
-      return formatDecimalCount(summary.total);
-    case "input":
-      return formatDecimalCount(summary.input);
-    case "output":
-      return formatDecimalCount(summary.output);
-    case "prefill":
-      return formatDecimalCount(summary.prefill);
-    case "cached":
-      return formatDecimalCount(summary.cacheRead);
-    case "cacheCreation":
-      return formatDecimalCount(summary.cacheCreation);
-    case "cachedRate":
-      return formatInputRate(summary.cacheRead, summary.input);
-    case "cacheHitRate":
-      return formatHitRate(summary.cacheRead, summary.cacheCreation);
+  case 'requests':
+    return formatCount(summary.requests, locale);
+  case 'cost':
+    return formatUsd(summary.cost);
+  case 'total':
+    return formatDecimalCount(summary.total);
+  case 'input':
+    return formatDecimalCount(summary.input);
+  case 'output':
+    return formatDecimalCount(summary.output);
+  case 'prefill':
+    return formatDecimalCount(summary.prefill);
+  case 'cached':
+    return formatDecimalCount(summary.cacheRead);
+  case 'cacheCreation':
+    return formatDecimalCount(summary.cacheCreation);
+  case 'cachedRate':
+    return formatInputRate(summary.cacheRead, summary.input);
+  case 'cacheHitRate':
+    return formatHitRate(summary.cacheRead, summary.cacheCreation);
   }
 }
 
@@ -606,9 +606,9 @@ export function formatSummaryMetric(
 // Summary tiles use formatUsd and formatDecimalCount on the decimal values.
 export function formatMetricValue(value: number, metric: UsageMetric, locale: string): string {
   const kind = metricConfig[metric].kind;
-  if (kind === "percent") return `${value.toFixed(0)}%`;
-  if (kind === "cost") return formatPlottedCost(value);
-  if (kind === "count") return formatCount(value, locale);
+  if (kind === 'percent') return `${value.toFixed(0)}%`;
+  if (kind === 'cost') return formatPlottedCost(value);
+  if (kind === 'count') return formatCount(value, locale);
   return formatTokenCount(value, locale);
 }
 
@@ -616,12 +616,12 @@ function formatPlottedCost(value: number): string {
   if (value >= 1) return `$${value.toFixed(2)}`;
   if (value >= 0.01) return `$${value.toFixed(3)}`;
   if (value > 0) return `$${value.toFixed(4)}`;
-  return "$0";
+  return '$0';
 }
 
 export function formatProvider(provider: string): string {
-  if (provider === "microsoft-grounding") return "Microsoft Grounding";
-  if (provider === "tavily") return "Tavily";
-  if (provider === "jina") return "Jina";
+  if (provider === 'microsoft-grounding') return 'Microsoft Grounding';
+  if (provider === 'tavily') return 'Tavily';
+  if (provider === 'jina') return 'Jina';
   return provider;
 }

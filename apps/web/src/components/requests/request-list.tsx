@@ -1,20 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
-import type { DumpMetadata } from "@floway-dev/gateway/dump-types";
 import {
   ArrowDownloadRegular,
   ArrowUploadRegular,
   CheckmarkCircleRegular,
   DismissCircleRegular,
   TimerRegular,
-} from "@fluentui/react-icons";
-import { List } from "react-window";
-import type { ListImperativeAPI, RowComponentProps } from "react-window";
-import { useTranslation } from "react-i18next";
+} from '@fluentui/react-icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import { List } from 'react-window';
+import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 
-import type { ApiKey } from "../../api/types";
-import { fluentComponents } from "../../fluent";
-import { Select } from "../ui/fluent-form-controls";
 import {
   errorLabel,
   formatBytes,
@@ -24,32 +20,36 @@ import {
   formatTokens,
   requestSeverity,
   totalTokens,
-} from "./format";
+} from './format';
+import type { ApiKey } from '../../api/types';
+import { fluentComponents } from '../../fluent';
+import { Select } from '../ui/fluent-form-controls';
+import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 const { MessageBar, MessageBarBody, Spinner, Text, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 74;
 
 const useStyles = makeStyles({
-  list: { outlineStyle: "none" },
+  list: { outlineStyle: 'none' },
   row: {
-    backgroundColor: "transparent",
-    borderBottom: "1px solid var(--colorNeutralStroke2)",
-    cursor: "pointer",
-    outlineStyle: "none",
-    padding: "8px 10px",
-    ":focus-visible": { boxShadow: "inset 0 0 0 2px var(--colorCompoundBrandStroke)" },
+    backgroundColor: 'transparent',
+    borderBottom: '1px solid var(--colorNeutralStroke2)',
+    cursor: 'pointer',
+    outlineStyle: 'none',
+    padding: '8px 10px',
+    ':focus-visible': { boxShadow: 'inset 0 0 0 2px var(--colorCompoundBrandStroke)' },
   },
   selected: {
-    backgroundColor: "var(--colorBrandBackgroundInvertedHover)",
-    border: "1px solid var(--colorBrandStroke1)",
-    borderRadius: "8px",
-    "@media (prefers-color-scheme: dark)": {
-      backgroundColor: "var(--colorBrandBackground2)",
+    backgroundColor: 'var(--colorBrandBackgroundInvertedHover)',
+    border: '1px solid var(--colorBrandStroke1)',
+    borderRadius: '8px',
+    '@media (prefers-color-scheme: dark)': {
+      backgroundColor: 'var(--colorBrandBackground2)',
     },
   },
-  success: { color: "var(--colorPaletteGreenForeground1)" },
-  warning: { color: "var(--colorPaletteDarkOrangeForeground1)" },
-  error: { color: "var(--colorPaletteRedForeground1)" },
+  success: { color: 'var(--colorPaletteGreenForeground1)' },
+  warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
+  error: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
 interface RequestListProps {
@@ -82,17 +82,17 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
   const severity = requestSeverity(record.status, record.error);
   const tokens = totalTokens(record);
   const rowError = errorLabel(record.error, record.status);
-  const StatusIcon = severity === "success" ? CheckmarkCircleRegular : DismissCircleRegular;
+  const StatusIcon = severity === 'success' ? CheckmarkCircleRegular : DismissCircleRegular;
   const selected = selectedId === record.id;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Enter" || event.key === " ") {
+    if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       onSelect(record.id);
-    } else if (event.key === "ArrowDown" && index < records.length - 1) {
+    } else if (event.key === 'ArrowDown' && index < records.length - 1) {
       event.preventDefault();
       selectByIndex(index + 1);
-    } else if (event.key === "ArrowUp" && index > 0) {
+    } else if (event.key === 'ArrowUp' && index > 0) {
       event.preventDefault();
       selectByIndex(index - 1);
     }
@@ -112,7 +112,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
       <div className="flex items-center gap-2 min-w-0">
         <StatusIcon className={s[severity]} />
         <Text size={200} weight="semibold" className="truncate min-w-0 font-mono">
-          {record.model ?? t("dashboard.requests.unknownModel")}
+          {record.model ?? t('dashboard.requests.unknownModel')}
         </Text>
         <Text size={100} className="ml-auto shrink-0 text-fui-fg3" title={formatFullTime(record.startedAt)}>
           {formatRelativeTime(record.startedAt, now)}
@@ -124,17 +124,17 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
         </Text>
       </div>
       <div className="mt-1 flex items-center gap-3 min-w-0 text-fui-fg3">
-        <span className="inline-flex items-center gap-1 shrink-0" title={t("dashboard.requests.duration", { value: record.durationMs })}>
+        <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.duration', { value: record.durationMs })}>
           <TimerRegular /> <Text size={100}>{formatDuration(record.durationMs)}</Text>
         </span>
-        <span className="inline-flex items-center gap-1 shrink-0" title={t("dashboard.requests.requestBytes", { value: record.requestBytes })}>
+        <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.requestBytes', { value: record.requestBytes })}>
           <ArrowUploadRegular /> <Text size={100}>{formatBytes(record.requestBytes)}</Text>
         </span>
-        <span className="inline-flex items-center gap-1 shrink-0" title={t("dashboard.requests.responseBytes", { value: record.responseBytes })}>
+        <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.responseBytes', { value: record.responseBytes })}>
           <ArrowDownloadRegular /> <Text size={100}>{formatBytes(record.responseBytes)}</Text>
         </span>
-        <Text size={100} className={mergeClasses("ml-auto truncate", rowError ? s.error : "text-fui-fg3")} title={rowError ?? undefined}>
-          {rowError ?? (tokens === null ? "-" : `${formatTokens(tokens)} tok`)}
+        <Text size={100} className={mergeClasses('ml-auto truncate', rowError ? s.error : 'text-fui-fg3')} title={rowError ?? undefined}>
+          {rowError ?? (tokens === null ? '-' : `${formatTokens(tokens)} tok`)}
         </Text>
       </div>
     </div>
@@ -156,7 +156,7 @@ export function RequestListPanel(props: RequestListProps) {
     const record = props.records[index];
     if (!record) return;
     props.onRecordChange(record.id);
-    listRef.current?.scrollToRow({ align: "smart", index });
+    listRef.current?.scrollToRow({ align: 'smart', index });
     window.requestAnimationFrame(() => listRef.current?.element?.querySelector<HTMLElement>(`[data-record-index="${index}"]`)?.focus());
   }, [listRef, props]);
 
@@ -171,20 +171,20 @@ export function RequestListPanel(props: RequestListProps) {
   return (
     <div className="h-full min-h-0 flex flex-col">
       <div className="py-3 grid gap-1.5">
-        <Text size={400} weight="semibold">{t("dashboard.requests.apiKey")}</Text>
-        <Select value={props.selectedKeyId} onChange={(event) => props.onKeyChange(event.target.value)}>
-          {props.apiKeys.map((key) => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
+        <Text size={400} weight="semibold">{t('dashboard.requests.apiKey')}</Text>
+        <Select value={props.selectedKeyId} onChange={event => props.onKeyChange(event.target.value)}>
+          {props.apiKeys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
         </Select>
       </div>
       {props.error && <MessageBar intent="error" className="!m-2"><MessageBarBody>{props.error}</MessageBarBody></MessageBar>}
       {props.loading && props.records.length === 0 ? (
-        <div className="flex-1 grid place-items-center"><Spinner size="tiny" label={t("common.loading")} /></div>
+        <div className="flex-1 grid place-items-center"><Spinner size="tiny" label={t('common.loading')} /></div>
       ) : props.records.length === 0 ? (
-        <div className="flex-1 grid place-items-center text-center p-6"><Text size={200} className="text-fui-fg3">{t("dashboard.requests.empty")}</Text></div>
+        <div className="flex-1 grid place-items-center text-center p-6"><Text size={200} className="text-fui-fg3">{t('dashboard.requests.empty')}</Text></div>
       ) : (
         <div className="flex-1 min-h-0 relative">
           <List
-            aria-label={t("dashboard.requests.listLabel")}
+            aria-label={t('dashboard.requests.listLabel')}
             className={s.list}
             defaultHeight={620}
             listRef={listRef}
@@ -197,7 +197,7 @@ export function RequestListPanel(props: RequestListProps) {
             rowCount={props.records.length}
             rowHeight={ROW_HEIGHT}
             rowProps={rowProps}
-            style={{ height: "100%" }}
+            style={{ height: '100%' }}
           />
           {props.loadingOlder && <div className="absolute bottom-2 left-0 right-0 grid place-items-center pointer-events-none"><Spinner size="extra-tiny" /></div>}
         </div>

@@ -1,7 +1,7 @@
-import { forwardRef } from "react";
-import type { ComponentProps } from "react";
+import { forwardRef } from 'react';
+import type { ComponentProps } from 'react';
 
-import { fluentComponents } from "../../fluent";
+import { fluentComponents } from '../../fluent';
 
 const {
   Combobox: FluentCombobox,
@@ -13,7 +13,7 @@ const {
   mergeClasses,
 } = fluentComponents;
 
-const MIN_WIDTH_CLASS = "!min-w-[0px]";
+const MIN_WIDTH_CLASS = '!min-w-[0px]';
 
 export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentInput>>(
   ({ className, ...props }, ref) => (

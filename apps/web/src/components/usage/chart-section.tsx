@@ -1,10 +1,11 @@
-import { ArrowRepeatAllRegular, SelectAllOffRegular, SelectAllOnRegular } from "@fluentui/react-icons";
-import { useTranslation } from "react-i18next";
-import { fluentComponents } from "../../fluent";
-import { OutlineCard } from "../ui/outline-card";
-import { colorForSlot } from "./chart-model";
-import type { ChartEntry, UsageChartModel } from "./types";
-import { UsageChart } from "./usage-chart";
+import { ArrowRepeatAllRegular, SelectAllOffRegular, SelectAllOnRegular } from '@fluentui/react-icons';
+import { useTranslation } from 'react-i18next';
+
+import { colorForSlot } from './chart-model';
+import type { ChartEntry, UsageChartModel } from './types';
+import { UsageChart } from './usage-chart';
+import { fluentComponents } from '../../fluent';
+import { OutlineCard } from '../ui/outline-card';
 
 const { Button, InteractionTag, InteractionTagPrimary, Text, Tooltip } = fluentComponents;
 export function ChartSection({
@@ -23,17 +24,17 @@ export function ChartSection({
   valueFormatter: (value: number) => string;
 }) {
   const { t } = useTranslation();
-  const ids = chart.entries.map((entry) => entry.id);
+  const ids = chart.entries.map(entry => entry.id);
   const visibleLegends = chart.entries
-    .filter((entry) => !hidden.has(entry.id))
-    .map((entry) => entry.label);
+    .filter(entry => !hidden.has(entry.id))
+    .map(entry => entry.label);
 
   return (
     <section className="grid gap-3 min-w-0">
       <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
         <Text size={400} weight="semibold" className="text-fui-fg1 leading-[1.25]">{title}</Text>
         <div className="flex items-center flex-none gap-1" aria-label={detailsLabel}>
-          <Tooltip content={t("dashboard.usage.series.all")} relationship="label">
+          <Tooltip content={t('dashboard.usage.series.all')} relationship="label">
             <Button
               appearance="subtle"
               icon={<SelectAllOnRegular />}
@@ -41,18 +42,18 @@ export function ChartSection({
             />
           </Tooltip>
           <Tooltip
-            content={t("dashboard.usage.series.invert")}
+            content={t('dashboard.usage.series.invert')}
             relationship="label"
           >
             <Button
               appearance="subtle"
               icon={<ArrowRepeatAllRegular />}
               onClick={() =>
-                onHiddenChange(new Set(ids.filter((id) => !hidden.has(id))))
+                onHiddenChange(new Set(ids.filter(id => !hidden.has(id))))
               }
             />
           </Tooltip>
-          <Tooltip content={t("dashboard.usage.series.none")} relationship="label">
+          <Tooltip content={t('dashboard.usage.series.none')} relationship="label">
             <Button
               appearance="subtle"
               icon={<SelectAllOffRegular />}
@@ -87,20 +88,20 @@ function ChartLegend({
   const { t } = useTranslation();
 
   if (!entries.length) {
-    return <Text size={200} className="text-fui-fg2">{t("dashboard.usage.empty")}</Text>;
+    return <Text size={200} className="text-fui-fg2">{t('dashboard.usage.empty')}</Text>;
   }
 
   return (
     <div className="flex flex-wrap gap-[6px] min-w-0">
-      {entries.map((entry) => (
+      {entries.map(entry => (
         <LegendTag
           key={entry.id}
           entry={entry}
           isHidden={hidden.has(entry.id)}
-          onToggle={(exclusive) => {
+          onToggle={exclusive => {
             if (exclusive) {
               onHiddenChange(
-                new Set(entries.map((item) => item.id).filter((id) => id !== entry.id)),
+                new Set(entries.map(item => item.id).filter(id => id !== entry.id)),
               );
               return;
             }
@@ -109,7 +110,7 @@ function ChartLegend({
             else next.add(entry.id);
             onHiddenChange(next);
           }}
-          toggleHint={t("dashboard.usage.series.toggleHint")}
+          toggleHint={t('dashboard.usage.series.toggleHint')}
         />
       ))}
     </div>
@@ -134,7 +135,7 @@ function LegendTag({
       size="small"
     >
       <InteractionTagPrimary
-        className={isHidden ? "line-through opacity-[0.55]" : ""}
+        className={isHidden ? 'line-through opacity-[0.55]' : ''}
         icon={
           <span
             aria-hidden="true"
@@ -142,7 +143,7 @@ function LegendTag({
             style={{ backgroundColor: colorForSlot(entry.colorSlot) }}
           />
         }
-        onClick={(event) => onToggle(event.shiftKey)}
+        onClick={event => onToggle(event.shiftKey)}
         title={toggleHint}
       >
         {entry.label}

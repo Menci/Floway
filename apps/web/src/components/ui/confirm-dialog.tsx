@@ -1,23 +1,23 @@
-import { useTranslation } from "react-i18next";
+import { useTranslation } from 'react-i18next';
 
-import { fluentComponents } from "../../fluent";
+import { fluentComponents } from '../../fluent';
 
 const { Button, Dialog, DialogSurface, DialogTitle, makeStyles } = fluentComponents;
 
 const useStyles = makeStyles({
   body: {
-    display: "grid",
-    gap: "14px",
-    padding: "26px 28px 22px",
+    display: 'grid',
+    gap: '14px',
+    padding: '26px 28px 22px',
   },
   actions: {
-    alignItems: "center",
-    display: "grid",
-    gap: "12px",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    padding: "18px 28px 20px",
-    "@media (max-width: 420px)": {
-      gridTemplateColumns: "minmax(0, 1fr)",
+    alignItems: 'center',
+    display: 'grid',
+    gap: '12px',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    padding: '18px 28px 20px',
+    '@media (max-width: 420px)': {
+      gridTemplateColumns: 'minmax(0, 1fr)',
     },
   },
 });
@@ -73,7 +73,7 @@ export function ConfirmDialog({
               else onOpenChange(false);
             }}
           >
-            {cancelLabel ?? t("common.cancel")}
+            {cancelLabel ?? t('common.cancel')}
           </Button>
         </footer>
       </DialogSurface>

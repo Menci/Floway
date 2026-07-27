@@ -1,43 +1,43 @@
-import { ArrowClockwiseRegular, EyeOffRegular, EyeRegular } from "@fluentui/react-icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { redirect } from "react-router";
+import { ArrowClockwiseRegular, EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { redirect } from 'react-router';
 
-import type { Route } from "./+types/dashboard-monitor-usage";
-import type { ControlPlaneModel } from "../api/types";
-import { getSessionToken } from "../auth/session";
-import { ChartSection } from "../components/usage/chart-section";
-import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, formatMetricValue, formatProvider, summarizeUsage } from "../components/usage/chart-model";
-import { SummaryMetrics } from "../components/usage/summary-metrics";
-import type { UsageMetric, UsageRange, UsageView } from "../components/usage/types";
-import { emptySearchUsageResponse, emptyUsageResponse, loadUsagePageData } from "../components/usage/usage-data";
-import { localeForLanguage } from "../i18n";
-import { PageLoadingPanel } from "../components/ui/page-loading-panel";
-import { Panel } from "../components/ui/panel";
-import { SegmentedControl } from "../components/ui/segmented-control";
-import { fluentComponents } from "../fluent";
-import { useAuthStore } from "../stores/auth-store";
-import { useDashboardOutletContext } from "./dashboard";
+import type { Route } from './+types/dashboard-monitor-usage';
+import { useDashboardOutletContext } from './dashboard';
+import type { ControlPlaneModel } from '../api/types';
+import { getSessionToken } from '../auth/session';
+import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { Panel } from '../components/ui/panel';
+import { SegmentedControl } from '../components/ui/segmented-control';
+import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
+import { ChartSection } from '../components/usage/chart-section';
+import { SummaryMetrics } from '../components/usage/summary-metrics';
+import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
+import { emptySearchUsageResponse, emptyUsageResponse, loadUsagePageData } from '../components/usage/usage-data';
+import { fluentComponents } from '../fluent';
+import { localeForLanguage } from '../i18n';
+import { useAuthStore } from '../stores/auth-store';
 
 const { Button, makeStyles, Spinner, Text, Tooltip } = fluentComponents;
-const useErrorStyles = makeStyles({ root: { backgroundColor: "var(--colorPaletteRedBackground2)", border: "1px solid var(--colorPaletteRedBorder1)", borderRadius: "8px", color: "var(--colorPaletteRedForeground1)", padding: "10px 12px" } });
+const useErrorStyles = makeStyles({ root: { backgroundColor: 'var(--colorPaletteRedBackground2)', border: '1px solid var(--colorPaletteRedBorder1)', borderRadius: '8px', color: 'var(--colorPaletteRedForeground1)', padding: '10px 12px' } });
 
-export async function clientLoader() { if (!getSessionToken()) throw redirect("/"); return null; }
-export function meta({}: Route.MetaArgs) { return [{ title: "Usage | Floway" }]; }
+export async function clientLoader() { if (!getSessionToken()) throw redirect('/'); return null; }
+export function meta({}: Route.MetaArgs) { return [{ title: 'Usage | Floway' }]; }
 
 export default function DashboardMonitorUsage() {
   const { i18n, t } = useTranslation();
   const { user } = useDashboardOutletContext();
-  const clearAuth = useAuthStore((state) => state.clear);
-  const initialView: UsageView = user.canViewGlobalTelemetry ? "all-by-user" : "self-by-key";
+  const clearAuth = useAuthStore(state => state.clear);
+  const initialView: UsageView = user.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const [view, setView] = useState<UsageView>(initialView);
-  const [range, setRange] = useState<UsageRange>("today");
-  const [loadedRange, setLoadedRange] = useState<UsageRange>("today");
+  const [range, setRange] = useState<UsageRange>('today');
+  const [loadedRange, setLoadedRange] = useState<UsageRange>('today');
   const [loadedAt, setLoadedAt] = useState(Date.now());
   const [usage, setUsage] = useState(emptyUsageResponse);
   const [search, setSearch] = useState(emptySearchUsageResponse);
   const [models, setModels] = useState<ControlPlaneModel[]>([]);
-  const [metric, setMetric] = useState<UsageMetric>("total");
+  const [metric, setMetric] = useState<UsageMetric>('total');
   const [redactKeys, setRedactKeys] = useState(false);
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set());
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set());
@@ -105,7 +105,7 @@ export default function DashboardMonitorUsage() {
   }, [refresh]);
 
   useEffect(() => {
-    if (error === "HTTP 401") clearAuth();
+    if (error === 'HTTP 401') clearAuth();
   }, [clearAuth, error]);
 
   const buckets = useMemo(
@@ -117,7 +117,7 @@ export default function DashboardMonitorUsage() {
     () =>
       summarizeUsage(
         usage.records.filter(
-          (record) =>
+          record =>
             !hiddenKeys.has(record.keyId) && !hiddenModels.has(record.model),
         ),
       ),
@@ -130,7 +130,7 @@ export default function DashboardMonitorUsage() {
         records: usage.records,
         metadata: usage.keys,
         models,
-        groupKey: "keyId",
+        groupKey: 'keyId',
         hiddenOwn: hiddenKeys,
         hiddenOther: hiddenModels,
         redactKeys,
@@ -157,7 +157,7 @@ export default function DashboardMonitorUsage() {
         records: usage.records,
         metadata: usage.keys,
         models,
-        groupKey: "model",
+        groupKey: 'model',
         hiddenOwn: hiddenModels,
         hiddenOther: hiddenKeys,
         redactKeys,
@@ -190,31 +190,31 @@ export default function DashboardMonitorUsage() {
     [buckets, hiddenKeys, loadedRange, redactKeys, search],
   );
 
-  const activeProvider = search.activeProvider ?? "disabled";
-  const showSearch = activeProvider !== "disabled";
+  const activeProvider = search.activeProvider ?? 'disabled';
+  const showSearch = activeProvider !== 'disabled';
   const chartTitle =
-    view === "all-by-user"
-      ? t("dashboard.usage.charts.byUser")
-      : t("dashboard.usage.charts.byKey");
+    view === 'all-by-user'
+      ? t('dashboard.usage.charts.byUser')
+      : t('dashboard.usage.charts.byKey');
 
   return (
     <section className="grid gap-[18px] min-w-0">
       <header className="flex items-start justify-between gap-[18px] min-w-0">
         <div className="grid gap-[6px] min-w-0">
           <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-            {t("dashboard.groups.monitor")}
+            {t('dashboard.groups.monitor')}
           </Text>
           <Text size={700} weight="semibold">
-            {t("dashboard.nav.usage")}
+            {t('dashboard.nav.usage')}
           </Text>
           <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-            {t("dashboard.pages.usage")}
+            {t('dashboard.pages.usage')}
           </Text>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {loading && !initialLoading && <Spinner size="tiny" label={t("dashboard.usage.refreshing")} />}
+          {loading && !initialLoading && <Spinner size="tiny" label={t('dashboard.usage.refreshing')} />}
           <Tooltip
-            content={t("dashboard.usage.actions.refresh")}
+            content={t('dashboard.usage.actions.refresh')}
             relationship="label"
           >
             <Button
@@ -228,98 +228,98 @@ export default function DashboardMonitorUsage() {
       </header>
 
       {initialLoading ? (
-        <PageLoadingPanel label={t("common.loading")} />
+        <PageLoadingPanel label={t('common.loading')} />
       ) : (
         <>
           {error && <div className={errorStyles.root}>{error}</div>}
 
-      <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
-        <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-          <div className="flex items-center flex-wrap gap-2.5 min-w-0">
-            <Text size={200} weight="semibold" className="text-fui-fg3 leading-[1.2]">
-              {t("dashboard.usage.tokenUsage")}
-            </Text>
-            {canSwitchView && (
+          <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
+            <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
+              <div className="flex items-center flex-wrap gap-2.5 min-w-0">
+                <Text size={200} weight="semibold" className="text-fui-fg3 leading-[1.2]">
+                  {t('dashboard.usage.tokenUsage')}
+                </Text>
+                {canSwitchView && (
+                  <SegmentedControl
+                    ariaLabel={t('dashboard.usage.view.label')}
+                    items={[
+                      {
+                        value: 'all-by-user',
+                        label: t('dashboard.usage.view.allByUser'),
+                      },
+                      {
+                        value: 'self-by-key',
+                        label: t('dashboard.usage.view.myKeys'),
+                      },
+                    ]}
+                    onChange={value => setView(value as UsageView)}
+                    value={view}
+                  />
+                )}
+                <Tooltip
+                  content={
+                    view === 'all-by-user'
+                      ? t('dashboard.usage.actions.redactUsers')
+                      : t('dashboard.usage.actions.redactKeys')
+                  }
+                  relationship="label"
+                >
+                  <Button
+                    appearance={redactKeys ? 'primary' : 'subtle'}
+                    icon={redactKeys ? <EyeOffRegular /> : <EyeRegular />}
+                    onClick={() => setRedactKeys(value => !value)}
+                  />
+                </Tooltip>
+              </div>
+
               <SegmentedControl
-                ariaLabel={t("dashboard.usage.view.label")}
+                ariaLabel={t('dashboard.usage.range.label')}
                 items={[
-                  {
-                    value: "all-by-user",
-                    label: t("dashboard.usage.view.allByUser"),
-                  },
-                  {
-                    value: "self-by-key",
-                    label: t("dashboard.usage.view.myKeys"),
-                  },
+                  { value: 'today', label: t('dashboard.usage.range.today') },
+                  { value: '7d', label: t('dashboard.usage.range.sevenDays') },
+                  { value: '30d', label: t('dashboard.usage.range.thirtyDays') },
                 ]}
-                onChange={(value) => setView(value as UsageView)}
-                value={view}
+                onChange={value => setRange(value as UsageRange)}
+                value={range}
               />
-            )}
-            <Tooltip
-              content={
-                view === "all-by-user"
-                  ? t("dashboard.usage.actions.redactUsers")
-                  : t("dashboard.usage.actions.redactKeys")
-              }
-              relationship="label"
-            >
-              <Button
-                appearance={redactKeys ? "primary" : "subtle"}
-                icon={redactKeys ? <EyeOffRegular /> : <EyeRegular />}
-                onClick={() => setRedactKeys((value) => !value)}
+            </div>
+
+            <ChartSection
+              chart={byKeyChart}
+              detailsLabel={chartTitle}
+              hidden={hiddenKeys}
+              onHiddenChange={setHiddenKeys}
+              title={chartTitle}
+              valueFormatter={value => formatMetricValue(value, metric, locale)}
+            />
+
+            <ChartSection
+              chart={byModelChart}
+              detailsLabel={t('dashboard.usage.charts.byModel')}
+              hidden={hiddenModels}
+              onHiddenChange={setHiddenModels}
+              title={t('dashboard.usage.charts.byModel')}
+              valueFormatter={value => formatMetricValue(value, metric, locale)}
+            />
+
+            <SummaryMetrics locale={locale} metric={metric} onMetricChange={setMetric} summary={summary} />
+
+          </Panel>
+
+          {showSearch && (
+            <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
+              <ChartSection
+                chart={searchChart}
+                detailsLabel={t('dashboard.usage.charts.search')}
+                hidden={hiddenKeys}
+                onHiddenChange={setHiddenKeys}
+                title={t('dashboard.usage.charts.searchWithProvider', {
+                  provider: formatProvider(activeProvider),
+                })}
+                valueFormatter={value => formatCount(value, locale)}
               />
-            </Tooltip>
-          </div>
-
-          <SegmentedControl
-            ariaLabel={t("dashboard.usage.range.label")}
-            items={[
-              { value: "today", label: t("dashboard.usage.range.today") },
-              { value: "7d", label: t("dashboard.usage.range.sevenDays") },
-              { value: "30d", label: t("dashboard.usage.range.thirtyDays") },
-            ]}
-            onChange={(value) => setRange(value as UsageRange)}
-            value={range}
-          />
-        </div>
-
-        <ChartSection
-          chart={byKeyChart}
-          detailsLabel={chartTitle}
-          hidden={hiddenKeys}
-          onHiddenChange={setHiddenKeys}
-          title={chartTitle}
-          valueFormatter={(value) => formatMetricValue(value, metric, locale)}
-        />
-
-        <ChartSection
-          chart={byModelChart}
-          detailsLabel={t("dashboard.usage.charts.byModel")}
-          hidden={hiddenModels}
-          onHiddenChange={setHiddenModels}
-          title={t("dashboard.usage.charts.byModel")}
-          valueFormatter={(value) => formatMetricValue(value, metric, locale)}
-        />
-
-        <SummaryMetrics locale={locale} metric={metric} onMetricChange={setMetric} summary={summary} />
-
-      </Panel>
-
-      {showSearch && (
-        <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
-          <ChartSection
-            chart={searchChart}
-            detailsLabel={t("dashboard.usage.charts.search")}
-            hidden={hiddenKeys}
-            onHiddenChange={setHiddenKeys}
-            title={t("dashboard.usage.charts.searchWithProvider", {
-              provider: formatProvider(activeProvider),
-            })}
-            valueFormatter={(value) => formatCount(value, locale)}
-          />
-        </Panel>
-      )}
+            </Panel>
+          )}
         </>
       )}
     </section>

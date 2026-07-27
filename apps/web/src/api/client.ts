@@ -1,8 +1,7 @@
 import { hc } from 'hono/client';
 
-import type { AppType } from '@floway-dev/gateway/app-type';
-
 import { authFetch, callApi, type ApiResult, type MeResponse } from './auth';
+import type { AppType } from '@floway-dev/gateway/app-type';
 
 // hc types the request — path, method and body come from the gateway's own
 // route definitions, so a control-plane change breaks typecheck here instead

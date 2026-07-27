@@ -1,9 +1,8 @@
-import { parseSSEStream } from '@floway-dev/protocols/common';
+import type { PlaygroundApi, PlaygroundMessage } from './playground-logic';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { parseSSEStream } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-
-import type { PlaygroundApi, PlaygroundMessage } from './playground-logic';
 
 export interface PlaygroundRequest {
   api: PlaygroundApi;

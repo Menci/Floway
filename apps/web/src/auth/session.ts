@@ -1,7 +1,7 @@
-export const flowayTokenStorageKey = "floway-token";
-export const flowaySessionHeader = "x-floway-session";
+export const flowayTokenStorageKey = 'floway-token';
+export const flowaySessionHeader = 'x-floway-session';
 
-const storageAvailable = (): boolean => typeof window !== "undefined";
+const storageAvailable = (): boolean => typeof window !== 'undefined';
 
 export const getSessionToken = (): string | null => {
   if (!storageAvailable()) return null;

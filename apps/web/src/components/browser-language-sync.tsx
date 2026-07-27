@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect } from 'react';
 
-import { defaultLanguage, i18n, normalizeLanguage } from "../i18n";
+import { defaultLanguage, i18n, normalizeLanguage } from '../i18n';
 
 export function BrowserLanguageSync() {
   useEffect(() => {

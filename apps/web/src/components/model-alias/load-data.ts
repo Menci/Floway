@@ -1,5 +1,5 @@
-import type { ApiResult } from "../../api/auth";
-import type { ControlPlaneModel, ModelAlias } from "../../api/types";
+import type { ApiResult } from '../../api/auth';
+import type { ControlPlaneModel, ModelAlias } from '../../api/types';
 
 interface ModelsResponse {
   data: ControlPlaneModel[];
@@ -13,7 +13,7 @@ export interface ModelAliasesPageData {
 }
 
 export function mergeModelAliasesPageData(
-  current: Pick<ModelAliasesPageData, "aliases" | "models">,
+  current: Pick<ModelAliasesPageData, 'aliases' | 'models'>,
   aliasResult: ApiResult<ModelAlias[]>,
   modelsResult: ApiResult<ModelsResponse>,
 ): ModelAliasesPageData {
