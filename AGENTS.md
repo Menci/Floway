@@ -133,8 +133,9 @@ bin edges, canonical enum values, header sets, protocol quirks. Prose like
 
 ## Architecture
 
-Stack: Hono on Web APIs, TypeScript, pnpm, Vitest. The dashboard is a Vue +
-Vite SPA. Cloudflare Workers is the production deployment target; Node.js
+Stack: Hono on Web APIs, TypeScript, pnpm, Vitest. The dashboard is a React +
+Fluent UI SPA on React Router in framework mode with runtime server rendering
+off, built by Vite. Cloudflare Workers is the production deployment target; Node.js
 (`node:sqlite` + `sharp` + filesystem) is a parallel target running the same
 Hono app and the same `packages/gateway/migrations` SQL.
 
@@ -183,11 +184,10 @@ Floway/
 │   ├── proxy/                # @floway-dev/proxy — proxy URIs, protocol dialers, request runners
 │   ├── test-utils/           # @floway-dev/test-utils — shared Vitest fixtures and stubs
 │   ├── translate/            # @floway-dev/translate — direct cross-protocol translation pairs
-│   └── ui/                   # @floway-dev/ui — internal Vue component library
 └── apps/
     ├── platform-cloudflare/  # Cloudflare runtime implementations and Worker entry
     ├── platform-node/        # Node runtime implementations and node-server entry
-    └── web/                  # Vue + Vite dashboard SPA
+    └── web/                  # React + Fluent UI dashboard SPA
 ```
 
 Dependency direction is strict. `protocols` and `interceptor` have no runtime
@@ -231,7 +231,7 @@ filesystem, `sharp`, WebSocket, socket, and runtime-root-CA implementations;
 its migrator consumes the gateway's exported migration directory. These apps
 are the only deployment-target composition roots.
 
-`apps/web` depends at runtime on `ui`, `protocols`, `provider`, and `proxy`.
+`apps/web` depends at runtime on `protocols`, `provider`, and `proxy`.
 Its protocol imports use `/common`, `/chat-completions`, `/completions`,
 `/messages`, `/responses`, `/gemini`, and `/rerank`; its provider imports use
 the root, `/flags`, `/model`, and `/model-prefix`; its proxy imports are
@@ -239,7 +239,9 @@ restricted to `/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA
 does not pull in dialers, userspace TLS, or Node `crypto`. It type-imports
 gateway contracts through `/app-type`, `/dump-types`,
 `/control-plane/performance/aggregate`, and
-`/control-plane/proxies/serialize`. It does not depend on
+`/control-plane/proxies/serialize`; `@floway-dev/gateway` stays a
+devDependency, because every one of those imports is type-only. It does not
+depend on
 `@floway-dev/agent-setup`; the dashboard derives Agent Setup types from the RPC
 client, and ESLint blocks a runtime import of that package from `apps/web`.
 
@@ -253,7 +255,7 @@ runtime import must use a declared `exports` entry; deep
 Tests live in each package's `__tests__/` mirror of `src/`; directory placement
 follows the production area while suite names describe the behavior under
 test. Every tested package owns a `vitest.config.ts` including
-`__tests__/**/*_test.ts`, and the root Vitest config discovers
+`__tests__/**/*_test.{ts,tsx}`, and the root Vitest config discovers
 `packages/*/vitest.config.ts` and `apps/*/vitest.config.ts`. Package TypeScript
 projects include their Vitest configs and their `__tests__/` tree. Root
 `scripts/**/*.ts` and
@@ -262,6 +264,18 @@ base config sets `types: []` so ambient types enter only projects that request
 them. ESLint checks both script trees and every package Vitest config; the
 workspace-root `eslint.config.ts` and `vitest.config.ts` sit outside every
 checked TypeScript project and are ignored.
+
+The dashboard imports every Fluent component through `apps/web/src/fluent.ts`
+and every form control through `components/ui/fluent-form-controls.tsx`, which
+adds the shared minimum-width reset. One Fluent `Field` wraps exactly one
+control; a composite editor uses `role="group"` with `aria-labelledby`. Colors
+and type come from the `fui-*` UnoCSS tokens rather than literals. Generic
+primitives live in `components/ui/`, and ESLint keeps them from importing a
+Floway domain module — a primitive that knows a domain concept belongs in that
+domain's directory. User-visible strings go through `react-i18next` in `en` and
+`zh-Hans`; a locale ships only if somebody here can review it, and the parity
+suite requires every plural key to supply the `other` form each language
+actually has.
 
 Client-carried affinity is a source-protocol membrane. Shared codec, candidate
 narrowing, and affinity request context live under
@@ -316,7 +330,7 @@ pnpm run db:migrate:remote   # production D1
 Vite proxies the gateway's HTTP paths to the Worker (see the canonical list in
 `apps/web/vite.config.ts`'s `wranglerProxiedPaths`), so relative-URL fetches in
 `apps/web` work identically in dev and prod. The Worker port serves the last
-built `apps/web/dist` via Workers Static Assets; direct SPA routes (e.g.
+built `apps/web/dist/client` via Workers Static Assets; direct SPA routes (e.g.
 `/login`, `/dashboard/...`) require
 `assets.not_found_handling: "single-page-application"` plus the backend-only
 `assets.run_worker_first` route list in the gitignored `wrangler.jsonc` (see

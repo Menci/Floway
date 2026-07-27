@@ -1,7 +1,6 @@
-// Pure HSV / RGB / HEX conversions for the upstream ColorPicker. Kept
-// separate from the SFC so the math is unit-testable without mounting
-// Vue, and so a future picker (highlighter, tag, etc.) can share the
-// same primitives.
+// Pure HSV / RGB / HEX conversions for the upstream colour picker. Kept
+// out of the component so the math is unit-testable without rendering, and so
+// a future picker (highlighter, tag, etc.) can share the same primitives.
 //
 // HSV coordinates: hue in [0, 360), saturation/value in [0, 1]. HEX is
 // the canonical wire form (`#RRGGBB`, upper-or-lower case accepted).
