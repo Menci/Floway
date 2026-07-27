@@ -29,13 +29,7 @@ test('buildTargetRequest projects a plaintext agent message as attributed user i
 
   assertEquals(result.target.messages, [{
     role: 'user',
-    content: [
-      {
-        type: 'text',
-        text: 'Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\n',
-      },
-      { type: 'text', text: 'No findings.' },
-    ],
+    content: 'Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\nNo findings.',
   }]);
 });
 
