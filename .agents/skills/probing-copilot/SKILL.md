@@ -83,8 +83,11 @@ unless the selected entry is explicitly `direct_fetch` or `direct_connect`.
 
 - `direct_fetch`, `direct_connect` — direct egress is intentional and visible in
   the query result.
-- `http://`, `https://`, `socks5://` — curl-native; use
-  `curl -x "$proxy_url" …`.
+- `http://`, `https://` — curl-native; use `curl -x "$proxy_url" …`.
+- `socks5://` — Floway sends the target hostname to the proxy for resolution,
+  while curl resolves it locally under this scheme. Convert it before use with
+  `curl_proxy_url="socks5h://${proxy_url#socks5://}"`, then run
+  `curl -x "$curl_proxy_url" …` so the probe follows the production DNS path.
 - `ss://`, `trojan://`, `vless://` — curl cannot speak these. Use a throwaway
   script outside the repository with the current `@floway-dev/proxy` dialer, or
   report that a faithful probe is blocked. Do not go direct.

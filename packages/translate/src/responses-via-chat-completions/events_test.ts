@@ -471,24 +471,17 @@ test('translateChatCompletionsChunkToResponsesEvents discards scalar reasoning w
 
 test('translateChatCompletionsChunkToResponsesEvents ignores empty tool_calls arrays', () => {
   const state = createChatCompletionsToResponsesStreamState();
-  // Before the fix, empty tool_calls [] was truthy and entered the
-  // tool-calls branch, prematurely closing the text item. After the fix
-  // (choice.delta.tool_calls?.length), empty arrays are treated as absent.
-  const events1 = translateChatCompletionsChunkToResponsesEvents(chunk({ role: 'assistant', tool_calls: [] }), state);
-  // role + empty tool_calls should only emit response.created + response.in_progress.
-  // No tool-call events should be emitted.
-  assertEquals(events1.length, 2);
-  assertEquals(events1[0].type, 'response.created');
-  assertEquals(events1[1].type, 'response.in_progress');
+  const initialEvents = translateChatCompletionsChunkToResponsesEvents(chunk({ role: 'assistant', tool_calls: [] }), state);
+  assertEquals(initialEvents.length, 2);
+  assertEquals(initialEvents[0].type, 'response.created');
+  assertEquals(initialEvents[1].type, 'response.in_progress');
 
-  // Content delta should create a message item and emit text delta — not a new
-  // output item for empty tool_calls.
-  const events2 = translateChatCompletionsChunkToResponsesEvents(chunk({ content: 'hello' }), state);
-  const addedEvents = events2.filter(e => e.type === 'response.output_item.added') as ResponsesOutputItemAddedEvent[];
+  const contentEvents = translateChatCompletionsChunkToResponsesEvents(chunk({ content: 'hello' }), state);
+  const addedEvents = contentEvents.filter(event => event.type === 'response.output_item.added') as ResponsesOutputItemAddedEvent[];
   assertEquals(addedEvents.length, 1, 'content delta should create one message output item');
   assertEquals(addedEvents[0].item.type, 'message');
 
-  const deltaEvents = events2.filter(e => e.type === 'response.output_text.delta');
+  const deltaEvents = contentEvents.filter(event => event.type === 'response.output_text.delta');
   assertEquals(deltaEvents.length, 1);
   assertEquals((deltaEvents[0] as { delta: string }).delta, 'hello');
 });
