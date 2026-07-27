@@ -1,7 +1,7 @@
 import { canonicalizeResponsesPayload } from '../canonicalize-responses-payload.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
-import { multiAgentMessageContent } from '../shared/responses-via/multi-agent.ts';
+import { agentMessageContent } from '../shared/responses-via/agent-message.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
@@ -220,7 +220,7 @@ const translateResponsesInput = async (input: ResponsesInputItem[], loadRemoteIm
       messages.push(await translateUserMessage({
         type: 'message',
         role: 'user',
-        content: multiAgentMessageContent(item),
+        content: agentMessageContent(item),
       }, loadRemoteImage));
       break;
     case 'function_call':

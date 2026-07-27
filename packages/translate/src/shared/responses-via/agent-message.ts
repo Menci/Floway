@@ -52,7 +52,7 @@ const pushText = (content: ResponsesInputContent[], text: string): void => {
 // Message Type / Task name / Sender envelope inside the plaintext content.
 // https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/tests/suite/subagent_notifications.rs#L1555-L1630
 // https://www.npmjs.com/package/@anthropic-ai/claude-code/v/2.1.220
-export const multiAgentMessageContent = (
+export const agentMessageContent = (
   item: ResponsesInputAgentMessageItem,
 ): ResponsesInputContent[] => {
   const content: ResponsesInputContent[] = [];

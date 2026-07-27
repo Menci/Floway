@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { multiAgentMessageContent } from '../../../src/shared/responses-via/multi-agent.ts';
+import { agentMessageContent } from '../../../src/shared/responses-via/agent-message.ts';
 import type { ResponsesInputAgentMessageItem } from '@floway-dev/protocols/responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
@@ -11,8 +11,8 @@ const agentMessage = (content: ResponsesInputAgentMessageItem['content']): Respo
   content,
 });
 
-test('multiAgentMessageContent normalizes readable beta content into Responses input parts', () => {
-  assertEquals(multiAgentMessageContent({
+test('agentMessageContent normalizes readable beta content into Responses input parts', () => {
+  assertEquals(agentMessageContent({
     ...agentMessage([
       { type: 'output_text', text: '<output>&' },
       { type: 'text', text: 'visible' },
@@ -41,18 +41,18 @@ test('multiAgentMessageContent normalizes readable beta content into Responses i
   ]);
 });
 
-test('multiAgentMessageContent reports the exact path for unknown beta content', () => {
+test('agentMessageContent reports the exact path for unknown beta content', () => {
   const error = assertThrows(
-    () => multiAgentMessageContent(agentMessage([{ type: 'future_agent_part', value: 1 }])),
+    () => agentMessageContent(agentMessage([{ type: 'future_agent_part', value: 1 }])),
     Error,
     "Invalid value: 'future_agent_part'",
   );
   assertEquals((error as Error & { param?: string }).param, 'agent_message.content[0].type');
 });
 
-test('multiAgentMessageContent reports the exact path for malformed text', () => {
+test('agentMessageContent reports the exact path for malformed text', () => {
   const error = assertThrows(
-    () => multiAgentMessageContent(agentMessage([
+    () => agentMessageContent(agentMessage([
       { type: 'input_text', text: 42 } as unknown as ResponsesInputAgentMessageItem['content'][number],
     ])),
     Error,

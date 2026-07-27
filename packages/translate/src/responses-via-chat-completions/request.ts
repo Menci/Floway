@@ -2,7 +2,7 @@ import { canonicalizeResponsesPayload } from '../canonicalize-responses-payload.
 import { responsesContentToChatCompletionsContent, responsesContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsReasoningProjection, chatCompletionsReasoningProjectionFields, createChatCompletionsReasoningProjection } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
-import { multiAgentMessageContent } from '../shared/responses-via/multi-agent.ts';
+import { agentMessageContent } from '../shared/responses-via/agent-message.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsContentPart, ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
@@ -200,7 +200,7 @@ export const buildTargetRequest = (source: ResponsesRequestPayload): TargetReque
       flushAssistant();
       messages.push({
         role: 'user',
-        content: responsesContentToChatCompletionsContent(multiAgentMessageContent(item)),
+        content: responsesContentToChatCompletionsContent(agentMessageContent(item)),
       });
       continue;
     }
