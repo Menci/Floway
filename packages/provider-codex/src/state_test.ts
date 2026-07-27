@@ -48,6 +48,24 @@ describe('assertCodexUpstreamState', () => {
   test('rejects unexpected keys inside an account', () => {
     expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, smuggled: 'x' }] })).toThrow(/smuggled/);
   });
+  // A key that also names an Object.prototype member is still an unknown key.
+  // `__proto__` only survives as an own property through JSON.parse, so every
+  // case is built that way for uniformity.
+  test('rejects prototype-named keys at every guarded level', () => {
+    const withKey = (target: object, key: string): unknown =>
+      JSON.parse(`${JSON.stringify(target).slice(0, -1)},"${key}":1}`);
+    for (const key of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      const account = { ...goodAccount, accessToken: null, quotaSnapshot: null };
+      expect(() => assertCodexUpstreamState(withKey({ accounts: [account] }, key))).toThrow(new RegExp(key));
+      expect(() => assertCodexUpstreamState({ accounts: [withKey(account, key)] })).toThrow(new RegExp(key));
+      expect(() => assertCodexUpstreamState({
+        accounts: [{ ...goodAccount, accessToken: withKey({ token: 't', expiresAt: 1, refreshedAt: 1 }, key) }],
+      })).toThrow(new RegExp(key));
+      expect(() => assertCodexUpstreamState({
+        accounts: [{ ...goodAccount, quotaSnapshot: { primary: withKey({ fetchedAt: 1, data: {} }, key) } }],
+      })).toThrow(new RegExp(key));
+    }
+  });
   test('rejects an empty accounts array (v1 invariant: exactly one)', () => {
     expect(() => assertCodexUpstreamState({ accounts: [] })).toThrow(/exactly one/);
   });

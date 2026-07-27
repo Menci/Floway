@@ -63,3 +63,21 @@ test('assertCopilotUpstreamState rejects an unknown key inside copilotToken', ()
     "CopilotUpstreamState.copilotToken has unexpected key 'unexpected'",
   );
 });
+
+// A key that also names an Object.prototype member is still an unknown key.
+test('assertCopilotUpstreamState rejects prototype-named keys', () => {
+  for (const key of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    assertThrows(
+      () => assertCopilotUpstreamState(JSON.parse(`{"knownModels":null,"copilotToken":null,"${key}":1}`)),
+      TypeError,
+      `CopilotUpstreamState has unexpected key '${key}'`,
+    );
+    assertThrows(
+      () => assertCopilotUpstreamState(JSON.parse(
+        `{"knownModels":null,"copilotToken":{"token":"tok","expiresAt":1,"baseUrl":"https://api.individual.githubcopilot.com","${key}":1}}`,
+      )),
+      TypeError,
+      `CopilotUpstreamState.copilotToken has unexpected key '${key}'`,
+    );
+  }
+});

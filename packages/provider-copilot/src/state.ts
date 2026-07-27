@@ -39,7 +39,7 @@ const assertCopilotTokenEntry = (value: unknown, where: string): void => {
   }
   const obj = value as Record<string, unknown>;
   for (const key of Object.keys(obj)) {
-    if (!(key in ALLOWED_TOKEN_KEYS_MAP)) {
+    if (!Object.hasOwn(ALLOWED_TOKEN_KEYS_MAP, key)) {
       throw new TypeError(`${where} has unexpected key '${key}'`);
     }
   }
@@ -75,7 +75,7 @@ export function assertCopilotUpstreamState(value: unknown): asserts value is Cop
   // state_json round-trips through canonical serialization, so any surviving
   // key is persisted. Reject unknown keys to keep the on-disk shape closed.
   for (const key of Object.keys(obj)) {
-    if (!(key in ALLOWED_STATE_KEYS_MAP)) {
+    if (!Object.hasOwn(ALLOWED_STATE_KEYS_MAP, key)) {
       throw new TypeError(`CopilotUpstreamState has unexpected key '${key}'`);
     }
   }
