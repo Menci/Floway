@@ -229,8 +229,11 @@ export function RequestDetailPanel({ keyId, recordId }: DetailProps) {
         {record.response.body.type === "stream" && streamView === "collected" && (
           collectKind === null ? <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t("dashboard.requests.noCollector")}</MessageBarBody></MessageBar>
             : collected === null ? <div className="p-5"><Spinner size="tiny" /></div>
-              : collected.error ? <MessageBar intent="error" className="!m-3"><MessageBarBody>{collected.error}</MessageBarBody></MessageBar>
-                : <CodeView body={{ text: JSON.stringify(collected.result, null, 2), copyText: "", decodeError: null, isJson: true }} />
+              : <>
+                {collected.error && <MessageBar intent="error" className="!m-3"><MessageBarBody>{collected.error}</MessageBarBody></MessageBar>}
+                {!collected.error && collected.truncated && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t("dashboard.requests.truncatedStream")}</MessageBarBody></MessageBar>}
+                {collected.result !== null && <CodeView body={{ text: JSON.stringify(collected.result, null, 2), copyText: "", decodeError: null, isJson: true }} />}
+              </>
         )}
         {record.response.body.type === "stream" && streamView === "events" && renderedEvents.map((event, index) => (
           <div className={s.section} key={index}>

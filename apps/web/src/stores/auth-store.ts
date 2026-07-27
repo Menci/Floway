@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import { type AuthUser, type LoginResponse } from "../api/auth";
 import { getCurrentSession } from "../api/client";
+import { api } from "../api/client";
 import { clearSessionToken, getSessionToken } from "../auth/session";
 
 type AuthStatus = "idle" | "loading" | "authenticated" | "unauthenticated" | "error";
@@ -12,6 +13,7 @@ interface AuthStore {
   user: AuthUser | null;
   error: string | null;
   clear: () => void;
+  logout: () => Promise<void>;
   initialize: () => Promise<AuthUser | null>;
   primeFromLogin: (session: LoginResponse) => void;
   setUser: (user: AuthUser) => void;
@@ -37,6 +39,18 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       user: null,
       error: null,
     });
+  },
+
+  // The server session outlives local state, so it is revoked first. A failed
+  // revoke still clears locally: the user asked to be signed out of this
+  // browser, and leaving them signed in because the network blipped is worse
+  // than a session the gateway expires on its own.
+  logout: async () => {
+    try {
+      await api.auth.logout.$post();
+    } finally {
+      get().clear();
+    }
   },
 
   initialize: () => {

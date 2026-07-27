@@ -704,6 +704,7 @@ const zhHansCN = {
           noResponseBody: "此请求未产生响应体。",
           noResponseHeaders: "没有响应 header。",
           emptyBody: "响应体为空。",
+          truncatedStream: "这次记录被截断，下面是从中能还原出的部分响应。",
           noStatus: "无状态码",
           copy: "复制",
           copied: "已复制",

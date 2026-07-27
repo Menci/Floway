@@ -127,7 +127,7 @@ const PREVIEW_LABEL_KEYS = [
   "searchUsage",
   "performance",
 ] as const;
-const EXPORT_VERSION = 11;
+const EXPORT_VERSION = 17;
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

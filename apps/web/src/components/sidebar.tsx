@@ -128,7 +128,7 @@ export function Sidebar({ user }: { user: AuthUser }) {
   const { t } = useTranslation();
   const styles = useSidebarStyles();
   const { pathname } = useLocation();
-  const clearAuth = useAuthStore((state) => state.clear);
+  const logout = useAuthStore((state) => state.logout);
   const [logoutOpen, setLogoutOpen] = useState(false);
 
   return (
@@ -193,7 +193,7 @@ export function Sidebar({ user }: { user: AuthUser }) {
       <ConfirmDialog
         actionLabel={t("dashboard.logout.action")}
         message={t("dashboard.logout.message")}
-        onConfirm={clearAuth}
+        onConfirm={() => void logout()}
         onOpenChange={setLogoutOpen}
         open={logoutOpen}
         title={t("dashboard.logout.title")}

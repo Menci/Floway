@@ -20,14 +20,6 @@ export async function clientAction({
   const username = String(formData.get("username") ?? "").trim();
   const password = String(formData.get("password") ?? "");
 
-  if (!password) {
-    return {
-      ok: false,
-      values: { username },
-      error: "validation.passwordRequired",
-    };
-  }
-
   const result = await loginWithPassword({ username, password });
   if (result.error) {
     return {

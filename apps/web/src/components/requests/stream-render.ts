@@ -25,9 +25,19 @@ import {
 
 export type CollectKind = "completions" | "chat-completions" | "messages" | "responses" | "gemini";
 
+// A recorded stream may be partial — the dump was cut off, or the upstream
+// failed mid-stream — so the outcome reports both facts instead of folding
+// them together. Collapsing a truncation into an empty result reads as a
+// dashboard bug rather than as the incomplete recording it is.
+//
+//   - happy path:       result populated, error null, truncated false
+//   - truncated:        result populated best-effort, error null, truncated true
+//   - mid-stream error: result populated best-effort, error set, truncated true
+//   - catastrophic:     result null, error set, truncated true
 export interface CollectedStream {
   result: unknown | null;
   error: string | null;
+  truncated: boolean;
 }
 
 export interface RenderedStreamEvent {
@@ -46,17 +56,27 @@ export function detectCollectKind(path: string): CollectKind | null {
   return null;
 }
 
+// A dump that never recorded a terminal frame was cut short, whatever the
+// reassembler managed to fold out of what it did record.
+const endedCleanly = (events: DumpStreamEvent[]): boolean => {
+  const last = events.at(-1)?.frame as { type?: string } | undefined;
+  return last?.type === "end";
+};
+
+const complete = (result: unknown, events: DumpStreamEvent[]): CollectedStream =>
+  ({ result, error: null, truncated: !endedCleanly(events) });
+
 export async function collectStream(kind: CollectKind, events: DumpStreamEvent[]): Promise<CollectedStream> {
   try {
     switch (kind) {
       case "chat-completions":
-        return { result: await collectChatCompletionsProtocolEventsToResult(frames(events) as never), error: null };
+        return complete(await collectChatCompletionsProtocolEventsToResult(frames(events) as never), events);
       case "messages":
-        return { result: await collectMessagesProtocolEventsToResult(frames(events) as never), error: null };
+        return complete(await collectMessagesProtocolEventsToResult(frames(events) as never), events);
       case "responses":
-        return { result: await collectResponsesProtocolEventsToResult(frames(events) as never), error: null };
+        return complete(await collectResponsesProtocolEventsToResult(frames(events) as never), events);
       case "gemini":
-        return { result: await collectGeminiProtocolEventsToResult(frames(events) as AsyncIterable<ProtocolFrame<GeminiStreamEvent>>), error: null };
+        return complete(await collectGeminiProtocolEventsToResult(frames(events) as AsyncIterable<ProtocolFrame<GeminiStreamEvent>>), events);
       case "completions": {
         const stream = (async function* () {
           for (const { frame } of events) {
@@ -64,11 +84,11 @@ export async function collectStream(kind: CollectKind, events: DumpStreamEvent[]
             if (typed.type === "event") yield typed.event;
           }
         })();
-        return { result: await reassembleCompletionsEvents(stream), error: null };
+        return complete(await reassembleCompletionsEvents(stream), events);
       }
     }
   } catch (cause) {
-    return { result: null, error: cause instanceof Error ? cause.message : String(cause) };
+    return { result: null, error: cause instanceof Error ? cause.message : String(cause), truncated: true };
   }
 }
 

@@ -743,6 +743,7 @@ const en = {
           noResponseBody: "The request did not produce a response body.",
           noResponseHeaders: "No response headers.",
           emptyBody: "Empty body.",
+          truncatedStream: "This recording was cut short; the response below is what could be reassembled from it.",
           noStatus: "No status",
           copy: "Copy",
           copied: "Copied",
