@@ -1,4 +1,3 @@
-import type { ModelMessage } from "ai";
 
 import type { ApiKey, ControlPlaneModel } from "../../api/types";
 
@@ -177,41 +176,39 @@ export function createWireFetch(custom: Record<string, unknown>, api?: Playgroun
   };
 }
 
-export function toModelMessages(messages: readonly PlaygroundMessage[]): ModelMessage[] {
-  return messages.map((message, index) => {
-    if (message.role === "assistant") return { role: "assistant", content: message.text };
-    const isLatest = index === messages.length - 1;
-    if (!isLatest || !message.imageUrl) return { role: "user", content: message.text };
-    return {
-      role: "user",
-      content: [
-        ...(message.text ? [{ type: "text" as const, text: message.text }] : []),
-        { type: "image" as const, image: new URL(message.imageUrl) },
-      ],
-    };
-  });
-}
-
-export function generationOptions(api: PlaygroundApi, settings: PlaygroundSettings): {
-  temperature?: number;
-  maxOutputTokens?: number;
-  topP?: number;
-  frequencyPenalty?: number;
-  presencePenalty?: number;
-  stopSequences?: string[];
-  providerOptions?: Record<string, Record<string, string>>;
-} {
-  const common = {
-    ...(settings.temperature !== undefined && { temperature: settings.temperature }),
-    ...(settings.maxOutputTokens !== undefined && { maxOutputTokens: settings.maxOutputTokens }),
-    ...(settings.topP !== undefined && { topP: settings.topP }),
-    ...(api !== "messages" && settings.frequencyPenalty !== undefined && { frequencyPenalty: settings.frequencyPenalty }),
-    ...(api !== "messages" && settings.presencePenalty !== undefined && { presencePenalty: settings.presencePenalty }),
-    ...(settings.stopSequences?.length && { stopSequences: settings.stopSequences }),
+// Wire-native generation options per protocol. Naming them the way each
+// protocol names them keeps reasoning effort, stop handling and token caps
+// visible on the request instead of behind a client abstraction.
+export function generationOptions(api: PlaygroundApi, settings: PlaygroundSettings): Record<string, unknown> {
+  const { temperature, maxOutputTokens, topP, frequencyPenalty, presencePenalty, stopSequences, reasoningEffort } = settings;
+  const shared = {
+    ...(temperature !== undefined && { temperature }),
+    ...(topP !== undefined && { top_p: topP }),
   };
-  if (!settings.reasoningEffort) return common;
-  const providerOptions: Record<string, Record<string, string>> = api === "messages"
-    ? { anthropic: { effort: settings.reasoningEffort } }
-    : { openai: { reasoningEffort: settings.reasoningEffort } };
-  return { ...common, providerOptions };
+
+  if (api === "messages") {
+    return {
+      ...shared,
+      ...(maxOutputTokens !== undefined && { max_tokens: maxOutputTokens }),
+      ...(stopSequences?.length && { stop_sequences: stopSequences }),
+      ...(reasoningEffort && { thinking: { type: "enabled", effort: reasoningEffort } }),
+    };
+  }
+
+  if (api === "responses") {
+    return {
+      ...shared,
+      ...(maxOutputTokens !== undefined && { max_output_tokens: maxOutputTokens }),
+      ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
+    };
+  }
+
+  return {
+    ...shared,
+    ...(maxOutputTokens !== undefined && { max_completion_tokens: maxOutputTokens }),
+    ...(frequencyPenalty !== undefined && { frequency_penalty: frequencyPenalty }),
+    ...(presencePenalty !== undefined && { presence_penalty: presencePenalty }),
+    ...(stopSequences?.length && { stop: stopSequences }),
+    ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+  };
 }

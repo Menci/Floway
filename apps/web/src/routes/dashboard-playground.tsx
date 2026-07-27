@@ -1,12 +1,10 @@
+import { streamPlaygroundText } from "../components/playground/playground-stream";
 import {
   ChevronDownRegular,
   ChevronUpRegular,
   DeleteRegular,
   EditRegular,
 } from "@fluentui/react-icons";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
-import { streamText } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { redirect } from "react-router";
 import { useTranslation } from "react-i18next";
@@ -28,7 +26,6 @@ import {
   parseCustomJson,
   playgroundApis,
   supportsImageInput,
-  toModelMessages,
   type PlaygroundApi,
   type PlaygroundMessage,
   type PlaygroundSettings,
@@ -216,18 +213,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
     try {
       const wireFetch = createWireFetch(customResult.value, api);
-      const model = api === "messages"
-        ? createAnthropic({ baseURL: "/v1", apiKey: selectedKey.key, fetch: wireFetch })(selectedModel.id)
-        : api === "chatCompletions"
-          ? createOpenAI({ baseURL: "/v1", apiKey: selectedKey.key, fetch: wireFetch }).chat(selectedModel.id)
-          : createOpenAI({ baseURL: "/v1", apiKey: selectedKey.key, fetch: wireFetch }).responses(selectedModel.id);
-      const options = {
-        model,
-        messages: toModelMessages(context),
-        ...(system.trim() && { system: system.trim() }),
-        abortSignal: controller.signal,
-        ...generationOptions(api, settings),
-      };
 
       const assistantId = randomId();
       let assistantText = "";
@@ -241,11 +226,17 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           return current.map((message) => message.id === assistantId ? { ...message, text } : message);
         });
       };
-      const result = streamText(options);
-      for await (const part of result.fullStream) {
-        if (part.type === "error") throw part.error;
-        if (part.type !== "text-delta") continue;
-        assistantText += part.text;
+      for await (const delta of streamPlaygroundText({
+        api,
+        apiKey: selectedKey.key,
+        model: selectedModel.id,
+        system: system.trim(),
+        messages: context,
+        options: generationOptions(api, settings),
+        signal: controller.signal,
+        fetchImpl: wireFetch,
+      })) {
+        assistantText += delta;
         if (renderFrame === null) renderFrame = requestAnimationFrame(commitAssistantText);
       }
       if (renderFrame !== null) cancelAnimationFrame(renderFrame);

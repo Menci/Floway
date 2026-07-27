@@ -56,9 +56,21 @@ describe("custom JSON", () => {
 });
 
 describe("parameters and capabilities", () => {
-  it("maps reasoning and omits unsupported Messages penalties", () => {
-    expect(generationOptions("responses", { reasoningEffort: "high" })).toMatchObject({ providerOptions: { openai: { reasoningEffort: "high" } } });
-    expect(generationOptions("messages", { reasoningEffort: "max", frequencyPenalty: 1 })).toEqual({ providerOptions: { anthropic: { effort: "max" } } });
+  it("names generation options the way each protocol names them on the wire", () => {
+    expect(generationOptions("responses", { reasoningEffort: "high", maxOutputTokens: 100 }))
+      .toEqual({ max_output_tokens: 100, reasoning: { effort: "high" } });
+    expect(generationOptions("chatCompletions", { reasoningEffort: "high", maxOutputTokens: 100, frequencyPenalty: 1, stopSequences: ["x"] }))
+      .toEqual({ max_completion_tokens: 100, frequency_penalty: 1, stop: ["x"], reasoning_effort: "high" });
+    expect(generationOptions("messages", { reasoningEffort: "max", maxOutputTokens: 100, stopSequences: ["x"] }))
+      .toEqual({ max_tokens: 100, stop_sequences: ["x"], thinking: { type: "enabled", effort: "max" } });
+  });
+
+  it("omits the penalties Messages has no wire field for", () => {
+    expect(generationOptions("messages", { frequencyPenalty: 1, presencePenalty: 1 })).toEqual({});
+  });
+
+  it("forwards an unknown reasoning effort rather than gating it", () => {
+    expect(generationOptions("chatCompletions", { reasoningEffort: "ludicrous" })).toEqual({ reasoning_effort: "ludicrous" });
   });
 
   it("reads image and output limits conservatively", () => {
