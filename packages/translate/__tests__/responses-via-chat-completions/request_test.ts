@@ -16,20 +16,21 @@ test('buildTargetRequest accepts an implicit message discriminator', () => {
   ]);
 });
 
-test('buildTargetRequest projects a plaintext agent message as attributed user input', () => {
+test('buildTargetRequest projects a plaintext agent message as user input', () => {
+  const notification = 'Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/reviewer\nPayload:\nNo findings.';
   const result = buildTargetRequest({
     model: 'gpt-test',
     input: [{
       type: 'agent_message',
       author: '/root/reviewer',
       recipient: '/root',
-      content: [{ type: 'input_text', text: 'No findings.' }],
+      content: [{ type: 'input_text', text: notification }],
     }],
   });
 
   assertEquals(result.target.messages, [{
     role: 'user',
-    content: 'Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\nNo findings.',
+    content: notification,
   }]);
 });
 

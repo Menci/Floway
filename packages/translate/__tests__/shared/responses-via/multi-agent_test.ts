@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { multiAgentCallOutputText, multiAgentMessageContent } from '../../../src/shared/responses-via/multi-agent.ts';
-import type { ResponsesInputAgentMessageItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputAgentMessageItem, ResponsesInputMultiAgentCallOutputItem } from '@floway-dev/protocols/responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 const agentMessage = (content: ResponsesInputAgentMessageItem['content']): ResponsesInputAgentMessageItem => ({
@@ -13,6 +13,7 @@ const agentMessage = (content: ResponsesInputAgentMessageItem['content']): Respo
 
 test('multiAgentMessageContent normalizes readable beta content into Responses input parts', () => {
   assertEquals(multiAgentMessageContent(agentMessage([
+    { type: 'output_text', text: 'output' },
     { type: 'text', text: 'visible' },
     { type: 'summary_text', text: 'summary' },
     { type: 'reasoning_text', text: 'reasoning' },
@@ -21,7 +22,7 @@ test('multiAgentMessageContent normalizes readable beta content into Responses i
     { type: 'computer_screenshot', image_url: null, file_id: 'file_screen', detail: 'original' },
     { type: 'input_file', file_id: 'file_doc' },
   ]), 'Messages'), [
-    { type: 'input_text', text: 'Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\n' },
+    { type: 'input_text', text: 'output' },
     { type: 'input_text', text: 'visible' },
     { type: 'input_text', text: 'summary' },
     { type: 'input_text', text: 'reasoning' },
@@ -61,4 +62,17 @@ test('multiAgentCallOutputText joins output fragments without inventing separato
       { type: 'output_text', text: 'completed' },
     ],
   }), 'agent_1: completed');
+});
+
+test('multiAgentCallOutputText rejects malformed output blocks', () => {
+  assertThrows(
+    () => multiAgentCallOutputText({
+      type: 'multi_agent_call_output',
+      action: 'wait_agent',
+      call_id: 'call_wait',
+      output: [{ type: 'future_output', text: 'hidden' }],
+    } as unknown as ResponsesInputMultiAgentCallOutputItem),
+    Error,
+    "content type 'future_output'",
+  );
 });

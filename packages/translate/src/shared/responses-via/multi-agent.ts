@@ -33,24 +33,21 @@ const imageDetail = (part: AgentContentFields): ResponsesInputImage['detail'] =>
   return part.detail as ResponsesInputImage['detail'];
 };
 
-// Codex's native multi-agent input carries author/recipient outside the content
-// array. Recreate the same visible routing envelope for protocols that only
-// have ordinary user messages.
-// https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/protocol/src/protocol.rs#L808-L840
-const attributionEnvelope = (item: ResponsesInputAgentMessageItem): string =>
-  `Message Type: MESSAGE\nTask name: ${item.recipient}\nSender: ${item.author}\nPayload:\n`;
-
+// Plaintext Codex deliveries already carry their Message Type / Task name /
+// Sender envelope inside `input_text`; synthesizing another envelope would
+// conflict with FINAL_ANSWER and other source message types.
+// https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/tests/suite/subagent_notifications.rs#L1555-L1630
 export const multiAgentMessageContent = (
   item: ResponsesInputAgentMessageItem,
   target: 'Messages' | 'Chat Completions',
 ): ResponsesInputContent[] => {
-  const content: ResponsesInputContent[] = [{ type: 'input_text', text: attributionEnvelope(item) }];
+  const content: ResponsesInputContent[] = [];
 
   for (const part of item.content) {
     switch (part.type) {
     case 'input_text':
     case 'output_text':
-      content.push({ type: part.type, text: readableText(part, 'text') });
+      content.push({ type: 'input_text', text: readableText(part, 'text') });
       break;
     case 'text':
     case 'summary_text':
@@ -93,4 +90,9 @@ export const multiAgentMessageContent = (
 };
 
 export const multiAgentCallOutputText = (item: ResponsesInputMultiAgentCallOutputItem): string =>
-  item.output.map(part => part.text).join('');
+  item.output.map(part => {
+    if (part.type !== 'output_text') {
+      throw new TranslatorInputError(`Cannot translate multi_agent_call_output content type '${part.type}' to message text.`);
+    }
+    return readableText(part, 'text');
+  }).join('');

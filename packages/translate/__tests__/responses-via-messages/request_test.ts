@@ -37,30 +37,25 @@ test('buildTargetRequest accepts an implicit message discriminator', async () =>
   ]);
 });
 
-test('buildTargetRequest projects a plaintext agent message as attributed user input', async () => {
+test('buildTargetRequest projects a plaintext agent message as user input', async () => {
+  const notification = 'Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/reviewer\nPayload:\nNo findings.';
   const result = await buildTargetRequest({
     ...minimalPayload,
     input: [{
       type: 'agent_message',
       author: '/root/reviewer',
       recipient: '/root',
-      content: [{ type: 'input_text', text: 'No findings.' }],
+      content: [{ type: 'input_text', text: notification }],
     }],
   });
 
   assertEquals(result.target.messages, [{
     role: 'user',
-    content: [
-      {
-        type: 'text',
-        text: 'Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\n',
-      },
-      {
-        type: 'text',
-        text: 'No findings.',
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
+    content: [{
+      type: 'text',
+      text: notification,
+      cache_control: { type: 'ephemeral' },
+    }],
   }]);
 });
 
