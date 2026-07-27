@@ -6,6 +6,7 @@ import { formatProxyUri } from "@floway-dev/proxy/url";
 
 import type { ProxyConflictBody, ProxyRecord } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { ConfirmDialog } from "../components/ui/confirm-dialog";
 import { PageLoadingPanel } from "../components/ui/page-loading-panel";
 import { Panel } from "../components/ui/panel";
@@ -78,14 +79,14 @@ export default function DashboardProvidersProxy() {
 
   // ---- load data ----
   const refreshProxies = useCallback(async () => {
-    const proxiesRes = await callApi<ProxyRecord[]>(() => authFetch("/api/proxies"));
+    const proxiesRes = await callApi<ProxyRecord[]>(() => api.api.proxies.$get());
     if (proxiesRes.data) setProxies(proxiesRes.data);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const proxiesRes = await callApi<ProxyRecord[]>(() => authFetch("/api/proxies"));
+      const proxiesRes = await callApi<ProxyRecord[]>(() => api.api.proxies.$get());
       if (cancelled) return;
       if (proxiesRes.error) {
         setLoadError(proxiesRes.error.message);

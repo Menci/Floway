@@ -7,6 +7,7 @@ import { redirect, useOutletContext } from "react-router";
 
 import type { ApiKey, ControlPlaneModel } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { getSessionToken } from "../auth/session";
 import { AgentSetupCard } from "../components/api-keys/agent-setup-card";
 import { KeyDialog } from "../components/api-keys/key-editor";
@@ -109,9 +110,9 @@ export default function DashboardServicesApiKeys() {
     setLoading(true);
     setPageError(null);
     const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
-      callApi<ApiKey[]>(() => authFetch("/api/keys")),
-      callApi<UpstreamOption[]>(() => authFetch("/api/upstream-options")),
-      callApi<ModelsResponse>(() => authFetch("/api/models?include_unlisted=true")),
+      callApi<ApiKey[]>(() => api.api.keys.$get()),
+      callApi<UpstreamOption[]>(() => api.api["upstream-options"].$get()),
+      callApi<ModelsResponse>(() => api.api.models.$get({ query: { include_unlisted: "true" } })),
     ]);
     setLoading(false);
 
@@ -139,9 +140,9 @@ export default function DashboardServicesApiKeys() {
     let cancelled = false;
     void (async () => {
       const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
-        callApi<ApiKey[]>(() => authFetch("/api/keys")),
-        callApi<UpstreamOption[]>(() => authFetch("/api/upstream-options")),
-        callApi<ModelsResponse>(() => authFetch("/api/models?include_unlisted=true")),
+        callApi<ApiKey[]>(() => api.api.keys.$get()),
+        callApi<UpstreamOption[]>(() => api.api["upstream-options"].$get()),
+        callApi<ModelsResponse>(() => api.api.models.$get({ query: { include_unlisted: "true" } })),
       ]);
       if (cancelled) return;
 

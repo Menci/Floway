@@ -12,7 +12,8 @@ import { useTranslation } from "react-i18next";
 import { redirect, useOutletContext } from "react-router";
 import { z } from "zod";
 
-import { authFetch, callApi, getCurrentSession } from "../api/auth";
+import { authFetch, callApi } from "../api/auth";
+import { api, getCurrentSession } from "../api/client";
 import type { ControlPlaneUser, UpstreamOption } from "../api/types";
 import { getSessionToken } from "../auth/session";
 import { ConfirmDialog } from "../components/ui/confirm-dialog";
@@ -719,8 +720,8 @@ function userFormDefaults(user: ControlPlaneUser | null): UserFormValues {
 
 async function loadUsersPageData(): Promise<UsersPageData> {
   const [usersResult, upstreamsResult] = await Promise.all([
-    callApi<ControlPlaneUser[]>(() => authFetch("/api/users")),
-    callApi<UpstreamOption[]>(() => authFetch("/api/upstream-options")),
+    callApi<ControlPlaneUser[]>(() => api.api.users.$get()),
+    callApi<UpstreamOption[]>(() => api.api["upstream-options"].$get()),
   ]);
   return {
     users: usersResult.data ?? [],

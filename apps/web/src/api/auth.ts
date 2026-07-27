@@ -105,9 +105,6 @@ export const login = (body: {
     }),
   );
 
-export const getCurrentSession = (): Promise<ApiResult<MeResponse>> =>
-  callApi<MeResponse>(() => authFetch("/auth/me"));
-
 // Mirrors PATCH /api/users/me/password in the Floway control plane.
 export const changeOwnPassword = (body: {
   currentPassword: string;

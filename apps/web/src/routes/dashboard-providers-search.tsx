@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { Route } from "./+types/dashboard-providers-search";
 import type { ControlPlaneModel, SearchConfig, SearchConfigTestResult, UpstreamRecord } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { getSessionToken } from "../auth/session";
 import bingIconUrl from "../assets/bing.svg";
 import jinaIconUrl from "../assets/jina.svg";
@@ -36,9 +37,9 @@ interface SearchPageLoaderData {
 export async function clientLoader(): Promise<SearchPageLoaderData> {
   if (!getSessionToken()) throw redirect("/");
   const [configResult, upstreamsResult, modelsResult] = await Promise.all([
-    callApi<SearchConfig>(() => authFetch("/api/search-config")),
-    callApi<UpstreamRecord[]>(() => authFetch("/api/upstreams")),
-    callApi<ModelsResponse>(() => authFetch("/api/models?aliases=false&include_unlisted=true")),
+    callApi<SearchConfig>(() => api.api["search-config"].$get()),
+    callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
+    callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: "false", include_unlisted: "true" } })),
   ]);
   return {
     config: configResult.data ?? DEFAULT_CONFIG,

@@ -10,7 +10,9 @@ import type {
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from "../../api/types";
-import { authFetch, callApi, getCurrentSession } from "../../api/auth";
+import { authFetch, callApi } from "../../api/auth";
+import { getCurrentSession } from "../../api/client";
+import { api } from "../../api/client";
 
 export interface RuntimeInfo {
   kind: "node" | "cloudflare";
@@ -85,11 +87,11 @@ export async function requireAdmin() {
 
 export async function loadEditorAux(): Promise<EditorAuxData> {
   const [flags, proxies, backoffs, runtime, upstreams] = await Promise.all([
-    callApi<Flag[]>(() => authFetch("/api/upstreams/flags")),
-    callApi<ProxyRecord[]>(() => authFetch("/api/proxies")),
-    callApi<BackoffRow[]>(() => authFetch("/api/proxies/backoffs")),
-    callApi<RuntimeInfo>(() => authFetch("/api/runtime-info")),
-    callApi<UpstreamRecord[]>(() => authFetch("/api/upstreams")),
+    callApi<Flag[]>(() => api.api.upstreams.flags.$get()),
+    callApi<ProxyRecord[]>(() => api.api.proxies.$get()),
+    callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
+    callApi<RuntimeInfo>(() => api.api["runtime-info"].$get()),
+    callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
   ]);
   const error = flags.error ?? proxies.error ?? backoffs.error ?? runtime.error ?? upstreams.error;
   if (error) throw new Error(error.message);

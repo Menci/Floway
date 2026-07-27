@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { Route } from "./+types/dashboard-monitor-requests";
 import type { ApiKey } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { getSessionToken } from "../auth/session";
 import { PageLoadingPanel } from "../components/ui/page-loading-panel";
 import { Panel } from "../components/ui/panel";
@@ -22,7 +23,7 @@ interface LoaderData {
 
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect("/");
-  const result = await callApi<ApiKey[]>(() => authFetch("/api/keys"));
+  const result = await callApi<ApiKey[]>(() => api.api.keys.$get());
   return result.error
     ? { keys: null, error: result.error.message }
     : { keys: result.data.filter((key) => key.dump_retention_seconds !== null), error: null };
@@ -72,7 +73,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
 
   useEffect(() => {
     const refresh = async () => {
-      const result = await callApi<ApiKey[]>(() => authFetch("/api/keys"));
+      const result = await callApi<ApiKey[]>(() => api.api.keys.$get());
       if (result.error) setKeysError(result.error.message);
       else {
         setKeys(result.data.filter((key) => key.dump_retention_seconds !== null));

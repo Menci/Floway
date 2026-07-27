@@ -8,6 +8,7 @@ import type { ChartProps, CustomizedCalloutData, LineChartProps } from "@fluentu
 
 import type { Route } from "./+types/dashboard-monitor-performance";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { getSessionToken } from "../auth/session";
 import {
   buildPerformanceQuery,
@@ -115,7 +116,7 @@ export default function DashboardMonitorPerformance() {
 
   useEffect(() => {
     let cancelled = false;
-    void callApi<UpstreamName[]>(() => authFetch("/api/upstreams")).then((result) => {
+    void callApi<UpstreamName[]>(() => api.api.upstreams.$get()).then((result) => {
       if (!cancelled && result.data) setUpstreamNames(new Map(result.data.map((item) => [item.id, item.name])));
     });
     return () => { cancelled = true; };

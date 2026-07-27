@@ -6,6 +6,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/dashboard-providers-model-aliases";
 import type { ControlPlaneModel, ModelAlias } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { getSessionToken } from "../auth/session";
 import { AliasDialog } from "../components/model-alias/alias-dialog";
 import { mergeModelAliasesPageData } from "../components/model-alias/load-data";
@@ -46,8 +47,8 @@ export default function DashboardProvidersModelAliases() {
     setError(null);
     setModelsError(null);
     const [aliasResult, modelResult] = await Promise.all([
-      callApi<ModelAlias[]>(() => authFetch("/api/aliases")),
-      callApi<ModelsResponse>(() => authFetch("/api/models?aliases=false&include_unlisted=true")),
+      callApi<ModelAlias[]>(() => api.api.aliases.$get()),
+      callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: "false", include_unlisted: "true" } })),
     ]);
     const next = mergeModelAliasesPageData({ aliases, models }, aliasResult, modelResult);
     setAliases(next.aliases);

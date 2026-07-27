@@ -20,6 +20,7 @@ import type {
   UpstreamRecord,
 } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { getSessionToken } from "../auth/session";
 import { ConfirmDialog } from "../components/ui/confirm-dialog";
 import { PageLoadingPanel } from "../components/ui/page-loading-panel";
@@ -545,8 +546,8 @@ function IconButton({
 
 async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
   const [upstreamsResult, modelsResult] = await Promise.all([
-    callApi<UpstreamRecord[]>(() => authFetch("/api/upstreams")),
-    callApi<ModelsResponse>(() => authFetch("/api/models?aliases=false&include_unlisted=true")),
+    callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
+    callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: "false", include_unlisted: "true" } })),
   ]);
   return {
     upstreams: [...(upstreamsResult.data ?? [])].sort(compareUpstreams),

@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import type { Route } from "./+types/dashboard-playground";
 import type { ApiKey, ControlPlaneModel } from "../api/types";
 import { authFetch, callApi } from "../api/auth";
+import { api } from "../api/client";
 import { getSessionToken } from "../auth/session";
 import { Combobox, Input, Select, SpinButton, Textarea } from "../components/ui/fluent-form-controls";
 import { Panel } from "../components/ui/panel";
@@ -71,8 +72,8 @@ interface LoaderData { keys: ApiKey[]; models: ControlPlaneModel[]; error: strin
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect("/");
   const [keys, models] = await Promise.all([
-    callApi<ApiKey[]>(() => authFetch("/api/keys")),
-    callApi<ModelsResponse>(() => authFetch("/api/models")),
+    callApi<ApiKey[]>(() => api.api.keys.$get()),
+    callApi<ModelsResponse>(() => api.api.models.$get({ query: {} })),
   ]);
   return {
     keys: keys.data ?? [],

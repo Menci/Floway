@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
-import { getCurrentSession, type AuthUser, type LoginResponse } from "../api/auth";
+import { type AuthUser, type LoginResponse } from "../api/auth";
+import { getCurrentSession } from "../api/client";
 import { clearSessionToken, getSessionToken } from "../auth/session";
 
 type AuthStatus = "idle" | "loading" | "authenticated" | "unauthenticated" | "error";
