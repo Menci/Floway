@@ -60,4 +60,3 @@ test('multiAgentMessageContent reports the exact path for malformed text', () =>
   );
   assertEquals((error as Error & { param?: string }).param, 'agent_message.content[0].text');
 });
-
