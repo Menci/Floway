@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { DEFAULT_RERANK_PATHS, parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, serializeRerankRequest } from './translate.ts';
+import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, serializeRerankRequest } from './translate.ts';
 
 describe('rerank request ingress', () => {
   test('Cohere v1 retains structured documents and v1-only options', () => {
@@ -144,17 +144,6 @@ describe('rerank request egress', () => {
       query: 'query',
       documents: ['one'],
       vendor_extension: { enabled: true },
-    });
-  });
-
-  test('canonical paths keep compatible and native DashScope wires distinct', () => {
-    expect(DEFAULT_RERANK_PATHS).toEqual({
-      'cohere-v1': '/v1/rerank',
-      'cohere-v2': '/v2/rerank',
-      'jina-v1': '/v1/rerank',
-      'voyage-v1': '/v1/rerank',
-      'dashscope-compatible': '/compatible-api/v1/reranks',
-      'dashscope-native': '/api/v1/services/rerank/text-rerank/text-rerank',
     });
   });
 

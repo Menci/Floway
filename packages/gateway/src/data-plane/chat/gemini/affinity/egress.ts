@@ -1,9 +1,7 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { captureExtras, eventFrame, type ProtocolFrame, USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiPart, GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-
-const KNOWN_EVENT_KEYS = new Set(['candidates', 'usageMetadata', 'modelVersion', 'responseId']);
-const KNOWN_CANDIDATE_KEYS = new Set(['index', 'content', 'finishReason']);
+import { GEMINI_CANDIDATE_KEYS, GEMINI_RESULT_KEYS } from '@floway-dev/protocols/gemini';
 
 // Gemini pays one upstream event of TTFT/inter-event latency. Within one event
 // repeated snapshots collapse to one signature on the element's first
@@ -377,8 +375,8 @@ const mergeEventMetadata = (
   target: GeminiResult,
 ): void => {
   const extras: Record<string, unknown> = {};
-  captureExtras(earlier as unknown as Record<string, unknown>, KNOWN_EVENT_KEYS, extras);
-  captureExtras(later as unknown as Record<string, unknown>, KNOWN_EVENT_KEYS, extras);
+  captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_RESULT_KEYS, extras);
+  captureExtras(later as unknown as Record<string, unknown>, GEMINI_RESULT_KEYS, extras);
   const usageMetadata = later.usageMetadata ?? earlier.usageMetadata;
   const modelVersion = later.modelVersion ?? earlier.modelVersion;
   const responseId = later.responseId ?? earlier.responseId;
@@ -401,10 +399,10 @@ const mergeCandidateExtras = (
   target: GeminiCandidate,
 ): void => {
   const extras: Record<string, unknown> = {};
-  captureExtras(earlier as unknown as Record<string, unknown>, KNOWN_CANDIDATE_KEYS, extras);
-  captureExtras(later as unknown as Record<string, unknown>, KNOWN_CANDIDATE_KEYS, extras);
+  captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_CANDIDATE_KEYS, extras);
+  captureExtras(later as unknown as Record<string, unknown>, GEMINI_CANDIDATE_KEYS, extras);
   for (const key of Object.keys(target)) {
-    if (!KNOWN_CANDIDATE_KEYS.has(key)) delete (target as unknown as Record<string, unknown>)[key];
+    if (!GEMINI_CANDIDATE_KEYS.has(key as keyof GeminiCandidate)) delete (target as unknown as Record<string, unknown>)[key];
   }
   Object.assign(target, extras);
 };

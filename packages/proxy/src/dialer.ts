@@ -1,5 +1,6 @@
 import { formatHostForUri } from './bytes.ts';
 import { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
+import { connectOrDialError } from './dial-target.ts';
 import { ProxyDialError } from './errors.ts';
 import { dialHttpConnect } from './protocols/http-connect.ts';
 import { dialReality } from './protocols/reality.ts';
@@ -9,7 +10,7 @@ import { dialSocks5 } from './protocols/socks5.ts';
 import { dialTrojan } from './protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
-import { connectOrDialError, type DialedSocket, type DialOptions, type DialResult, type DialTarget, type ProxyRequestTarget } from './types.ts';
+import type { DialedSocket, DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
 import { fetchOnStream, signalAbortReason, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
 
 /**

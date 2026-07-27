@@ -4,7 +4,7 @@
 
 import type { CodexQuotaSnapshot } from './quota.ts';
 
-export type CodexCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
+export type CodexAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
 
 // Short-lived OAuth access token minted by exchanging the stored refresh_token
 // against /oauth/token. The refresh_token itself stays on CodexAccountCredential
@@ -24,7 +24,7 @@ export interface CodexQuotaSnapshotEntry {
   data: CodexQuotaSnapshot;
 }
 
-export type CodexQuotaSnapshotMapEntry = Record<string, CodexQuotaSnapshotEntry>;
+export type CodexQuotaSnapshotEntryMap = Record<string, CodexQuotaSnapshotEntry>;
 
 // One account's autonomous credential state, joined back to its identity in
 // CodexUpstreamConfig.accounts via `chatgptAccountId`.
@@ -33,7 +33,7 @@ export interface CodexAccountCredential {
   // OpenAI rotates refresh_token on every /oauth/token call. Stored in D1
   // (not KV) so KV eviction never forces operator re-import.
   refresh_token: string;
-  state: CodexCredentialHealth;
+  state: CodexAccountCredentialHealth;
   state_message?: string;
   // ISO 8601, written on every state transition (initial import, rotation,
   // terminal-state flip). The mutation paths in routes.ts and provider.ts
@@ -52,7 +52,7 @@ export interface CodexAccountCredential {
   // normalizes absent → `null` on a shallow copy, so consumers can rely on
   // the typed `null` slot here.
   accessToken: CodexAccessTokenEntry | null;
-  quotaSnapshot: CodexQuotaSnapshotMapEntry | null;
+  quotaSnapshot: CodexQuotaSnapshotEntryMap | null;
 }
 
 // Account-pool state. v1 always carries exactly one entry; the asserter
@@ -60,6 +60,18 @@ export interface CodexAccountCredential {
 export interface CodexUpstreamState {
   accounts: CodexAccountCredential[];
 }
+
+export const findCodexAccountIndex = (state: CodexUpstreamState, accountId: string): number =>
+  state.accounts.findIndex(account => account.chatgptAccountId === accountId);
+
+export const replaceCodexAccount = (
+  state: CodexUpstreamState,
+  index: number,
+  patch: (account: CodexAccountCredential) => CodexAccountCredential,
+): CodexUpstreamState => ({
+  ...state,
+  accounts: state.accounts.map((account, currentIndex) => currentIndex === index ? patch(account) : account),
+});
 
 const ALLOWED_CREDENTIAL_KEYS_MAP: Record<keyof CodexAccountCredential, true> = {
   chatgptAccountId: true,
@@ -132,7 +144,7 @@ const assertCodexQuotaSnapshotEntry = (value: unknown, where: string): void => {
 
 const isUnsafeMapKey = (key: string): boolean => key === '' || key === '__proto__' || key === 'constructor' || key === 'prototype';
 
-const assertCodexQuotaSnapshotMapEntry = (value: unknown, where: string): void => {
+const assertCodexQuotaSnapshotEntryMap = (value: unknown, where: string): void => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${where} must be a plain object`);
   }
@@ -184,7 +196,7 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
     assertCodexAccessTokenEntry(obj.accessToken, `${where}.accessToken`);
   }
   if (obj.quotaSnapshot !== undefined && obj.quotaSnapshot !== null) {
-    assertCodexQuotaSnapshotMapEntry(obj.quotaSnapshot, `${where}.quotaSnapshot`);
+    assertCodexQuotaSnapshotEntryMap(obj.quotaSnapshot, `${where}.quotaSnapshot`);
   }
 };
 
@@ -216,7 +228,7 @@ export function assertCodexUpstreamState(value: unknown): asserts value is Codex
 // promises `null` rather than `undefined`. Build a shallow copy of the
 // state with absent → `null` so consumers can rely on `=== null` checks
 // without seeing legacy rows escape unfilled. The original `raw` is left
-// untouched so callers (e.g. access-token-cache, quota) can still pass it
+// untouched so callers (e.g. the access-token and quota modules) can still pass it
 // straight through as the CAS `expectedState`.
 export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
   assertCodexUpstreamState(raw);

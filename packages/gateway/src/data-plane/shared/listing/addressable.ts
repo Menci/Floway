@@ -1,4 +1,4 @@
-// One enumeration per (effective upstream cap) of every inbound model id the
+// One enumeration per `upstreamIds` set of every inbound model id the
 // gateway accepts — the union of the listed catalog surface and the
 // addressable-but-not-listed surface contributed by `modelPrefix.addressable`
 // alternates. Listing-side availability checks (this module's alias helper,
@@ -11,8 +11,9 @@
 // DTO) read `limits` / `chat` / `endpoints` directly off the entry without
 // a second registry round trip.
 
+import { compareModelIds, getModelsFromProviders } from '../../providers/catalog.ts';
 import { fetchUpstreamModelsCached } from '../../providers/models-cache.ts';
-import { compareModelIds, getModelsFromProviders, listModelProviders } from '../../providers/registry.ts';
+import { listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { isAbortError, type Fetcher, type InternalModel, type Provider, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -26,7 +27,7 @@ export interface AddressableIdEntry {
   // wire bytes stay byte-identical.
   readonly unlisted: true | undefined;
   // Real catalog row this id routes to. For multi-provider models this is
-  // the same `InternalModel` instance `getModels` returns (one row per
+  // the same `InternalModel` instance `getModelsFromProviders` returns (one row per
   // public-listed id, with the union-merged endpoints already applied).
   readonly model: InternalModel;
   // Every upstream instance that surfaces this addressable id in its
@@ -34,7 +35,7 @@ export interface AddressableIdEntry {
   // canonical listed row the addressable id resolves to — addressable-only
   // alternates inherit the same list (the prefix-stripped id resolves
   // through the same upstream). Lets the control-plane DTO render per-
-  // model upstream chips without re-walking the registry.
+  // model upstream chips without re-walking the catalog.
   readonly upstreams: readonly Provider[];
 }
 
@@ -48,7 +49,7 @@ export const listedRealModels = (entries: readonly AddressableIdEntry[]): readon
 // tagged with whether the id participates in the default `/v1/models`
 // listing. Fans out per upstream the same way `collectProviderModels` does,
 // re-uses the SWR cache so the catalog refresh round-trip is shared with
-// `getModels`.
+// `getModelsFromProviders`.
 export const enumerateAddressableModelIds = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -85,7 +86,7 @@ export const enumerateAddressableModelIds = async (
   //
   // A rejected per-upstream catalog refresh collapses to no addressable-
   // only contribution from THAT upstream — its listed rows already came
-  // (or were dropped) through `getModels`. Mirrors the `Promise.allSettled`
+  // (or were dropped) through `getModelsFromProviders`. Mirrors the `Promise.allSettled`
   // tolerance there so a transiently-down upstream cannot tank /v1/models
   // on a cold-start gateway.
   const perUpstream = await Promise.allSettled(providers.map(async provider => {
@@ -93,13 +94,13 @@ export const enumerateAddressableModelIds = async (
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
     if (cfg === null || addressableOnly.length === 0) return [] as AddressableIdEntry[];
 
-    const upstreamModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher: fetcherForUpstream(provider.upstream) });
+    const upstreamModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher: fetcherForUpstream(provider.upstreamId) });
     const disabled = new Set(provider.disabledPublicModelIds);
     const out: AddressableIdEntry[] = [];
 
     // The canonical listed form for this upstream — the row the listing
-    // surface emitted, and the row a redirect-only addressable id should
-    // resolve back into so consumers find one consistent `InternalModel`.
+    // surface emitted, and the row an addressable-only prefix alternate
+    // resolves back into so consumers find one consistent `InternalModel`.
     const canonicalForm = cfg.listed.includes('prefixed') ? 'prefixed' : 'unprefixed';
 
     for (const upstreamModel of upstreamModels) {

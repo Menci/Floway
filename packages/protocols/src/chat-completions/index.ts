@@ -139,12 +139,14 @@ interface ChatCompletionsChoiceStreaming {
 export interface ChatCompletionsDelta {
   content?: string | null;
   role?: string;
-  tool_calls?: {
-    index: number;
-    id?: string;
-    type?: 'function';
-    function?: { name?: string; arguments?: string };
-  }[];
+  tool_calls?:
+    | {
+      index: number;
+      id?: string;
+      type?: 'function';
+      function?: { name?: string; arguments?: string };
+    }[]
+    | null;
   /** Human-readable reasoning text delta */
   reasoning_text?: string | null;
   /** Opaque reasoning token/signature delta */

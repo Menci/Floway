@@ -81,7 +81,7 @@ const parseFixedDecimal = (value: string, label: string, limits: DecimalLimits):
   return { coefficient, scale };
 };
 
-export const canonicalDecimalString = (value: string, label = 'decimal'): DecimalString =>
+export const parseDecimalString = (value: string, label = 'decimal'): DecimalString =>
   formatFixedDecimal(parseFixedDecimal(value, label, PUBLIC_LIMITS));
 
 export const parseNonNegativeDecimalString = (value: unknown, label = 'decimal'): DecimalString => {

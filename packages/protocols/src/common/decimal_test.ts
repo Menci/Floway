@@ -1,18 +1,18 @@
 import { test } from 'vitest';
 
-import { addDecimalStrings, canonicalDecimalString, divideDecimalString, multiplyDecimalStrings, parseNonNegativeDecimalString } from './decimal.ts';
-import { assertEquals, assertThrows } from '../test-assert.ts';
+import { addDecimalStrings, divideDecimalString, multiplyDecimalStrings, parseDecimalString, parseNonNegativeDecimalString } from './decimal.ts';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('decimal strings canonicalize without floating-point conversion', () => {
-  assertEquals(canonicalDecimalString('001.2300'), '1.23');
-  assertEquals(canonicalDecimalString('1e-7'), '0.0000001');
-  assertEquals(canonicalDecimalString('-0'), '0');
+  assertEquals(parseDecimalString('001.2300'), '1.23');
+  assertEquals(parseDecimalString('1e-7'), '0.0000001');
+  assertEquals(parseDecimalString('-0'), '0');
   assertEquals(parseNonNegativeDecimalString('0.00000000000000000001'), '0.00000000000000000001');
   assertThrows(() => parseNonNegativeDecimalString(-1), TypeError, 'must be a decimal string');
   assertThrows(() => parseNonNegativeDecimalString('-0.1'), RangeError, 'must be non-negative');
-  assertEquals(canonicalDecimalString('1e-324'), `0.${'0'.repeat(323)}1`);
-  assertThrows(() => canonicalDecimalString('1e401'), RangeError, 'exponent must be between');
-  assertThrows(() => canonicalDecimalString('1'.repeat(101)), RangeError, 'significant digits');
+  assertEquals(parseDecimalString('1e-324'), `0.${'0'.repeat(323)}1`);
+  assertThrows(() => parseDecimalString('1e401'), RangeError, 'exponent must be between');
+  assertThrows(() => parseDecimalString('1'.repeat(101)), RangeError, 'significant digits');
 });
 
 test('decimal arithmetic preserves exact finite decimal results', () => {

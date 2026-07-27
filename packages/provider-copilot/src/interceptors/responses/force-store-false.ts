@@ -14,7 +14,7 @@ import type { ResponsesBoundaryCtx } from './types.ts';
  */
 export const withStoreForcedFalse = async <TResult>(
   ctx: ResponsesBoundaryCtx,
-  _request: object,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   ctx.payload = { ...ctx.payload, store: false };

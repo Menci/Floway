@@ -1,5 +1,5 @@
 import type { TokenUsage, UsageMetricRecord, UsageQuantities, UsageRecord } from './types.ts';
-import { BILLING_METRICS, canonicalDecimalString, decimalStringToNumber, parseNonNegativeDecimalString, type BillingMetric, type PriceVector } from '@floway-dev/protocols/common';
+import { BILLING_METRICS, decimalStringToNumber, parseDecimalString, parseNonNegativeDecimalString, type BillingMetric, type PriceVector } from '@floway-dev/protocols/common';
 
 const TOKEN_METRIC_BY_USAGE_KEY = {
   input: 'input_tokens',
@@ -37,7 +37,7 @@ export const tokenUsageQuantities = (tokens: TokenUsage): UsageQuantities => {
   const quantities: UsageQuantities = {};
   for (const [key, metric] of Object.entries(TOKEN_METRIC_BY_USAGE_KEY) as [keyof typeof TOKEN_METRIC_BY_USAGE_KEY, BillingMetric][]) {
     const quantity = tokens[key];
-    if (quantity !== undefined) quantities[metric] = canonicalDecimalString(String(quantity), `token usage ${key}`);
+    if (quantity !== undefined) quantities[metric] = parseDecimalString(String(quantity), `token usage ${key}`);
   }
   return quantities;
 };

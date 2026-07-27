@@ -5,9 +5,14 @@ targets. Client-carried affinity records which target produced an opaque
 assistant blob so a later request can prefer that target, or require it when
 the surrounding protocol state is not portable.
 
-Affinity is a source-protocol membrane. Ingress authenticates and removes
-Floway metadata before interceptors, translators, and providers run. Egress
-adds metadata only after events return to the client-facing protocol.
+Affinity is a source-protocol membrane. Each source protocol authenticates and
+projects Floway metadata before candidate attempts enter protocol interceptors,
+translators, or providers. Egress wraps source-shaped events only after the
+selected candidate has returned through translation. Native Responses first
+hydrates its own stored source items, then applies affinity to the hydrated
+payload; on output it applies affinity before Stateful Responses persists the
+client-facing items. The Stateful Responses store and Copilot's provider-private
+item-id membrane are neighboring layers, not parts of affinity.
 
 ## Encrypted data
 
@@ -45,7 +50,9 @@ created solely for affinity has no `origin` and no original bytes.
 Authentication failure, malformed framing, an undeclared plaintext property,
 or another key's carrier makes the complete value foreign. Foreign values pass
 through byte-for-byte and add no routing evidence, allowing nested Floway
-deployments to unwrap their own layer independently.
+deployments to unwrap their own layer independently. The implementation and
+byte-freeze coverage live in
+[`data-plane/chat/shared/affinity/`](../packages/gateway/src/data-plane/chat/shared/affinity/).
 
 ## Ingress and routing
 
@@ -64,9 +71,14 @@ available preference moves first. Force never narrows alias rules; an exact
 preferred rule variant still wins when available. A direct candidate's absent
 rules and an alias target's empty `rules: {}` are the same no-overlay variant.
 
-Affinity only orders or narrows candidates already produced by model
-resolution. Missing preferred targets fall back normally. Missing or mutually
-incompatible forced upstream/model targets are routing errors.
+[`narrowCandidatesByAffinity`](../packages/gateway/src/data-plane/chat/shared/affinity/index.ts)
+only reorders or narrows candidates already produced by model resolution; it
+never creates a candidate. Missing preferred targets fall back normally.
+Missing or mutually incompatible forced upstream/model targets are routing
+errors. Candidate attempts still follow the sequential result-class rules in
+[RESOLUTION.md](./RESOLUTION.md); affinity selects the candidate only when an
+attempt succeeds, so a failed preferred attempt can fall through before egress
+records the actual serving target.
 
 ## Egress
 
@@ -125,32 +137,64 @@ program-output items inherit force from the latest earlier owned carrier; they
 do not receive additional blobs. Failed streams do not invent a missing first
 carrier.
 
-The Copilot provider has an independent inner item-identity membrane. For
-reasoning, compaction, program, and agent-message outputs that already carry an
-opaque blob, it appends plaintext JSON `{version:1, origin, id}` plus a trailing
-big-endian two-byte JSON length to the decoded/original blob bytes. `origin` is
-`raw`, `base64`, or `base64url`; no account identifier or encryption is part of
-this provider-private layer. The client-facing item receives a fresh
-type-correct random ID at `output_item.added`, while the raw Copilot ID from
-each canonical blob-bearing frame travels only inside that frame's blob
-trailer. Verified Copilot output types without a blob also receive random IDs.
-An unknown output type fails the stream before its raw ID is yielded.
+## Copilot item IDs
 
-Affinity egress subsequently appends its own authenticated outer layer. Two
-appends on the client-visible blob are therefore expected and remain
-independent. On the next request, affinity ingress removes or projects the
-outer layer before candidate dispatch. If Copilot receives its inner layer, the
-provider restores the raw ID and original blob; a blob without that layer, or
-an item whose blob was stripped by affinity routing, remains foreign and passes
-through unchanged. Neither layer buffers visible stream deltas.
+The Copilot provider has an independent inner item-id membrane. For reasoning,
+compaction, program, and agent-message outputs that carry replay state, it
+appends plaintext JSON `{version:1, origin, id}` plus a trailing big-endian
+two-byte JSON length to each decoded/original carrier value. `origin` is `raw`,
+`base64`, or `base64url`; no account identifier or encryption is part of this
+provider-private layer. The client-facing item receives a fresh type-correct
+random ID at `output_item.added`, while raw Copilot IDs travel only inside the
+matching carrier trailers. Known output types without a carrier also receive
+random IDs. An unknown output type fails before its raw ID is yielded.
 
-Responses persistence runs separately at the client-facing boundary. It stores
-the first complete item verbatim under the exact ID emitted on that item; a
-later done or terminal frame remains wire-visible but does not replace that
-durable item.
-Full items and `item_reference`s hydrate by arbitrary exact ID with no format
-validation or candidate-specific rewrite. When state is written, idless input
-items use internal storage keys only inside snapshots; stateless HTTP requests
-neither hash nor stage them. The persistence backing accepts exact item/private
-payload reuse and rejects a different row under the same API-key-scoped ID.
-Affinity never reads, writes, authenticates, or validates item IDs.
+Affinity egress subsequently appends its authenticated outer layer, so two
+trailers on one client-visible blob are expected and independent. On the next
+request, affinity ingress removes or projects the outer layer for each
+candidate. If Copilot then receives its inner layer, the provider restores the
+raw ID and original carrier value. A foreign value, or an item whose carrier
+was removed by affinity routing, passes through without item-id restoration.
+Neither layer buffers visible deltas. The closed output-type policy and OpenAI
+prefix references live beside the
+[Copilot item-id membrane](../packages/provider-copilot/src/interceptors/responses/item-id-membrane.ts);
+its framing is implemented by the adjacent
+[item-id carrier](../packages/provider-copilot/src/interceptors/responses/item-id-carrier.ts).
+
+## Stateful Responses
+
+Stateful Responses is a native Responses source-edge membrane. Before affinity,
+it expands `previous_response_id`, loads exact API-key-scoped item IDs, replaces
+stored full items and `item_reference`s with their first durable client-facing
+payload, and carries any server-private payload in a request-local scratchpad.
+Item IDs are opaque: hydration performs no prefix validation and no
+candidate-specific rewrite. Affinity never reads, writes, authenticates, or
+validates item IDs.
+
+On output, affinity wraps the source-shaped events first. When state is
+writable, persistence stores the first `response.output_item.done` value for
+every output index under the exact client-facing item ID; duplicate done or
+terminal frames remain wire-visible but cannot replace that durable row.
+Completed item rows survive a later failed stream, but a response snapshot
+commits only before a successful `response.completed` or `response.incomplete`
+terminal.
+
+An ordinary successful turn appends prior-snapshot IDs, newly staged input IDs,
+and output IDs into the new response snapshot. If any completed output is a
+`compaction` item, the snapshot instead replaces history with only that turn's
+output IDs. Non-streaming `/v1/responses/compact` is converted to the same
+added/done/terminal event path, so it has identical affinity and snapshot
+semantics.
+
+When state is writable, idless input items use content hashes to reuse or mint
+internal storage keys; those internal keys never alter the wire item. HTTP
+`store: false` may read durable state but neither stages nor writes new state.
+WebSocket `store: false` writes new state only to its session-local in-memory
+backing; when durable retention is enabled, reads check session-local state and
+then the durable backing. It never writes the new turn durably. Every backing
+accepts reuse of the
+same item/private payload and rejects a different payload under the same
+API-key-scoped ID. The ordering is owned by the
+[native client-output boundary](../packages/gateway/src/data-plane/chat/responses/client-output.ts)
+and the
+[Stateful Responses output wrapper](../packages/gateway/src/data-plane/chat/responses/items/output.ts).

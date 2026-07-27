@@ -1,7 +1,7 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { PerformanceDimensions } from '../../../repo/types.ts';
-import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
+import type { GatewayCtx } from '../gateway-ctx.ts';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
 export type { PerformanceTelemetryContext };
@@ -21,12 +21,16 @@ const record = async (op: Promise<void>, label: string): Promise<void> => {
   }
 };
 
-// TTFT is measured from the provider's outbound-fetch stamp so it isolates
-// upstream round-trip latency from gateway-internal overhead. Any success
-// without a real upstream call or first-output-token stamp records as
-// neutral; only genuine upstream failures with no output land in a pure
-// zero-output-error bucket. TPOT layers on top only when at least two
-// output tokens streamed — see the per-branch comments below.
+// TTFT is anchored on the provider's outbound-fetch stamp, so the interval
+// includes the gateway's own egress work — proxy-backoff lookup, dial, TLS,
+// CONNECT — and excludes everything the gateway does before dispatch; after a
+// failover the per-candidate anchor reset makes the recorded interval shorter
+// than the latency the client observed. See
+// `UpstreamCallOptions.wrapUpstreamCall`. Any success without a real upstream
+// call or first-output-token stamp records as neutral; only genuine upstream
+// failures with no output land in a pure zero-output-error bucket. TPOT layers
+// on top only when at least two output tokens streamed — see the per-branch
+// comments below.
 //
 // A failure that produced output tokens (mid-stream failure that streamed
 // tokens before dying) records a partial-output sample: the row bumps
@@ -60,6 +64,9 @@ export const recordPerformance = (
     scheduler(record(settle, failed ? 'zero-output-error' : 'neutral'));
     return;
   }
+  // Time to first token. Matches the OpenTelemetry GenAI spec
+  // gen_ai.server.time_to_first_token
+  // (https://github.com/open-telemetry/semantic-conventions-genai/blob/953dd22e3cecd3a397d742c349d2435d59c8b771/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_to_first_token).
   const ttftMs = Math.round(attempt.firstOutputTokenAt - attempt.upstreamCallStartedAt);
   const success = !failed;
   if (outputTokens < 2) {

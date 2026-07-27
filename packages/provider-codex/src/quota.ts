@@ -1,4 +1,4 @@
-import { readCodexUpstreamState, type CodexQuotaSnapshotMapEntry, type CodexUpstreamState } from './state.ts';
+import { findCodexAccountIndex, readCodexUpstreamState, replaceCodexAccount } from './state.ts';
 import { getProviderRepo } from '@floway-dev/provider';
 
 export interface CodexQuotaSnapshot {
@@ -103,18 +103,6 @@ export const computeCodexQuotaTtlMs = (snapshot: CodexQuotaSnapshot, now: Date):
   return Math.max(TTL_FLOOR_MS, ...horizons);
 };
 
-const findAccountIndex = (state: CodexUpstreamState, accountId: string): number =>
-  state.accounts.findIndex(a => a.chatgptAccountId === accountId);
-
-const replaceAccountQuota = (
-  state: CodexUpstreamState,
-  index: number,
-  quotaSnapshot: CodexQuotaSnapshotMapEntry,
-): CodexUpstreamState => ({
-  ...state,
-  accounts: state.accounts.map((account, i) => (i === index ? { ...account, quotaSnapshot } : account)),
-});
-
 // Returns all fresh quota snapshots keyed by active limit. Stale buckets read as
 // absent — the next upstream response for that active limit will overwrite it.
 // state_json is unbounded, so freshness is gated inline by
@@ -145,10 +133,10 @@ export const putCodexQuota = async (
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) throw new Error(`putCodexQuota: Codex upstream ${upstreamId} disappeared mid-request`);
   const state = readCodexUpstreamState(fresh.state);
-  const idx = findAccountIndex(state, accountId);
+  const idx = findCodexAccountIndex(state, accountId);
   if (idx < 0) throw new Error(`putCodexQuota: Codex account ${accountId} not found in upstream ${upstreamId}`);
   const currentQuota = state.accounts[idx].quotaSnapshot ?? {};
   const nextQuota = { ...currentQuota, [codexQuotaActiveLimitKey(snapshot)]: { fetchedAt: Date.now(), data: snapshot } };
-  const next = replaceAccountQuota(state, idx, nextQuota);
+  const next = replaceCodexAccount(state, idx, account => ({ ...account, quotaSnapshot: nextQuota }));
   await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
 };

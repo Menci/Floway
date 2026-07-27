@@ -63,7 +63,7 @@ const selectCacheMarkerIndexes = (messages: readonly ChatCompletionsMessage[]): 
   return [...new Set([...systemIndexes, ...nonSystemIndexes])].sort((a, b) => a - b);
 };
 
-export const withCacheControlMarkersAttached: CopilotChatCompletionsBoundaryInterceptor = async (ctx, _request, run) => {
+export const withCacheControlMarkersAttached: CopilotChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
   const indexes = selectCacheMarkerIndexes(ctx.payload.messages);
   for (const index of indexes) {
     // Fresh object per message so downstream mutations (none today, but

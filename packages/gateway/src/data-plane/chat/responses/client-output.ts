@@ -1,7 +1,9 @@
 import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
 import { wrapResponsesClientOutput } from './items/output.ts';
 import { createResponsesResponseId } from './response-id.ts';
-import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { affinityEgressOptions } from '../shared/affinity/index.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -14,10 +16,7 @@ export const wrapNativeResponsesClientOutput = (
 ): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
   if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('Responses output reached the client-facing boundary without chat context');
   const chatCtx = ctx as ChatGatewayCtx;
-  const withAffinity = wrapResponsesAffinityEgress(frames, {
-    codec: chatCtx.affinity.codec,
-    affinity: chatCtx.affinity.selectedTarget(),
-  });
+  const withAffinity = wrapResponsesAffinityEgress(frames, affinityEgressOptions(ctx));
   return wrapResponsesClientOutput(withAffinity, {
     store: chatCtx.store,
     responseId: createResponsesResponseId(),

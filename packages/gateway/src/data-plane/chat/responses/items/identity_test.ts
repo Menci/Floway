@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
+import { createResponsesStorageKey, hashResponsesItem, responsesItemId } from './identity.ts';
 
 test('reads arbitrary non-empty item ids without format filtering', () => {
   expect(responsesItemId({ id: 'raw/provider:id' })).toBe('raw/provider:id');
@@ -16,9 +16,9 @@ test('creates collision-resistant internal keys for idless stored inputs', () =>
   expect(second).not.toBe(first);
 });
 
-test('content hashing includes the item id', async () => {
-  const first = await hashResponsesItemContent({ type: 'message', id: 'msg_a', role: 'user', content: 'same' });
-  const second = await hashResponsesItemContent({ type: 'message', id: 'msg_b', role: 'user', content: 'same' });
+test('item hashing includes the item id', async () => {
+  const first = await hashResponsesItem({ type: 'message', id: 'msg_a', role: 'user', content: 'same' });
+  const second = await hashResponsesItem({ type: 'message', id: 'msg_b', role: 'user', content: 'same' });
 
   expect(first).not.toBe(second);
 });

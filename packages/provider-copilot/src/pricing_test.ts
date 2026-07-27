@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
+import { pricingForCopilotPublicModelId } from './pricing.ts';
 import { perMillionTokenRates, priceRequest, type PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -49,15 +49,4 @@ test('Copilot pricing resolves exact and regex model families', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.3-codex'), { inputTokens: 0 }).rates, published({ input_tokens: '1.75', input_cache_read_tokens: '0.175', output_tokens: '14' }));
   assertEquals(priceRequest(pricingForCopilotPublicModelId('text-embedding-3-small'), { inputTokens: 0 }).rates, published({ input_tokens: '0.02', output_tokens: '0' }));
   assertEquals(pricingForCopilotPublicModelId('totally-made-up-model'), null);
-});
-
-test('pricingForCopilotModelKey strips Claude variant suffixes before lookup', () => {
-  for (const id of ['claude-opus-4-7-high', 'claude-opus-4-7-xhigh', 'claude-opus-4-7-1m', 'claude-opus-4-7-1m-internal', 'claude-opus-4-7-20251101']) {
-    assertEquals(priceRequest(pricingForCopilotModelKey(id), { inputTokens: 0 }).rates, OPUS_BASE);
-  }
-  assertEquals(priceRequest(pricingForCopilotModelKey('claude-opus-4-7-fast'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '30', input_cache_read_tokens: '3', input_cache_write_tokens: '37.5', output_tokens: '150' }));
-  for (const id of ['claude-opus-5', 'claude-opus-5-high', 'claude-opus-5-xhigh', 'claude-opus-5-1m']) {
-    assertEquals(priceRequest(pricingForCopilotModelKey(id), { inputTokens: 0 }).rates, OPUS_BASE);
-  }
-  assertEquals(priceRequest(pricingForCopilotModelKey('claude-opus-5-fast'), { serviceTier: 'fast', inputTokens: 0 }).rates, published({ input_tokens: '10', input_cache_read_tokens: '1', input_cache_write_tokens: '12.5', output_tokens: '50' }));
 });

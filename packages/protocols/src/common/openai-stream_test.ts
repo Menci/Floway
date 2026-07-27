@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { isOpenAIUsageOnlyEventShape } from './openai-stream.ts';
-import { assertEquals } from '../test-assert.ts';
+import { assertEquals } from '@floway-dev/test-utils';
 
 test('isOpenAIUsageOnlyEventShape identifies the OpenAI / vanilla-vLLM shape (empty choices + usage)', () => {
   assertEquals(isOpenAIUsageOnlyEventShape({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } }), true);

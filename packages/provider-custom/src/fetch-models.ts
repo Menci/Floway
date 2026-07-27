@@ -31,7 +31,7 @@ export interface CustomRawModel {
     max_prompt_tokens?: number;
   };
   pricing?: ModelPricing;
-  // Optional ModelKind published by Floway upstreams; absent on plain
+  // Optional ModelKind published by Floway-shaped upstreams; absent on plain
   // OpenAI-compat upstreams.
   kind?: ModelKind;
   // Optional chat metadata from Floway-shaped upstreams; absent on plain

@@ -22,20 +22,20 @@ import type { ResponsesInterceptor } from './types.ts';
 import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import { providerModelOf } from '@floway-dev/provider';
 
-interface DeepseekDisableField {
+interface DeepSeekDisableField {
   thinking?: { type: 'disabled' };
 }
 
-type CanonicalResponsesPayloadWithDeepseekDisable = Omit<CanonicalResponsesPayload, 'reasoning'> & DeepseekDisableField;
+type CanonicalResponsesPayloadWithDeepSeekDisable = Omit<CanonicalResponsesPayload, 'reasoning'> & DeepSeekDisableField;
 
 const stripCanonicalReasoningSentinel = (payload: CanonicalResponsesPayload): CanonicalResponsesPayload => {
   if (payload.reasoning?.effort !== 'none') return payload;
   const { reasoning: _stripped, ...rest } = payload;
-  const out: CanonicalResponsesPayloadWithDeepseekDisable = { ...rest, thinking: { type: 'disabled' } };
+  const out: CanonicalResponsesPayloadWithDeepSeekDisable = { ...rest, thinking: { type: 'disabled' } };
   return out as CanonicalResponsesPayload;
 };
 
-export const withVendorDeepseekResponsesNormalize: ResponsesInterceptor = async (ctx, _request, run) => {
+export const withVendorDeepSeekResponsesNormalize: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-deepseek')) return await run();
 
   ctx.payload = stripCanonicalReasoningSentinel(ctx.payload);

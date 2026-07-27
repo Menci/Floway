@@ -35,6 +35,7 @@ interface Mismatch {
 }
 
 const fmt = (v: unknown): string => JSON.stringify(v);
+const isArray = (value: unknown): value is readonly unknown[] => Array.isArray(value);
 
 const isBindingArray = (arr: readonly unknown[]): arr is ReadonlyArray<Record<string, unknown>> =>
   arr.length > 0 && arr.every(
@@ -49,7 +50,7 @@ const compare = (expected: unknown, actual: unknown, path: string, out: Mismatch
     return;
   }
 
-  if (Array.isArray(expected)) {
+  if (isArray(expected)) {
     if (!Array.isArray(actual)) {
       out.push({ path, reason: `expected array, got ${fmt(actual)}` });
       return;

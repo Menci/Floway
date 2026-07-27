@@ -8,35 +8,31 @@
 // credential-bearing proxy URIs. The endpoint is admin-only; handle the file
 // with the same care as a DB backup.
 
-import type { Context } from 'hono';
-
-import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
-import { createProviderInstance } from '../../data-plane/providers/registry.ts';
-import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
-import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { parseWebSearchConfigDefault, parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
+import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { isResponsesRetentionSeconds, RESPONSES_RETENTION_MAX_SECONDS, RESPONSES_RETENTION_MIN_SECONDS } from '../../repo/responses-retention.ts';
-import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, UsageMetricRecord, UsageRecord, User } from '../../repo/types.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
+import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, WebSearchUsageRecord, UsageMetricRecord, UsageRecord, User } from '../../repo/types.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
-import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.ts';
-import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
+import { isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
+import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
+import { warmModelsCache } from '../shared/warm-models-cache.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, type PricingSelector } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
+import { parseCopilotUpstreamConfig } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { parseProxyUri } from '@floway-dev/proxy';
 
@@ -59,10 +55,10 @@ interface ExportPayload {
     upstreams: SerializedUpstreamRecord[];
     proxies: SerializedProxy[];
     usage: UsageRecord[];
-    searchUsage: SearchUsageRecord[];
+    searchUsage: WebSearchUsageRecord[];
     performance?: PerformanceTelemetryRecord[];
     performanceIncluded: boolean;
-    searchConfig: SearchConfig;
+    searchConfig: WebSearchConfig;
   };
 }
 
@@ -95,16 +91,16 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
     assertClaudeCodeUpstreamRecord(record);
     return record.config;
   }
-  return copilotConfigField(record.config, importErrorBuilder);
+  return parseCopilotUpstreamConfig(record.config, importErrorBuilder);
 };
 
-// State is persisted only for providers that own autonomous runtime state.
-// Codex rotates a refresh_token and tracks credential health; Claude Code
-// holds per-account refresh tokens, OAuth-minted access tokens, and quota
-// snapshots; Custom/Azure/Copilot have no such state and serialize to null.
-// Round-trip the stateful providers through the same shape assertion the
-// runtime uses so a corrupt or hand-edited import can't smuggle unknown
-// fields onto the column.
+// Only Codex and Claude Code carry state across an import: their per-account
+// refresh tokens and credential health cannot be re-derived, so they
+// round-trip through the same shape assertion the runtime uses and a corrupt
+// or hand-edited payload can't smuggle unknown fields onto the column.
+// Copilot's state is a cached model catalog plus a short-lived exchanged
+// token, both re-minted on demand, so it lands as null; Custom, Azure, and
+// Ollama own no state at all.
 const normalizeUpstreamState = (provider: UpstreamProviderKind, value: unknown): unknown => {
   if (provider !== 'codex' && provider !== 'claude-code') return null;
   if (value === null || value === undefined) {
@@ -468,10 +464,10 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
   return { type: 'ok', records };
 };
 
-const parseSearchUsageRecords = (value: unknown): { type: 'ok'; records: SearchUsageRecord[] } | { type: 'invalid'; index: number; error: string } => {
+const parseWebSearchUsageRecords = (value: unknown): { type: 'ok'; records: WebSearchUsageRecord[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'searchUsage must be an array' };
 
-  const records: SearchUsageRecord[] = [];
+  const records: WebSearchUsageRecord[] = [];
   for (let i = 0; i < value.length; i++) {
     const record = value[i];
     if (!record || typeof record !== 'object') return { type: 'invalid', index: i, error: 'record must be an object' };
@@ -494,13 +490,13 @@ const parseSearchUsageRecords = (value: unknown): { type: 'ok'; records: SearchU
   return { type: 'ok', records };
 };
 
-const parseSearchConfig = (value: unknown): { type: 'ok'; config: SearchConfig } | { type: 'invalid'; error: string } => {
+const parseWebSearchConfig = (value: unknown): { type: 'ok'; config: WebSearchConfig } | { type: 'invalid'; error: string } => {
   // Delegate to the shared strict parser so the import layer and the
   // load/save helpers cannot drift on what counts as a valid stored
   // config. The strict parser throws a descriptive Error; we map that
   // back into the route's structured invalid envelope here.
   try {
-    return { type: 'ok', config: parseSearchConfigStrict(value) };
+    return { type: 'ok', config: parseWebSearchConfigStrict(value) };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { type: 'invalid', error: message };
@@ -645,37 +641,17 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
   return { type: 'ok', records };
 };
 
-// Synchronously populate the SWR models cache for each saved upstream so the
-// dashboard's next navigation lands on a populated row. In merge mode the
-// upstreams.save above is an ON CONFLICT UPDATE that does not touch the
-// models_cache row through any FK cascade, so without this call a re-import
-// that changes an upstream's config would keep serving the prior cached
-// model list until SWR's soft window expired. Replace mode wiped the table
-// before the loop; warming there is a no-op population. Per-upstream warm
-// failures (network blip, dead credential among many) must not abort the
-// import — the cache layer persists `lastError` on the row for the dashboard
-// to surface. Provider-instance and fetcher construction errors signal
-// genuine misconfiguration and are not swallowed.
-const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
-  const scheduler = backgroundSchedulerFromContext(c);
-  const instance = createProviderInstance(record);
-  const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);
-  try {
-    await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch {}
-};
-
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
 
-  const [users, apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams, proxies] = await Promise.all([
+  const [users, apiKeys, usage, webSearchUsage, performance, rawWebSearchConfig, upstreams, proxies] = await Promise.all([
     repo.users.listIncludingDeleted(),
     repo.apiKeys.listIncludingDeleted(),
     repo.usage.listAll(),
-    repo.searchUsage.listAll(),
+    repo.webSearchUsage.listAll(),
     includePerformance ? repo.performance.listAll() : Promise.resolve([]),
-    repo.searchConfig.get(),
+    repo.webSearchConfig.get(),
     repo.upstreams.list(),
     repo.proxies.list(),
   ]);
@@ -689,9 +665,9 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(p => ({ id: p.id, name: p.name, url: p.url, dial_timeout_seconds: p.dialTimeoutSeconds })),
       usage,
-      searchUsage,
+      searchUsage: webSearchUsage,
       performanceIncluded: includePerformance,
-      searchConfig: rawSearchConfig === null ? parseSearchConfigDefault() : parseSearchConfigStrict(rawSearchConfig),
+      searchConfig: rawWebSearchConfig === null ? parseWebSearchConfigDefault() : parseWebSearchConfigStrict(rawWebSearchConfig),
     },
   };
   if (includePerformance) payload.data.performance = performance;
@@ -718,7 +694,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     return c.json({ error: `invalid users${location}: ${usersResult.error}` }, 400);
   }
   const users = usersResult.records;
-  if (!users.some(u => u.id === 1)) {
+  if (!users.some(user => user.id === SEED_ADMIN_USER_ID)) {
     return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
   }
   const known = new Set(users.map(u => u.id));
@@ -752,18 +728,18 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const proxyIdentityError = validateProxyIdentities(proxies);
   if (proxyIdentityError) return c.json({ error: `invalid proxies: ${proxyIdentityError}` }, 400);
 
-  const searchUsageResult = parseSearchUsageRecords(data.searchUsage);
-  if (searchUsageResult.type === 'invalid') {
-    const location = searchUsageResult.index >= 0 ? ` at index ${searchUsageResult.index}` : '';
-    return c.json({ error: `invalid searchUsage${location}: ${searchUsageResult.error}` }, 400);
+  const webSearchUsageResult = parseWebSearchUsageRecords(data.searchUsage);
+  if (webSearchUsageResult.type === 'invalid') {
+    const location = webSearchUsageResult.index >= 0 ? ` at index ${webSearchUsageResult.index}` : '';
+    return c.json({ error: `invalid searchUsage${location}: ${webSearchUsageResult.error}` }, 400);
   }
-  const searchUsage = searchUsageResult.records;
+  const webSearchUsage = webSearchUsageResult.records;
 
-  const searchConfigResult = parseSearchConfig(data.searchConfig);
-  if (searchConfigResult.type === 'invalid') {
-    return c.json({ error: `invalid searchConfig: ${searchConfigResult.error}` }, 400);
+  const webSearchConfigResult = parseWebSearchConfig(data.searchConfig);
+  if (webSearchConfigResult.type === 'invalid') {
+    return c.json({ error: `invalid searchConfig: ${webSearchConfigResult.error}` }, 400);
   }
-  const searchConfig = searchConfigResult.config;
+  const webSearchConfig = webSearchConfigResult.config;
 
   const performanceIncludedResult = parsePerformanceIncluded(data);
   if (performanceIncludedResult.type === 'invalid') {
@@ -806,7 +782,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       repo.sessions.deleteAll(),
       repo.apiKeys.deleteAll(),
       repo.usage.deleteAll(),
-      repo.searchUsage.deleteAll(),
+      repo.webSearchUsage.deleteAll(),
       repo.upstreams.deleteAll(),
       repo.proxies.deleteAll(),
       // proxy_upstream_backoffs is per-deployment runtime state keyed on
@@ -845,11 +821,11 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     }
   }
   for (const record of usage) await repo.usage.set(record);
-  for (const record of searchUsage) await repo.searchUsage.set(record);
+  for (const record of webSearchUsage) await repo.webSearchUsage.set(record);
   for (const upstream of upstreams) await repo.upstreams.save(upstream);
   await Promise.all(upstreams.map(upstream => warmModelsCache(upstream, c)));
   for (const record of performance) await repo.performance.set(record);
-  await repo.searchConfig.save(searchConfig);
+  await repo.webSearchConfig.save(webSearchConfig);
 
   return c.json({
     ok: true,
@@ -859,7 +835,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       upstreams: upstreams.length,
       proxies: proxies.length,
       usage: usage.length,
-      searchUsage: searchUsage.length,
+      searchUsage: webSearchUsage.length,
       performance: performance.length,
     },
   });

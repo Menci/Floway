@@ -30,7 +30,7 @@ test('fetchPageAndRecordUsage records usage with action=fetch_page on success', 
   });
 
   assertEquals(result, okResult);
-  const records = await repo.searchUsage.listAll();
+  const records = await repo.webSearchUsage.listAll();
   assertEquals(records.length, 1);
   assertEquals(records[0].provider, 'tavily');
   assertEquals(records[0].keyId, 'k1');
@@ -46,7 +46,7 @@ test('fetchPageAndRecordUsage records once per URL (one row, requests=N) on a mu
     request: { urls: ['https://a.com', 'https://b.com', 'https://c.com'] },
   });
 
-  const records = await repo.searchUsage.listAll();
+  const records = await repo.webSearchUsage.listAll();
   assertEquals(records.length, 1);
   assertEquals(records[0].requests, 3);
 });
@@ -59,7 +59,7 @@ test('fetchPageAndRecordUsage records usage even when result is type:error', asy
     request: { urls: ['https://a.com'] },
   });
 
-  const records = await repo.searchUsage.listAll();
+  const records = await repo.webSearchUsage.listAll();
   assertEquals(records.length, 1);
 });
 
@@ -80,13 +80,13 @@ test('fetchPageAndRecordUsage rethrows AND records when provider call throws (tr
     'network down',
   );
 
-  const records = await repo.searchUsage.listAll();
+  const records = await repo.webSearchUsage.listAll();
   assertEquals(records.length, 1);
   assertEquals(records[0].requests, 1);
 });
 
 test('fetchPageAndRecordUsage swallows recorder errors but still returns provider result', async () => {
-  repo.searchUsage.record = () => Promise.reject(new Error('write failed'));
+  repo.webSearchUsage.record = () => Promise.reject(new Error('write failed'));
 
   const originalConsoleError = console.error;
   console.error = () => {};
@@ -104,7 +104,7 @@ test('fetchPageAndRecordUsage swallows recorder errors but still returns provide
 });
 
 test('fetchPageAndRecordUsage swallows recorder errors but still rethrows provider errors', async () => {
-  repo.searchUsage.record = () => Promise.reject(new Error('write failed'));
+  repo.webSearchUsage.record = () => Promise.reject(new Error('write failed'));
 
   const originalConsoleError = console.error;
   console.error = () => {};

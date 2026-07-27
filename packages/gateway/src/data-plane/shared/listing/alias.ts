@@ -245,7 +245,7 @@ const mergeWithOverride = (
 // Returns null when no target serves this alias on the gateway, OR when the
 // caller cannot reach any of the configured targets — the catalog should
 // never advertise an id the caller would 404 on. The alias itself stays
-// addressable through the request-time resolver in `providers/registry.ts`,
+// addressable through the request-time resolver in `providers/resolution.ts`,
 // which walks the alias's targets in configured order and surfaces a
 // regular model-missing 404 when no target has any kind-matching binding.
 // Callers (`synthesizeListedAliases`) filter the nulls out.
@@ -256,8 +256,8 @@ const synthesizeOne = (
   narrowTargets: boolean,
 ): InternalModel | null => {
   // Gateway-wide kind-matched targets — the basis for stable metadata.
-  // A target reachable only via a prefix-addressable alternate or a
-  // provider-side redirect (Copilot variant id) still counts.
+  // A target reachable only through a prefix-addressable alternate still
+  // counts.
   const gatewayById = new Map(gatewayAddressableModelIds.map(entry => [entry.id, entry.model] as const));
   const gatewayAvailable = alias.targets
     .map(target => ({ target, real: gatewayById.get(target.target_model_id) }))
@@ -317,7 +317,7 @@ const sortAliases = (aliases: readonly ModelAliasRecord[]): ModelAliasRecord[] =
 export const synthesizeListedAliases = (input: ListedAliasInputs): InternalModel[] =>
   sortAliases(input.aliases)
     // `visibleInModelsList` is a LISTING flag only — the request-time
-    // resolver in `providers/registry.ts` does not consult it, so a hidden
+    // resolver in `providers/resolution.ts` does not consult it, so a hidden
     // alias stays reachable at dispatch. This lets an operator ship a
     // gateway id (e.g. a legacy client hardcodes it) without cluttering
     // the public catalog.

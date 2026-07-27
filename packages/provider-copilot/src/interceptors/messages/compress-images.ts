@@ -1,7 +1,7 @@
-import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './types.ts';
+import { memoizedBase64Compressor } from '../image-compression.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/platform';
 import type { MessagesImageBlock, MessagesMessage, MessagesToolResultBlock, MessagesToolResultContentBlock, MessagesUserContentBlock } from '@floway-dev/protocols/messages';
-import { memoizedBase64Compressor } from '@floway-dev/provider';
 
 // Per-model image caps for the Claude (Messages) egress, measured from the real
 // /v1/messages generation path (count_tokens misreports the downscale here).
@@ -48,7 +48,7 @@ const collectImageBlocks = (messages: MessagesMessage[]): MessagesImageBlock[] =
   return blocks;
 };
 
-const compressInlineImages = async (ctx: MessagesBoundaryCtx | MessagesCountTokensBoundaryCtx): Promise<void> => {
+const compressInlineImages = async (ctx: MessagesBoundaryCtx): Promise<void> => {
   const blocks = collectImageBlocks(ctx.payload.messages);
   if (blocks.length === 0) return;
 
@@ -104,8 +104,8 @@ const compressInlineImages = async (ctx: MessagesBoundaryCtx | MessagesCountToke
 // count_tokens boundary chain, so count_tokens sizes the same recompressed
 // payload the chat path sends.
 export const withInlineImagesCompressed = async <TResult>(
-  ctx: MessagesBoundaryCtx | MessagesCountTokensBoundaryCtx,
-  _request: object,
+  ctx: MessagesBoundaryCtx,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   // Finish this nested activation before starting the upstream call. Its

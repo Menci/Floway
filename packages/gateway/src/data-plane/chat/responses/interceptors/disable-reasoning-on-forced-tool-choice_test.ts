@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import type { ResponsesInvocation } from './types.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult, type FlagId } from '@floway-dev/provider';

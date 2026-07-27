@@ -1,10 +1,11 @@
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
+import { openAIServiceTierFromMessagesUsage } from '../shared/via-messages/service-tier.ts';
+import { inclusiveMessagesInputUsage } from '../shared/via-messages/usage.ts';
 import { eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   mergeMessagesUsageSnapshot,
   messagesUsageSnapshot,
-  splitMessagesCacheCreationTokens,
 } from '@floway-dev/protocols/messages';
 import type {
   MessagesContentBlockDeltaEvent,
@@ -87,16 +88,12 @@ interface MessagesToResponsesStreamState {
 }
 
 const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesResult['status']): ResponsesResult => {
-  const { cacheWrite, cacheWrite1h } = splitMessagesCacheCreationTokens(state.usage);
-  const cacheRead = state.usage.cache_read_input_tokens ?? 0;
+  const { cacheWrite, cacheWrite1h, inclusiveInput: inputTokens } = inclusiveMessagesInputUsage(state.usage);
   const cacheCreation = cacheWrite + cacheWrite1h;
   const hasCacheCreation = state.usage.cache_creation_input_tokens !== undefined
     || state.usage.cache_creation?.ephemeral_5m_input_tokens !== undefined
     || state.usage.cache_creation?.ephemeral_1h_input_tokens !== undefined;
-  const inputTokens = (state.usage.input_tokens ?? 0) + cacheRead + cacheCreation;
-  // Anthropic's `speed: 'fast'` surfaces as OpenAI `service_tier: 'fast'`;
-  // all other Anthropic service_tier values pass through directly.
-  const serviceTier = state.usage.speed === 'fast' ? 'fast' : state.usage.service_tier;
+  const serviceTier = openAIServiceTierFromMessagesUsage(state.usage);
 
   return responses.result({
     id: state.responseId,

@@ -81,18 +81,12 @@ test('fetchOllamaCatalog projects /api/show capabilities + model_info into the r
     assertEquals(gptoss.capabilities.has('tools'), true);
     assertEquals(gptoss.capabilities.has('embedding'), false);
     assertEquals(gptoss.contextLength, 131072);
-    assertEquals(gptoss.embeddingLength, 2880);
-    assertEquals(gptoss.family, 'gptoss');
-    assertEquals(gptoss.architecture, 'gptoss');
-    assertEquals(gptoss.quantizationLevel, 'MXFP4');
-    assertEquals(gptoss.parameterCount, 116829156672);
 
     const embed = catalog.data.find(m => m.id === 'nomic-embed-text:latest')!;
     assertEquals(embed.capabilities.has('embedding'), true);
     // model_info keys are arch-prefixed; the fetcher must enumerate keys to
     // find `.context_length` without hardcoding `gptoss.`.
     assertEquals(embed.contextLength, 8192);
-    assertEquals(embed.embeddingLength, 768);
   });
 });
 

@@ -12,13 +12,13 @@ vi.mock('../../data-plane/providers/models-cache.ts', () => ({
 }));
 
 import { exportData, importData } from './routes.ts';
-import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-config.ts';
+import { DEFAULT_WEB_SEARCH_CONFIG } from '../../data-plane/tools/web-search/config.ts';
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../repo/types.ts';
 import { tokenUsageMetrics } from '../../repo/usage-metrics.ts';
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
@@ -209,7 +209,7 @@ const USAGE_2: UsageRecord = {
   metrics: tokenUsageMetrics({ input: 2000, output: 800, input_cache_read: 200, input_cache_write: 50 }, null),
 };
 
-const SEARCH_USAGE_1: SearchUsageRecord = {
+const WEB_SEARCH_USAGE_1: WebSearchUsageRecord = {
   provider: 'tavily',
   keyId: 'key-a',
   action: 'search',
@@ -217,7 +217,7 @@ const SEARCH_USAGE_1: SearchUsageRecord = {
   requests: 2,
 };
 
-const SEARCH_USAGE_2: SearchUsageRecord = {
+const WEB_SEARCH_USAGE_2: WebSearchUsageRecord = {
   provider: 'microsoft-grounding',
   keyId: 'key-b',
   action: 'fetch_page',
@@ -306,7 +306,7 @@ const latestImportData = (overrides: Record<string, unknown> = {}) => ({
   usage: [],
   searchUsage: [],
   performanceIncluded: false,
-  searchConfig: DEFAULT_SEARCH_CONFIG,
+  searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   ...overrides,
 });
 
@@ -344,7 +344,7 @@ test('export emits the v17 envelope with users and upstreams', async () => {
   assertEquals(result.data.searchUsage, []);
   assertEquals(result.data.performanceIncluded, false);
   assertEquals(hasOwn(result.data, 'performance'), false);
-  assertEquals(result.data.searchConfig, DEFAULT_SEARCH_CONFIG);
+  assertEquals(result.data.searchConfig, DEFAULT_WEB_SEARCH_CONFIG);
   assertEquals(hasOwn(result.data, 'githubAccounts'), false);
   assertEquals(hasOwn(result.data, 'upstreamConfigs'), false);
 });
@@ -356,9 +356,9 @@ test('export includes full upstream configs and omits performance by default', a
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.upstreams.save(AZURE_UPSTREAM);
   await repo.usage.set(USAGE_1);
-  await repo.searchUsage.set(SEARCH_USAGE_1);
+  await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
   await repo.performance.set(PERFORMANCE_1);
-  await repo.searchConfig.save({
+  await repo.webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'tvly-test' },
     microsoftGrounding: { apiKey: 'ms-test' },
@@ -374,7 +374,7 @@ test('export includes full upstream configs and omits performance by default', a
   assertEquals(result.data.upstreams.find((upstream: any) => upstream.id === 'up_copilot_a').config.githubToken, 'ghu-alice');
   assertEquals(result.data.upstreams.find((upstream: any) => upstream.id === 'up_azure_a').config.apiKey, 'az-key');
   assertEquals(result.data.usage, [USAGE_1]);
-  assertEquals(result.data.searchUsage, [SEARCH_USAGE_1]);
+  assertEquals(result.data.searchUsage, [WEB_SEARCH_USAGE_1]);
   assertEquals(result.data.performanceIncluded, false);
   assertEquals(hasOwn(result.data, 'performance'), false);
   assertEquals(result.data.searchConfig.provider, 'tavily');
@@ -424,9 +424,9 @@ test('import replace writes upstreams and clears replaced collections', async ()
   await repo.apiKeys.save({ ...KEY_A, responsesRetentionSeconds: 24 * 60 * 60 });
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
-  await repo.searchUsage.set(SEARCH_USAGE_1);
+  await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
   await repo.responsesItems.insertMany([STORED_RESPONSES_ITEM], 0);
-  await repo.searchConfig.save({
+  await repo.webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'old' },
     microsoftGrounding: { apiKey: '' },
@@ -439,7 +439,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
     apiKeys: [KEY_B],
     upstreams: [upstreamRecordToFullJson(AZURE_UPSTREAM)],
     usage: [USAGE_2],
-    searchUsage: [SEARCH_USAGE_2],
+    searchUsage: [WEB_SEARCH_USAGE_2],
     performanceIncluded: false,
     searchConfig: {
       provider: 'microsoft-grounding',
@@ -457,9 +457,9 @@ test('import replace writes upstreams and clears replaced collections', async ()
   assertEquals(restoredKey, KEY_B);
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
-  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_2]);
+  assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_2]);
   assertEquals(await repo.responsesItems.lookupMany('key-a', [STORED_RESPONSES_ITEM.id], 0), []);
-  assertEquals(await repo.searchConfig.get(), {
+  assertEquals(await repo.webSearchConfig.get(), {
     provider: 'microsoft-grounding',
     tavily: { apiKey: '' },
     microsoftGrounding: { apiKey: 'ms-new' },
@@ -474,7 +474,7 @@ test('replace import preserves API-key IDs and imported references', async () =>
   const result = await doImport(app, 'replace', latestImportData({
     apiKeys: [KEY_A],
     usage: [USAGE_1],
-    searchUsage: [SEARCH_USAGE_1],
+    searchUsage: [WEB_SEARCH_USAGE_1],
     performanceIncluded: true,
     performance: [PERFORMANCE_1],
   }));
@@ -484,7 +484,7 @@ test('replace import preserves API-key IDs and imported references', async () =>
   if (restored === null) throw new Error('restored key missing');
   assertEquals(restored.id, KEY_A.id);
   assertEquals((await repo.usage.listAll())[0].keyId, KEY_A.id);
-  assertEquals((await repo.searchUsage.listAll())[0].keyId, KEY_A.id);
+  assertEquals((await repo.webSearchUsage.listAll())[0].keyId, KEY_A.id);
   assertEquals((await repo.performance.listAll())[0].keyId, KEY_A.id);
 });
 
@@ -493,14 +493,14 @@ test('import merge upserts by repository key without clearing unrelated rows', a
   await repo.apiKeys.save(KEY_A);
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set({ ...USAGE_1, requests: 10 });
-  await repo.searchUsage.set({ ...SEARCH_USAGE_1, requests: 10 });
+  await repo.webSearchUsage.set({ ...WEB_SEARCH_USAGE_1, requests: 10 });
 
   const updatedCustom = { ...CUSTOM_UPSTREAM, name: 'Custom Updated', updatedAt: '2026-03-01T00:00:00.000Z' } satisfies UpstreamRecord;
   const result = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_A, name: 'Alice Updated' }, KEY_B],
     upstreams: [upstreamRecordToFullJson(updatedCustom), upstreamRecordToFullJson(COPILOT_UPSTREAM)],
     usage: [USAGE_1],
-    searchUsage: [SEARCH_USAGE_1],
+    searchUsage: [WEB_SEARCH_USAGE_1],
   }));
 
   assertEquals(result.status, 200);
@@ -510,7 +510,7 @@ test('import merge upserts by repository key without clearing unrelated rows', a
     ['up_custom_a', 'Custom Updated'],
   ]);
   assertEquals(await repo.usage.listAll(), [USAGE_1]);
-  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_1]);
+  assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_1]);
 });
 
 test('import replace handles performance inclusion explicitly', async () => {
@@ -529,7 +529,7 @@ test('import replace handles performance inclusion explicitly', async () => {
     searchUsage: [],
     performanceIncluded: true,
     performance: [PERFORMANCE_2],
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
 
   assertEquals(replace.status, 200);
@@ -659,7 +659,7 @@ test('import rejects missing upstreams before clearing existing data', async () 
     usage: [USAGE_2],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
 
   assertEquals(result.status, 400);
@@ -672,7 +672,7 @@ test('import rejects missing upstreams before clearing existing data', async () 
 test('codex upstreams export and import round-trip with state intact', async () => {
   const { app, repo } = setup();
   await repo.upstreams.save(CODEX_UPSTREAM);
-  await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
+  await repo.webSearchConfig.save(DEFAULT_WEB_SEARCH_CONFIG);
 
   const result = await doExport(app);
   const exportedCodex = result.data.upstreams.find((upstream: any) => upstream.id === 'up_codex_a');
@@ -686,7 +686,7 @@ test('codex upstreams export and import round-trip with state intact', async () 
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   assertEquals(replaceResult.status, 200);
   assertEquals(await repo.upstreams.list(), [CODEX_UPSTREAM]);
@@ -702,7 +702,7 @@ test('codex import rejects when state is missing', async () => {
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   assertEquals(result.status, 400);
   assertEquals(result.body.error.includes('codex upstream is missing state'), true);
@@ -718,7 +718,7 @@ test('codex import rejects unknown keys in state', async () => {
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   assertEquals(result.status, 400);
   assertEquals(result.body.error.includes('unexpected key'), true);
@@ -768,7 +768,7 @@ test('import rejects invalid records before clearing existing data', async () =>
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   await repo.upstreams.save(CUSTOM_UPSTREAM);
-  await repo.searchUsage.set(SEARCH_USAGE_1);
+  await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
 
   const badApiKeys = await doImport(app, 'replace', {
     users: [SEED_ADMIN],
@@ -777,7 +777,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   const badUsage = await doImport(app, 'replace', {
     users: [SEED_ADMIN],
@@ -786,7 +786,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     usage: [{ ...USAGE_2, requests: -1 }],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   const badUpstream = await doImport(app, 'replace', {
     users: [SEED_ADMIN],
@@ -795,7 +795,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
   const badFixes = await doImport(app, 'replace', {
     users: [SEED_ADMIN],
@@ -804,16 +804,16 @@ test('import rejects invalid records before clearing existing data', async () =>
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
-  const badSearchUsage = await doImport(app, 'replace', {
+  const badWebSearchUsage = await doImport(app, 'replace', {
     users: [SEED_ADMIN],
     apiKeys: [],
     upstreams: [],
     usage: [],
     searchUsage: [{ provider: 'not-real', keyId: 'key-a', hour: '2026-01-01T10', requests: 1 }],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   });
 
   assertEquals(badApiKeys.status, 400);
@@ -824,11 +824,11 @@ test('import rejects invalid records before clearing existing data', async () =>
   assertEquals(String(badUpstream.body.error).includes('invalid upstreams at index 0'), true);
   assertEquals(badFixes.status, 400);
   assertEquals(badFixes.body.error, 'invalid upstreams at index 0: Unknown flag_overrides ids: made-up-fix');
-  assertEquals(badSearchUsage.status, 400);
-  assertEquals(badSearchUsage.body.error, 'invalid searchUsage at index 0: invalid provider');
+  assertEquals(badWebSearchUsage.status, 400);
+  assertEquals(badWebSearchUsage.body.error, 'invalid searchUsage at index 0: invalid provider');
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
-  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_1]);
+  assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_1]);
 });
 
 test('import rejects api key unique identity conflicts before mutating', async () => {
@@ -992,22 +992,22 @@ test('import rejects missing latest-v17 arrays before clearing existing data', a
   await repo.apiKeys.save(KEY_A);
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
-  await repo.searchUsage.set(SEARCH_USAGE_1);
+  await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
 
   const missingApiKeys = await doImport(app, 'replace', latestImportData({ apiKeys: undefined }));
   const missingUsage = await doImport(app, 'replace', latestImportData({ usage: undefined }));
-  const missingSearchUsage = await doImport(app, 'replace', latestImportData({ searchUsage: undefined }));
+  const missingWebSearchUsage = await doImport(app, 'replace', latestImportData({ searchUsage: undefined }));
 
   assertEquals(missingApiKeys.status, 400);
   assertEquals(missingApiKeys.body.error, 'invalid apiKeys: apiKeys must be an array');
   assertEquals(missingUsage.status, 400);
   assertEquals(missingUsage.body.error, 'invalid usage: usage must be an array');
-  assertEquals(missingSearchUsage.status, 400);
-  assertEquals(missingSearchUsage.body.error, 'invalid searchUsage: searchUsage must be an array');
+  assertEquals(missingWebSearchUsage.status, 400);
+  assertEquals(missingWebSearchUsage.body.error, 'invalid searchUsage: searchUsage must be an array');
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_1]);
-  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_1]);
+  assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_1]);
 });
 
 test('import validates mode and data before mutating', async () => {
@@ -1205,7 +1205,7 @@ test('v17 import rejects api_keys whose user_id does not appear in the payload',
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   }, 17);
 
   assertEquals(result.status, 400);
@@ -1222,7 +1222,7 @@ test('v17 import rejects malformed users (bad username, bad password_hash)', asy
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   }, 17);
   assertEquals(badUsername.status, 400);
   assertEquals(String(badUsername.body.error).startsWith('invalid users at index 0:'), true);
@@ -1234,7 +1234,7 @@ test('v17 import rejects malformed users (bad username, bad password_hash)', asy
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   }, 17);
   assertEquals(badHash.status, 400);
   assertEquals(String(badHash.body.error).includes('passwordHash'), true);
@@ -1253,7 +1253,7 @@ test('import rejects a pre-accounts v3 export instead of coercing its legacy api
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   }, 3);
 
   assertEquals(result.status, 400);
@@ -1277,7 +1277,7 @@ test('replace-mode import clears sessions before writing users', async () => {
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   }, 17);
 
   assertEquals(result.status, 200);
@@ -1296,7 +1296,7 @@ test('v17 import rejects users[i].upstreamIds === undefined', async () => {
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   }, 17);
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/upstreamIds/);
@@ -1311,7 +1311,7 @@ test('v17 import rejects users[i].deletedAt of non-string non-null type', async 
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   }, 17);
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/deletedAt/);
@@ -1326,7 +1326,7 @@ test('v17 replace import refuses payload missing user 1', async () => {
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   }, 17);
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/user 1/);
@@ -1344,8 +1344,8 @@ test('a full v17 export re-imports verbatim — the export→import round trip i
   await repo.upstreams.save(CODEX_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.usage.set(USAGE_2);
-  await repo.searchUsage.set(SEARCH_USAGE_1);
-  await repo.searchUsage.set(SEARCH_USAGE_2);
+  await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
+  await repo.webSearchUsage.set(WEB_SEARCH_USAGE_2);
   await repo.performance.set(PERFORMANCE_1);
   await repo.performance.set(PERFORMANCE_2);
   const config = {
@@ -1355,7 +1355,7 @@ test('a full v17 export re-imports verbatim — the export→import round trip i
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   };
-  await repo.searchConfig.save(config);
+  await repo.webSearchConfig.save(config);
 
   const exported = await doExport(app, true);
   assertEquals(exported.version, 17);
@@ -1375,7 +1375,7 @@ test('a full v17 export re-imports verbatim — the export→import round trip i
   if (restoredKeyA === null) throw new Error('restored key A missing');
   assertEquals((await repo.usage.listAll()).find(u => u.keyId === restoredKeyA.id && u.hour === USAGE_1.hour), { ...USAGE_1, keyId: restoredKeyA.id });
   assertEquals((await repo.performance.listAll()).find(p => p.keyId === restoredKeyA.id && p.hour === PERFORMANCE_1.hour), { ...PERFORMANCE_1, keyId: restoredKeyA.id });
-  assertEquals(await repo.searchConfig.get(), config);
+  assertEquals(await repo.webSearchConfig.get(), config);
 });
 
 test('any data bearing a historical version is rejected on the version gate, before mutating', async () => {
@@ -1393,7 +1393,7 @@ test('any data bearing a historical version is rejected on the version gate, bef
     usage: [],
     searchUsage: [],
     performanceIncluded: false,
-    searchConfig: DEFAULT_SEARCH_CONFIG,
+    searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
   };
 
   for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {

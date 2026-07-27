@@ -13,7 +13,7 @@
 // vendor-neutral rerank path exists.
 //
 // Custom upstreams surface models from two sources, merged at the data
-// plane: a statically configured list of per-model overrides
+// plane: a manual list of per-model entries
 // (`config.models`) that pin metadata/pricing locally, and an optional
 // live fetch of the upstream `/models` (`config.modelsFetch`). The `/models`
 // path is part of the fetch toggle (`modelsFetch.endpoint`), not a generic
@@ -29,20 +29,23 @@ export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
 // count-tokens endpoint, the responses compact endpoint) and the catalog
 // (`/models` — owned by modelsFetch.endpoint) are intentionally absent:
 // they derive their URL from a parent override or a separate field. Each
-// key is the OpenAI-canonical path fragment so the default upstream path
-// is just `/v1` + the key — the lookup table is the key itself. Kept
+// key is the default path fragment, so the upstream path is `/v1` + the key
+// unless overridden — the lookup table is the key itself. Kept
 // package-internal because outside callers reach the upstream through
 // the typed `customFetchXxx` transports, not by naming an endpoint key.
-type CustomPathOverrideKey =
-  | '/completions'
-  | '/chat/completions'
-  | '/responses'
-  | '/messages'
-  | '/embeddings'
-  | '/alpha/search'
-  | '/images/generations'
-  | '/images/edits'
-  | '/audio/transcriptions';
+const CUSTOM_PATH_OVERRIDE_KEYS = [
+  '/completions',
+  '/chat/completions',
+  '/responses',
+  '/messages',
+  '/embeddings',
+  '/alpha/search',
+  '/images/generations',
+  '/images/edits',
+  '/audio/transcriptions',
+] as const;
+
+export type CustomPathOverrideKey = typeof CUSTOM_PATH_OVERRIDE_KEYS[number];
 
 export interface CustomModelsFetch {
   enabled: boolean;
@@ -98,17 +101,7 @@ const baseUrlField = (value: unknown): string => {
   return baseUrl;
 };
 
-const PATH_OVERRIDE_KEYS = new Set<CustomPathOverrideKey>([
-  '/completions',
-  '/chat/completions',
-  '/responses',
-  '/messages',
-  '/embeddings',
-  '/alpha/search',
-  '/images/generations',
-  '/images/edits',
-  '/audio/transcriptions',
-]);
+const PATH_OVERRIDE_KEYS: ReadonlySet<string> = new Set(CUSTOM_PATH_OVERRIDE_KEYS);
 
 const pathOverridesField = (value: unknown): CustomUpstreamConfigBase['pathOverrides'] => {
   if (value === undefined) return undefined;
@@ -116,7 +109,7 @@ const pathOverridesField = (value: unknown): CustomUpstreamConfigBase['pathOverr
 
   const pathOverrides: NonNullable<CustomUpstreamConfigBase['pathOverrides']> = {};
   for (const [key, path] of Object.entries(value)) {
-    if (!PATH_OVERRIDE_KEYS.has(key as CustomPathOverrideKey)) {
+    if (!PATH_OVERRIDE_KEYS.has(key)) {
       throw new Error(`Malformed custom upstream config: unsupported pathOverrides key ${key}`);
     }
     const validPath = validateUpstreamPath(path, `pathOverrides.${key}`);

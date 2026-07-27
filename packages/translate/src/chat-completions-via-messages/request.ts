@@ -1,12 +1,14 @@
 import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shared/chat-completions-and-messages/reasoning.ts';
-import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
-import { type RemoteImageLoader, resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
+import { resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
+import { messagesServiceTierFieldsFromOpenAI } from '../shared/via-messages/service-tier.ts';
+import { parseToolArgumentsObject } from '../shared/via-messages/tool-arguments.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
+import type { RemoteImageLoader } from '../types.ts';
 import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 
-interface TranslateChatCompletionsToMessagesOptions {
+interface BuildTargetRequestOptions {
   loadRemoteImage?: RemoteImageLoader;
   /**
    * Preferred cap used when the source payload omits `max_tokens`. Callers in
@@ -179,7 +181,7 @@ const CHAT_TOOL_CHOICES = {
   required: { type: 'any' },
 } satisfies Record<Extract<ChatCompletionsPayload['tool_choice'], string>, MessagesPayload['tool_choice']>;
 
-export const translateChatCompletionsToMessages = async (payload: ChatCompletionsPayload, options: TranslateChatCompletionsToMessagesOptions = {}): Promise<MessagesPayload> => {
+export const buildTargetRequest = async (payload: ChatCompletionsPayload, options: BuildTargetRequestOptions = {}): Promise<MessagesPayload> => {
   // Hoist the leading contiguous run of system/developer messages to
   // MessagesPayload.system, preserving each ContentPart text as its own
   // MessagesTextBlock so part boundaries survive the hoist. Non-leading
@@ -218,15 +220,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
-  // `service_tier: 'fast'` from the Chat Completions caller maps to
-  // Anthropic's `speed: 'fast'`; all other defined service_tier values
-  // pass through as `service_tier` on the Messages wire.
-  const serviceTierFields: Partial<MessagesPayload> =
-    payload.service_tier === 'fast'
-      ? { speed: 'fast' }
-      : payload.service_tier != null
-        ? { service_tier: payload.service_tier }
-        : {};
+  const serviceTierFields = messagesServiceTierFieldsFromOpenAI(payload.service_tier);
 
   // Leave OpenAI `user` and generic metadata out of the Messages fallback instead
   // of treating them as a backchannel for Anthropic `metadata.user_id`.
@@ -249,6 +243,3 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     ...serviceTierFields,
   };
 };
-
-export const buildTargetRequest = (payload: ChatCompletionsPayload, options: TranslateChatCompletionsToMessagesOptions): Promise<MessagesPayload> =>
-  translateChatCompletionsToMessages(payload, options);

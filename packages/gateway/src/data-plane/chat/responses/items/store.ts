@@ -1,4 +1,4 @@
-import { createResponsesStorageKey, hashResponsesItemContent, responsesItemId } from './identity.ts';
+import { createResponsesStorageKey, hashResponsesItem, responsesItemId } from './identity.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { assertSameStoredResponsesItem, cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
 import { quantizeResponsesRefreshedAt, responsesStateCutoff } from '../../../../repo/responses-retention.ts';
@@ -46,7 +46,7 @@ export interface StatefulResponsesStore {
 
 export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItems = new Map<string, StoredResponsesItem>();
-  private readonly loadedByContentHash = new Map<string, StoredResponsesItem>();
+  private readonly loadedByItemHash = new Map<string, StoredResponsesItem>();
   private readonly stagedInputItemIds: string[] = [];
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
@@ -101,7 +101,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of this.writesState ? inputItemsToStage : []) {
       if (item.type === 'item_reference' || item.type === 'compaction_trigger') continue;
       if (responsesItemId(item) !== null) continue;
-      itemHashes.add(await hashResponsesItemContent(item));
+      itemHashes.add(await hashResponsesItem(item));
     }
     await this.loadItems({ ids: [...ids], itemHashes: [...itemHashes] });
   }
@@ -200,7 +200,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         id,
         apiKeyId: this.apiKeyId,
         payload: { item },
-        itemHash: await hashResponsesItemContent(item),
+        itemHash: await hashResponsesItem(item),
         refreshedAt: quantizeResponsesRefreshedAt(Date.now()),
       };
       this.stagedInputItemIds.push(id);
@@ -208,8 +208,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return;
     }
 
-    const itemHash = await hashResponsesItemContent(item);
-    const existing = this.loadedByContentHash.get(itemHash);
+    const itemHash = await hashResponsesItem(item);
+    const existing = this.loadedByItemHash.get(itemHash);
     if (existing !== undefined) {
       this.stagedInputItemIds.push(existing.id);
       return;
@@ -231,9 +231,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const existing = this.loadedItems.get(cloned.id);
     if (existing !== undefined && existing.refreshedAt >= cloned.refreshedAt) return;
     this.loadedItems.set(cloned.id, cloned);
-    const byHash = this.loadedByContentHash.get(cloned.itemHash);
+    const byHash = this.loadedByItemHash.get(cloned.itemHash);
     if (byHash === undefined || compareResponsesItemsByFreshness(cloned, byHash) < 0) {
-      this.loadedByContentHash.set(cloned.itemHash, cloned);
+      this.loadedByItemHash.set(cloned.itemHash, cloned);
     }
   }
 
@@ -263,12 +263,12 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
   }
 
   async lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]> {
-    const [byId, byContentHash] = await Promise.all([
+    const [byId, byItemHash] = await Promise.all([
       this.getRepo().responsesItems.lookupMany(query.apiKeyId, query.ids, this.earliestVisibleCutoff),
       this.getRepo().responsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.earliestVisibleCutoff),
     ]);
     const rows = new Map<string, StoredResponsesItem>();
-    for (const row of [...byId, ...byContentHash]) rows.set(scopedResponsesKey(row.apiKeyId, row.id), row);
+    for (const row of [...byId, ...byItemHash]) rows.set(scopedResponsesKey(row.apiKeyId, row.id), row);
     return [...rows.values()];
   }
 

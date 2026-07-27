@@ -9,6 +9,8 @@ import {
   scopedResponsesKey,
 } from './responses-clone.ts';
 import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS, responsesStateCutoff } from './responses-retention.ts';
+import { SEED_ADMIN_USER_ID } from './seed-admin.ts';
+import { generateSessionToken } from './session-tokens.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -22,7 +24,7 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  CachedModelsRow,
+  ModelsCacheRow,
   ModelAliasesRepo,
   ModelAliasRecord,
   ModelsCacheRepo,
@@ -39,10 +41,9 @@ import type {
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
   SpilledFilesRepo,
-  SearchConfig,
-  SearchConfigRepo,
-  SearchUsageRecord,
-  SearchUsageRepo,
+  WebSearchConfigRepo,
+  WebSearchUsageRecord,
+  WebSearchUsageRepo,
   Session,
   SessionsRepo,
   StoredResponsesItem,
@@ -56,14 +57,13 @@ import type {
 import { serializeStoredState } from './upstream-json.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
-import { generateSessionToken } from '../shared/session-tokens.ts';
-import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
+import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingMetric, type DecimalString, type PricingSelector } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
-  id: 1,
+  id: SEED_ADMIN_USER_ID,
   username: 'admin',
   passwordHash: null,
   isAdmin: true,
@@ -385,14 +385,14 @@ class MemoryUsageRepo implements UsageRepo {
   }
 }
 
-class MemorySearchUsageRepo implements SearchUsageRepo {
-  private store = new Map<string, SearchUsageRecord>();
+class MemoryWebSearchUsageRepo implements WebSearchUsageRepo {
+  private store = new Map<string, WebSearchUsageRecord>();
 
-  private key(r: { provider: SearchUsageRecord['provider']; keyId: string; action: SearchUsageRecord['action']; hour: string }): string {
+  private key(r: { provider: WebSearchUsageRecord['provider']; keyId: string; action: WebSearchUsageRecord['action']; hour: string }): string {
     return `${r.provider}\0${r.keyId}\0${r.action}\0${r.hour}`;
   }
 
-  record(args: { provider: SearchUsageRecord['provider']; keyId: string; action: SearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
+  record(args: { provider: WebSearchUsageRecord['provider']; keyId: string; action: WebSearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
     return Promise.resolve().then(() => {
       const validProvider = assertWebSearchProviderName(args.provider);
       const k = this.key({ provider: validProvider, keyId: args.keyId, action: args.action, hour: args.hour });
@@ -405,7 +405,7 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
     });
   }
 
-  query(opts: { provider?: SearchUsageRecord['provider']; keyId?: string; action?: SearchUsageRecord['action']; start: string; end: string }): Promise<SearchUsageRecord[]> {
+  query(opts: { provider?: WebSearchUsageRecord['provider']; keyId?: string; action?: WebSearchUsageRecord['action']; start: string; end: string }): Promise<WebSearchUsageRecord[]> {
     return Promise.resolve().then(() => {
       const provider = opts.provider ? assertWebSearchProviderName(opts.provider) : undefined;
       return [...this.store.values()]
@@ -418,11 +418,11 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
     });
   }
 
-  listAll(): Promise<SearchUsageRecord[]> {
+  listAll(): Promise<WebSearchUsageRecord[]> {
     return Promise.resolve([...this.store.values()].map(r => ({ ...r })).sort((a, b) => a.hour.localeCompare(b.hour)));
   }
 
-  set(record: SearchUsageRecord): Promise<void> {
+  set(record: WebSearchUsageRecord): Promise<void> {
     return Promise.resolve().then(() => {
       const provider = assertWebSearchProviderName(record.provider);
       const validRecord = { ...record, provider };
@@ -544,9 +544,9 @@ class MemoryPerformanceRepo implements PerformanceRepo {
 }
 
 class MemoryModelsCacheRepo implements ModelsCacheRepo {
-  private rows = new Map<string, CachedModelsRow>();
+  private rows = new Map<string, ModelsCacheRow>();
 
-  get(upstreamId: string): Promise<CachedModelsRow | null> {
+  get(upstreamId: string): Promise<ModelsCacheRow | null> {
     const row = this.rows.get(upstreamId);
     return Promise.resolve(row ? { ...row, models: [...row.models] } : null);
   }
@@ -570,14 +570,14 @@ class MemoryModelsCacheRepo implements ModelsCacheRepo {
   }
 }
 
-class MemorySearchConfigRepo implements SearchConfigRepo {
+class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
   private config: unknown | null = null;
 
   get(): Promise<unknown | null> {
     return Promise.resolve(this.config === null ? null : structuredClone(this.config));
   }
 
-  save(config: SearchConfig): Promise<void> {
+  save(config: WebSearchConfig): Promise<void> {
     this.config = structuredClone(config);
     return Promise.resolve();
   }
@@ -1247,10 +1247,10 @@ export class InMemoryRepo implements Repo {
   users: UsersRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
-  searchUsage: SearchUsageRepo;
+  webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
-  searchConfig: SearchConfigRepo;
+  webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
@@ -1267,10 +1267,10 @@ export class InMemoryRepo implements Repo {
     this.expirationSweeps = new MemoryExpirationSweepsRepo();
     this.apiKeys = new MemoryApiKeyRepo(this.expirationSweeps);
     this.usage = new MemoryUsageRepo();
-    this.searchUsage = new MemorySearchUsageRepo();
+    this.webSearchUsage = new MemoryWebSearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
     this.modelsCache = new MemoryModelsCacheRepo();
-    this.searchConfig = new MemorySearchConfigRepo();
+    this.webSearchConfig = new MemoryWebSearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);
     this.proxyBackoffs = new MemoryProxyBackoffRepo();

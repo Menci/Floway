@@ -1,6 +1,9 @@
 const CLAUDE_VARIANT_SUFFIX = /-(?:high|xhigh|1m(?:-internal)?|fast)$/;
 const CLAUDE_DATE_SUFFIX = /-\d{8}$/;
 
+export const stripClaudeDateSuffix = (id: string): string =>
+  id.startsWith('claude-') ? id.replace(CLAUDE_DATE_SUFFIX, '') : id;
+
 export const copilotRawModelId = (id: string): string => {
   if (!id.startsWith('claude-')) return id;
   return id.replace(/(?<=-)(\d+)-(\d+)(?=-|$)/g, '$1.$2');

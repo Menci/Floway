@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { respondGemini } from './respond.ts';
-import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse } from '@floway-dev/protocols/gemini';
@@ -22,7 +22,7 @@ const ctx = () => mockChatGatewayCtx();
 
 const requestGeminiResponse = async (result: ExecuteResult<ProtocolFrame<GeminiErrorResponse>>): Promise<Response> => {
   const app = new Hono();
-  app.get('/', async c => (await respondGemini(c, result, false, ctx())).response);
+  app.get('/', async c => await respondGemini(c, result, false, ctx()));
   return await app.request('/');
 };
 

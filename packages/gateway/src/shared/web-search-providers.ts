@@ -2,7 +2,7 @@ export const WEB_SEARCH_PROVIDER_NAMES = ['tavily', 'microsoft-grounding', 'jina
 
 export type WebSearchProviderName = (typeof WEB_SEARCH_PROVIDER_NAMES)[number];
 
-export interface SearchConfig {
+export interface WebSearchConfig {
   provider: 'disabled' | WebSearchProviderName;
   tavily: { apiKey: string };
   microsoftGrounding: { apiKey: string };

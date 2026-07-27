@@ -1,8 +1,10 @@
+import type { MessagesUsage, MessagesUsageServerToolUse } from './usage.ts';
+
 /**
  * Messages requires `max_tokens`, but the Chat Completions, Responses, and
  * Gemini sources may omit their output-token cap. When we translate one of
  * those sources to a Messages target, the data-plane prefers the model's
- * advertised `/models` output cap (`capabilities.maxOutputTokens`); this
+ * advertised `/models` output cap (`limits.max_output_tokens`); this
  * constant is the last-resort gateway policy default when both the source
  * payload and the model capability are silent.
  *
@@ -232,35 +234,13 @@ export interface MessagesNativeWebSearchTool {
 
 export type MessagesTool = MessagesClientTool | MessagesNativeWebSearchTool;
 
-export interface MessagesUsageServerToolUse {
-  web_search_requests?: number;
-}
-
-export interface MessagesUsage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?: number;
-  // Per-TTL split for cache writes introduced by extended-cache-ttl-2025-04-11.
-  // Each `ephemeral_*` field is a disjoint subset of `cache_creation_input_tokens`
-  // (the legacy flat field is the sum of both); upstreams that have not opted
-  // into the beta omit `cache_creation` entirely and emit only the flat field.
-  cache_creation?: {
-    ephemeral_5m_input_tokens?: number;
-    ephemeral_1h_input_tokens?: number;
-  };
-  // https://docs.claude.com/en/api/service-tiers
-  service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
-  // https://docs.claude.com/en/build-with-claude/fast-mode
-  speed?: 'standard' | 'fast' | (string & {});
-  server_tool_use?: MessagesUsageServerToolUse;
-}
-
 export {
   mergeMessagesUsageSnapshot,
   messagesUsageSnapshot,
   splitMessagesCacheCreationTokens,
   type MessagesCacheCreationUsage,
+  type MessagesUsage,
+  type MessagesUsageServerToolUse,
   type MessagesUsageSnapshot,
 } from './usage.ts';
 

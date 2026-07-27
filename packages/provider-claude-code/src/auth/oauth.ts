@@ -11,7 +11,7 @@ import {
 import { type Fetcher } from '@floway-dev/provider';
 
 // Discriminates the two PKCE flows. `oauth` is the full Claude Code CLI
-// sign-in: 6-scope grant that mints a short-lived access token + rotating
+// sign-in: three-scope grant that mints a short-lived access token + rotating
 // refresh token. `setup-token` is the inference-only long-lived bearer that
 // Anthropic's "Create a Long-Lived Token" UI issues; no refresh_token, ~1
 // year validity, cannot mint API keys. Both share authorize host, client_id,
@@ -19,7 +19,7 @@ import { type Fetcher } from '@floway-dev/provider';
 // and the optional `expires_in` on the exchange body differ.
 export type ClaudeCodeOAuthFlowKind = 'oauth' | 'setup-token';
 
-export interface ClaudeOAuthTokenResponse {
+export interface ClaudeCodeOAuthTokenResponse {
   access_token: string;
   expires_in: number;
   // Absent on setup-token exchanges (the long-lived bearer has no rotation
@@ -33,7 +33,7 @@ export interface ClaudeOAuthTokenResponse {
 // from generic OAuth 4xx so callers can react to session-termination
 // separately from a transient upstream message. `code` carries the raw OAuth
 // `error` value (`invalid_grant`, `app_session_terminated`, etc.) so the
-// refresh-race recovery in the access-token cache can single out
+// refresh-race recovery in the access-token module can single out
 // `invalid_grant` — which is the only terminal code that might actually mean
 // "a sibling worker just rotated the refresh token, and our copy is stale" —
 // from codes that signal genuine credential death under any race scenario.
@@ -72,7 +72,7 @@ const claudeCodeTokenRequest = async (
   body: Record<string, string | number>,
   terminalCodes: ReadonlySet<string>,
   fetcher: Fetcher,
-): Promise<ClaudeOAuthTokenResponse> => {
+): Promise<ClaudeCodeOAuthTokenResponse> => {
   const response = await fetcher(CLAUDE_CODE_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -160,7 +160,7 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
   state: string;
   kind: ClaudeCodeOAuthFlowKind;
   fetcher: Fetcher;
-}): Promise<ClaudeOAuthTokenResponse> => {
+}): Promise<ClaudeCodeOAuthTokenResponse> => {
   const body: Record<string, string | number> = {
     grant_type: 'authorization_code',
     code: opts.code,
@@ -185,7 +185,7 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
 export const refreshClaudeCodeAccessToken = async (
   refreshToken: string,
   fetcher: Fetcher,
-): Promise<ClaudeOAuthTokenResponse> => {
+): Promise<ClaudeCodeOAuthTokenResponse> => {
   const body = {
     grant_type: 'refresh_token',
     refresh_token: refreshToken,

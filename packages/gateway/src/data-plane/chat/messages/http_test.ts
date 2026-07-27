@@ -11,8 +11,8 @@ import { type ModelCandidate, directFetcher, type ProviderCallResult, type Provi
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
-vi.mock('../../providers/registry.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
+vi.mock('../../providers/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async () => {
@@ -113,7 +113,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream, kind: 'custom', name: upstream,
+      upstreamId: upstream, kind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
     model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),

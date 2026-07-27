@@ -1,5 +1,5 @@
-import { upstreamPerformanceContext } from './telemetry/attempt-helpers.ts';
-import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
+import type { GatewayCtx } from './gateway-ctx.ts';
+import { upstreamPerformanceContext } from './telemetry/attribution.ts';
 import type { ModelCandidate, PerformanceOperation } from '@floway-dev/provider';
 
 // A serve-layer attempt result counts as success when:
@@ -37,20 +37,21 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 };
 
 // Tries each narrowed candidate in order and returns the first success. A
-// per-candidate failure falls through so a transient 5xx/429/network on
-// one upstream rolls over to the next; when the list is exhausted the
-// most recent failure is returned so callers can forward it verbatim and
-// clients still see real upstream telemetry rather than a synthetic
-// gateway envelope. Callers are contractually required to hand in a
-// non-empty candidate list — the empty-candidate branch renders each
-// caller's own protocol-shaped "no viable candidate" envelope at the
+// per-candidate *failure result* falls through so a transient 5xx/429 on
+// one upstream rolls over to the next; a thrown error leaves the loop and
+// surfaces to the caller, so a dial failure does not advance. When the
+// list is exhausted the most recent failure is returned so callers can
+// forward it verbatim and clients still see real upstream telemetry rather
+// than a synthetic gateway envelope. Callers are contractually required to
+// hand in a non-empty candidate list — the empty-candidate branch renders
+// each caller's own protocol-shaped "no viable candidate" envelope at the
 // serve site.
 //
 // Owns per-attempt AttemptState: clears the two timing slots and stamps
 // `ctx.attempt.telemetry` with the current candidate's
 // `PerformanceTelemetryContext` synchronously BEFORE handing control to
 // `run`. That way a mid-attempt throw (interceptor bug, translation
-// error, provider-layer JS exception bypassing tryCatchChatServeFailure)
+// error, provider-layer JS exception not represented as a ChatServeFailure)
 // still attributes the perf error row to the throwing candidate: the
 // outer catch reads `ctx.attempt.telemetry` and feeds it into
 // `recordFailedRequest`. Callsites don't need to duplicate this stamp.

@@ -13,12 +13,11 @@
 // protocol it speaks without going through a translation pair.
 //
 // `/api/show` does not expose a dedicated transcription capability, so audio
-// models are manual overrides rather than inferred catalog entries.
+// models reach the catalog only through manual `models[]` entries.
 // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/server/routes.go#L1909-L1922
 //
-// Operators can pin per-model overrides via `models[]`; auto-fetched and
-// manual entries merge the same way as the custom provider (manual wins on
-// id collision).
+// A manual `models[]` entry wins over an auto-fetched row carrying the same
+// upstream id.
 
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { modelsField } from '@floway-dev/provider';

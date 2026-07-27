@@ -1,7 +1,9 @@
 import { test } from 'vitest';
 
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { createCustomProvider } from './provider.ts';
+import { directFetcher, type UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const EMBEDDINGS = { embeddings: {} };
 const IMAGES = { imagesGenerations: {}, imagesEdits: {} };
@@ -92,4 +94,43 @@ test('inferEndpointsFromModelId returns audio transcription for standard transcr
   ]) {
     assertEquals(inferEndpointsFromModelId(id), AUDIO);
   }
+});
+
+test('Custom provider projects gpt-image-* models with kind=image and both image endpoints', async () => {
+  const record: UpstreamRecord = {
+    id: 'up_custom_image',
+    kind: 'custom',
+    name: 'Custom Image',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    config: {
+      baseUrl: 'https://custom.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-custom',
+      endpoints: { chatCompletions: {} },
+    },
+    state: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    color: null,
+  };
+  await withMockedFetch(
+    request => {
+      if (new URL(request.url).pathname === '/v1/models') {
+        return jsonResponse({ data: [{ id: 'gpt-image-2-2026-04-21' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await createCustomProvider(record).instance.getProvidedModels(directFetcher);
+      assertEquals(models.length, 1);
+      assertEquals(models[0].id, 'gpt-image-2-2026-04-21');
+      assertEquals(models[0].kind, 'image');
+      assertEquals(models[0].endpoints, IMAGES);
+    },
+  );
 });

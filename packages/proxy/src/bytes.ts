@@ -1,7 +1,7 @@
-// Tiny byte-buffer primitives shared across the proxy-protocol dialers.
-// Buffers come in from a transport-owned ReadableStream — those buffers may
-// be pooled or reused by the runtime (most visibly on Node), so anything we
-// enqueue downstream or retain past the next read needs to own its memory.
+// Byte ownership, encoding, HTTP head scanning, URI-host formatting, and
+// SOCKS-style address framing for proxy dialing and request execution.
+// Buffers read from a transport-owned ReadableStream may be pooled or reused
+// by the runtime, so retained or downstream-enqueued bytes must own their memory.
 
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array detached from any

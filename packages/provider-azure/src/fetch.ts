@@ -1,38 +1,6 @@
-import { type AzureUpstreamConfig, isFoundryProjectRootPath, trimTrailingSlash } from './config.ts';
+import type { AzureUpstreamConfig } from './config.ts';
+import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl } from './endpoint.ts';
 import { type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
-
-const azureOpenAiV1BaseUrl = (endpoint: string): string => {
-  const url = new URL(trimTrailingSlash(endpoint));
-  const path = trimTrailingSlash(url.pathname);
-  if (path.endsWith('/openai/v1')) {
-    url.pathname = path;
-  } else if (path === '/anthropic/v1/messages' || path === '/anthropic/v1' || path === '/anthropic') {
-    url.pathname = '/openai/v1';
-  } else if (isFoundryProjectRootPath(path)) {
-    url.pathname = `${path}/openai/v1`;
-  } else {
-    url.pathname = '/openai/v1';
-  }
-  return trimTrailingSlash(url.href);
-};
-
-const azureAnthropicBaseUrl = (endpoint: string): string => {
-  const url = new URL(trimTrailingSlash(endpoint));
-  if (url.hostname.endsWith('.openai.azure.com')) {
-    url.hostname = `${url.hostname.slice(0, -'.openai.azure.com'.length)}.services.ai.azure.com`;
-  }
-  const path = trimTrailingSlash(url.pathname);
-  if (path === '/anthropic/v1/messages') {
-    url.pathname = path.slice(0, -'/v1/messages'.length);
-  } else if (path === '/anthropic/v1') {
-    url.pathname = path.slice(0, -3);
-  } else if (path === '/anthropic') {
-    url.pathname = path;
-  } else {
-    url.pathname = '/anthropic';
-  }
-  return trimTrailingSlash(url.href);
-};
 
 const azureFetchUrl = async (
   config: AzureUpstreamConfig,

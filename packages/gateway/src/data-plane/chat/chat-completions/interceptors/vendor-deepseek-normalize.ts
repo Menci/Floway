@@ -119,7 +119,7 @@ const rewriteInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletions
   return { ...chunk, usage: next as unknown as ChatCompletionsStreamEvent['usage'] };
 };
 
-export const withVendorDeepseekChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
+export const withVendorDeepSeekChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-deepseek')) return await run();
 
   ctx.payload = rewriteOutboundPayload(ctx.payload);

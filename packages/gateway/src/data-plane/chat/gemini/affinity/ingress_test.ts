@@ -10,13 +10,13 @@ const codec = new AffinityCodec('22'.repeat(32));
 const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
-    provider: { ...base.provider, upstream },
+    provider: { ...base.provider, upstreamId: upstream },
     model: { id: 'model' },
   });
 };
 
 const targetFor = (value: ModelCandidate): AffinityTarget => ({
-  upstreamId: value.provider.upstream,
+  upstreamId: value.provider.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
 });

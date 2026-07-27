@@ -13,13 +13,13 @@ const carrierDomain = (itemType: string, slot: string): string => `responses.${c
 const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
-    provider: { ...base.provider, upstream },
+    provider: { ...base.provider, upstreamId: upstream },
     model: { id: 'model' },
   });
 };
 
 const targetFor = (value: ModelCandidate): AffinityTarget => ({
-  upstreamId: value.provider.upstream,
+  upstreamId: value.provider.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
 });
@@ -135,7 +135,7 @@ test('derives force routing from blob-less program state after the turn carrier'
     ],
   }, codec);
 
-  expect(prepared.routingEvidence).toEqual([
+  expect(prepared.narrowingEvidence).toEqual([
     { target: targetFor(candidateA), mode: 'prefer' },
     { target: targetFor(candidateA), mode: 'force' },
   ]);
@@ -158,7 +158,7 @@ test('does not inherit force through a foreign program blob', async () => {
     ],
   }, codec);
 
-  expect(prepared.routingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
+  expect(prepared.narrowingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
   expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ fingerprint: 'foreign' });
 });
 
@@ -171,7 +171,7 @@ test('treats compaction_summary as force state across alias-rule variants', asyn
   const item = { type: 'compaction_summary', id: 'cmp_client', encrypted_content: carrier } as unknown as CanonicalResponsesPayload['input'][number];
   const prepared = await prepareResponsesAffinity({ model: 'model', input: [item] }, codec);
 
-  expect(prepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
+  expect(prepared.narrowingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
   expect(prepared.payloadForCandidate({ ...candidateA, rules: {} }).input[0]).toMatchObject({
     id: 'cmp_client',
     encrypted_content: 'opaque',
@@ -186,12 +186,12 @@ test('keeps originless context compaction prefer-only while natural encrypted st
     encrypted_content: synthetic,
   } as unknown as CanonicalResponsesPayload['input'][number];
   const syntheticPrepared = await prepareResponsesAffinity({ model: 'model', input: [originlessItem] }, codec);
-  expect(syntheticPrepared.routingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
+  expect(syntheticPrepared.narrowingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
 
   const natural = await codec.wrap('opaque', targetFor(candidateA), carrierDomain('context_compaction', 'encrypted_content'));
   const naturalPrepared = await prepareResponsesAffinity({
     model: 'model',
     input: [{ ...originlessItem, encrypted_content: natural } as CanonicalResponsesPayload['input'][number]],
   }, codec);
-  expect(naturalPrepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
+  expect(naturalPrepared.narrowingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
 });

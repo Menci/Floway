@@ -1,7 +1,7 @@
-import type { SearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
+import type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
 import type { MessagesWebSearchErrorCode } from '@floway-dev/protocols/messages';
 
-export type { SearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
+export type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
 
 export const DEFAULT_WEB_SEARCH_RESULT_COUNT = 10;
 
@@ -100,16 +100,16 @@ export type ConfiguredWebSearchProvider =
     impl: WebSearchProvider;
   };
 
-export type SearchConfigConnectionTestResult =
+export type WebSearchConfigConnectionTestResult =
   | {
     ok: true;
-    provider: SearchConfig['provider'];
+    provider: WebSearchConfig['provider'];
     query: string;
     results: WebSearchPreviewResult[];
   }
   | {
     ok: false;
-    provider: SearchConfig['provider'];
+    provider: WebSearchConfig['provider'];
     query: string;
     error: { code: string; message: string };
   };

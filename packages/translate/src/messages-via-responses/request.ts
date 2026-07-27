@@ -1,6 +1,9 @@
-import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/structured-output.ts';
 import { messagesReasoningBlockToResponsesReasoning } from '../shared/messages-and-responses/reasoning.ts';
+import { filterMessagesClientTools } from '../shared/messages-via/client-tools.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
+import { openAIServiceTierFromMessages } from '../shared/messages-via/service-tier.ts';
+import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages-via/structured-output.ts';
+import { flattenMessagesToolResult } from '../shared/messages-via/tool-result.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
@@ -42,19 +45,6 @@ const translateUserContentBlock = (
   throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
 };
 
-const toResponsesToolResultOutput = (content: MessagesToolResultBlock['content']): string => {
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  const textBlocks = content.filter((block): block is MessagesTextBlock => block.type === 'text');
-  if (textBlocks.length === content.length) {
-    return textBlocks.map(block => block.text).join('\n\n');
-  }
-
-  return JSON.stringify(content);
-};
-
 const toResponsesFunctionCall = (block: MessagesToolUseBlock | MessagesServerToolUseBlock): ResponsesInputItem => ({
   type: 'function_call',
   call_id: block.id,
@@ -69,13 +59,6 @@ const toResponsesStructuredToolOutput = (block: MessagesWebSearchToolResultBlock
   output: JSON.stringify(block.content),
   status: Array.isArray(block.content) ? 'completed' : 'incomplete',
 });
-
-const getClientTools = (tools?: MessagesPayload['tools']): MessagesClientTool[] | undefined => {
-  if (!tools || tools.length === 0) return undefined;
-
-  const clientTools = tools.filter((tool): tool is MessagesClientTool => tool.type === undefined || tool.type === 'custom');
-  return clientTools.length > 0 ? clientTools : undefined;
-};
 
 const translateUserMessage = (message: MessagesUserMessage, messageIdx: number): ResponsesInputItem[] => {
   if (typeof message.content === 'string') {
@@ -94,7 +77,7 @@ const translateUserMessage = (message: MessagesUserMessage, messageIdx: number):
       input.push({
         type: 'function_call_output',
         call_id: block.tool_use_id,
-        output: toResponsesToolResultOutput(block.content),
+        output: flattenMessagesToolResult(block.content),
         status: block.is_error ? 'incomplete' : 'completed',
       });
       continue;
@@ -229,22 +212,18 @@ const translateToolChoice = (toolChoice: MessagesPayload['tool_choice'], tools?:
   }
 };
 
-export const translateMessagesToResponses = (payload: MessagesPayload): CanonicalResponsesPayload => {
+export const buildTargetRequest = (payload: MessagesPayload): CanonicalResponsesPayload => {
   // Preserve the source `output_config.effort` value as-is, even if the chosen
   // Responses upstream may reject it. Translation stays pairwise and leaves
   // target-side validation to the selected upstream endpoint.
   const effort = resolveMessagesReasoningEffort(payload);
   const reasoning = effort ? { effort } : undefined;
-  const clientTools = getClientTools(payload.tools);
+  const clientTools = filterMessagesClientTools(payload.tools);
   const { instructions, prependItems } = placeMessagesSystem(payload.system);
   const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
   const text = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;
 
-  // `speed: 'fast'` maps to Responses `service_tier: 'fast'`; other non-fast
-  // `speed` values have no OpenAI equivalent and are dropped. When `speed` is
-  // absent, Anthropic's own `service_tier` ('auto'/'standard_only') is passed
-  // through verbatim for symmetry with the forward direction.
-  const serviceTier = payload.speed === 'fast' ? 'fast' : payload.speed === undefined ? payload.service_tier : undefined;
+  const serviceTier = openAIServiceTierFromMessages(payload);
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or
@@ -267,5 +246,3 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Canonica
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
 };
-
-export { translateMessagesToResponses as buildTargetRequest };

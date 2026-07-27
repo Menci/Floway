@@ -25,9 +25,7 @@ export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 // `rules` is set only for candidates minted by the alias walk — it carries
 // the picked target's rule overlay so the attempt's terminal wire call can
 // apply it against the target IR. Absent (undefined) for direct-resolution
-// candidates, present (possibly `{}`) for alias-origin candidates; the two
-// values together also mark the candidate as needing a `payload.model`
-// rewrite before dispatch.
+// candidates and present (possibly `{}`) for alias-origin candidates.
 export interface ModelCandidate {
   readonly provider: Provider;
   readonly model: InternalModel;
@@ -38,7 +36,7 @@ export interface ModelCandidate {
 // Pull the emitting upstream's `ProviderModel` off the candidate. Dispatch
 // hands this to the provider's `callXxx`; interceptor gates read
 // `.enabledFlags`, boundary shims read `.providerData`, etc. The candidate
-// always names exactly one upstream via `provider.upstream`; for real-row
+// always names exactly one upstream via `provider.upstreamId`; for real-row
 // candidates the resolver populates `model.providerModels` with an entry
 // under that key at candidate-creation time.
 //
@@ -53,9 +51,9 @@ export const providerModelOf = (candidate: ModelCandidate): ProviderModel => {
   if (model.providerModels === undefined) {
     throw new Error(`providerModelOf: model '${model.id}' is an alias row; the resolver should have expanded it to a target row before dispatch`);
   }
-  const providerModel = model.providerModels[provider.upstream];
+  const providerModel = model.providerModels[provider.upstreamId];
   if (providerModel === undefined) {
-    throw new Error(`providerModelOf: model '${model.id}' has no providerModel for '${provider.upstream}'`);
+    throw new Error(`providerModelOf: model '${model.id}' has no providerModel for '${provider.upstreamId}'`);
   }
   return providerModel;
 };

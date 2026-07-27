@@ -63,31 +63,6 @@ export class CopilotTokenFetchError extends Error {
 
 export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenFetchError => error instanceof CopilotTokenFetchError;
 
-export async function clearCopilotTokenCache(upstreamId: string): Promise<void> {
-  // Drop both the in-process memo and the persisted `state.copilotToken`. The
-  // persisted entry outlives the in-process clear by ~25 minutes, so a caller
-  // that just rotated the upstream's GitHub PAT (or otherwise needs the next
-  // request to mint a fresh Copilot token) MUST also wipe the persisted entry —
-  // otherwise `getCopilotToken` would happily return the still-valid hydrated
-  // token that was minted from the previous PAT, authenticating subsequent
-  // requests as the prior identity until the natural expiry.
-  inProcessTokenCache.clear();
-  const repo = getRepo().upstreams;
-  const fresh = await repo.getById(upstreamId);
-  if (!fresh) return;
-  const state = readCopilotUpstreamState(fresh.state);
-  if (state.copilotToken === null) return;
-  try {
-    await repo.saveState(
-      upstreamId,
-      { ...state, copilotToken: null } satisfies CopilotUpstreamState,
-      { expectedState: fresh.state },
-    );
-  } catch (err) {
-    console.warn(`Failed to clear persisted Copilot token for ${upstreamId}:`, err);
-  }
-}
-
 // Tests use this to drop only the process-local memo between cases — they
 // run against a fresh DB per test so the persisted state needs no separate
 // reset, and some tests deliberately want the next call to hydrate from
@@ -268,7 +243,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
   headers.set('x-interaction-type', 'conversation-agent');
 
   // Provider-attached invocation headers (vision, initiator, anthropic-beta,
-  // ...) flow through unchanged. The provider's target interceptors decide
+  // ...) flow through unchanged. The provider's boundary interceptors decide
   // which headers each upstream call needs; this layer only knows how to ship
   // them. Setting them last lets workaround interceptors override the static
   // VSCode identification block when a future workaround needs to.

@@ -6,11 +6,14 @@ import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/co
 import type { Fetcher, InternalModel } from '@floway-dev/provider';
 
 // Project an `InternalModel` onto the public-facing `/v1/models` wire DTO.
-// `endpoints` rides through so listing clients can introspect each model's
-// reach without a per-endpoint probe. When the row is an alias-synthesized
-// one, `aliasedFrom` is emitted verbatim from the internal shape (they
-// share the same fields); the real branch never carries it, so the sidecar
-// is present exactly on alias rows.
+// `endpoints` rides through as the merged upstream wire surface — the
+// endpoints the upstreams serve this model on, not the inbound routes a
+// client may call. Translation widens the chat keys: any one of
+// `chatCompletions` / `messages` / `responses` makes the model reachable from
+// all four inbound chat routes, and the Gemini route has no key of its own.
+// When the row is an alias-synthesized one, `aliasedFrom` is emitted verbatim
+// from the internal shape (they share the same fields); the real branch never
+// carries it, so the sidecar is present exactly on alias rows.
 export const toPublicModel = (model: InternalModel): PublicModel => {
   const info: PublicModel = {
     id: model.id,

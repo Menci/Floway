@@ -1,13 +1,20 @@
 import { test } from 'vitest';
 
-import { responsesInputErrorResult } from './errors.ts';
+import { responsesInputErrorResult, type ResponsesServeFailure } from './errors.ts';
+import { throwChatServeFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ApiErrorResult } from '@floway-dev/provider';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 import { TranslatorInputError } from '@floway-dev/translate';
 
 const apiErrorOf = (result: ReturnType<typeof responsesInputErrorResult>): ApiErrorResult => result as ApiErrorResult;
 const bodyOf = (result: ReturnType<typeof responsesInputErrorResult>): unknown =>
   JSON.parse(new TextDecoder().decode(apiErrorOf(result).body));
+
+test('round-trips the Responses-only item-not-found failure through throw/catch', () => {
+  const failure: ResponsesServeFailure = { kind: 'item-not-found', itemId: 'msg_abc' };
+  const error = assertThrows(() => throwChatServeFailure(failure));
+  assertEquals(tryCatchChatServeFailure<ResponsesServeFailure>(error), failure);
+});
 
 test('responsesInputErrorResult renders an OpenAI 400 invalid_request_error envelope with default `input` param', () => {
   const result = responsesInputErrorResult(

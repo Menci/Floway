@@ -1,31 +1,21 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
+import { rerankAttempt, type RerankAttemptResult } from './attempt.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../chat/shared/gateway-ctx.ts';
-import { readRequestBody, takeRequestBody } from '../chat/shared/request-body.ts';
-import { enumerateModelCandidates } from '../providers/registry.ts';
+import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
-import { inboundHeadersForUpstream } from '../shared/inbound-headers.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { iterateCandidates } from '../shared/iterate-candidates.ts';
-import { buildUpstreamCallOptions, telemetryModelIdentity, upstreamPerformanceContext } from '../shared/telemetry/attempt-helpers.ts';
+import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
-import { canonicalDecimalString, type RerankSourceProtocol, type RerankTarget } from '@floway-dev/protocols/common';
-import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankRequest, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
+import { parseDecimalString, type RerankSourceProtocol } from '@floway-dev/protocols/common';
+import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
 import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
-import type { ModelCandidate, ProviderRerankCallResult, TelemetryModelIdentity } from '@floway-dev/provider';
-
-interface RerankAttemptResult {
-  readonly type: 'plain';
-  readonly status: number;
-  readonly response: Response;
-  readonly target: RerankTarget;
-  readonly performance: PerformanceTelemetryContext;
-  readonly identity: TelemetryModelIdentity;
-}
+import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
   c.json({ error: { message, type: 'api_error' } }, status);
@@ -38,29 +28,6 @@ const parseJson = (bytes: Uint8Array): unknown => {
   }
 };
 
-const attemptRerank = async (
-  c: Context,
-  ctx: GatewayCtx,
-  candidate: ModelCandidate,
-  request: CanonicalRerankRequest,
-): Promise<RerankAttemptResult> => {
-  const model = providerModelOf(candidate);
-  const result: ProviderRerankCallResult = await candidate.provider.instance.callRerank(
-    model,
-    request,
-    ctx.abortSignal,
-    buildUpstreamCallOptions(candidate, ctx, inboundHeadersForUpstream(c)),
-  );
-  return {
-    type: 'plain',
-    status: result.response.status,
-    response: result.response,
-    target: result.target,
-    performance: upstreamPerformanceContext(ctx, candidate, 'rerank'),
-    identity: telemetryModelIdentity(candidate, result.modelKey),
-  };
-};
-
 const settleRerank = (
   ctx: GatewayCtx,
   performanceContext: PerformanceTelemetryContext,
@@ -69,8 +36,8 @@ const settleRerank = (
   failed: boolean,
 ): void => {
   const quantities: UsageQuantities = {};
-  if (usage?.searchUnits !== undefined) quantities.rerank_searches = canonicalDecimalString(String(usage.searchUnits));
-  if (usage?.totalTokens !== undefined) quantities.input_tokens = canonicalDecimalString(String(usage.totalTokens));
+  if (usage?.searchUnits !== undefined) quantities.rerank_searches = parseDecimalString(String(usage.searchUnits));
+  if (usage?.totalTokens !== undefined) quantities.input_tokens = parseDecimalString(String(usage.totalTokens));
   const pricingFacts = usage?.totalTokens === undefined ? {} : { inputTokens: usage.totalTokens };
   ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, pricingFacts).catch(error => {
     console.error('Failed to record rerank usage:', error);
@@ -147,7 +114,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       'rerank',
       ctx,
       'rerank',
-      candidate => attemptRerank(c, ctx, candidate, request),
+      candidate => rerankAttempt(c, ctx, candidate, request),
     );
 
     if (!terminal.response.ok) {

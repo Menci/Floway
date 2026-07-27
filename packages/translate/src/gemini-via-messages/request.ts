@@ -146,33 +146,37 @@ const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatc
   return blocks.length ? { role: 'assistant', content: blocks } : null;
 };
 
-const applyThinkingConfig = (request: MessagesPayload, thinkingConfig?: GeminiThinkingConfig): void => {
-  if (!thinkingConfig) return;
+interface ThinkingConfigFields {
+  thinking?: NonNullable<MessagesPayload['thinking']>;
+  outputConfig: NonNullable<MessagesPayload['output_config']>;
+}
 
-  if (thinkingConfig.thinkingBudget !== undefined) {
-    if (thinkingConfig.thinkingBudget === -1) {
-      request.thinking = { type: 'adaptive' };
-    } else if (thinkingConfig.thinkingBudget > 0) {
-      request.thinking = {
-        type: 'enabled',
-        budget_tokens: thinkingConfig.thinkingBudget,
-      };
-    } else if (thinkingConfig.thinkingBudget === 0) {
-      request.thinking = { type: 'disabled' };
-    }
+const applyThinkingConfig = (thinkingConfig?: GeminiThinkingConfig): ThinkingConfigFields => {
+  if (!thinkingConfig) return { outputConfig: {} };
+
+  let thinking: ThinkingConfigFields['thinking'];
+  if (thinkingConfig.thinkingBudget === -1) {
+    thinking = { type: 'adaptive' };
+  } else if (thinkingConfig.thinkingBudget !== undefined && thinkingConfig.thinkingBudget > 0) {
+    thinking = {
+      type: 'enabled',
+      budget_tokens: thinkingConfig.thinkingBudget,
+    };
+  } else if (thinkingConfig.thinkingBudget === 0) {
+    thinking = { type: 'disabled' };
   }
 
   const effort = geminiThinkingLevelEffort(thinkingConfig);
-  // Spread to merge with any output_config fields a sibling helper has
-  // already written (e.g. structured-output `format` from
-  // applyGenerationConfig).
-  if (effort !== undefined) request.output_config = { ...request.output_config, effort };
+  return {
+    ...(thinking !== undefined ? { thinking } : {}),
+    outputConfig: effort !== undefined ? { effort } : {},
+  };
 };
 
-const applyGenerationConfig = (request: MessagesPayload, generationConfig: GeminiGenerationConfig | undefined, fallbackMaxOutputTokens: number): void => {
+const applyGenerationConfig = (request: MessagesPayload, generationConfig: GeminiGenerationConfig | undefined, fallbackMaxOutputTokens: number): NonNullable<MessagesPayload['output_config']> => {
   request.max_tokens = generationConfig?.maxOutputTokens ?? fallbackMaxOutputTokens;
 
-  if (!generationConfig) return;
+  if (!generationConfig) return {};
 
   if (generationConfig.temperature !== undefined) {
     request.temperature = generationConfig.temperature;
@@ -190,14 +194,9 @@ const applyGenerationConfig = (request: MessagesPayload, generationConfig: Gemin
   // as `output_config.format = { type: 'json_schema', schema }`. `responseMimeType:
   // application/json` without a schema has no Anthropic equivalent and is
   // dropped — the routing fallback degrades gracefully rather than fails.
-  if (generationConfig.responseSchema !== undefined) {
-    request.output_config = {
-      ...request.output_config,
-      format: { type: 'json_schema', schema: generationConfig.responseSchema as Record<string, unknown> },
-    };
-  }
-
-  applyThinkingConfig(request, generationConfig.thinkingConfig);
+  return generationConfig.responseSchema !== undefined
+    ? { format: { type: 'json_schema', schema: generationConfig.responseSchema as Record<string, unknown> } }
+    : {};
 };
 
 const inputSchemaForDeclaration = (parameters: Record<string, unknown> | undefined): Record<string, unknown> => {
@@ -226,8 +225,8 @@ export const buildTargetRequest = (
 ): MessagesPayload => {
   // Gemini can omit maxOutputTokens, but MessagesPayload requires max_tokens.
   // Prefer the model's advertised `/models` cap when one is known; otherwise
-  // fall back to the gateway policy default shared with the other *-to-Messages
-  // translators.
+  // fall back to the gateway policy default shared with the other
+  // `*-via-messages` translators.
   const fallbackMaxOutputTokens = options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
   const request: MessagesPayload = {
     model,
@@ -260,7 +259,19 @@ export const buildTargetRequest = (
     if (message) request.messages.push(message);
   });
 
-  applyGenerationConfig(request, payload.generationConfig, fallbackMaxOutputTokens);
+  const generationOutputConfig = applyGenerationConfig(request, payload.generationConfig, fallbackMaxOutputTokens);
+  const { thinking, outputConfig: thinkingOutputConfig } = applyThinkingConfig(payload.generationConfig?.thinkingConfig);
+  const outputConfig = { ...generationOutputConfig, ...thinkingOutputConfig };
+  const hasGenerationOutputConfig = Object.keys(generationOutputConfig).length > 0;
+  const attachOutputConfig = (): void => {
+    request.output_config = outputConfig;
+  };
+
+  // Preserve request-key insertion order: a structured-output format precedes
+  // `thinking`, while an effort-only `output_config` follows it.
+  if (hasGenerationOutputConfig) attachOutputConfig();
+  if (thinking !== undefined) request.thinking = thinking;
+  if (!hasGenerationOutputConfig && Object.keys(outputConfig).length > 0) attachOutputConfig();
 
   const tools = buildTools(payload);
   if (tools) request.tools = tools;

@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from './cache-breakpoints.ts';
-import { assert, assertEquals } from '../../test-assert.ts';
 import type { MessagesAssistantMessage, MessagesMessage, MessagesTextBlock, MessagesTool, MessagesUserMessage } from '@floway-dev/protocols/messages';
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const cacheControlOf = (value: unknown): unknown => (value as { cache_control?: unknown }).cache_control;
 

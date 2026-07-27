@@ -35,7 +35,7 @@ type CacheableBlock = Extract<
 const isCacheableBlock = (block: MessagesUserContentBlock | MessagesAssistantContentBlock): block is CacheableBlock =>
   block.type === 'text' || block.type === 'image' || block.type === 'tool_use' || block.type === 'tool_result';
 
-export const withTopLevelCacheControlApplied: CopilotMessagesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withTopLevelCacheControlApplied: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {
   const payload = ctx.payload as typeof ctx.payload & { cache_control?: { type: 'ephemeral' } };
   const topLevel = payload.cache_control;
   if (topLevel === undefined) return await run();

@@ -20,10 +20,10 @@ import { hkdf } from '@noble/hashes/hkdf.js';
 import { md5, sha1 } from '@noble/hashes/legacy.js';
 
 import { utf8Bytes, concat, encodeAtypAddress, randomBytes } from '../bytes.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { type Aead, leNonce, makeAead } from './shadowsocks-aead.ts';
 

@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
-import { translateMessagesToChatCompletions } from './request.ts';
-import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
+import { buildTargetRequest } from './request.ts';
 import type { MessagesAssistantContentBlock, MessagesUserContentBlock } from '@floway-dev/protocols/messages';
+import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
-test('translateMessagesToChatCompletions maps thinking.disabled to reasoning_effort none', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest maps thinking.disabled to reasoning_effort none', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     thinking: { type: 'disabled' },
@@ -15,8 +15,8 @@ test('translateMessagesToChatCompletions maps thinking.disabled to reasoning_eff
   assertEquals(result.reasoning_effort, 'none');
 });
 
-test('translateMessagesToChatCompletions prefers output_config.effort over thinking.disabled', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest prefers output_config.effort over thinking.disabled', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     output_config: { effort: 'high' },
@@ -27,8 +27,8 @@ test('translateMessagesToChatCompletions prefers output_config.effort over think
   assertEquals(result.reasoning_effort, 'high');
 });
 
-test('translateMessagesToChatCompletions treats empty output_config.effort as absent', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest treats empty output_config.effort as absent', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     output_config: { effort: '' },
@@ -39,9 +39,9 @@ test('translateMessagesToChatCompletions treats empty output_config.effort as ab
   assertEquals(result.reasoning_effort, 'none');
 });
 
-test('translateMessagesToChatCompletions maps thinking.enabled to reasoning_effort medium regardless of budget_tokens', () => {
+test('buildTargetRequest maps thinking.enabled to reasoning_effort medium regardless of budget_tokens', () => {
   for (const budget of [undefined, 1024, 16384]) {
-    const result = translateMessagesToChatCompletions({
+    const result = buildTargetRequest({
       model: 'gpt-test',
       max_tokens: 4096,
       thinking: budget === undefined ? { type: 'enabled' } : { type: 'enabled', budget_tokens: budget },
@@ -52,8 +52,8 @@ test('translateMessagesToChatCompletions maps thinking.enabled to reasoning_effo
   }
 });
 
-test('translateMessagesToChatCompletions maps thinking.adaptive to reasoning_effort medium', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest maps thinking.adaptive to reasoning_effort medium', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 4096,
     thinking: { type: 'adaptive' },
@@ -63,8 +63,8 @@ test('translateMessagesToChatCompletions maps thinking.adaptive to reasoning_eff
   assertEquals(result.reasoning_effort, 'medium');
 });
 
-test('translateMessagesToChatCompletions prefers output_config.effort over thinking.enabled', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest prefers output_config.effort over thinking.enabled', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 4096,
     output_config: { effort: 'high' },
@@ -75,8 +75,8 @@ test('translateMessagesToChatCompletions prefers output_config.effort over think
   assertEquals(result.reasoning_effort, 'high');
 });
 
-test('translateMessagesToChatCompletions keeps tool_result and user text as separate chat messages', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest keeps tool_result and user text as separate chat messages', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -96,8 +96,8 @@ test('translateMessagesToChatCompletions keeps tool_result and user text as sepa
   ]);
 });
 
-test('translateMessagesToChatCompletions drops filtered-native tool_choice and rewrites assistant native web-search history as tool-call history', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest drops filtered-native tool_choice and rewrites assistant native web-search history as tool-call history', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     tool_choice: { type: 'any' },
@@ -154,8 +154,8 @@ test('translateMessagesToChatCompletions drops filtered-native tool_choice and r
   ]);
 });
 
-test('translateMessagesToChatCompletions flattens text-block tool_result content but serializes search-result arrays', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest flattens text-block tool_result content but serializes search-result arrays', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -194,8 +194,8 @@ test('translateMessagesToChatCompletions flattens text-block tool_result content
   ]);
 });
 
-test('translateMessagesToChatCompletions preserves mixed user/tool_result chronology', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest preserves mixed user/tool_result chronology', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -219,8 +219,8 @@ test('translateMessagesToChatCompletions preserves mixed user/tool_result chrono
   ]);
 });
 
-test('translateMessagesToChatCompletions preserves redacted_thinking as reasoning_opaque', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest preserves redacted_thinking as reasoning_opaque', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -241,8 +241,8 @@ test('translateMessagesToChatCompletions preserves redacted_thinking as reasonin
   ]);
 });
 
-test('translateMessagesToChatCompletions projects only the first scalar reasoning group', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest projects only the first scalar reasoning group', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -265,8 +265,8 @@ test('translateMessagesToChatCompletions projects only the first scalar reasonin
   });
 });
 
-test('translateMessagesToChatCompletions does not pair readable thinking with later redacted opaque data', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest does not pair readable thinking with later redacted opaque data', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -294,8 +294,8 @@ test('translateMessagesToChatCompletions does not pair readable thinking with la
 // packages/translate/src/chat-completions-via-messages/request.ts already
 // defaults `parameters` to {type: 'object', properties: {}}. Ref:
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
-test('translateMessagesToChatCompletions defaults missing input_schema.properties to {} for object tools', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest defaults missing input_schema.properties to {} for object tools', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     tools: [{ name: 'no_args', input_schema: { type: 'object' } }],
@@ -314,8 +314,8 @@ test('translateMessagesToChatCompletions defaults missing input_schema.propertie
   ]);
 });
 
-test('translateMessagesToChatCompletions preserves declared input_schema.properties verbatim', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest preserves declared input_schema.properties verbatim', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     tools: [
@@ -338,8 +338,8 @@ test('translateMessagesToChatCompletions preserves declared input_schema.propert
   });
 });
 
-test('translateMessagesToChatCompletions does not inject properties for non-object input_schema', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest does not inject properties for non-object input_schema', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     // Non-object root schemas are unusual but legal upstream; we should not
@@ -351,14 +351,14 @@ test('translateMessagesToChatCompletions does not inject properties for non-obje
   assertEquals(result.tools?.[0].function.parameters, { type: 'string' });
 });
 
-test('translateMessagesToChatCompletions wraps output_config.format json_schema as response_format with nested json_schema and strict', () => {
+test('buildTargetRequest wraps output_config.format json_schema as response_format with nested json_schema and strict', () => {
   const schema = {
     type: 'object',
     properties: { test: { type: 'string' } },
     required: ['test'],
     additionalProperties: false,
   };
-  const result = translateMessagesToChatCompletions({
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'Hi' }],
@@ -371,8 +371,8 @@ test('translateMessagesToChatCompletions wraps output_config.format json_schema 
   });
 });
 
-test('translateMessagesToChatCompletions omits response_format when output_config has no format', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest omits response_format when output_config has no format', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'Hi' }],
@@ -382,10 +382,10 @@ test('translateMessagesToChatCompletions omits response_format when output_confi
   assertFalse('response_format' in result);
 });
 
-test('translateMessagesToChatCompletions rejects an unknown assistant content block type', () => {
+test('buildTargetRequest rejects an unknown assistant content block type', () => {
   assertThrows(
     () =>
-      translateMessagesToChatCompletions({
+      buildTargetRequest({
         model: 'gpt-test',
         max_tokens: 256,
         messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as MessagesAssistantContentBlock] }],
@@ -395,10 +395,10 @@ test('translateMessagesToChatCompletions rejects an unknown assistant content bl
   );
 });
 
-test('translateMessagesToChatCompletions rejects an unknown user content block type', () => {
+test('buildTargetRequest rejects an unknown user content block type', () => {
   assertThrows(
     () =>
-      translateMessagesToChatCompletions({
+      buildTargetRequest({
         model: 'gpt-test',
         max_tokens: 256,
         messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as MessagesUserContentBlock] }],
@@ -408,8 +408,8 @@ test('translateMessagesToChatCompletions rejects an unknown user content block t
   );
 });
 
-test('translateMessagesToChatCompletions emits in-array role:"system" inline as a CC system message', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest emits in-array role:"system" inline as a CC system message', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -425,8 +425,8 @@ test('translateMessagesToChatCompletions emits in-array role:"system" inline as 
   assertEquals(result.messages[2].role, 'user');
 });
 
-test('translateMessagesToChatCompletions preserves in-array system text blocks as separate content parts', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest preserves in-array system text blocks as separate content parts', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -450,8 +450,8 @@ test('translateMessagesToChatCompletions preserves in-array system text blocks a
   });
 });
 
-test('translateMessagesToChatCompletions preserves top-level system text blocks as separate content parts', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest preserves top-level system text blocks as separate content parts', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     system: [
@@ -472,8 +472,8 @@ test('translateMessagesToChatCompletions preserves top-level system text blocks 
   });
 });
 
-test('translateMessagesToChatCompletions skips system message when top-level system is empty array', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest skips system message when top-level system is empty array', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     system: [],
@@ -484,8 +484,8 @@ test('translateMessagesToChatCompletions skips system message when top-level sys
   assertEquals(result.messages[0].role, 'user');
 });
 
-test('translateMessagesToChatCompletions preserves chronology of multiple in-array system messages', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest preserves chronology of multiple in-array system messages', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     system: 'top-level prompt',
@@ -508,10 +508,10 @@ test('translateMessagesToChatCompletions preserves chronology of multiple in-arr
   assertEquals(result.messages[5].role, 'user');
 });
 
-test('translateMessagesToChatCompletions rejects an unknown message role', () => {
+test('buildTargetRequest rejects an unknown message role', () => {
   assertThrows(
     () =>
-      translateMessagesToChatCompletions({
+      buildTargetRequest({
         model: 'gpt-test',
         max_tokens: 256,
         messages: [{ role: 'tool', content: 'oops' } as unknown as { role: 'user'; content: string }],
@@ -521,8 +521,8 @@ test('translateMessagesToChatCompletions rejects an unknown message role', () =>
   );
 });
 
-test('translateMessagesToChatCompletions drops Anthropic-only knobs that have no Chat-completions slot', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest drops Anthropic-only knobs that have no Chat-completions slot', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
@@ -538,8 +538,8 @@ test('translateMessagesToChatCompletions drops Anthropic-only knobs that have no
 
 // ── speed ↔ service_tier bridge ──
 
-test('translateMessagesToChatCompletions maps speed:fast to service_tier:fast on the outbound Chat Completions payload', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest maps speed:fast to service_tier:fast on the outbound Chat Completions payload', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     speed: 'fast',
@@ -549,8 +549,8 @@ test('translateMessagesToChatCompletions maps speed:fast to service_tier:fast on
   assertEquals(result.service_tier, 'fast');
 });
 
-test('translateMessagesToChatCompletions omits service_tier when speed is absent', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest omits service_tier when speed is absent', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
@@ -559,8 +559,8 @@ test('translateMessagesToChatCompletions omits service_tier when speed is absent
   assertFalse('service_tier' in result);
 });
 
-test('translateMessagesToChatCompletions drops speed values other than fast without emitting service_tier', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest drops speed values other than fast without emitting service_tier', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     speed: 'standard',
@@ -570,8 +570,8 @@ test('translateMessagesToChatCompletions drops speed values other than fast with
   assertFalse('service_tier' in result);
 });
 
-test('translateMessagesToChatCompletions forwards Anthropic service_tier to Chat Completions when speed is absent', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest forwards Anthropic service_tier to Chat Completions when speed is absent', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     service_tier: 'auto',
@@ -581,8 +581,8 @@ test('translateMessagesToChatCompletions forwards Anthropic service_tier to Chat
   assertEquals(result.service_tier, 'auto');
 });
 
-test('translateMessagesToChatCompletions forwards service_tier:standard_only to Chat Completions when speed is absent', () => {
-  const result = translateMessagesToChatCompletions({
+test('buildTargetRequest forwards service_tier:standard_only to Chat Completions when speed is absent', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     service_tier: 'standard_only',

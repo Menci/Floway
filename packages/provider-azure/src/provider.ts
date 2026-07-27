@@ -107,7 +107,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   };
 
   return {
-    upstream: azure.id,
+    upstreamId: azure.id,
     kind: 'azure',
     name: azure.name,
     disabledPublicModelIds: azure.disabledPublicModelIds,

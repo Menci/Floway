@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { backfillRequiredFields } from './backfill-required-fields.ts';
-import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ProviderModel, ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
@@ -9,7 +9,7 @@ import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 const okEvents = (): Promise<ProviderStreamResult<MessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: MessagesPayload, model: ProviderModel = stubProviderModel({ endpoints: { messages: {} } })): ClaudeCodeMessagesBoundaryCtx => ({
+const invocation = (payload: MessagesPayload, model: ProviderModel = stubProviderModel({ endpoints: { messages: {} } })): MessagesBoundaryCtx => ({
   payload,
   model,
   upstreamId: 'up_test',

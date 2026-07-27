@@ -20,7 +20,7 @@ export const CUSTOM_DEFAULT_FLAGS: FlagDefaults = {
   'promote-system-to-developer': false,
   // `x-anthropic-billing-header:` from Claude Code clients is meaningful
   // only to the Anthropic subscription endpoint; strip it here so it
-  // does not pollute the OpenAI-compatible upstream's prompt-cache key.
+  // does not pollute the upstream's prompt-cache key.
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
 };

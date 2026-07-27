@@ -12,7 +12,7 @@
 //
 // - `oauth`: a short-lived access token plus a rotating refresh token.
 //   Every refresh call mints a new access token AND rotates the refresh
-//   token; the access-token cache CASes both together.
+//   token; the access-token module CASes both together.
 // - `setup-token`: a long-lived (~1 year) inference-only bearer with NO
 //   refresh token. The `accessToken` entry IS the credential — when it
 //   expires the operator must re-import. `refreshToken` is null. The
@@ -48,7 +48,7 @@ export interface ClaudeCodeUsageProbeSnapshotEntry {
   data: unknown;
 }
 
-// One account's autonomous credential state, joined back to its identity in
+// One account's gateway-written credential state, joined back to its identity in
 // ClaudeCodeUpstreamConfig.accounts via `accountUuid`. The `tokenKind` axis
 // crosses with the `state` (health) axis: each combination is independently
 // valid on the wire, so the type is a cartesian product of both unions.
@@ -66,12 +66,12 @@ interface ClaudeCodeAccountCredentialBase {
   accessToken: ClaudeCodeAccessTokenEntry | null;
   quotaSnapshot: ClaudeCodeQuotaSnapshotEntry | null;
   // Most recent /api/oauth/usage probe. Populated by the operator-driven
-  // probe-quota route; the data-plane hot path never writes it.
+  // /upstreams/claude-code/probe route; the data-plane hot path never writes it.
   usageProbeSnapshot: ClaudeCodeUsageProbeSnapshotEntry | null;
 }
 
 // The credential class. `oauth` carries a non-empty rotating refresh token
-// that the cache rotates on every refresh round-trip; `setup-token` is the
+// that the access-token module rotates on every refresh round-trip; `setup-token` is the
 // long-lived inference-only bearer with no refresh counterpart.
 type ClaudeCodeAccountCredentialTokenKind =
   | { tokenKind: 'oauth'; refreshToken: string }
@@ -182,7 +182,7 @@ const assertClaudeCodeAccountCredential = (value: unknown, where: string): void 
     throw new TypeError(`${where}.state must be one of 'active' | 'session_terminated' | 'refresh_failed', got ${String(obj.state)}`);
   }
   // Terminal states carry the upstream's terminal message; 'active' must not.
-  // This split keeps the access-token cache from inventing a fallback string
+  // This split keeps the access-token module from inventing a fallback string
   // when it surfaces ClaudeCodeOAuthSessionTerminatedError.
   if (obj.state === 'active') {
     if (obj.stateMessage !== undefined) {

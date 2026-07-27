@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { isClaudeCodeShapedRequest, parseMetadataUserID } from './detection.ts';
-import type { MessagesPayload, MessagesTextBlock } from '@floway-dev/protocols';
+import type { MessagesPayload, MessagesTextBlock } from '@floway-dev/protocols/messages';
 
 const validUserIdLegacy
   = 'user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -73,7 +73,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.181' }),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
   });
 
@@ -81,7 +80,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.10' }),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
   });
 
@@ -89,7 +87,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'claude-cli/2.1' }),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 
@@ -97,7 +94,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'not-claude-cli/2.1.10' }),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 
@@ -105,7 +101,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'claude-cli/' }),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 
@@ -115,22 +110,21 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
     expect(isClaudeCodeShapedRequest({
       headers: h,
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 });
 
 describe('isClaudeCodeShapedRequest — short-circuit paths', () => {
-  test('max_tokens=1 Haiku probe passes without system/metadata', () => {
-    expect(isClaudeCodeShapedRequest({
+  test('only a max_tokens=1 Haiku probe passes without system/metadata', () => {
+    const shaped = (model: string, maxTokens: number): boolean => isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      body: {
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'quota' }],
-      },
-      isMaxTokensOneHaikuProbe: true,
-    })).toBe(true);
+      body: { model, max_tokens: maxTokens, messages: [{ role: 'user', content: 'quota' }] },
+    });
+
+    expect(shaped('claude-haiku-4-5-20251001', 1)).toBe(true);
+    expect(shaped('claude-haiku-4-5-20251001', 2)).toBe(false);
+    expect(shaped('claude-sonnet-4-5-20250929', 1)).toBe(false);
+    expect(shaped('', 1)).toBe(false);
   });
 });
 
@@ -139,7 +133,6 @@ describe('isClaudeCodeShapedRequest — billing-block fast path', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.181.abc; cc_entrypoint=cli; cch=00000;'),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
   });
 
@@ -147,7 +140,6 @@ describe('isClaudeCodeShapedRequest — billing-block fast path', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.181.abc; some_other_marker=1;'),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 });
@@ -165,7 +157,6 @@ describe('isClaudeCodeShapedRequest — Dice template fallback', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body: bodyWithSystem(text),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
   });
 
@@ -173,7 +164,6 @@ describe('isClaudeCodeShapedRequest — Dice template fallback', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body: bodyWithSystem('Translate the following passage into French and preserve the original meter.'),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 });
@@ -185,7 +175,6 @@ describe('isClaudeCodeShapedRequest — strict header gate', () => {
     expect(isClaudeCodeShapedRequest({
       headers: h,
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 });
@@ -195,7 +184,6 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude.", validUserIdLegacy),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
   });
 
@@ -203,7 +191,6 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude.", validUserIdJson),
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
   });
 
@@ -217,7 +204,6 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body,
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 
@@ -227,7 +213,6 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body,
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 });
@@ -244,7 +229,6 @@ describe('isClaudeCodeShapedRequest — system shape variants', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body,
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
   });
 
@@ -254,7 +238,6 @@ describe('isClaudeCodeShapedRequest — system shape variants', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body,
-      isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
   });
 });

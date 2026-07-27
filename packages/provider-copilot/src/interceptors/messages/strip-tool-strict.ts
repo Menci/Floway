@@ -10,7 +10,7 @@ import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
  * outbound; the model still respects `input_schema`, only the
  * grammar-constrained guarantee is gone.
  */
-export const withToolStrictStripped: CopilotMessagesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withToolStrictStripped: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {
   if (Array.isArray(ctx.payload.tools)) {
     for (const tool of ctx.payload.tools as unknown as Record<string, unknown>[]) {
       if ('strict' in tool) delete tool.strict;

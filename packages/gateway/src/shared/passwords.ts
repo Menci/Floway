@@ -1,3 +1,5 @@
+import { timingSafeEqual } from './timing-safe-equal.ts';
+
 // Cloudflare Workers' Web Crypto refuses PBKDF2 with iterations above 100k as a
 // CPU-time DoS guard ("Pbkdf2 failed: iteration counts above 100000 are not
 // supported"). 100k is below OWASP's current 600k recommendation for
@@ -28,13 +30,6 @@ const deriveBits = async (plaintext: string, salt: Uint8Array, iterations: numbe
   const saltBuffer = new Uint8Array(salt).buffer;
   const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: saltBuffer, iterations }, key, HASH_BITS);
   return new Uint8Array(bits);
-};
-
-export const timingSafeEqual = (a: Uint8Array, b: Uint8Array): boolean => {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
 };
 
 export const hashPassword = async (plaintext: string): Promise<string> => {

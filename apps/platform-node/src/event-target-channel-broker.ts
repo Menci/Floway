@@ -1,4 +1,4 @@
-import type { ChannelBroker, Codec } from '@floway-dev/gateway/channel-broker';
+import type { ChannelBroker, ChannelCodec } from '@floway-dev/platform';
 
 // In-process per-channel fan-out backed by EventTarget. The Node deployment
 // target only ever runs one worker process per gateway instance, so a Map of
@@ -6,7 +6,7 @@ import type { ChannelBroker, Codec } from '@floway-dev/gateway/channel-broker';
 export class EventTargetChannelBroker<T> implements ChannelBroker<T> {
   private readonly targets = new Map<string, EventTarget>();
 
-  constructor(private readonly codec: Codec<T>) {}
+  constructor(private readonly codec: ChannelCodec<T>) {}
 
   private targetFor(channelId: string): EventTarget {
     let target = this.targets.get(channelId);
@@ -41,7 +41,7 @@ export class EventTargetChannelBroker<T> implements ChannelBroker<T> {
 const iterateFromTarget = <T>(
   target: EventTarget,
   signal: AbortSignal,
-  codec: Codec<T>,
+  codec: ChannelCodec<T>,
 ): AsyncIterable<T> => {
   const queue: T[] = [];
   let resolveNext: ((value: IteratorResult<T>) => void) | null = null;

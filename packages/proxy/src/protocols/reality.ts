@@ -46,9 +46,9 @@ import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
 import { base64DecodeBytes, copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
 import { signalAbortReason } from '@floway-dev/http';

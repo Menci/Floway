@@ -2,7 +2,7 @@ import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
-import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
+import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const ownerPatch = (id: string, body: unknown, rawKey: string) =>
@@ -12,7 +12,7 @@ const ownerPatch = (id: string, body: unknown, rawKey: string) =>
     body: JSON.stringify(body),
   });
 
-test('GET /api/keys never exposes the server-side server secret', async () => {
+test('GET /api/keys never exposes the server secret', async () => {
   const { apiKey } = await setupAppTest();
   const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(response.status, 200);

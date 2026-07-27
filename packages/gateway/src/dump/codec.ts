@@ -1,5 +1,5 @@
 import type { DumpMetadata } from './types.ts';
-import type { Codec } from '../runtime/channel-broker-contract.ts';
+import type { ChannelCodec } from '@floway-dev/platform';
 
 const APPENDED_EVENT = 'appended';
 
@@ -8,7 +8,7 @@ interface AppendedFrame {
   data: DumpMetadata;
 }
 
-export const dumpCodec: Codec<DumpMetadata> = {
+export const dumpCodec: ChannelCodec<DumpMetadata> = {
   encode: meta => JSON.stringify({ event: APPENDED_EVENT, data: meta } satisfies AppendedFrame),
   decode: text => {
     const parsed = JSON.parse(text) as { event: unknown; data: unknown };

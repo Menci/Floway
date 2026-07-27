@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { assertAzureUpstreamRecord } from './index.ts';
+import { assertAzureUpstreamRecord } from './config.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 

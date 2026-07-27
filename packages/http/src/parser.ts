@@ -1,10 +1,11 @@
 // HTTP/1.1 response-head parser + body-framing decoders + the
 // wire-faithful → Web Response bridge.
 
-import { concat, copy, findDoubleCrlfFrom } from './bytes.ts';
+import { copy } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
 import { HttpProtocolError } from './errors.ts';
-import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
+import { STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
+import { readHeadSection } from './read-head-section.ts';
 import type { RawHttpResponse } from './types.ts';
 
 /**
@@ -93,43 +94,22 @@ const readResponseHead = async (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   preBuffered: Uint8Array,
 ): Promise<ResponseHead> => {
-  let buffer = preBuffered;
-
   // Cap accumulation so a misbehaving upstream that streams headers
   // forever can't exhaust the runtime's heap. 64 KiB is two orders of
   // magnitude over any sane response-header block.
   const HEADER_BUFFER_CAP = 64 * 1024;
-  let headerEnd = findDoubleCrlfFrom(buffer, 0);
-  while (headerEnd < 0) {
-    // Resume from the last position where a partial terminator could have
-    // started straddling the seam — three bytes back covers `CR LF CR ?`
-    // landing across the read boundary. Without this resume index the
-    // per-read scan is O(n) on the whole buffer, turning a 1-byte drip
-    // up to HEADER_BUFFER_CAP into O(n²).
-    const scanFrom = Math.max(0, buffer.byteLength - 3);
-    const { value, done } = await reader.read();
-    if (done) {
-      throw new HttpProtocolError(
-        `unexpected EOF before headers; got ${buffer.byteLength} bytes`,
-        'EOF',
-      );
-    }
-    buffer = concat(buffer, value);
-    headerEnd = findDoubleCrlfFrom(buffer, scanFrom);
-    if (headerEnd < 0 && buffer.byteLength > HEADER_BUFFER_CAP) {
-      throw new HttpProtocolError(
-        `HTTP/1.1 response headers exceeded ${HEADER_BUFFER_CAP} bytes without a terminator`,
-        'HEADER_BUFFER_OVERFLOW',
-      );
-    }
-  }
-
-  const headerBytes = buffer.subarray(0, headerEnd);
-  const remainder = copy(buffer.subarray(headerEnd + 4));
-
-  const headerText = decodeAsciiHeaderSection(headerBytes, 'response headers');
-  const lines = headerText.split('\r\n');
-  const statusLine = lines.shift()!;
+  const { statusLine, lines, remainder } = await readHeadSection(reader, preBuffered, {
+    maxBytes: HEADER_BUFFER_CAP,
+    decodeContext: 'response headers',
+    eofError: receivedBytes => new HttpProtocolError(
+      `unexpected EOF before headers; got ${receivedBytes} bytes`,
+      'EOF',
+    ),
+    overflowError: maxBytes => new HttpProtocolError(
+      `HTTP/1.1 response headers exceeded ${maxBytes} bytes without a terminator`,
+      'HEADER_BUFFER_OVERFLOW',
+    ),
+  });
   // RFC 9112 §4: status-line = HTTP-version SP status-code SP reason-phrase.
   // Two distinct issues to call out separately for a useful error message:
   // (1) the line MUST start with HTTP/1.0 or HTTP/1.1 — llhttp dispatches

@@ -1,4 +1,4 @@
-import { hashResponsesItemContent, responsesItemId } from './identity.ts';
+import { hashResponsesItem, responsesItemId } from './identity.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -36,7 +36,7 @@ export const wrapResponsesClientOutput = async function* (
         item,
         ...(privatePayload !== undefined ? { private: privatePayload } : {}),
       },
-      itemHash: await hashResponsesItemContent(item),
+      itemHash: await hashResponsesItem(item),
       refreshedAt: Date.now(),
     };
     return row;

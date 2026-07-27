@@ -4,18 +4,18 @@ import { type Interceptor, runInterceptors } from './index.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 type TestCtx = { payload: { value: string } };
-type TestRequest = { traceId: string };
+type TestEnv = { traceId: string };
 
 test('composes interceptors outermost-first and unwinds epilogues inside-out', async () => {
   const calls: string[] = [];
 
-  const outer: Interceptor<TestCtx, TestRequest, string> = async (_ctx, _request, run) => {
+  const outer: Interceptor<TestCtx, TestEnv, string> = async (_ctx, _env, run) => {
     calls.push('outer-before');
     const result = await run();
     calls.push('outer-after');
     return result;
   };
-  const inner: Interceptor<TestCtx, TestRequest, string> = async (_ctx, _request, run) => {
+  const inner: Interceptor<TestCtx, TestEnv, string> = async (_ctx, _env, run) => {
     calls.push('inner-before');
     const result = await run();
     calls.push('inner-after');
@@ -34,7 +34,7 @@ test('lets an interceptor retry by calling run() again — each call reruns the 
   const ctx: TestCtx = { payload: { value: 'broken' } };
   let attempts = 0;
 
-  const interceptor: Interceptor<TestCtx, TestRequest, string> = async (current, _request, run) => {
+  const interceptor: Interceptor<TestCtx, TestEnv, string> = async (current, _env, run) => {
     const first = await run();
     if (first !== 'fail') return first;
     current.payload.value = 'fixed';
@@ -53,7 +53,7 @@ test('lets an interceptor retry by calling run() again — each call reruns the 
 test('propagates an inner throw past each enclosing run() call site without swallowing', async () => {
   const seen: string[] = [];
 
-  const wrap = (label: string): Interceptor<TestCtx, TestRequest, string> => async (_ctx, _request, run) => {
+  const wrap = (label: string): Interceptor<TestCtx, TestEnv, string> => async (_ctx, _env, run) => {
     seen.push(`${label}-before`);
     try {
       return await run();
@@ -75,7 +75,7 @@ test('propagates an inner throw past each enclosing run() call site without swal
 test('lets an interceptor patch context before run and transform the result after run', async () => {
   const ctx: TestCtx = { payload: { value: 'original' } };
 
-  const interceptor: Interceptor<TestCtx, TestRequest, string> = async (current, _request, run) => {
+  const interceptor: Interceptor<TestCtx, TestEnv, string> = async (current, _env, run) => {
     current.payload.value = 'patched';
     const result = await run();
     return `${result}:${current.payload.value}`;

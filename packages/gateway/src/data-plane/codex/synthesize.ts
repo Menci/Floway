@@ -40,7 +40,8 @@
 
 import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
-import type { InternalModel, Modality } from '@floway-dev/provider';
+import type { Modality } from '@floway-dev/protocols/common';
+import type { InternalModel } from '@floway-dev/provider';
 
 // A synthesized (miss-path) entry with no registry-supplied
 // `max_context_window_tokens` still needs SOME window — codex's auto-compact

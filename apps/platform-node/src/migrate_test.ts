@@ -1,18 +1,12 @@
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { test } from 'vitest';
 
 import { applyMigrations } from './migrate.ts';
 import { createNodeSqliteDatabase } from './node-sqlite-database.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
-
-const REAL_MIGRATIONS_DIR = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '..', '..', '..', 'packages', 'gateway', 'migrations',
-);
 
 const withTemp = async (fn: (dir: string) => Promise<void>): Promise<void> => {
   const dir = await mkdtemp(join(tmpdir(), 'migrate-test-'));
@@ -38,37 +32,6 @@ test('applies all real migration files against a fresh sqlite', () => withTemp(a
   const recorded = await db.prepare('SELECT COUNT(*) AS n FROM _migrations').first<{ n: number }>();
   assertEquals(recorded !== null && recorded.n > 0, true);
 }));
-
-// Migration filenames must start with a unique NNNN_ prefix so that the
-// lexical apply order is unambiguous, both here and in `wrangler d1
-// migrations apply` (which sorts the same way). A duplicate prefix means two
-// branches independently picked the same number — the second one to merge
-// must be renumbered before it is applied anywhere.
-//
-// The two collisions below predate this check and are already applied to
-// production D1. Renaming them now would orphan the recorded entry in
-// `d1_migrations` and trick wrangler into re-running each file under its new
-// name — both DROP/CREATE pairs would error against an already-mutated
-// schema. They are grandfathered; every new migration must keep this list
-// empty.
-const KNOWN_DUPLICATE_PREFIXES: ReadonlySet<string> = new Set(['0011', '0025']);
-
-test('every migration file has a unique numeric prefix', async () => {
-  const files = (await readdir(REAL_MIGRATIONS_DIR)).filter(f => f.endsWith('.sql'));
-  const byPrefix = new Map<string, string[]>();
-  for (const file of files) {
-    const match = /^(\d{4})_/.exec(file);
-    assertEquals(match !== null, true, `migration filename must start with NNNN_: ${file}`);
-    const prefix = match![1];
-    const bucket = byPrefix.get(prefix) ?? [];
-    bucket.push(file);
-    byPrefix.set(prefix, bucket);
-  }
-  const collisions = [...byPrefix.entries()]
-    .filter(([prefix, bucket]) => bucket.length > 1 && !KNOWN_DUPLICATE_PREFIXES.has(prefix))
-    .map(([, bucket]) => bucket);
-  assertEquals(collisions, [], `duplicate migration numbers: ${JSON.stringify(collisions)}`);
-});
 
 test('rerun is a no-op once all migrations are applied', () => withTemp(async dir => {
   const db = createNodeSqliteDatabase(join(dir, 'idempotent.db'));

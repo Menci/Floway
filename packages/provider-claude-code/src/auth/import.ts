@@ -110,6 +110,14 @@ export const importClaudeCodeFromSetupTokenCallback = async (opts: {
   });
 };
 
+const pickNonEmptyString = (record: Record<string, unknown>, key: string, prefix: string): string => {
+  const value = record[key];
+  if (typeof value !== 'string' || value === '') {
+    throw new TypeError(`${prefix}.${key} must be a non-empty string`);
+  }
+  return value;
+};
+
 // Verbatim ~/.claude/.credentials.json paste. The CLI's on-disk format wraps
 // tokens under `.claudeAiOauth` and stores `subscriptionType` ('pro' / 'max'
 // / 'team' / 'enterprise') and `rateLimitTier`
@@ -125,14 +133,6 @@ export const importClaudeCodeFromSetupTokenCallback = async (opts: {
 //
 // `fetcher` is forwarded to the identity call so the control-plane import
 // route can route through an operator-supplied proxy chain. Default direct.
-const pickNonEmptyString = (record: Record<string, unknown>, key: string, prefix: string): string => {
-  const value = record[key];
-  if (typeof value !== 'string' || value === '') {
-    throw new TypeError(`${prefix}.${key} must be a non-empty string`);
-  }
-  return value;
-};
-
 export const importClaudeCodeFromCredentialsJson = async (
   rawJson: string,
   fetcher: Fetcher = directFetcher,

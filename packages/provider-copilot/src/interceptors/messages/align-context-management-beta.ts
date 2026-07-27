@@ -1,4 +1,5 @@
-import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './types.ts';
+import { CONTEXT_MANAGEMENT_BETA } from './filter-anthropic-beta-header.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 
 /**
  * Copilot's Anthropic-shaped upstream gates the body field `context_management`
@@ -24,11 +25,9 @@ import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './type
  * writer of `anthropic-beta` on `ctx.headers`. Reading the post-filter
  * value is the whole point.
  */
-const CONTEXT_MANAGEMENT_BETA = 'context-management-2025-06-27';
-
 export const withContextManagementBetaAligned = async <TResult>(
-  ctx: MessagesBoundaryCtx | MessagesCountTokensBoundaryCtx,
-  _request: object,
+  ctx: MessagesBoundaryCtx,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const payload = ctx.payload as typeof ctx.payload & { context_management?: unknown };

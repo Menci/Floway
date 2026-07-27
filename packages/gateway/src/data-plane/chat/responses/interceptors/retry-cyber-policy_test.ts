@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import type { ResponsesInvocation } from './types.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -143,7 +143,6 @@ const performanceFor = (model: string) => ({
   stream: true,
   runtimeLocation: 'TEST',
   dump: null,
-  responseHeaders: new Headers(),
 });
 
 const upstreamCyberPolicyError = (message: string): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => ({

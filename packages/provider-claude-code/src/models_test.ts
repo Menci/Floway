@@ -5,9 +5,9 @@ import {
   buildClaudeCodeCatalog,
   chatFromCapabilities,
   type ClaudeCodeApiModel,
+  type ClaudeCodeProviderData,
 } from './models.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
-import type { ClaudeCodeProviderData } from './types.ts';
 import type { FlagId } from '@floway-dev/provider';
 
 const SAMPLE_API_MODELS: ClaudeCodeApiModel[] = [

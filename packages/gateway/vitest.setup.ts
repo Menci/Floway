@@ -3,12 +3,12 @@ import { initDumpBroker, initDumpStore } from './src/dump/registry.ts';
 import type { DumpStore } from './src/dump/store-contract.ts';
 import type { DumpMetadata, StoredDumpRecord, DumpRecordId } from './src/dump/types.ts';
 import { initBackgroundSchedulerResolver } from './src/runtime/background.ts';
-import { trackBackground } from './src/test-helpers/background-tracker.ts';
+import { trackBackground } from './src/test-utils/background-tracker.ts';
 import { initEnv, initRuntimeKind } from '@floway-dev/platform';
 
-// Production always initializes env at boot, so getEnv() never throws in a
-// live request. Mirror that here with a neutral default; tests needing real
-// values (RUNTIME_LOCATION, ADMIN_KEY, …) re-init with their own getter.
+// Production always initializes the environment getter at boot. Mirror that
+// here with a neutral default; tests needing real values (RUNTIME_LOCATION,
+// ADMIN_KEY, …) re-init with their own getter.
 initEnv(() => '');
 // Tests run as 'node' by default. The few tests that exercise CF-specific
 // runtime behaviour re-init this with 'cloudflare'.

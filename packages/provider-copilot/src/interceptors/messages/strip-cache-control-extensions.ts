@@ -42,7 +42,7 @@ const stripExtensions = (block: Record<string, unknown>): void => {
   else delete block.cache_control;
 };
 
-export const withCacheControlExtensionsStripped: CopilotMessagesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withCacheControlExtensionsStripped: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {
   if (Array.isArray(ctx.payload.system)) {
     for (const block of ctx.payload.system as unknown as Record<string, unknown>[]) {
       stripExtensions(block);

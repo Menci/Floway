@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import { requestApp, setupAppTest } from '../../test-helpers.ts';
+import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const seedSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryRepo, primaryKeyId: string) => {
+const seedWebSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryRepo, primaryKeyId: string) => {
   await repo.apiKeys.save({
     id: 'key_other',
     userId: 1,
@@ -17,14 +17,14 @@ const seedSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryRepo
     responsesRetentionSeconds: 0,
   });
 
-  await repo.searchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'search', hour: '2026-03-15T10', requests: 2 });
-  await repo.searchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'fetch_page', hour: '2026-03-15T10', requests: 3 });
-  await repo.searchUsage.set({ provider: 'microsoft-grounding', keyId: 'key_other', action: 'search', hour: '2026-03-15T11', requests: 4 });
+  await repo.webSearchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'search', hour: '2026-03-15T10', requests: 2 });
+  await repo.webSearchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'fetch_page', hour: '2026-03-15T10', requests: 3 });
+  await repo.webSearchUsage.set({ provider: 'microsoft-grounding', keyId: 'key_other', action: 'search', hour: '2026-03-15T11', requests: 4 });
 };
 
 test('/api/search-usage scopes to the actor\'s keys when called with an API key', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await seedSearchUsage(repo, apiKey.id);
+  await seedWebSearchUsage(repo, apiKey.id);
 
   const response = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&view=self-by-key', {
     headers: { 'x-api-key': apiKey.key },
@@ -45,8 +45,8 @@ test('/api/search-usage scopes to the actor\'s keys when called with an API key'
 
 test('/api/search-usage in self-by-key mode includes per-key metadata for the actor only', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await seedSearchUsage(repo, apiKey.id);
-  await repo.searchConfig.save({
+  await seedWebSearchUsage(repo, apiKey.id);
+  await repo.webSearchConfig.save({
     provider: 'microsoft-grounding',
     tavily: { apiKey: 'tvly-test' },
     microsoftGrounding: { apiKey: 'ms-test' },
@@ -78,7 +78,7 @@ test('/api/search-usage in self-by-key mode includes per-key metadata for the ac
 
 test('/api/search-usage all-by-user view aggregates across keys per user', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
-  await seedSearchUsage(repo, apiKey.id);
+  await seedWebSearchUsage(repo, apiKey.id);
 
   const response = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user', {
     headers: { 'x-floway-session': adminSession },
@@ -121,7 +121,7 @@ test('/api/search-usage rejects all-by-user from a non-admin user', async () => 
 
 test('/api/search-usage filters by provider and rejects invalid provider', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await seedSearchUsage(repo, apiKey.id);
+  await seedWebSearchUsage(repo, apiKey.id);
 
   const filtered = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&provider=tavily&view=self-by-key', {
     headers: { 'x-api-key': apiKey.key },
@@ -154,7 +154,7 @@ test('/api/search-usage all-by-user attributes soft-deleted keys to their origin
   // Seed a usage row, then soft-delete the originating key. The aggregator
   // must still resolve the row to apiKey.userId — not the synthetic userId 0
   // it falls back to when the key→user lookup misses.
-  await repo.searchUsage.set({ provider: 'tavily', keyId: apiKey.id, action: 'search', hour: '2026-03-15T10', requests: 7 });
+  await repo.webSearchUsage.set({ provider: 'tavily', keyId: apiKey.id, action: 'search', hour: '2026-03-15T10', requests: 7 });
   await repo.apiKeys.softDelete(apiKey.id);
 
   const response = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user', {

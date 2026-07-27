@@ -3,7 +3,7 @@ import { test, vi } from 'vitest';
 import { geminiAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
@@ -88,7 +88,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream, kind: 'custom', name: upstream,
+      upstreamId: upstream, kind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
     model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),

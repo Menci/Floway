@@ -15,10 +15,5 @@
   "dependencies": {
     "@noble/hashes": "^2.2.0",
     "@reclaimprotocol/tls": "0.1.2"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20251215.0",
-    "@types/node": "^22",
-    "typescript": "^5.9.3"
   }
 }

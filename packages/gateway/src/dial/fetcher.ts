@@ -1,19 +1,11 @@
+import type { ProxyEntry } from './proxy-catalog.ts';
+import { createReplayableRequest, type ReplayableRequest } from './replayable-request.ts';
 import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
 import type { HttpRequest } from '@floway-dev/http';
-import { normalizeDialHost } from '@floway-dev/platform';
 import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
 import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDirectConnectRequestOptions, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
-
-// Pairs the parsed wire config with an optional per-proxy dial deadline so
-// a slow but real proxy can be granted more time without raising the bar
-// for the whole gateway.
-export interface ProxyEntry {
-  config: ProxyConfig;
-  /** ms; null means "use the dialer's default". */
-  dialTimeoutMs: number | null;
-}
 
 interface CreateFetcherInput {
   repo: Pick<Repo, 'proxyBackoffs'>;
@@ -40,29 +32,14 @@ interface CreateFetcherInput {
     options: RunDirectConnectRequestOptions,
   ) => Promise<Response>;
   /**
-   * Platform-injected raw TCP dial primitive, threaded into runProxied.
+   * Platform-injected byte-stream dial, threaded into runProxied. Each dialer
+   * asks through `SocketDialOptions` for either a raw connection or one
+   * wrapped in the runtime's native TLS.
    * Lazily evaluated — only invoked when a socket-backed fallback entry is
    * actually attempted, so direct-fetch-only call sites can run without an
    * installed SocketDial impl.
    */
   socketDial: () => SocketDial;
-}
-
-/**
- * Buffered request shape extracted from a Fetcher call. Splits the
- * transport target (host/port/tls/sni) from the HTTP-shaped request
- * (method/path/headers/body) so the dial layer and request-shaping layer
- * each receive only what they need.
- */
-interface MaterializedRequest {
-  target: ProxyRequestTarget;
-  request: HttpRequest;
-}
-
-interface ReplayableRequest {
-  readonly signal: AbortSignal | undefined;
-  fetchInit(): RequestInit;
-  materialized(): Promise<MaterializedRequest>;
 }
 
 // Two-pass dial strategy. First pass walks the fallback list skipping any
@@ -149,67 +126,6 @@ const runFallbacks = async (
   // a meaningless AggregateError wrapper.
   if (errors.length === 1) throw errors[0];
   throw new AggregateError(errors, 'all proxies failed at the dial layer');
-};
-
-class ReplayableRequestOwner implements ReplayableRequest {
-  readonly signal: AbortSignal | undefined;
-  private fetch: RequestInit;
-  private materializedRequest: MaterializedRequest | undefined;
-  private rebuildFetchBody = false;
-
-  constructor(
-    private readonly url: string,
-    init: RequestInit,
-  ) {
-    this.signal = init.signal ?? undefined;
-    this.fetch = init;
-  }
-
-  fetchInit(): RequestInit {
-    if (this.rebuildFetchBody) {
-      this.fetch = rebuildInitFromMaterialized(this.fetch, this.materializedRequest!);
-      this.rebuildFetchBody = false;
-    }
-    return this.fetch;
-  }
-
-  async materialized(): Promise<MaterializedRequest> {
-    if (this.materializedRequest !== undefined) return this.materializedRequest;
-    this.materializedRequest = await buildMaterializedRequest(this.url, this.fetch);
-    // Once bytes exist, the original BodyInit must not remain captured for the
-    // duration of the upstream request. A later direct-fetch fallback rebuilds its
-    // owned byte body lazily, so a successful proxy does not retain a second
-    // full buffer merely because `direct_fetch` appears later in the list.
-    this.fetch = { ...this.fetch, body: null };
-    this.rebuildFetchBody = true;
-    return this.materializedRequest;
-  }
-}
-
-const createReplayableRequest = (url: string, init: RequestInit): ReplayableRequest =>
-  new ReplayableRequestOwner(url, init);
-
-const rebuildInitFromMaterialized = (original: RequestInit, materialized: MaterializedRequest): RequestInit => {
-  const headers = new Headers(original.headers);
-  const targetCt = materialized.request.headers['content-type'];
-  if (targetCt !== undefined && !headers.has('content-type')) {
-    headers.set('content-type', targetCt);
-  }
-  // Copy into a freshly-allocated ArrayBuffer-backed Uint8Array so the
-  // BodyInit slot accepts it under TypeScript's stricter typing — and so
-  // the buffer we hand to runtime fetch never aliases a backing buffer
-  // that's also referenced elsewhere.
-  let body: Uint8Array<ArrayBuffer> | null = null;
-  if (materialized.request.body) {
-    const owned = new Uint8Array(materialized.request.body.byteLength);
-    owned.set(materialized.request.body);
-    body = owned;
-  }
-  return {
-    ...original,
-    headers,
-    body,
-  };
 };
 
 const tryOne = async (
@@ -313,80 +229,4 @@ const tryOne = async (
     }
     throw err;
   }
-};
-
-const buildMaterializedRequest = async (url: string, init: RequestInit): Promise<MaterializedRequest> => {
-  const u = new URL(url);
-  const collected = await collectBody(init.body);
-  const headers = extractHeaders(init.headers);
-  // FormData/URLSearchParams synthesize a Content-Type with the multipart
-  // boundary or the urlencoded marker. Adopt it only when the caller did not
-  // pre-set Content-Type itself, so explicit overrides keep winning.
-  if (collected?.contentType !== undefined && headers['content-type'] === undefined) {
-    headers['content-type'] = collected.contentType;
-  }
-  // `URL#hostname` keeps the `[…]` envelope on IPv6 literals; the
-  // `DialTarget.host` contract requires the bare address. Strip the
-  // brackets here at the URL→DialTarget seam so every dialer sees a
-  // canonical host.
-  const target: ProxyRequestTarget = {
-    host: normalizeDialHost(u.hostname),
-    port: u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 80),
-    tls: u.protocol === 'https:',
-  };
-  const request: HttpRequest = {
-    method: init.method ?? 'GET',
-    path: `${u.pathname}${u.search}`,
-    headers,
-    body: collected?.body,
-  };
-  return { target, request };
-};
-
-// Lower-case keys here so the request is canonical at the seam; the http
-// package also lowercases internally, but normalizing at the boundary
-// keeps the contract simple.
-const extractHeaders = (input: HeadersInit | undefined): Record<string, string> => {
-  if (!input) return {};
-  if (input instanceof Headers) {
-    const out: Record<string, string> = {};
-    input.forEach((v, k) => { out[k.toLowerCase()] = v; });
-    return out;
-  }
-  if (Array.isArray(input)) {
-    const out: Record<string, string> = {};
-    for (const [k, v] of input) out[k.toLowerCase()] = v;
-    return out;
-  }
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(input)) out[k.toLowerCase()] = v;
-  return out;
-};
-
-interface CollectedBody {
-  body: Uint8Array;
-  /** Content-Type the runtime synthesizes for FormData/URLSearchParams (with
-   *  multipart boundary or urlencoded marker). undefined for shapes that
-   *  carry no implicit Content-Type. */
-  contentType?: string;
-}
-
-const collectBody = async (
-  body: BodyInit | null | undefined,
-): Promise<CollectedBody | undefined> => {
-  if (body == null) return undefined;
-  if (typeof body === 'string') return { body: new TextEncoder().encode(body) };
-  if (body instanceof Uint8Array) return { body };
-  if (body instanceof ArrayBuffer) return { body: new Uint8Array(body) };
-  if (body instanceof Blob) return { body: new Uint8Array(await body.arrayBuffer()) };
-  // FormData / URLSearchParams: round-trip through Request so the runtime
-  // produces a canonical multipart/url-encoded byte stream we can buffer
-  // alongside the synthesized Content-Type (with boundary or charset).
-  if (body instanceof FormData || body instanceof URLSearchParams) {
-    const req = new Request('https://internal/', { method: 'POST', body });
-    const buffer = new Uint8Array(await req.arrayBuffer());
-    const contentType = req.headers.get('content-type') ?? undefined;
-    return { body: buffer, contentType };
-  }
-  throw new Error('unsupported BodyInit shape for materialized request');
 };

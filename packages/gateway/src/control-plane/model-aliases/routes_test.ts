@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { requestApp, setupAppTest } from '../../test-helpers.ts';
+import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelAlias } from '@floway-dev/protocols/common';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 

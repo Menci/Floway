@@ -1,13 +1,13 @@
 import { test } from 'vitest';
 
-import { resolveConfiguredWebSearchProvider, testSearchConfigConnection } from './provider.ts';
-import { DEFAULT_SEARCH_CONFIG, FIXED_SEARCH_CONFIG_TEST_QUERY } from './search-config.ts';
+import { DEFAULT_WEB_SEARCH_CONFIG, FIXED_WEB_SEARCH_CONFIG_TEST_QUERY } from './config.ts';
+import { resolveConfiguredWebSearchProvider, testWebSearchConfigConnection } from './provider.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, or enabled', () => {
-  assertEquals(resolveConfiguredWebSearchProvider(DEFAULT_SEARCH_CONFIG), {
+  assertEquals(resolveConfiguredWebSearchProvider(DEFAULT_WEB_SEARCH_CONFIG), {
     type: 'disabled',
   });
 
@@ -40,11 +40,11 @@ test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, o
   assertEquals(resolved.provider, 'microsoft-grounding');
 });
 
-test('testSearchConfigConnection returns structured disabled and missing-credential errors', async () => {
-  assertEquals(await testSearchConfigConnection(DEFAULT_SEARCH_CONFIG), {
+test('testWebSearchConfigConnection returns structured disabled and missing-credential errors', async () => {
+  assertEquals(await testWebSearchConfigConnection(DEFAULT_WEB_SEARCH_CONFIG), {
     ok: false,
     provider: 'disabled',
-    query: FIXED_SEARCH_CONFIG_TEST_QUERY,
+    query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
     error: {
       code: 'disabled',
       message: 'Search provider is disabled.',
@@ -52,7 +52,7 @@ test('testSearchConfigConnection returns structured disabled and missing-credent
   });
 
   assertEquals(
-    await testSearchConfigConnection({
+    await testWebSearchConfigConnection({
       provider: 'tavily',
       tavily: { apiKey: '' },
       microsoftGrounding: { apiKey: 'ms-test' },
@@ -62,7 +62,7 @@ test('testSearchConfigConnection returns structured disabled and missing-credent
     {
       ok: false,
       provider: 'tavily',
-      query: FIXED_SEARCH_CONFIG_TEST_QUERY,
+      query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
       error: {
         code: 'missing_credential',
         message: 'Missing API key for tavily.',
@@ -71,7 +71,7 @@ test('testSearchConfigConnection returns structured disabled and missing-credent
   );
 });
 
-test('testSearchConfigConnection previews at most three normalized results', async () => {
+test('testWebSearchConfigConnection previews at most three normalized results', async () => {
   await withMockedFetch(
     () =>
       jsonResponse({
@@ -100,7 +100,7 @@ test('testSearchConfigConnection previews at most three normalized results', asy
         ],
       }),
     async () => {
-      const result = await testSearchConfigConnection({
+      const result = await testWebSearchConfigConnection({
         provider: 'tavily',
         tavily: { apiKey: 'tvly-test' },
         microsoftGrounding: { apiKey: 'ms-test' },
@@ -114,7 +114,7 @@ test('testSearchConfigConnection previews at most three normalized results', asy
       }
 
       assertEquals(result.provider, 'tavily');
-      assertEquals(result.query, FIXED_SEARCH_CONFIG_TEST_QUERY);
+      assertEquals(result.query, FIXED_WEB_SEARCH_CONFIG_TEST_QUERY);
       assertEquals(result.results.length, 3);
       assertEquals(result.results[0].title, 'React A');
       assertEquals(result.results[0].url, 'https://react.dev/a');
@@ -125,12 +125,12 @@ test('testSearchConfigConnection previews at most three normalized results', asy
   );
 });
 
-test('testSearchConfigConnection returns no_results when the provider returns no previews', async () => {
+test('testWebSearchConfigConnection returns no_results when the provider returns no previews', async () => {
   await withMockedFetch(
     () => jsonResponse({ results: [] }),
     async () => {
       assertEquals(
-        await testSearchConfigConnection({
+        await testWebSearchConfigConnection({
           provider: 'tavily',
           tavily: { apiKey: 'tvly-test' },
           microsoftGrounding: { apiKey: 'ms-test' },
@@ -140,7 +140,7 @@ test('testSearchConfigConnection returns no_results when the provider returns no
         {
           ok: false,
           provider: 'tavily',
-          query: FIXED_SEARCH_CONFIG_TEST_QUERY,
+          query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
           error: {
             code: 'no_results',
             message: 'Search returned no preview results.',
@@ -151,7 +151,7 @@ test('testSearchConfigConnection returns no_results when the provider returns no
   );
 });
 
-test('testSearchConfigConnection returns preview results for Microsoft Grounding too', async () => {
+test('testWebSearchConfigConnection returns preview results for Microsoft Grounding too', async () => {
   await withMockedFetch(
     () =>
       jsonResponse({
@@ -165,7 +165,7 @@ test('testSearchConfigConnection returns preview results for Microsoft Grounding
         ],
       }),
     async () => {
-      const result = await testSearchConfigConnection({
+      const result = await testWebSearchConfigConnection({
         provider: 'microsoft-grounding',
         tavily: { apiKey: 'tvly-test' },
         microsoftGrounding: { apiKey: 'ms-test' },
@@ -179,7 +179,7 @@ test('testSearchConfigConnection returns preview results for Microsoft Grounding
       }
 
       assertEquals(result.provider, 'microsoft-grounding');
-      assertEquals(result.query, FIXED_SEARCH_CONFIG_TEST_QUERY);
+      assertEquals(result.query, FIXED_WEB_SEARCH_CONFIG_TEST_QUERY);
       assertEquals(result.results, [
         {
           title: 'React on Microsoft Learn',
@@ -192,7 +192,7 @@ test('testSearchConfigConnection returns preview results for Microsoft Grounding
   );
 });
 
-test('testSearchConfigConnection does not record search usage', async () => {
+test('testWebSearchConfigConnection does not record search usage', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
 
@@ -208,7 +208,7 @@ test('testSearchConfigConnection does not record search usage', async () => {
         ],
       }),
     async () => {
-      const result = await testSearchConfigConnection({
+      const result = await testWebSearchConfigConnection({
         provider: 'tavily',
         tavily: { apiKey: 'tvly-test' },
         microsoftGrounding: { apiKey: '' },
@@ -220,5 +220,5 @@ test('testSearchConfigConnection does not record search usage', async () => {
     },
   );
 
-  assertEquals(await repo.searchUsage.listAll(), []);
+  assertEquals(await repo.webSearchUsage.listAll(), []);
 });

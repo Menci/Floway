@@ -1,6 +1,6 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
-import { rewriteContextExceededToPromptTooLong } from '../shared/messages/context-window-error.ts';
+import { rewriteContextExceededToPromptTooLong } from '../shared/messages-via/context-window-error.ts';
 import type { TranslateTrip } from '../types.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { CanonicalResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';

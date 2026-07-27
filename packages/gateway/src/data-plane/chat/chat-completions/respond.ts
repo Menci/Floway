@@ -3,13 +3,13 @@ import { streamSSE } from 'hono/streaming';
 
 import { wrapChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
+import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsProtocolFrameToSSEFrame, CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult, chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
@@ -22,24 +22,24 @@ export const respondChatCompletions = async (
   wantsStream: boolean,
   includeUsageChunk: boolean,
   ctx: GatewayCtx,
-): Promise<{ success: boolean; response: Response }> => {
+): Promise<Response> => {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
-    ctx.dump?.error(result.source, result.upstream);
-    return { success: false, response: apiErrorToResponse(result) };
+    ctx.dump?.error(result.source, result.upstreamId);
+    return apiErrorToResponse(result);
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    return { success: false, response: internalChatCompletionsErrorResponse(result.status, result.error) };
+    return internalChatCompletionsErrorResponse(result.status, result.error);
   }
 
   if (result.type === 'plain') {
     if (result.status >= 400) {
-      ctx.dump?.error(result.upstream !== undefined ? 'upstream' : 'gateway', result.upstream);
+      ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
     }
-    return { success: true, response: plainResultToResponse(result) };
+    return plainResultToResponse(result);
   }
 
   const state = new SourceStreamState();
@@ -53,16 +53,16 @@ export const respondChatCompletions = async (
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
-      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
+      return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
-      return { success: false, response: internalChatCompletionsErrorResponse(502, toInternalDebugError(error)) };
+      return internalChatCompletionsErrorResponse(502, toInternalDebugError(error));
     }
   }
 
   forwardUpstreamHeaders(c, result.headers);
-  const response = streamSSE(c, async stream => {
+  return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, chatCompletionsSseFrames(frames, includeUsageChunk, state), {
@@ -80,8 +80,6 @@ export const respondChatCompletions = async (
       settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
     }
   });
-
-  return { success: true, response };
 };
 
 // --- error rendering ---

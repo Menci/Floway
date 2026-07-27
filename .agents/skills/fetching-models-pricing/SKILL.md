@@ -17,6 +17,13 @@ Maintain the notional per-token rate cards in:
 These providers are subscription-backed or self-hosted. Floway records
 notional API-equivalent value so the usage dashboard remains comparable.
 
+`ModelPricing.entries[].rates` stores decimal-string USD prices per one base
+`BillingMetric` unit. The ten-member `BILLING_METRICS` array in
+`packages/protocols/src/common/pricing.ts` owns the complete metric domain, and
+`BillingMetric` is derived from it. Read the array rather than copying its
+members into this procedure; each provider table may price only the defensible
+subset for a model.
+
 ## Procedure
 
 1. Fetch the provider's live catalog and diff its ids against the table's
@@ -24,7 +31,7 @@ notional API-equivalent value so the usage dashboard remains comparable.
 2. Find a defensible rate source for every new id:
    - Prefer the model vendor's first-party API.
    - For open weights with no vendor API, use the cheapest credible commodity
-     host that publishes the required dimensions.
+     host that publishes the required metrics.
    - For retired versions, use a permalink or dated archive from when that
      version was current.
 3. Cross-check at least two sources. models.dev remains useful as an independent
@@ -36,25 +43,53 @@ notional API-equivalent value so the usage dashboard remains comparable.
 
    OpenRouter prices below first-party rates are usually mirror-host prices,
    not the canonical vendor rate.
-4. Author one `ModelPricing` with `modelPricing` and `pricingEntry`:
+4. Author pricing with the token-rate conversion helpers and decimal strings:
 
    ```ts
-   modelPricing(
-     pricingEntry({ input: 2.5, input_cache_read: 0.25, output: 15 }),
-     pricingEntry(
-       { input: 5, input_cache_read: 0.5, output: 22.5 },
-       { inputTokens: { operator: 'gt', value: 272000 } },
-     ),
-   )
+   import {
+     modelPricing,
+     tokenBasePricing,
+     tokenPricingEntry,
+     type PriceVector,
+   } from '@floway-dev/protocols/common';
+
+   const EXAMPLE_BASE_RATES = {
+     input_tokens: '1',
+     input_cache_read_tokens: '0.1',
+     output_tokens: '10',
+   } satisfies PriceVector;
+
+   const EXAMPLE_PRIORITY_RATES = {
+     input_tokens: '2',
+     input_cache_read_tokens: '0.2',
+     output_tokens: '20',
+   } satisfies PriceVector;
+
+   export const BASE_ONLY_PRICING = tokenBasePricing(EXAMPLE_BASE_RATES);
+
+   export const TIERED_PRICING = modelPricing(
+     tokenPricingEntry(EXAMPLE_BASE_RATES),
+     tokenPricingEntry(EXAMPLE_PRIORITY_RATES, { serviceTier: 'priority' }),
+   );
    ```
 
-   Every entry is one exact selector coordinate plus explicit USD-per-million-
-   token rates. Follow these invariants:
+   The numbers above are placeholders. Published token rate cards are normally
+   USD per million tokens. `tokenPricingEntry` and `tokenBasePricing` apply the
+   existing `perMillionTokenRates` conversion, so their resulting `PriceVector`
+   values are USD per base token. Do not divide manually or pass number literals.
+   Follow `packages/provider-codex/src/pricing.ts` for a complete production
+   example instead of copying a rate vector into this skill.
+
+   `collectModelPricingIssues` in
+   `packages/protocols/src/common/pricing.ts` enforces the structural invariants
+   below, including Base count, matching rate metrics, selector uniqueness, and
+   threshold-operator consistency. The source-quality rules still require
+   human judgment.
 
    - Declare exactly one Base entry without a selector.
-   - Give every entry the same rate dimensions as Base.
+   - Give every entry the same metrics as Base.
    - Never merge entries or inherit individual cache/image rates from another
-     dimension. A dimension absent from Base is unpriced everywhere.
+     metric. A metric absent from Base is unpriced everywhere.
    - Treat `serviceTier` as an open-string equality coordinate.
    - Treat `inputTokens` `gt` / `gte` thresholds as whole-request bands, not
      marginal token buckets.
@@ -71,11 +106,12 @@ notional API-equivalent value so the usage dashboard remains comparable.
    is serialized inside cached `ProviderModel` rows; a mismatch makes every
    older row cold before TTL evaluation.
 6. Add boundary tests for exact ids, aliases, dated releases, RegExp coverage,
-   threshold edges, and Base fallback through `priceRequest`.
+   threshold edges, Base fallback, and the per-base-unit result through
+   `priceRequest`.
 7. Run all affected provider tests, typecheck, lint, and the full test suite.
 8. If an existing rate changed, use `backfill-model-pricing` for the intended
    historical usage slice. Catalog revisioning changes future snapshots; it
-   does not rewrite recorded unit prices.
+   does not rewrite recorded `unit_price` values.
 
 ## Catalog Revision Policy
 
@@ -92,7 +128,10 @@ ineligible.
 ## Provider Identity
 
 - Copilot usage stores raw variant suffixes such as `-high`, `-xhigh`, and
-  `-1m` in `model_key`; its pricing lookup normalizes them to the public id.
+  `-1m` in `model_key`. Its pricing table is keyed by the public id that survives
+  variant merging: catalog projection merges the raw variants first, and
+  `pricingForCopilotPublicModelId` is a plain table match over anchored keys that
+  normalizes nothing itself.
 - Claude Code resolves pricing from the dated raw upstream id before catalog
   aliases are merged into public ids.
 - Codex and Ollama use the raw upstream slug directly.

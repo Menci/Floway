@@ -2,7 +2,7 @@ import type { Context, Next } from 'hono';
 
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, User } from '../repo/types.ts';
-import { timingSafeEqual } from '../shared/passwords.ts';
+import { timingSafeEqual } from '../shared/timing-safe-equal.ts';
 import { getEnvOptional } from '@floway-dev/platform';
 
 const PUBLIC_PATHS = new Set(['/api/health', '/favicon.ico']);

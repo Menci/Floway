@@ -212,7 +212,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   };
 
   return {
-    upstream: record.id,
+    upstreamId: record.id,
     kind: 'custom',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,

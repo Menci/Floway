@@ -7,7 +7,7 @@ import { expect, test, vi } from 'vitest';
 
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey } from '../repo/types.ts';
-import { requestApp, setupAppTest } from '../test-helpers.ts';
+import { requestApp, setupAppTest } from '../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const RAW_KEY = 'raw-key';

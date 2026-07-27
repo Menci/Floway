@@ -5,7 +5,7 @@ export const responsesItemId = (item: object): string | null => {
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
-export const hashResponsesItemContent = async (item: unknown): Promise<string> =>
+export const hashResponsesItem = async (item: unknown): Promise<string> =>
   await hashResponsesJson(item);
 
 export const createResponsesStorageKey = (): string => {

@@ -7,11 +7,8 @@ import type { Context } from 'hono';
 import { recordToWire, wireToRecord } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { createAliasBody, updateAliasBody } from '../schemas.ts';
-
-const nextSortOrder = (existing: readonly ModelAliasRecord[]): number =>
-  existing.reduce((acc, record) => Math.max(acc, record.sortOrder), -1) + 1;
+import { nextSortOrder } from '../shared/sort-order.ts';
 
 // Both D1 and node:sqlite raise a UNIQUE-constraint error naming the column;
 // the repo layer's alias INSERT / rename UPDATE lets that bubble up so the

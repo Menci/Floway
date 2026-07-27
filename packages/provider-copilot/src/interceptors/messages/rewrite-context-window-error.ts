@@ -17,7 +17,7 @@ const isContextWindowError = (text: string): boolean => text.includes('Request b
  * substring set here (`Request body is too large...`) is disjoint from
  * the Responses/Chat shapes those pairs match on.
  */
-export const rewriteContextWindowError: CopilotMessagesBoundaryInterceptor = async (_ctx, _request, run) => {
+export const rewriteContextWindowError: CopilotMessagesBoundaryInterceptor = async (_ctx, _env, run) => {
   const result = await run();
   if (result.type !== 'api-error' || result.source !== 'upstream') return result;
 

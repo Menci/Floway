@@ -59,8 +59,6 @@ export const renderGeminiFailure = (
   endpoint: 'generate' | 'countTokens',
 ): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => {
   switch (failure.kind) {
-  case 'item-not-found':
-    return geminiRpcErrorResult(404, `Item with id '${failure.itemId}' not found.`);
   case 'routing-unavailable':
     return geminiRpcErrorResult(400, failure.message);
   case 'model-missing':

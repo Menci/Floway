@@ -59,7 +59,8 @@ test('Claude Code SDK compact request: Claude-agent overrides compact intent, bo
   assertEquals(ctx.headers.get('x-interaction-type'), 'messages-proxy');
   assertEquals(ctx.headers.get('openai-intent'), 'messages-proxy');
   assertEquals(ctx.headers.get('user-agent'), CLAUDE_AGENT_USER_AGENT);
-  // Empty-string sentinel: copilotFetch will delete the base header.
+  // Empty-string sentinel: `copilotAuthedFetch` in
+  // `packages/provider-copilot/src/auth.ts` deletes the base header.
   assertEquals(ctx.headers.get('copilot-integration-id'), '');
   // SHA-256-then-UUIDv4 of 'sess-1' (matches caozhiyuan's getUUID).
   assertEquals(ctx.headers.get('x-interaction-id'), 'abe633f3-a47a-4758-974e-abe9160daf36');

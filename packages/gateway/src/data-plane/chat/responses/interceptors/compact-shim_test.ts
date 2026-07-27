@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { SUMMARY_PREFIX, expandShimCompactionItems, withResponsesCompactShim } from './compact-shim.ts';
 import type { ResponsesInvocation } from './types.ts';
 import { encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';

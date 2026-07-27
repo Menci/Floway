@@ -6,7 +6,7 @@ import { providerModelOf } from '@floway-dev/provider';
 // request reaches the terminal. OpenAI-native and truly OpenAI-compatible
 // Responses upstreams accept it for prefix-cache attribution, so removal only
 // happens under the flag.
-export const withPromptCacheKeyStripped: ResponsesInterceptor = async (ctx, _request, run) => {
+export const withPromptCacheKeyStripped: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('strip-prompt-cache-key')) return await run();
   if (ctx.payload.prompt_cache_key === undefined) return await run();
   const { prompt_cache_key: _stripped, ...rest } = ctx.payload;

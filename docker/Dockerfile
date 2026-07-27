@@ -33,7 +33,6 @@ RUN set -eux; \
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY patches ./patches
-COPY scripts ./scripts
 COPY apps ./apps
 COPY packages ./packages
 

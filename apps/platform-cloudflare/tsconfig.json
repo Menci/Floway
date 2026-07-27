@@ -1,8 +1,4 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx"
-  },
   "include": ["entry.ts", "vitest.config.ts", "src/**/*.ts", "test/**/*.ts"]
 }

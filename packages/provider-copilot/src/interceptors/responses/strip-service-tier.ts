@@ -14,7 +14,7 @@ import type { ResponsesBoundaryCtx } from './types.ts';
  */
 export const withServiceTierStripped = async <TResult>(
   ctx: ResponsesBoundaryCtx,
-  _request: object,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const { service_tier: _, ...payload } = ctx.payload;

@@ -27,10 +27,7 @@ describe('kindFromUri', () => {
     expect(kindFromUri('http://')).toBe('PROXY');
   });
 
-  it('does not throw on a malformed percent-escape — the URL parser leaves them raw in userinfo', () => {
-    // kindFromUri must be total — a single malformed URI in a list must
-    // surface as a generic label rather than throw out of the discriminator.
-    expect(() => kindFromUri('ss://%zz@h:8388')).not.toThrow();
+  it('handles a malformed percent-escape left raw in URL userinfo', () => {
     expect(kindFromUri('ss://%zz@h:8388')).toBe('SS');
   });
 

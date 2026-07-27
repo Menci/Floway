@@ -1,4 +1,4 @@
-import type { MessagesPayload } from '@floway-dev/protocols';
+import type { MessagesPayload } from '@floway-dev/protocols/messages';
 
 // Decide whether an inbound /v1/messages request is already shaped like a
 // real Claude Code session and can pass through unmodified, or whether it
@@ -125,6 +125,11 @@ const matchesAnyIdentityTemplate = (text: string): boolean => {
 const looksLikeBillingBlock = (text: string): boolean =>
   text.startsWith('x-anthropic-billing-header') && text.includes('cc_entrypoint=cli');
 
+// Real Claude Code's periodic connectivity probe carries max_tokens=1 against
+// a Haiku id and no system block.
+const detectHaikuProbe = (body: MessagesPayload): boolean =>
+  body.model.includes('haiku') && body.max_tokens === 1;
+
 const extractSystemTexts = (body: MessagesPayload): string[] => {
   const { system } = body;
   if (!system) return [];
@@ -140,7 +145,6 @@ const extractSystemTexts = (body: MessagesPayload): string[] => {
 export interface ClaudeCodeShapedRequestInput {
   headers: Headers;
   body: MessagesPayload;
-  isMaxTokensOneHaikuProbe: boolean;
 }
 
 export const isClaudeCodeShapedRequest = (input: ClaudeCodeShapedRequestInput): boolean => {
@@ -149,7 +153,7 @@ export const isClaudeCodeShapedRequest = (input: ClaudeCodeShapedRequestInput): 
 
   // Real CC's periodic Haiku connectivity probe sends max_tokens=1 with no
   // system; surface it as CC-shaped without further checks.
-  if (input.isMaxTokensOneHaikuProbe) return true;
+  if (detectHaikuProbe(input.body)) return true;
 
   if (!input.headers.get('x-app')) return false;
   if (!input.headers.get('anthropic-beta')) return false;

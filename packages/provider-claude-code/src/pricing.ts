@@ -8,11 +8,13 @@
 // × 2 (1-hour write). Fast mode is an explicit `serviceTier: 'fast'` entry
 // priced as a flat multiple of base: 6× on Opus 4.6/4.7, lowered to 2× from
 // Opus 4.8 onward (Opus 4.8, Opus 5); each entry records its own cache rates.
+//
+// Refresh procedure: .agents/skills/fetching-models-pricing/.
 
-import { tokenBasePricing, tokenModelPricing, tokenPricingEntry as pricingEntry, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
+import { modelPricing, tokenBasePricing, tokenPricingEntry, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
 
 const fastPricing = (rates: PriceVector, fastRates: PriceVector): ModelPricing =>
-  tokenModelPricing(pricingEntry(rates), pricingEntry(fastRates, { serviceTier: 'fast' }));
+  modelPricing(tokenPricingEntry(rates), tokenPricingEntry(fastRates, { serviceTier: 'fast' }));
 
 const OPUS_RATES = { input_tokens: '5', input_cache_read_tokens: '0.5', input_cache_write_tokens: '6.25', input_cache_write_1h_tokens: '10', output_tokens: '25' };
 const SONNET_PRICING = tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.3', input_cache_write_tokens: '3.75', input_cache_write_1h_tokens: '6', output_tokens: '15' });

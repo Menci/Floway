@@ -32,7 +32,7 @@ import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
  * - https://github.com/microsoft/vscode/blob/fb5e582d1c8edb9ad0a69e50fe6f508a8c095466/extensions/copilot/src/platform/endpoint/node/responsesApi.ts#L419-L468
  * - https://github.com/microsoft/vscode/blob/fb5e582d1c8edb9ad0a69e50fe6f508a8c095466/extensions/copilot/src/extension/prompt/node/chatMLFetcher.ts#L1453-L1474
  */
-export const withInitiatorHeaderSet: CopilotChatCompletionsBoundaryInterceptor = async (ctx, _request, run) => {
+export const withInitiatorHeaderSet: CopilotChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
   const lastMessage = ctx.payload.messages.at(-1);
   const agentInitiated = lastMessage?.role === 'assistant'
     || lastMessage?.role === 'tool';

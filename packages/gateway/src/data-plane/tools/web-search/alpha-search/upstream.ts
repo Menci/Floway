@@ -1,5 +1,5 @@
-import { enumerateModelCandidates } from '../../../providers/registry.ts';
-import type { SearchConfig } from '../types.ts';
+import { enumerateModelCandidates } from '../../../providers/resolution.ts';
+import type { WebSearchConfig } from '../types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { identityWrapUpstreamCall, providerModelOf } from '@floway-dev/provider';
 
@@ -11,7 +11,7 @@ export const resolveAlphaSearchDispatcher = async ({
   scheduler,
   runtimeLocation,
 }: {
-  config: Pick<SearchConfig['passthroughOpenAiSearch'], 'upstreamId' | 'model'>;
+  config: Pick<WebSearchConfig['passthroughOpenAiSearch'], 'upstreamId' | 'model'>;
   upstreamIds: readonly string[] | null;
   scheduler: BackgroundScheduler;
   runtimeLocation: string;
@@ -26,7 +26,7 @@ export const resolveAlphaSearchDispatcher = async ({
     scheduler,
     runtimeLocation,
   });
-  const candidate = candidates.find(value => value.provider.upstream === config.upstreamId);
+  const candidate = candidates.find(value => value.provider.upstreamId === config.upstreamId);
   if (candidate === undefined) {
     throw new Error(`Selected OpenAI search model ${config.model} is unavailable`);
   }

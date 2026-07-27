@@ -560,3 +560,31 @@ test('reassembleChatCompletionsEvents holds first non-empty system_fingerprint w
   const result = await reassembleChatCompletionsEvents(body);
   assertEquals(result.system_fingerprint, 'fp_late');
 });
+
+test('reassembleChatCompletionsEvents treats a null tool_calls as carrying no call', async () => {
+  const body = makeEvents([
+    {
+      data: {
+        id: 'cmpl_null',
+        object: 'chat.completion.chunk',
+        created: 1000,
+        model: 'sglang-test',
+        choices: [{ index: 0, delta: { role: 'assistant', content: null, tool_calls: null }, finish_reason: null }],
+      },
+    },
+    {
+      data: {
+        id: 'cmpl_null',
+        object: 'chat.completion.chunk',
+        created: 1000,
+        model: 'sglang-test',
+        choices: [{ index: 0, delta: { content: 'hi', tool_calls: null }, finish_reason: 'stop' }],
+      },
+    },
+  ]);
+
+  const result = await reassembleChatCompletionsEvents(body);
+
+  assertEquals(result.choices[0].message.content, 'hi');
+  assertEquals('tool_calls' in result.choices[0].message, false);
+});

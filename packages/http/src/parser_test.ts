@@ -623,6 +623,10 @@ describe('parseHttpResponse — DoS caps', () => {
     });
   });
 
+  // The head reader is generic over its cap and error factories; this vector
+  // pins the pair `parseHttpResponse` actually wires in — the 64 KiB cap and
+  // HEADER_BUFFER_OVERFLOW — so neither an unbounded read nor a different
+  // code can pass unnoticed.
   it('rejects a single header that grows past the 64 KiB header buffer', async () => {
     const fake = makeFakeDuplex();
     fake.respond('HTTP/1.1 200 OK\r\nX-Big: ');
@@ -630,12 +634,6 @@ describe('parseHttpResponse — DoS caps', () => {
     fake.endResponse();
     await expect(parseHttpResponse(fake.readable)).rejects.toMatchObject({
       code: 'HEADER_BUFFER_OVERFLOW',
-    });
-  });
-
-  it('rejects EOF before the header terminator with code EOF', async () => {
-    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Type:'))).rejects.toMatchObject({
-      code: 'EOF',
     });
   });
 

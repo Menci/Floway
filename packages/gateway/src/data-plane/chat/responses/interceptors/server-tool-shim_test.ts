@@ -16,13 +16,13 @@ import { SHIM_TOOL_NAME, webSearchServerTool } from './server-tools/web-search.t
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { getRepo, initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
 import type { AlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
-  SearchConfig,
+  WebSearchConfig,
   WebSearchFetchPageRequest,
   WebSearchFetchPageResult,
   WebSearchProvider,
@@ -184,8 +184,8 @@ const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFram
 
 // We replace `resolveConfiguredWebSearchProvider` because real provider
 // construction (`createTavilyWebSearchProvider` etc.) would otherwise
-// pull in network-hitting backend impls. Tests insert a SearchConfig
-// row through the in-memory repo so `loadSearchConfig` returns
+// pull in network-hitting backend impls. Tests insert a WebSearchConfig
+// row through the in-memory repo so `loadWebSearchConfig` returns
 // non-default values; the mock then ignores the config and returns a
 // test stub. Tests that need a specific configured state set
 // `mockResolveConfigured.mockReturnValue(...)` per call.
@@ -285,20 +285,20 @@ const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
 const mockResolveAlpha = vi.mocked(resolveAlphaSearchDispatcher);
 
 // Seed a per-test InMemoryRepo and a default tavily search config so
-// `loadSearchConfig()` returns a non-default value. The actual provider
+// `loadWebSearchConfig()` returns a non-default value. The actual provider
 // construction is short-circuited by the module mock above; tests
 // override `mockResolveConfigured` to point at a stub backend.
 beforeEach(() => {
   mockResolveAlpha.mockReset();
   const repo = new InMemoryRepo();
   initRepo(repo);
-  void repo.searchConfig.save({
+  void repo.webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'test-key' },
     microsoftGrounding: { apiKey: '' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
-  } satisfies SearchConfig);
+  } satisfies WebSearchConfig);
 });
 
 const makeStubDeps = (overrides: DepsOverrides = {}): {
@@ -3942,13 +3942,13 @@ test('responses target with flag on: function_call_output is plain-text formatte
 
 test('responses target with OpenAI passthrough uses the selected alpha search dispatcher', async () => {
   makeStubDeps();
-  await getRepo().searchConfig.save({
+  await getRepo().webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'test-key' },
     microsoftGrounding: { apiKey: '' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-search' },
-  } satisfies SearchConfig);
+  } satisfies WebSearchConfig);
   const call = vi.fn<AlphaSearchDispatcher>(async () => new Response(JSON.stringify({
     encrypted_output: null,
     output: 'alpha output',

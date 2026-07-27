@@ -10,11 +10,12 @@
 // Response plus the per-call telemetry the serve site needs when it
 // forwards the winning attempt (2xx) or the last failure (exhausted).
 
+import type { GatewayCtx } from './gateway-ctx.ts';
 import { inboundHeadersForUpstream } from './inbound-headers.ts';
-import { buildUpstreamCallOptions, telemetryModelIdentity, upstreamPerformanceContext } from './telemetry/attempt-helpers.ts';
+import { telemetryModelIdentity, upstreamPerformanceContext } from './telemetry/attribution.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
+import { buildUpstreamCallOptions } from './upstream-call-options.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
-import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { providerModelOf } from '@floway-dev/provider';
 import type { ModelCandidate, PerformanceOperation, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 

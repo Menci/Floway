@@ -28,16 +28,9 @@ export type CopilotMessagesBoundaryInterceptor = Interceptor<
 
 // count_tokens is a one-shot, non-streaming HTTP exchange: the terminal
 // returns the raw upstream `Response` directly. Pure header/payload mutators
-// only — post-`run()` event-stream inspection is not portable to this
-// result type.
-export interface MessagesCountTokensBoundaryCtx {
-  payload: MessagesPayload;
-  headers: Headers;
-  readonly model: ProviderModel;
-}
-
+// only — post-`run()` event-stream inspection is not portable to this result.
 export type CopilotMessagesCountTokensBoundaryInterceptor = Interceptor<
-  MessagesCountTokensBoundaryCtx,
+  MessagesBoundaryCtx,
   object,
   Response
 >;

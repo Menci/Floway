@@ -24,6 +24,6 @@ export const geminiInterceptors: readonly GeminiInterceptor[] = [
 // dispatch (acceptable) or wrap the post-`run()` event stream (incompatible
 // with the count-tokens result shape). `geminiAttempt.countTokens` applies
 // the payload-mutators inline before handing the translated payload to the
-// Messages count_tokens path, so this list stays empty and serves only as a
-// clear extension point for provider-supplied geminiCountTokens entries.
+// Messages count_tokens path, so this list stays empty; the chain still runs
+// so the count-tokens path keeps the same invocation envelope as generate.
 export const geminiCountTokensInterceptors: readonly GeminiCountTokensInterceptor[] = [];

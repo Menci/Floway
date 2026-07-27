@@ -1,6 +1,6 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
-import type { TranslatedApiError } from '@floway-dev/translate';
+import type { TranslateTripResult } from '@floway-dev/translate';
 
 // Threads a translate trip around an inner attempt. The trip itself is async
 // (the real `@floway-dev/translate` pair functions resolve a `Promise`), so
@@ -16,11 +16,7 @@ import type { TranslatedApiError } from '@floway-dev/translate';
 // pass the upstream body through verbatim.
 export const traverseTranslation = async <SP, TP, SE, TE>(
   payload: SP,
-  translate: (p: SP) => Promise<{
-    target: TP;
-    events: (e: AsyncIterable<ProtocolFrame<TE>>) => AsyncIterable<ProtocolFrame<SE>>;
-    apiError?: (upstream: TranslatedApiError) => TranslatedApiError | undefined;
-  }>,
+  translate: (p: SP) => Promise<TranslateTripResult<TP, SE, TE>>,
   innerAttempt: (translated: TP) => Promise<ExecuteResult<ProtocolFrame<TE>>>,
 ): Promise<ExecuteResult<ProtocolFrame<SE>>> => {
   const trip = await translate(payload);

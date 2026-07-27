@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 
 import { authMiddleware } from './auth.ts';
 import { initRepo } from '../repo/index.ts';
-import { setupAppTest } from '../test-helpers.ts';
+import { setupAppTest } from '../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const authTestApp = () => {

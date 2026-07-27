@@ -1,9 +1,9 @@
 import { prepareChatCompletionsAffinity } from './affinity/ingress.ts';
 import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
-import { enumerateModelCandidates } from '../../providers/registry.ts';
+import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
-import { routeCandidatesByAffinity } from '../shared/affinity/index.ts';
+import { narrowCandidatesByAffinity } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -28,9 +28,9 @@ export const chatCompletionsServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
-    if (decision.kind === 'failure') return renderChatCompletionsFailure(decision.failure);
-    if (decision.candidates.length === 0) return renderChatCompletionsFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams));
+    const narrowed = narrowCandidatesByAffinity(viable, prepared.narrowingEvidence);
+    if ('kind' in narrowed) return renderChatCompletionsFailure(narrowed);
+    if (narrowed.length === 0) return renderChatCompletionsFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams));
 
     // Try each narrowed candidate in order. A successful attempt (SSE
     // stream opened) is the final answer; an api-error or internal-error
@@ -41,7 +41,7 @@ export const chatCompletionsServe = {
     // stamps its private payload clone with the candidate's canonical model id
     // so aliases and prefixed ids resolve without mutating the caller payload.
     return await iterateCandidates(
-      decision.candidates,
+      narrowed,
       'chatCompletionsServe.generate',
       ctx,
       'chat',

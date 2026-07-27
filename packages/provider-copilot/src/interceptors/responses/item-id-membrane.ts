@@ -74,19 +74,19 @@ const mapCarrierValues = <TItem extends CarrierItem>(
 };
 
 const restoreInputItem = (item: ResponsesInputItem): ResponsesInputItem => {
-  const upstreamIds = new Set<string>();
+  const upstreamItemIds = new Set<string>();
   const restored = mapCarrierValues(item, value => {
     const decoded = unwrapCopilotItemId(value);
     if (decoded.kind === 'foreign') return value;
-    upstreamIds.add(decoded.id);
+    upstreamItemIds.add(decoded.id);
     return decoded.value;
   });
 
-  if (upstreamIds.size === 0) return restored;
-  if (upstreamIds.size > 1) {
+  if (upstreamItemIds.size === 0) return restored;
+  if (upstreamItemIds.size > 1) {
     throw new TypeError('Copilot Responses item carries conflicting upstream ids');
   }
-  return { ...restored, id: [...upstreamIds][0] } as ResponsesInputItem;
+  return { ...restored, id: [...upstreamItemIds][0] } as ResponsesInputItem;
 };
 
 const restoreInputItemIds = (payload: CanonicalResponsesPayload): CanonicalResponsesPayload => ({
@@ -268,7 +268,7 @@ const normalizeCompactionResult = (response: ResponsesResult): ResponsesResult =
   }),
 });
 
-export const withCopilotResponsesItemIdMembrane: CopilotResponsesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withCopilotResponsesItemIdMembrane: CopilotResponsesBoundaryInterceptor = async (ctx, _env, run) => {
   ctx.payload = restoreInputItemIds(ctx.payload);
   const result = await run();
   if (!result.ok) return result;

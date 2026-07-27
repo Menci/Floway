@@ -54,7 +54,7 @@ import type { CopilotMessagesBoundaryInterceptor, CopilotMessagesCountTokensBoun
 // `withMessagesWebSearchShim` is intentionally NOT registered here. It runs
 // in the gateway's `messagesInterceptors` (filtered by enabled flags); the
 // Copilot provider opts in by listing `messages-web-search-shim` in its
-// default flag set (see COPILOT_DEFAULT_FLAGS in ../../provider.ts).
+// default flag set (see COPILOT_DEFAULT_FLAGS in ../../defaults.ts).
 export const COPILOT_MESSAGES_BOUNDARY = [
   rewriteContextWindowError,
   withCompactHeadersSet,
@@ -75,19 +75,19 @@ export const COPILOT_MESSAGES_BOUNDARY = [
 ] as const satisfies readonly CopilotMessagesBoundaryInterceptor[];
 
 // /v1/messages/count_tokens is a one-shot HTTP exchange that returns the raw
-// upstream Response. Pre-Path A the Copilot provider's call helper applied
-// vision detection, x-initiator classification, and anthropic-beta allow-list
-// filtering to BOTH chat and count_tokens; only count_tokens stopped seeing
-// them when the headers moved onto the chat-planning target interceptor
-// chain. This list re-instates exactly those three header-shaping workarounds
-// at the Copilot count_tokens boundary so behavior matches pre-Path A.
+// upstream Response. The Copilot provider applies vision detection,
+// x-initiator classification, anthropic-beta allow-list filtering, and
+// context-management beta alignment to both chat and count_tokens.
 //
 // withInlineImagesCompressed runs first so count_tokens sizes the same
-// WebP-recompressed payload the chat path sends — and reuses its cached
-// transform — keeping the estimate consistent with the real request.
-// withThinkingDisplayPromoted / withTopLevelCacheControlApplied /
-// withCacheControlExtensionsStripped / withEagerInputStreamingStripped are
-// intentionally absent: pre-Path A they also never ran on count_tokens.
+// WebP-recompressed payload the chat path sends, keeping the estimate
+// consistent with the real request. withContextManagementBetaAligned follows
+// withAnthropicBetaHeaderFiltered so any surviving `context_management` field
+// remains paired with its required header token. The chat boundary's other
+// entries stay out: its post-`run()` inspectors cannot be expressed against a
+// raw Response at all, and the remaining payload mutators and header setters
+// each answer something we observed on the generation endpoint, with no
+// equivalent need seen on count_tokens.
 export const COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY = [
   withInlineImagesCompressed,
   withVisionHeaderSet,

@@ -1,4 +1,6 @@
-// Failures a protocol can render before reaching an upstream; unexpected
+import type { ApiErrorResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+
+// Failures a chat protocol can render before reaching an upstream; unexpected
 // throws bubble as-is. `failedUpstreams` on model-{missing,unsupported}
 // carries the upstream names whose catalog fetch threw during this
 // resolution — surfaced parenthetically so the caller can tell a genuine
@@ -8,24 +10,39 @@
 export type ChatServeFailure =
   | { readonly kind: 'model-missing'; readonly model: string; readonly failedUpstreams: readonly string[] }
   | { readonly kind: 'model-unsupported'; readonly model: string; readonly failedUpstreams: readonly string[] }
-  | { readonly kind: 'item-not-found'; readonly itemId: string }
   | { readonly kind: 'routing-unavailable'; readonly message: string };
 
-class ChatServeFailureError extends Error {
-  readonly failure: ChatServeFailure;
+class ChatServeFailureError<TFailure extends { readonly kind: string }> extends Error {
+  readonly failure: TFailure;
 
-  constructor(failure: ChatServeFailure) {
+  constructor(failure: TFailure) {
     super(`ChatServeFailure: ${failure.kind}`);
     this.failure = failure;
   }
 }
 
-export const throwChatServeFailure = (failure: ChatServeFailure): never => {
+export const throwChatServeFailure = <TFailure extends { readonly kind: string }>(failure: TFailure): never => {
   throw new ChatServeFailureError(failure);
 };
 
-export const tryCatchChatServeFailure = (error: unknown): ChatServeFailure | null =>
-  error instanceof ChatServeFailureError ? error.failure : null;
+export const tryCatchChatServeFailure = <TFailure extends { readonly kind: string } = ChatServeFailure>(error: unknown): TFailure | null =>
+  error instanceof ChatServeFailureError ? error.failure as TFailure : null;
+
+export const openAiErrorResult = (
+  status: number,
+  message: string,
+  extra?: { readonly param: string; readonly code: string | null },
+  performance?: PerformanceTelemetryContext,
+): ApiErrorResult => ({
+  type: 'api-error',
+  source: 'gateway',
+  status,
+  headers: new Headers({ 'content-type': 'application/json' }),
+  body: new TextEncoder().encode(JSON.stringify({
+    error: { message, type: 'invalid_request_error', ...extra },
+  })),
+  ...(performance ? { performance } : {}),
+}) satisfies ApiErrorResult;
 
 // Builds the failure value every serve dispatches with after `canServe` has
 // dropped every candidate: `sawModel=true` means the inbound id exists in

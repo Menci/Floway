@@ -1,7 +1,7 @@
 import type { MessagesStreamEvent } from './index.ts';
+import { parseTargetStreamFrames } from '../common/parse-events.ts';
+import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
-import { parseTargetStreamFrames } from '../common/stream/parse-events.ts';
-import { parseSSEStream } from '../common/stream/parse-sse.ts';
 
 export interface ParseMessagesStreamOptions {
   signal?: AbortSignal;

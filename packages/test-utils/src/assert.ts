@@ -23,10 +23,6 @@ export function assertStringIncludes(actual: string, expected: string, message?:
   expect(actual, message).toContain(expected);
 }
 
-export function assertAlmostEquals(actual: number, expected: number, tolerance = 1e-7, message?: string): void {
-  expect(Math.abs(actual - expected), message).toBeLessThanOrEqual(tolerance);
-}
-
 export function assertThrows(fn: () => unknown, errorClass?: ErrorConstructor, messageIncludes?: string, message?: string): Error {
   try {
     fn();

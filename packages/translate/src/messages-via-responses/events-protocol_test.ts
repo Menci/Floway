@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
-import { assertEquals, assertRejects } from '../test-assert.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const makeResponse = (status: ResponsesResult['status']): ResponsesResult => ({
   id: 'resp_123',

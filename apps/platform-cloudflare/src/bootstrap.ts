@@ -1,10 +1,10 @@
-import { DurableObjectChannelBroker, type BroadcastNamespace } from './do-channel-broker.ts';
+import { DurableObjectChannelBroker, type BroadcastNamespace } from './durable-object-channel-broker.ts';
 import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
-import { KvImageCache, type KvNamespace } from './kv-image-cache.ts';
-import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
+import { KvImageCacheStore, type KvNamespace } from './kv-image-cache-store.ts';
+import { R2FileStore, type R2BucketLike } from './r2-file-store.ts';
+import { cloudflareRuntimeRootCAs } from './runtime-root-cas.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
-import { cloudflareRuntimeRootCAs } from './tls-trust.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
 import { dumpCodec } from '@floway-dev/gateway/dump-codec';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
@@ -13,7 +13,7 @@ import {
   IMAGE_CACHE_POLICY,
   initEnv,
   initExternalResourceFetcher,
-  initFileProvider,
+  initFileStore,
   initImageCacheStore,
   initImageProcessor,
   initRuntimeKind,
@@ -31,8 +31,8 @@ export interface CloudflareEnv {
 }
 
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
-// config and telemetry, R2 holds spilled payloads, Images compresses inline
-// images, KV memoises compressed image results. A missing binding means
+// config and telemetry, R2 stores file-backed response payloads and dump bodies,
+// Images re-encodes images, and KV memoises the results. A missing binding means
 // wrangler.jsonc drifted from the code, so we refuse to initialise rather
 // than 503 on first use of the absent binding.
 const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
@@ -53,9 +53,9 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   });
   initRuntimeKind('cloudflare');
   initExternalResourceFetcher(createCloudflareExternalResourceFetcher());
-  const files = new R2FileProvider(env.FILES);
-  initFileProvider(files);
-  initImageCacheStore(new KvImageCache(env.KV, IMAGE_CACHE_POLICY));
+  const files = new R2FileStore(env.FILES);
+  initFileStore(files);
+  initImageCacheStore(new KvImageCacheStore(env.KV, IMAGE_CACHE_POLICY));
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
   addTrustedRootCAs(cloudflareRuntimeRootCAs);

@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
-import { assertEquals, assertThrows } from '../test-assert.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const noOptions = {};
 
@@ -63,7 +63,7 @@ test('buildTargetRequest maps system, default max tokens, and multimodal user co
   });
 });
 
-test('buildTargetRequest prefers capabilities.maxOutputTokens over the gateway default when payload omits maxOutputTokens', () => {
+test('buildTargetRequest prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', () => {
   const request = buildTargetRequest({}, 'claude-test', withMaxOutputTokens(6144));
   assertEquals(request.max_tokens, 6144);
 });

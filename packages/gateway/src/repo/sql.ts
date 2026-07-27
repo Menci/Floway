@@ -3,7 +3,9 @@ import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlResponsesItemsRepo, SqlResponsesSnapshotsRepo } from './responses-state-sql.ts';
+import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
+import { runStatements } from './sql-batch.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -14,7 +16,7 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  CachedModelsRow,
+  ModelsCacheRow,
   ModelAliasesRepo,
   ModelAliasRecord,
   ModelsCacheRepo,
@@ -31,10 +33,9 @@ import type {
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
   SpilledFilesRepo,
-  SearchConfig,
-  SearchConfigRepo,
-  SearchUsageRecord,
-  SearchUsageRepo,
+  WebSearchConfigRepo,
+  WebSearchUsageRecord,
+  WebSearchUsageRepo,
   Session,
   SessionsRepo,
   UpstreamRepo,
@@ -48,21 +49,12 @@ import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
-import { generateSessionToken } from '../shared/session-tokens.ts';
-import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
+import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
+import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation } from '@floway-dev/provider';
-
-const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
-  if (statements.length === 0) return [];
-  if (db.batch) return await db.batch(statements);
-  const results: SqlResult[] = [];
-  for (const statement of statements) results.push(await statement.run());
-  return results;
-};
 
 interface ApiKeyRow {
   id: string;
@@ -536,10 +528,10 @@ const assembleUsageRecords = (metrics: readonly UsageMetricRow[], requests: read
   return [...byBucket.values()].sort((a, b) => a.hour.localeCompare(b.hour));
 };
 
-class SqlSearchUsageRepo implements SearchUsageRepo {
+class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
   constructor(private db: SqlDatabase) {}
 
-  async record(args: { provider: SearchUsageRecord['provider']; keyId: string; action: SearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
+  async record(args: { provider: WebSearchUsageRecord['provider']; keyId: string; action: WebSearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
     const validProvider = assertWebSearchProviderName(args.provider);
     await this.db
       .prepare(
@@ -551,7 +543,7 @@ class SqlSearchUsageRepo implements SearchUsageRepo {
       .run();
   }
 
-  async query(opts: { provider?: SearchUsageRecord['provider']; keyId?: string; action?: SearchUsageRecord['action']; start: string; end: string }): Promise<SearchUsageRecord[]> {
+  async query(opts: { provider?: WebSearchUsageRecord['provider']; keyId?: string; action?: WebSearchUsageRecord['action']; start: string; end: string }): Promise<WebSearchUsageRecord[]> {
     const filters = ['hour >= ?', 'hour < ?'];
     const binds: unknown[] = [opts.start, opts.end];
     if (opts.provider) {
@@ -578,10 +570,10 @@ class SqlSearchUsageRepo implements SearchUsageRepo {
       hour: string;
       requests: number;
     }>();
-    return results.map(toSearchUsageRecord);
+    return results.map(toWebSearchUsageRecord);
   }
 
-  async listAll(): Promise<SearchUsageRecord[]> {
+  async listAll(): Promise<WebSearchUsageRecord[]> {
     const { results } = await this.db.prepare('SELECT provider, key_id, action, hour, requests FROM search_usage ORDER BY hour').all<{
       provider: string;
       key_id: string;
@@ -589,10 +581,10 @@ class SqlSearchUsageRepo implements SearchUsageRepo {
       hour: string;
       requests: number;
     }>();
-    return results.map(toSearchUsageRecord);
+    return results.map(toWebSearchUsageRecord);
   }
 
-  async set(record: SearchUsageRecord): Promise<void> {
+  async set(record: WebSearchUsageRecord): Promise<void> {
     const provider = assertWebSearchProviderName(record.provider);
     await this.db
       .prepare(
@@ -803,7 +795,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
   }
 }
 
-const toSearchUsageRecord = (row: { provider: string; key_id: string; action: string; hour: string; requests: number }): SearchUsageRecord => {
+const toWebSearchUsageRecord = (row: { provider: string; key_id: string; action: string; hour: string; requests: number }): WebSearchUsageRecord => {
   if (row.action !== 'search' && row.action !== 'fetch_page') {
     throw new TypeError(`Invalid search usage action: ${row.action}`);
   }
@@ -828,7 +820,7 @@ const modelsReviver = (key: string, value: unknown): unknown =>
 class SqlModelsCacheRepo implements ModelsCacheRepo {
   constructor(private db: SqlDatabase) {}
 
-  async get(upstreamId: string): Promise<CachedModelsRow | null> {
+  async get(upstreamId: string): Promise<ModelsCacheRow | null> {
     const row = await this.db
       .prepare('SELECT revision, fetched_at, models_json, last_error_json FROM models_cache WHERE upstream_id = ?')
       .bind(upstreamId)
@@ -869,7 +861,7 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
   }
 }
 
-class SqlSearchConfigRepo implements SearchConfigRepo {
+class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   constructor(private db: SqlDatabase) {}
 
   async get(): Promise<unknown | null> {
@@ -890,7 +882,7 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
     };
   }
 
-  async save(config: SearchConfig): Promise<void> {
+  async save(config: WebSearchConfig): Promise<void> {
     const { provider, tavily, microsoftGrounding, jina, passthroughOpenAiSearch } = config;
     await this.db
       .prepare(
@@ -1654,10 +1646,10 @@ export class SqlRepo implements Repo {
   sessions: SessionsRepo;
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
-  searchUsage: SearchUsageRepo;
+  webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
-  searchConfig: SearchConfigRepo;
+  webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
@@ -1673,10 +1665,10 @@ export class SqlRepo implements Repo {
     this.sessions = new SqlSessionsRepo(db);
     this.apiKeys = new SqlApiKeyRepo(db);
     this.usage = new SqlUsageRepo(db);
-    this.searchUsage = new SqlSearchUsageRepo(db);
+    this.webSearchUsage = new SqlWebSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
     this.modelsCache = new SqlModelsCacheRepo(db);
-    this.searchConfig = new SqlSearchConfigRepo(db);
+    this.webSearchConfig = new SqlWebSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);
     this.proxyBackoffs = new SqlProxyBackoffRepo(db);

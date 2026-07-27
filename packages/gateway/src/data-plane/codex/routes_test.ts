@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { mountCodexRoutes } from './routes.ts';
 import { type AuthVars, authMiddleware } from '../../middleware/auth.ts';
-import { copilotModels, setupAppTest } from '../../test-helpers.ts';
+import { copilotModels, setupAppTest } from '../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCodexApp = () => {

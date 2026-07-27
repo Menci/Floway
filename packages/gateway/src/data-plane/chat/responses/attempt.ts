@@ -3,12 +3,15 @@ import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
-import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
-import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker, upstreamPerformanceContext } from '../../shared/telemetry/attempt-helpers.ts';
+import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
+import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
+import { applyRulesToUpstreamResponses } from '../shared/alias-rules.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
+import { chatTargetPicker } from '../shared/target-picker.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -220,7 +223,7 @@ const providerResponsesResultToExecuteResult = async (
   }
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');
   if (!providerResult.ok) {
-    return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstream)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
   }
   return eventResult(
     syntheticEventsFromResult(providerResult.result),

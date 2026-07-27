@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createFetcher, type ProxyEntry } from './fetcher.ts';
+import { createFetcher } from './fetcher.ts';
+import type { ProxyEntry } from './proxy-catalog.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import type { HttpRequest } from '@floway-dev/http';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type SocketDial } from '@floway-dev/proxy';

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
+import { buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 

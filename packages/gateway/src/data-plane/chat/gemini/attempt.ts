@@ -2,11 +2,11 @@ import { geminiStatusForHttpStatus } from './errors.ts';
 import { geminiCountTokensInterceptors, geminiInterceptors } from './interceptors/index.ts';
 import { stripUnsupportedPartFieldsFromPayload } from './interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupported-tools.ts';
-import { chatTargetPicker } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { chatTargetPicker } from '../shared/target-picker.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -124,7 +124,7 @@ const reshapeMessagesCountAsGemini = (messagesResult: PlainResult): PlainResult 
   if (messagesResult.status !== 200) {
     // Empty upstream bodies fall back to a fixed message so the Google-RPC envelope is never empty.
     const text = new TextDecoder().decode(messagesResult.body);
-    return geminiErrorPlainResult(messagesResult.status, text || 'Upstream token counting request failed.', messagesResult.upstream);
+    return geminiErrorPlainResult(messagesResult.status, text || 'Upstream token counting request failed.', messagesResult.upstreamId);
   }
   let decoded: unknown;
   try { decoded = JSON.parse(new TextDecoder().decode(messagesResult.body)); } catch {}
@@ -143,7 +143,7 @@ const reshapeMessagesCountAsGemini = (messagesResult: PlainResult): PlainResult 
     200,
     new Headers({ 'content-type': 'application/json' }),
     new TextEncoder().encode(JSON.stringify({ totalTokens })),
-    messagesResult.upstream,
+    messagesResult.upstreamId,
   );
 };
 

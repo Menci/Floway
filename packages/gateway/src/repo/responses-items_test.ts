@@ -6,11 +6,11 @@ import { InMemoryRepo } from './memory.ts';
 import { hashResponsesJson } from './responses-hash.ts';
 import { prepareStoredResponsesPayload } from './responses-payload.ts';
 import { quantizeResponsesRefreshedAt, responsesStateCutoff } from './responses-retention.ts';
-import { collectSpilledFiles } from './spilled-files.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ApiKey, Repo, StoredResponsesItem } from './types.ts';
-import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
+import { collectSpilledFiles } from '../scheduled/spilled-files.ts';
+import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 const RETENTION_SECONDS = 24 * 60 * 60;
 const DAY_MS = RETENTION_SECONDS * 1000;
@@ -56,7 +56,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   test('scopes exact and content-hash reads by key and rolling cutoff', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(atDay(4));
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     await repo.apiKeys.save(apiKey(7 * RETENTION_SECONDS));
     await repo.apiKeys.save({ ...apiKey(7 * RETENTION_SECONDS), id: 'key-b', key: 'raw-key-b', serverSecret: '22'.repeat(32) });
@@ -73,7 +73,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   test('rejects a live producer-ID collision but replaces an expired row', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(atDay(11, DAY_MS / 2));
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     await repo.apiKeys.save(apiKey());
     const original = storedItem('msg-collision', atDay(10), 'original');
@@ -89,7 +89,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   test('refreshes only active rows and never lowers their timestamp', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(atDay(11, DAY_MS / 2));
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     await repo.apiKeys.save(apiKey());
     const item = storedItem('msg-refresh', atDay(10));
@@ -102,7 +102,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('deletes rows outside each key current rolling policy', async () => {
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     const now = atDay(10);
     vi.useFakeTimers();
@@ -144,7 +144,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('a concurrent shrink does not change an in-flight request retention snapshot', async () => {
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     const now = Date.now();
     const thirtyDays = 30 * 24 * 60 * 60;
@@ -161,7 +161,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('a concurrent grow does not widen an in-flight request retention snapshot', async () => {
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     const now = Date.now();
     const thirtyDays = 30 * 24 * 60 * 60;
@@ -179,7 +179,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('an in-flight request reuses its narrower retention snapshot after a concurrent grow', async () => {
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     const now = atDay(40, DAY_MS / 2);
     vi.useFakeTimers();
@@ -200,7 +200,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('growing retention reveals a surviving row inside the wider window', async () => {
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     const now = Date.now();
     const thirtyDays = 30 * 24 * 60 * 60;
@@ -217,7 +217,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
     ]);
   });
   test('a concurrent disable does not cancel a captured durable writer', async () => {
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     const now = Date.now();
     await repo.apiKeys.save(apiKey(RETENTION_SECONDS));
@@ -231,7 +231,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('same-day reuse keeps the request snapshot after a concurrent disable', async () => {
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     const now = atDay(10, DAY_MS / 2);
     vi.useFakeTimers();
@@ -248,7 +248,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('an old request cannot refresh a replacement payload under a reused ID', async () => {
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     const now = atDay(10, DAY_MS / 2);
     vi.useFakeTimers();
@@ -269,7 +269,7 @@ describe.each(backends)('%s Responses state repository', (_backend, makeRepo) =>
   });
 
   test('missing keys reject writes while soft-deleted keys preserve captured requests', async () => {
-    initFileProvider(new MemoryFileProvider());
+    initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
     const now = Date.now();
     const missing = storedItem('msg-missing-key', now);
@@ -289,8 +289,8 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
   initRepo(repo);
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
+  const files = new MemoryFileStore();
+  initFileStore(files);
   const now = atDay(10, DAY_MS / 2);
   vi.useFakeTimers();
   vi.setSystemTime(now);
@@ -322,7 +322,7 @@ test('SQL performs no item or snapshot mutation after an earlier refresh in the 
   vi.setSystemTime(atDay(10, DAY_MS / 4));
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
-  initFileProvider(new MemoryFileProvider());
+  initFileStore(new MemoryFileStore());
   await repo.apiKeys.save(apiKey());
   const item = storedItem('msg-daily-refresh', atDay(10, 1_000));
   const snapshot = { id: 'resp-daily-refresh', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: atDay(10, 1_000) };
@@ -350,8 +350,8 @@ test('SQL hydration retries with every current item identity column after a repl
   vi.setSystemTime(atDay(11));
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
+  const files = new MemoryFileStore();
+  initFileStore(files);
   await repo.apiKeys.save(apiKey());
   const original = storedItem('msg-hydration-race', atDay(10), largeContent());
   const replacement = storedItem(original.id, atDay(11), 'replacement');

@@ -1,15 +1,14 @@
 import { test } from 'vitest';
 
-import { translateToSourceEvents } from './events.ts';
-import { assertEquals, assertRejects } from '../test-assert.ts';
+import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks, translateToSourceEvents } from './events.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-// Inlined copy of the gateway's chatCompletionsProtocolFrameToSSEFrame: kept here so this
-// translate-package test does not deep-import into packages/gateway. The behavior
-// under test is the translate output's terminal-frame discipline, not the
-// SSE projection itself.
+// Local stand-in for `chatCompletionsProtocolFrameToSSEFrame`: the behavior
+// under test is the translate output's terminal-frame discipline, not the SSE
+// projection itself.
 const isUsageOnlyChunk = (frame: ProtocolFrame<ChatCompletionsStreamEvent>): boolean =>
   frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage !== undefined;
 
@@ -402,4 +401,909 @@ test('translateToSourceEvents rejects truncated Responses streams without termin
   }
 
   await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream Responses stream ended without a terminal event.');
+});
+
+test('translateResponsesEventToChatCompletionsChunks drops reasoning items without readable summary', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+
+  const created = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_single_opaque',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'in_progress',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+  assertEquals(created.length, 1);
+  assertEquals(created[0].choices[0].delta.role, 'assistant');
+
+  const during = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: {
+        type: 'reasoning',
+        id: 'rs_1',
+        summary: [],
+      },
+    },
+    state,
+  );
+  assertEquals(during, []);
+
+  const completed = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.completed',
+      response: {
+        id: 'resp_single_opaque',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'completed',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+        usage: {
+          input_tokens: 1,
+          output_tokens: 2,
+          total_tokens: 3,
+        },
+      },
+    },
+    state,
+  );
+
+  assertEquals(completed.length, 2);
+  assertEquals(completed[0].choices[0].delta, {});
+  assertEquals(completed[0].choices[0].finish_reason, 'stop');
+  assertEquals(completed[0].usage, undefined);
+  assertEquals(completed[1].choices, []);
+  assertEquals(completed[1].usage, {
+    prompt_tokens: 1,
+    completion_tokens: 2,
+    total_tokens: 3,
+  });
+});
+
+test('translateResponsesEventToChatCompletionsChunks does not fill scalar opaque from later empty reasoning', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+
+  translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_stream_no_cross_pair',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'in_progress',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+
+  const chunks = [
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.reasoning_summary_text.delta',
+        item_id: 'rs_1',
+        output_index: 0,
+        summary_index: 0,
+        delta: 'first',
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'reasoning',
+          id: 'rs_1',
+          summary: [{ type: 'summary_text', text: 'first' }],
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.done',
+        output_index: 1,
+        item: {
+          type: 'reasoning',
+          id: 'rs_2',
+          summary: [],
+        },
+      },
+      state,
+    ),
+  ].flatMap(result => result);
+
+  const completed = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.completed',
+      response: {
+        id: 'resp_stream_no_cross_pair',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'completed',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+
+  assertEquals(
+    [...chunks, ...completed].some(chunk => chunk.choices[0]?.delta.reasoning_opaque !== undefined),
+    false,
+  );
+  assertEquals(completed[0].usage, undefined);
+});
+
+test('translateResponsesEventToChatCompletionsChunks drops multiple reasoning items without readable summaries', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+
+  translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_multi_opaque',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'in_progress',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+
+  const firstReasoning = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: {
+        type: 'reasoning',
+        id: 'rs_1',
+        summary: [],
+      },
+    },
+    state,
+  );
+  const secondReasoning = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.output_item.done',
+      output_index: 1,
+      item: {
+        type: 'reasoning',
+        id: 'rs_2',
+        summary: [],
+      },
+    },
+    state,
+  );
+
+  const completed = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.completed',
+      response: {
+        id: 'resp_multi_opaque',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'completed',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+        usage: {
+          input_tokens: 1,
+          output_tokens: 2,
+          total_tokens: 3,
+        },
+      },
+    },
+    state,
+  );
+
+  assertEquals(firstReasoning, []);
+  assertEquals(secondReasoning, []);
+  assertEquals(completed.length, 2);
+  assertEquals(completed[0].choices[0].finish_reason, 'stop');
+  assertEquals(completed[0].usage, undefined);
+  assertEquals(completed[1].choices, []);
+  assertEquals(completed[1].usage, {
+    prompt_tokens: 1,
+    completion_tokens: 2,
+    total_tokens: 3,
+  });
+});
+
+test('translateResponsesEventToChatCompletionsChunks projects done-only summary text into scalar reasoning_text', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+
+  translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_done_only_summary',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'in_progress',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+  translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.reasoning_summary_text.done',
+      item_id: 'rs_1',
+      output_index: 0,
+      summary_index: 0,
+      text: 'done trace',
+    },
+    state,
+  );
+  const reasoning = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: {
+        type: 'reasoning',
+        id: 'rs_1',
+        summary: [{ type: 'summary_text', text: 'done trace' }],
+      },
+    },
+    state,
+  );
+
+  const completed = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.completed',
+      response: {
+        id: 'resp_done_only_summary',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'completed',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+
+  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'done trace');
+  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
+    {
+      type: 'reasoning',
+      id: 'rs_1',
+      summary: [{ type: 'summary_text', text: 'done trace' }],
+    },
+  ]);
+  assertEquals(completed[0].choices[0].finish_reason, 'stop');
+});
+
+test('translateResponsesEventToChatCompletionsChunks projects output_item.done summary into scalar reasoning_text', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+
+  translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_output_done_summary',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'in_progress',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+  const reasoning = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: {
+        type: 'reasoning',
+        id: 'rs_1',
+        summary: [{ type: 'summary_text', text: 'output trace' }],
+      },
+    },
+    state,
+  );
+
+  const completed = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.completed',
+      response: {
+        id: 'resp_output_done_summary',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'completed',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+
+  assertEquals(reasoning[0].choices[0].delta.reasoning_text, 'output trace');
+  assertEquals(reasoning[1].choices[0].delta.reasoning_items, [
+    {
+      type: 'reasoning',
+      id: 'rs_1',
+      summary: [{ type: 'summary_text', text: 'output trace' }],
+    },
+  ]);
+  assertEquals(completed[0].choices[0].finish_reason, 'stop');
+});
+
+test('translateResponsesEventToChatCompletionsChunks emits stream usage as a usage-only chunk', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+
+  translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_usage_only',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'in_progress',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+
+  const completed = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.completed',
+      response: {
+        id: 'resp_usage_only',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'completed',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+        usage: {
+          input_tokens: 12,
+          output_tokens: 4,
+          total_tokens: 16,
+          input_tokens_details: { cached_tokens: 3 },
+        },
+      },
+    },
+    state,
+  );
+
+  assertEquals(completed.length, 2);
+  assertEquals(completed[0].choices[0].finish_reason, 'stop');
+  assertEquals(completed[0].usage, undefined);
+  assertEquals(completed[1].choices, []);
+  assertEquals(completed[1].usage, {
+    prompt_tokens: 12,
+    completion_tokens: 4,
+    total_tokens: 16,
+    prompt_tokens_details: { cached_tokens: 3 },
+  });
+});
+
+test('translateResponsesEventToChatCompletionsChunks preserves text order around empty reasoning', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+  const chunks = [
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.created',
+        response: {
+          id: 'resp_late_opaque_order',
+          object: 'response',
+          model: 'gpt-test',
+          status: 'in_progress',
+          output: [],
+          output_text: '',
+          error: null,
+          incomplete_details: null,
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'reasoning', id: 'rs_0', summary: [] },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_text.delta',
+        item_id: 'msg_1',
+        output_index: 1,
+        content_index: 0,
+        delta: 'answer',
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'reasoning',
+          id: 'rs_0',
+          summary: [],
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_late_opaque_order',
+          object: 'response',
+          model: 'gpt-test',
+          status: 'completed',
+          output: [
+            {
+              type: 'reasoning',
+              id: 'rs_0',
+              summary: [],
+            },
+            {
+              type: 'message',
+              role: 'assistant',
+              content: [{ type: 'output_text', text: 'answer' }],
+            },
+          ],
+          output_text: 'answer',
+          error: null,
+          incomplete_details: null,
+        },
+      },
+      state,
+    ),
+  ].flatMap(result => result);
+
+  assertEquals(
+    chunks.map(chunk => chunk.choices[0]?.delta),
+    [
+      { role: 'assistant' },
+      { content: 'answer' },
+      {},
+    ],
+  );
+});
+
+test('translateResponsesEventToChatCompletionsChunks preserves later text after empty reasoning is done', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+  const chunks = [
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.created',
+        response: {
+          id: 'resp_done_before_text',
+          object: 'response',
+          model: 'gpt-test',
+          status: 'in_progress',
+          output: [],
+          output_text: '',
+          error: null,
+          incomplete_details: null,
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'reasoning', id: 'rs_0', summary: [] },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'reasoning',
+          id: 'rs_0',
+          summary: [],
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_text.delta',
+        item_id: 'msg_1',
+        output_index: 1,
+        content_index: 0,
+        delta: 'answer',
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.completed',
+        response: {
+          id: 'resp_done_before_text',
+          object: 'response',
+          model: 'gpt-test',
+          status: 'completed',
+          output: [
+            {
+              type: 'reasoning',
+              id: 'rs_0',
+              summary: [],
+            },
+            {
+              type: 'message',
+              role: 'assistant',
+              content: [{ type: 'output_text', text: 'answer' }],
+            },
+          ],
+          output_text: 'answer',
+          error: null,
+          incomplete_details: null,
+        },
+      },
+      state,
+    ),
+  ].flatMap(result => result);
+
+  assertEquals(
+    chunks.map(chunk => chunk.choices[0]?.delta),
+    [
+      { role: 'assistant' },
+      { content: 'answer' },
+      {},
+    ],
+  );
+});
+
+test('translateResponsesEventToChatCompletionsChunks emits output_text.done when no delta arrived', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+  const chunks = [
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.created',
+        response: {
+          id: 'resp_done_text',
+          object: 'response',
+          model: 'gpt-test',
+          status: 'in_progress',
+          output: [],
+          output_text: '',
+          error: null,
+          incomplete_details: null,
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_text.done',
+        item_id: 'msg_0',
+        output_index: 0,
+        content_index: 0,
+        text: 'answer',
+      },
+      state,
+    ),
+  ].flatMap(result => result);
+
+  assertEquals(
+    chunks.map(chunk => chunk.choices[0]?.delta),
+    [{ role: 'assistant' }, { content: 'answer' }],
+  );
+});
+
+test('translateResponsesEventToChatCompletionsChunks emits function_call_arguments.done when no delta arrived', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+  const chunks = [
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.created',
+        response: {
+          id: 'resp_done_args',
+          object: 'response',
+          model: 'gpt-test',
+          status: 'in_progress',
+          output: [],
+          output_text: '',
+          error: null,
+          incomplete_details: null,
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: {
+          type: 'function_call',
+          call_id: 'call_0',
+          name: 'lookup',
+          arguments: '',
+          status: 'in_progress',
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.function_call_arguments.done',
+        item_id: 'fc_0',
+        output_index: 0,
+        arguments: '{"q":1}',
+      },
+      state,
+    ),
+  ].flatMap(result => result);
+
+  assertEquals(
+    chunks.map(chunk => chunk.choices[0]?.delta),
+    [
+      { role: 'assistant' },
+      {
+        tool_calls: [
+          {
+            index: 0,
+            id: 'call_0',
+            type: 'function',
+            function: { name: 'lookup', arguments: '' },
+          },
+        ],
+      },
+      {
+        tool_calls: [
+          {
+            index: 0,
+            function: { arguments: '{"q":1}' },
+          },
+        ],
+      },
+    ],
+  );
+});
+
+test('translateResponsesEventToChatCompletionsChunks emits all done-only reasoning summary parts', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+  const chunks = [
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.created',
+        response: {
+          id: 'resp_done_reasoning_parts',
+          object: 'response',
+          model: 'gpt-test',
+          status: 'in_progress',
+          output: [],
+          output_text: '',
+          error: null,
+          incomplete_details: null,
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'reasoning', id: 'rs_0', summary: [] },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.reasoning_summary_text.done',
+        item_id: 'rs_0',
+        output_index: 0,
+        summary_index: 0,
+        text: 'first',
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.reasoning_summary_text.done',
+        item_id: 'rs_0',
+        output_index: 0,
+        summary_index: 1,
+        text: 'second',
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'reasoning',
+          id: 'rs_0',
+          summary: [
+            { type: 'summary_text', text: 'first' },
+            { type: 'summary_text', text: 'second' },
+          ],
+        },
+      },
+      state,
+    ),
+  ].flatMap(result => result);
+
+  assertEquals(
+    chunks.map(chunk => chunk.choices[0]?.delta.reasoning_text).filter(text => text !== undefined),
+    ['first', 'second'],
+  );
+});
+
+test('translateResponsesEventToChatCompletionsChunks flushes pending done-only reasoning summary at completion', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+
+  translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_terminal_reasoning_done',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'in_progress',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+  translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.reasoning_summary_text.done',
+      item_id: 'rs_0',
+      output_index: 0,
+      summary_index: 0,
+      text: 'terminal trace',
+    },
+    state,
+  );
+  const completed = translateResponsesEventToChatCompletionsChunks(
+    {
+      type: 'response.completed',
+      response: {
+        id: 'resp_terminal_reasoning_done',
+        object: 'response',
+        model: 'gpt-test',
+        status: 'completed',
+        output: [],
+        output_text: '',
+        error: null,
+        incomplete_details: null,
+      },
+    },
+    state,
+  );
+
+  assertEquals(
+    completed.map(chunk => chunk.choices[0]?.delta),
+    [{ reasoning_text: 'terminal trace' }, {}],
+  );
+});
+
+test('translateResponsesEventToChatCompletionsChunks keeps first scalar reasoning by output order', () => {
+  const state = createResponsesToChatCompletionsStreamState();
+  const chunks = [
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.created',
+        response: {
+          id: 'resp_reasoning_order',
+          object: 'response',
+          model: 'gpt-test',
+          status: 'in_progress',
+          output: [],
+          output_text: '',
+          error: null,
+          incomplete_details: null,
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'reasoning', id: 'rs_0', summary: [] },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.added',
+        output_index: 1,
+        item: { type: 'reasoning', id: 'rs_1', summary: [] },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.done',
+        output_index: 1,
+        item: {
+          type: 'reasoning',
+          id: 'rs_1',
+          summary: [{ type: 'summary_text', text: 'second' }],
+        },
+      },
+      state,
+    ),
+    translateResponsesEventToChatCompletionsChunks(
+      {
+        type: 'response.output_item.done',
+        output_index: 0,
+        item: {
+          type: 'reasoning',
+          id: 'rs_0',
+          summary: [{ type: 'summary_text', text: 'first' }],
+        },
+      },
+      state,
+    ),
+  ].flatMap(result => result);
+
+  assertEquals(
+    chunks.map(chunk => chunk.choices[0]?.delta),
+    [
+      { role: 'assistant' },
+      { reasoning_text: 'first' },
+      {
+        reasoning_items: [
+          {
+            type: 'reasoning',
+            id: 'rs_0',
+            summary: [{ type: 'summary_text', text: 'first' }],
+          },
+          {
+            type: 'reasoning',
+            id: 'rs_1',
+            summary: [{ type: 'summary_text', text: 'second' }],
+          },
+        ],
+      },
+    ],
+  );
 });

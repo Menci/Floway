@@ -1,16 +1,16 @@
-import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './types.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import type { MessagesAssistantMessage, MessagesUserMessage } from '@floway-dev/protocols/messages';
 
 /**
  * Copilot rejects Anthropic `image` blocks as plain text unless the private
  * `copilot-vision-request: true` header is set. Detection must scan the final
- * post-mutation payload (after other Messages target interceptors have run)
+ * post-mutation payload (after other Messages boundary interceptors have run)
  * and cover both the top-level `message.content` and the nested
  * `tool_result.content[]` shape; Anthropic allows images in both positions.
  *
- * Generic in the run-result type because pre-Path A the equivalent vision
- * detection ran on every Copilot Messages HTTP exchange (chat AND
- * count_tokens). Keeping a single generic interceptor lets both the streaming
+ * Generic in the run-result type because the Copilot provider historically
+ * applied equivalent vision detection to every Messages HTTP exchange (chat
+ * AND count_tokens). Keeping a single generic interceptor lets both the streaming
  * Messages boundary chain (`ExecuteResult<...>`) and the count_tokens chain
  * (`Response`) share one definition.
  *
@@ -29,8 +29,8 @@ const contentHasImage = (content: MessagesUserMessage['content'] | MessagesAssis
 };
 
 export const withVisionHeaderSet = async <TResult>(
-  ctx: MessagesBoundaryCtx | MessagesCountTokensBoundaryCtx,
-  _request: object,
+  ctx: MessagesBoundaryCtx,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   if (ctx.payload.messages.some(message => contentHasImage(message.content))) {

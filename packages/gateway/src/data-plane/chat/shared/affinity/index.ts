@@ -1,12 +1,11 @@
 import { isEqual } from 'es-toolkit';
 
 import { serverSecretBytes } from '../../../../shared/server-secret.ts';
-import type { ChatGatewayCtx, GatewayCtx } from '../gateway-ctx.ts';
-import type { RoutingDecision } from '../routing.ts';
+import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
+import type { ChatServeFailure } from '../errors.ts';
+import type { ChatGatewayCtx } from '../gateway-ctx.ts';
 import { appendOpaqueTrailer, concatBytes, decodeOpaqueValue, encodeOpaqueValue, MAX_OPAQUE_TRAILER_BYTES, splitOpaqueTrailer, uint16be, type AliasRules, type OpaqueValueOrigin } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
-
-type AffinityOrigin = OpaqueValueOrigin;
 
 export interface AffinityTarget {
   upstreamId: string;
@@ -21,7 +20,7 @@ export interface AffinityEvidence {
 
 interface AffinityData {
   version: 1;
-  origin?: AffinityOrigin;
+  origin?: OpaqueValueOrigin;
   affinity: AffinityTarget;
 }
 
@@ -30,7 +29,7 @@ export type DecodedAffinityBlob =
   | ({ kind: 'owned'; value?: string } & AffinityData);
 
 export interface PreparedAffinityPayload<T> {
-  readonly routingEvidence: readonly AffinityEvidence[];
+  readonly narrowingEvidence: readonly AffinityEvidence[];
   readonly payloadForCandidate: (candidate: ModelCandidate) => T;
 }
 
@@ -172,13 +171,13 @@ const sameForcedTarget = (left: AffinityTarget, right: AffinityTarget): boolean 
   left.upstreamId === right.upstreamId && left.modelId === right.modelId;
 
 const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget => ({
-  upstreamId: candidate.provider.upstream,
+  upstreamId: candidate.provider.upstreamId,
   modelId: candidate.model.id,
   ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
 });
 
 const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
-  candidate.provider.upstream === affinity.upstreamId
+  candidate.provider.upstreamId === affinity.upstreamId
   && candidate.model.id === affinity.modelId
   // Alias targets always carry a rules object, while direct candidates omit
   // it. Both shapes describe the same no-overlay variant when the object is
@@ -187,7 +186,7 @@ const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: Affini
   && isEqual(candidate.rules ?? {}, affinity.rules ?? {});
 
 const candidateMatchesForcedTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
-  candidate.provider.upstream === affinity.upstreamId && candidate.model.id === affinity.modelId;
+  candidate.provider.upstreamId === affinity.upstreamId && candidate.model.id === affinity.modelId;
 
 const reorderByLatestAvailablePreference = <T extends ModelCandidate>(
   candidates: readonly T[],
@@ -206,21 +205,18 @@ const reorderByLatestAvailablePreference = <T extends ModelCandidate>(
   return candidates;
 };
 
-export const routeCandidatesByAffinity = <T extends ModelCandidate>(
-  candidates: readonly T[],
+export const narrowCandidatesByAffinity = (
+  candidates: readonly ModelCandidate[],
   evidence: readonly AffinityEvidence[],
-): RoutingDecision<T> => {
+): readonly ModelCandidate[] | ChatServeFailure => {
   const forcing: AffinityTarget[] = [];
   for (const item of evidence) {
     if (item.mode === 'force' && !forcing.some(existing => sameForcedTarget(existing, item.target))) forcing.push(item.target);
   }
   if (forcing.length > 1) {
     return {
-      kind: 'failure',
-      failure: {
-        kind: 'routing-unavailable',
-        message: `Client-carried state requires multiple incompatible targets: ${forcing.map(target => `'${target.upstreamId}/${target.modelId}'`).join(', ')}.`,
-      },
+      kind: 'routing-unavailable',
+      message: `Client-carried state requires multiple incompatible targets: ${forcing.map(target => `'${target.upstreamId}/${target.modelId}'`).join(', ')}.`,
     };
   }
 
@@ -229,15 +225,12 @@ export const routeCandidatesByAffinity = <T extends ModelCandidate>(
     : candidates.filter(candidate => candidateMatchesForcedTarget(candidate, forcing[0]));
   if (forcing.length === 1 && narrowed.length === 0) {
     return {
-      kind: 'failure',
-      failure: {
-        kind: 'routing-unavailable',
-        message: `Client-carried state requires unavailable target '${forcing[0].upstreamId}/${forcing[0].modelId}'.`,
-      },
+      kind: 'routing-unavailable',
+      message: `Client-carried state requires unavailable target '${forcing[0].upstreamId}/${forcing[0].modelId}'.`,
     };
   }
 
-  return { kind: 'success', candidates: reorderByLatestAvailablePreference(narrowed, evidence) as readonly T[] };
+  return reorderByLatestAvailablePreference(narrowed, evidence);
 };
 
 type CandidateBlob =
@@ -269,8 +262,8 @@ export class AffinityRequestContext {
   readonly codec: AffinityCodec;
   #selectedCandidate: ModelCandidate | undefined;
 
-  constructor(secret: string) {
-    this.codec = new AffinityCodec(secret);
+  constructor(serverSecret: string) {
+    this.codec = new AffinityCodec(serverSecret);
   }
 
   select(candidate: ModelCandidate): void {

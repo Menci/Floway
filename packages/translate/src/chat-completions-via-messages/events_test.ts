@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
 import { createMessagesToChatCompletionsStreamState, translateMessagesEventToChatCompletionsChunks } from './events.ts';
-import { assertEquals } from '../test-assert.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
 import { USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { assertEquals } from '@floway-dev/test-utils';
 
 // ── Helpers ──
 

@@ -1,81 +1,16 @@
 import type { ExecutionContext } from 'hono';
 import { test, vi } from 'vitest';
 
-import { hashResponsesItemContent } from './items/identity.ts';
+import { hashResponsesItem } from './items/identity.ts';
 import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
 import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
-import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
+import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-utils/app.ts';
+import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/sse.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
-
-type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
-
-class TestWorkerWebSocket extends EventTarget {
-  peer?: TestWorkerWebSocket;
-  readyState: number = WebSocket.OPEN;
-
-  accept(): void {}
-
-  send(data: string): void {
-    this.peer?.dispatchEvent(new MessageEvent('message', { data }));
-  }
-
-  close(): void {
-    this.readyState = WebSocket.CLOSED;
-    if (this.peer) {
-      this.peer.readyState = WebSocket.CLOSED;
-      this.peer.dispatchEvent(new Event('close'));
-    }
-  }
-}
-
-const installWorkerWebSocketRuntime = (): {
-  readonly pairs: Array<{ readonly client: TestWorkerWebSocket; readonly server: TestWorkerWebSocket }>;
-  restore(): void;
-} => {
-  const globals = globalThis as typeof globalThis & {
-    WebSocketPair?: unknown;
-    Response: typeof Response;
-  };
-  const originalWebSocketPair = globals.WebSocketPair;
-  const OriginalResponse = globals.Response;
-  const pairs: Array<{ readonly client: TestWorkerWebSocket; readonly server: TestWorkerWebSocket }> = [];
-
-  globals.WebSocketPair = class {
-    constructor() {
-      const client = new TestWorkerWebSocket();
-      const server = new TestWorkerWebSocket();
-      client.peer = server;
-      server.peer = client;
-      pairs.push({ client, server });
-      return { 0: client, 1: server };
-    }
-  };
-
-  globals.Response = class extends OriginalResponse {
-    constructor(body?: BodyInit | null, init?: WorkerResponseInit) {
-      if (init?.status === 101) {
-        const { webSocket, status: _status, ...rest } = init;
-        super(null, { ...rest, status: 200 });
-        Object.defineProperty(this, 'status', { value: 101 });
-        Object.defineProperty(this, 'webSocket', { value: webSocket });
-        return;
-      }
-      super(body, init);
-    }
-  };
-
-  return {
-    pairs,
-    restore: () => {
-      globals.WebSocketPair = originalWebSocketPair;
-      globals.Response = OriginalResponse;
-    },
-  };
-};
 
 const waitForMessages = async (
   socket: TestWorkerWebSocket,
@@ -768,7 +703,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       assert(firstOutput.item.id !== 'assistant_ws_store_false_1', 'expected Copilot to replace the raw message id');
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id], 0), []);
       assertEquals(
-        await repo.responsesItems.lookupManyByItemHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })], 0),
+        await repo.responsesItems.lookupManyByItemHash(apiKey.id, [await hashResponsesItem({ type: 'message', role: 'user', content: 'first question' })], 0),
         [],
       );
 
@@ -1159,8 +1094,7 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
 });
 
 // The four chat HTTP transports render a mid-attempt throw (interceptor
-// bug, translation error, provider-layer JS exception that bypassed
-// tryCatchChatServeFailure) through an
+// bug, translation error, provider-layer JS exception not represented as a ChatServeFailure) through an
 // `internalErrorResult(..., ctx.attempt.telemetry)` envelope,
 // which internally reaches `recordFailedRequest` and lands an error row
 // attributed to the throwing candidate. The WS transport's outer catch

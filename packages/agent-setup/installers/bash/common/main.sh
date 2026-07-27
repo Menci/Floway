@@ -1,3 +1,14 @@
+SETUP_TMPDIR=""
+_cleanup() {
+  if [ -n "$SETUP_TMPDIR" ]; then
+    rm -rf "$SETUP_TMPDIR" 2>/dev/null || true
+  fi
+}
+# EXIT owns cleanup. INT/TERM only translate the signal into the conventional
+# exit status (130 = 128+SIGINT, 143 = 128+SIGTERM) and let that exit fire the
+# EXIT trap. Cleaning up directly inside the INT/TERM handlers would delete the
+# working directory and then let the interrupted script resume into the next
+# agent's configuration; exiting instead stops all further agent work.
 # --- run --------------------------------------------------------------------
 
 main() {

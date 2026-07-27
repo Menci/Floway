@@ -72,7 +72,7 @@ export const fetchUpstreamModelsCached = async (
   opts: ModelsCacheFetchOptions,
 ): Promise<ProviderModel[]> => {
   const { scheduler, fetcher, force } = opts;
-  const key = instance.upstream;
+  const key = instance.upstreamId;
   const now = Date.now();
 
   if (force) {

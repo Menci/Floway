@@ -1,13 +1,13 @@
 import { expect, test } from 'vitest';
 
-import { translateMessagesToResponses } from './request.ts';
+import { buildTargetRequest } from './request.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
-import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
 import type { MessagesAssistantContentBlock, MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 import type { ResponsesFunctionTool, ResponsesInputReasoning } from '@floway-dev/protocols/responses';
+import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
-test('translateMessagesToResponses preserves a native thinking signature as encrypted_content with a synthesized id', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest preserves a native thinking signature as encrypted_content with a synthesized id', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -28,8 +28,8 @@ test('translateMessagesToResponses preserves a native thinking signature as encr
   });
 });
 
-test('translateMessagesToResponses recovers Responses ids and encrypted_content from packed thinking signatures', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest recovers Responses ids and encrypted_content from packed thinking signatures', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -56,8 +56,8 @@ test('translateMessagesToResponses recovers Responses ids and encrypted_content 
   });
 });
 
-test('translateMessagesToResponses recovers an empty-front packed signature as id-only reasoning', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest recovers an empty-front packed signature as id-only reasoning', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -78,8 +78,8 @@ test('translateMessagesToResponses recovers an empty-front packed signature as i
   });
 });
 
-test('translateMessagesToResponses drops filtered-native tool_choice and rewrites assistant native web-search history as function-call history', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest drops filtered-native tool_choice and rewrites assistant native web-search history as function-call history', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     tool_choice: { type: 'any' },
@@ -130,8 +130,8 @@ test('translateMessagesToResponses drops filtered-native tool_choice and rewrite
   ]);
 });
 
-test('translateMessagesToResponses maps output_config.effort directly to reasoning.effort', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest maps output_config.effort directly to reasoning.effort', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     output_config: { effort: 'xhigh' },
@@ -142,8 +142,8 @@ test('translateMessagesToResponses maps output_config.effort directly to reasoni
   assertFalse('include' in result);
 });
 
-test('translateMessagesToResponses prefers output_config.effort over thinking.disabled', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest prefers output_config.effort over thinking.disabled', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     output_config: { effort: 'high' },
@@ -154,8 +154,8 @@ test('translateMessagesToResponses prefers output_config.effort over thinking.di
   assertEquals(result.reasoning, { effort: 'high' });
 });
 
-test('translateMessagesToResponses preserves output_config.effort max at the translation boundary', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest preserves output_config.effort max at the translation boundary', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     output_config: { effort: 'max' },
@@ -165,9 +165,9 @@ test('translateMessagesToResponses preserves output_config.effort max at the tra
   assertEquals(result.reasoning, { effort: 'max' });
 });
 
-test('translateMessagesToResponses maps thinking.enabled to reasoning.effort medium regardless of budget_tokens', () => {
+test('buildTargetRequest maps thinking.enabled to reasoning.effort medium regardless of budget_tokens', () => {
   for (const budget of [undefined, 1024, 16384]) {
-    const result = translateMessagesToResponses({
+    const result = buildTargetRequest({
       model: 'gpt-test',
       max_tokens: 4096,
       thinking: budget === undefined ? { type: 'enabled' } : { type: 'enabled', budget_tokens: budget },
@@ -178,8 +178,8 @@ test('translateMessagesToResponses maps thinking.enabled to reasoning.effort med
   }
 });
 
-test('translateMessagesToResponses maps thinking.adaptive to reasoning.effort medium', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest maps thinking.adaptive to reasoning.effort medium', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 4096,
     thinking: { type: 'adaptive' },
@@ -189,11 +189,11 @@ test('translateMessagesToResponses maps thinking.adaptive to reasoning.effort me
   assertEquals(result.reasoning, { effort: 'medium' });
 });
 
-test('translateMessagesToResponses never invents reasoning.context from a source thinking block', () => {
+test('buildTargetRequest never invents reasoning.context from a source thinking block', () => {
   // The Messages thinking shape carries no reasoning-context mode, so the
   // target reasoning object must expose effort only — never a synthesized
   // `all_turns` (or any other) context value.
-  const result = translateMessagesToResponses({
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 4096,
     thinking: { type: 'enabled', budget_tokens: 8192 },
@@ -205,8 +205,8 @@ test('translateMessagesToResponses never invents reasoning.context from a source
   assertFalse('context' in (result.reasoning ?? {}));
 });
 
-test('translateMessagesToResponses preserves max_tokens at the translation boundary', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest preserves max_tokens at the translation boundary', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
@@ -215,8 +215,8 @@ test('translateMessagesToResponses preserves max_tokens at the translation bound
   assertEquals(result.max_output_tokens, 256);
 });
 
-test('translateMessagesToResponses maps thinking.disabled to reasoning.effort none', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest maps thinking.disabled to reasoning.effort none', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     thinking: { type: 'disabled' },
@@ -227,8 +227,8 @@ test('translateMessagesToResponses maps thinking.disabled to reasoning.effort no
   assertFalse('include' in result);
 });
 
-test('translateMessagesToResponses preserves explicit temperature and omits translated-path defaults', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest preserves explicit temperature and omits translated-path defaults', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     temperature: 0.2,
@@ -240,8 +240,8 @@ test('translateMessagesToResponses preserves explicit temperature and omits tran
   assertFalse('parallel_tool_calls' in result);
 });
 
-test('translateMessagesToResponses omits temperature when the source omitted it', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest omits temperature when the source omitted it', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
@@ -250,8 +250,8 @@ test('translateMessagesToResponses omits temperature when the source omitted it'
   assertFalse('temperature' in result);
 });
 
-test('translateMessagesToResponses prepends multi-block top-level system as a leading input system message preserving block boundaries', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest prepends multi-block top-level system as a leading input system message preserving block boundaries', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     system: [
@@ -273,8 +273,8 @@ test('translateMessagesToResponses prepends multi-block top-level system as a le
   });
 });
 
-test('translateMessagesToResponses keeps a single-block top-level system in canonical `instructions` slot', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest keeps a single-block top-level system in canonical `instructions` slot', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     system: [{ type: 'text', text: 'You are helpful.' }],
@@ -286,8 +286,8 @@ test('translateMessagesToResponses keeps a single-block top-level system in cano
   assertEquals(input[0].role, 'user');
 });
 
-test('translateMessagesToResponses preserves redacted_thinking as a native-signature reasoning item', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest preserves redacted_thinking as a native-signature reasoning item', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -309,8 +309,8 @@ test('translateMessagesToResponses preserves redacted_thinking as a native-signa
   ]);
 });
 
-test('translateMessagesToResponses recovers id and encrypted_content from packed redacted_thinking data', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest recovers id and encrypted_content from packed redacted_thinking data', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -332,8 +332,8 @@ test('translateMessagesToResponses recovers id and encrypted_content from packed
   ]);
 });
 
-test('translateMessagesToResponses preserves text-only thinking input', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest preserves text-only thinking input', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -357,8 +357,8 @@ test('translateMessagesToResponses preserves text-only thinking input', () => {
 // `properties` field. Anthropic accepts that shape, so the input_schema must
 // be normalized before forwarding to Responses. Ref:
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
-test('translateMessagesToResponses defaults missing input_schema.properties to {} for object tools', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest defaults missing input_schema.properties to {} for object tools', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     tools: [{ name: 'no_args', input_schema: { type: 'object' } }],
@@ -375,8 +375,8 @@ test('translateMessagesToResponses defaults missing input_schema.properties to {
   ]);
 });
 
-test('translateMessagesToResponses preserves declared input_schema.properties verbatim', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest preserves declared input_schema.properties verbatim', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     tools: [
@@ -400,8 +400,8 @@ test('translateMessagesToResponses preserves declared input_schema.properties ve
   });
 });
 
-test('translateMessagesToResponses does not inject properties for non-object input_schema', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest does not inject properties for non-object input_schema', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     tools: [{ name: 'scalar', input_schema: { type: 'string' } }],
@@ -412,14 +412,14 @@ test('translateMessagesToResponses does not inject properties for non-object inp
   assertEquals(tool.parameters, { type: 'string' });
 });
 
-test('translateMessagesToResponses wraps output_config.format json_schema as text.format with synthesised name and strict', () => {
+test('buildTargetRequest wraps output_config.format json_schema as text.format with synthesised name and strict', () => {
   const schema = {
     type: 'object',
     properties: { test: { type: 'string' } },
     required: ['test'],
     additionalProperties: false,
   };
-  const result = translateMessagesToResponses({
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'Hi' }],
@@ -431,8 +431,8 @@ test('translateMessagesToResponses wraps output_config.format json_schema as tex
   });
 });
 
-test('translateMessagesToResponses omits text when output_config has no format', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest omits text when output_config has no format', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'Hi' }],
@@ -442,10 +442,10 @@ test('translateMessagesToResponses omits text when output_config has no format',
   assertFalse('text' in result);
 });
 
-test('translateMessagesToResponses rejects an unknown assistant content block type', () => {
+test('buildTargetRequest rejects an unknown assistant content block type', () => {
   assertThrows(
     () =>
-      translateMessagesToResponses({
+      buildTargetRequest({
         model: 'gpt-test',
         max_tokens: 256,
         messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as MessagesAssistantContentBlock] }],
@@ -455,10 +455,10 @@ test('translateMessagesToResponses rejects an unknown assistant content block ty
   );
 });
 
-test('translateMessagesToResponses rejects an unknown user content block type', () => {
+test('buildTargetRequest rejects an unknown user content block type', () => {
   assertThrows(
     () =>
-      translateMessagesToResponses({
+      buildTargetRequest({
         model: 'gpt-test',
         max_tokens: 256,
         messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as MessagesUserContentBlock] }],
@@ -468,8 +468,8 @@ test('translateMessagesToResponses rejects an unknown user content block type', 
   );
 });
 
-test('translateMessagesToResponses emits in-array role:"system" inline as a Responses message input item', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest emits in-array role:"system" inline as a Responses message input item', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -486,8 +486,8 @@ test('translateMessagesToResponses emits in-array role:"system" inline as a Resp
   assertEquals(input[2].role, 'user');
 });
 
-test('translateMessagesToResponses preserves in-array system text blocks as separate input_text parts', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest preserves in-array system text blocks as separate input_text parts', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -513,8 +513,8 @@ test('translateMessagesToResponses preserves in-array system text blocks as sepa
   });
 });
 
-test('translateMessagesToResponses preserves chronology of multiple in-array system messages', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest preserves chronology of multiple in-array system messages', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [
@@ -535,10 +535,10 @@ test('translateMessagesToResponses preserves chronology of multiple in-array sys
   assertEquals(input[4].role, 'user');
 });
 
-test('translateMessagesToResponses rejects an unknown message role', () => {
+test('buildTargetRequest rejects an unknown message role', () => {
   assertThrows(
     () =>
-      translateMessagesToResponses({
+      buildTargetRequest({
         model: 'gpt-test',
         max_tokens: 256,
         messages: [{ role: 'tool', content: 'oops' } as unknown as { role: 'user'; content: string }],
@@ -548,8 +548,8 @@ test('translateMessagesToResponses rejects an unknown message role', () => {
   );
 });
 
-test('translateMessagesToResponses collapses Anthropic thinking mode onto reasoning.effort only', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest collapses Anthropic thinking mode onto reasoning.effort only', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
@@ -563,8 +563,8 @@ test('translateMessagesToResponses collapses Anthropic thinking mode onto reason
 
 // ── speed ↔ service_tier bridge ──
 
-test('translateMessagesToResponses maps speed:fast to service_tier:fast on the outbound Responses payload', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest maps speed:fast to service_tier:fast on the outbound Responses payload', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     speed: 'fast',
@@ -574,8 +574,8 @@ test('translateMessagesToResponses maps speed:fast to service_tier:fast on the o
   assertEquals(result.service_tier, 'fast');
 });
 
-test('translateMessagesToResponses omits service_tier when speed is absent', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest omits service_tier when speed is absent', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
@@ -584,8 +584,8 @@ test('translateMessagesToResponses omits service_tier when speed is absent', () 
   assertFalse('service_tier' in result);
 });
 
-test('translateMessagesToResponses drops speed values other than fast without emitting service_tier', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest drops speed values other than fast without emitting service_tier', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     speed: 'standard',
@@ -595,8 +595,8 @@ test('translateMessagesToResponses drops speed values other than fast without em
   assertFalse('service_tier' in result);
 });
 
-test('translateMessagesToResponses forwards Anthropic service_tier to Responses when speed is absent', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest forwards Anthropic service_tier to Responses when speed is absent', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     service_tier: 'auto',
@@ -606,8 +606,8 @@ test('translateMessagesToResponses forwards Anthropic service_tier to Responses 
   assertEquals(result.service_tier, 'auto');
 });
 
-test('translateMessagesToResponses forwards service_tier:standard_only to Responses when speed is absent', () => {
-  const result = translateMessagesToResponses({
+test('buildTargetRequest forwards service_tier:standard_only to Responses when speed is absent', () => {
+  const result = buildTargetRequest({
     model: 'gpt-test',
     max_tokens: 256,
     service_tier: 'standard_only',

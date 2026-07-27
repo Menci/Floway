@@ -6,7 +6,7 @@ import { AffinityCodec } from '../../shared/affinity/index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { initProviderRepo, providerModelOf, type UpstreamRecord } from '@floway-dev/provider';
-import { clearInProcessCopilotTokenCache, copilotProvider } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache, copilotProviderModule } from '@floway-dev/provider-copilot';
 import { noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstream: UpstreamRecord = {
@@ -67,7 +67,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
     },
   }));
   clearInProcessCopilotTokenCache();
-  const provider = copilotProvider.create(upstream);
+  const provider = copilotProviderModule.create(upstream);
   const rawModel = { id: 'gpt-test', supported_endpoints: ['/responses'] };
   const candidate = stubModelCandidate({
     provider,
@@ -76,7 +76,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
   });
   const otherCandidate = stubModelCandidate({
     provider: {
-      upstream: 'up-other',
+      upstreamId: 'up-other',
       kind: 'custom',
       name: 'Other',
       disabledPublicModelIds: [],
@@ -124,7 +124,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       const codec = new AffinityCodec('00'.repeat(32));
       const publicEvents = await collectEvents(wrapResponsesAffinityEgress(first.events, {
         codec,
-        affinity: { upstreamId: provider.upstream, modelId: candidate.model.id },
+        affinity: { upstreamId: provider.upstreamId, modelId: candidate.model.id },
       }));
       const done = publicEvents.find(event => event.type === 'response.output_item.done');
       if (done?.type !== 'response.output_item.done') throw new Error('expected public done item');

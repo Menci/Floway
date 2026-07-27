@@ -97,7 +97,7 @@ export const stubModelCandidate = (overrides: {
   providerData?: unknown;
 } = {}): ModelCandidate => {
   const provider = overrides.provider ?? {
-    upstream: 'test-upstream',
+    upstreamId: 'test-upstream',
     kind: 'custom',
     name: 'Test Upstream',
     disabledPublicModelIds: [],
@@ -124,7 +124,7 @@ export const stubModelCandidate = (overrides: {
     provider,
     model: stubInternalModel({
       ...modelOverrides,
-      providerModels: modelOverrides.providerModels ?? { [provider.upstream]: providerModel },
+      providerModels: modelOverrides.providerModels ?? { [provider.upstreamId]: providerModel },
     }),
     fetcher: directFetcher,
   };

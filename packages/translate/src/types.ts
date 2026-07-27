@@ -1,5 +1,12 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
+export interface RemoteImageData {
+  mediaType: string | null;
+  data: Uint8Array;
+}
+
+export type RemoteImageLoader = (url: string) => Promise<RemoteImageData | null>;
+
 /**
  * Per-trip context. Carries the model name plus a per-pair-declared `TExtras`
  * shape that lists exactly the capability fields and runtime adapters the trip
@@ -32,6 +39,23 @@ export interface TranslatedApiError {
 }
 
 /**
+ * What one translation trip hands back: the target payload, an events
+ * translator closure mapping target-protocol events into source-protocol
+ * events, and an optional upstream-error rewriter.
+ *
+ * `apiError` is optional: when the target upstream returns a non-2xx HTTP
+ * body (rather than an SSE stream), the pair may rewrite it into the source
+ * protocol's envelope. Returning `undefined` — or omitting the field
+ * entirely — passes the upstream body through verbatim, which is what most
+ * pairs want.
+ */
+export interface TranslateTripResult<TgtPayload, SrcEvent, TgtEvent> {
+  target: TgtPayload;
+  events: (frames: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
+  apiError?: (upstream: TranslatedApiError) => TranslatedApiError | undefined;
+}
+
+/**
  * One pairwise translation trip. The function body owns the trip: it builds
  * the target payload and returns an events translator closure that maps
  * target-protocol events back into source-protocol events. Trip-scoped state
@@ -44,18 +68,8 @@ export interface TranslatedApiError {
  * `TExtras` is the pair-declared context surface: each pair lists exactly the
  * capabilities and injected runtime adapters it reads. Pairs that need no
  * extra context leave it as `unknown` (default).
- *
- * `apiError` is optional: when the target upstream returns a non-2xx HTTP
- * body (rather than an SSE stream), the pair may rewrite it into the source
- * protocol's envelope. Returning `undefined` — or omitting the field
- * entirely — passes the upstream body through verbatim, which is what most
- * pairs want.
  */
 export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent, TExtras = unknown> = (
   src: SrcPayload,
   ctx: TranslationContext<TExtras>,
-) => Promise<{
-  target: TgtPayload;
-  events: (frames: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-  apiError?: (upstream: TranslatedApiError) => TranslatedApiError | undefined;
-}>;
+) => Promise<TranslateTripResult<TgtPayload, SrcEvent, TgtEvent>>;

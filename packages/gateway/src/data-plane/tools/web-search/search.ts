@@ -1,7 +1,7 @@
 import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from './types.ts';
-import { recordSearchUsage } from './usage.ts';
+import { recordWebSearchUsage } from './usage.ts';
 
-export const searchWebAndRecordUsage = async (opts: {
+export const runWebSearchAndRecordUsage = async (opts: {
   provider: WebSearchProvider;
   providerName: WebSearchProviderName;
   keyId: string;
@@ -13,7 +13,7 @@ export const searchWebAndRecordUsage = async (opts: {
     // Telemetry must never mask the provider result; log and swallow
     // recording failures.
     try {
-      await recordSearchUsage({
+      await recordWebSearchUsage({
         provider: opts.providerName,
         keyId: opts.keyId,
         action: 'search',

@@ -17,7 +17,7 @@ import type { ResponsesInterceptor } from './types.ts';
 import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import { providerModelOf } from '@floway-dev/provider';
 
-export const withVendorQwenResponsesNormalize: ResponsesInterceptor = async (ctx, _request, run) => {
+export const withVendorQwenResponsesNormalize: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-qwen')) return await run();
 
   if (ctx.payload.reasoning?.effort === 'none') {

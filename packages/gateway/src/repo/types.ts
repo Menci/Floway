@@ -1,5 +1,4 @@
-import type { SearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
-export type { SearchConfig } from '../shared/web-search-providers.ts';
+import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
@@ -14,7 +13,9 @@ export interface ApiKey {
   serverSecret: string;
   createdAt: string;
   lastUsedAt?: string;
-  // null = inherit global upstream order; array = whitelist + priority order.
+  // null = inherit the user-level cap; array = whitelist in priority order.
+  // When both levels carry a list the effective list is their intersection
+  // taken in this order, so a key that sets one also decides the priority.
   upstreamIds: string[] | null;
   deletedAt: string | null;
   // null = dump capture disabled; positive integer = seconds of retention.
@@ -33,7 +34,9 @@ export interface User {
   passwordHash: string | null;
   isAdmin: boolean;
   // null = unrestricted at the user level; an array intersects with the
-  // per-key whitelist when both are present.
+  // per-key whitelist when both are present. Membership only — the key's
+  // order carries the intersection, so this order applies only to requests
+  // whose key sets no list of its own.
   upstreamIds: string[] | null;
   createdAt: string;
   deletedAt: string | null;
@@ -83,16 +86,18 @@ export interface TokenUsage {
   tier?: string | null;
 }
 
-export type SearchUsageAction = 'search' | 'fetch_page';
+export type WebSearchUsageAction = 'search' | 'fetch_page';
 
-export interface SearchUsageRecord {
+export interface WebSearchUsageRecord {
   provider: WebSearchProviderName;
   keyId: string;
-  action: SearchUsageAction;
+  action: WebSearchUsageAction;
   hour: string;
   requests: number;
 }
 
+// `ttft_ms` is time to first token in milliseconds; `tpot_us` is time per
+// output token in microseconds.
 export type PerformanceMetric = 'ttft_ms' | 'tpot_us';
 
 // A performance-summary row is a `PerformanceTelemetryContext` (the provider-
@@ -206,11 +211,11 @@ export interface UsageRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface SearchUsageRepo {
-  record(args: { provider: WebSearchProviderName; keyId: string; action: SearchUsageAction; hour: string; requests: number }): Promise<void>;
-  query(opts: { provider?: WebSearchProviderName; keyId?: string; action?: SearchUsageAction; start: string; end: string }): Promise<SearchUsageRecord[]>;
-  listAll(): Promise<SearchUsageRecord[]>;
-  set(record: SearchUsageRecord): Promise<void>;
+export interface WebSearchUsageRepo {
+  record(args: { provider: WebSearchProviderName; keyId: string; action: WebSearchUsageAction; hour: string; requests: number }): Promise<void>;
+  query(opts: { provider?: WebSearchProviderName; keyId?: string; action?: WebSearchUsageAction; start: string; end: string }): Promise<WebSearchUsageRecord[]>;
+  listAll(): Promise<WebSearchUsageRecord[]>;
+  set(record: WebSearchUsageRecord): Promise<void>;
   deleteAll(): Promise<void>;
 }
 
@@ -238,7 +243,7 @@ export interface PerformanceRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface CachedModelsRow {
+export interface ModelsCacheRow {
   revision: number;
   fetchedAt: number;
   models: ProviderModel[];
@@ -246,15 +251,15 @@ export interface CachedModelsRow {
 }
 
 export interface ModelsCacheRepo {
-  get(upstreamId: string): Promise<CachedModelsRow | null>;
+  get(upstreamId: string): Promise<ModelsCacheRow | null>;
   put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void>;
   setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void>;
   delete(upstreamId: string): Promise<void>;
 }
 
-export interface SearchConfigRepo {
+export interface WebSearchConfigRepo {
   get(): Promise<unknown>;
-  save(config: SearchConfig): Promise<void>;
+  save(config: WebSearchConfig): Promise<void>;
 }
 
 export interface UpstreamRepo {
@@ -263,10 +268,12 @@ export interface UpstreamRepo {
   save(upstream: UpstreamRecord): Promise<void>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
-  // Gateway autonomous state write with optimistic concurrency. Returns
-  // updated:true only if the row's state_json equals the serialized form of
-  // options.expectedState at write time. On updated:false the caller re-reads
-  // and decides whether to retry or drop the update.
+  // Upstream state write with optimistic concurrency, used both by the
+  // gateway's own token-rotation work and by the operator-triggered OAuth
+  // refresh / probe routes. Returns updated:true only if the row's
+  // state_json equals the serialized form of options.expectedState at write
+  // time. On updated:false the caller re-reads and decides whether to retry
+  // or drop the update.
   saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }>;
 }
 
@@ -442,10 +449,10 @@ export interface Repo {
   users: UsersRepo;
   sessions: SessionsRepo;
   usage: UsageRepo;
-  searchUsage: SearchUsageRepo;
+  webSearchUsage: WebSearchUsageRepo;
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
-  searchConfig: SearchConfigRepo;
+  webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;

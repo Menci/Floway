@@ -23,7 +23,7 @@ const isClaudeVersionAtLeast = (model: string, major: number, minor: number): bo
 export const resolveMessagesDownstreamThinkingDisplay = (ctx: Pick<MessagesBoundaryCtx, 'payload'>): MessagesThinkingDisplay | undefined => {
   const display = ctx.payload.thinking?.display;
   if (display !== undefined) {
-    // Request JSON is not runtime-validated before target interceptors; leave
+    // Request JSON is not runtime-validated before boundary interceptors; leave
     // unknown display values untouched so upstream, not this workaround, owns
     // rejecting or accepting future values.
     return isMessagesThinkingDisplay(display) ? display : undefined;
@@ -73,7 +73,7 @@ const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterabl
  * the model is reasoning. Our Copilot probes found Claude 4.7 defaults to
  * omitted display, while 4.6/4.5 default to summarized; forcing summarized
  * upstream keeps data flowing during thinking and avoids the idle gap. To keep
- * downstream omitted semantics, this target interceptor removes only thinking
+ * downstream omitted semantics, this boundary interceptor removes only thinking
  * text/deltas after the upstream attempt and preserves every `signature` byte;
  * the same probes showed blank thinking text is accepted, while any signature
  * tampering makes the next Messages request fail with 400. Those probes justify
@@ -91,7 +91,7 @@ const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterabl
  * - https://github.com/anthropics/claude-code/issues/46987
  * - https://github.com/anthropics/claude-code/issues/50477
  */
-export const withThinkingDisplayPromoted: CopilotMessagesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withThinkingDisplayPromoted: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {
   const downstreamDisplay = resolveMessagesDownstreamThinkingDisplay(ctx);
   const thinking = ctx.payload.thinking;
   const hasActiveThinking = !!thinking && thinking.type !== 'disabled';

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';

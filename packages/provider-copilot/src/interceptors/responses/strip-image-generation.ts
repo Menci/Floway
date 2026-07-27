@@ -51,7 +51,7 @@ export const stripImageGenerationFromPayload = (payload: CanonicalResponsesPaylo
 
 export const withImageGenerationStripped = async <TResult>(
   ctx: ResponsesBoundaryCtx,
-  _request: object,
+  _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   stripImageGenerationFromPayload(ctx.payload);

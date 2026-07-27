@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
 import { hoistUserSystemToMessages } from './hoist-user-system-to-messages.ts';
-import { claudeCodeMessagesChain } from './index.ts';
+import { CLAUDE_CODE_MESSAGES_BOUNDARY } from './index.ts';
 import { synthesizeMetadataUserId } from './synthesize-metadata-user-id.ts';
-import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import { parseMetadataUserID } from '../../detection.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
@@ -12,7 +12,7 @@ import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 const okEvents = (): Promise<ProviderStreamResult<MessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: MessagesPayload, upstreamId = 'up_test'): ClaudeCodeMessagesBoundaryCtx => ({
+const invocation = (payload: MessagesPayload, upstreamId = 'up_test'): MessagesBoundaryCtx => ({
   payload,
   model: stubProviderModel({ endpoints: { messages: {} } }),
   upstreamId,
@@ -113,7 +113,7 @@ test('session_id differs when system prompt is shared but user message differs (
 });
 
 test('chain registers synthesize before hoist', () => {
-  const chain = claudeCodeMessagesChain();
+  const chain = CLAUDE_CODE_MESSAGES_BOUNDARY;
   const synthIdx = chain.indexOf(synthesizeMetadataUserId);
   const hoistIdx = chain.indexOf(hoistUserSystemToMessages);
   if (synthIdx === -1 || hoistIdx === -1) throw new Error('chain missing required step');

@@ -8,7 +8,8 @@ import { aggregateUsageByUserForDisplay, aggregateUsageForDisplay } from './aggr
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageQuery } from '../schemas.ts';
-import { buildKeyToUserMap, resolveTelemetryView } from '../telemetry-view.ts';
+import { buildKeyToUserMap } from '../shared/key-to-user.ts';
+import { resolveUsageView } from '../shared/usage-view.ts';
 
 export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const query = c.req.valid('query');
@@ -17,7 +18,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   }
   const { start, end } = query;
 
-  const resolved = resolveTelemetryView(c, query.view, query.key_id);
+  const resolved = resolveUsageView(c, query.view, query.key_id);
   if ('error' in resolved) {
     return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
   }

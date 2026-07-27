@@ -1,10 +1,10 @@
-import { isContextExceededError, PROMPT_TOO_LONG_MESSAGE } from '../shared/messages/context-window-error.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
+import { isContextExceededError } from '../shared/messages-via/context-window-error.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
-import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
+import { responsesPartKey } from '../shared/via-responses/responses-stream.ts';
 import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesResult, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
-import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { PROMPT_TOO_LONG_MESSAGE, type MessagesResult, type MessagesStreamEvent, type MessagesUsage } from '@floway-dev/protocols/messages';
+import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const mapResponsesStopReason = (response: ResponsesResult): MessagesResult['stop_reason'] => {
   if (response.status === 'completed') {
@@ -50,7 +50,7 @@ const upstreamResponsesEventsUntilTerminal = async function* (frames: AsyncItera
     if (frame.type === 'done') continue;
 
     yield frame.event;
-    if (frame.event.type === 'response.completed' || frame.event.type === 'response.incomplete' || frame.event.type === 'response.failed' || frame.event.type === 'error') {
+    if (isResponsesTerminalEvent(frame.event)) {
       return;
     }
   }
@@ -147,7 +147,7 @@ const handleResponseCreated = (response: ResponsesResult): MessagesStreamEvent[]
   },
 ];
 
-const handleOutputItemAdded = (event: ResponsesEvent<'response.output_item.added'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+const handleOutputItemAdded = (event: Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (event.item.type !== 'function_call') return [];
 
   const blockIndex = state.nextBlockIndex++;
@@ -181,7 +181,7 @@ const handleOutputItemAdded = (event: ResponsesEvent<'response.output_item.added
   return events;
 };
 
-const handleOutputItemDone = (event: ResponsesEvent<'response.output_item.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+const handleOutputItemDone = (event: Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (event.item.type !== 'reasoning') return [];
 
   const hasEmittedSummary = hasResponsePartForOutput(state.emittedReasoningSummaryKeys, event.output_index);
@@ -234,7 +234,7 @@ const handleOutputItemDone = (event: ResponsesEvent<'response.output_item.done'>
   return events;
 };
 
-const handleThinkingDelta = (event: ResponsesEvent<'response.reasoning_summary_text.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+const handleThinkingDelta = (event: Extract<ResponsesStreamEvent, { type: 'response.reasoning_summary_text.delta' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
   events.push({
@@ -246,7 +246,7 @@ const handleThinkingDelta = (event: ResponsesEvent<'response.reasoning_summary_t
   return events;
 };
 
-const handleThinkingDone = (event: ResponsesEvent<'response.reasoning_summary_text.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+const handleThinkingDone = (event: Extract<ResponsesStreamEvent, { type: 'response.reasoning_summary_text.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
   const key = responsesPartKey(event.output_index, event.summary_index);
@@ -263,7 +263,7 @@ const handleThinkingDone = (event: ResponsesEvent<'response.reasoning_summary_te
   return events;
 };
 
-const handleTextDelta = (event: ResponsesEvent<'response.output_text.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+const handleTextDelta = (event: Extract<ResponsesStreamEvent, { type: 'response.output_text.delta' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (!event.delta) return [];
 
   const events: MessagesStreamEvent[] = [];
@@ -277,7 +277,7 @@ const handleTextDelta = (event: ResponsesEvent<'response.output_text.delta'>, st
   return events;
 };
 
-const handleTextDone = (event: ResponsesEvent<'response.output_text.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+const handleTextDone = (event: Extract<ResponsesStreamEvent, { type: 'response.output_text.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
   const blockIndex = openTextBlock(state, event.output_index, event.content_index, events);
 
@@ -294,7 +294,7 @@ const handleTextDone = (event: ResponsesEvent<'response.output_text.done'>, stat
   return events;
 };
 
-const handleContentPartDone = (event: ResponsesEvent<'response.content_part.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+const handleContentPartDone = (event: Extract<ResponsesStreamEvent, { type: 'response.content_part.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (event.part.type !== 'refusal') return [];
 
   const key = responsesPartKey(event.output_index, event.content_index);
@@ -311,7 +311,7 @@ const handleContentPartDone = (event: ResponsesEvent<'response.content_part.done
   return events;
 };
 
-const handleFunctionArgumentsDelta = (event: ResponsesEvent<'response.function_call_arguments.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+const handleFunctionArgumentsDelta = (event: Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (!event.delta) return [];
 
   const functionCallState = state.functionCallState.get(event.output_index);
@@ -328,7 +328,7 @@ const handleFunctionArgumentsDelta = (event: ResponsesEvent<'response.function_c
   ];
 };
 
-const handleFunctionArgumentsDone = (event: ResponsesEvent<'response.function_call_arguments.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+const handleFunctionArgumentsDone = (event: Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   const functionCallState = state.functionCallState.get(event.output_index);
   if (!functionCallState) return [];
 
@@ -396,7 +396,7 @@ const handleStreamError = (
 const handleFailed = (response: ResponsesResult, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
   handleStreamError(state, response.error ?? undefined, 'Response failed due to unknown error.');
 
-const handleError = (event: ResponsesEvent<'error'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
+const handleError = (event: Extract<ResponsesStreamEvent, { type: 'error' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
   handleStreamError(state, { code: event.code, message: event.message }, 'An unexpected error occurred during streaming.');
 
 export const createResponsesToMessagesStreamState = (): ResponsesToMessagesStreamState => ({
@@ -417,32 +417,32 @@ const translateReadyResponsesEvent = (event: ResponsesStreamEvent, state: Respon
 
   switch (event.type) {
   case 'response.created':
-    return handleResponseCreated((event as ResponsesEvent<'response.created'>).response);
+    return handleResponseCreated((event as Extract<ResponsesStreamEvent, { type: 'response.created' }>).response);
   case 'response.output_item.added':
-    return handleOutputItemAdded(event as ResponsesEvent<'response.output_item.added'>, state);
+    return handleOutputItemAdded(event as Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>, state);
   case 'response.output_item.done':
-    return handleOutputItemDone(event as ResponsesEvent<'response.output_item.done'>, state);
+    return handleOutputItemDone(event as Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>, state);
   case 'response.reasoning_summary_text.delta':
-    return handleThinkingDelta(event as ResponsesEvent<'response.reasoning_summary_text.delta'>, state);
+    return handleThinkingDelta(event as Extract<ResponsesStreamEvent, { type: 'response.reasoning_summary_text.delta' }>, state);
   case 'response.reasoning_summary_text.done':
-    return handleThinkingDone(event as ResponsesEvent<'response.reasoning_summary_text.done'>, state);
+    return handleThinkingDone(event as Extract<ResponsesStreamEvent, { type: 'response.reasoning_summary_text.done' }>, state);
   case 'response.output_text.delta':
-    return handleTextDelta(event as ResponsesEvent<'response.output_text.delta'>, state);
+    return handleTextDelta(event as Extract<ResponsesStreamEvent, { type: 'response.output_text.delta' }>, state);
   case 'response.output_text.done':
-    return handleTextDone(event as ResponsesEvent<'response.output_text.done'>, state);
+    return handleTextDone(event as Extract<ResponsesStreamEvent, { type: 'response.output_text.done' }>, state);
   case 'response.content_part.done':
-    return handleContentPartDone(event as ResponsesEvent<'response.content_part.done'>, state);
+    return handleContentPartDone(event as Extract<ResponsesStreamEvent, { type: 'response.content_part.done' }>, state);
   case 'response.function_call_arguments.delta':
-    return handleFunctionArgumentsDelta(event as ResponsesEvent<'response.function_call_arguments.delta'>, state);
+    return handleFunctionArgumentsDelta(event as Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>, state);
   case 'response.function_call_arguments.done':
-    return handleFunctionArgumentsDone(event as ResponsesEvent<'response.function_call_arguments.done'>, state);
+    return handleFunctionArgumentsDone(event as Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.done' }>, state);
   case 'response.completed':
   case 'response.incomplete':
-    return handleCompleted((event as ResponsesEvent<'response.completed' | 'response.incomplete'>).response, state);
+    return handleCompleted((event as Extract<ResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' }>).response, state);
   case 'response.failed':
-    return handleFailed((event as ResponsesEvent<'response.failed'>).response, state);
+    return handleFailed((event as Extract<ResponsesStreamEvent, { type: 'response.failed' }>).response, state);
   case 'error':
-    return handleError(event as ResponsesEvent<'error'>, state);
+    return handleError(event as Extract<ResponsesStreamEvent, { type: 'error' }>, state);
   case 'ping':
     return [{ type: 'ping' }];
   default:

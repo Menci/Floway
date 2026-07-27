@@ -1,14 +1,14 @@
 import type { Hono } from 'hono';
 
 import { mountAlphaSearchRoutes } from './alpha-search/routes.ts';
-import { audioTranscriptions } from './audio/transcriptions.ts';
+import { audioTranscriptions } from './audio/http.ts';
 import { mountChatRoutes } from './chat/routes.ts';
 import { mountCodexRoutes } from './codex/routes.ts';
-import { completions } from './completions/serve.ts';
-import { embeddings } from './embeddings/serve.ts';
-import { imagesEdits, imagesGenerations } from './images/serve.ts';
+import { completions } from './completions/http.ts';
+import { embeddings } from './embeddings/http.ts';
+import { imagesEdits, imagesGenerations } from './images/http.ts';
 import { serveGeminiModelInfo, serveGeminiModels } from './models/gemini.ts';
-import { serveModels } from './models/serve.ts';
+import { serveModels } from './models/http.ts';
 import { rerank } from './rerank/serve.ts';
 import type { AuthVars } from '../middleware/auth.ts';
 

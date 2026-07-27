@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { callClaudeCodeMessages, detectHaikuProbe } from './fetch.ts';
+import { callClaudeCodeMessages } from './fetch.ts';
 import { CLAUDE_CODE_HEADERS_HAIKU, CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
 import type {
   ClaudeCodeAccessTokenEntry,
@@ -126,15 +126,6 @@ const errorJson = (status: number, body: unknown, extraHeaders: Record<string, s
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...extraHeaders } });
 
 const minimalBody = { max_tokens: 16, messages: [{ role: 'user' as const, content: 'hi' }] };
-
-describe('detectHaikuProbe', () => {
-  test('true only when model contains "haiku" and max_tokens is exactly 1', () => {
-    expect(detectHaikuProbe({ model: 'claude-haiku-4-5-20251001', max_tokens: 1 })).toBe(true);
-    expect(detectHaikuProbe({ model: 'claude-haiku-4-5-20251001', max_tokens: 2 })).toBe(false);
-    expect(detectHaikuProbe({ model: 'claude-sonnet-4-5-20250929', max_tokens: 1 })).toBe(false);
-    expect(detectHaikuProbe({ max_tokens: 1 })).toBe(false);
-  });
-});
 
 describe('callClaudeCodeMessages — pre-fetch gates', () => {
   test('non-active account → synthetic 503', async () => {

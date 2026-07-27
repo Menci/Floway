@@ -9,9 +9,9 @@
 //      avoids `startTls()` entirely.
 
 import { base64EncodeBytes, concat, copy, findDoubleCrlfFrom, formatHostForUri, utf8Bytes } from '../bytes.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../dial-target.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { STATUS_LINE } from '@floway-dev/http';
 

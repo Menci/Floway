@@ -9,15 +9,22 @@
 // Resolution runs above prefix routing and never re-enters itself, which
 // makes recursive aliasing impossible by construction.
 
-import type { ChatModelInfo, ModelKind, PublicModelLimits } from './models.ts';
+import type { ModelKind } from './endpoints.ts';
+import type { ChatModelInfo, PublicModelLimits } from './models.ts';
 
-// Target-picking strategy applied to the pool of currently-routable targets:
+// Walk order over the alias's configured targets. Nothing is filtered out
+// up front: the resolver takes the raw target list in this order, resolves
+// each one against the live catalog, and flattens the results in target
+// order, so a later target's candidates are the failover pool for an
+// earlier one.
 //
-// - `first-available` — pick the first target in declaration order whose
-//   target_model_id resolves to an enabled upstream binding.
-// - `random` — pick uniformly at random from the same pool.
+// - `first-available` — declaration order.
+// - `random` — a uniform shuffle of the whole configured list, so the walk
+//   distributes evenly across targets.
 //
-// When the pool is empty both strategies surface the same 404 to the caller.
+// When the walk produces no candidate at all the caller sees a 404 only if
+// no target id was known to any upstream; an id that is known but of the
+// wrong kind is model-unsupported, a 400.
 export type AliasSelection = 'random' | 'first-available';
 
 // Discrete reasoning-effort presets understood across upstreams. The literal
@@ -77,9 +84,11 @@ export interface AliasTarget {
 // entirely, so other limit keys disappear from the announced metadata
 // unless the override re-states them. (The dashboard hides this by
 // seeding the buffer from the full computed snapshot at the moment the
-// "Enable override" switch flips on.) `kind` and the supported endpoint
-// set are not part of this payload; they follow from the alias row
-// (`kind`) and the target union (endpoints).
+// "Enable override" switch flips on.) `kind`, the supported endpoint set,
+// and `pricing` are not part of this payload: `kind` follows from the alias
+// row, endpoints from the target union, and `pricing` is announced only when
+// the alias has exactly one available target, because rates across several
+// targets have no meaningful merge.
 export interface AnnouncedMetadata {
   limits?: PublicModelLimits;
   chat?: ChatModelInfo;

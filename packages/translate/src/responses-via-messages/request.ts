@@ -1,11 +1,13 @@
-import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
+import { canonicalizeResponsesPayload } from '../canonicalize-responses-payload.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
-import { type RemoteImageLoader, resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
-import { canonicalizeResponsesPayload } from '../shared/via-responses/responses-items.ts';
+import { resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
+import { messagesServiceTierFieldsFromOpenAI } from '../shared/via-messages/service-tier.ts';
+import { parseToolArgumentsObject } from '../shared/via-messages/tool-arguments.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
+import type { RemoteImageLoader } from '../types.ts';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
@@ -30,7 +32,7 @@ import type {
   ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
 
-interface TranslateResponsesToMessagesOptions {
+interface BuildTargetRequestOptions {
   loadRemoteImage?: RemoteImageLoader;
   /**
    * Preferred cap used when the source payload omits `max_output_tokens`.
@@ -41,14 +43,14 @@ interface TranslateResponsesToMessagesOptions {
   fallbackMaxOutputTokens?: number;
 }
 
-/**
- * Names of Responses `custom` tools the request translator wrapped as
- * single-string function tools. Returned alongside the translated payload so
- * the trip's events translator can project wrapped function calls back into
- * `custom_tool_call` outputs.
- */
-export interface ResponsesToMessagesResult {
+export interface TargetRequestResult {
   target: MessagesPayload;
+  /**
+   * Names of Responses `custom` tools the request translator wrapped as
+   * single-string function tools. Returned alongside the translated payload so
+   * the trip's events translator can project wrapped function calls back into
+   * `custom_tool_call` outputs.
+   */
   customToolNames: Set<string>;
 }
 
@@ -333,7 +335,7 @@ const translateToolChoice = (toolChoice: ResponsesToolChoice | null | undefined)
   return undefined;
 };
 
-export const translateResponsesToMessages = async (source: ResponsesRequestPayload, options: TranslateResponsesToMessagesOptions = {}): Promise<ResponsesToMessagesResult> => {
+export const buildTargetRequest = async (source: ResponsesRequestPayload, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {
   const payload = canonicalizeResponsesPayload(source);
   rejectProgrammaticResponsesPayload(payload, 'Messages');
   const customToolNames = new Set<string>();
@@ -374,16 +376,7 @@ export const translateResponsesToMessages = async (source: ResponsesRequestPaylo
 
   const thinking = effort === 'none' ? { type: 'disabled' as const } : undefined;
 
-  // `service_tier: 'fast'` from the Responses caller maps to Anthropic's
-  // `speed: 'fast'`; all other defined service_tier values pass through as
-  // `service_tier` on the Messages wire (Anthropic accepts 'auto',
-  // 'standard_only', and future literals).
-  const serviceTierFields: Partial<MessagesPayload> =
-    payload.service_tier === 'fast'
-      ? { speed: 'fast' }
-      : payload.service_tier != null
-        ? { service_tier: payload.service_tier }
-        : {};
+  const serviceTierFields = messagesServiceTierFieldsFromOpenAI(payload.service_tier);
 
   // Responses `metadata` is intentionally omitted on the Messages path;
   // not coerced into Anthropic metadata.user_id, prompt-cache, or safety
@@ -405,6 +398,3 @@ export const translateResponsesToMessages = async (source: ResponsesRequestPaylo
 
   return { target, customToolNames };
 };
-
-export const buildTargetRequest = (payload: ResponsesRequestPayload, options: TranslateResponsesToMessagesOptions): Promise<ResponsesToMessagesResult> =>
-  translateResponsesToMessages(payload, options);

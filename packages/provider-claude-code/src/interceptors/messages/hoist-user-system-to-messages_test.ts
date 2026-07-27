@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { hoistUserSystemToMessages } from './hoist-user-system-to-messages.ts';
-import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
@@ -9,7 +9,7 @@ import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 const okEvents = (): Promise<ProviderStreamResult<MessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: MessagesPayload): ClaudeCodeMessagesBoundaryCtx => ({
+const invocation = (payload: MessagesPayload): MessagesBoundaryCtx => ({
   payload,
   model: stubProviderModel({ endpoints: { messages: {} } }),
   upstreamId: 'up_test',

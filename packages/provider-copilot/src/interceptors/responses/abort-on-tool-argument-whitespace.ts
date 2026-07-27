@@ -33,7 +33,7 @@ const errorEvent = (): ResponsesStreamEvent =>
     code: 'api_error',
   }) as ResponsesStreamEvent;
 
-export const withToolArgumentWhitespaceAborted: CopilotResponsesBoundaryInterceptor = async (_invocation, _request, run) => {
+export const withToolArgumentWhitespaceAborted: CopilotResponsesBoundaryInterceptor = async (_invocation, _env, run) => {
   const result = await run();
   // Only the streaming generate branch produces events worth inspecting.
   // The compact branch is a single value envelope; pass it through unchanged.

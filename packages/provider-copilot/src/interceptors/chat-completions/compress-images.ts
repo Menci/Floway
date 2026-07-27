@@ -1,7 +1,8 @@
+import { memoizedDataUrlCompressor } from '../image-compression.ts';
 import { targetSizeForResponsesChat } from '../image-size.ts';
 import type { ChatCompletionsBoundaryCtx, CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
 import type { ChatCompletionsContentPart, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
-import { isBase64ImageDataUrl, memoizedDataUrlCompressor } from '@floway-dev/provider';
+import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
 type ChatCompletionsImagePart = Extract<ChatCompletionsContentPart, { type: 'image_url' }>;
 
@@ -45,7 +46,7 @@ const compressInlineImages = async (ctx: ChatCompletionsBoundaryCtx): Promise<vo
 // Recompresses every inline base64 image (`data:image/*;base64,...` in an
 // `image_url` part) in the outgoing Chat Completions payload to WebP before
 // the Copilot upstream call. Remote https image references are left untouched.
-export const withInlineImagesCompressed: CopilotChatCompletionsBoundaryInterceptor = async (ctx, _request, run) => {
+export const withInlineImagesCompressed: CopilotChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
   // Finish this nested activation before starting the upstream call. Its
   // request-local memoizer keys are the full source data URLs, which can be
   // several megabytes each and must not stay live for the response stream.

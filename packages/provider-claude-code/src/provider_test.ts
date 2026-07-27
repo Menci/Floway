@@ -146,7 +146,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
   test('kind is "claude-code"', async () => {
     const instance = createClaudeCodeProvider(currentRecord);
     expect(instance.kind).toBe('claude-code');
-    expect(instance.upstream).toBe(upstreamId);
+    expect(instance.upstreamId).toBe(upstreamId);
   });
 });
 

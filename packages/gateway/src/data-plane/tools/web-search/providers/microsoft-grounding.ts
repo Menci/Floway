@@ -1,7 +1,6 @@
-import { extractWebSearchProviderErrorMessage, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import { sleep } from '../../../../shared/sleep.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
 import {
   DEFAULT_WEB_SEARCH_RESULT_COUNT,
@@ -19,24 +18,6 @@ const MICROSOFT_GROUNDING_SEARCH_URL = 'https://api.microsoft.ai/v3/search/web';
 // Per-iteration concurrency is naturally bounded by the shim's iteration cap
 // (~30) and the model's parallel call count (≤4 in practice).
 const MICROSOFT_GROUNDING_BROWSE_URL = 'https://api.microsoft.ai/v3/browse';
-
-// Retry policy for both `/v3/search/web` and `/v3/browse`. 429 and 5xx
-// are documented by Microsoft as transient. Transport-level errors are
-// not retried — on Cloudflare Workers a thrown fetch is reliably a
-// systemic issue, not transient.
-const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000] as const;
-const RETRYABLE_HTTP_STATUS: ReadonlySet<number> = new Set([429, 500, 502, 503, 504]);
-
-const fetchWithRetry = async (doFetch: () => Promise<Response>, signal?: AbortSignal): Promise<Response> => {
-  let attempt = 0;
-  while (true) {
-    const response = await doFetch();
-    if (!RETRYABLE_HTTP_STATUS.has(response.status)) return response;
-    if (attempt >= RETRY_DELAYS_MS.length) return response;
-    await sleep(RETRY_DELAYS_MS[attempt], signal);
-    attempt += 1;
-  }
-};
 
 const toMicrosoftQuery = (request: WebSearchProviderRequest, query: string) => {
   // Microsoft Grounding has no allow/block-domain fields, so domain
@@ -186,7 +167,7 @@ export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?:
       if (response.status === 429) {
         return {
           type: 'error',
-          errorCode: 'too_many_requests',
+          errorCode: httpStatusToErrorCode(response.status),
           message: message ?? 'Microsoft Grounding rate limited the request.',
         };
       }
@@ -194,7 +175,7 @@ export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?:
       if (response.status === 400) {
         return {
           type: 'error',
-          errorCode: 'invalid_tool_input',
+          errorCode: httpStatusToErrorCode(response.status),
           message: message ?? 'Microsoft Grounding rejected the search query.',
         };
       }
@@ -202,14 +183,14 @@ export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?:
       if (response.status === 413) {
         return {
           type: 'error',
-          errorCode: 'request_too_large',
+          errorCode: httpStatusToErrorCode(response.status),
           message: message ?? 'Microsoft Grounding rejected the request as too large.',
         };
       }
 
       return {
         type: 'error',
-        errorCode: 'unavailable',
+        errorCode: httpStatusToErrorCode(response.status),
         message: message ?? 'Microsoft Grounding search failed.',
       };
     } catch (error) {
@@ -259,13 +240,9 @@ export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?:
       }
 
       // 430 is the Browse-only "Too Many On-Demand Crawls" signal.
-      const errorCode: WebSearchProviderErrorCode = outcome.httpStatus === 429 || outcome.httpStatus === 430
+      const errorCode: WebSearchProviderErrorCode = outcome.httpStatus === 430
         ? 'too_many_requests'
-        : outcome.httpStatus === 413
-          ? 'request_too_large'
-          : outcome.httpStatus === 400
-            ? 'invalid_tool_input'
-            : 'unavailable';
+        : httpStatusToErrorCode(outcome.httpStatus);
       failures.push({ url: outcome.url, errorCode, message: outcome.message });
     }
 

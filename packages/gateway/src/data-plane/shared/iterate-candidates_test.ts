@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { GatewayCtx } from './gateway-ctx.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
-import { mockGatewayCtx } from '../../test-helpers/gateway-ctx.ts';
-import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
+import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import type { ModelCandidate, PerformanceTelemetryContext } from '@floway-dev/provider';
 import { mockPerfTelemetryContext, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
@@ -10,7 +10,7 @@ const stubCandidate = (id: string, upstream = 'up'): ModelCandidate =>
   stubModelCandidate({
     model: { id },
     provider: {
-      upstream,
+      upstreamId: upstream,
       kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],

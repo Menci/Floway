@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import type { CompletionsStreamEvent } from './index.ts';
 import { reassembleCompletionsEvents } from './reassemble.ts';
-import { assertEquals } from '../test-assert.ts';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const chunk = (text: string, finish_reason: string | null = null, extra: Partial<CompletionsStreamEvent> = {}): CompletionsStreamEvent => ({
   id: 'cmpl_test',

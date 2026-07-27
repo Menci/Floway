@@ -7,7 +7,7 @@ import type { ProviderModel } from '@floway-dev/provider';
 // to derive deterministic device/session ids that stay stable per upstream
 // across requests (so prompt-cache hits depend on conversation content only,
 // not on per-call randomness).
-export interface ClaudeCodeMessagesBoundaryCtx {
+export interface MessagesBoundaryCtx {
   payload: MessagesPayload;
   readonly model: ProviderModel;
   readonly upstreamId: string;

@@ -1,25 +1,14 @@
 import { streamSSE } from 'hono/streaming';
 
-import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
+import { measureAudioTranscriptionUsage } from './usage.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import type { PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
+import { type StreamCompletion, writeSSEFrames } from '../shared/sse.ts';
 import { settleUsageMeasurement } from '../shared/telemetry/settle.ts';
-import { audioTranscriptionUsageMeasurement, requestOnlyUsageMeasurement } from '../shared/telemetry/usage.ts';
+import { requestOnlyUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstream-response.ts';
 import { isAudioTranscriptionDoneEvent } from '@floway-dev/protocols/audio';
 import { eventFrame, parseSSEStream, sseCommentFrame } from '@floway-dev/protocols/common';
-
-const measureAudioUsage = (value: unknown, sourceApi: string) => {
-  try {
-    return audioTranscriptionUsageMeasurement(value);
-  } catch (error) {
-    console.warn(
-      `audio-transcription: invalid usage in 2xx upstream response for ${sourceApi}; usage row will be request-only`,
-      error instanceof Error ? error.message : String(error),
-    );
-    return requestOnlyUsageMeasurement();
-  }
-};
 
 const respondNonStreaming = async ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Promise<Response> => {
   let measurement = requestOnlyUsageMeasurement();
@@ -36,7 +25,7 @@ const respondNonStreaming = async ({ ctx, sourceApi, response, performance, iden
       );
     }
     if (parsed !== undefined) {
-      measurement = measureAudioUsage(parsed, sourceApi);
+      measurement = measureAudioTranscriptionUsage(parsed, sourceApi);
     }
   }
   ctx.dump?.success(identity, measurement.dumpTokenUsage);
@@ -70,7 +59,7 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
           ctx.dump?.frame(eventFrame(event));
           if (isAudioTranscriptionDoneEvent(event)) {
             terminalEventSeen = true;
-            measurement = measureAudioUsage(event, sourceApi);
+            measurement = measureAudioTranscriptionUsage(event, sourceApi);
             yield frame;
             return;
           }

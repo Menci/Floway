@@ -28,7 +28,7 @@ const sessionUuid = async (input: string): Promise<string> => {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
 
-export const withInteractionIdHeaderSet: CopilotMessagesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withInteractionIdHeaderSet: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {
   const { sessionId } = parseUserIdMetadata(ctx.payload.metadata?.user_id);
   if (sessionId) {
     ctx.headers.set('x-interaction-id', await sessionUuid(sessionId));

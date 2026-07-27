@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { requestApp, setupAppTest } from '../../test-helpers.ts';
+import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('/api/performance/overview modelRows carry backend-aggregated base-model percentiles', async () => {

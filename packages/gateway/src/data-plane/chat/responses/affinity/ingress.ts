@@ -27,7 +27,7 @@ const blobRequiresForce = (item: ResponsesInputItem, decoded: DecodedAffinityBlo
     ? decoded.kind === 'owned' && decoded.value !== undefined
     : itemInheritsForce(item);
 
-const routingEvidenceFrom = (
+const narrowingEvidenceFrom = (
   items: readonly ResponsesInputItem[],
   locations: readonly ResponsesBlobLocation[],
 ): AffinityEvidence[] => {
@@ -113,7 +113,7 @@ export const prepareResponsesAffinity = async (
   const locations = await opaqueBlobLocations(payload.input, codec);
 
   return {
-    routingEvidence: routingEvidenceFrom(payload.input, locations),
+    narrowingEvidence: narrowingEvidenceFrom(payload.input, locations),
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
       const byItem = Map.groupBy(locations, location => location.itemIndex);

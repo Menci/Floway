@@ -3,19 +3,13 @@ import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import { SEED_ADMIN_USER_ID } from '../../repo/seed-admin.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
-
-const validateUpstreamIdsExist = async (ids: readonly string[] | null): Promise<string | null> => {
-  if (ids === null) return null;
-  const upstreams = await getRepo().upstreams.list();
-  const known = new Set(upstreams.map(u => u.id));
-  const unknown = ids.filter(id => !known.has(id));
-  return unknown.length ? `Unknown upstream(s): ${unknown.join(', ')}` : null;
-};
+import { validateUpstreamIdsExist } from '../shared/upstream-ids.ts';
 
 const parseUserId = (raw: string): number | null => {
   const n = Number(raw);
@@ -75,7 +69,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   const existing = await repo.users.getById(id);
   if (!existing) return c.json({ error: 'user not found' }, 404);
 
-  if (id === 1 && body.isAdmin === false) return c.json({ error: 'user 1 cannot be demoted' }, 400);
+  if (id === SEED_ADMIN_USER_ID && body.isAdmin === false) return c.json({ error: 'user 1 cannot be demoted' }, 400);
   if (id === actorId && body.isAdmin === false) {
     return c.json({ error: 'cannot demote yourself' }, 400);
   }
@@ -109,7 +103,7 @@ export const deleteUser = async (c: AuthedContext) => {
   const id = parseUserId(c.req.param('id')!);
   if (id === null) return c.json({ error: 'invalid user id' }, 400);
   const actorId = userFromContext(c).id;
-  if (id === 1) return c.json({ error: 'user 1 cannot be deleted' }, 400);
+  if (id === SEED_ADMIN_USER_ID) return c.json({ error: 'user 1 cannot be deleted' }, 400);
   if (id === actorId) return c.json({ error: 'cannot delete yourself' }, 400);
 
   const repo = getRepo();

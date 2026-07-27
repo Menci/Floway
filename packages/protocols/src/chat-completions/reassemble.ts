@@ -1,4 +1,4 @@
-import { chatCompletionsErrorPayloadMessage } from './index.ts';
+import { chatCompletionsErrorPayloadMessage } from './errors.ts';
 import type { ChatCompletionsChoiceNonStreaming, ChatCompletionsDelta, ChatCompletionsResult, ChatCompletionsStreamEvent, ChatCompletionsReasoningItem, ChatCompletionsToolCall } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
@@ -39,7 +39,7 @@ const createChoiceAccumulator = (index: number): ChoiceAccumulator => ({
 });
 
 const accumulateToolCalls = (choice: ChoiceAccumulator, value: ChatCompletionsDelta['tool_calls']): void => {
-  if (value === undefined) return;
+  if (value == null) return;
 
   for (const toolCall of value) {
     const fn = toolCall.function;

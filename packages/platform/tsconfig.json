@@ -1,9 +1,4 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "resolveJsonModule": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx"
-  },
   "include": ["vitest.config.ts", "src/**/*.ts"]
 }

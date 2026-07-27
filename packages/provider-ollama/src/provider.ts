@@ -20,8 +20,9 @@
 // semantic endpoint; ordinary catalog rows stay chat/embedding.
 // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/middleware/openai.go#L682-L789
 //
-// Manual config.models[] entries override auto-fetched models with the same
-// upstreamModelId, mirroring the custom provider's pinning behavior.
+// Manual config.models[] entries are emitted ahead of the auto-fetched
+// catalog, and an auto row carrying the same upstreamModelId is dropped so the
+// manual copy is the only one for that id.
 
 import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
@@ -77,8 +78,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertOllamaUpstreamRecord(record);
   const upstreamFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides]);
 
-  // Manual overrides always emit, regardless of whether the upstream catalog
-  // fetch succeeds. Same shape and merge precedence as the custom provider.
+  // Manual models always emit.
   const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
   const manualModels: ProviderModel[] = config.models.map(model => {
     const enabledFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
@@ -189,7 +189,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   };
 
   return {
-    upstream: record.id,
+    upstreamId: record.id,
     kind: 'ollama',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,

@@ -3,10 +3,11 @@ import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse, respondGemini }
 import { geminiServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createChatGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
+import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
@@ -64,8 +65,8 @@ const respondWithGeminiError = async (
   wantsStream: boolean,
 ): Promise<Response> => {
   if (error instanceof TranslatorInputError) {
-    const { response } = await respondGemini(c, translatorInputErrorResult(error, ctx.attempt.telemetry), wantsStream, ctx);
-    return (ctx.dump?.finalize(response) ?? response);
+    const response = await respondGemini(c, translatorInputErrorResult(error, ctx.attempt.telemetry), wantsStream, ctx);
+    return finalizeGatewayResponse(ctx, response);
   }
   if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
     const { status, headers, body } = error.httpResponse;
@@ -76,11 +77,11 @@ const respondWithGeminiError = async (
       headers: new Headers(headers),
       body: new TextEncoder().encode(body),
     };
-    const { response } = await respondGemini(c, apiErrorResult, wantsStream, ctx);
+    const response = await respondGemini(c, apiErrorResult, wantsStream, ctx);
     return finalizeGatewayResponse(ctx, response);
   }
   const internalResult = internalErrorResult(500, toInternalDebugError(error), ctx.attempt.telemetry);
-  const { response } = await respondGemini(c, internalResult, wantsStream, ctx);
+  const response = await respondGemini(c, internalResult, wantsStream, ctx);
   return finalizeGatewayResponse(ctx, response);
 };
 
@@ -106,7 +107,7 @@ const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: b
   const ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
   try {
     const result = await geminiServe.generate({ payload, ctx, model, headers: inboundHeadersForUpstream(c) });
-    const { response } = await respondGemini(c, result, wantsStream, ctx);
+    const response = await respondGemini(c, result, wantsStream, ctx);
     return finalizeGatewayResponse(ctx, response);
   } catch (error) {
     return await respondWithGeminiError(c, error, ctx, wantsStream);
@@ -121,7 +122,7 @@ const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Re
   const ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
   try {
     const result = await geminiServe.countTokens({ payload, ctx, model, headers: inboundHeadersForUpstream(c) });
-    const { response } = await respondGemini(c, result, false, ctx);
+    const response = await respondGemini(c, result, false, ctx);
     return finalizeGatewayResponse(ctx, response);
   } catch (error) {
     return await respondWithGeminiError(c, error, ctx, false);

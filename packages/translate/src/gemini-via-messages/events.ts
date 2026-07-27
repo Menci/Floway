@@ -1,7 +1,8 @@
 import { flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiCandidateEvent, parseStrictJsonObject, setGeminiThoughtSignature, signGeminiPart } from '../shared/gemini-via/gemini.ts';
+import { inclusiveMessagesInputUsage } from '../shared/via-messages/usage.ts';
 import { billableServiceTier, eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
-import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
+import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
 
 const messagesStopReasonToGemini = (stopReason: Extract<MessagesStreamEvent, { type: 'message_delta' }>['delta']['stop_reason']): GeminiFinishReason => {
   switch (stopReason) {
@@ -45,15 +46,14 @@ interface MessagesToGeminiStreamState extends GeminiThoughtSignatureState {
   toolUses: Record<number, MessagesToolUseDraft>;
 }
 
-// Anthropic's input_tokens excludes cache reads and cache creation; Gemini's
-// promptTokenCount is an inclusive total like OpenAI's prompt_tokens. Fold all
-// three Anthropic buckets into the Gemini total, then surface cache reads
-// separately as cachedContentTokenCount.
+// Gemini's `promptTokenCount` is an inclusive total that already contains the
+// cached prefix, and `cachedContentTokenCount` is the breakdown of that share
+// rather than an extra bucket — so the folded Anthropic total goes out whole
+// and cache reads are re-surfaced alongside it, not subtracted from it.
+// https://github.com/googleapis/js-genai/blob/86d4bfa5b8d026b6d9fae46f0069e7b7972beb80/src/types.ts#L7594-L7597
 const mapUsage = (state: MessagesToGeminiStreamState, hasTerminalUsage: boolean): GeminiUsageMetadata | undefined => {
-  const { cacheWrite, cacheWrite1h } = splitMessagesCacheCreationTokens(state.usage);
+  const { cacheRead, cacheWrite, cacheWrite1h, inclusiveInput: promptTokenCount } = inclusiveMessagesInputUsage(state.usage);
   const cacheWriteTotal = cacheWrite + cacheWrite1h;
-  const cacheRead = state.usage.cache_read_input_tokens ?? 0;
-  const promptTokenCount = (state.usage.input_tokens ?? 0) + cacheRead + cacheWriteTotal;
   const candidatesTokenCount = state.usage.output_tokens;
   splitInclusiveInputTokens(promptTokenCount, cacheRead, cacheWriteTotal);
   const serviceTier = billableServiceTier(state.usage.speed) ?? billableServiceTier(state.usage.service_tier);
