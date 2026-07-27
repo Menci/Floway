@@ -8,9 +8,9 @@ patchedDependencies:
   '@reclaimprotocol/tls@0.1.2':
     hash: 8ed07af54e914cbcc2cea19ce7109635092cbbe35b9d2ad1bf55e3dfef1b8fd6
     path: patches/@reclaimprotocol__tls@0.1.2.patch
-  overlayscrollbars@2.13.0:
+  overlayscrollbars:
     hash: 0989d8ab263bb64de03bfa5ce05a0492b7a0b2211ac83be29beaf137c31b2e22
-    path: patches/overlayscrollbars@2.13.0.patch
+    path: patches/overlayscrollbars.patch
 
 importers:
 
