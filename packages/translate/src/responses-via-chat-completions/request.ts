@@ -2,6 +2,7 @@ import { canonicalizeResponsesPayload } from '../canonicalize-responses-payload.
 import { responsesContentToChatCompletionsContent, responsesContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsReasoningProjection, chatCompletionsReasoningProjectionFields, createChatCompletionsReasoningProjection } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { multiAgentCallOutputText, multiAgentMessageContent } from '../shared/responses-via/multi-agent.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsContentPart, ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
@@ -193,8 +194,36 @@ export const buildTargetRequest = (source: ResponsesRequestPayload): TargetReque
   };
 
   for (const item of payload.input) {
-    if (item.type !== 'function_call_output' && item.type !== 'custom_tool_call_output') flushToolOutputImages();
+    if (item.type !== 'function_call_output' && item.type !== 'custom_tool_call_output' && item.type !== 'multi_agent_call_output') flushToolOutputImages();
     rejectProgramCaller(item);
+    if (item.type === 'agent_message') {
+      flushAssistant();
+      messages.push({
+        role: 'user',
+        content: responsesContentToChatCompletionsContent(multiAgentMessageContent(item, 'Chat Completions')),
+      });
+      continue;
+    }
+
+    if (item.type === 'multi_agent_call') {
+      assistant = appendAssistantToolCall(assistant, {
+        call_id: item.call_id,
+        name: item.action,
+        arguments: item.arguments,
+      });
+      continue;
+    }
+
+    if (item.type === 'multi_agent_call_output') {
+      flushAssistant();
+      messages.push({
+        role: 'tool',
+        tool_call_id: item.call_id,
+        content: multiAgentCallOutputText(item),
+      });
+      continue;
+    }
+
     if (item.type === 'reasoning') {
       assistant = ensureAssistant(assistant);
       addResponsesReasoningToChatCompletionsProjection(assistant.reasoning, item);

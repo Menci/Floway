@@ -384,8 +384,15 @@ export interface ResponsesProgramOutputItem {
   status: 'completed' | 'incomplete';
 }
 
+// OpenAI beta Responses multi-agent item shapes.
+// https://github.com/openai/openai-node/blob/228c224393ef4bf3bda2a9d7eb40f387499299b5/src/resources/beta/responses/responses.ts#L6549-L6805
 export type ResponsesAgentMessageContent =
-  | { type: 'input_text'; text: string }
+  | ResponsesInputText
+  | ResponsesInputImage
+  | ResponsesInputFile
+  | { type: 'text' | 'summary_text' | 'reasoning_text'; text: string }
+  | { type: 'refusal'; refusal: string }
+  | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail: 'auto' | 'low' | 'high' | 'original' | (string & {}) }
   | { type: 'encrypted_content'; encrypted_content: string }
   | (Record<string, unknown> & { type: string });
 
