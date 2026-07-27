@@ -1,5 +1,6 @@
 import { canonicalizeResponsesPayload } from '../canonicalize-responses-payload.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
+import { agentMessageContent } from '../shared/responses-via/agent-message.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
@@ -214,6 +215,13 @@ const translateResponsesInput = async (input: ResponsesInputItem[], loadRemoteIm
       default:
         throw new TranslatorInputError(`Invalid role '${(item as { role: string }).role}' in input message.`);
       }
+      break;
+    case 'agent_message':
+      messages.push(await translateUserMessage({
+        type: 'message',
+        role: 'user',
+        content: agentMessageContent(item),
+      }, loadRemoteImage));
       break;
     case 'function_call':
       appendAssistantBlock(messages, {

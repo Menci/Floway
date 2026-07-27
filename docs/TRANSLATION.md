@@ -261,6 +261,12 @@ Request mapping:
 - `function_call` becomes assistant `tool_use`.
 - `function_call_output` becomes user `tool_result`; incomplete status marks the
   tool result as an error.
+- readable `agent_message` content uses the Messages user wire role, while
+  an explicit non-user-source notice and XML-escaped `<agent-message>` wrapper
+  keep it from acquiring user authority. The wrapper preserves `author` and
+  `recipient`. Ordinary text, image, and file payloads use their native target
+  carriers; summary, reasoning, refusal, and screenshot content retains a
+  typed XML boundary when projection would otherwise erase that distinction.
 - `reasoning` becomes a Messages thinking carrier bound for the real Messages
   upstream, which owns and validates the signature: the genuine
   `encrypted_content` is sent verbatim with no gateway envelope — as
@@ -483,6 +489,9 @@ Request mapping:
   boundaries, so a final lifted-image turn is reported as user-initiated even
   though its image originated in tool output; no out-of-band provenance
   contradicts the wire role.
+- readable `agent_message` content uses one Chat user wire message with the
+  same non-user-source notice and selective typed XML boundaries as the
+  Messages target.
 - `max_output_tokens`, `stream`, `temperature`, `top_p`, `metadata`, `store`,
   `parallel_tool_calls`, `prompt_cache_key`, `safety_identifier`,
   `service_tier`, and explicit `reasoning.effort` pass through when present.

@@ -1,6 +1,7 @@
 import { canonicalizeResponsesPayload } from '../canonicalize-responses-payload.ts';
 import { responsesContentToChatCompletionsContent, responsesContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsReasoningProjection, chatCompletionsReasoningProjectionFields, createChatCompletionsReasoningProjection } from '../shared/chat-completions-and-responses/reasoning.ts';
+import { agentMessageContent } from '../shared/responses-via/agent-message.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
@@ -195,6 +196,15 @@ export const buildTargetRequest = (source: ResponsesRequestPayload): TargetReque
   for (const item of payload.input) {
     if (item.type !== 'function_call_output' && item.type !== 'custom_tool_call_output') flushToolOutputImages();
     rejectProgramCaller(item);
+    if (item.type === 'agent_message') {
+      flushAssistant();
+      messages.push({
+        role: 'user',
+        content: responsesContentToChatCompletionsContent(agentMessageContent(item)),
+      });
+      continue;
+    }
+
     if (item.type === 'reasoning') {
       assistant = ensureAssistant(assistant);
       addResponsesReasoningToChatCompletionsProjection(assistant.reasoning, item);
