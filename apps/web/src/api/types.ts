@@ -5,8 +5,7 @@ import type {
   AliasSelection,
   AliasTarget,
   AnnouncedMetadata,
-  BillingMetric,
-  DecimalString,
+  BillingDimension,
   ChatAliasRules,
   ChatModelInfo,
   ModelAlias,
@@ -16,17 +15,17 @@ import type {
   ModelPricing,
   PublicModel,
   PublicModelLimits,
-  RerankTarget,
 } from '@floway-dev/protocols/common';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/provider';
 import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
-export type { BillingMetric, DecimalString, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing, RerankTarget };
-export type { UpstreamModelConfig };
+export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
 export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };
+export type { UpstreamModelConfig };
+export type UpstreamChatConfig = UpstreamChatModelConfig;
 export type {
   AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
   PublicModel, PublicModelLimits,
@@ -271,10 +270,8 @@ interface UpstreamRecordBase {
   disabled_public_model_ids: string[];
   // Ordered proxy fallback list. Each entry pins a proxy id or one of the
   // built-in direct transports (`direct_fetch`, `direct_connect`), plus an
-  // optional `colos` whitelist that scopes it to location tags (Cloudflare
-  // colos / the Node `RUNTIME_LOCATION` env var). Empty/missing whitelist
-  // means "active in all locations". Empty top-level list defaults to
-  // `direct_fetch`.
+  // optional `colos` whitelist. Empty/missing means all locations; an empty
+  // top-level list defaults to `direct_fetch`.
   proxy_fallback_list: ProxyFallbackEntry[];
   // Per-upstream model name prefix. When set, this upstream's models can be
   // addressed in two forms (`unprefixed` and `prefixed`) and listed in either
@@ -282,10 +279,6 @@ interface UpstreamRecordBase {
   // means "no prefix configured; the upstream advertises and accepts only
   // the bare upstream id."
   model_prefix: ModelPrefixConfig | null;
-  // Operator-chosen badge color override. `null` inherits the kind default;
-  // a preset key from `UPSTREAM_COLOR_PRESETS` resolves to a static UnoCSS
-  // accent class; a `#RRGGBB` string renders via inline CSS custom
-  // properties so any operator hex works without extending the theme.
   color: UpstreamColor | null;
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set
@@ -326,10 +319,26 @@ export type UpstreamRecordEnvelope = {
 
 export const toRecordEnvelope = (record: UpstreamRecord): UpstreamRecordEnvelope => ({ ...record });
 
-// Importing the gateway's source-of-truth type as the actual definition (rather
-// than redeclaring the shape) makes any future field rename a compile error
-// here instead of a runtime mismatch the next time someone refreshes the page.
-export type { SerializedProxyRecord as ProxyRecord, SerializedBackoffRow as BackoffRow } from '@floway-dev/gateway/control-plane/proxies/serialize';
+// Mirrors @floway-dev/gateway/control-plane/proxies/serialize. Keep this narrow
+// until this app needs the gateway Hono RPC type; pulling gateway in just for
+// these DTOs drags the whole backend package graph into the frontend workspace.
+export interface ProxyRecord {
+  id: string;
+  name: string;
+  url: string;
+  created_at: string;
+  updated_at: string;
+  dial_timeout_seconds: number | null;
+}
+
+export interface BackoffRow {
+  proxy_id: string;
+  upstream_id: string;
+  fail_count: number;
+  expires_at: number;
+  last_error: string | null;
+  last_error_at: number | null;
+}
 
 // 409 body returned by DELETE /api/proxies/:id when the row is referenced
 // by an upstream's fallback list.
@@ -346,8 +355,25 @@ export interface ApiKey {
   last_used_at: string | null;
   upstream_ids: string[] | null;
   dump_retention_seconds: number | null;
-  // Zero disables persistence; positive values are whole days expressed in seconds.
-  responses_retention_seconds: number;
+}
+
+// Raw admin projection returned by GET /api/users. Unlike /auth/me, the
+// telemetry flag is not widened by administrator status so it can be edited.
+export interface ControlPlaneUser {
+  id: number;
+  username: string;
+  isAdmin: boolean;
+  upstreamIds: string[] | null;
+  canViewGlobalTelemetry: boolean;
+  createdAt: string;
+}
+
+export interface UpstreamOption {
+  id: string;
+  name: string;
+  kind: UpstreamProviderKind;
+  enabled: boolean;
+  color: UpstreamColor | null;
 }
 
 export interface ControlPlaneModel extends PublicModel {
@@ -360,6 +386,14 @@ export interface SearchConfig {
   microsoftGrounding: { apiKey: string };
   jina: { apiKey: string };
   passthroughOpenAiSearch: { enabled: boolean; upstreamId: string; model: string };
+}
+
+export interface SearchConfigTestResult {
+  ok: boolean;
+  provider: string;
+  query: string;
+  results?: { title: string; url: string; previewText: string; pageAge?: string }[];
+  error?: { code: string; message: string };
 }
 
 export interface CopilotQuotaSnapshot {
@@ -395,3 +429,39 @@ export type DeviceFlowPoll =
       state: CopilotUpstreamState;
     };
   };
+
+// Backup / restore DTOs — the frontend is a pass-through and does not introspect
+// individual records, so the data arrays use unknown[].
+
+export interface BackupExportData {
+  users: unknown[];
+  apiKeys: unknown[];
+  upstreams: unknown[];
+  proxies: unknown[];
+  usage: unknown[];
+  searchUsage: unknown[];
+  performance?: unknown[];
+  performanceIncluded: boolean;
+  searchConfig: unknown;
+}
+
+export interface BackupExportResponse {
+  version: number;
+  exportedAt: string;
+  data: BackupExportData;
+}
+
+export interface BackupImportCounts {
+  users: number;
+  apiKeys: number;
+  upstreams: number;
+  proxies: number;
+  usage: number;
+  searchUsage: number;
+  performance: number;
+}
+
+export interface BackupImportResponse {
+  ok: true;
+  imported: BackupImportCounts;
+}

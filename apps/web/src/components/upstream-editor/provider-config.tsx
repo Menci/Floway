@@ -1,0 +1,425 @@
+import {
+  ArrowClockwiseRegular,
+  CheckmarkCircleRegular,
+  CopyRegular,
+  EyeOffRegular,
+  EyeRegular,
+  OpenRegular,
+  PlugConnectedRegular,
+} from "@fluentui/react-icons";
+import { useEffect, useId, useRef, useState } from "react";
+import { Controller, useFormContext, useWatch } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+
+import type {
+  DeviceFlowPoll,
+  DeviceFlowStart,
+  UpstreamProviderKind,
+  UpstreamRecord,
+} from "../../api/types";
+import { authFetch, callApi } from "../../api/auth";
+import { fluentComponents } from "../../fluent";
+import { Dropdown, Input, Textarea } from "../ui/fluent-form-controls";
+import { ProviderIcon } from "../upstreams/provider-badge";
+import type { UpstreamEditorValues } from "./editor-data";
+import { previewRecord } from "./editor-data";
+import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from "./pkce";
+
+const {
+  Button,
+  Checkbox,
+  Field,
+  Link,
+  MessageBar,
+  MessageBarBody,
+  Option,
+  Spinner,
+  Switch,
+  Tab,
+  TabList,
+  Text,
+  Tooltip,
+  makeStyles,
+} = fluentComponents;
+
+const useStyles = makeStyles({
+  apiControlOffset: {
+    marginLeft: "-8px",
+  },
+  endpointCheckbox: {
+    fontFamily: "monospace !important",
+  },
+  pathOverrideLabel: {
+    fontFamily: "monospace !important",
+    fontSize: "var(--fontSizeBase200) !important",
+  },
+});
+
+export function ProviderConfigSection({
+  record,
+  onPatch,
+}: {
+  record: UpstreamRecord;
+  onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
+}) {
+  if (record.kind === "custom") return <CustomConfig record={record} />;
+  if (record.kind === "azure") return <AzureConfig record={record} />;
+  if (record.kind === "ollama") return <OllamaConfig record={record} />;
+  if (record.kind === "copilot") return <CopilotConfig record={record} onPatch={onPatch} />;
+  return <OAuthConfig record={record} onPatch={onPatch} />;
+}
+
+export function ApiPathsSection({ record, onRefreshModels }: { record: UpstreamRecord; onRefreshModels: () => void }) {
+  if (record.kind !== "custom") return null;
+  return <CustomApiPaths onRefreshModels={onRefreshModels} />;
+}
+
+function CustomConfig({ record }: { record: Extract<UpstreamRecord, { kind: "custom" }> }) {
+  const { t } = useTranslation();
+  const { control, register, setValue } = useFormContext<UpstreamEditorValues>();
+  const authStyle = useWatch({ control, name: "config.authStyle" as never }) as string;
+  const authStyleLabel = (value: unknown) => {
+    if (value === "bearer") return "Bearer";
+    if (value === "anthropic") return "Anthropic";
+    if (value === "none") return t("dashboard.upstreamEditor.auth.none");
+    return "";
+  };
+  return (
+    <div className="grid gap-4">
+      <Field label={t("dashboard.upstreamEditor.fields.baseUrl")} required>
+        <Controller
+          control={control}
+          name={"config.baseUrl" as never}
+          render={({ field }) => (
+            <Input
+              value={typeof field.value === "string" ? field.value : ""}
+              onBlur={field.onBlur}
+              onChange={(_, data) => field.onChange(data.value)}
+              placeholder="https://api.openai.com"
+            />
+          )}
+        />
+      </Field>
+      <Controller control={control} name={"config.authStyle" as never} render={({ field }) => (
+        <Field label={t("dashboard.upstreamEditor.fields.authStyle")}>
+          <Dropdown value={authStyleLabel(field.value)} selectedOptions={[String(field.value)]} onOptionSelect={(_, data) => {
+            field.onChange(data.optionValue);
+            if (data.optionValue === "none") setValue("config.apiKey" as never, "" as never, { shouldDirty: true });
+          }}>
+            <Option value="bearer">Bearer</Option>
+            <Option value="anthropic">Anthropic</Option>
+            <Option value="none">{t("dashboard.upstreamEditor.auth.none")}</Option>
+          </Dropdown>
+        </Field>
+      )} />
+      {authStyle !== "none" && <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />}
+    </div>
+  );
+}
+
+function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
+  const { t } = useTranslation();
+  const styles = useStyles();
+  const idPrefix = useId();
+  const { control, register } = useFormContext<UpstreamEditorValues>();
+  return (
+    <div className="grid gap-4">
+      <EndpointPicker />
+      <Controller control={control} name={"config.modelsFetch.enabled" as never} render={({ field }) => (
+        <Switch
+          checked={Boolean(field.value)}
+          className={styles.apiControlOffset}
+          label={t("dashboard.upstreamEditor.fields.fetchModels")}
+          onChange={(_, data) => {
+            field.onChange(data.checked);
+            if (data.checked) onRefreshModels();
+          }}
+        />
+      )} />
+      <Field label={t("dashboard.upstreamEditor.fields.modelsPath")}>
+        <Input {...register("config.modelsFetch.endpoint" as never)} className="font-mono" placeholder="/v1/models" />
+      </Field>
+      <div
+        aria-describedby={`${idPrefix}-hint`}
+        aria-labelledby={`${idPrefix}-label`}
+        className="grid gap-1.5"
+        role="group"
+      >
+        <Text id={`${idPrefix}-label`}>
+          {t("dashboard.upstreamEditor.fields.pathOverrides")}
+        </Text>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-3">
+          {pathOverrideKeys.map((path) => (
+            <Controller
+              control={control}
+              key={path}
+              name={`config.pathOverrides.${path}` as never}
+              render={({ field }) => (
+                <Field className="min-w-0" label={{ children: path, className: styles.pathOverrideLabel }}>
+                  <Input
+                    className="!w-full"
+                    placeholder={`/v1${path}`}
+                    size="small"
+                    value={typeof field.value === "string" ? field.value : ""}
+                    onChange={(_, data) => field.onChange(data.value)}
+                  />
+                </Field>
+              )}
+            />
+          ))}
+        </div>
+        <Text id={`${idPrefix}-hint`} size={200} className="text-fui-fg2">
+          {t("dashboard.upstreamEditor.pathOverridesHint")}
+        </Text>
+      </div>
+    </div>
+  );
+}
+
+function AzureConfig({ record }: { record: Extract<UpstreamRecord, { kind: "azure" }> }) {
+  const { t } = useTranslation();
+  const { register } = useFormContext<UpstreamEditorValues>();
+  return <div className="grid gap-4">
+    <Field label={t("dashboard.upstreamEditor.fields.endpoint")} required>
+      <Input {...register("config.endpoint" as never)} className="font-mono" placeholder="https://resource.openai.azure.com/openai/v1" />
+    </Field>
+    <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />
+  </div>;
+}
+
+function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: "ollama" }> }) {
+  const { t } = useTranslation();
+  const { register } = useFormContext<UpstreamEditorValues>();
+  return <div className="grid gap-4">
+    <Field label={t("dashboard.upstreamEditor.fields.baseUrl")} required>
+      <Input {...register("config.baseUrl" as never)} className="font-mono" placeholder="https://ollama.com" />
+    </Field>
+    <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
+  </div>;
+}
+
+function SecretField({ name, optional, secretSet }: { name: string; optional?: boolean; secretSet: boolean }) {
+  const { t } = useTranslation();
+  const { control } = useFormContext<UpstreamEditorValues>();
+  const [visible, setVisible] = useState(false);
+  return <Field
+    label={`${t("dashboard.upstreamEditor.fields.apiKey")}${optional ? ` (${t("dashboard.upstreamEditor.optional")})` : ""}`}
+    hint={secretSet ? t("dashboard.upstreamEditor.secretKeep") : undefined}
+  >
+    <Controller
+      control={control}
+      name={name as never}
+      render={({ field }) => (
+        <Input
+          type={visible ? "text" : "password"}
+          value={typeof field.value === "string" ? field.value : ""}
+          onBlur={field.onBlur}
+          onChange={(_, data) => field.onChange(data.value)}
+          placeholder={secretSet ? "••••••••" : "sk-..."}
+          contentAfter={
+            <Tooltip
+              content={visible ? t("dashboard.upstreamEditor.actions.hideSecret") : t("dashboard.upstreamEditor.actions.showSecret")}
+              relationship="label"
+            >
+              <Button
+                appearance="subtle"
+                aria-label={visible ? t("dashboard.upstreamEditor.actions.hideSecret") : t("dashboard.upstreamEditor.actions.showSecret")}
+                icon={visible ? <EyeOffRegular /> : <EyeRegular />}
+                onClick={() => setVisible((value) => !value)}
+                size="small"
+              />
+            </Tooltip>
+          }
+        />
+      )}
+    />
+  </Field>;
+}
+
+const endpointOptions = [
+  ["completions", "/completions"],
+  ["chatCompletions", "/chat/completions"],
+  ["responses", "/responses"],
+  ["messages", "/messages"],
+] as const;
+
+const pathOverrideKeys = [
+  "/completions",
+  "/chat/completions",
+  "/responses",
+  "/messages",
+  "/embeddings",
+  "/alpha/search",
+  "/images/generations",
+  "/images/edits",
+] as const;
+
+function EndpointPicker() {
+  const { t } = useTranslation();
+  const styles = useStyles();
+  const idPrefix = useId();
+  const { control, getValues, setValue } = useFormContext<UpstreamEditorValues>();
+  const config = useWatch({ control, name: "config" });
+  const customConfig = config as Extract<UpstreamRecord, { kind: "custom" }>["config"];
+  const value = customConfig.endpoints ?? {};
+  return <div className="grid gap-1" role="group" aria-labelledby={`${idPrefix}-label`}>
+    <Text id={`${idPrefix}-label`} size={300}>
+      {t("dashboard.upstreamEditor.fields.defaultEndpoints")}
+    </Text>
+      <div className="grid gap-1">
+        {endpointOptions.map(([key, label]) => {
+          const selected = value[key] !== undefined;
+          return <Checkbox
+            id={`${idPrefix}-${key}`}
+            name={`default-endpoint-${key}`}
+            key={key}
+            checked={selected}
+            className={styles.apiControlOffset}
+            label={{ children: label, className: styles.endpointCheckbox }}
+            onChange={(_, data) => {
+            const latestConfig = getValues("config") as Extract<UpstreamRecord, { kind: "custom" }>["config"];
+            const next = { ...(latestConfig.endpoints ?? {}) };
+            if (data.checked) next[key] = {}; else delete next[key];
+            setValue("config", { ...latestConfig, endpoints: next }, { shouldDirty: true });
+          }} />;
+        })}
+      </div>
+    </div>;
+}
+
+function CopilotConfig({ record, onPatch }: {
+  record: Extract<UpstreamRecord, { kind: "copilot" }>;
+  onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const values = useWatch<UpstreamEditorValues>();
+  const config = values.config as typeof record.config;
+  const [flow, setFlow] = useState<DeviceFlowStart | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const timer = useRef<number | null>(null);
+  const stop = () => { if (timer.current !== null) window.clearTimeout(timer.current); timer.current = null; };
+  useEffect(() => stop, []);
+
+  const poll = async (deviceCode: string, interval: number) => {
+    const result = await callApi<DeviceFlowPoll>(() => authFetch("/api/upstreams/copilot/oauth/device-login/poll", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ record: previewRecord(record, values as UpstreamEditorValues), deviceCode }),
+    }));
+    if (result.error) { timer.current = window.setTimeout(() => void poll(deviceCode, interval), interval * 1000); return; }
+    if (result.data.status === "complete") { setBusy(false); onPatch(result.data.patch, record.id !== ""); return; }
+    if (result.data.status === "error") { setBusy(false); setError(result.data.error); return; }
+    const next = result.data.status === "slow_down" ? result.data.interval + 1 : interval;
+    timer.current = window.setTimeout(() => void poll(deviceCode, next), next * 1000);
+  };
+  const start = async () => {
+    stop(); setBusy(true); setError(null);
+    const result = await callApi<DeviceFlowStart>(() => authFetch("/api/upstreams/copilot/oauth/device-login/start", { method: "POST" }));
+    if (result.error) { setBusy(false); setError(result.error.message); return; }
+    setFlow(result.data);
+    timer.current = window.setTimeout(() => void poll(result.data.device_code, result.data.interval), result.data.interval * 1000);
+  };
+
+  if (config.user?.login) return <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`@${config.user.login}`} />;
+  return <div className="grid gap-3">
+    <Text size={300} className="text-fui-fg2">{t("dashboard.upstreamEditor.copilot.description")}</Text>
+    {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+    {!flow ? <Button appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t("dashboard.upstreamEditor.copilot.connect")}</Button> : <>
+      <Text size={200} className="text-fui-fg2">{t("dashboard.upstreamEditor.copilot.deviceCode")}</Text>
+      <code className="text-xl tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
+      <Link href={flow.verification_uri} target="_blank">{flow.verification_uri}</Link>
+      <span className="inline-flex items-center gap-2 text-xs text-fui-fg2"><Spinner size="tiny" />{t("dashboard.upstreamEditor.copilot.waiting")}</span>
+    </>}
+  </div>;
+}
+
+type OAuthKind = "codex" | "claude-code";
+function OAuthConfig({ record, onPatch }: {
+  record: Extract<UpstreamRecord, { kind: OAuthKind }>;
+  onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
+  const config = values.config as typeof record.config;
+  const hasAccount = config.accounts.length > 0;
+  const [open, setOpen] = useState(!hasAccount);
+  const [tab, setTab] = useState(record.kind === "codex" ? "json" : "oauth");
+  const [json, setJson] = useState("");
+  const [callback, setCallback] = useState("");
+  const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const flowKind = tab === "setup" ? "setup-token" : "oauth";
+
+  const prepare = async () => {
+    setBusy(true); setError(null);
+    const pkce = await generatePkce();
+    stashPkce(record.kind, flowKind, { verifier: pkce.verifier, state: pkce.state });
+    const path = record.kind === "codex"
+      ? "/api/upstreams/codex/oauth/authorize-url"
+      : `/api/upstreams/claude-code/${tab === "setup" ? "setup-token" : "oauth"}/authorize-url`;
+    const result = await callApi<{ authorize_url: string }>(() => authFetch(path, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ record: previewRecord(record, values), challenge: pkce.challenge, state: pkce.state }),
+    }));
+    setBusy(false);
+    if (result.error) { setError(result.error.message); return; }
+    setAuthorizeUrl(result.data.authorize_url);
+  };
+  useEffect(() => { if (open && tab !== "json" && !authorizeUrl) void prepare(); }, [open, tab]);
+
+  const submit = async () => {
+    setBusy(true); setError(null);
+    let body: Record<string, unknown> = { record: previewRecord(record, values) };
+    let path: string;
+    try {
+      if (tab === "json") {
+        JSON.parse(json);
+        body[record.kind === "codex" ? "auth_json" : "credentials_json"] = json;
+      } else {
+        const parsed = parseCallbackPaste(callback);
+        const recalled = recallPkce(record.kind, flowKind, parsed.state);
+        if (!recalled) throw new Error(t("dashboard.upstreamEditor.oauth.unrecognized"));
+        body.callback = { code: parsed.code, verifier: recalled.verifier, ...(record.kind === "claude-code" ? { state: parsed.state } : {}) };
+      }
+      path = record.kind === "codex"
+        ? "/api/upstreams/codex/oauth/exchange"
+        : `/api/upstreams/claude-code/${tab === "setup" ? "setup-token" : "oauth"}/exchange`;
+    } catch (cause) {
+      setBusy(false); setError(cause instanceof Error ? cause.message : String(cause)); return;
+    }
+    const result = await callApi<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch(path, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    }));
+    setBusy(false);
+    if (result.error) { setError(result.error.message); return; }
+    clearPkce(record.kind, flowKind);
+    onPatch(result.data.patch, record.id !== "");
+    setOpen(false); setJson(""); setCallback(""); setAuthorizeUrl(null);
+  };
+
+  return <div className="grid gap-4">
+    {hasAccount && (record.kind === "codex"
+      ? <AccountSummary kind="codex" title={(config as Extract<UpstreamRecord, { kind: "codex" }>["config"]).accounts[0].email} subtitle={(config as Extract<UpstreamRecord, { kind: "codex" }>["config"]).accounts[0].planType} />
+      : <AccountSummary kind="claude-code" title={(config as Extract<UpstreamRecord, { kind: "claude-code" }>["config"]).accounts[0].email ?? (config as Extract<UpstreamRecord, { kind: "claude-code" }>["config"]).accounts[0].accountUuid.slice(0, 8)} subtitle={(config as Extract<UpstreamRecord, { kind: "claude-code" }>["config"]).accounts[0].subscriptionType ?? "Claude Code"} />)}
+    {hasAccount && <Button appearance="secondary" icon={<ArrowClockwiseRegular />} onClick={() => setOpen((value) => !value)}>{open ? t("common.cancel") : t("dashboard.upstreamEditor.oauth.reimport")}</Button>}
+    {open && <>
+      <TabList selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setAuthorizeUrl(null); }}>
+        {record.kind === "codex" ? <><Tab value="json">auth.json</Tab><Tab value="oauth">OAuth</Tab></> : <><Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab></>}
+      </TabList>
+      {tab === "json" ? <Field label={t("dashboard.upstreamEditor.oauth.credentialJson")}><Textarea rows={8} value={json} onChange={(_, data) => setJson(data.value)} className="font-mono" /></Field> : <div className="grid gap-3">
+        {busy && !authorizeUrl ? <Spinner label={t("dashboard.upstreamEditor.oauth.preparing")} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" className="truncate">{t("dashboard.upstreamEditor.oauth.openAuthorize")}</Link><Button appearance="subtle" icon={<CopyRegular />} aria-label={t("dashboard.upstreamEditor.oauth.copy")} onClick={() => void navigator.clipboard.writeText(authorizeUrl)} /></div>}
+        <Field label={t("dashboard.upstreamEditor.oauth.callback")}><Textarea rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} className="font-mono" /></Field>
+      </div>}
+      {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+      <Button appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t("dashboard.upstreamEditor.oauth.reimport") : t("dashboard.upstreamEditor.oauth.import")}</Button>
+    </>}
+  </div>;
+}
+
+function AccountSummary({ kind, subtitle, title }: { kind: UpstreamProviderKind; subtitle: string; title: string }) {
+  return <div className="flex items-center gap-3 border border-solid border-fui-stroke1 rounded-lg p-3 min-w-0">
+    <ProviderIcon kind={kind} className="h-8 w-8" />
+    <div className="grid gap-0.5 min-w-0"><Text weight="semibold" truncate>{title}</Text><Text size={200} className="text-fui-fg2" truncate>{subtitle}</Text></div>
+  </div>;
+}
