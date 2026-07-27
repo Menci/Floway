@@ -12,21 +12,21 @@ interface AgentContentFields {
 
 const requiredString = (value: unknown, path: string): string => {
   if (typeof value !== 'string') {
-    throw new TranslatorInputError(`Invalid type for '${path}': expected a string.`);
+    throw new TranslatorInputError(`Invalid type for '${path}': expected a string.`, { param: path });
   }
   return value;
 };
 
 const nullableString = (value: unknown, path: string): string | null | undefined => {
   if (value !== undefined && value !== null && typeof value !== 'string') {
-    throw new TranslatorInputError(`Invalid type for '${path}': expected a string or null.`);
+    throw new TranslatorInputError(`Invalid type for '${path}': expected a string or null.`, { param: path });
   }
   return value;
 };
 
 const imageDetail = (value: unknown, path: string): ResponsesInputImage['detail'] => {
   if (typeof value !== 'string') {
-    throw new TranslatorInputError(`Invalid type for '${path}': expected a string.`);
+    throw new TranslatorInputError(`Invalid type for '${path}': expected a string.`, { param: path });
   }
   return value as ResponsesInputImage['detail'];
 };
@@ -96,7 +96,7 @@ export const multiAgentMessageContent = (
       });
       break;
     default:
-      throw new TranslatorInputError(`Invalid value: '${part.type}' for '${path}.type'.`);
+      throw new TranslatorInputError(`Invalid value: '${part.type}' for '${path}.type'.`, { param: `${path}.type` });
     }
   }
 
@@ -107,7 +107,7 @@ export const multiAgentMessageContent = (
 export const multiAgentCallOutputText = (item: ResponsesInputMultiAgentCallOutputItem): string =>
   item.output.map((part, index) => {
     if (part.type !== 'output_text') {
-      throw new TranslatorInputError(`Invalid value: '${part.type}' for 'multi_agent_call_output.output[${index}].type'.`);
+      throw new TranslatorInputError(`Invalid value: '${part.type}' for 'multi_agent_call_output.output[${index}].type'.`, { param: `multi_agent_call_output.output[${index}].type` });
     }
     return requiredString(part.text, `multi_agent_call_output.output[${index}].text`);
   }).join('');

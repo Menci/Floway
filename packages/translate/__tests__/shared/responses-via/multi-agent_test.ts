@@ -41,12 +41,24 @@ test('multiAgentMessageContent normalizes readable beta content into Responses i
   ]);
 });
 
-test('multiAgentMessageContent rejects unknown beta content explicitly', () => {
-  assertThrows(
+test('multiAgentMessageContent reports the exact path for unknown beta content', () => {
+  const error = assertThrows(
     () => multiAgentMessageContent(agentMessage([{ type: 'future_agent_part', value: 1 }])),
     Error,
     "Invalid value: 'future_agent_part'",
   );
+  assertEquals((error as Error & { param?: string }).param, 'agent_message.content[0].type');
+});
+
+test('multiAgentMessageContent reports the exact path for malformed text', () => {
+  const error = assertThrows(
+    () => multiAgentMessageContent(agentMessage([
+      { type: 'input_text', text: 42 } as unknown as ResponsesInputAgentMessageItem['content'][number],
+    ])),
+    Error,
+    "Invalid type for 'agent_message.content[0].text'",
+  );
+  assertEquals((error as Error & { param?: string }).param, 'agent_message.content[0].text');
 });
 
 test('multiAgentCallOutputText joins output fragments without inventing separators', () => {
@@ -61,8 +73,8 @@ test('multiAgentCallOutputText joins output fragments without inventing separato
   }), 'agent_1: completed');
 });
 
-test('multiAgentCallOutputText rejects malformed output blocks', () => {
-  assertThrows(
+test('multiAgentCallOutputText reports the exact path for malformed output blocks', () => {
+  const error = assertThrows(
     () => multiAgentCallOutputText({
       type: 'multi_agent_call_output',
       action: 'wait_agent',
@@ -72,4 +84,5 @@ test('multiAgentCallOutputText rejects malformed output blocks', () => {
     Error,
     "Invalid value: 'future_output'",
   );
+  assertEquals((error as Error & { param?: string }).param, 'multi_agent_call_output.output[0].type');
 });
