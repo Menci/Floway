@@ -35,7 +35,7 @@ export default function DashboardProvidersModelAliases() {
   const { user } = useDashboardOutletContext();
   const [aliases, setAliases] = useState<ModelAlias[]>([]);
   const [models, setModels] = useState<ControlPlaneModel[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(user.isAdmin);
   const [error, setError] = useState<string | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -58,7 +58,8 @@ export default function DashboardProvidersModelAliases() {
     setLoading(false);
   };
 
-  useEffect(() => { if (user.isAdmin) void load(); else setLoading(false); }, [user.isAdmin]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Loading the alias list on mount; the pending flag begins that work.
+  useEffect(() => { if (user.isAdmin) void load(); }, [user.isAdmin]);
 
   if (!user.isAdmin) return <section className="grid gap-[18px] max-w-[960px]"><Header /><Panel className="!p-[22px_24px]"><Text weight="semibold">{t('dashboard.pages.adminOnly')}</Text><Text block className="text-fui-fg2 mt-2">{t('dashboard.pages.adminOnlyDescription')}</Text></Panel></section>;
 

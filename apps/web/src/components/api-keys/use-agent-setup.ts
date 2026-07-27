@@ -139,6 +139,7 @@ export function useAgentSetup(apiKeyId: string | null) {
     draftRef.current = null;
     generationRef.current = 0;
     confirmedRef.current = 0;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Switching keys tears down the previous lease before acquiring the next; this is the teardown, not state mirrored from a prop.
     setLease(null);
     setDraftState(null);
     setGeneration(0);

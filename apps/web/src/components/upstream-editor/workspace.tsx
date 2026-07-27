@@ -6,7 +6,7 @@ import {
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -120,14 +120,16 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
   const filtered = rows.filter(row => `${row.config.display_name ?? ''} ${publicModelId(row.config)} ${row.config.upstreamModelId}`.toLowerCase().includes(search.toLowerCase()));
 
   const setEnabled = (id: string, enabled: boolean) => setValue('disabledPublicModelIds', enabled ? disabled.filter(item => item !== id) : [...new Set([...disabled, id])], { shouldDirty: true });
-  useEffect(() => {
-    if (pendingManualId === null) return;
-    const manualRow = rows.find(row => row.source === 'manual' && row.config.upstreamModelId === pendingManualId);
-    if (!manualRow) return;
-    setSelected(manualRow.key);
+  // Once the row the pending manual model produced exists, hand selection to
+  // it and drop the placeholder — a one-shot handoff, not synchronised state.
+  const settledManualRow = pendingManualId === null
+    ? undefined
+    : rows.find(row => row.source === 'manual' && row.config.upstreamModelId === pendingManualId);
+  if (settledManualRow) {
+    setSelected(settledManualRow.key);
     setPendingManualId(null);
     setPendingManualConfig(null);
-  }, [pendingManualId, rows]);
+  }
 
   const setModelSource = (row: ModelRow, source: 'auto' | 'manual') => {
     if (source === row.source || readOnly) return;

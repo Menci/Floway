@@ -152,17 +152,17 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
-  useEffect(() => {
-    if (selectedModel && selectedModel.id !== modelId) setModelId(selectedModel.id);
-    if (!selectedModel && modelId) setModelId('');
-  }, [modelId, selectedModel]);
+  // The picker holds an id; the catalog decides whether it still resolves.
+  // Reconciling during render keeps the two from disagreeing for a frame.
+  const resolvedModelId = selectedModel?.id ?? '';
+  if (resolvedModelId !== modelId) setModelId(resolvedModelId);
 
-  useEffect(() => {
-    if (!imageEnabled) {
-      setShowImage(false);
-      setImageUrl('');
-    }
-  }, [imageEnabled]);
+  // A model that cannot take images has no attachment to show; reconciling
+  // during render avoids painting the composer with a stale one.
+  if (!imageEnabled && (showImage || imageUrl !== '')) {
+    setShowImage(false);
+    setImageUrl('');
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });

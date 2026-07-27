@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
@@ -63,22 +63,20 @@ export function CliConfiguration({
   const claudeSonnet = useMemo(() => [...claudeIds].sort(sortClaudeFor('sonnet')), [claudeIds]);
   const claudeHaiku = useMemo(() => [...claudeIds].sort(sortClaudeFor('haiku')), [claudeIds]);
   const codexModels = useMemo(() => [...codexIds].sort(sortCodex), [codexIds]);
-  const [fableModel, setFableModel] = useState('');
-  const [opusModel, setOpusModel] = useState('');
-  const [sonnetModel, setSonnetModel] = useState('');
-  const [haikuModel, setHaikuModel] = useState('');
-  const [codexModel, setCodexModel] = useState('');
+  const [fableModelPick, setFableModel] = useState('');
+  const [opusModelPick, setOpusModel] = useState('');
+  const [sonnetModelPick, setSonnetModel] = useState('');
+  const [haikuModelPick, setHaikuModel] = useState('');
+  const [codexModelPick, setCodexModel] = useState('');
 
-  useEffect(() => {
-    setFableModel(current => (claudeFable.includes(current) ? current : claudeFable[0] ?? ''));
-    setOpusModel(current => (claudeOpus.includes(current) ? current : claudeOpus[0] ?? ''));
-    setSonnetModel(current =>
-      claudeSonnet.includes(current) ? current : claudeSonnet[0] ?? '');
-    setHaikuModel(current =>
-      claudeHaiku.includes(current) ? current : claudeHaiku[0] ?? '');
-    setCodexModel(current =>
-      codexModels.includes(current) ? current : codexModels[0] ?? '');
-  }, [claudeFable, claudeHaiku, claudeOpus, claudeSonnet, codexModels]);
+  // A pick stays whatever the operator chose until the catalog stops offering
+  // it, at which point the first entry stands in. Deriving that here rather
+  // than writing it back keeps the two from disagreeing for a render.
+  const fableModel = claudeFable.includes(fableModelPick) ? fableModelPick : claudeFable[0] ?? '';
+  const opusModel = claudeOpus.includes(opusModelPick) ? opusModelPick : claudeOpus[0] ?? '';
+  const sonnetModel = claudeSonnet.includes(sonnetModelPick) ? sonnetModelPick : claudeSonnet[0] ?? '';
+  const haikuModel = claudeHaiku.includes(haikuModelPick) ? haikuModelPick : claudeHaiku[0] ?? '';
+  const codexModel = codexModels.includes(codexModelPick) ? codexModelPick : codexModels[0] ?? '';
 
   const contextById = useMemo(() => {
     const map = new Map<string, number>();

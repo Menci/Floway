@@ -1,5 +1,5 @@
 import { ArrowLeftRegular, DeleteRegular } from '@fluentui/react-icons';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { publicModelId } from './editor-data';
@@ -76,7 +76,11 @@ export function ModelDetail({
     onUpdate(updated);
   };
   const [savedFlagOverrides, setSavedFlagOverrides] = useState(row.config.flagOverrides ?? {});
-  useEffect(() => setSavedFlagOverrides(row.config.flagOverrides ?? {}), [row.key]);
+  const [snapshotRowKey, setSnapshotRowKey] = useState(row.key);
+  if (snapshotRowKey !== row.key) {
+    setSnapshotRowKey(row.key);
+    setSavedFlagOverrides(row.config.flagOverrides ?? {});
+  }
 
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,

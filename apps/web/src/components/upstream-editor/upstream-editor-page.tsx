@@ -113,6 +113,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     const canFetch = record.id !== '' && record.kind !== 'azure'
       || record.kind === 'custom' && Boolean((values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).baseUrl)
       || record.kind === 'ollama' && Boolean((values.config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Fetching the model catalog on mount; the pending flag begins that work.
     if (canFetch) void refreshModels();
   }, []);
 

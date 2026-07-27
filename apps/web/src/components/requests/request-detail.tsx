@@ -147,14 +147,21 @@ export function RequestDetailPanel({ keyId, recordId }: DetailProps) {
   const [streamView, setStreamView] = useState<'collected' | 'events'>('collected');
   const [collected, setCollected] = useState<CollectedStream | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
+  // Clearing the previous record during render means the panel never shows
+  // one record's body under another record's header while the fetch is out.
+  const [shownRecordId, setShownRecordId] = useState(recordId);
+  if (shownRecordId !== recordId) {
+    setShownRecordId(recordId);
     setRecord(null);
     setError(null);
     setCollected(null);
     setStreamView('collected');
+    setLoading(recordId !== null);
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
     if (!recordId) return () => controller.abort();
-    setLoading(true);
     void authFetch(`/api/dump/keys/${encodeURIComponent(keyId)}/records/${encodeURIComponent(recordId)}`, { signal: controller.signal })
       .then(async response => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);

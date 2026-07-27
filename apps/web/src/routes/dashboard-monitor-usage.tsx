@@ -95,6 +95,7 @@ export default function DashboardMonitorUsage() {
   }, [range, user, view]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- The filters are user-selected, so a change starts a load; marking it pending synchronously is the point.
     void refresh();
     return () => {
       requestIdRef.current += 1;

@@ -198,6 +198,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       </Panel>
 
       <UserDialog
+        key={'create'}
         actorId={actor.id}
         mode="create"
         onOpenChange={setCreateOpen}
@@ -207,6 +208,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         user={null}
       />
       <UserDialog
+        key={editTarget?.id ?? 'closed'}
         actorId={actor.id}
         mode="edit"
         onOpenChange={open => { if (!open) setEditTarget(null); }}
@@ -215,7 +217,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         upstreams={data.upstreams}
         user={editTarget}
       />
-      <PasswordDialog
+      <PasswordDialog key={passwordTarget?.id ?? 'closed'}
         onOpenChange={open => { if (!open) setPasswordTarget(null); }}
         onSaved={reload}
         open={passwordTarget !== null}
@@ -378,17 +380,11 @@ function UserDialog({
     }),
     [mode],
   );
-  const { control, handleSubmit, reset, setValue, watch, formState: { errors } } =
+  const { control, handleSubmit, setValue, watch, formState: { errors } } =
     useForm<UserFormValues>({
       resolver: zodResolver(schema),
       defaultValues: userFormDefaults(user),
     });
-
-  useEffect(() => {
-    if (!open) return;
-    reset(userFormDefaults(user));
-    setError(null);
-  }, [open, reset, user]);
 
   const values = watch();
   const adminLocked = mode === 'edit' && !!user && (user.id === 1 || user.id === actorId);
@@ -617,16 +613,10 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
     message: 'dashboard.users.validation.passwordMismatch',
     path: ['confirmation'],
   }), []);
-  const { control, handleSubmit, reset, formState: { errors } } = useForm<PasswordFormValues>({
+  const { control, handleSubmit, formState: { errors } } = useForm<PasswordFormValues>({
     resolver: zodResolver(schema),
     defaultValues: { password: '', confirmation: '' },
   });
-
-  useEffect(() => {
-    if (!open) return;
-    reset({ password: '', confirmation: '' });
-    setError(null);
-  }, [open, reset, user]);
 
   const save = async (values: PasswordFormValues) => {
     if (!user) return;

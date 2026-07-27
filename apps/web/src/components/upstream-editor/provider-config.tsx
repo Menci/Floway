@@ -388,6 +388,7 @@ function OAuthConfig({ record, onPatch }: {
     if (result.error) { setError(result.error.message); return; }
     setAuthorizeUrl(result.data.authorize_url);
   };
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the panel starts an authorize-url request; the pending flag is the start of that work.
   useEffect(() => { if (open && tab !== 'json' && !authorizeUrl) void prepare(); }, [open, tab]);
 
   const submit = async () => {
