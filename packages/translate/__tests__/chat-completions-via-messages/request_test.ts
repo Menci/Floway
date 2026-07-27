@@ -53,7 +53,7 @@ test('buildTargetRequest preserves scalar and content-part assistant refusals as
 
   assertEquals(result.messages, [
     { role: 'assistant', content: [{ type: 'text', text: 'Scalar refusal.' }] },
-    { role: 'assistant', content: [{ type: 'text', text: 'Part refusal.' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'Part refusal.', cache_control: { type: 'ephemeral' } }] },
   ]);
 });
 
