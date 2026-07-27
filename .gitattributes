@@ -3,8 +3,10 @@
 # the default open state changes. The per-package `__tests__/` mirror is what
 # makes this a single pattern instead of a scattered list.
 # https://docs.github.com/en/repositories/working-with-files/managing-files/customizing-how-changed-files-appear-on-github
-**/__tests__/**                                     linguist-generated=true
-packages/test-utils/src/**                          linguist-generated=true
+**/__tests__/**            linguist-generated=true
+packages/test-utils/src/** linguist-generated=true
 
-# Assembled by packages/agent-setup/scripts/generate-assets.ts.
-packages/agent-setup/src/script-assets.generated.ts linguist-generated=true
+# Checked-in generator output. The `.generated.` infix is what keeps this a
+# pattern rather than a list of paths; output named anything else opts itself
+# out.
+**/*.generated.*           linguist-generated=true

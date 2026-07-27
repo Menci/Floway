@@ -21,6 +21,9 @@
   mirror position. `.gitattributes` marks the whole `__tests__/` tree as
   generated so reviewers can collapse it in one move; anything left behind in
   `src/` silently opts out of that.
+- A checked-in file written by a generator carries a `.generated.` infix in
+  its name. `.gitattributes` keys off that infix, so output named anything
+  else stays in the language statistics and expanded in diffs.
 - When investigating Copilot upstream quirks, compare at least one other
   Copilot gateway implementation before inventing a policy. For generic
   adapter behavior, compare at least one Copilot gateway and one general
