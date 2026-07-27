@@ -13,7 +13,7 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input, Select } from '../ui/fluent-form-controls';
-const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody } = fluentComponents;
 type RetentionPreset = 'off' | '1h' | '6h' | '24h' | '7d' | 'custom';
 interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; retentionPreset: RetentionPreset; retentionCustom: string }
 interface CreateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; key_source: KeySource; custom_key?: string }

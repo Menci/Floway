@@ -309,6 +309,7 @@ export default function DashboardServicesApiKeys() {
           />
           <RotateKeyDialog
             apiKey={rotateTarget}
+            key={rotateTarget?.id ?? 'closed'}
             onOpenChange={open => {
               if (!open) setRotateTarget(null);
             }}

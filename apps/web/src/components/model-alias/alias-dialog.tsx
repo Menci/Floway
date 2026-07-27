@@ -1,6 +1,6 @@
 import { AddRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -63,7 +63,6 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
   const targetIds = useMemo(() => realModelIdsOfKind(models, kind), [kind, models]);
   const aliasWarnings = computeAliasWarnings({ name: values.name?.trim() ?? '', targets }, models);
 
-  useEffect(() => { if (open) { reset(aliasDefaults(record)); setServerError(null); } }, [open, record, reset]);
   const changeKind = (next: ModelKind) => {
     setValue('kind', next, { shouldValidate: true });
     replace(targets.map(target => ({ ...target, rules: {} })));

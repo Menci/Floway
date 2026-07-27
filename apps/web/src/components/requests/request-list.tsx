@@ -5,7 +5,7 @@ import {
   DismissCircleRegular,
   TimerRegular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { List } from 'react-window';
@@ -23,6 +23,7 @@ import {
 } from './format';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useNow } from '../../lib/use-now';
 import { Select } from '../ui/fluent-form-controls';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
@@ -145,12 +146,7 @@ export function RequestListPanel(props: RequestListProps) {
   const { t } = useTranslation();
   const s = useStyles();
   const listRef = useRef<ListImperativeAPI | null>(null);
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const now = useNow(30_000);
 
   const selectByIndex = useCallback((index: number) => {
     const record = props.records[index];

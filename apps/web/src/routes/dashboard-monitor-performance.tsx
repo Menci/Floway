@@ -35,6 +35,7 @@ import { Panel } from '../components/ui/panel';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
+import { useNow } from '../lib/use-now';
 import { useAuthStore } from '../stores/auth-store';
 
 const {
@@ -76,7 +77,10 @@ export default function DashboardMonitorPerformance() {
   const view: PerformanceView = user.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const [range, setRange] = useState<PerformanceRange>(initialState.range);
   const [loadedRange, setLoadedRange] = useState<PerformanceRange>(initialState.range);
-  const [loadedAt, setLoadedAt] = useState(Date.now());
+  // Stamped by each completed load; the initial value only has to be a
+  // stable reading, which the shared clock provides without an impure render.
+  const mountClock = useNow(60_000);
+  const [loadedAt, setLoadedAt] = useState(mountClock);
   const [metric, setMetric] = useState<PerformanceMetric>(initialState.metric);
   const [percentile, setPercentile] = useState<PerformancePercentile>(initialState.percentile);
   const [groupBy, setGroupBy] = useState<PerformanceGroupBy>(initialState.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : initialState.groupBy);

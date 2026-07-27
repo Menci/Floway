@@ -17,6 +17,7 @@ import type { UsageMetric, UsageRange, UsageView } from '../components/usage/typ
 import { emptySearchUsageResponse, emptyUsageResponse, loadUsagePageData } from '../components/usage/usage-data';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
+import { useNow } from '../lib/use-now';
 import { useAuthStore } from '../stores/auth-store';
 
 const { Button, makeStyles, Spinner, Text, Tooltip } = fluentComponents;
@@ -33,7 +34,10 @@ export default function DashboardMonitorUsage() {
   const [view, setView] = useState<UsageView>(initialView);
   const [range, setRange] = useState<UsageRange>('today');
   const [loadedRange, setLoadedRange] = useState<UsageRange>('today');
-  const [loadedAt, setLoadedAt] = useState(Date.now());
+  // Stamped by each completed load; the initial value only has to be a
+  // stable reading, which the shared clock provides without an impure render.
+  const mountClock = useNow(60_000);
+  const [loadedAt, setLoadedAt] = useState(mountClock);
   const [usage, setUsage] = useState(emptyUsageResponse);
   const [search, setSearch] = useState(emptySearchUsageResponse);
   const [models, setModels] = useState<ControlPlaneModel[]>([]);

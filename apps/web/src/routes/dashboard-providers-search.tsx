@@ -8,9 +8,6 @@ import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
-
-type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
-type SearchConfigTestFailure = Extract<SearchConfigTestResult, { ok: false }>;
 import bingIconUrl from '../assets/bing.svg';
 import jinaIconUrl from '../assets/jina.svg';
 import tavilyIconUrl from '../assets/tavily.svg';
@@ -18,6 +15,9 @@ import { getSessionToken } from '../auth/session';
 import { Dropdown, Input, Select } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
+
+type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
+type SearchConfigTestFailure = Extract<SearchConfigTestResult, { ok: false }>;
 
 const {
   Button,

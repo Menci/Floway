@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { authFetch, callApi } from '../../api/auth';
+import { useNow } from '../../lib/use-now';
 
 export interface AgentSetupConfiguration {
   apiKeyId: string;
@@ -57,7 +58,7 @@ export function useAgentSetup(apiKeyId: string | null) {
   const [noSelectableKey, setNoSelectableKey] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [confirmedGeneration, setConfirmedGeneration] = useState(0);
-  const [now, setNow] = useState(Date.now());
+  const now = useNow(1000);
   const [createAttempt, setCreateAttempt] = useState(0);
   const lifecycleRef = useRef(0);
   const leaseRef = useRef<AgentSetupLease | null>(null);
@@ -70,7 +71,6 @@ export function useAgentSetup(apiKeyId: string | null) {
   const adoptLease = useCallback((next: AgentSetupLease) => {
     leaseRef.current = next;
     setLease(next);
-    setNow(Date.now());
   }, []);
 
   const request = useCallback(async <T>(path: string, method: string, body: unknown) => {
@@ -186,7 +186,6 @@ export function useAgentSetup(apiKeyId: string | null) {
     });
     const interval = setInterval(heartbeat, HEARTBEAT_INTERVAL_MS);
     const onVisibility = () => {
-      setNow(Date.now());
       if (document.visibilityState === 'visible') heartbeat();
     };
     document.addEventListener('visibilitychange', onVisibility);

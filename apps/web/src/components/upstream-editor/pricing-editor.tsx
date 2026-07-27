@@ -80,21 +80,16 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
   value: ModelPricing | undefined;
 }) => {
   const { t } = useTranslation();
-  const [drafts, setDrafts] = useState<PricingEntryDraft[]>(() => pricingEntryDraftsFor(value));
-  const [selectedId, setSelectedId] = useState<number | null>(() => drafts[0]?.id ?? null);
+  const [ownDrafts, setOwnDrafts] = useState<PricingEntryDraft[]>(() => pricingEntryDraftsFor(value));
+  const [selectedId, setSelectedId] = useState<number | null>(() => ownDrafts[0]?.id ?? null);
+  // Read-only is a view of the record; editable owns its drafts, because
+  // re-seeding from the prop mid-edit would fight the user's typing.
+  const mirrored = useMemo(() => (editable ? null : pricingEntryDraftsFor(value)), [editable, value]);
+  const drafts = mirrored ?? ownDrafts;
   const conditionsHeadingId = useId();
   const ratesHeadingId = useId();
 
-  // A read-only editor mirrors whatever the record says; an editable one owns
-  // its drafts, so re-seeding from the prop would fight the user's typing.
-  useEffect(() => {
-    if (editable) return;
-    const next = pricingEntryDraftsFor(value);
-    setDrafts(next);
-    setSelectedId(next[0]?.id ?? null);
-  }, [editable, value]);
-
-  const selectedIndex = drafts.findIndex(draft => draft.id === selectedId);
+  const selectedIndex = Math.max(0, drafts.findIndex(draft => draft.id === selectedId));
   const active = drafts[selectedIndex];
   const fields = useMemo(() => visiblePricingFields(drafts, kind), [drafts, kind]);
   const issues = useMemo(() => collectDraftIssues(drafts, value), [drafts, value]);
@@ -104,7 +99,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
 
   const commit = (next: PricingEntryDraft[]) => {
     if (!editable) return;
-    setDrafts(next);
+    setOwnDrafts(next);
     onChange(pricingFromDrafts(next));
   };
 

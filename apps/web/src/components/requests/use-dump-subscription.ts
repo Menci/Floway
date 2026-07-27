@@ -15,20 +15,25 @@ export function useDumpSubscription(keyId: string | null) {
   const seenRef = useRef(new Set<string>());
   const loadingOlderRef = useRef(false);
 
-  useEffect(() => {
+  // Switching keys discards the previous stream's accumulation. Doing that
+  // during render rather than in the effect means the component never paints
+  // one key's records under another key's heading.
+  const [subscribedKeyId, setSubscribedKeyId] = useState(keyId);
+  if (subscribedKeyId !== keyId) {
+    setSubscribedKeyId(keyId);
     setRecords([]);
-    seenRef.current.clear();
     setError(null);
     setHasOlder(true);
+    setLoading(keyId !== null);
+  }
+
+  useEffect(() => {
+    seenRef.current.clear();
     loadingOlderRef.current = false;
-    if (!keyId) {
-      setLoading(false);
-      return;
-    }
+    if (!keyId) return;
 
     const token = getSessionToken();
     if (!token) return;
-    setLoading(true);
     const source = new EventSource(`/api/dump/keys/${encodeURIComponent(keyId)}/stream?session=${encodeURIComponent(token)}`);
 
     source.addEventListener('snapshot', raw => {

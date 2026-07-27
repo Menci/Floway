@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import {
   isRouteErrorResponse,
   Links,
@@ -22,28 +22,28 @@ const { FluentProvider } = fluentComponents;
 
 export const links: Route.LinksFunction = () => [];
 
-function useSystemTheme() {
-  const [dark, setDark] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches,
+const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)';
+
+const subscribeToColorScheme = (onChange: () => void): (() => void) => {
+  const query = window.matchMedia(COLOR_SCHEME_QUERY);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+};
+
+// The build-time prerender has no matchMedia, so the server snapshot reports
+// light and the client corrects on hydration. useSyncExternalStore is what
+// makes that a subscription rather than state mirrored through an effect.
+const useSystemTheme = () => {
+  const dark = useSyncExternalStore(
+    subscribeToColorScheme,
+    () => window.matchMedia(COLOR_SCHEME_QUERY).matches,
+    () => false,
   );
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (e: MediaQueryListEvent) => setDark(e.matches);
-    mq.addEventListener('change', onChange);
-    setReady(true);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-
-  const theme = dark ? flowayDarkTheme : flowayLightTheme;
-  return { theme, ready };
-}
+  return dark ? flowayDarkTheme : flowayLightTheme;
+};
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { theme, ready } = useSystemTheme();
+  const theme = useSystemTheme();
 
   return (
     <html lang="en">
@@ -61,7 +61,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         `}</style>
       </head>
       <body className="text-[14px] font-sans m-0">
-        <FluentProvider key={ready ? 'ready' : 'init'} theme={theme}>
+        <FluentProvider theme={theme}>
           <BrowserLanguageSync />
           <GradientBackground>{children}</GradientBackground>
         </FluentProvider>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { keyWriteBody, type KeySource } from './key-source';
@@ -28,16 +28,7 @@ export function RotateKeyDialog({
   const [customKey, setCustomKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [snapName, setSnapName] = useState('');
-
-  useEffect(() => {
-    if (open) {
-      setKeySource('generate');
-      setCustomKey('');
-      setError(null);
-      if (apiKey) setSnapName(apiKey.name);
-    }
-  }, [open, apiKey]);
+  const [snapName] = useState(() => apiKey?.name ?? '');
 
   const rotate = async () => {
     if (!apiKey) return;
