@@ -1,7 +1,16 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { ResponsesInputAgentMessageItem, ResponsesInputContent, ResponsesInputImage, ResponsesInputMultiAgentCallOutputItem } from '@floway-dev/protocols/responses';
 
-const readableText = (part: Record<string, unknown> & { type: string }, field: 'text' | 'refusal'): string => {
+interface AgentContentFields {
+  type: string;
+  text?: unknown;
+  refusal?: unknown;
+  image_url?: unknown;
+  file_id?: unknown;
+  detail?: unknown;
+}
+
+const readableText = (part: AgentContentFields, field: 'text' | 'refusal'): string => {
   const value = part[field];
   if (typeof value !== 'string') {
     throw new TranslatorInputError(`Invalid '${part.type}' agent_message content: '${field}' must be a string.`);
@@ -9,7 +18,7 @@ const readableText = (part: Record<string, unknown> & { type: string }, field: '
   return value;
 };
 
-const nullableString = (part: Record<string, unknown> & { type: string }, field: 'image_url' | 'file_id'): string | null | undefined => {
+const nullableString = (part: AgentContentFields, field: 'image_url' | 'file_id'): string | null | undefined => {
   const value = part[field];
   if (value !== undefined && value !== null && typeof value !== 'string') {
     throw new TranslatorInputError(`Invalid '${part.type}' agent_message content: '${field}' must be a string or null.`);
@@ -17,7 +26,7 @@ const nullableString = (part: Record<string, unknown> & { type: string }, field:
   return value;
 };
 
-const imageDetail = (part: Record<string, unknown> & { type: string }): ResponsesInputImage['detail'] => {
+const imageDetail = (part: AgentContentFields): ResponsesInputImage['detail'] => {
   if (typeof part.detail !== 'string') {
     throw new TranslatorInputError(`Invalid '${part.type}' agent_message content: 'detail' must be a string.`);
   }
