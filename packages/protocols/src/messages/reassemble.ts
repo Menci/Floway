@@ -12,9 +12,9 @@ import type {
   MessagesUsage,
   MessagesWebSearchToolResultBlock,
 } from './index.ts';
+import { cloneMessagesUsageIterations } from './usage.ts';
 import { isJsonObject } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
-import { cloneMessagesUsageIterations } from './usage.ts';
 
 const normalizeMessagesTextCitation = (value: unknown): MessagesTextCitation | null => {
   if (!isJsonObject(value) || typeof value.type !== 'string') {

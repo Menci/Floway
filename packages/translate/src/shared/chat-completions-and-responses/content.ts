@@ -27,9 +27,9 @@ export const chatCompletionsContentToResponsesInputContent = (content: string | 
         return { type: 'refusal', refusal: part.refusal };
       case 'image_url':
         return {
-            type: 'input_image',
-            image_url: part.image_url.url,
-            detail: part.image_url.detail ?? 'auto',
+          type: 'input_image',
+          image_url: part.image_url.url,
+          detail: part.image_url.detail ?? 'auto',
         };
       }
     },
