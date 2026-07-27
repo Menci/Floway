@@ -1,8 +1,9 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/responses-via-chat-completions/request.ts';
-import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { TranslatorInputError } from '../../src/translator-input-error.ts';
+import type { ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 test('buildTargetRequest accepts an implicit message discriminator', () => {
   const result = buildTargetRequest({
@@ -13,6 +14,80 @@ test('buildTargetRequest accepts an implicit message discriminator', () => {
   assertEquals(result.target.messages, [
     { role: 'system', content: 'rules' },
   ]);
+});
+
+test('buildTargetRequest projects a plaintext agent message as attributed user input', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [{
+      type: 'agent_message',
+      author: '/root/reviewer',
+      recipient: '/root',
+      content: [{ type: 'input_text', text: 'No findings.' }],
+    }],
+  });
+
+  assertEquals(result.target.messages, [{
+    role: 'user',
+    content: [
+      {
+        type: 'text',
+        text: 'Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\n',
+      },
+      { type: 'text', text: 'No findings.' },
+    ],
+  }]);
+});
+
+test('buildTargetRequest projects multi-agent call history as Chat tool history', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [
+      {
+        type: 'multi_agent_call',
+        action: 'spawn_agent',
+        arguments: '{"message":"review"}',
+        call_id: 'call_spawn',
+      },
+      {
+        type: 'multi_agent_call_output',
+        action: 'spawn_agent',
+        call_id: 'call_spawn',
+        output: [{ type: 'output_text', text: 'agent_1' }],
+      },
+    ],
+  });
+
+  assertEquals(result.target.messages, [
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{
+        id: 'call_spawn',
+        type: 'function',
+        function: { name: 'spawn_agent', arguments: '{"message":"review"}' },
+      }],
+    },
+    { role: 'tool', tool_call_id: 'call_spawn', content: 'agent_1' },
+  ]);
+});
+
+test('buildTargetRequest rejects encrypted agent content without reflecting it', () => {
+  const error = assertThrows(
+    () => buildTargetRequest({
+      model: 'gpt-test',
+      input: [{
+        type: 'agent_message',
+        author: '/root',
+        recipient: '/root/reviewer',
+        content: [{ type: 'encrypted_content', encrypted_content: 'opaque-secret' }],
+      }],
+    }),
+    TranslatorInputError,
+    'encrypted agent_message content requires native Responses model execution',
+  );
+
+  assertFalse(error.message.includes('opaque-secret'));
 });
 
 test('buildTargetRequest merges adjacent assistant reasoning text and tool calls', () => {
@@ -498,9 +573,6 @@ test.each([
   { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
-  { name: 'agent_message', input: [{ type: 'agent_message', author: '/root/a', recipient: '/root', content: [{ type: 'input_text', text: 'done' }] as ResponsesAgentMessageContent[] }] },
-  { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
-  { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
 ] as const)('buildTargetRequest rejects Responses-only $name input', ({ name, input }) => {

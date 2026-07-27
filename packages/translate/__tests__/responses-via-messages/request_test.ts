@@ -1,8 +1,9 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/responses-via-messages/request.ts';
+import { TranslatorInputError } from '../../src/translator-input-error.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesClientTool, type MessagesToolResultBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
-import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool } from '@floway-dev/protocols/responses';
+import type { ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
@@ -36,13 +37,96 @@ test('buildTargetRequest accepts an implicit message discriminator', async () =>
   ]);
 });
 
+test('buildTargetRequest projects a plaintext agent message as attributed user input', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [{
+      type: 'agent_message',
+      author: '/root/reviewer',
+      recipient: '/root',
+      content: [{ type: 'input_text', text: 'No findings.' }],
+    }],
+  });
+
+  assertEquals(result.target.messages, [{
+    role: 'user',
+    content: [
+      {
+        type: 'text',
+        text: 'Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\n',
+      },
+      {
+        type: 'text',
+        text: 'No findings.',
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+  }]);
+});
+
+test('buildTargetRequest projects multi-agent call history as Messages tool history', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      {
+        type: 'multi_agent_call',
+        action: 'spawn_agent',
+        arguments: '{"message":"review"}',
+        call_id: 'call_spawn',
+      },
+      {
+        type: 'multi_agent_call_output',
+        action: 'spawn_agent',
+        call_id: 'call_spawn',
+        output: [{ type: 'output_text', text: 'agent_1' }],
+      },
+    ],
+  });
+
+  assertEquals(result.target.messages, [
+    {
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id: 'call_spawn',
+        name: 'spawn_agent',
+        input: { message: 'review' },
+      }],
+    },
+    {
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: 'call_spawn',
+        content: 'agent_1',
+        cache_control: { type: 'ephemeral' },
+      }],
+    },
+  ]);
+});
+
+test('buildTargetRequest rejects encrypted agent content without reflecting it', async () => {
+  const error = await assertRejects(
+    () => buildTargetRequest({
+      ...minimalPayload,
+      input: [{
+        type: 'agent_message',
+        author: '/root',
+        recipient: '/root/reviewer',
+        content: [{ type: 'encrypted_content', encrypted_content: 'opaque-secret' }],
+      }],
+    }),
+    TranslatorInputError,
+    'encrypted agent_message content requires native Responses model execution',
+  );
+
+  assertFalse(error.message.includes('opaque-secret'));
+});
+
 test.each([
   { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
-  { name: 'agent_message', input: [{ type: 'agent_message', author: '/root/a', recipient: '/root', content: [{ type: 'input_text', text: 'done' }] as ResponsesAgentMessageContent[] }] },
-  { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
-  { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
 ] as const)('buildTargetRequest rejects Responses-only $name input', async ({ name, input }) => {
