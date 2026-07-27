@@ -118,9 +118,10 @@ export interface UpstreamRecord {
 // present; the map may carry any other endpoint alongside, and no producer
 // checks otherwise. `data-plane/providers/catalog.ts`'s union merge
 // manufactures exactly such mixed sets on purpose when several upstreams
-// contribute one public id, then recomputes `kind` from the union. Dispatch is
-// unaffected: every serve path narrows on the endpoint key it needs, never on
-// `kind`.
+// contribute one public id, then recomputes `kind` from the union. Resolution
+// uses this projection as the source-route discriminator before the selected
+// serve path reads its endpoint configuration; `endpoints` remains the
+// catalog's precise capability metadata even for mixed sets.
 interface ModelMetadata {
   id: string;
   display_name?: string;

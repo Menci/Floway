@@ -5,6 +5,50 @@ import { collectGeminiProtocolEventsToResult } from './to-result.ts';
 import { eventFrame } from '../common/index.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
+test('collectGeminiProtocolEventsToResult consumes preterminal events and stops at the terminal event', async () => {
+  let consumed = 0;
+  const frames = (async function* () {
+    const events = [
+      {
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ text: 'Hel' }] },
+        }],
+      },
+      {
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ text: 'lo' }] },
+          finishReason: 'STOP',
+        }],
+        responseId: 'response-final',
+      },
+      {
+        error: {
+          code: 500,
+          message: 'must not be consumed',
+          status: 'INTERNAL',
+        },
+      },
+    ] satisfies GeminiStreamEvent[];
+
+    for (const event of events) {
+      consumed += 1;
+      yield eventFrame(event);
+    }
+  })();
+
+  assertEquals(await collectGeminiProtocolEventsToResult(frames), {
+    candidates: [{
+      index: 0,
+      content: { role: 'model', parts: [{ text: 'Hello' }] },
+      finishReason: 'STOP',
+    }],
+    responseId: 'response-final',
+  });
+  assertEquals(consumed, 2);
+});
+
 test('collectGeminiProtocolEventsToResult throws Gemini error events', async () => {
   const errorEvent = {
     error: {
