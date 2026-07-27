@@ -1,7 +1,6 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/responses-via-chat-completions/request.ts';
-import { TranslatorInputError } from '../../src/translator-input-error.ts';
 import type { ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 

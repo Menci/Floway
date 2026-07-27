@@ -1,7 +1,6 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from '../../src/responses-via-messages/request.ts';
-import { TranslatorInputError } from '../../src/translator-input-error.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesClientTool, type MessagesToolResultBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 import type { ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';

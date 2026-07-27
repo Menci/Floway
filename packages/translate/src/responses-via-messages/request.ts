@@ -220,7 +220,7 @@ const translateResponsesInput = async (input: ResponsesInputItem[], loadRemoteIm
       messages.push(await translateUserMessage({
         type: 'message',
         role: 'user',
-        content: multiAgentMessageContent(item, 'Messages'),
+        content: multiAgentMessageContent(item),
       }, loadRemoteImage));
       break;
     case 'multi_agent_call':

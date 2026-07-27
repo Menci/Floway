@@ -200,7 +200,7 @@ export const buildTargetRequest = (source: ResponsesRequestPayload): TargetReque
       flushAssistant();
       messages.push({
         role: 'user',
-        content: responsesContentToChatCompletionsContent(multiAgentMessageContent(item, 'Chat Completions')),
+        content: responsesContentToChatCompletionsContent(multiAgentMessageContent(item)),
       });
       continue;
     }

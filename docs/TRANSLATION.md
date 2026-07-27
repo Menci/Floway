@@ -261,10 +261,11 @@ Request mapping:
 - `function_call` becomes assistant `tool_use`.
 - `function_call_output` becomes user `tool_result`; incomplete status marks the
   tool result as an error.
-- readable `agent_message` content becomes user input, with text, image,
-  screenshot, and file parts following ordinary user content translation.
-  Codex already carries its routing envelope in plaintext content; the
-  source-only `author` and `recipient` fields have no target wire slot.
+- readable `agent_message` content uses the Messages user wire role, while
+  an explicit non-user-source notice and XML-escaped `<agent-message>` wrapper
+  keep it from acquiring user authority. The wrapper preserves `author` and
+  `recipient`; text, image, screenshot, and file parts follow ordinary user
+  content translation.
 - `multi_agent_call` and `multi_agent_call_output` become assistant `tool_use`
   and user `tool_result` history, preserving the action, arguments, call id,
   and concatenated text output.
@@ -326,10 +327,6 @@ Known losses:
   rather than failing the request.
 - `input_file` content and assistant-side images have no Messages counterpart
   and are rejected.
-- `agent_message.encrypted_content` is rejected without reflecting the opaque
-  bytes in the error. OpenAI defines that content as decryptable only inside
-  trusted Responses model execution, so it has no provider-neutral Messages
-  projection.
 
 ## Messages Via Chat Completions
 
@@ -494,7 +491,8 @@ Request mapping:
   boundaries, so a final lifted-image turn is reported as user-initiated even
   though its image originated in tool output; no out-of-band provenance
   contradicts the wire role.
-- readable `agent_message` content becomes one Chat user message;
+- readable `agent_message` content uses one Chat user wire message with the
+  same non-user-source notice and XML-escaped wrapper as the Messages target;
   `multi_agent_call` and `multi_agent_call_output` become assistant function
   calls and Chat tool-result messages.
 - `max_output_tokens`, `stream`, `temperature`, `top_p`, `metadata`, `store`,
@@ -539,8 +537,6 @@ Known losses:
   Responses values such as `original` are rejected.
 - opaque Responses reasoning state is not requested, translated, or preserved on
   Chat fallback paths.
-- `agent_message.encrypted_content` requires trusted native Responses model
-  execution and is rejected without reflecting the opaque bytes.
 
 ## Responses Custom Tool Wrapping
 
