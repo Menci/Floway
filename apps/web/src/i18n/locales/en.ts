@@ -689,6 +689,15 @@ const en = {
             delete: "Delete manual model",
           },
           copilot: {
+            quota: {
+              title: "Premium quota",
+              load: "Load",
+              refresh: "Refresh",
+              loading: "Loading…",
+              used: "{{used}} of {{entitlement}} premium interactions used",
+              resets: "Resets {{date}}",
+              unmetered: "This account reports no premium interaction quota.",
+            },
             description:
               "Connect a GitHub Copilot subscription using GitHub device authorization.",
             connect: "Connect GitHub",

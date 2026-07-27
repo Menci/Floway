@@ -19,6 +19,7 @@ import type {
 } from "../../api/types";
 import { authFetch, callApi } from "../../api/auth";
 import { api } from "../../api/client";
+import { CopilotQuotaCard } from "./copilot-quota-card";
 import { fluentComponents } from "../../fluent";
 import { Dropdown, Input, Textarea } from "../ui/fluent-form-controls";
 import { ProviderIcon } from "../upstreams/provider-badge";
@@ -321,7 +322,12 @@ function CopilotConfig({ record, onPatch }: {
     timer.current = window.setTimeout(() => void poll(result.data.device_code, result.data.interval), result.data.interval * 1000);
   };
 
-  if (config.user?.login) return <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`@${config.user.login}`} />;
+  if (config.user?.login) {
+    return <div className="grid gap-3">
+      <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`@${config.user.login}`} />
+      <CopilotQuotaCard record={record} />
+    </div>;
+  }
   return <div className="grid gap-3">
     <Text size={300} className="text-fui-fg2">{t("dashboard.upstreamEditor.copilot.description")}</Text>
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}

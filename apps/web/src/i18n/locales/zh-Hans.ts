@@ -652,6 +652,15 @@ const zhHansCN = {
             delete: "删除手动模型",
           },
           copilot: {
+            "quota": {
+              "title": "高级额度",
+              "load": "加载",
+              "refresh": "刷新",
+              "loading": "加载中…",
+              "used": "已用 {{used}} / {{entitlement}} 次高级交互",
+              "resets": "{{date}} 重置",
+              "unmetered": "该账号未报告高级交互额度。",
+            },
             description: "通过 GitHub 设备授权连接 GitHub Copilot 订阅。",
             connect: "连接 GitHub",
             deviceCode: "设备代码",
