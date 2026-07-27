@@ -21,6 +21,7 @@ export const agentSetupConfigurationSchema = z.object({
   apiKeyId: z.string().min(1),
   claudeCode: z.object({
     model: opaqueOptionalString,
+    defaultFableModel: opaqueOptionalString,
     defaultOpusModel: opaqueOptionalString,
     defaultSonnetModel: opaqueOptionalString,
     defaultHaikuModel: opaqueOptionalString,
@@ -53,6 +54,7 @@ export const defaultAgentSetupConfiguration = (apiKeyId: string): AgentSetupConf
   apiKeyId,
   claudeCode: {
     model: null,
+    defaultFableModel: null,
     defaultOpusModel: null,
     defaultSonnetModel: null,
     defaultHaikuModel: null,

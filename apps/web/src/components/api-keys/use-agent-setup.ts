@@ -7,6 +7,7 @@ export interface AgentSetupConfiguration {
   apiKeyId: string;
   claudeCode: {
     model: string | null;
+    defaultFableModel: string | null;
     defaultOpusModel: string | null;
     defaultSonnetModel: string | null;
     defaultHaikuModel: string | null;

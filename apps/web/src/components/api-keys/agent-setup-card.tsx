@@ -145,6 +145,7 @@ export const buildAgentClaudeSnippet = (
     ANTHROPIC_BASE_URL: origin,
     ANTHROPIC_AUTH_TOKEN: apiKey,
     ...(settings.model ? { ANTHROPIC_MODEL: settings.model } : {}),
+    ...(settings.defaultFableModel ? { ANTHROPIC_DEFAULT_FABLE_MODEL: settings.defaultFableModel } : {}),
     ...(settings.defaultOpusModel ? { ANTHROPIC_DEFAULT_OPUS_MODEL: settings.defaultOpusModel } : {}),
     ...(settings.defaultSonnetModel ? { ANTHROPIC_DEFAULT_SONNET_MODEL: settings.defaultSonnetModel } : {}),
     ...(settings.defaultHaikuModel ? { ANTHROPIC_DEFAULT_HAIKU_MODEL: settings.defaultHaikuModel } : {}),
@@ -201,7 +202,8 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
           </Select>
         </Field>
       </div>
-      <div className="grid grid-cols-3 gap-3 max-[760px]:grid-cols-1">
+      <div className="grid grid-cols-4 gap-3 max-[980px]:grid-cols-2 max-[560px]:grid-cols-1">
+        <ModelSelect label={t('dashboard.apiKeys.agentSetup.fableModel')} models={models} family="claude" picker="fable" value={configuration.claudeCode.defaultFableModel} onChange={model => patchClaude({ defaultFableModel: model })} />
         <ModelSelect label={t('dashboard.apiKeys.agentSetup.opusModel')} models={models} family="claude" picker="opus" value={configuration.claudeCode.defaultOpusModel} onChange={model => patchClaude({ defaultOpusModel: model })} />
         <ModelSelect label={t('dashboard.apiKeys.agentSetup.sonnetModel')} models={models} family="claude" picker="sonnet" value={configuration.claudeCode.defaultSonnetModel} onChange={model => patchClaude({ defaultSonnetModel: model })} />
         <ModelSelect label={t('dashboard.apiKeys.agentSetup.haikuModel')} models={models} family="claude" picker="haiku" value={configuration.claudeCode.defaultHaikuModel} onChange={model => patchClaude({ defaultHaikuModel: model })} />
@@ -270,7 +272,7 @@ function ModelSelect({ className, family, label, models, onChange, picker, value
   label: string;
   models: ControlPlaneModel[];
   onChange: (value: string | null) => void;
-  picker: 'default' | 'opus' | 'sonnet' | 'haiku';
+  picker: 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku';
   value: string | null;
 }) {
   const { t } = useTranslation();
@@ -320,8 +322,8 @@ export const filterModelOptions = (options: readonly ModelOption[], query: strin
     || option.value.toLocaleLowerCase().includes(needle));
 };
 
-export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: 'default' | 'opus' | 'sonnet' | 'haiku') => {
-  const target = { default: 0, opus: 1, sonnet: 2, haiku: 3 }[picker];
+export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku') => {
+  const target = { default: 0, fable: 0, opus: 1, sonnet: 2, haiku: 3 }[picker];
   const rows = [...new Map(models.filter(model => model.kind === 'chat').map(model => [model.id, model])).values()];
   rows.sort((a, b) => rankModel(a.id, family, target) - rankModel(b.id, family, target));
   return rows.map(model => {
