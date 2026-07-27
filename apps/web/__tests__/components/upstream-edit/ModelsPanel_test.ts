@@ -2,8 +2,8 @@ import { mount } from '@vue/test-utils';
 import { expect, test } from 'vitest';
 import { nextTick } from 'vue';
 
-import ModelsPanel from '../../../src/components/upstream-edit/ModelsPanel.vue';
 import type { UpstreamModelConfig } from '../../../src/api/types.ts';
+import ModelsPanel from '../../../src/components/upstream-edit/ModelsPanel.vue';
 import type { FlagDefaults } from '@floway-dev/provider/flags';
 
 const model = (upstreamModelId: string, pricing: UpstreamModelConfig['pricing']): UpstreamModelConfig => ({

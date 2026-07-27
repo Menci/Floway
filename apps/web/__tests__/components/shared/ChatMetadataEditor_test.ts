@@ -2,8 +2,8 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
-import ChatMetadataEditor from '../../../src/components/shared/ChatMetadataEditor.vue';
 import type { AnnouncedMetadata } from '../../../src/api/types.ts';
+import ChatMetadataEditor from '../../../src/components/shared/ChatMetadataEditor.vue';
 
 const baseValue = (): AnnouncedMetadata => ({
   limits: { max_context_window_tokens: 100_000, max_output_tokens: 4096 },

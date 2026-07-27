@@ -2,9 +2,9 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h, nextTick, ref } from 'vue';
 
-import { buildRealModel } from '../../../api/test-fixtures.ts';
 import type { ApiKey, ControlPlaneModel } from '../../../../src/api/types.ts';
 import KeysTable from '../../../../src/components/keys/KeysTable.vue';
+import { buildRealModel } from '../../../api/test-fixtures.ts';
 
 // The page renders behind a route data loader; the tests bypass navigation by
 // stubbing defineBasicLoader so the composable hands back a ref the test owns.

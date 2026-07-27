@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createSqliteTestDb } from './test-sqlite.ts';
 import { InMemoryRepo } from '../../src/repo/memory.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import { createSqliteTestDb } from './test-sqlite.ts';
 import type { Repo } from '../../src/repo/types.ts';
 
 // The geometric backoff schedule and the per-(proxy, upstream) row state

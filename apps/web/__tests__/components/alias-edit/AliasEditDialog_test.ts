@@ -2,8 +2,8 @@ import { mount, type VueWrapper } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 
-import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { ControlPlaneModel, ModelAlias } from '../../../src/api/types.ts';
+import { buildRealModel } from '../../api/test-fixtures.ts';
 import { Select } from '@floway-dev/ui';
 
 // Mock the API client + composables so the dialog mounts without hitting the

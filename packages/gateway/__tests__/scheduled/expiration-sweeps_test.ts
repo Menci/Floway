@@ -1,7 +1,6 @@
 import initSqlJs from 'sql.js';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
 import { initDumpStore } from '../../src/dump/registry.ts';
 import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
@@ -9,8 +8,9 @@ import { initRepo } from '../../src/repo/index.ts';
 import { InMemoryRepo } from '../../src/repo/memory.ts';
 import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from '../../src/repo/responses-retention.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import { createSqliteTestDb, migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import type { ApiKey, StoredResponsesItem } from '../../src/repo/types.ts';
+import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
+import { createSqliteTestDb, migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());

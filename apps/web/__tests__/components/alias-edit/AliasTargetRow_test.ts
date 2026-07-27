@@ -2,9 +2,9 @@ import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
+import type { AliasTarget, ControlPlaneModel } from '../../../src/api/types.ts';
 import AliasTargetRow from '../../../src/components/alias-edit/AliasTargetRow.vue';
 import { buildRealModel } from '../../api/test-fixtures.ts';
-import type { AliasTarget, ControlPlaneModel } from '../../../src/api/types.ts';
 import { Select } from '@floway-dev/ui';
 
 const target = (over: Partial<AliasTarget> = {}): AliasTarget => ({

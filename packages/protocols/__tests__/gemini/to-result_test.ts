@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import { eventFrame } from '../../src/common/index.ts';
 import type { GeminiStreamEvent } from '../../src/gemini/index.ts';
 import { collectGeminiProtocolEventsToResult } from '../../src/gemini/to-result.ts';
-import { eventFrame } from '../../src/common/index.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('collectGeminiProtocolEventsToResult consumes preterminal events and stops at the terminal event', async () => {

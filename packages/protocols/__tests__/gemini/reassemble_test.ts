@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import { USAGE_BILLING } from '../../src/common/index.ts';
 import type { GeminiResult, GeminiStreamEvent } from '../../src/gemini/index.ts';
 import { reassembleGeminiEvents } from '../../src/gemini/reassemble.ts';
-import { USAGE_BILLING } from '../../src/common/index.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const eventsFrom = async function* (events: readonly GeminiStreamEvent[]) {

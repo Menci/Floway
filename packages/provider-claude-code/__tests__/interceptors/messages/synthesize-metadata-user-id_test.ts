@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
+import { parseMetadataUserID } from '../../../src/detection.ts';
 import { hoistUserSystemToMessages } from '../../../src/interceptors/messages/hoist-user-system-to-messages.ts';
 import { CLAUDE_CODE_MESSAGES_BOUNDARY } from '../../../src/interceptors/messages/index.ts';
 import { synthesizeMetadataUserId } from '../../../src/interceptors/messages/synthesize-metadata-user-id.ts';
 import type { MessagesBoundaryCtx } from '../../../src/interceptors/messages/types.ts';
-import { parseMetadataUserID } from '../../../src/detection.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';

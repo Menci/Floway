@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import { eventFrame } from '../../src/common/index.ts';
 import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent } from '../../src/responses/index.ts';
 import { collectResponsesProtocolEventsToResult } from '../../src/responses/to-result.ts';
-import { eventFrame } from '../../src/common/index.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('collectResponsesProtocolEventsToResult reassembles synthetic Responses events', async () => {

@@ -1,9 +1,9 @@
 import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
+import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import { InMemoryRepo } from '../../src/repo/memory.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, UsageRecord } from '../../src/repo/types.ts';
 import { tokenCountsFromUsage, tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';

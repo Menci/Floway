@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ControlPlaneModel } from '../../../src/api/types.ts';
 import { computeAliasLevelWarnings, computeModelWarnings, computeRuleWarnings, findCatalogModel, type AliasView } from '../../../src/components/alias-edit/warnings.ts';
 import { buildAliasModel as aliasModel, buildRealModel as realModel, buildUnlistedModel as unlistedModel } from '../../api/test-fixtures.ts';
-import type { ControlPlaneModel } from '../../../src/api/types.ts';
 
 const view = (name: string, ids: readonly string[]): AliasView => ({
   name,

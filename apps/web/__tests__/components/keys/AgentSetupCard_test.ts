@@ -2,9 +2,9 @@ import { mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref, type Ref } from 'vue';
 
-import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { ApiKey, ControlPlaneModel } from '../../../src/api/types.ts';
 import type { AgentSetupConfiguration } from '../../../src/composables/useAgentSetup.ts';
+import { buildRealModel } from '../../api/test-fixtures.ts';
 import { Combobox, SearchableSelect, Select, Switch } from '@floway-dev/ui';
 
 // The card owns one useAgentSetup instance; the tests drive the card through a

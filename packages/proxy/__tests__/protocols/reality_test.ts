@@ -3,6 +3,7 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { describe, expect, it } from 'vitest';
 
+import { hexDecode } from '../../src/bytes.ts';
 import {
   buildRealityAad,
   buildRealitySessionId,
@@ -12,10 +13,9 @@ import {
   parseShortId,
   verifyRealityLeaf,
 } from '../../src/protocols/reality.ts';
-import { hexDecode } from '../../src/bytes.ts';
 import type { RealityProxyConfig } from '../../src/proxy-config.ts';
-import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../../src/types.ts';
+import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 
 describe('buildRealitySessionId', () => {
   it('packs version, timestamp, and short id into 32 bytes', () => {

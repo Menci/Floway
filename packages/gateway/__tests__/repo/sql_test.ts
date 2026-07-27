@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { SqlRepo } from '../../src/repo/sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
+import { SqlRepo } from '../../src/repo/sql.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 

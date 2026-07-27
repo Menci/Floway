@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { DEFAULT_WEB_SEARCH_CONFIG } from '../src/data-plane/tools/web-search/config.ts';
 import { requestApp, setupAppTest } from './test-utils/app.ts';
+import { DEFAULT_WEB_SEARCH_CONFIG } from '../src/data-plane/tools/web-search/config.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 test('session token grants control-plane access but is rejected on data-plane', async () => {

@@ -1,9 +1,9 @@
 import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
+import { migrationSqlByFilename } from './test-sqlite.ts';
 import { InMemoryRepo } from '../../src/repo/memory.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import { migrationSqlByFilename } from './test-sqlite.ts';
 import type { UpstreamRepo } from '../../src/repo/types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 import { divideDecimalString, priceRequest, type ModelPricing, validateModelPricing } from '@floway-dev/protocols/common';

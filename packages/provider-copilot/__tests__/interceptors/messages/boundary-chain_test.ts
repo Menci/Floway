@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import { CLAUDE_AGENT_USER_AGENT } from '../../../src/auth.ts';
 import { COPILOT_MESSAGES_BOUNDARY } from '../../../src/interceptors/messages/index.ts';
 import type { MessagesBoundaryCtx } from '../../../src/interceptors/messages/types.ts';
-import { CLAUDE_AGENT_USER_AGENT } from '../../../src/auth.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';

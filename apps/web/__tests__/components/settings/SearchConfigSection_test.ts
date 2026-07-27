@@ -2,8 +2,8 @@ import { mount } from '@vue/test-utils';
 import { expect, test, vi } from 'vitest';
 import { nextTick } from 'vue';
 
-import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { SearchConfig, UpstreamProviderKind, UpstreamRecord } from '../../../src/api/types.ts';
+import { buildRealModel } from '../../api/test-fixtures.ts';
 
 vi.mock('../../../src/stores/auth.ts', () => ({ useAuthStore: () => ({ authToken: 'session' }) }));
 vi.mock('../../../src/api/client.ts', () => ({

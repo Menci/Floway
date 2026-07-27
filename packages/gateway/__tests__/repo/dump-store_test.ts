@@ -4,11 +4,11 @@ import { dirname, join, resolve } from 'node:path';
 
 import { expect, test } from 'vitest';
 
+import { createSqliteTestDb } from './test-sqlite.ts';
+import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import { createSqliteTestDb } from './test-sqlite.ts';
-import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { collectSpilledFiles } from '../../src/scheduled/spilled-files.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';

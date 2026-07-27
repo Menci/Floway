@@ -1,5 +1,5 @@
-import { app } from '../../src/app.ts';
 import { trackBackground } from './background-tracker.ts';
+import { app } from '../../src/app.ts';
 import { clearInFlightForTesting } from '../../src/data-plane/providers/models-cache.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../src/repo/index.ts';

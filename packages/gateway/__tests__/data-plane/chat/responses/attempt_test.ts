@@ -1,16 +1,16 @@
 import { test, vi } from 'vitest';
 
+import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from './test-policy.ts';
 import { prepareResponsesAffinity } from '../../../../src/data-plane/chat/responses/affinity/ingress.ts';
 import { responsesAttempt } from '../../../../src/data-plane/chat/responses/attempt.ts';
 import { hydrateResponsesPayload } from '../../../../src/data-plane/chat/responses/items/hydrate.ts';
 import * as outputModule from '../../../../src/data-plane/chat/responses/items/output.ts';
 import { createResponsesHttpStore } from '../../../../src/data-plane/chat/responses/items/store.ts';
-import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from './test-policy.ts';
+import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../src/repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../src/repo/types.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';

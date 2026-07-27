@@ -18,10 +18,10 @@ import {
   synthesizeImageGenerationCallId,
   transformInputItemsForImageGeneration,
 } from '../../../../../../src/data-plane/chat/responses/interceptors/server-tools/image-generation.ts';
+import type { ResponsesInvocation } from '../../../../../../src/data-plane/chat/responses/interceptors/types.ts';
 import { initRepo } from '../../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../../../src/repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
-import type { ResponsesInvocation } from '../../../../../../src/data-plane/chat/responses/interceptors/types.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { CanonicalResponsesPayload, ResponsesInputImage, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';

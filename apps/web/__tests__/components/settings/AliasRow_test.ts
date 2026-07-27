@@ -1,9 +1,9 @@
 import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 
+import type { ControlPlaneModel, ModelAlias } from '../../../src/api/types.ts';
 import AliasRow from '../../../src/components/settings/AliasRow.vue';
 import { buildAliasModel, buildRealModel } from '../../api/test-fixtures.ts';
-import type { ControlPlaneModel, ModelAlias } from '../../../src/api/types.ts';
 
 const alias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
   kind: 'chat',

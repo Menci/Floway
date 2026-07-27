@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { createSqliteTestDb } from './test-sqlite.ts';
 import { InMemoryRepo } from '../../src/repo/memory.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
-import { createSqliteTestDb } from './test-sqlite.ts';
 import type {
   PerformanceDimensions,
   PerformanceRepo,

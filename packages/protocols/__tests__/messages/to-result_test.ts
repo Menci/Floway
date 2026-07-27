@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import { eventFrame } from '../../src/common/index.ts';
 import type { MessagesResult, MessagesStreamEvent } from '../../src/messages/index.ts';
 import { collectMessagesProtocolEventsToResult } from '../../src/messages/to-result.ts';
-import { eventFrame } from '../../src/common/index.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('collectMessagesProtocolEventsToResult reassembles synthetic Messages events', async () => {

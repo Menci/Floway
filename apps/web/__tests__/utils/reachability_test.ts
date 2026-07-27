@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ControlPlaneModel } from '../../src/api/types.ts';
 import { effectiveUpstreamCap, isReachableUnderCap, reachableTargets } from '../../src/utils/reachability.ts';
 import { buildAliasModel, buildRealModel, buildUnlistedModel } from '../api/test-fixtures.ts';
-import type { ControlPlaneModel } from '../../src/api/types.ts';
 
 const realWithUpstreams = (id: string, upstreams: { id: string }[]): ControlPlaneModel => buildRealModel({
   id,

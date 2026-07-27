@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import { CLAUDE_CLI_VERSION } from '../../../src/headers.ts';
 import { injectBillingBlock } from '../../../src/interceptors/messages/inject-billing-block.ts';
 import type { MessagesBoundaryCtx } from '../../../src/interceptors/messages/types.ts';
-import { CLAUDE_CLI_VERSION } from '../../../src/headers.ts';
 import type { MessagesPayload, MessagesStreamEvent, MessagesTextBlock } from '@floway-dev/protocols/messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';

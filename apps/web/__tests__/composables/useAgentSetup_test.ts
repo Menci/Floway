@@ -1,8 +1,8 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { effectScope, shallowRef } from 'vue';
 
-import { useAgentSetup } from '../../src/composables/useAgentSetup.ts';
 import type { ApiClient } from '../../src/api/client.ts';
+import { useAgentSetup } from '../../src/composables/useAgentSetup.ts';
 
 // --- fake RPC client -------------------------------------------------------
 //

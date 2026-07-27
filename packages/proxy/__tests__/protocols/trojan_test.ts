@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { buildTrojanRequestHeader, dialTrojan } from '../../src/protocols/trojan.ts';
 import type { TrojanProxyConfig } from '../../src/proxy-config.ts';
-import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../../src/types.ts';
+import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 
 const target443: DialTarget = { host: 'api.openai.com', port: 443 };
 

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { ProxyDialError } from '../../src/errors.ts';
 import { dialHttpConnect } from '../../src/protocols/http-connect.ts';
 import type { HttpProxyConfig } from '../../src/proxy-config.ts';
-import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialOptions, DialTarget } from '../../src/types.ts';
+import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
 

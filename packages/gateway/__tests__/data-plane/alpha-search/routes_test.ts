@@ -2,10 +2,10 @@ import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountAlphaSearchRoutes } from '../../../src/data-plane/alpha-search/routes.ts';
-import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
-import { buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../src/data-plane/tools/web-search/provider.ts';
 import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../src/data-plane/tools/web-search/types.ts';
+import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
+import { buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchProvider` etc.) hits the

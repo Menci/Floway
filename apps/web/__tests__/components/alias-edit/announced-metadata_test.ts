@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../../src/api/types.ts';
 import { computeAnnouncedMetadata } from '../../../src/components/alias-edit/announced-metadata.ts';
 import { buildRealModel } from '../../api/test-fixtures.ts';
-import type { AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../../src/api/types.ts';
 
 // Mirror of `packages/gateway/src/data-plane/shared/listing/alias_test.ts`'s
 // matrix on the frontend's hand-written `intersectChat` / `intersectLimits`.

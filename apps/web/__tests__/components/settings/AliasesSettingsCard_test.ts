@@ -2,8 +2,8 @@ import { mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 
-import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { ControlPlaneModel, ModelAlias } from '../../../src/api/types.ts';
+import { buildRealModel } from '../../api/test-fixtures.ts';
 
 const aliasesRef = ref<ModelAlias[]>([]);
 const modelsRef = ref<ControlPlaneModel[]>([]);

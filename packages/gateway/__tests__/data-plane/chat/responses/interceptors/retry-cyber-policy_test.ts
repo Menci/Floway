@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { withCyberPolicyRetried } from '../../../../../src/data-plane/chat/responses/interceptors/retry-cyber-policy.ts';
 import type { ResponsesInvocation } from '../../../../../src/data-plane/chat/responses/interceptors/types.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../../../../../src/data-plane/chat/shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';

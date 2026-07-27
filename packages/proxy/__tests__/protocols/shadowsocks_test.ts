@@ -3,10 +3,10 @@ import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha1 } from '@noble/hashes/legacy.js';
 import { describe, expect, it } from 'vitest';
 
-import type { ShadowsocksProxyConfig } from '../../src/proxy-config.ts';
 import { buildSsAddress, dialShadowsocks, evpBytesToKey } from '../../src/protocols/shadowsocks.ts';
-import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
+import type { ShadowsocksProxyConfig } from '../../src/proxy-config.ts';
 import type { DialTarget } from '../../src/types.ts';
+import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
 

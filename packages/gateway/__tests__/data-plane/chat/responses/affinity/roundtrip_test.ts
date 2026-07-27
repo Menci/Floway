@@ -2,12 +2,12 @@ import { expect, test } from 'vitest';
 
 import { wrapResponsesAffinityEgress } from '../../../../../src/data-plane/chat/responses/affinity/egress.ts';
 import { prepareResponsesAffinity } from '../../../../../src/data-plane/chat/responses/affinity/ingress.ts';
-import { initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../src/repo/memory.ts';
-import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { hydrateResponsesPayload } from '../../../../../src/data-plane/chat/responses/items/hydrate.ts';
 import { wrapResponsesClientOutput } from '../../../../../src/data-plane/chat/responses/items/output.ts';
 import { createResponsesHttpStore } from '../../../../../src/data-plane/chat/responses/items/store.ts';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { initRepo } from '../../../../../src/repo/index.ts';
+import { InMemoryRepo } from '../../../../../src/repo/memory.ts';
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';

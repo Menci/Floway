@@ -2,11 +2,11 @@ import { gcm } from '@noble/ciphers/aes.js';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { describe, expect, it } from 'vitest';
 
-import type { Shadowsocks2022ProxyConfig } from '../../src/proxy-config.ts';
-import { buildSs2022RequestHeader, dialShadowsocks2022 } from '../../src/protocols/shadowsocks-2022.ts';
 import { concat } from '../../src/bytes.ts';
-import { makeFakeSocketDial, type FakeServer } from '../test-utils/fake-socket-dial.ts';
+import { buildSs2022RequestHeader, dialShadowsocks2022 } from '../../src/protocols/shadowsocks-2022.ts';
+import type { Shadowsocks2022ProxyConfig } from '../../src/proxy-config.ts';
 import type { DialTarget } from '../../src/types.ts';
+import { makeFakeSocketDial, type FakeServer } from '../test-utils/fake-socket-dial.ts';
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
 

@@ -6,8 +6,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { parseHttpResponse, toWebResponse } from '../src/parser.ts';
 import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
+import { parseHttpResponse, toWebResponse } from '../src/parser.ts';
 
 describe('parseHttpResponse — status-line grammar', () => {
   it('accepts HTTP/1.0 200 OK', async () => {

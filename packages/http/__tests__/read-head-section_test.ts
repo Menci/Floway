@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 import { HttpProtocolError } from '../src/errors.ts';
 import { readHeadSection } from '../src/read-head-section.ts';
-import { makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 
 const HEADER_BUFFER_CAP = 64 * 1024;
 

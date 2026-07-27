@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import { type SseFrame } from '../../src/common/sse.ts';
 import type { ResponsesResult } from '../../src/responses/index.ts';
 import { parseResponsesStream } from '../../src/responses/stream.ts';
-import { type SseFrame } from '../../src/common/sse.ts';
 import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
+import { clearInFlightForTesting } from '../../../../src/data-plane/providers/models-cache.ts';
 import { enumerateAddressableModelIds } from '../../../../src/data-plane/shared/listing/addressable.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-utils/app.ts';
-import { clearInFlightForTesting } from '../../../../src/data-plane/providers/models-cache.ts';
 import { directFetcher } from '@floway-dev/provider';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
