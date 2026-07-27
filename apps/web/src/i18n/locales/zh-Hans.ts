@@ -667,6 +667,8 @@ const zhHansCN = {
             waiting: "正在等待授权...",
           },
           oauth: {
+            "refresh": "刷新凭据",
+            "refreshing": "刷新中…",
             reimport: "重新导入凭据",
             import: "导入凭据",
             credentialJson: "凭据 JSON",

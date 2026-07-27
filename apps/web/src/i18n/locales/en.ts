@@ -705,6 +705,8 @@ const en = {
             waiting: "Waiting for authorization...",
           },
           oauth: {
+            refresh: "Refresh credential",
+            refreshing: "Refreshing…",
             reimport: "Re-import credential",
             import: "Import credential",
             credentialJson: "Credential JSON",

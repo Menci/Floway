@@ -349,6 +349,22 @@ function OAuthConfig({ record, onPatch }: {
   const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
   const config = values.config as typeof record.config;
   const hasAccount = config.accounts.length > 0;
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshCredential = async () => {
+    setRefreshing(true);
+    setError(null);
+    const path = record.kind === "codex"
+      ? "/api/upstreams/codex/oauth/refresh"
+      : "/api/upstreams/claude-code/oauth/refresh";
+    const result = await callApi<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch(path, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ record: previewRecord(record, values) }),
+    }));
+    setRefreshing(false);
+    if (result.error) { setError(result.error.message); return; }
+    onPatch(result.data.patch, record.id !== "");
+  };
   const [open, setOpen] = useState(!hasAccount);
   const [tab, setTab] = useState(record.kind === "codex" ? "json" : "oauth");
   const [json, setJson] = useState("");
@@ -409,7 +425,12 @@ function OAuthConfig({ record, onPatch }: {
     {hasAccount && (record.kind === "codex"
       ? <AccountSummary kind="codex" title={(config as Extract<UpstreamRecord, { kind: "codex" }>["config"]).accounts[0].email} subtitle={(config as Extract<UpstreamRecord, { kind: "codex" }>["config"]).accounts[0].planType} />
       : <AccountSummary kind="claude-code" title={(config as Extract<UpstreamRecord, { kind: "claude-code" }>["config"]).accounts[0].email ?? (config as Extract<UpstreamRecord, { kind: "claude-code" }>["config"]).accounts[0].accountUuid.slice(0, 8)} subtitle={(config as Extract<UpstreamRecord, { kind: "claude-code" }>["config"]).accounts[0].subscriptionType ?? "Claude Code"} />)}
-    {hasAccount && <Button appearance="secondary" icon={<ArrowClockwiseRegular />} onClick={() => setOpen((value) => !value)}>{open ? t("common.cancel") : t("dashboard.upstreamEditor.oauth.reimport")}</Button>}
+    {hasAccount && <div className="flex flex-wrap items-center gap-2">
+      <Button appearance="primary" disabled={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
+        {refreshing ? t("dashboard.upstreamEditor.oauth.refreshing") : t("dashboard.upstreamEditor.oauth.refresh")}
+      </Button>
+      <Button appearance="secondary" onClick={() => setOpen((value) => !value)}>{open ? t("common.cancel") : t("dashboard.upstreamEditor.oauth.reimport")}</Button>
+    </div>}
     {open && <>
       <TabList selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setAuthorizeUrl(null); }}>
         {record.kind === "codex" ? <><Tab value="json">auth.json</Tab><Tab value="oauth">OAuth</Tab></> : <><Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab></>}
