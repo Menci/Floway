@@ -1,12 +1,16 @@
-# Test material is excluded from the repository language statistics and hidden
-# by default in GitHub diffs. It stays fully reviewable behind a click; only
-# the default open state changes. Package-local material is grouped under
+# Test material is excluded from the repository language statistics and kept
+# out of the reviewer's way. Package-local material is grouped under
 # `__tests__/`; the shared test-support package is grouped by its source root.
+# Both labels are set because each does a different half of the job:
+# `linguist-generated` collapses the diff body by default, and
+# `linguist-vendored` is the only one of the two that the pull request file
+# filter can toggle, so unchecking "Vendored files" drops the whole set from
+# the file tree and the diffs at once.
 # https://docs.github.com/en/repositories/working-with-files/managing-files/customizing-how-changed-files-appear-on-github
-**/__tests__/**            linguist-generated=true
-packages/test-utils/src/** linguist-generated=true
+**/__tests__/**            linguist-generated=true linguist-vendored=true
+packages/test-utils/src/** linguist-generated=true linguist-vendored=true
 
 # Checked-in generator output. The `.generated.` infix is what keeps this a
 # pattern rather than a list of paths; output named anything else opts itself
 # out.
-**/*.generated.*           linguist-generated=true
+**/*.generated.*           linguist-generated=true linguist-vendored=true

@@ -20,10 +20,13 @@
   standalone verifier scripts stay at their tool entrypoints;
   `@floway-dev/test-utils` is itself the shared test-support package, so its
   exported implementation remains its production `src/`. `.gitattributes`
-  marks both forms as generated so reviewers can collapse them by default.
+  marks both forms generated and vendored: generated collapses each diff body
+  by default, and vendored is the label the pull request file filter can
+  toggle away.
 - A checked-in file written by a generator carries a `.generated.` infix in
   its name. `.gitattributes` keys off that infix, so output named anything
-  else stays in the language statistics and expanded in diffs.
+  else stays in the language statistics, expanded in diffs, and outside the
+  reviewer's filter.
 - When investigating Copilot upstream quirks, compare at least one other
   Copilot gateway implementation before inventing a policy. For generic
   adapter behavior, compare at least one Copilot gateway and one general
