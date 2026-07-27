@@ -1,5 +1,5 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
-import type { ResponsesInputAgentMessageItem, ResponsesInputContent, ResponsesInputMultiAgentCallOutputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputAgentMessageItem, ResponsesInputContent, ResponsesInputImage, ResponsesInputMultiAgentCallOutputItem } from '@floway-dev/protocols/responses';
 
 const readableText = (part: Record<string, unknown> & { type: string }, field: 'text' | 'refusal'): string => {
   const value = part[field];
@@ -7,6 +7,21 @@ const readableText = (part: Record<string, unknown> & { type: string }, field: '
     throw new TranslatorInputError(`Invalid '${part.type}' agent_message content: '${field}' must be a string.`);
   }
   return value;
+};
+
+const nullableString = (part: Record<string, unknown> & { type: string }, field: 'image_url' | 'file_id'): string | null | undefined => {
+  const value = part[field];
+  if (value !== undefined && value !== null && typeof value !== 'string') {
+    throw new TranslatorInputError(`Invalid '${part.type}' agent_message content: '${field}' must be a string or null.`);
+  }
+  return value;
+};
+
+const imageDetail = (part: Record<string, unknown> & { type: string }): ResponsesInputImage['detail'] => {
+  if (typeof part.detail !== 'string') {
+    throw new TranslatorInputError(`Invalid '${part.type}' agent_message content: 'detail' must be a string.`);
+  }
+  return part.detail as ResponsesInputImage['detail'];
 };
 
 // Codex's native multi-agent input carries author/recipient outside the content
@@ -26,7 +41,7 @@ export const multiAgentMessageContent = (
     switch (part.type) {
     case 'input_text':
     case 'output_text':
-      content.push(part);
+      content.push({ type: part.type, text: readableText(part, 'text') });
       break;
     case 'text':
     case 'summary_text':
@@ -37,15 +52,22 @@ export const multiAgentMessageContent = (
       content.push({ type: 'input_text', text: readableText(part, 'refusal') });
       break;
     case 'input_image':
+      content.push({
+        type: 'input_image',
+        image_url: nullableString(part, 'image_url'),
+        file_id: nullableString(part, 'file_id'),
+        detail: imageDetail(part),
+      });
+      break;
     case 'input_file':
-      content.push(part);
+      content.push({ ...part, type: 'input_file' });
       break;
     case 'computer_screenshot':
       content.push({
         type: 'input_image',
-        image_url: part.image_url,
-        file_id: part.file_id,
-        detail: part.detail,
+        image_url: nullableString(part, 'image_url'),
+        file_id: nullableString(part, 'file_id'),
+        detail: imageDetail(part),
       });
       break;
     case 'encrypted_content':
