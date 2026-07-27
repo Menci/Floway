@@ -109,7 +109,14 @@ const applyMessagesUsage = (usage: MessagesUsage, update: Partial<MessagesUsage>
   if (update.server_tool_use != null) {
     usage.server_tool_use = update.server_tool_use;
   }
-  if (update.iterations != null) usage.iterations = update.iterations.map(iteration => ({ ...iteration }));
+  if (update.iterations !== undefined) {
+    usage.iterations = update.iterations?.map(iteration => ({
+      ...iteration,
+      ...(iteration.cache_creation === undefined || iteration.cache_creation === null
+        ? {}
+        : { cache_creation: { ...iteration.cache_creation } }),
+    })) ?? null;
+  }
 };
 
 const createBlockAccumulator = (event: Extract<MessagesStreamEvent, { type: 'content_block_start' }>): MessagesBlockAccumulator => {

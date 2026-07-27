@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import type {
+  MessagesAssistantMessage,
   MessagesResult,
   MessagesSearchResultBlock,
   MessagesSearchResultLocationCitation,
@@ -878,4 +879,20 @@ test('reassembleMessagesEvents preserves refusal details, fallback boundaries, a
     trigger: { type: 'refusal', category: 'future_policy' },
   }]);
   assertEquals(result.usage.iterations, [{ type: 'fallback_message', model: 'claude-opus-4-8', input_tokens: 5, output_tokens: 0 }]);
+});
+
+test('Messages assistant fallback history accepts omitted and opaque triggers', () => {
+  const messages: MessagesAssistantMessage[] = [
+    {
+      role: 'assistant',
+      content: [{ type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } }],
+    },
+    {
+      role: 'assistant',
+      content: [{ type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' }, trigger: null }],
+    },
+  ];
+
+  assertEquals(messages[0].content[0], { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } });
+  assertEquals(messages[1].content[0], { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' }, trigger: null });
 });

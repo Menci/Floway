@@ -835,3 +835,38 @@ test('stream `error` event with a mundane message → api_error carrying that me
     error: { type: 'api_error', message: 'transient upstream hiccup' },
   }]);
 });
+
+test('multiple Responses refusal parts compose one Messages explanation in output order', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = [
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.delta', item_id: 'msg_1', output_index: 1, content_index: 0, delta: 'later',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.done', item_id: 'msg_1', output_index: 1, content_index: 0, refusal: 'later',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.delta', item_id: 'msg_0', output_index: 0, content_index: 1, delta: 'second ',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.done', item_id: 'msg_0', output_index: 0, content_index: 1, refusal: 'second ',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.delta', item_id: 'msg_0', output_index: 0, content_index: 0, delta: 'first ',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.done', item_id: 'msg_0', output_index: 0, content_index: 0, refusal: 'first ',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.completed',
+      response: {
+        id: 'resp_refusal_parts', object: 'response', model: 'gpt-test', output: [], status: 'completed', error: null, incomplete_details: null,
+      },
+    }, state),
+  ];
+
+  const delta = events.find((event): event is MessagesMessageDeltaEvent => event.type === 'message_delta');
+  assertEquals(delta?.delta.stop_details, {
+    type: 'refusal', category: null, explanation: 'first second later',
+  });
+});

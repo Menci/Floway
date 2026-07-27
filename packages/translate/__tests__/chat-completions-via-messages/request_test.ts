@@ -43,6 +43,20 @@ function stubRemoteImageLoader(result: Awaited<ReturnType<RemoteImageLoader>>): 
   return () => Promise.resolve(result);
 }
 
+test('buildTargetRequest preserves scalar and content-part assistant refusals as history text', async () => {
+  const result = await buildTargetRequest(mkPayload({
+    messages: [
+      { role: 'assistant', content: null, refusal: 'Scalar refusal.' },
+      { role: 'assistant', content: [{ type: 'refusal', refusal: 'Part refusal.' }] },
+    ],
+  }));
+
+  assertEquals(result.messages, [
+    { role: 'assistant', content: [{ type: 'text', text: 'Scalar refusal.' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'Part refusal.' }] },
+  ]);
+});
+
 // ── service_tier → speed mapping ──
 
 test('buildTargetRequest maps service_tier:fast to speed:fast (no service_tier on target)', async () => {

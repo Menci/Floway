@@ -57,7 +57,10 @@ const responsesMessageEvents = (item: ResponsesOutputMessage, outputIndex: numbe
         type: 'message',
         id: itemId,
         role: 'assistant',
-        content: item.content.map(part => (part.type === 'output_text' ? { type: 'output_text', text: '' } : part)),
+        content: item.content.map(part =>
+          part.type === 'output_text'
+            ? { type: 'output_text', text: '' }
+            : { type: 'refusal', refusal: '' }),
       },
     },
   ];

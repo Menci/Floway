@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { responsesResultToEvents } from '../../src/responses/from-result.ts';
-import type { ResponsesOutputItem, ResponsesResult } from '../../src/responses/index.ts';
+import type { ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '../../src/responses/index.ts';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 const completedResponse: ResponsesResult = {
@@ -182,6 +182,14 @@ test('responsesResultToEvents expands refusal content with the native refusal li
       content: [{ type: 'refusal', refusal: 'Cannot help.' }],
     }],
   })).map(frame => frame.event);
+
+  const added = events.find(event => event.type === 'response.output_item.added') as Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>;
+  assertEquals(added.item, {
+    type: 'message',
+    id: 'msg_refusal',
+    role: 'assistant',
+    content: [{ type: 'refusal', refusal: '' }],
+  });
 
   assertEquals(events.filter(event => event.type.startsWith('response.refusal')), [
     {

@@ -211,6 +211,13 @@ export interface MessagesFallbackBlock {
   };
 }
 
+export interface MessagesFallbackBlockParam {
+  type: 'fallback';
+  from: { model: string };
+  to: { model: string };
+  trigger?: unknown;
+}
+
 export type MessagesUserContentBlock = MessagesTextBlock | MessagesImageBlock | MessagesToolResultBlock;
 
 export type MessagesAssistantContentBlock =
@@ -222,6 +229,10 @@ export type MessagesAssistantContentBlock =
   | MessagesRedactedThinkingBlock
   | MessagesFallbackBlock;
 
+export type MessagesAssistantInputContentBlock =
+  | Exclude<MessagesAssistantContentBlock, MessagesFallbackBlock>
+  | MessagesFallbackBlockParam;
+
 export interface MessagesUserMessage {
   role: 'user';
   content: string | MessagesUserContentBlock[];
@@ -229,7 +240,7 @@ export interface MessagesUserMessage {
 
 export interface MessagesAssistantMessage {
   role: 'assistant';
-  content: string | MessagesAssistantContentBlock[];
+  content: string | MessagesAssistantInputContentBlock[];
 }
 
 // The Anthropic Messages API role enum is "user" | "assistant" | "system"
@@ -362,7 +373,7 @@ export interface MessagesMessageDeltaEvent {
     service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
     speed?: 'standard' | 'fast' | (string & {});
     server_tool_use?: MessagesUsageServerToolUse;
-    iterations?: MessagesUsageIteration[];
+    iterations?: MessagesUsageIteration[] | null;
   };
 }
 

@@ -20,7 +20,7 @@ interface ChoiceAccumulator {
   content: string;
   reasoningText: string;
   reasoningOpaque?: string;
-  refusal: string;
+  refusal?: string;
   readonly reasoningItems: ChatCompletionsReasoningItem[];
   finishReason: ChatCompletionsChoiceNonStreaming['finish_reason'];
   readonly toolCalls: Map<number, ToolCallAccumulator>;
@@ -33,7 +33,6 @@ const createChoiceAccumulator = (index: number): ChoiceAccumulator => ({
   content: '',
   reasoningText: '',
   reasoningItems: [],
-  refusal: '',
   finishReason: 'stop',
   toolCalls: new Map(),
   choiceExtras: {},
@@ -73,7 +72,7 @@ const finalizeChoice = (choice: ChoiceAccumulator): ChatCompletionsChoiceNonStre
       ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
       ...(choice.reasoningOpaque !== undefined ? { reasoning_opaque: choice.reasoningOpaque } : {}),
       ...(choice.reasoningItems.length > 0 ? { reasoning_items: choice.reasoningItems } : {}),
-      ...(choice.refusal ? { refusal: choice.refusal } : {}),
+      ...(choice.refusal !== undefined ? { refusal: choice.refusal } : {}),
       ...choice.messageExtras,
     },
     finish_reason: choice.finishReason,
@@ -119,7 +118,7 @@ export async function reassembleChatCompletionsEvents(chunks: AsyncIterable<Chat
       if (typeof delta.content === 'string') choice.content += delta.content;
       if (typeof delta.reasoning_text === 'string') choice.reasoningText += delta.reasoning_text;
       if (typeof delta.reasoning_opaque === 'string') choice.reasoningOpaque = delta.reasoning_opaque;
-      if (typeof delta.refusal === 'string') choice.refusal += delta.refusal;
+      if (typeof delta.refusal === 'string') choice.refusal = (choice.refusal ?? '') + delta.refusal;
       if (Array.isArray(delta.reasoning_items)) {
         choice.reasoningItems.push(...delta.reasoning_items);
       }

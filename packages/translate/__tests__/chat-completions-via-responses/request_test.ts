@@ -5,6 +5,21 @@ import type { ChatCompletionsMessage } from '@floway-dev/protocols/chat-completi
 import type { ResponsesInputReasoning } from '@floway-dev/protocols/responses';
 import { assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
+test('buildTargetRequest preserves scalar and content-part assistant refusals', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    messages: [
+      { role: 'assistant', content: null, refusal: 'Scalar refusal.' },
+      { role: 'assistant', content: [{ type: 'refusal', refusal: 'Part refusal.' }] },
+    ],
+  });
+
+  assertEquals(result.input, [
+    { type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'Scalar refusal.' }] },
+    { type: 'message', role: 'assistant', content: [{ type: 'refusal', refusal: 'Part refusal.' }] },
+  ]);
+});
+
 test('buildTargetRequest uses rs-prefixed ids for reasoning input items', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',

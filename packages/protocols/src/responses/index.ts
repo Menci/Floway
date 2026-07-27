@@ -133,7 +133,7 @@ export type CanonicalResponsesPayload = Omit<ResponsesPayload, 'input'> & {
   input: ResponsesInputItem[];
 };
 
-export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
+export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile | ResponsesOutputRefusal;
 
 // Explicit content breakpoints inherit their lifetime from
 // `prompt_cache_options.ttl`. The mode stays open-string for forward

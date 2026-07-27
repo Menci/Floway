@@ -22,6 +22,22 @@ const minimalPayload = {
   parallel_tool_calls: true,
 };
 
+test('buildTargetRequest preserves Responses assistant refusal history as Messages text', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [{
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'refusal', refusal: 'Cannot help.' }],
+    }],
+  });
+  const message = result.target.messages[0];
+
+  assertEquals(message.role, 'assistant');
+  assert(Array.isArray(message.content));
+  assertEquals(message.content[0], { type: 'text', text: 'Cannot help.', cache_control: { type: 'ephemeral' } });
+});
+
 test('buildTargetRequest accepts an implicit message discriminator', async () => {
   const result = await buildTargetRequest({
     ...minimalPayload,

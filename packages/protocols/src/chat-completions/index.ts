@@ -53,6 +53,7 @@ export interface ChatCompletionsMessage {
   /** Opaque reasoning token/signature for round-tripping */
   reasoning_opaque?: string | null;
   reasoning_items?: ChatCompletionsReasoningItem[] | null;
+  refusal?: string | null;
 }
 
 export interface ChatCompletionsReasoningItem {
@@ -67,7 +68,7 @@ export interface ChatCompletionsToolCall {
   function: { name: string; arguments: string };
 }
 
-export type ChatCompletionsContentPart = ChatCompletionsTextPart | ChatCompletionsImagePart;
+export type ChatCompletionsContentPart = ChatCompletionsTextPart | ChatCompletionsImagePart | ChatCompletionsRefusalPart;
 
 interface ChatCompletionsTextPart {
   type: 'text';
@@ -77,6 +78,11 @@ interface ChatCompletionsTextPart {
 interface ChatCompletionsImagePart {
   type: 'image_url';
   image_url: { url: string; detail?: 'low' | 'high' | 'auto' };
+}
+
+interface ChatCompletionsRefusalPart {
+  type: 'refusal';
+  refusal: string;
 }
 
 // Response types

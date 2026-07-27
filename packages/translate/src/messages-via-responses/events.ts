@@ -74,8 +74,7 @@ interface ResponsesToMessagesStreamState {
   emittedReasoningSummaryKeys: Set<string>;
   emittedReasoningSignatureOutputIndexes: Set<number>;
   emittedTextContentKeys: Set<string>;
-  refusalText: string;
-  sawRefusal: boolean;
+  refusalTexts: Map<number, Map<number, string>>;
   emittedFunctionArgumentOutputIndexes: Set<number>;
   outputOrder: ResponsesOutputOrderState;
   functionCallState: Map<
@@ -302,22 +301,25 @@ const handleContentPartDone = (event: Extract<ResponsesStreamEvent, { type: 'res
   const key = responsesPartKey(event.output_index, event.content_index);
   if (!event.part.refusal || state.emittedTextContentKeys.has(key)) return [];
 
-  state.sawRefusal = true;
-  state.refusalText = event.part.refusal;
+  const parts = state.refusalTexts.get(event.output_index) ?? new Map<number, string>();
+  parts.set(event.content_index, event.part.refusal);
+  state.refusalTexts.set(event.output_index, parts);
   state.emittedTextContentKeys.add(key);
   return [];
 };
 
 const handleRefusalDelta = (event: Extract<ResponsesStreamEvent, { type: 'response.refusal.delta' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
-  state.sawRefusal = true;
-  state.refusalText += event.delta;
+  const parts = state.refusalTexts.get(event.output_index) ?? new Map<number, string>();
+  parts.set(event.content_index, (parts.get(event.content_index) ?? '') + event.delta);
+  state.refusalTexts.set(event.output_index, parts);
   state.emittedTextContentKeys.add(responsesPartKey(event.output_index, event.content_index));
   return [];
 };
 
 const handleRefusalDone = (event: Extract<ResponsesStreamEvent, { type: 'response.refusal.done' }>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
-  state.sawRefusal = true;
-  state.refusalText = event.refusal;
+  const parts = state.refusalTexts.get(event.output_index) ?? new Map<number, string>();
+  parts.set(event.content_index, event.refusal);
+  state.refusalTexts.set(event.output_index, parts);
   state.emittedTextContentKeys.add(responsesPartKey(event.output_index, event.content_index));
   return [];
 };
@@ -364,17 +366,23 @@ const handleCompleted = (response: ResponsesResult, state: ResponsesToMessagesSt
   const events: MessagesStreamEvent[] = [];
   closeAllBlocks(state, events);
 
+  const refusalText = [...state.refusalTexts.entries()]
+    .sort(([left], [right]) => left - right)
+    .flatMap(([, parts]) => [...parts.entries()].sort(([left], [right]) => left - right).map(([, text]) => text))
+    .join('');
+  const refused = state.refusalTexts.size > 0;
+
   events.push(
     {
       type: 'message_delta',
       delta: {
-        stop_reason: state.sawRefusal ? 'refusal' : mapResponsesStopReason(response),
-        ...(state.sawRefusal
+        stop_reason: refused ? 'refusal' : mapResponsesStopReason(response),
+        ...(refused
           ? {
               stop_details: {
                 type: 'refusal' as const,
                 category: null,
-                explanation: state.refusalText || null,
+                explanation: refusalText,
               },
             }
           : {}),
@@ -454,8 +462,7 @@ export const createResponsesToMessagesStreamState = (): ResponsesToMessagesStrea
   emittedReasoningSummaryKeys: new Set(),
   emittedReasoningSignatureOutputIndexes: new Set(),
   emittedTextContentKeys: new Set(),
-  refusalText: '',
-  sawRefusal: false,
+  refusalTexts: new Map(),
   emittedFunctionArgumentOutputIndexes: new Set(),
   outputOrder: createResponsesOutputOrderState(),
   functionCallState: new Map(),
