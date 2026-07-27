@@ -1,4 +1,4 @@
-import { FileSystemIconLoader } from '@iconify/utils/lib/loader/fs';
+import { FileSystemIconLoader } from '@iconify/utils/lib/loader/node-loaders';
 import { defineConfig, presetIcons, presetWind3, transformerDirectives, transformerVariantGroup } from 'unocss';
 
 export default defineConfig({

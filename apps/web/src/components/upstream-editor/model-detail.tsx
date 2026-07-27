@@ -13,7 +13,8 @@ import { Input, Select } from "../ui/fluent-form-controls";
 import { SegmentedControl } from "../ui/segmented-control";
 import { publicModelId } from "./editor-data";
 import { FeatureFlagsEditor } from "./feature-flags";
-import { PricingEditor, pricingIsValid } from "./pricing-editor";
+import { PricingEditor } from "./pricing-editor";
+import { pricingEntryDraftsFor, pricingIsValid } from "./pricing-model";
 
 const {
   Button,
@@ -252,7 +253,7 @@ export function modelValidationError(model: UpstreamModelConfig, t: ReturnType<t
   if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return t("dashboard.upstreamEditor.models.invalidEffort");
   const budget = model.chat?.reasoning?.budget_tokens;
   if (budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min) return t("dashboard.upstreamEditor.models.invalidBudget");
-  if (!pricingIsValid(model.pricing)) return t("dashboard.upstreamEditor.models.invalidPricing");
+  if (!pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing)) return t("dashboard.upstreamEditor.models.invalidPricing");
   return null;
 }
 
@@ -261,7 +262,7 @@ export const modelsAreValid = (models: readonly UpstreamModelConfig[]) => models
   if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return false;
   const budget = model.chat?.reasoning?.budget_tokens;
   return !(budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min)
-    && pricingIsValid(model.pricing);
+    && pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing);
 });
 
 const optionalNumber = (raw: string): number | undefined => raw === "" ? undefined : Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined;

@@ -5,6 +5,8 @@ import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
+import { MODEL_KINDS } from "@floway-dev/protocols/common";
+
 import type { ControlPlaneModel, ModelAlias, ModelKind } from "../../api/types";
 import { authFetch, callApi } from "../../api/auth";
 import { DialogShell } from "../ui/dialog-shell";
@@ -33,7 +35,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
   const schema = useMemo(() => z.object({
     name: z.string().trim().min(1, "dashboard.modelAliases.validation.nameRequired"),
     displayName: z.string(),
-    kind: z.enum(["chat", "embedding", "image"]),
+    kind: z.enum(MODEL_KINDS),
     selection: z.enum(["first-available", "random"]),
     visible: z.boolean(),
     targets: z.array(z.object({ target_model_id: z.string().trim().min(1, "dashboard.modelAliases.validation.targetRequired"), rules: z.any() })).min(1),
@@ -93,7 +95,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
     <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
       <Controller control={control} name="name" render={({ field }) => <Field required label={t("dashboard.modelAliases.form.name")} validationMessage={errors.name?.message ? t(errors.name.message) : undefined} validationState={errors.name ? "error" : undefined}><Input {...field} className="font-mono" disabled={saving} placeholder={t("dashboard.modelAliases.form.namePlaceholder")} /></Field>} />
       <Controller control={control} name="displayName" render={({ field }) => <Field label={t("dashboard.modelAliases.form.displayName")}><Input {...field} disabled={saving} placeholder={values.name || t("dashboard.modelAliases.form.displayPlaceholder")} /></Field>} />
-      <Controller control={control} name="kind" render={({ field }) => <Field label={t("dashboard.modelAliases.form.kind")}><Select disabled={saving} value={field.value} onChange={(_, data) => changeKind(data.value as ModelKind)}><option value="chat">{t("dashboard.modelAliases.kind.chat")}</option><option value="embedding">{t("dashboard.modelAliases.kind.embedding")}</option><option value="image">{t("dashboard.modelAliases.kind.image")}</option></Select></Field>} />
+      <Controller control={control} name="kind" render={({ field }) => <Field label={t("dashboard.modelAliases.form.kind")}><Select disabled={saving} value={field.value} onChange={(_, data) => changeKind(data.value as ModelKind)}>{MODEL_KINDS.map(modelKind => <option key={modelKind} value={modelKind}>{t(`dashboard.modelAliases.kind.${modelKind}`)}</option>)}</Select></Field>} />
       <Field label={t("dashboard.modelAliases.form.selection")}><SegmentedControl ariaLabel={t("dashboard.modelAliases.form.selection")} value={values.selection ?? "first-available"} onChange={(value) => setValue("selection", value as AliasFormValues["selection"])} items={[{ value: "first-available", label: t("dashboard.modelAliases.selection.first") }, { value: "random", label: t("dashboard.modelAliases.selection.random") }]} /></Field>
     </div>
     <section className="grid gap-2" role="group" aria-labelledby="alias-targets-heading">

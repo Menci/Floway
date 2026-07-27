@@ -1,5 +1,8 @@
 import { curveMonotoneX } from "d3-shape";
-import type { ControlPlaneModel, BillingDimension } from "../../api/types";
+import type { DecimalString } from "@floway-dev/protocols/common";
+
+import type { ControlPlaneModel, BillingMetric } from "../../api/types";
+import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from "../../utils/decimal-display";
 import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenDetail, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from "./types";
 const palette = [
   "#0f6cbd",
@@ -247,8 +250,8 @@ export function buildSearchChart({
       model: "",
       hour: record.hour,
       requests: record.requests,
-      tokens: {},
-      cost: 0,
+      metrics: {},
+      cost: null,
     })),
     redactKeys,
   );
@@ -304,8 +307,9 @@ function aggregateTokenRecords(
     bucketDetails.set(group, detail);
 
     if (metricConfig[metric].kind !== "percent") {
-      const bucketValues = values.get(bucket)!;
-      bucketValues.set(group, (bucketValues.get(group) ?? 0) + metricValue(record, metric));
+      const bucketValues = values.get(bucket);
+      if (bucketValues === undefined) throw new RangeError(`Bucket is missing from the chart series: ${bucket}`);
+      bucketValues.set(group, (bucketValues.get(group) ?? 0) + plottableMetricValue(record, metric));
     }
   }
 
@@ -372,95 +376,101 @@ export function summarizeUsage(records: DisplayUsageRecord[]): TokenSummary {
     cost: summary.cost,
     cacheRead: summary.cacheRead,
     cacheCreation: summary.cacheCreation,
-    input: summary.input + summary.cacheRead + summary.cacheCreation + summary.inputImage,
-    output: summary.output + summary.outputImage,
-    total:
-      summary.input +
-      summary.output +
-      summary.cacheRead +
-      summary.cacheCreation +
-      summary.inputImage +
-      summary.outputImage,
-    prefill: summary.input + summary.cacheCreation + summary.inputImage,
+    input: sumDecimalStrings(summary.input, summary.cacheRead, summary.cacheCreation, summary.inputImage),
+    output: sumDecimalStrings(summary.output, summary.outputImage),
+    total: sumDecimalStrings(summary.input, summary.output, summary.cacheRead, summary.cacheCreation, summary.inputImage, summary.outputImage),
+    prefill: sumDecimalStrings(summary.input, summary.cacheCreation, summary.inputImage),
   };
 }
 
 function addRecordToDetail(detail: TokenDetail, record: DisplayUsageRecord) {
   detail.requests += record.requests;
-  detail.cost += record.cost;
-  detail.input += dim(record, "input");
-  detail.output += dim(record, "output");
-  detail.cacheRead += dim(record, "input_cache_read");
-  detail.cacheCreation += dim(record, "input_cache_write") + dim(record, "input_cache_write_1h");
-  detail.inputImage += dim(record, "input_image");
-  detail.outputImage += dim(record, "output_image");
+  if (record.cost !== null) detail.cost = sumDecimalStrings(detail.cost ?? '0', record.cost);
+  detail.input = sumDecimalStrings(detail.input, dim(record, "input_tokens"));
+  detail.output = sumDecimalStrings(detail.output, dim(record, "output_tokens"));
+  detail.cacheRead = sumDecimalStrings(detail.cacheRead, dim(record, "input_cache_read_tokens"));
+  detail.cacheCreation = sumDecimalStrings(detail.cacheCreation, dim(record, "input_cache_write_tokens"), dim(record, "input_cache_write_1h_tokens"));
+  detail.inputImage = sumDecimalStrings(detail.inputImage, dim(record, "input_image_tokens"));
+  detail.outputImage = sumDecimalStrings(detail.outputImage, dim(record, "output_image_tokens"));
 }
 
 function emptyDetail(): TokenDetail {
   return {
     requests: 0,
-    cost: 0,
-    input: 0,
-    output: 0,
-    total: 0,
-    prefill: 0,
-    cacheRead: 0,
-    cacheCreation: 0,
-    inputImage: 0,
-    outputImage: 0,
+    cost: null,
+    input: '0',
+    output: '0',
+    total: '0',
+    prefill: '0',
+    cacheRead: '0',
+    cacheCreation: '0',
+    inputImage: '0',
+    outputImage: '0',
   };
 }
 
-function dim(record: DisplayUsageRecord, key: BillingDimension): number {
-  return record.tokens[key] ?? 0;
+// Aggregate token counts routinely exceed the safe integer range, and cost is
+// billed to sub-cent precision, so both stay decimal strings until they reach a
+// chart axis or a formatted label.
+function dim(record: DisplayUsageRecord, key: BillingMetric): DecimalString {
+  return record.metrics[key] ?? '0';
 }
 
-function metricValue(record: DisplayUsageRecord, metric: UsageMetric): number {
+function metricValue(record: DisplayUsageRecord, metric: UsageMetric): DecimalString | number | null {
   switch (metric) {
     case "requests":
       return record.requests;
     case "cost":
       return record.cost;
     case "total":
-      return (
-        dim(record, "input") +
-        dim(record, "output") +
-        dim(record, "input_cache_read") +
-        dim(record, "input_cache_write") +
-        dim(record, "input_cache_write_1h") +
-        dim(record, "input_image") +
-        dim(record, "output_image")
+      return sumDecimalStrings(
+        dim(record, "input_tokens"),
+        dim(record, "output_tokens"),
+        dim(record, "input_cache_read_tokens"),
+        dim(record, "input_cache_write_tokens"),
+        dim(record, "input_cache_write_1h_tokens"),
+        dim(record, "input_image_tokens"),
+        dim(record, "output_image_tokens"),
       );
     case "input":
-      return (
-        dim(record, "input") +
-        dim(record, "input_cache_read") +
-        dim(record, "input_cache_write") +
-        dim(record, "input_cache_write_1h") +
-        dim(record, "input_image")
+      return sumDecimalStrings(
+        dim(record, "input_tokens"),
+        dim(record, "input_cache_read_tokens"),
+        dim(record, "input_cache_write_tokens"),
+        dim(record, "input_cache_write_1h_tokens"),
+        dim(record, "input_image_tokens"),
       );
     case "output":
-      return dim(record, "output") + dim(record, "output_image");
+      return sumDecimalStrings(dim(record, "output_tokens"), dim(record, "output_image_tokens"));
     case "prefill":
-      return dim(record, "input") + dim(record, "input_cache_write") + dim(record, "input_cache_write_1h") + dim(record, "input_image");
+      return sumDecimalStrings(dim(record, "input_tokens"), dim(record, "input_cache_write_tokens"), dim(record, "input_cache_write_1h_tokens"), dim(record, "input_image_tokens"));
     case "cached":
-      return dim(record, "input_cache_read");
+      return dim(record, "input_cache_read_tokens");
     case "cacheCreation":
-      return dim(record, "input_cache_write") + dim(record, "input_cache_write_1h");
+      return sumDecimalStrings(dim(record, "input_cache_write_tokens"), dim(record, "input_cache_write_1h_tokens"));
     case "cachedRate":
     case "cacheHitRate":
-      return 0;
+      return null;
   }
 }
 
+// Plot values cross into floating point exactly here, at the axis boundary.
+function plottableMetricValue(record: DisplayUsageRecord, metric: UsageMetric): number {
+  const value = metricValue(record, metric);
+  if (value === null) return 0;
+  return typeof value === 'number' ? value : decimalStringToPlottableNumber(value);
+}
+
+// Ratios are percentages of one aggregate over another, so both sides convert
+// to plottable numbers first; the division itself has no precision to protect.
 function tokenDetailMetricValue(detail: TokenDetail, metric: UsageMetric): number | null {
-  if (metric === "cacheHitRate") {
-    const total = detail.cacheRead + detail.cacheCreation;
-    return total > 0 ? (detail.cacheRead / total) * 100 : null;
-  }
+  const ratio = (numerator: DecimalString, denominator: DecimalString): number | null => {
+    const bottom = decimalStringToPlottableNumber(denominator);
+    return bottom > 0 ? (decimalStringToPlottableNumber(numerator) / bottom) * 100 : null;
+  };
+  if (metric === "cacheHitRate") return ratio(detail.cacheRead, sumDecimalStrings(detail.cacheRead, detail.cacheCreation));
   if (metric === "cachedRate") {
-    const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage;
-    return prompt > 0 ? (detail.cacheRead / prompt) * 100 : null;
+    return ratio(detail.cacheRead, sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage));
   }
   return null;
 }
@@ -542,22 +552,24 @@ export function formatTokenCount(value: number, locale: string): string {
   return Math.round(value).toLocaleString(locale);
 }
 
-export function formatCost(value: number): string {
-  if (value >= 1) return `$${value.toFixed(2)}`;
-  if (value >= 0.01) return `$${value.toFixed(3)}`;
-  if (value > 0) return `$${value.toFixed(4)}`;
-  return "$0";
+// Aggregate token totals are decimal strings; grouping them digit-wise keeps
+// counts past the safe integer range exact in the label.
+export const formatUsdCost = formatUsd;
+
+export function formatDecimalCount(value: DecimalString): string {
+  return formatDecimalQuantity(value);
 }
 
-export function formatInputRate(cached: number, input: number): string {
-  if (input <= 0) return "-";
-  return `${((cached / input) * 100).toFixed(1)}%`;
+export function formatInputRate(cached: DecimalString, input: DecimalString): string {
+  const denominator = decimalStringToPlottableNumber(input);
+  if (denominator <= 0) return "-";
+  return `${((decimalStringToPlottableNumber(cached) / denominator) * 100).toFixed(1)}%`;
 }
 
-export function formatHitRate(cached: number, created: number): string {
-  const denom = cached + created;
-  if (denom <= 0) return "-";
-  return `${((cached / denom) * 100).toFixed(1)}%`;
+export function formatHitRate(cached: DecimalString, created: DecimalString): string {
+  const denominator = decimalStringToPlottableNumber(sumDecimalStrings(cached, created));
+  if (denominator <= 0) return "-";
+  return `${((decimalStringToPlottableNumber(cached) / denominator) * 100).toFixed(1)}%`;
 }
 
 export function formatSummaryMetric(
@@ -569,19 +581,19 @@ export function formatSummaryMetric(
     case "requests":
       return formatCount(summary.requests, locale);
     case "cost":
-      return formatCost(summary.cost);
+      return formatUsd(summary.cost);
     case "total":
-      return formatCount(summary.total, locale);
+      return formatDecimalCount(summary.total);
     case "input":
-      return formatCount(summary.input, locale);
+      return formatDecimalCount(summary.input);
     case "output":
-      return formatCount(summary.output, locale);
+      return formatDecimalCount(summary.output);
     case "prefill":
-      return formatCount(summary.prefill, locale);
+      return formatDecimalCount(summary.prefill);
     case "cached":
-      return formatCount(summary.cacheRead, locale);
+      return formatDecimalCount(summary.cacheRead);
     case "cacheCreation":
-      return formatCount(summary.cacheCreation, locale);
+      return formatDecimalCount(summary.cacheCreation);
     case "cachedRate":
       return formatInputRate(summary.cacheRead, summary.input);
     case "cacheHitRate":
@@ -589,12 +601,22 @@ export function formatSummaryMetric(
   }
 }
 
+// Axis-side formatter: the value here is a plotted point, so it has already
+// crossed into floating point and there is no exact decimal left to preserve.
+// Summary tiles use formatUsd and formatDecimalCount on the decimal values.
 export function formatMetricValue(value: number, metric: UsageMetric, locale: string): string {
   const kind = metricConfig[metric].kind;
   if (kind === "percent") return `${value.toFixed(0)}%`;
-  if (kind === "cost") return formatCost(value);
+  if (kind === "cost") return formatPlottedCost(value);
   if (kind === "count") return formatCount(value, locale);
   return formatTokenCount(value, locale);
+}
+
+function formatPlottedCost(value: number): string {
+  if (value >= 1) return `$${value.toFixed(2)}`;
+  if (value >= 0.01) return `$${value.toFixed(3)}`;
+  if (value > 0) return `$${value.toFixed(4)}`;
+  return "$0";
 }
 
 export function formatProvider(provider: string): string {

@@ -1,6 +1,6 @@
 import type { CustomizedCalloutData } from "@fluentui/react-charts";
 import { fluentComponents } from "../../fluent";
-import { bucketKeyForCallout, formatCalloutTitle, formatCost, formatCount, formatHitRate, formatInputRate, formatTokenCount } from "./chart-model";
+import { bucketKeyForCallout, formatCalloutTitle, formatCount, formatDecimalCount, formatHitRate, formatInputRate, formatUsdCost } from "./chart-model";
 import type { UsageChartModel } from "./types";
 
 const { Text } = fluentComponents;
@@ -52,12 +52,12 @@ export function UsageChartCallout({ chart, data, labelByTime, locale, valueForma
                         </span>
                       </td>
                       <td className="px-2 py-[2px] text-right"><Text size={200}>{formatCount(detail.requests, locale)}</Text></td>
-                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatCost(detail.cost)}</Text></td>
-                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatTokenCount(total, locale)}</Text></td>
-                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatTokenCount(detail.cacheRead, locale)}</Text></td>
+                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatUsdCost(detail.cost)}</Text></td>
+                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(total)}</Text></td>
+                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(detail.cacheRead)}</Text></td>
                       <td className="px-2 py-[2px] text-right"><Text size={200}>{formatInputRate(detail.cacheRead, prompt)}</Text></td>
-                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatTokenCount(prefill, locale)}</Text></td>
-                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatTokenCount(output, locale)}</Text></td>
+                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(prefill)}</Text></td>
+                      <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(output)}</Text></td>
                       <td className="px-2 py-[2px] text-right"><Text size={200}>{formatHitRate(detail.cacheRead, detail.cacheCreation)}</Text></td>
                     </tr>
                   );

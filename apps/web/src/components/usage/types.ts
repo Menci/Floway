@@ -1,6 +1,8 @@
 import type { ChartProps } from "@fluentui/react-charts";
 
-import type { BillingDimension } from "../../api/types";
+import type { DecimalString } from "@floway-dev/protocols/common";
+
+import type { BillingMetric } from "../../api/types";
 
 export type UsageView = "all-by-user" | "self-by-key";
 export type UsageRange = "today" | "7d" | "30d";
@@ -15,8 +17,8 @@ export interface DisplayUsageRecord {
   model: string;
   hour: string;
   requests: number;
-  tokens: Partial<Record<BillingDimension, number>>;
-  cost: number;
+  metrics: Partial<Record<BillingMetric, DecimalString>>;
+  cost: DecimalString | null;
 }
 
 export interface UsageResponse {
@@ -40,11 +42,20 @@ export interface SearchUsageResponse {
 }
 
 export interface UsageBucket { key: string; label: string; date: Date }
+// Requests are a plain count; everything else is a decimal string, because
+// aggregate token totals exceed the safe integer range and cost is billed to
+// sub-cent precision.
 export interface TokenSummary {
-  requests: number; cost: number; input: number; output: number; total: number;
-  prefill: number; cacheRead: number; cacheCreation: number;
+  requests: number;
+  cost: DecimalString | null;
+  input: DecimalString;
+  output: DecimalString;
+  total: DecimalString;
+  prefill: DecimalString;
+  cacheRead: DecimalString;
+  cacheCreation: DecimalString;
 }
-export interface TokenDetail extends TokenSummary { inputImage: number; outputImage: number }
+export interface TokenDetail extends TokenSummary { inputImage: DecimalString; outputImage: DecimalString }
 export interface ChartEntry { id: string; label: string; colorSlot: number }
 export interface UsageChartModel {
   entries: ChartEntry[];

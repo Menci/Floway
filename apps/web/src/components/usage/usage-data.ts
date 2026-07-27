@@ -11,7 +11,7 @@ import type {
 import { dashboardRangeQuery } from "./chart-model";
 
 interface UsageByUserResponse {
-  records: Array<{ userId: number; model: string; hour: string; requests: number; tokens: DisplayUsageRecord["tokens"]; cost: number }>;
+  records: Array<{ userId: number; model: string; hour: string; requests: number; metrics: DisplayUsageRecord["metrics"]; cost: DisplayUsageRecord["cost"] }>;
   users: Array<{ id: number; username: string }>;
 }
 interface SearchUsageByUserResponse {
