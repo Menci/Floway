@@ -1,7 +1,7 @@
 import { canonicalizeResponsesPayload } from '../canonicalize-responses-payload.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
-import { multiAgentCallOutputText, multiAgentMessageContent } from '../shared/responses-via/multi-agent.ts';
+import { multiAgentMessageContent } from '../shared/responses-via/multi-agent.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
@@ -222,21 +222,6 @@ const translateResponsesInput = async (input: ResponsesInputItem[], loadRemoteIm
         role: 'user',
         content: multiAgentMessageContent(item),
       }, loadRemoteImage));
-      break;
-    case 'multi_agent_call':
-      appendAssistantBlock(messages, {
-        type: 'tool_use',
-        id: item.call_id,
-        name: item.action,
-        input: parseToolArgumentsObject(item.arguments),
-      });
-      break;
-    case 'multi_agent_call_output':
-      appendUserBlock(messages, {
-        type: 'tool_result',
-        tool_use_id: item.call_id,
-        content: multiAgentCallOutputText(item),
-      });
       break;
     case 'function_call':
       appendAssistantBlock(messages, {

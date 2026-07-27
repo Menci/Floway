@@ -266,9 +266,6 @@ Request mapping:
   keep it from acquiring user authority. The wrapper preserves `author` and
   `recipient`; text, image, screenshot, and file parts follow ordinary user
   content translation.
-- `multi_agent_call` and `multi_agent_call_output` become assistant `tool_use`
-  and user `tool_result` history, preserving the action, arguments, call id,
-  and concatenated text output.
 - `reasoning` becomes a Messages thinking carrier bound for the real Messages
   upstream, which owns and validates the signature: the genuine
   `encrypted_content` is sent verbatim with no gateway envelope — as
@@ -492,9 +489,7 @@ Request mapping:
   though its image originated in tool output; no out-of-band provenance
   contradicts the wire role.
 - readable `agent_message` content uses one Chat user wire message with the
-  same non-user-source notice and XML-escaped wrapper as the Messages target;
-  `multi_agent_call` and `multi_agent_call_output` become assistant function
-  calls and Chat tool-result messages.
+  same non-user-source notice and XML-escaped wrapper as the Messages target.
 - `max_output_tokens`, `stream`, `temperature`, `top_p`, `metadata`, `store`,
   `parallel_tool_calls`, `prompt_cache_key`, `safety_identifier`,
   `service_tier`, and explicit `reasoning.effort` pass through when present.

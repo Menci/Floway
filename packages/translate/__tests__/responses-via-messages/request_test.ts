@@ -65,47 +65,6 @@ test('buildTargetRequest projects a plaintext agent message as non-user agent in
   }]);
 });
 
-test('buildTargetRequest projects multi-agent call history as Messages tool history', async () => {
-  const result = await buildTargetRequest({
-    ...minimalPayload,
-    input: [
-      {
-        type: 'multi_agent_call',
-        action: 'spawn_agent',
-        arguments: '{"message":"review"}',
-        call_id: 'call_spawn',
-      },
-      {
-        type: 'multi_agent_call_output',
-        action: 'spawn_agent',
-        call_id: 'call_spawn',
-        output: [{ type: 'output_text', text: 'agent_1' }],
-      },
-    ],
-  });
-
-  assertEquals(result.target.messages, [
-    {
-      role: 'assistant',
-      content: [{
-        type: 'tool_use',
-        id: 'call_spawn',
-        name: 'spawn_agent',
-        input: { message: 'review' },
-      }],
-    },
-    {
-      role: 'user',
-      content: [{
-        type: 'tool_result',
-        tool_use_id: 'call_spawn',
-        content: 'agent_1',
-        cache_control: { type: 'ephemeral' },
-      }],
-    },
-  ]);
-});
-
 test.each([
   { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },

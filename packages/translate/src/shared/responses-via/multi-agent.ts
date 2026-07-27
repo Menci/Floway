@@ -1,5 +1,5 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
-import type { ResponsesInputAgentMessageItem, ResponsesInputContent, ResponsesInputImage, ResponsesInputMultiAgentCallOutputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputAgentMessageItem, ResponsesInputContent, ResponsesInputImage } from '@floway-dev/protocols/responses';
 
 interface AgentContentFields {
   type: string;
@@ -103,11 +103,3 @@ export const multiAgentMessageContent = (
   pushText(content, '\n</agent-message>');
   return content;
 };
-
-export const multiAgentCallOutputText = (item: ResponsesInputMultiAgentCallOutputItem): string =>
-  item.output.map((part, index) => {
-    if (part.type !== 'output_text') {
-      throw new TranslatorInputError(`Invalid value: '${part.type}' for 'multi_agent_call_output.output[${index}].type'.`, { param: `multi_agent_call_output.output[${index}].type` });
-    }
-    return requiredString(part.text, `multi_agent_call_output.output[${index}].text`);
-  }).join('');

@@ -40,39 +40,6 @@ test('buildTargetRequest projects a plaintext agent message as non-user agent in
   }]);
 });
 
-test('buildTargetRequest projects multi-agent call history as Chat tool history', () => {
-  const result = buildTargetRequest({
-    model: 'gpt-test',
-    input: [
-      {
-        type: 'multi_agent_call',
-        action: 'spawn_agent',
-        arguments: '{"message":"review"}',
-        call_id: 'call_spawn',
-      },
-      {
-        type: 'multi_agent_call_output',
-        action: 'spawn_agent',
-        call_id: 'call_spawn',
-        output: [{ type: 'output_text', text: 'agent_1' }],
-      },
-    ],
-  });
-
-  assertEquals(result.target.messages, [
-    {
-      role: 'assistant',
-      content: null,
-      tool_calls: [{
-        id: 'call_spawn',
-        type: 'function',
-        function: { name: 'spawn_agent', arguments: '{"message":"review"}' },
-      }],
-    },
-    { role: 'tool', tool_call_id: 'call_spawn', content: 'agent_1' },
-  ]);
-});
-
 test('buildTargetRequest merges adjacent assistant reasoning text and tool calls', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',

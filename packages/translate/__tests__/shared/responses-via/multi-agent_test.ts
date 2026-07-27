@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { multiAgentCallOutputText, multiAgentMessageContent } from '../../../src/shared/responses-via/multi-agent.ts';
-import type { ResponsesInputAgentMessageItem, ResponsesInputMultiAgentCallOutputItem } from '@floway-dev/protocols/responses';
+import { multiAgentMessageContent } from '../../../src/shared/responses-via/multi-agent.ts';
+import type { ResponsesInputAgentMessageItem } from '@floway-dev/protocols/responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const agentMessage = (content: ResponsesInputAgentMessageItem['content']): ResponsesInputAgentMessageItem => ({
@@ -61,28 +61,3 @@ test('multiAgentMessageContent reports the exact path for malformed text', () =>
   assertEquals((error as Error & { param?: string }).param, 'agent_message.content[0].text');
 });
 
-test('multiAgentCallOutputText joins output fragments without inventing separators', () => {
-  assertEquals(multiAgentCallOutputText({
-    type: 'multi_agent_call_output',
-    action: 'wait_agent',
-    call_id: 'call_wait',
-    output: [
-      { type: 'output_text', text: 'agent_1: ' },
-      { type: 'output_text', text: 'completed' },
-    ],
-  }), 'agent_1: completed');
-});
-
-test('multiAgentCallOutputText reports the exact path for malformed output blocks', () => {
-  const error = assertThrows(
-    () => multiAgentCallOutputText({
-      type: 'multi_agent_call_output',
-      action: 'wait_agent',
-      call_id: 'call_wait',
-      output: [{ type: 'future_output', text: 'hidden' }],
-    } as unknown as ResponsesInputMultiAgentCallOutputItem),
-    Error,
-    "Invalid value: 'future_output'",
-  );
-  assertEquals((error as Error & { param?: string }).param, 'multi_agent_call_output.output[0].type');
-});
