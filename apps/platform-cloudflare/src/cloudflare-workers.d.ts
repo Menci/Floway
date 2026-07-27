@@ -6,8 +6,8 @@
 // Production code at `apps/platform-cloudflare/src/broadcast-do.ts`
 // does `import { DurableObject } from 'cloudflare:workers'` so the CF runtime
 // gates RPC dispatch on the subclass extending this base; the tests resolve
-// the same import through `test/cloudflare-workers-stub.ts` via the vitest
-// alias in `apps/platform-cloudflare/vitest.config.ts`.
+// the same import through `__tests__/test-utils/cloudflare-workers-stub.ts`
+// via the alias in `apps/platform-cloudflare/vitest.config.ts`.
 
 declare module 'cloudflare:workers' {
   // The base class's only role for our actor is to mark the subclass as

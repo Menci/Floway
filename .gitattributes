@@ -1,7 +1,7 @@
 # Test material is excluded from the repository language statistics and hidden
 # by default in GitHub diffs. It stays fully reviewable behind a click; only
-# the default open state changes. The per-package `__tests__/` mirror is what
-# makes this a single pattern instead of a scattered list.
+# the default open state changes. Package-local material is grouped under
+# `__tests__/`; the shared test-support package is grouped by its source root.
 # https://docs.github.com/en/repositories/working-with-files/managing-files/customizing-how-changed-files-appear-on-github
 **/__tests__/**            linguist-generated=true
 packages/test-utils/src/** linguist-generated=true

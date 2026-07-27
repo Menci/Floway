@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, test } from 'vitest';
 import type { AttemptState } from '../../../../src/data-plane/shared/gateway-ctx.ts';
 import { recordPerformance } from '../../../../src/data-plane/shared/telemetry/performance.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
 

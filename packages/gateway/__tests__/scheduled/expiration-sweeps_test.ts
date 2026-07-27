@@ -5,7 +5,7 @@ import { initDumpStore } from '../../src/dump/registry.ts';
 import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
-import { InMemoryRepo } from '../../src/repo/memory.ts';
+import { InMemoryRepo } from '../repo/memory.ts';
 import { quantizeResponsesRefreshedAt, RESPONSES_REFRESH_GRANULARITY_MS } from '../../src/repo/responses-retention.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, StoredResponsesItem } from '../../src/repo/types.ts';

@@ -1,9 +1,10 @@
-# `shared/` Convention
+# Translation Shared Helpers
 
-Helpers in this folder are translate-internal. Their location is an import
+`src/shared/` contains translate-internal helpers, and `__tests__/shared/`
+mirrors their test coverage. A helper's production location is an import
 ceiling over the sibling translation-pair directories. Pick the narrowest
-matching category before writing a helper; do not put flat `.ts` files at the
-top level of `shared/`.
+matching category before writing a helper or its tests; do not put flat `.ts`
+files at the top level of either `shared/` tree.
 
 ## Categories
 
@@ -20,7 +21,7 @@ top level of `shared/`.
    `chat-completions-and-responses/reasoning.ts` runs both directions of the
    Chat Completions ↔ Responses reasoning round trip.
 
-## Current subdirectories
+## Current Production Subdirectories
 
 - `chat-completions-and-responses/` — available only to
   `chat-completions-via-responses` and `responses-via-chat-completions`.
@@ -42,8 +43,12 @@ top level of `shared/`.
   a wrapper: `via-responses/responses-stream.ts` owns the composite stream-part
   key both Responses-target pairs build and compare, and inlining it would let
   the copies drift apart.
-- Flat `.ts` files at the top level of `shared/` are forbidden. Every shared
-  helper lives in one of the categories above.
+- Flat `.ts` files at the top level of either `src/shared/` or
+  `__tests__/shared/` are forbidden. Every shared helper and test suite lives
+  in one of the categories above.
+- Tests stay in the same category as the helper or cross-helper behavior they
+  cover. Suite names describe the tested behavior; they do not need a
+  one-to-one production basename.
 - Helpers that fit no category stay in their pair directories. Do not invent a
   folder pattern without explicit confirmation.
 - A helper that is not translation logic, such as defense against a malformed

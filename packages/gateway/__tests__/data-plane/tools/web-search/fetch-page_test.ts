@@ -3,7 +3,7 @@ import { beforeEach, test } from 'vitest';
 import { fetchPageAndRecordUsage } from '../../../../src/data-plane/tools/web-search/fetch-page.ts';
 import type { WebSearchFetchPageResult, WebSearchProvider } from '../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const okResult: WebSearchFetchPageResult = { type: 'ok', pages: [], failures: [] };

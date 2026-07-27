@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { DEFAULT_WEB_SEARCH_CONFIG, FIXED_WEB_SEARCH_CONFIG_TEST_QUERY } from '../../../../src/data-plane/tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider, testWebSearchConfigConnection } from '../../../../src/data-plane/tools/web-search/provider.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, or enabled', () => {

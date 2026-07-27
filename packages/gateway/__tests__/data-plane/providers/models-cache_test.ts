@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { initRepo } from '../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../repo/memory.ts';
 import { directFetcher, type Provider, type ProviderModel } from '@floway-dev/provider';
 import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 

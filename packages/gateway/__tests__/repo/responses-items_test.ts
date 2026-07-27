@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import { initRepo } from '../../src/repo/index.ts';
-import { InMemoryRepo } from '../../src/repo/memory.ts';
+import { InMemoryRepo } from './memory.ts';
 import { hashResponsesJson } from '../../src/repo/responses-hash.ts';
 import { prepareStoredResponsesPayload } from '../../src/repo/responses-payload.ts';
 import { quantizeResponsesRefreshedAt, responsesStateCutoff } from '../../src/repo/responses-retention.ts';

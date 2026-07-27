@@ -8,7 +8,7 @@ const displayQuantity = (record: { metrics: Array<{ metric: string; quantity: st
   record.metrics.find(row => row.metric === `${tokenCategory}_tokens`)?.quantity;
 
 const seedUsage = async (
-  repo: import('../../../src/repo/memory.ts').InMemoryRepo,
+  repo: import('../../repo/memory.ts').InMemoryRepo,
   keyId: string,
   hour: string,
   model: string,

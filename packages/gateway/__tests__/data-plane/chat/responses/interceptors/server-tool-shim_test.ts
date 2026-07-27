@@ -29,7 +29,7 @@ import type {
   WebSearchProviderResult,
 } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';

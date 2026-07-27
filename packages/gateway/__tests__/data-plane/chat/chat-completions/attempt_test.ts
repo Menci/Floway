@@ -2,7 +2,7 @@ import { test, vi } from 'vitest';
 
 import { chatCompletionsAttempt } from '../../../../src/data-plane/chat/chat-completions/attempt.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';

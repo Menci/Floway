@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { hashResponsesItem } from '../../../../../src/data-plane/chat/responses/items/identity.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from '../../../../../src/data-plane/chat/responses/items/store.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { quantizeResponsesRefreshedAt } from '../../../../../src/repo/responses-retention.ts';
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 

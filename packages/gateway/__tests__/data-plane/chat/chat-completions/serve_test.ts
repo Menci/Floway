@@ -1,7 +1,7 @@
 import { afterEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';

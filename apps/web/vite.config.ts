@@ -44,7 +44,7 @@ const wranglerProxiedPaths = [
 export default defineConfig({
   plugins: [
     VueRouter({
-      dts: 'src/typed-router.d.ts',
+      dts: 'src/typed-router.generated.d.ts',
       exclude: ['**/components/**'],
     }),
     Vue(),

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPerRequestFetcher } from '../../src/dial/per-request.ts';
 import { initRepo } from '../../src/repo/index.ts';
-import { InMemoryRepo } from '../../src/repo/memory.ts';
+import { InMemoryRepo } from '../repo/memory.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
 import type { ProxyFallbackEntry } from '@floway-dev/provider';
 

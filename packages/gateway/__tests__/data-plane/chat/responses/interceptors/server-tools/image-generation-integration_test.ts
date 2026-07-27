@@ -2,7 +2,7 @@ import { beforeEach, test, vi } from 'vitest';
 
 import type { ResponsesInvocation } from '../../../../../../src/data-plane/chat/responses/interceptors/types.ts';
 import { initRepo } from '../../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';

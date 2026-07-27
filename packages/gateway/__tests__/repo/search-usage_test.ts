@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { InMemoryRepo } from '../../src/repo/memory.ts';
+import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { WebSearchUsageRecord, WebSearchUsageRepo } from '../../src/repo/types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';

@@ -15,7 +15,7 @@ import {
 import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../../src/data-plane/tools/web-search/config.ts';
 import type { WebSearchProvider, WebSearchProviderResult } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/messages';

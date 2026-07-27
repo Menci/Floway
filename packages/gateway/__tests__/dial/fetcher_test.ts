@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFetcher } from '../../src/dial/fetcher.ts';
 import type { ProxyEntry } from '../../src/dial/proxy-catalog.ts';
-import { InMemoryRepo } from '../../src/repo/memory.ts';
+import { InMemoryRepo } from '../repo/memory.ts';
 import type { HttpRequest } from '@floway-dev/http';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type SocketDial } from '@floway-dev/proxy';
 

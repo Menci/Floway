@@ -8,6 +8,6 @@ export default defineConfig({
     // test; under workspace-parallel load that occasionally pushes past 10s.
     // 30s absorbs the contention without masking actual hangs.
     testTimeout: 30_000,
-    setupFiles: ['./vitest.setup.ts'],
+    setupFiles: ['./__tests__/vitest.setup.ts'],
   },
 });

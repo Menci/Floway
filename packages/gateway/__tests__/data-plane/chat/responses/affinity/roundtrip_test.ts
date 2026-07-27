@@ -7,7 +7,7 @@ import { wrapResponsesClientOutput } from '../../../../../src/data-plane/chat/re
 import { createResponsesHttpStore } from '../../../../../src/data-plane/chat/responses/items/store.ts';
 import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';

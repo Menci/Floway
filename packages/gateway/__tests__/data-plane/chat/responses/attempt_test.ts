@@ -8,7 +8,7 @@ import * as outputModule from '../../../../src/data-plane/chat/responses/items/o
 import { createResponsesHttpStore } from '../../../../src/data-plane/chat/responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../src/repo/types.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';

@@ -4,7 +4,7 @@ import { responsesItemId } from '../../../../../src/data-plane/chat/responses/it
 import { wrapResponsesClientOutput } from '../../../../../src/data-plane/chat/responses/items/output.ts';
 import { createResponsesHttpStore } from '../../../../../src/data-plane/chat/responses/items/store.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_RESPONSES_RETENTION_SECONDS, testResponsesStatePolicy } from '../test-policy.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';

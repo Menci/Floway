@@ -2,7 +2,7 @@ import initSqlJs from 'sql.js';
 import { describe, expect, test } from 'vitest';
 
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
-import { InMemoryRepo } from '../../src/repo/memory.ts';
+import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo } from '../../src/repo/types.ts';
 import { type AgentSetupConfiguration, AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';

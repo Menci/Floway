@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import type { InMemoryRepo } from '../../../src/repo/memory.ts';
+import type { InMemoryRepo } from '../../repo/memory.ts';
 import { copilotModels, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 

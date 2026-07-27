@@ -4,7 +4,7 @@ import { test, vi } from 'vitest';
 import { TEST_RESPONSES_RETENTION_SECONDS } from './test-policy.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';

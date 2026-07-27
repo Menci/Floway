@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { runWebSearchAndRecordUsage } from '../../../../src/data-plane/tools/web-search/search.ts';
 import type { WebSearchProvider, WebSearchProviderResult } from '../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const stubProvider = (search: WebSearchProvider['search']): WebSearchProvider => ({

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const seedWebSearchUsage = async (repo: import('../../../src/repo/memory.ts').InMemoryRepo, primaryKeyId: string) => {
+const seedWebSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryRepo, primaryKeyId: string) => {
   await repo.apiKeys.save({
     id: 'key_other',
     userId: 1,

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { openAICacheTokensFromUsage, recordUsage } from '../../../../src/data-plane/shared/telemetry/usage.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../src/repo/memory.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import { basePricing } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
