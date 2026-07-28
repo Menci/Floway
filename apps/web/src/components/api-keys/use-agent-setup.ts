@@ -189,13 +189,14 @@ export function useAgentSetup(apiKeyId: string | null) {
     if (!currentLease || !configuration || terminatedRef.current
       || generationRef.current === confirmedRef.current) return;
     const sentGeneration = generationRef.current;
+    const lifecycle = lifecycleRef.current;
     const sentConfiguration = clone(configuration);
     const result = await request<AgentSetupLease>('/api/setup', 'PUT', {
       token: currentLease.token,
       configuration: sentConfiguration,
       expectedRevision: currentLease.configurationRevision,
     });
-    if (leaseRef.current?.token !== currentLease.token) return;
+    if (lifecycle !== lifecycleRef.current || leaseRef.current?.token !== currentLease.token) return;
     if (result.error) {
       const status = rawStatus(result.error.raw);
       if (status === 'missing') { markTerminated(); return; }
@@ -234,8 +235,9 @@ export function useAgentSetup(apiKeyId: string | null) {
   const runHeartbeat = useCallback(async () => {
     const currentLease = leaseRef.current;
     if (!currentLease || terminatedRef.current || document.visibilityState === 'hidden') return;
+    const lifecycle = lifecycleRef.current;
     const result = await request<AgentSetupLease>('/api/setup/heartbeat', 'POST', { token: currentLease.token });
-    if (leaseRef.current?.token !== currentLease.token) return;
+    if (lifecycle !== lifecycleRef.current || leaseRef.current?.token !== currentLease.token) return;
     if (result.error) {
       if (rawStatus(result.error.raw) === 'missing') { markTerminated(); return; }
       setHeartbeatError(result.error.message);

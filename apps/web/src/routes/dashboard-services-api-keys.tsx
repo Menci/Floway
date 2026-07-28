@@ -170,11 +170,13 @@ export default function DashboardServicesApiKeys() {
   const copyToClipboard = async (text: string, tag: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      setCopyFailedTag(null);
       setCopiedTag(tag);
       window.setTimeout(() => {
         setCopiedTag(current => (current === tag ? null : current));
       }, 1500);
     } catch {
+      setCopiedTag(null);
       setCopyFailedTag(tag);
       window.setTimeout(() => {
         setCopyFailedTag(current => (current === tag ? null : current));
