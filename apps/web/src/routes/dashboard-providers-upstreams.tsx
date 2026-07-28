@@ -363,7 +363,7 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
             <TableHeaderCell className="!w-[180px]">{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableHeaderCell className="!w-[110px]">{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[88px]">{t('dashboard.upstreams.table.actions')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.upstreams.table.actions')}</TableHeaderCell>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -413,7 +413,7 @@ function UpstreamsTable({
                 />
               </TableCell>
               <TableCell>
-                <div className="inline-flex items-center gap-[2px]">
+                <div className="flex items-center justify-center gap-[2px]">
                   <TooltipIconButton
                     disabled={busy}
                     icon={<EditRegular />}

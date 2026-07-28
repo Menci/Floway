@@ -43,7 +43,7 @@ export function ProxyList({
           <TableRow>
             <TableHeaderCell>{t('dashboard.proxy.form.name')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.proxy.form.address')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[88px]">{t('dashboard.proxy.columns.actions')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.proxy.columns.actions')}</TableHeaderCell>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -73,7 +73,7 @@ export function ProxyList({
                   </Text>
                 </TableCell>
                 <TableCell>
-                  <div className="flex gap-1">
+                  <div className="flex justify-center gap-1">
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<EditRegular />}

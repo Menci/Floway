@@ -16,14 +16,9 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  // Both rows carry this class, so the column stays the same width in each and
-  // the grid keeps its alignment; it only parks the buttons at the row's
-  // trailing edge instead of the column's leading one.
   actionsCell: {
-    justifyContent: 'flex-end',
-    // The header cell delegates its width to an inner button, so the label
-    // needs the same alignment to stay above the buttons it names.
-    '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' },
+    justifyContent: 'center',
+    '& .fui-TableHeaderCell__button': { justifyContent: 'center' },
   },
   accentText: { color: 'var(--colorBrandForeground1)' },
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },

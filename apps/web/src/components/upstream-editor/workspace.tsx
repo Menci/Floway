@@ -83,15 +83,14 @@ export function UpstreamWorkspace({
   return <section className="grid grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 max-[1050px]:h-auto">
     <div className="border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
-        ? <div className="flex items-center gap-3">
-            <Button appearance="transparent" icon={<ArrowLeftRegular />} onClick={() => setModelView('list')}>
-              {t('dashboard.upstreamEditor.models.back')}
-            </Button>
-            <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => setModelDetailTab(data.value as ModelDetailTab)}>
+        ? <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => {
+            if (data.value === 'back') setModelView('list');
+            else setModelDetailTab(data.value as ModelDetailTab);
+          }}>
+              <Tab icon={<ArrowLeftRegular />} value="back">{t('dashboard.upstreamEditor.models.back')}</Tab>
               <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
               <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
             </TabList>
-          </div>
         : <TabList selectedValue={tab} onTabSelect={(_, data) => setTab(data.value as typeof tab)}>
             <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
@@ -273,10 +272,10 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table className="w-full min-w-[860px] table-fixed">
-        <TableHeader><TableRow><TableHeaderCell className="!w-[72px]">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[25%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.upstreamEditor.models.actions')}</TableHeaderCell></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[25%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.upstreamEditor.models.actions')}</TableHeaderCell></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
-            <TableCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} size="small" /></TableCell>
+            <TableCell><div className="flex justify-center"><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} size="small" /></div></TableCell>
             <TableCell className="!overflow-hidden">
               <button
                 className="block bg-transparent border-0 cursor-pointer font-fui-semibold min-w-0 max-w-full overflow-hidden p-0 text-ellipsis text-fui-fg1 text-left whitespace-nowrap hover:underline"
