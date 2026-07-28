@@ -51,6 +51,15 @@ describe('model badges', () => {
     expect(modelBadges(alias, [real, alias], null)).toContainEqual(
       { key: 'aliasOf', kind: 'aliasOfModel', target: 'real' },
     );
+    const unreachable = model('unreachable', [], {
+      aliasedFrom: {
+        selection: 'random',
+        targets: [{ target_model_id: 'withdrawn', rules: {} }],
+      },
+    });
+    expect(modelBadges(unreachable, [unreachable], null)).toEqual([
+      { key: 'aliasOf', kind: 'aliasOfCount', reachable: 0, total: 1 },
+    ]);
   });
 
   it('collapses a rule its targets disagree on', () => {

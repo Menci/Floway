@@ -91,6 +91,6 @@ export const modelBadges = (
     : { key: 'aliasOf', kind: 'aliasOfModel', target: sole.id });
   // The selection strategy only decides anything when the resolver has more
   // than one candidate to pick between.
-  if (sole === null) badges.push({ key: 'selection', kind: 'selection', selection: alias.selection });
+  if (reachable.length > 1) badges.push({ key: 'selection', kind: 'selection', selection: alias.selection });
   return [...badges, ...ruleBadges(reachableAliasTargets)];
 };
