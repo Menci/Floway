@@ -1,5 +1,5 @@
 import { ArrowClockwiseRegular, CheckmarkRegular, CopyRegular, DeleteRegular, DismissRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { UpstreamOption } from './types';
@@ -76,35 +76,22 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? ''),
         renderHeaderCell: () => t('dashboard.apiKeys.table.lastUsed'),
-        renderCell: key => {
-          const copyTag = `key-${key.id}`;
-          return <>
-            {key.last_used_at
-              ? <span title={dateTime(key.last_used_at)}>
-                  {relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })}
-                </span>
-              : <span>{t('dashboard.apiKeys.table.never')}</span>}
-            <TableCellActions>
-              <TooltipIconButton
-                icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
-                label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
-                onClick={() => onCopy(key.key, copyTag)}
-              />
-              <Menu>
-                <MenuTrigger disableButtonEnhancement>
-                  <Button appearance="subtle" aria-label={t('dashboard.apiKeys.actions.more', { name: key.name })} icon={<MoreHorizontalRegular />} />
-                </MenuTrigger>
-                <MenuPopover>
-                  <MenuList>
-                    <MenuItem icon={<EditRegular />} onClick={() => onEdit(key)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
-                    <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
-                    <MenuItem icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
-                  </MenuList>
-                </MenuPopover>
-              </Menu>
-            </TableCellActions>
-          </>;
-        },
+        renderCell: key => <>
+          {key.last_used_at
+            ? <span title={dateTime(key.last_used_at)}>
+                {relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })}
+              </span>
+            : <span>{t('dashboard.apiKeys.table.never')}</span>}
+          <RowActions
+            apiKey={key}
+            copiedTag={copiedTag}
+            copyFailedTag={copyFailedTag}
+            onCopy={onCopy}
+            onDelete={onDelete}
+            onEdit={onEdit}
+            onRotate={onRotate}
+          />
+        </>,
       }),
     ],
     [copiedTag, copyFailedTag, onCopy, onDelete, onEdit, onRotate, s, t, upstreamById],
@@ -166,6 +153,46 @@ export function KeysTable({
 
 const truncateKey = (key: string) =>
   key.length <= 14 ? key : `${key.slice(0, 7)}...${key.slice(-4)}`;
+
+// Row actions ride in TableCellActions, which Fluent keeps at opacity 0 until
+// the row is hovered or holds focus. An open menu portals its popover out of
+// the row, so without pinning the actions visible the trigger fades out from
+// under its own menu as soon as the pointer travels to a menu item.
+function RowActions({ apiKey, copiedTag, copyFailedTag, onCopy, onDelete, onEdit, onRotate }: {
+  apiKey: ApiKey;
+  copiedTag: string | null;
+  copyFailedTag: string | null;
+  onCopy: (text: string, tag: string) => void;
+  onDelete: (key: ApiKey) => void;
+  onEdit: (key: ApiKey) => void;
+  onRotate: (key: ApiKey) => void;
+}) {
+  const { t } = useTranslation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const copyTag = `key-${apiKey.id}`;
+
+  return (
+    <TableCellActions visible={menuOpen}>
+      <TooltipIconButton
+        icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
+        label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
+        onClick={() => onCopy(apiKey.key, copyTag)}
+      />
+      <Menu onOpenChange={(_, data) => setMenuOpen(data.open)} open={menuOpen}>
+        <MenuTrigger disableButtonEnhancement>
+          <Button appearance="subtle" aria-label={t('dashboard.apiKeys.actions.more', { name: apiKey.name })} icon={<MoreHorizontalRegular />} />
+        </MenuTrigger>
+        <MenuPopover>
+          <MenuList>
+            <MenuItem icon={<EditRegular />} onClick={() => onEdit(apiKey)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
+            <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(apiKey)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
+            <MenuItem icon={<DeleteRegular />} onClick={() => onDelete(apiKey)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
+          </MenuList>
+        </MenuPopover>
+      </Menu>
+    </TableCellActions>
+  );
+}
 
 const upstreamsText = (
   key: ApiKey,
