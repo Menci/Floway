@@ -13,7 +13,7 @@ test('normalizeDomainEntry rejects empty, whitespace-only, single-label, or non-
   assertEquals(normalizeDomainEntry(''), null);
   assertEquals(normalizeDomainEntry('   '), null);
   assertEquals(normalizeDomainEntry('localhost'), null);
-  // Query-operator smuggling (the original Microsoft Grounding regression).
+  // Query-operator smuggling (the original Microsoft Web IQ regression).
   assertEquals(normalizeDomainEntry('example.com OR site:evil.com'), null);
   assertEquals(normalizeDomainEntry('bad.com test'), null);
   assertEquals(normalizeDomainEntry('https://example.com'), null);
@@ -34,7 +34,7 @@ test('normalizeDomainList drops invalid entries and keeps valid ones in order', 
 
 // Cross-site parity: the same input must be treated identically by the
 // local URL-allowed filter, the Tavily request builder, and the
-// Microsoft Grounding query builder. All three route through these
+// Microsoft Web IQ query builder. All three route through these
 // helpers; this test pins down the contract.
 test('normalizeDomainEntry parity contract for the three call sites', () => {
   const input = '  Example.COM  ';

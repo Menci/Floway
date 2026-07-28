@@ -57,7 +57,7 @@ const formatUserLocation = (loc: NonNullable<WebSearchFilters['userLocation']>):
 
 // The injected function mirrors the complete command object accepted by
 // OpenAI's alpha-search endpoint. Alpha passthrough can execute every field;
-// local Tavily, Jina, and Microsoft Grounding execution rejects the fields it
+// local Tavily, Jina, and Microsoft Web IQ execution rejects the fields it
 // cannot implement before dispatch.
 // https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L31-L213
 export const buildShimFunctionTool = (

@@ -13,14 +13,17 @@ import {
   type WebSearchProviderResult,
 } from '../types.ts';
 
-const MICROSOFT_GROUNDING_SEARCH_URL = 'https://api.microsoft.ai/v3/search/web';
-// Grounding `browse` API is single-URL; we issue Promise.all over the batch.
+// Microsoft publishes api.microsoft.ai/v3 as Web IQ's REST API base.
+// https://webiq.microsoft.ai/documentation/quick-start/
+const MICROSOFT_WEB_IQ_SEARCH_URL = 'https://api.microsoft.ai/v3/search/web';
+// Microsoft Web IQ's `browse` API is single-URL; we issue Promise.all over the batch.
 // Per-iteration concurrency is naturally bounded by the shim's iteration cap
 // (~30) and the model's parallel call count (≤4 in practice).
-const MICROSOFT_GROUNDING_BROWSE_URL = 'https://api.microsoft.ai/v3/browse';
+// https://webiq.microsoft.ai/documentation/quick-start/
+const MICROSOFT_WEB_IQ_BROWSE_URL = 'https://api.microsoft.ai/v3/browse';
 
 const toMicrosoftQuery = (request: WebSearchProviderRequest, query: string) => {
-  // Microsoft Grounding has no allow/block-domain fields, so domain
+  // Microsoft Web IQ has no allow/block-domain fields, so domain
   // policy is biased through `site:` / `-site:` operators. Best-effort,
   // not strict. Smuggled query fragments (e.g. `example.com OR
   // site:evil.com`) get rejected at normalization.
@@ -63,7 +66,7 @@ type BrowseOutcome =
 
 const browseOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, signal?: AbortSignal): Promise<BrowseOutcome> => {
   try {
-    const response = await fetchWithRetry(() => httpFetch(MICROSOFT_GROUNDING_BROWSE_URL, {
+    const response = await fetchWithRetry(() => httpFetch(MICROSOFT_WEB_IQ_BROWSE_URL, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -79,7 +82,7 @@ const browseOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string
       ...(signal !== undefined ? { signal } : {}),
     }), signal);
 
-    // Grounding returns 202 with `retryAfter` when the page isn't
+    // Microsoft Web IQ returns 202 with `retryAfter` when the page isn't
     // cached and a live crawl was kicked off. Don't poll — Workers
     // can't afford the budget and re-issuing from the next model turn
     // is fine.
@@ -94,7 +97,7 @@ const browseOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string
 
     const payload = await response.json();
     if (!isJsonObject(payload) || typeof payload.url !== 'string') {
-      return { kind: 'fail', url, httpStatus: response.status, message: 'Microsoft Grounding browse returned an unexpected payload.' };
+      return { kind: 'fail', url, httpStatus: response.status, message: 'Microsoft Web IQ browse returned an unexpected payload.' };
     }
     return {
       kind: 'ok',
@@ -112,7 +115,7 @@ const browseOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string
   }
 };
 
-export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?: { fetch?: typeof fetch }): WebSearchProvider => {
+export const createMicrosoftWebIqWebSearchProvider = (apiKey: string, deps?: { fetch?: typeof fetch }): WebSearchProvider => {
   const httpFetch = deps?.fetch ?? fetch;
 
   const search = async (request: WebSearchProviderRequest): Promise<WebSearchProviderResult> => {
@@ -133,7 +136,7 @@ export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?:
     }
 
     try {
-      const response = await fetchWithRetry(() => httpFetch(MICROSOFT_GROUNDING_SEARCH_URL, {
+      const response = await fetchWithRetry(() => httpFetch(MICROSOFT_WEB_IQ_SEARCH_URL, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -146,12 +149,12 @@ export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?:
       if (response.ok) {
         const payload = await response.json();
         // Unexpected payload shape is a backend contract violation;
-        // returning empty results would mask a real Grounding outage.
+        // returning empty results would mask a real Microsoft Web IQ outage.
         if (!isJsonObject(payload) || !Array.isArray(payload.webResults)) {
           return {
             type: 'error',
             errorCode: 'unavailable',
-            message: 'Microsoft Grounding returned an unexpected payload shape; check provider status.',
+            message: 'Microsoft Web IQ returned an unexpected payload shape; check provider status.',
           };
         }
         const results = payload.webResults.map(normalizeResult).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -168,7 +171,7 @@ export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?:
         return {
           type: 'error',
           errorCode: httpStatusToErrorCode(response.status),
-          message: message ?? 'Microsoft Grounding rate limited the request.',
+          message: message ?? 'Microsoft Web IQ rate limited the request.',
         };
       }
 
@@ -176,7 +179,7 @@ export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?:
         return {
           type: 'error',
           errorCode: httpStatusToErrorCode(response.status),
-          message: message ?? 'Microsoft Grounding rejected the search query.',
+          message: message ?? 'Microsoft Web IQ rejected the search query.',
         };
       }
 
@@ -184,20 +187,20 @@ export const createMicrosoftGroundingWebSearchProvider = (apiKey: string, deps?:
         return {
           type: 'error',
           errorCode: httpStatusToErrorCode(response.status),
-          message: message ?? 'Microsoft Grounding rejected the request as too large.',
+          message: message ?? 'Microsoft Web IQ rejected the request as too large.',
         };
       }
 
       return {
         type: 'error',
         errorCode: httpStatusToErrorCode(response.status),
-        message: message ?? 'Microsoft Grounding search failed.',
+        message: message ?? 'Microsoft Web IQ search failed.',
       };
     } catch (error) {
       return {
         type: 'error',
         errorCode: 'unavailable',
-        message: error instanceof Error ? error.message : 'Microsoft Grounding search failed.',
+        message: error instanceof Error ? error.message : 'Microsoft Web IQ search failed.',
       };
     }
   };

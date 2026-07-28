@@ -23,7 +23,7 @@ import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 const defaultSearchConfig: SearchConfig = {
   provider: 'disabled',
   tavily: { apiKey: '' },
-  microsoftGrounding: { apiKey: '' },
+  microsoftWebIq: { apiKey: '' },
   jina: { apiKey: '' },
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };

@@ -5,26 +5,27 @@ import type { WebSearchConfig } from '../../../../src/data-plane/tools/web-searc
 import { initRepo } from '../../../../src/repo/index.ts';
 import { SqlRepo } from '../../../../src/repo/sql.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { createSqliteTestDb } from '../../../repo/test-sqlite.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
 interface WebSearchConfigRow {
   provider: string;
   tavily_api_key: string;
-  microsoft_grounding_api_key: string;
+  microsoft_web_iq_api_key: string;
   jina_api_key: string;
   passthrough_openai_search: number;
   alpha_search_upstream_id: string;
   alpha_search_model: string;
 }
 
-const SELECT_SQL = 'SELECT provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1';
-const UPSERT_SQL = `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
+const SELECT_SQL = 'SELECT provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1';
+const UPSERT_SQL = `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
          VALUES (1, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            tavily_api_key = excluded.tavily_api_key,
-           microsoft_grounding_api_key = excluded.microsoft_grounding_api_key,
+           microsoft_web_iq_api_key = excluded.microsoft_web_iq_api_key,
            jina_api_key = excluded.jina_api_key,
            passthrough_openai_search = excluded.passthrough_openai_search,
            alpha_search_upstream_id = excluded.alpha_search_upstream_id,
@@ -58,7 +59,7 @@ class FakeSqlPreparedStatement {
       this.db.webSearchConfig = {
         provider: String(this.binds[0]),
         tavily_api_key: String(this.binds[1]),
-        microsoft_grounding_api_key: String(this.binds[2]),
+        microsoft_web_iq_api_key: String(this.binds[2]),
         jina_api_key: String(this.binds[3]),
         passthrough_openai_search: Number(this.binds[4]),
         alpha_search_upstream_id: String(this.binds[5]),
@@ -90,7 +91,7 @@ test('search config repo defaults to disabled and round-trips provider keys', as
   await saveWebSearchConfig({
     provider: 'tavily',
     tavily: { apiKey: 'tvly-test' },
-    microsoftGrounding: { apiKey: 'ms-test' },
+    microsoftWebIq: { apiKey: 'ms-test' },
     jina: { apiKey: 'jina-test' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -98,7 +99,7 @@ test('search config repo defaults to disabled and round-trips provider keys', as
   assertEquals(await loadWebSearchConfig(), {
     provider: 'tavily',
     tavily: { apiKey: 'tvly-test' },
-    microsoftGrounding: { apiKey: 'ms-test' },
+    microsoftWebIq: { apiKey: 'ms-test' },
     jina: { apiKey: 'jina-test' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -112,7 +113,7 @@ test('loadWebSearchConfig strict-parses a stored row and rejects unknown provide
   await repo.webSearchConfig.save({
     provider: 'unknown-provider',
     tavily: { apiKey: '  tvly-test  ' },
-    microsoftGrounding: { apiKey: '  ms-test  ' },
+    microsoftWebIq: { apiKey: '  ms-test  ' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   } as unknown as WebSearchConfig);
@@ -127,7 +128,7 @@ test('loadWebSearchConfig strict-parses a stored row and trims valid api keys', 
   await repo.webSearchConfig.save({
     provider: 'jina',
     tavily: { apiKey: '  tvly-trim  ' },
-    microsoftGrounding: { apiKey: '  ms-trim  ' },
+    microsoftWebIq: { apiKey: '  ms-trim  ' },
     jina: { apiKey: '  jina-trim  ' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -135,7 +136,7 @@ test('loadWebSearchConfig strict-parses a stored row and trims valid api keys', 
   assertEquals(await loadWebSearchConfig(), {
     provider: 'jina',
     tavily: { apiKey: 'tvly-trim' },
-    microsoftGrounding: { apiKey: 'ms-trim' },
+    microsoftWebIq: { apiKey: 'ms-trim' },
     jina: { apiKey: 'jina-trim' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -155,15 +156,15 @@ test('parseWebSearchConfigStrict throws on missing required fields', () => {
   assertThrows(
     () => parseWebSearchConfigStrict({ provider: 'disabled', tavily: { apiKey: '' } }),
     Error,
-    'microsoftGrounding',
+    'microsoftWebIq',
   );
   assertThrows(
-    () => parseWebSearchConfigStrict({ provider: 'disabled', tavily: {}, microsoftGrounding: { apiKey: '' }, jina: { apiKey: '' } }),
+    () => parseWebSearchConfigStrict({ provider: 'disabled', tavily: {}, microsoftWebIq: { apiKey: '' }, jina: { apiKey: '' } }),
     Error,
     'tavily.apiKey',
   );
   assertThrows(
-    () => parseWebSearchConfigStrict({ provider: 'disabled', tavily: { apiKey: '' }, microsoftGrounding: { apiKey: '' } }),
+    () => parseWebSearchConfigStrict({ provider: 'disabled', tavily: { apiKey: '' }, microsoftWebIq: { apiKey: '' } }),
     Error,
     'jina',
   );
@@ -183,7 +184,7 @@ test('saveWebSearchConfig writes the typed columns and round-trips through the s
   const saved = await saveWebSearchConfig({
     provider: 'disabled',
     tavily: { apiKey: '  tvly-test  ' },
-    microsoftGrounding: { apiKey: '  ms-test  ' },
+    microsoftWebIq: { apiKey: '  ms-test  ' },
     jina: { apiKey: '  jina-test  ' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -191,14 +192,14 @@ test('saveWebSearchConfig writes the typed columns and round-trips through the s
   assertEquals(saved, {
     provider: 'disabled',
     tavily: { apiKey: 'tvly-test' },
-    microsoftGrounding: { apiKey: 'ms-test' },
+    microsoftWebIq: { apiKey: 'ms-test' },
     jina: { apiKey: 'jina-test' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
   assertEquals(db.webSearchConfig, {
     provider: 'disabled',
     tavily_api_key: 'tvly-test',
-    microsoft_grounding_api_key: 'ms-test',
+    microsoft_web_iq_api_key: 'ms-test',
     jina_api_key: 'jina-test',
     passthrough_openai_search: 0,
     alpha_search_upstream_id: '',
@@ -207,8 +208,38 @@ test('saveWebSearchConfig writes the typed columns and round-trips through the s
   assertEquals(await loadWebSearchConfig(), {
     provider: 'disabled',
     tavily: { apiKey: 'tvly-test' },
-    microsoftGrounding: { apiKey: 'ms-test' },
+    microsoftWebIq: { apiKey: 'ms-test' },
     jina: { apiKey: 'jina-test' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
+});
+
+test('current SQL schema round-trips Microsoft Web IQ configuration and usage', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb());
+  initRepo(repo);
+
+  const config: WebSearchConfig = {
+    provider: 'microsoft-web-iq',
+    tavily: { apiKey: '' },
+    microsoftWebIq: { apiKey: 'web-iq-test' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
+  };
+  await repo.webSearchConfig.save(config);
+  assertEquals(await loadWebSearchConfig(), config);
+
+  await repo.webSearchUsage.record({
+    provider: 'microsoft-web-iq',
+    keyId: 'key-a',
+    action: 'search',
+    hour: '2026-07-29T00',
+    requests: 2,
+  });
+  assertEquals(await repo.webSearchUsage.listAll(), [{
+    provider: 'microsoft-web-iq',
+    keyId: 'key-a',
+    action: 'search',
+    hour: '2026-07-29T00',
+    requests: 2,
+  }]);
 });

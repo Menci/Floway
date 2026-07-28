@@ -44,11 +44,11 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     set: (config, apiKey) => ({ ...config, tavily: { apiKey } }),
   },
   {
-    value: 'microsoft-grounding',
-    label: 'Microsoft Grounding',
-    description: 'Gateway-managed Microsoft Grounding key.',
-    apiKey: config => config.microsoftGrounding.apiKey,
-    set: (config, apiKey) => ({ ...config, microsoftGrounding: { apiKey } }),
+    value: 'microsoft-web-iq',
+    label: 'Microsoft Web IQ',
+    description: 'Gateway-managed Microsoft Web IQ key.',
+    apiKey: config => config.microsoftWebIq.apiKey,
+    set: (config, apiKey) => ({ ...config, microsoftWebIq: { apiKey } }),
   },
   {
     value: 'jina',

@@ -19,7 +19,7 @@ const JINA_READER_URL = 'https://r.jina.ai/';
 // `X-Max-Tokens` on s.jina.ai. Jina's default scrapes the full readability
 // markdown of each result page, which can run into double-digit KB; capping
 // to 500 tokens (~2 KB markdown) keeps each Jina result in the same size
-// ballpark as Microsoft Grounding's `passage` mode (~300-400 tokens) and
+// ballpark as Microsoft Web IQ's `passage` mode (~300-400 tokens) and
 // Tavily's `basic` mode (~100 tokens / ~400 chars). 500 is also Jina's
 // documented minimum — values below trigger `Rejected by validator (v) =>
 // v >= 500`. Verified against jina-ai/reader's `tokenTrim` call sites in
@@ -80,7 +80,7 @@ const normalizeSearchResult = (value: unknown): Extract<WebSearchProviderResult,
   // `content` is the readability-extracted markdown (when present, capped to
   // JINA_SEARCH_MAX_TOKENS_PER_RESULT by `X-Max-Tokens`); `description` is
   // the SERP-level snippet that Jina always returns. Prefer the former, fall
-  // back to the latter — matches what Tavily and Microsoft Grounding hand
+  // back to the latter — matches what Tavily and Microsoft Web IQ hand
   // back as result-level `content`.
   const text = entry.content ?? entry.description ?? '';
   return {
@@ -200,7 +200,7 @@ export const createJinaWebSearchProvider = (apiKey: string, deps?: { fetch?: typ
       if (!response.ok) {
         // Jina returns "no results" as an HTTP 4xx with
         // `AssertionFailureError`. Surface that as an empty result list
-        // instead of a hard error, matching how Tavily and Grounding
+        // instead of a hard error, matching how Tavily and Microsoft Web IQ
         // hand back an empty `results` array on no hits.
         if (envelope !== null && isAssertionEmptyResults(envelope)) {
           return { type: 'ok', results: [] };
@@ -243,7 +243,7 @@ export const createJinaWebSearchProvider = (apiKey: string, deps?: { fetch?: typ
     const outcomes = await Promise.all(request.urls.map(url => readOneUrl(httpFetch, apiKey, url, request.signal)));
 
     // Whole-batch transport / 5xx failure collapses into one envelope —
-    // mirrors Microsoft Grounding's policy. Per-URL 4xx stays granular so
+    // mirrors Microsoft Web IQ's policy. Per-URL 4xx stays granular so
     // a single bad target doesn't poison the rest of the batch.
     const allHardFail = outcomes.every(outcome => outcome.kind === 'fail' && (outcome.httpStatus === 0 || outcome.httpStatus >= 500));
     if (allHardFail) {

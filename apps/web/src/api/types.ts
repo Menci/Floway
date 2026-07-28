@@ -355,9 +355,9 @@ export interface ControlPlaneModel extends PublicModel {
 }
 
 export interface SearchConfig {
-  provider: 'disabled' | 'tavily' | 'microsoft-grounding' | 'jina';
+  provider: 'disabled' | 'tavily' | 'microsoft-web-iq' | 'jina';
   tavily: { apiKey: string };
-  microsoftGrounding: { apiKey: string };
+  microsoftWebIq: { apiKey: string };
   jina: { apiKey: string };
   passthroughOpenAiSearch: { enabled: boolean; upstreamId: string; model: string };
 }

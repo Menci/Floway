@@ -16,7 +16,7 @@ const { default: SearchConfigSection } = await import('../../../src/components/s
 const config: SearchConfig = {
   provider: 'tavily',
   tavily: { apiKey: 'key' },
-  microsoftGrounding: { apiKey: '' },
+  microsoftWebIq: { apiKey: '' },
   jina: { apiKey: '' },
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
