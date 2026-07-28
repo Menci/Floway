@@ -2,6 +2,7 @@ import {
   AddRegular,
   ArrowSyncRegular,
   CheckmarkCircleRegular,
+  CodeRegular,
   CopyRegular,
   EditRegular,
   WarningRegular,
@@ -14,10 +15,11 @@ import type { UpstreamEditorValues } from './editor-data';
 import { publicModelId } from './editor-data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
+import { parseModels, serializeModels } from './models-json';
 import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { formatFullTime, formatRelativeTime } from '../requests/format';
-import { Input } from '../ui/fluent-form-controls';
+import { Input, Textarea } from '../ui/fluent-form-controls';
 import type { Flag } from '@floway-dev/provider/flags';
 
 const {
@@ -95,7 +97,9 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
   const manual = useWatch({ control, name: 'manualModels' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
-  const [view, setView] = useState<'list' | 'detail'>('list');
+  const [view, setView] = useState<'list' | 'detail' | 'json'>('list');
+  const [json, setJson] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [pendingManualId, setPendingManualId] = useState<string | null>(null);
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
@@ -147,6 +151,39 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
     }
   };
 
+  if (view === 'json') {
+    // Leaving JSON mode has to validate first; refusing to leave on a parse
+    // error is what keeps the operator's unsaved text on screen.
+    const applyAndLeave = () => {
+      const parsed = parseModels(json, { allowRerank: record.kind === 'custom' });
+      if (!parsed.ok) { setJsonError(parsed.message); return; }
+      setValue('manualModels', parsed.models, { shouldDirty: true, shouldTouch: true });
+      setJsonError(null);
+      setView('list');
+    };
+    return <div className="grid gap-4 min-w-0">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="grid gap-0.5">
+          <Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.jsonTitle')}</Text>
+          <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.jsonHint')}</Text>
+        </div>
+        <Button appearance="primary" className="ml-auto" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
+          {t('dashboard.upstreamEditor.models.editWithUi')}
+        </Button>
+      </div>
+      <Textarea
+        aria-label={t('dashboard.upstreamEditor.models.jsonTitle')}
+        className="!w-full font-mono"
+        resize="vertical"
+        rows={20}
+        spellCheck={false}
+        value={json}
+        onChange={(_, data) => { setJson(data.value); setJsonError(null); }}
+      />
+      {jsonError && <MessageBar intent="error"><MessageBarBody>{jsonError}</MessageBarBody></MessageBar>}
+    </div>;
+  }
+
   if (view === 'detail' && activeDetailRow) return <ModelDetail row={activeDetailRow} readOnly={readOnly} onBack={() => setView('list')} onDelete={() => { if (activeDetailRow.manualIndex !== null) remove(activeDetailRow.manualIndex); setView('list'); }} onSourceChange={source => setModelSource(activeDetailRow, source)} onUpdate={value => {
     if (activeDetailRow.manualIndex === null) return;
     setValue(`manualModels.${activeDetailRow.manualIndex}`, value, {
@@ -160,6 +197,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
       <div className="grid gap-0.5"><Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.title')}</Text><Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}</Text></div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {!readOnly && <Button icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
+        {!readOnly && <Button icon={<CodeRegular />} onClick={() => { setJson(serializeModels(manual)); setJsonError(null); setView('json'); }}>{t('dashboard.upstreamEditor.models.editAsJson')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
           <Button disabled={loading} icon={loading ? <Spinner size="tiny" /> : <ArrowSyncRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
