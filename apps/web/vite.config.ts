@@ -35,6 +35,7 @@ const wranglerOrigin = 'http://127.0.0.1:8788';
 const wranglerProxiedPaths = [
   '/api',
   '/auth',
+  '/favicon.ico',
   '/v1',
   '/v2',
   '/v1beta',
