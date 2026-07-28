@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from './codex-credential-snippets';
 import { buildAgentModelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform';
+import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from './codex-credential-snippets';
 import { agentSetupCommand, defaultAgentSetupConfiguration, useAgentSetup, type AgentSetupConfiguration } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
@@ -52,13 +52,16 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selec
   const localDraftBaseline = useRef(cloneConfiguration(localDraft));
   const appliedLease = useRef<string | null>(null);
   const setup = useAgentSetup(selectedKey?.id ?? null);
+  const setupDraft = setup.draft;
+  const setupLease = setup.lease;
+  const updateSetupDraft = setup.updateDraft;
 
   useEffect(() => {
-    if (!selectedKey || !setup.lease || !setup.draft) return;
-    const leaseKey = `${selectedKey.id}:${setup.lease.token}`;
+    if (!selectedKey || !setupLease || !setupDraft) return;
+    const leaseKey = `${selectedKey.id}:${setupLease.token}`;
     if (appliedLease.current === leaseKey) return;
     appliedLease.current = leaseKey;
-    setup.updateDraft(current => {
+    updateSetupDraft(current => {
       const merged = cloneConfiguration(current);
       copyChangedFields(merged.claudeCode, localDraft.claudeCode, localDraftBaseline.current.claudeCode);
       copyChangedFields(merged.codex, localDraft.codex, localDraftBaseline.current.codex);
@@ -66,11 +69,11 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selec
       return merged;
     });
     localDraftBaseline.current = cloneConfiguration(localDraft);
-  }, [localDraft, selectedKey, setup.draft, setup.lease, setup.updateDraft]);
+  }, [localDraft, selectedKey, setupDraft, setupLease, updateSetupDraft]);
 
-  const activeDraft = selectedKey && setup.draft ? setup.draft : localDraft;
+  const activeDraft = selectedKey && setupDraft ? setupDraft : localDraft;
   const updateConfiguration = (update: (current: AgentSetupConfiguration) => AgentSetupConfiguration) => {
-    if (selectedKey && setup.draft) setup.updateDraft(update);
+    if (selectedKey && setupDraft) updateSetupDraft(update);
     else setLocalDraft(current => update(cloneConfiguration(current)));
   };
 
