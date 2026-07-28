@@ -165,7 +165,7 @@ const en = {
           title: 'Base URL and authentication',
           description: 'Use an API key created under Services → API Keys.',
           baseUrl: 'Base URL',
-          warning: 'Dashboard session tokens and ADMIN_KEY are not data-plane credentials. Browser WebSocket clients may use ?key= because the handshake cannot set arbitrary headers.',
+          warning: 'Dashboard session tokens and ADMIN_KEY are not data-plane credentials.',
         },
         groups: { models: 'Model discovery', generation: 'Text and multimodal generation', media: 'Embeddings, images, and audio', rerank: 'Rerank protocols', search: 'Codex search' },
         endpointNames: {
