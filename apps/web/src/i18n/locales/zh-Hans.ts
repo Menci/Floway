@@ -111,7 +111,7 @@ const zhHansCN = {
         settings: { connection: '连接', generation: '生成参数', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
         parameters: {
-          reasoningEffort: '推理强度',
+          reasoningEffort: '思考强度',
           providerDefault: 'Provider 默认值',
         },
         badges: {
@@ -124,19 +124,19 @@ const zhHansCN = {
           selection: '选择策略：{{selection}}',
           selectionValues: { firstAvailable: '首个可用', random: '随机' },
           rules: {
-            reasoningEffort: '推理强度：{{value}}',
-            reasoningBudget: '推理预算：{{value}} token',
-            adaptive: '自适应推理',
-            nonAdaptive: '非自适应推理',
-            reasoningSummary: '推理摘要：{{value}}',
+            reasoningEffort: '思考强度：{{value}}',
+            reasoningBudget: '思考预算：{{value}} token',
+            adaptive: '自适应思考',
+            nonAdaptive: '非自适应思考',
+            reasoningSummary: '思考摘要：{{value}}',
             verbosity: '输出详细度：{{value}}',
             serviceTier: '服务层级：{{value}}',
           },
           ruleVaries: {
-            reasoningEffort: '推理强度因目标而异',
-            reasoningBudget: '推理预算因目标而异',
-            reasoningAdaptive: '自适应推理设置因目标而异',
-            reasoningSummary: '推理摘要设置因目标而异',
+            reasoningEffort: '思考强度因目标而异',
+            reasoningBudget: '思考预算因目标而异',
+            reasoningAdaptive: '自适应思考设置因目标而异',
+            reasoningSummary: '思考摘要设置因目标而异',
             verbosity: '输出详细度因目标而异',
             serviceTier: '服务层级因目标而异',
           },
@@ -392,7 +392,7 @@ const zhHansCN = {
           codexAuthHint: 'Linux 和 macOS：仅在 CODEX_HOME 下保存 Floway provider token。',
           codexWindowsAuthHint: 'Windows PowerShell：保存相同 token，不修改官方账号登录。',
         },
-        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后数分钟过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '推理强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
+        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后数分钟过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
         rotate: {
           title: '轮换 API 密钥',
           message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',
@@ -575,12 +575,12 @@ const zhHansCN = {
             'vendor-deepseek': {
               label: 'DeepSeek 兼容',
               description:
-                  'DeepSeek 的“OpenAI 兼容 API”在推理字段和结构化输出等方面采用了非标准格式。\n开启此开关，以在 OpenAI 规范格式与 DeepSeek 非标准格式之间双向转换请求和响应，包括转换推理开关 (`thinking`) 与推理内容 (`reasoning_text`)、归一化缓存 Token 用量，以及将不支持的 `json_schema` 格式化模式降级为 `json_object`。\n当上游为 **DeepSeek chat completions API** 时应开启。',
+                  'DeepSeek 的“OpenAI 兼容 API”在思考字段和结构化输出等方面采用了非标准格式。\n开启此开关，以在 OpenAI 规范格式与 DeepSeek 非标准格式之间双向转换请求和响应，包括转换思考开关 (`thinking`) 与思考内容 (`reasoning_text`)、归一化缓存 Token 用量，以及将不支持的 `json_schema` 格式化模式降级为 `json_object`。\n当上游为 **DeepSeek chat completions API** 时应开启。',
             },
             'vendor-qwen': {
               label: '阿里云百炼兼容',
               description:
-                  '阿里云百炼的“OpenAI 兼容 - Chat API”在禁用推理的控制方式上采用了非标准格式。\n开启此开关，以将 OpenAI 规范格式中的“禁用推理”请求 (`reasoning_effort: "none"`) 转换为 Qwen 使用的顶层字段 (`enable_thinking: false`)。\n当上游为**阿里云百炼（Qwen）chat completions API** 时应开启。',
+                  '阿里云百炼的“OpenAI 兼容 - Chat API”在禁用思考的控制方式上采用了非标准格式。\n开启此开关，以将 OpenAI 规范格式中的“禁用思考”请求 (`reasoning_effort: "none"`) 转换为 Qwen 使用的顶层字段 (`enable_thinking: false`)。\n当上游为**阿里云百炼（Qwen）chat completions API** 时应开启。',
             },
             'vendor-kimi': {
               label: 'Kimi 兼容',
@@ -613,9 +613,9 @@ const zhHansCN = {
                   'Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 Responses API 时，此开关被视为开启。',
             },
             'disable-reasoning-on-forced-tool-choice': {
-              label: '强制工具调用时禁用推理',
+              label: '强制工具调用时禁用思考',
               description:
-                  '部分上游不支持同时开启“强制工具调用”和推理模式，会直接拒绝此类请求。\n开启此开关后，当调用方通过 `tool_choice` 强制指定某个工具时，Floway 会在转发请求时**关闭推理模式**。',
+                  '部分上游不支持同时开启“强制工具调用”和思考模式，会直接拒绝此类请求。\n开启此开关后，当调用方通过 `tool_choice` 强制指定某个工具时，Floway 会在转发请求时**关闭思考模式**。',
             },
             'demote-interleaved-system-to-user': {
               label: '改写行内 system 角色',
@@ -685,12 +685,12 @@ const zhHansCN = {
           promptTokens: 'Prompt Token',
           outputTokens: '输出 Token',
           imageInput: '图像输入',
-          reasoning: '推理',
-          effortLevels: '推理强度',
+          reasoning: '思考',
+          effortLevels: '思考强度',
           customEffortPlaceholder: '自定义...',
-          budgetTokens: '推理 Token 预算',
+          budgetTokens: '思考 Token 预算',
           adaptive: '自适应',
-          mandatory: '强制推理',
+          mandatory: '强制思考',
           minimum: '最小值',
           maximum: '最大值',
           pricing: '定价',
@@ -736,10 +736,10 @@ const zhHansCN = {
           flagsHint: '模型覆盖默认采用上游的最终设置。',
           enableFlagOverrides: '为此模型覆盖特性开关',
           invalidEffort:
-              '推理强度至少需要一个支持值，且默认值必须包含在支持列表中。',
-          invalidBudget: '最大推理 Token 预算不能小于最小值。',
+              '思考强度至少需要一个支持值，且默认值必须包含在支持列表中。',
+          invalidBudget: '最大思考 Token 预算不能小于最小值。',
           invalidContract: '模型 ID、类型、端点与 Rerank 目标必须组成有效的模型配置。',
-          removeEffort: '移除 {{level}} 推理强度',
+          removeEffort: '移除 {{level}} 思考强度',
           delete: '删除手动模型',
         },
         copilot: {
@@ -1046,10 +1046,10 @@ const zhHansCN = {
         form: { name: '别名 ID', namePlaceholder: 'my-alias-id', displayName: '显示名称', displayPlaceholder: '可选显示名称', kind: '类型', selection: '选择策略', visible: '在 /v1/models 中可见' },
         kind: { 'chat': '对话', 'embedding': '嵌入', 'image': '图像', 'rerank': '重排', 'transcription': '转录' }, selection: { first: '首个可用', random: '随机' }, visibility: { visible: '可见', hidden: '隐藏' },
         target: { heading: '模型', description: '使用“首个可用”时将按顺序尝试目标。可选择建议或输入任意模型 ID。', label: '目标 {{number}}', modelId: '目标模型 ID', placeholder: '目标模型 ID', toggle: '展开目标规则', moveUp: '上移目标', moveDown: '下移目标', remove: '移除目标', count_one: '{{count}} 个目标', count_other: '{{count}} 个目标' },
-        rules: { effort: '推理强度', budget: '推理预算 token', adaptive: '自适应推理', adaptiveAuto: '自动（遵循模型）', adaptiveOn: '开启（强制自适应）', adaptiveOff: '关闭（强制非自适应）', summary: '推理摘要', verbosity: '详细程度', serviceTier: '服务等级' },
-        metadata: { heading: '声明元数据', description: '/v1/models 为此别名报告的能力。', manual: '手动', limits: 'Token 限制', context: '上下文窗口', prompt: '提示 token', output: '输出 token', modalities: '模态', imageInput: '图像输入', reasoning: '推理', effortEnabled: '强度级别', budgetEnabled: '预算 token', adaptive: '自适应', mandatory: '强制推理', efforts: '支持的强度', effortsHint: '使用逗号分隔；保留顺序。', defaultEffort: '默认强度', minBudget: '最小预算', maxBudget: '最大预算' },
-        warnings: { label: '别名警告', shadow: '别名 ID 会遮蔽真实模型 {{id}} {{display}}。', noTarget: '当前没有目标可解析到此 gateway 上的模型。', unknownTarget: '{{id}} 当前无法解析到已启用模型。', wrongKind: '{{id}} 是 {{actual}} 模型，但此别名类型为 {{expected}}。', notAdvertisedEffort: '目标未声明推理强度能力。', unsupportedEffort: '目标声明的强度为：{{values}}。', adaptiveBudgetConflict: '自适应推理不能与固定预算同时使用。', notAdvertisedBudget: '目标未声明推理预算能力。', budgetBelow: '低于目标最小值（{{value}}）。', budgetAbove: '高于目标最大值（{{value}}）。', notAdvertisedAdaptive: '目标未声明自适应推理能力。', ruleAdvisory: '一项或多项规则可能不受此目标支持。' },
-        validation: { nameRequired: '请输入别名 ID。', duplicate: '已存在使用此 ID 的别名。', targetRequired: '每个目标都需要模型 ID。', budget: '推理预算必须是非负整数。', adaptiveBudget: '自适应推理不能与固定预算同时使用。', metadataNumber: '元数据 token 值必须是非负整数。', metadataRange: '最大预算必须大于或等于最小预算。' },
+        rules: { effort: '思考强度', budget: '思考预算 token', adaptive: '自适应思考', adaptiveAuto: '自动（遵循模型）', adaptiveOn: '开启（强制自适应）', adaptiveOff: '关闭（强制非自适应）', summary: '思考摘要', verbosity: '详细程度', serviceTier: '服务等级' },
+        metadata: { heading: '声明元数据', description: '/v1/models 为此别名报告的能力。', manual: '手动', limits: 'Token 限制', context: '上下文窗口', prompt: '提示 token', output: '输出 token', modalities: '模态', imageInput: '图像输入', reasoning: '思考', effortEnabled: '强度级别', budgetEnabled: '预算 token', adaptive: '自适应', mandatory: '强制思考', efforts: '支持的强度', effortsHint: '使用逗号分隔；保留顺序。', defaultEffort: '默认强度', minBudget: '最小预算', maxBudget: '最大预算' },
+        warnings: { label: '别名警告', shadow: '别名 ID 会遮蔽真实模型 {{id}} {{display}}。', noTarget: '当前没有目标可解析到此 gateway 上的模型。', unknownTarget: '{{id}} 当前无法解析到已启用模型。', wrongKind: '{{id}} 是 {{actual}} 模型，但此别名类型为 {{expected}}。', notAdvertisedEffort: '目标未声明思考强度能力。', unsupportedEffort: '目标声明的强度为：{{values}}。', adaptiveBudgetConflict: '自适应思考不能与固定预算同时使用。', notAdvertisedBudget: '目标未声明思考预算能力。', budgetBelow: '低于目标最小值（{{value}}）。', budgetAbove: '高于目标最大值（{{value}}）。', notAdvertisedAdaptive: '目标未声明自适应思考能力。', ruleAdvisory: '一项或多项规则可能不受此目标支持。' },
+        validation: { nameRequired: '请输入别名 ID。', duplicate: '已存在使用此 ID 的别名。', targetRequired: '每个目标都需要模型 ID。', budget: '思考预算必须是非负整数。', adaptiveBudget: '自适应思考不能与固定预算同时使用。', metadataNumber: '元数据 token 值必须是非负整数。', metadataRange: '最大预算必须大于或等于最小预算。' },
         delete: { title: '删除别名', message: '删除别名 {{name}}？此操作无法撤销。' }, errors: { load: '无法加载别名。', message: '无法完成别名操作：{{message}}', models: '模型目录不可用：{{message}}' },
       },
       proxy: {
