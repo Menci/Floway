@@ -24,7 +24,7 @@ import type {
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
-import { ProviderIcon } from '../upstreams/provider-badge';
+import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
 
 const {
   Button,
@@ -33,6 +33,7 @@ const {
   Link,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Option,
   Spinner,
   Switch,
@@ -288,6 +289,19 @@ function EndpointPicker() {
   </div>;
 }
 
+// An upstream that has just been authorised but not yet saved has no id, and
+// the catalog endpoint keys off one — so the panel says what the next step is
+// rather than leaving an empty model list to be interpreted.
+const ReadyToSaveHint = ({ kind }: { kind: UpstreamProviderKind }) => {
+  const { t } = useTranslation();
+  return <MessageBar intent="info">
+    <MessageBarBody>
+      <MessageBarTitle>{t('dashboard.upstreamEditor.readyToSave.title')}</MessageBarTitle>
+      {t('dashboard.upstreamEditor.readyToSave.description', { provider: providerLabel(kind) })}
+    </MessageBarBody>
+  </MessageBar>;
+};
+
 function CopilotConfig({ record, onPatch }: {
   record: Extract<UpstreamRecord, { kind: 'copilot' }>;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
@@ -324,7 +338,7 @@ function CopilotConfig({ record, onPatch }: {
   if (config.user?.login) {
     return <div className="grid gap-3">
       <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`@${config.user.login}`} />
-      <CopilotQuotaCard record={record} />
+      {record.id === '' ? <ReadyToSaveHint kind="copilot" /> : <CopilotQuotaCard record={record} />}
     </div>;
   }
   return <div className="grid gap-3">
@@ -425,6 +439,7 @@ function OAuthConfig({ record, onPatch }: {
     {hasAccount && (record.kind === 'codex'
       ? <AccountSummary kind="codex" title={(config as Extract<UpstreamRecord, { kind: 'codex' }>['config']).accounts[0].email} subtitle={(config as Extract<UpstreamRecord, { kind: 'codex' }>['config']).accounts[0].planType} />
       : <AccountSummary kind="claude-code" title={(config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config']).accounts[0].email ?? (config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config']).accounts[0].accountUuid.slice(0, 8)} subtitle={(config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config']).accounts[0].subscriptionType ?? 'Claude Code'} />)}
+    {hasAccount && record.id === '' && <ReadyToSaveHint kind={record.kind} />}
     {hasAccount && <div className="flex flex-wrap items-center gap-2">
       <Button appearance="primary" disabled={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
         {refreshing ? t('dashboard.upstreamEditor.oauth.refreshing') : t('dashboard.upstreamEditor.oauth.refresh')}

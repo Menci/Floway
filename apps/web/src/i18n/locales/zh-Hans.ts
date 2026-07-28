@@ -271,6 +271,7 @@ const zhHansCN = {
           customKey: '自定义 API 密钥',
           customKeyPlaceholder: '粘贴自定义 API 密钥',
           retention: '记录请求转储',
+          viewCapturedRequests: '查看已捕获的请求 →',
           responsesRetention: 'Stateful Responses 保留',
           responsesRetentionHint: '该 key 的 Responses 条目可被后续请求按 id 引用的时长。关闭表示不做持久化。',
           retentionHint:
@@ -416,6 +417,10 @@ const zhHansCN = {
         },
       },
       upstreamEditor: {
+        readyToSave: {
+          title: '可以保存了',
+          description: '保存这个 {{provider}} 上游即可加载它的模型目录。',
+        },
         new: '新建上游',
         documentTitleNew: '新建上游',
         documentTitleEdit: '上游详情',

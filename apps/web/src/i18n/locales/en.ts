@@ -282,6 +282,7 @@ const en = {
           customKey: 'Custom API key',
           customKeyPlaceholder: 'Paste custom API key',
           retention: 'Request dump retention',
+          viewCapturedRequests: 'View captured requests →',
           responsesRetention: 'Stateful Responses retention',
           responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id. Off means nothing is persisted.',
           retentionHint:
@@ -437,6 +438,10 @@ const en = {
         },
       },
       upstreamEditor: {
+        readyToSave: {
+          title: 'Ready to save',
+          description: 'Save this {{provider}} upstream to load its model catalog.',
+        },
         new: 'New upstream',
         documentTitleNew: 'New upstream',
         documentTitleEdit: 'Upstream details',

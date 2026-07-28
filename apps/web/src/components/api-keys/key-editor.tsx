@@ -14,7 +14,7 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
-const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Link, Text } = fluentComponents;
 interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: RetentionValue }
 interface CreateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; responses_retention_seconds: number; key_source: KeySource; custom_key?: string }
 interface UpdateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; responses_retention_seconds: number }
@@ -253,6 +253,11 @@ export function KeyDialog({
           >
             {retentionWarning !== null && (
               <Text role="status" size={200} className="text-fui-fg2">{retentionWarning}</Text>
+            )}
+            {apiKey !== null && field.value !== null && field.value !== 'invalid' && (
+              <Link href={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
+                {t('dashboard.apiKeys.form.viewCapturedRequests')}
+              </Link>
             )}
           </RetentionField>
         )}
