@@ -56,7 +56,6 @@ export function UpstreamPicker({
   ids,
   onChange,
   override,
-  showTable,
 }: {
   available: UpstreamOption[];
   disabled: boolean;
@@ -64,7 +63,6 @@ export function UpstreamPicker({
   ids: string[];
   onChange: (value: { override: boolean; ids: string[] }) => void;
   override: boolean;
-  showTable: boolean;
 }) {
   const { t } = useTranslation();
   const s = useStyles();
@@ -86,7 +84,7 @@ export function UpstreamPicker({
         />
       </div>
       {error && <span className={`${s.fieldError} text-xs !m-0`}>{error}</span>}
-      {override && showTable && (
+      {override && (
         <UpstreamOverrideTable
           available={available}
           disabled={disabled}

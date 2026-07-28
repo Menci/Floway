@@ -1,5 +1,5 @@
 import { AddRegular, ArrowClockwiseRegular, DeleteRegular, EditRegular, WarningRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
@@ -33,8 +33,11 @@ export function meta({}: Route.MetaArgs) {
 export default function DashboardProvidersModelAliases() {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
-  const [aliases, setAliases] = useState<ModelAlias[]>([]);
-  const [models, setModels] = useState<ControlPlaneModel[] | null>(null);
+  const [catalog, setCatalog] = useState<{
+    aliases: ModelAlias[];
+    models: ControlPlaneModel[] | null;
+  }>({ aliases: [], models: null });
+  const { aliases, models } = catalog;
   const [loading, setLoading] = useState(user.isAdmin);
   const [error, setError] = useState<string | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -42,8 +45,6 @@ export default function DashboardProvidersModelAliases() {
   const [editing, setEditing] = useState<ModelAlias | null>(null);
   const [deleting, setDeleting] = useState<ModelAlias | null>(null);
   const [mutating, setMutating] = useState(false);
-  const dataRef = useRef({ aliases, models });
-  dataRef.current = { aliases, models };
 
   const load = useCallback(async () => {
     setError(null);
@@ -52,11 +53,12 @@ export default function DashboardProvidersModelAliases() {
       callApi<ModelAlias[]>(() => api.api.aliases.$get()),
       callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
     ]);
-    const next = mergeModelAliasesPageData(dataRef.current, aliasResult, modelResult);
-    setAliases(next.aliases);
-    setModels(next.models);
-    setError(next.aliasError);
-    setModelsError(next.modelsError);
+    setCatalog(current => {
+      const next = mergeModelAliasesPageData(current, aliasResult, modelResult);
+      return { aliases: next.aliases, models: next.models };
+    });
+    setError(aliasResult.error?.message ?? null);
+    setModelsError(modelResult.error?.message ?? null);
     setLoading(false);
   }, []);
 

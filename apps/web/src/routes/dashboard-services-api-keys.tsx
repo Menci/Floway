@@ -290,6 +290,7 @@ export default function DashboardServicesApiKeys() {
 
           <KeyDialog
             apiKey={null}
+            key={createOpen ? 'create-open' : 'create-closed'}
             mode="create"
             onOpenChange={setCreateOpen}
             onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
@@ -300,6 +301,7 @@ export default function DashboardServicesApiKeys() {
           />
           <KeyDialog
             apiKey={editTarget}
+            key={editTarget?.id ?? 'edit-closed'}
             mode="edit"
             onOpenChange={open => {
               if (!open) setEditTarget(null);

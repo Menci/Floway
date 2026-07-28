@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -54,7 +54,6 @@ export function KeyDialog({
   const isCreate = mode === 'create';
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showUpstreamTable, setShowUpstreamTable] = useState(false);
 
   const visibleUpstreams = useMemo(() => {
     if (userUpstreamIds === null) return upstreams;
@@ -105,24 +104,12 @@ export function KeyDialog({
   const {
     control,
     handleSubmit,
-    reset,
     setValue,
     formState: { errors },
   } = useForm<KeyFormValues>({
     resolver: zodResolver(schema),
     defaultValues: keyFormDefaults(apiKey),
   });
-
-  useEffect(() => {
-    if (!open) {
-      setShowUpstreamTable(false);
-      return;
-    }
-    reset(keyFormDefaults(apiKey));
-    setError(null);
-    const timer = window.setTimeout(() => setShowUpstreamTable(true), 220);
-    return () => window.clearTimeout(timer);
-  }, [apiKey, open, reset]);
 
   const values = useWatch({ control }) as KeyFormValues;
   const dumpRetentionPresets = DUMP_RETENTION_PRESETS.map(preset => ({
@@ -227,7 +214,6 @@ export function KeyDialog({
         error={errors.upstreamIds?.message ? t(errors.upstreamIds.message) : null}
         ids={values.upstreamIds}
         override={values.upstreamOverride}
-        showTable={showUpstreamTable}
         onChange={next => {
           setValue('upstreamOverride', next.override, { shouldValidate: true });
           setValue('upstreamIds', next.ids, { shouldValidate: true });

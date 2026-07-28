@@ -51,8 +51,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const allowNavigation = useRef(false);
-  const recordRef = useRef(record);
-  recordRef.current = record;
   const initialValues = valuesFromRecord(data.record);
   const [savedBaseline, setSavedBaseline] = useState(() => comparableValues(initialValues));
   const form = useForm<UpstreamEditorValues>({
@@ -93,8 +91,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedChanges]);
 
-  const refreshModels = useCallback(async () => {
-    const currentRecord = recordRef.current;
+  const refreshModelsFor = useCallback(async (currentRecord: UpstreamRecord) => {
     if (currentRecord.kind === 'azure') return;
     setModelsLoading(true);
     setModelsError(null);
@@ -123,8 +120,13 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setModelsLoading(false);
   }, [getValues]);
 
+  const refreshModels = useCallback(
+    () => refreshModelsFor(record),
+    [record, refreshModelsFor],
+  );
+
   useEffect(() => {
-    const currentRecord = recordRef.current;
+    const currentRecord = data.record;
     const values = getValues();
     const canFetch = currentRecord.kind === 'custom'
       ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).baseUrl)
@@ -132,9 +134,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       : currentRecord.kind === 'ollama'
         ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl)
         : currentRecord.id !== '' && currentRecord.kind !== 'azure';
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Fetching the model catalog on mount; the pending flag begins that work.
-    if (canFetch) void refreshModels();
-  }, [getValues, refreshModels]);
+    if (canFetch) void refreshModelsFor(currentRecord);
+  }, [data.record, getValues, refreshModelsFor]);
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });

@@ -336,7 +336,7 @@ export default function DashboardAdminBackupRestore() {
     setImportFile(null);
     setImportParsedData(null);
     setImporting(false);
-  }, [doImport, importMode, importParsedData]);
+  }, [importMode, importParsedData]);
 
   const handleImportClick = useCallback(() => {
     if (!importParsedData) return;
@@ -345,7 +345,7 @@ export default function DashboardAdminBackupRestore() {
       return;
     }
     void doImport();
-  }, [importParsedData, importMode]);
+  }, [doImport, importMode, importParsedData]);
 
   // ---- render ----
   const previewCounts = importParsedData ? countRecords(importParsedData.data) : null;
