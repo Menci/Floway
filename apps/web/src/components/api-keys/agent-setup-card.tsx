@@ -23,11 +23,8 @@ const NONE = '__floway_none__';
 // cannot collide with an opaque model id.
 const MODEL_DEFAULT = '\u0000default';
 const NO_MODEL_MATCHES = '\u0000no-matches';
-// Every configuration field shares one column track, so the pickers line up
-// whatever their labels and values are. The tracks floor at zero because a
-// combobox reports the width of its input as min-content, which would
-// otherwise push the grid past the panel.
-const FIELD_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[720px]:grid-cols-[minmax(0,1fr)]';
+const FIELD_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(2,minmax(0,1fr))] max-[720px]:grid-cols-[minmax(0,1fr)]';
+const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[720px]:grid-cols-[minmax(0,1fr)]';
 // cleanupPeriodDays is a numeric top-level Claude Code setting.
 // https://code.claude.com/docs/en/settings#available-settings
 const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['cleanupPeriodDays']>[];
@@ -267,7 +264,7 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   const effortOptions = codexModel?.chat?.reasoning?.effort?.supported ?? [];
 
   if (agent === 'claude') return <div className="grid gap-5">
-    <div className={FIELD_GRID_CLASS}>
+    <div className={CLAUDE_MODEL_GRID_CLASS}>
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} models={models} family="claude" picker="default" value={configuration.claudeCode.model} onChange={model => patchClaude({ model })} />
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.fableModel')} models={models} family="claude" picker="fable" value={configuration.claudeCode.defaultFableModel} onChange={model => patchClaude({ defaultFableModel: model })} />
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.opusModel')} models={models} family="claude" picker="opus" value={configuration.claudeCode.defaultOpusModel} onChange={model => patchClaude({ defaultOpusModel: model })} />
