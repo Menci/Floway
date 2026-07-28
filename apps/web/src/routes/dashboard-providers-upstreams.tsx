@@ -392,20 +392,17 @@ function UpstreamsTable({
                 </div>
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-3 min-w-0 max-w-[520px]">
-                  <ProviderBadge color={record.color} kind={record.kind} />
-                  <div className="grid gap-[3px] min-w-0">
-                    <Link
-                      className="text-fui-fg1 font-fui-semibold no-underline hover:underline truncate"
-                      title={record.name}
-                      to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
-                    >
-                      {record.name}
-                    </Link>
-                    <Text size={200} className="text-fui-fg3 truncate" title={upstreamSummary(record, t)}>
-                      {upstreamSummary(record, t)}
-                    </Text>
-                  </div>
+                <div className="grid gap-[3px] min-w-0 max-w-[520px] justify-items-start">
+                  <Link
+                    className="min-w-0 max-w-full no-underline"
+                    title={record.name}
+                    to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
+                  >
+                    <ProviderBadge color={record.color} kind={record.kind} label={record.name} />
+                  </Link>
+                  <Text size={200} className="text-fui-fg3 truncate max-w-full" title={upstreamSummary(record, t)}>
+                    {upstreamSummary(record, t)}
+                  </Text>
                 </div>
               </TableCell>
               <TableCell>
