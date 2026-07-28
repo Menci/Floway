@@ -25,10 +25,11 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useNow } from '../../lib/use-now';
 import { Select } from '../ui/fluent-form-controls';
+import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 const { MessageBar, MessageBarBody, Spinner, Text, makeStyles, mergeClasses } = fluentComponents;
-const ROW_HEIGHT = 74;
+const ROW_HEIGHT = 82;
 
 const useStyles = makeStyles({
   list: { outlineStyle: 'none' },
@@ -123,6 +124,12 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
         <Text size={100} className="truncate min-w-0 flex-1 text-fui-fg3 font-mono" title={`${record.method} ${record.path}`}>
           {record.path}
         </Text>
+        {record.upstream && <ProviderBadge
+          color={record.upstream.color}
+          kind={record.upstream.kind}
+          label={record.upstream.name}
+          title={`${record.upstream.kind} · ${record.upstream.id}`}
+        />}
       </div>
       <div className="mt-1 flex items-center gap-3 min-w-0 text-fui-fg3">
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.duration', { value: record.durationMs })}>

@@ -58,13 +58,11 @@ export function detectCollectKind(path: string): CollectKind | null {
 
 // A dump that never recorded a terminal frame was cut short, whatever the
 // reassembler managed to fold out of what it did record.
-const endedCleanly = (events: DumpStreamEvent[]): boolean => {
-  const last = events.at(-1)?.frame as { type?: string } | undefined;
-  return last?.type === 'end';
-};
+export const streamEndedCleanly = (events: DumpStreamEvent[]): boolean =>
+  events.at(-1)?.frame.type === 'done';
 
 const complete = (result: unknown, events: DumpStreamEvent[]): CollectedStream =>
-  ({ result, error: null, truncated: !endedCleanly(events) });
+  ({ result, error: null, truncated: !streamEndedCleanly(events) });
 
 export async function collectStream(kind: CollectKind, events: DumpStreamEvent[]): Promise<CollectedStream> {
   try {

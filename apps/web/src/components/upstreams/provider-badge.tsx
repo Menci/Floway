@@ -100,22 +100,28 @@ const customColorStyle = (color: `#${string}`) => ({
 const isHexColor = (color: UpstreamColor | null): color is `#${string}` =>
   color?.startsWith('#') === true;
 
-export function ProviderBadge({ color = null, kind }: { color?: UpstreamColor | null; kind: ProviderBadgeKind }) {
+export function ProviderBadge({ color = null, kind, label, title }: {
+  color?: UpstreamColor | null;
+  kind: ProviderBadgeKind;
+  label?: string;
+  title?: string;
+}) {
   const { t } = useTranslation();
   const styles = useStyles();
   const meta = kind === null ? { label: 'Unknown', tone: 'zinc' as const } : providerMeta[kind];
   const tone: ProviderTone = color && !isHexColor(color) ? color : meta.tone;
-  const label = t(`provider.${kind ?? 'unknown'}`, meta.label);
+  const providerName = t(`provider.${kind ?? 'unknown'}`, meta.label);
+  const visibleLabel = label ?? providerName;
 
   return (
     <span
       className={`${styles[tone]} inline-flex items-center gap-[5px] rounded-full border border-solid max-w-full min-h-[22px] py-0.5 px-2 whitespace-nowrap leading-[1.2]`}
       style={isHexColor(color) ? customColorStyle(color) : undefined}
-      title={label}
+      title={title ?? visibleLabel}
     >
       <ProviderIcon kind={kind} className="h-[14px] w-[14px]" />
       <Text size={200} weight="semibold" truncate wrap={false} className="min-w-0">
-        {label}
+        {visibleLabel}
       </Text>
     </span>
   );
