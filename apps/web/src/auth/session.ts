@@ -20,7 +20,8 @@ export const clearSessionToken = (): void => {
   window.localStorage.removeItem(flowayTokenStorageKey);
 };
 
-export const invalidateSession = (): void => {
+export const invalidateSession = (expectedToken: string | null): void => {
+  if (getSessionToken() !== expectedToken) return;
   clearSessionToken();
   if (!storageAvailable()) return;
   window.dispatchEvent(new Event(sessionInvalidatedEvent));

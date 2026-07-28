@@ -17,7 +17,6 @@ import type { Route } from './+types/dashboard-providers-upstreams';
 import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
-import { upstreamRecordsFromWire } from '../api/types';
 import type {
   ControlPlaneModel,
   UpstreamProviderKind,
@@ -495,7 +494,7 @@ async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
   return {
-    upstreams: upstreamRecordsFromWire(upstreamsResult.data ?? []).sort(compareUpstreams),
+    upstreams: (upstreamsResult.data ?? []).sort(compareUpstreams),
     models: modelsResult.data?.data ?? null,
     loadError: upstreamsResult.error?.message ?? null,
     modelsError: modelsResult.error?.message ?? null,

@@ -2,7 +2,7 @@ import { ArrowUpRight16Regular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { apiDocsEndpoints, apiDocsExamples, type ApiDocsGroup } from './api-docs-data';
+import { apiDocsEndpoints, apiDocsExamples, apiDocsGroups, authCurlExample, type ApiDocsExampleId } from './api-docs-data';
 import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Panel } from '../ui/panel';
@@ -19,7 +19,6 @@ const {
   Text,
 } = fluentComponents;
 
-const groups: ApiDocsGroup[] = ['models', 'generation', 'media', 'rerank', 'search', 'codex'];
 const referenceSections = [
   { id: 'openai', examples: ['completions', 'chat', 'responses'], notes: ['openaiSurface', 'modelSelection'] },
   { id: 'anthropic', examples: ['messages'], notes: ['anthropicHeaders', 'anthropicStreaming'] },
@@ -28,7 +27,11 @@ const referenceSections = [
   { id: 'rerank', examples: ['rerank'], notes: ['rerankDialects'] },
   { id: 'search', examples: ['search'], notes: ['searchCommands'] },
   { id: 'websocket', examples: ['websocket'], notes: ['websocketUpgrade', 'websocketFrames', 'statefulResponses'] },
-] as const;
+] as const satisfies ReadonlyArray<{
+  examples: readonly ApiDocsExampleId[];
+  id: string;
+  notes: readonly string[];
+}>;
 
 export function ApiDocsContent() {
   const { t } = useTranslation();
@@ -44,7 +47,7 @@ export function ApiDocsContent() {
       setCopyFailed(id);
     }
   };
-  const authExample = `curl "${window.location.origin}/v1/models" \\\n+  -H "Authorization: Bearer $FLOWAY_API_KEY"`;
+  const authExample = authCurlExample(window.location.origin);
 
   return <>
     <Panel className="grid gap-4 !p-[22px_24px] max-[680px]:!p-[18px]">
@@ -52,7 +55,6 @@ export function ApiDocsContent() {
       <Text className="text-fui-fg2">{t('dashboard.apiDocs.authentication.description')}</Text>
       <div className="grid gap-2 text-sm">
         <Text><strong>{t('dashboard.apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
-        <Text><code>?key=</code> → <code>x-api-key</code> → <code>x-goog-api-key</code> → <code>Authorization: Bearer</code></Text>
       </div>
       <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiDocs.authentication.warning')}</MessageBarBody></MessageBar>
       <CodeBlock code={authExample} copied={copied === 'auth'} copyFailed={copyFailed === 'auth'} language="bash" onCopy={() => void copy('auth', authExample)} />
@@ -63,7 +65,7 @@ export function ApiDocsContent() {
         <Text as="h2" size={500} weight="semibold" className="!m-0">{t('dashboard.apiDocs.endpointsTitle')}</Text>
         <Text size={300} className="text-fui-fg2">{t('dashboard.apiDocs.endpointsDescription')}</Text>
       </div>
-      {groups.map(group => <section className="grid gap-2" key={group}>
+      {apiDocsGroups.map(group => <section className="grid gap-2" key={group}>
         <Text as="h3" size={300} weight="semibold" className="!m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
         <ScrollArea axes="horizontal" className="min-w-0">
           <div className="grid min-w-[780px]">
@@ -93,10 +95,10 @@ export function ApiDocsContent() {
                 {section.notes.map(note => <li key={note}>{t(`dashboard.apiDocs.notes.${note}`)}</li>)}
               </ul>
               {section.examples.map(exampleId => {
-                const example = apiDocsExamples.find(candidate => candidate.id === exampleId)!;
-                return <div className="grid gap-2" key={example.id}>
+                const example = apiDocsExamples[exampleId];
+                return <div className="grid gap-2" key={exampleId}>
                   <Text size={300} weight="semibold">{t(`dashboard.apiDocs.examples.${example.title}`)}</Text>
-                  <CodeBlock code={example.code} copied={copied === example.id} copyFailed={copyFailed === example.id} language={example.language} onCopy={() => void copy(example.id, example.code)} />
+                  <CodeBlock code={example.code} copied={copied === exampleId} copyFailed={copyFailed === exampleId} language={example.language} onCopy={() => void copy(exampleId, example.code)} />
                 </div>;
               })}
             </div>

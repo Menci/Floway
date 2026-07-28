@@ -1,5 +1,5 @@
 import { geminiCandidateEvent, parseStrictJsonObject } from '../shared/gemini-via/gemini.ts';
-import { billableServiceTier, eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import { isResponsesTerminalEvent, type ResponsesOutputFunctionCall, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -7,19 +7,17 @@ import { isResponsesTerminalEvent, type ResponsesOutputFunctionCall, type Respon
 // matching Gemini's inclusive promptTokenCount semantics. Pass both through
 // directly — no folding. Contrast with gemini-via-messages, where Anthropic's
 // input_tokens excludes cache buckets and must be summed.
-const mapUsage = (response: ResponsesResult, upstreamServiceTier: ResponsesResult['service_tier']): GeminiUsageMetadata | undefined => {
+const mapUsage = (response: ResponsesResult): GeminiUsageMetadata | undefined => {
   const usage = response.usage;
   if (!usage) return undefined;
 
   const cachedTokens = usage.input_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.input_tokens_details?.cache_write_tokens;
-  const writes = splitCacheWriteTokens(cacheWriteTokens, usage[USAGE_BILLING]);
   splitInclusiveInputTokens(usage.input_tokens, cachedTokens, cacheWriteTokens);
   const { output: candidatesTokenCount, reasoning: thoughtsTokenCount } = splitInclusiveOutputTokens(
     usage.output_tokens,
     usage.output_tokens_details?.reasoning_tokens,
   );
-  const serviceTier = billableServiceTier(upstreamServiceTier);
 
   return {
     promptTokenCount: usage.input_tokens,
@@ -33,15 +31,6 @@ const mapUsage = (response: ResponsesResult, upstreamServiceTier: ResponsesResul
     ...(cachedTokens !== undefined
       ? {
           cachedContentTokenCount: cachedTokens,
-        }
-      : {}),
-    ...(cacheWriteTokens !== undefined || serviceTier !== null
-      ? {
-          [USAGE_BILLING]: {
-            ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: writes.cacheWrite } : {}),
-            ...(writes.cacheWrite1h > 0 ? { cacheWrite1hTokenCount: writes.cacheWrite1h } : {}),
-            ...(serviceTier !== null ? { serviceTier } : {}),
-          },
         }
       : {}),
   };
@@ -135,7 +124,7 @@ const functionCallDoneFrame = (item: ResponsesOutputFunctionCall, outputIndex: n
 
 const handleTerminal = (event: Extract<ResponsesStreamEvent, { type: 'response.completed' | 'response.incomplete' | 'response.failed' }>, state: ResponsesToGeminiStreamState): ProtocolFrame<GeminiStreamEvent> => {
   if (event.response.service_tier !== undefined) state.serviceTier = event.response.service_tier;
-  return eventFrame(geminiCandidateEvent([], mapTerminalFinishReason(event), mapUsage(event.response, state.serviceTier)));
+  return eventFrame(geminiCandidateEvent([], mapTerminalFinishReason(event), mapUsage(event.response)));
 };
 
 export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {

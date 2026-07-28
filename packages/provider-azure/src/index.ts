@@ -6,4 +6,4 @@ export const azureProviderModule: ProviderModule = {
   create: createAzureProvider,
   defaultFlags: AZURE_DEFAULT_FLAGS,
 };
-export { assertAzureUpstreamRecord } from './config.ts';
+export { assertAzureUpstreamRecord, type AzureUpstreamConfig } from './config.ts';

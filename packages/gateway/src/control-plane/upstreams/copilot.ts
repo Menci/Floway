@@ -66,7 +66,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     const data = await pollGitHubDeviceFlow(deviceCode, fetcher);
 
     if (data.error === 'authorization_pending') return c.json({ status: 'pending' as const });
-    if (data.error === 'slow_down') return c.json({ status: 'slow_down' as const, interval: data.interval });
+    if (data.error === 'slow_down') return c.json({ status: 'slow_down' as const });
     if (data.error) return c.json({ status: 'error' as const, error: data.error_description ?? data.error }, 400);
     if (!data.access_token) return c.json({ status: 'error' as const, error: 'Unknown response' }, 500);
 

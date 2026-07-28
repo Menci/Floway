@@ -178,6 +178,7 @@ const wrapResponsesFirstCarrier = async function* (
         undefined,
         options.affinity,
         carrierDomain('reasoning', 'encrypted_content'),
+        { syntheticItem: true },
       ),
     };
     prefix = { originalOutputIndex, item };

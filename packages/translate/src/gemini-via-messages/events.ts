@@ -1,7 +1,7 @@
 import { flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiCandidateEvent, parseStrictJsonObject, setGeminiThoughtSignature, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { messagesRefusalExplanation } from '../shared/via-messages/refusal.ts';
 import { inclusiveMessagesInputUsage } from '../shared/via-messages/usage.ts';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { billableServiceTier, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
 
@@ -65,15 +65,6 @@ const mapUsage = (state: MessagesToGeminiStreamState, hasTerminalUsage: boolean)
     candidatesTokenCount,
     totalTokenCount: promptTokenCount + candidatesTokenCount,
     ...(cacheRead > 0 ? { cachedContentTokenCount: cacheRead } : {}),
-    ...(cacheWrite > 0 || cacheWrite1h > 0 || serviceTier !== null
-      ? {
-          [USAGE_BILLING]: {
-            ...(cacheWrite > 0 ? { cacheWriteTokenCount: cacheWrite } : {}),
-            ...(cacheWrite1h > 0 ? { cacheWrite1hTokenCount: cacheWrite1h } : {}),
-            ...(serviceTier !== null ? { serviceTier } : {}),
-          },
-        }
-      : {}),
   };
 };
 

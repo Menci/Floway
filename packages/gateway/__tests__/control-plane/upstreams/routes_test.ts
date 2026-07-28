@@ -8,14 +8,13 @@ import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-ut
 
 type JsonObject = Record<string, any>;
 
-// Every action endpoint takes a `record` envelope — the wire projection of
-// SerializedUpstreamRecord. Two build paths: a blueprint-shaped envelope for
+// Every action endpoint takes a `record` envelope. Two build paths: a blueprint-shaped envelope for
 // create-flow tests (`record.id === ''`), and a full-record envelope for
 // edit-flow tests (`record.id !== ''`) built from a repo-fetched row.
 const envelopeFromRecord = (record: UpstreamRecord): Record<string, unknown> => upstreamRecordToFullJson(record) as unknown as Record<string, unknown>;
 
 const blueprintEnvelope = (kind: UpstreamProviderKind, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  ...envelopeFromRecord(blueprintUpstreamRecord(kind)),
+  ...blueprintUpstreamRecord(kind),
   ...overrides,
 });
 
@@ -87,10 +86,8 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   assertEquals(items[0].config.apiKey, undefined);
 });
 
-// Regression: the Zod modelEndpointsSchema previously did not list
-// `completions`, so a POST that declared a model with only the completions
-// capability had it silently stripped by Zod and then failed the runtime
-// "must declare at least one endpoint" check.
+// `completions` must survive request validation as a complete endpoint map;
+// stripping it would make this otherwise valid model fail provider validation.
 test('POST /api/upstreams accepts a custom model whose only endpoint is /completions', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -2133,8 +2130,7 @@ test('GET /api/upstreams/blueprint serves a pure-blank record with provider flag
   // everything except `flag_defaults` and lets the operator fill the
   // actual config in from an empty draft. Serialization is a static
   // registry lookup so no provider asserter runs against the blank.
-  // The blueprint travels through `upstreamRecordToFullJson`, so
-  // credentials come through verbatim (empty strings, not `*Set` bools).
+  // Credentials are editable empty strings, not redacted `*Set` projections.
   const custom = (await (await requestApp('/api/upstreams/blueprint?kind=custom', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(custom.config.authStyle, 'bearer');
   assertEquals(custom.config.apiKey, '');

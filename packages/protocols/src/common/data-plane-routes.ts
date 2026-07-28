@@ -1,0 +1,32 @@
+export const PUBLIC_DATA_PLANE_ROUTES = {
+  alphaSearch: { method: 'POST', paths: ['/alpha/search', '/v1/alpha/search'] },
+  chatCompletions: { method: 'POST', paths: ['/v1/chat/completions', '/chat/completions'] },
+  responses: { method: 'POST', paths: ['/v1/responses', '/responses'] },
+  responsesCompact: { method: 'POST', paths: ['/v1/responses/compact', '/responses/compact'] },
+  messages: { method: 'POST', paths: ['/v1/messages', '/messages'] },
+  messagesCountTokens: { method: 'POST', paths: ['/v1/messages/count_tokens', '/messages/count_tokens'] },
+  responsesWebSocket: { method: 'GET', paths: ['/v1/responses', '/responses'] },
+  geminiAction: { method: 'POST', paths: ['/v1beta/models/:modelAction{.+}'] },
+  codexAlphaSearch: { method: 'POST', paths: ['/azure-api.codex/alpha/search'] },
+  codexResponses: { method: 'POST', paths: ['/azure-api.codex/responses'] },
+  codexResponsesCompact: { method: 'POST', paths: ['/azure-api.codex/responses/compact'] },
+  codexResponsesWebSocket: { method: 'GET', paths: ['/azure-api.codex/responses'] },
+  codexImagesGenerations: { method: 'POST', paths: ['/azure-api.codex/images/generations'] },
+  codexImagesEdits: { method: 'POST', paths: ['/azure-api.codex/images/edits'] },
+  codexModels: { method: 'GET', paths: ['/azure-api.codex/models'] },
+  models: { method: 'GET', paths: ['/v1/models', '/models'] },
+  geminiModels: { method: 'GET', paths: ['/v1beta/models'] },
+  geminiModel: { method: 'GET', paths: ['/v1beta/models/:modelId{.+}'] },
+  embeddings: { method: 'POST', paths: ['/v1/embeddings', '/embeddings'] },
+  completions: { method: 'POST', paths: ['/v1/completions', '/completions'] },
+  imagesGenerations: { method: 'POST', paths: ['/v1/images/generations', '/images/generations'] },
+  imagesEdits: { method: 'POST', paths: ['/v1/images/edits', '/images/edits'] },
+  audioTranscriptions: { method: 'POST', paths: ['/v1/audio/transcriptions'] },
+  cohereV1Rerank: { method: 'POST', paths: ['/v1/rerank'] },
+  cohereV2Rerank: { method: 'POST', paths: ['/v2/rerank'] },
+  jinaV1Rerank: { method: 'POST', paths: ['/jina/v1/rerank'] },
+  voyageV1Rerank: { method: 'POST', paths: ['/voyage/v1/rerank'] },
+} as const;
+
+export type PublicDataPlaneRouteId = keyof typeof PUBLIC_DATA_PLANE_ROUTES;
+export type PublicDataPlaneRoute = typeof PUBLIC_DATA_PLANE_ROUTES[PublicDataPlaneRouteId];

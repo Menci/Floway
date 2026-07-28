@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/gemini-via-messages/events.ts';
-import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -353,7 +353,6 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini promptTok
         candidatesTokenCount: 7,
         totalTokenCount: 52,
         cachedContentTokenCount: 30,
-        [USAGE_BILLING]: { cacheWriteTokenCount: 2, cacheWrite1hTokenCount: 3, serviceTier: 'priority' },
       },
     }),
   ]);
@@ -377,7 +376,6 @@ test('translateToSourceEvents accepts late input accounting from message_delta',
   const usage = frames[0]?.type === 'event' && !('error' in frames[0].event) ? frames[0].event.usageMetadata : undefined;
   assertEquals(usage?.promptTokenCount, 45);
   assertEquals(usage?.cachedContentTokenCount, 30);
-  assertEquals(usage?.[USAGE_BILLING]?.cacheWriteTokenCount, 5);
 });
 
 test('translateToSourceEvents emits known input usage when terminal usage is absent', async () => {

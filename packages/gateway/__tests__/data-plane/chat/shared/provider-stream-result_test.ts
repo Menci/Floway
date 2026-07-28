@@ -32,7 +32,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hi' } } },
       { type: 'event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: ' there' } } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'messages', ctx);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'messages', ctx, () => null);
     const collected = await drainEvents(result);
     expect(collected).toEqual(frames);
     expect(ctx.attempt.firstOutputTokenAt).not.toBe(null);
@@ -44,7 +44,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { type: 'response.created' } },
       { type: 'event', event: { type: 'response.output_item.added' } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx, () => null);
     await drainEvents(result);
     expect(ctx.attempt.firstOutputTokenAt).toBe(null);
   });
@@ -56,7 +56,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { choices: [{ delta: { content: 'b' } }] } },
       { type: 'event', event: { choices: [{ delta: { content: 'c' } }] } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'chat-completions', ctx);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'chat-completions', ctx, () => null);
     if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
     const stampsAfterEachFrame: (number | null)[] = [];
     for await (const _ of result.events) stampsAfterEachFrame.push(ctx.attempt.firstOutputTokenAt);
@@ -66,4 +66,22 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
     expect(stampsAfterEachFrame[1]).toBe(stampsAfterEachFrame[0]);
     expect(stampsAfterEachFrame[2]).toBe(stampsAfterEachFrame[0]);
   });
+});
+
+test('an abandoned stream still settles its metadata instead of hanging the caller', async () => {
+  // Every streaming response resolves its cost through finalMetadata, and the
+  // respond layer awaits it in a finally. A transport that walks away without
+  // closing the generator would hang that await forever.
+  const abort = new AbortController();
+  const ctx = { ...mockGatewayCtx(), abortSignal: abort.signal };
+  const frames: ProtocolFrame<unknown>[] = [{ type: 'event', event: { type: 'response.created' } }];
+
+  const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx, () => null);
+  expect(result.type).toBe('events');
+  if (result.type !== 'events') return;
+
+  // Never iterate the events; just abandon them.
+  abort.abort();
+
+  expect((await result.finalMetadata!).modelIdentity).toBeDefined();
 });
