@@ -147,9 +147,10 @@ test('upstreamRecordToFullJson includes provider config secrets for export', () 
   const result = upstreamRecordToFullJson(custom);
   if (result.kind !== 'custom') throw new Error('Expected a Custom response');
   const { config } = result;
+  if (config.authStyle === 'none') throw new Error('Expected an authenticated Custom response');
   assertEquals(result.id, 'up_custom_test');
   assertEquals(config.apiKey, 'sk-secret-token-12345');
-  assertEquals(config.apiKeySet, undefined);
+  assertEquals('apiKeySet' in config, false);
 });
 
 // Strict-throw helpers in serialize.ts fail loud rather than silently
