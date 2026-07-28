@@ -8,8 +8,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { listModelsBody } from '../schemas.ts';
 import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProxyFallbackEntry, type UpstreamRecord } from '@floway-dev/provider';
-import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
-import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
+import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels } from '@floway-dev/provider-custom';
 
 // `upstreamModelId` is the wire-side identifier the provider will send when
 // a caller invokes the public `model.id` — Claude Code exposes
@@ -81,16 +80,29 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   try {
     if (kind === 'custom') {
       const assertedConfig = assertCustomUpstreamRecord(synthRecord).config;
-      const result = await fetchCustomModels(assertedConfig, fetcher);
+      const provider = createProvider(synthRecord);
+      let result: Awaited<ReturnType<typeof fetchCustomModels>> | undefined;
+      if (record.id === '') {
+        result = await fetchCustomModels(assertedConfig, fetcher);
+      } else {
+        await fetchUpstreamModelsCached(provider, {
+          scheduler,
+          fetcher,
+          force: true,
+          loadProvidedModels: async () => {
+            result = await fetchCustomModels(assertedConfig, fetcher);
+            return projectCustomModels(synthRecord, result);
+          },
+        });
+        // A concurrent refresh may already own the cache's in-flight slot, in
+        // which case our raw-shape loader was not invoked. The dashboard still
+        // needs its raw response, so only that joined-flight case fetches it
+        // separately.
+        result ??= await fetchCustomModels(assertedConfig, fetcher);
+      }
       return c.json(result);
     }
-    if (kind === 'ollama') {
-      assertOllamaUpstreamRecord(synthRecord);
-      const instance = createOllamaProvider(synthRecord);
-      const models = await instance.instance.getProvidedModels(fetcher);
-      return c.json({ data: models.map(reshapeModelForDashboard) });
-    }
-    // Copilot / codex / claude-code / azure — use the provider factory.
+    // Copilot / codex / claude-code / azure / ollama — use the provider factory.
     // Force through the SWR cache when the record is persisted so the
     // side-effect refresh keeps the data-plane cache in step; otherwise
     // live-fetch without any caching.

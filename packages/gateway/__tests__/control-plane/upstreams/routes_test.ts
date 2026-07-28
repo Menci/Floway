@@ -659,6 +659,8 @@ test('POST /api/upstreams/list-models with a persisted id forces a fresh upstrea
       // through the draft's endpoints.
       assertEquals(body.data.map(m => m.id), ['fresh-model']);
       assertEquals(upstreamCalls, 1);
+      const cached = await repo.modelsCache.get(savedRecord.id);
+      assertEquals(cached?.models.map(model => model.id), ['fresh-model']);
     },
   );
 });

@@ -71,12 +71,14 @@ const finalizeCustomModels = (
   return models;
 };
 
-export const createCustomProvider = (record: UpstreamRecord): Provider => {
+export const projectCustomModels = (
+  record: UpstreamRecord,
+  response?: CustomModelsResponse,
+): ProviderModel[] => {
   const { config } = assertCustomUpstreamRecord(record);
   const configuredEndpoints = config.endpoints;
-  // Computed once for the auto-fetch layer: only the upstream layer applies to
-  // auto models (no per-model override layer). Manual models layer their own
-  // flag overrides on top, resolved per-model below.
+  // Only the upstream layer applies to auto models (no per-model override
+  // layer). Manual models layer their own flag overrides on top.
   const upstreamFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides]);
 
   // Manual models always emit.
@@ -98,6 +100,24 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     if (model.chat) internal.chat = model.chat;
     return internal;
   });
+  if (!config.modelsFetch.enabled || response === undefined) return manualModels;
+
+  const fetchedPricing = new Map(
+    response.data.flatMap(model => model.pricing ? [[model.id, model.pricing] as const] : []),
+  );
+  const effectiveManualModels = manualModels.map(model => {
+    if (model.pricing !== undefined) return model;
+    const pricing = fetchedPricing.get(rawModelIdOf(model));
+    return pricing === undefined ? model : { ...model, pricing };
+  });
+  // Drop any auto-fetched model whose id is pinned by a manual override so
+  // the manual copy is the only one emitted for that id.
+  const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };
+  return [...effectiveManualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
+};
+
+export const createCustomProvider = (record: UpstreamRecord): Provider => {
+  const { config } = assertCustomUpstreamRecord(record);
   const call = (
     transport: (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
     model: ProviderModel,
@@ -138,20 +158,9 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
 
   const instance: ProviderInstance = {
     getProvidedModels: async fetcher => {
-      if (!config.modelsFetch.enabled) return manualModels;
+      if (!config.modelsFetch.enabled) return projectCustomModels(record);
       const response = await fetchCustomModels(config, fetcher);
-      const fetchedPricing = new Map(
-        response.data.flatMap(model => model.pricing ? [[model.id, model.pricing] as const] : []),
-      );
-      const effectiveManualModels = manualModels.map(model => {
-        if (model.pricing !== undefined) return model;
-        const pricing = fetchedPricing.get(rawModelIdOf(model));
-        return pricing === undefined ? model : { ...model, pricing };
-      });
-      // Drop any auto-fetched model whose id is pinned by a manual
-      // override so the manual copy is the only one emitted for that id.
-      const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };
-      return [...effectiveManualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
+      return projectCustomModels(record, response);
     },
     callAlphaSearch: (model, body, signal, opts) => call(customFetchAlphaSearch, model, body, signal, opts.headers, opts),
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),

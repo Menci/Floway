@@ -25,6 +25,11 @@ export interface ModelsCacheFetchOptions {
   // single upstream request. Failure throws; no fall-back to the stored
   // row.
   force?: boolean;
+  // Some control-plane callers also need the upstream's raw catalog shape.
+  // Their loader projects that already-fetched response into the exact
+  // ProviderModel catalog the provider would otherwise return, avoiding a
+  // second upstream request while keeping cache writes in this module.
+  loadProvidedModels?: () => Promise<ProviderModel[]>;
 }
 
 // L1: per-isolate in-flight memoization. Collapses concurrent callers for
@@ -53,9 +58,10 @@ const runFetch = async (
   instance: Provider,
   fetcher: Fetcher,
   key: string,
+  loadProvidedModels?: () => Promise<ProviderModel[]>,
 ): Promise<ProviderModel[]> => {
   try {
-    const models = [...await instance.instance.getProvidedModels(fetcher)];
+    const models = [...await (loadProvidedModels?.() ?? instance.instance.getProvidedModels(fetcher))];
     await getRepo().modelsCache.put(key, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models });
     return models;
   } catch (err) {
@@ -71,12 +77,12 @@ export const fetchUpstreamModelsCached = async (
   instance: Provider,
   opts: ModelsCacheFetchOptions,
 ): Promise<ProviderModel[]> => {
-  const { scheduler, fetcher, force } = opts;
+  const { scheduler, fetcher, force, loadProvidedModels } = opts;
   const key = instance.upstreamId;
   const now = Date.now();
 
   if (force) {
-    return await memoInFlight(key, () => runFetch(instance, fetcher, key));
+    return await memoInFlight(key, () => runFetch(instance, fetcher, key, loadProvidedModels));
   }
 
   const stored = await getRepo().modelsCache.get(key);
