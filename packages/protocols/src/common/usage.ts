@@ -3,6 +3,25 @@
 // https://developers.openai.com/api/docs/guides/priority-processing
 // https://docs.claude.com/en/api/service-tiers
 // https://docs.claude.com/en/build-with-claude/fast-mode
+// A response can span several upstream turns — the server-tool shim's ReAct
+// loop, a compaction round trip — and we are billed for every one.
+export const sumBillableUsage = (a: BillableUsage | undefined, b: BillableUsage | undefined): BillableUsage | undefined => {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return {
+    input: a.input + b.input,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    cacheWrite1h: a.cacheWrite1h + b.cacheWrite1h,
+    output: a.output + b.output,
+    ...(a.reasoning !== undefined || b.reasoning !== undefined
+      ? { reasoning: (a.reasoning ?? 0) + (b.reasoning ?? 0) }
+      : {}),
+    // A tier cannot be summed; the latest turn's is the one served.
+    ...(b.tier ?? a.tier ? { tier: b.tier ?? a.tier } : {}),
+  };
+};
+
 export const billableServiceTier = (tier: string | null | undefined): string | null => {
   if (tier == null) return null;
   const normalized = tier.trim().toLowerCase();
