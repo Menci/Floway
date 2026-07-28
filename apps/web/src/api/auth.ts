@@ -42,7 +42,7 @@ export const authFetch = async (
 
   const response = await fetch(input, { ...init, headers });
   if (response.status === 401) {
-    invalidateSession();
+    invalidateSession(token);
   }
   return response;
 };
