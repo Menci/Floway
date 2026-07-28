@@ -8,7 +8,7 @@ import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 're
 
 import type { Route } from './+types/dashboard-monitor-performance';
 import { callApi } from '../api/auth';
-import { api, getCurrentSession } from '../api/client';
+import { api } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { ChartSection } from '../components/charts/chart-section';
 import { colorForSlot } from '../components/charts/palette';
@@ -70,10 +70,10 @@ interface LoaderData {
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
-  const session = await getCurrentSession();
-  if (session.error) throw redirect('/');
+  const user = await useAuthStore.getState().initialize();
+  if (!user) throw redirect('/');
   const state = parsePerformanceUrlState(new URL(request.url).searchParams);
-  const view: PerformanceView = session.data.user.isAdmin ? 'all-by-user' : 'self-by-key';
+  const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
   const groupBy = state.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : state.groupBy;
   const loadedAt = Date.now();
   const query = buildPerformanceQuery(view, state.range, groupBy, state.filters, loadedAt);

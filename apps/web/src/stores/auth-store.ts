@@ -15,7 +15,6 @@ interface AuthStore {
   logout: () => Promise<void>;
   initialize: () => Promise<AuthUser | null>;
   primeFromLogin: (session: LoginResponse) => void;
-  primeFromSession: (user: AuthUser, token: string) => void;
   setUser: (user: AuthUser) => void;
 }
 
@@ -113,16 +112,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       status: 'authenticated',
       token: session.token,
       user: session.user,
-      error: null,
-    });
-  },
-
-  primeFromSession: (user, token) => {
-    sessionRequest = null;
-    set({
-      status: 'authenticated',
-      token,
-      user,
       error: null,
     });
   },

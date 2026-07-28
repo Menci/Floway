@@ -5,7 +5,6 @@ import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-usage';
 import { useDashboardOutletContext } from './dashboard';
-import { getCurrentSession } from '../api/client';
 import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -31,12 +30,12 @@ type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
 
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
-  const session = await getCurrentSession();
-  if (session.error) throw redirect('/');
-  const view: UsageView = session.data.user.isAdmin ? 'all-by-user' : 'self-by-key';
+  const user = await useAuthStore.getState().initialize();
+  if (!user) throw redirect('/');
+  const view: UsageView = user.isAdmin ? 'all-by-user' : 'self-by-key';
   const range: UsageRange = 'today';
   const loadedAt = Date.now();
-  return { ...await loadUsagePageData(session.data.user, view, range, loadedAt), loadedAt, range, view };
+  return { ...await loadUsagePageData(user, view, range, loadedAt), loadedAt, range, view };
 }
 export function meta({}: Route.MetaArgs) { return [{ title: 'Usage | Floway' }]; }
 

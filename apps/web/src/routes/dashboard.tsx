@@ -2,6 +2,7 @@ import { NavigationRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  Navigate,
   Outlet,
   redirect,
   useLocation,
@@ -10,7 +11,6 @@ import {
 
 import type { Route } from './+types/dashboard';
 import type { AuthUser } from '../api/auth';
-import { getCurrentSession } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { FlowayLogo } from '../components/logo';
 import { Sidebar } from '../components/sidebar';
@@ -27,27 +27,27 @@ export type DashboardOutletContext = {
 export async function clientLoader() {
   const token = getSessionToken();
   if (!token) throw redirect('/');
-  const session = await getCurrentSession();
-  if (session.error) {
-    if (session.error.status === 401) throw redirect('/');
-    throw new Error(session.error.message);
-  }
-  useAuthStore.getState().primeFromSession(session.data.user, token);
-  return { user: session.data.user };
+  const user = await useAuthStore.getState().initialize();
+  if (user) return null;
+  const error = useAuthStore.getState().error;
+  if (error) throw new Error(error);
+  throw redirect('/');
 }
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Dashboard | Floway' }];
 }
 
-export default function Dashboard({ loaderData }: Route.ComponentProps) {
+export default function Dashboard({}: Route.ComponentProps) {
   const { t } = useTranslation();
-  const user = loaderData.user;
+  const user = useAuthStore(state => state.user);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const { pathname } = useLocation();
   const upstreamEditor = /^\/dashboard\/providers\/upstreams\/(?:new\/[^/]+|[^/]+)$/.test(pathname);
   const requestsInspector = pathname === '/dashboard/monitor/requests';
   const playground = pathname === '/dashboard/playground';
+
+  if (!user) return <Navigate replace to="/" />;
 
   return (
     <>
