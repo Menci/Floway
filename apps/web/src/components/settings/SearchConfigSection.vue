@@ -46,7 +46,7 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     value: 'microsoft-web-iq',
     label: 'Microsoft Web IQ',
-    description: 'Gateway-managed Microsoft Web IQ key.',
+    description: 'Gateway-managed Microsoft Web IQ API key.',
     apiKey: config => config.microsoftWebIq.apiKey,
     set: (config, apiKey) => ({ ...config, microsoftWebIq: { apiKey } }),
   },
