@@ -3993,7 +3993,7 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
 test('local and cascaded Floway unsupported commands produce the same agent-visible error', async () => {
   makeStubDeps();
   const commands = { image_query: [{ q: 'Floway logo' }] };
-  const expected = 'Upstream stream failed mid-response: The configured web search provider does not implement OpenAI search feature `commands.image_query`.';
+  const expected = 'The configured web search provider does not implement OpenAI search feature `commands.image_query`.';
   const runUnsupported = async (): Promise<string> => {
     const inv = makeInvocation({
       targetApi: 'responses',
@@ -4001,14 +4001,10 @@ test('local and cascaded Floway unsupported commands produce the same agent-visi
     });
     const script = scriptedRun([
       fcTurn(0, 'call_unsupported', SHIM_TOOL_NAME, JSON.stringify(commands)),
+      messageTurn('model repeated the tool error', 0),
     ]);
-    const { frames } = await runShimAndDrain(withResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
-    const failed = eventPayloads(frames).find(
-      (event): event is Extract<ResponsesStreamEvent, { type: 'response.failed' }> => event.type === 'response.failed',
-    );
-    assert(failed !== undefined);
-    assert(failed.response.error !== null && failed.response.error !== undefined);
-    return failed.response.error.message;
+    await runShimAndDrain(withResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+    return lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]);
   };
 
   const localMessage = await runUnsupported();
