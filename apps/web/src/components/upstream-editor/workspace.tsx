@@ -221,7 +221,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     return <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
       <div className="flex flex-wrap items-center gap-3">
         <div className="grid gap-0.5">
-          <Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.yamlTitle')}</Text>
+          <Text as="h2" size={500} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.yamlTitle')}</Text>
           <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.yamlHint')}</Text>
         </div>
         <Button appearance="secondary" className="!min-w-[160px] ml-auto" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
