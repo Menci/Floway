@@ -1,5 +1,5 @@
 import { ArrowUpRight16Regular } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { apiDocsEndpoints, apiDocsExamples, apiDocsGroups, authCurlExample, type ApiDocsExampleId } from './api-docs-data';
@@ -13,6 +13,7 @@ const {
   AccordionHeader,
   AccordionItem,
   AccordionPanel,
+  Badge,
   Link,
   MessageBar,
   MessageBarBody,
@@ -65,23 +66,29 @@ export function ApiDocsContent() {
         <Text as="h2" size={500} weight="semibold" className="!m-0">{t('dashboard.apiDocs.endpointsTitle')}</Text>
         <Text size={300} className="text-fui-fg2">{t('dashboard.apiDocs.endpointsDescription')}</Text>
       </div>
-      {apiDocsGroups.map(group => <section className="grid gap-2" key={group}>
-        <Text as="h3" size={300} weight="semibold" className="!m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
-        <ScrollArea axes="horizontal" className="min-w-0">
-          <div className="grid min-w-[780px]">
-            {apiDocsEndpoints.filter(endpoint => endpoint.group === group).map(endpoint => (
-              <div className="grid grid-cols-[54px_minmax(260px,1fr)_minmax(190px,auto)_74px] items-center gap-3 py-2 px-2 border-b border-fui-subtle last:border-b-0" key={`${endpoint.method} ${endpoint.path}`}>
-                <MethodBadge method={endpoint.method} />
-                <code className="font-mono text-xs">{endpoint.path}</code>
-                <Text size={200}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text>
-                <Link href={endpoint.docs} target="_blank">
-                  {t('dashboard.apiDocs.docsLink')} <ArrowUpRight16Regular aria-hidden="true" />
-                </Link>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </section>)}
+      {apiDocsGroups.map(group => {
+        const endpoints = apiDocsEndpoints.filter(endpoint => endpoint.group === group);
+        return <section className="grid gap-2" key={group}>
+          <Text as="h3" size={300} weight="semibold" className="!m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
+          <ScrollArea axes="horizontal" className="min-w-0">
+            <div className="grid grid-cols-[70px_minmax(360px,1fr)_minmax(260px,320px)_74px] min-w-[780px]">
+              {endpoints.map((endpoint, index) => {
+                const cellClassName = `min-w-0 px-2 py-2 ${index === endpoints.length - 1 ? '' : 'border-b border-fui-subtle'}`;
+                return <Fragment key={`${endpoint.method} ${endpoint.path}`}>
+                  <div className={`flex items-center ${cellClassName}`}><MethodBadge method={endpoint.method} /></div>
+                  <code className={`${cellClassName} flex items-center font-mono text-xs`} translate="no">{endpoint.path}</code>
+                  <Text className={`${cellClassName} !flex !items-center`} size={200}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text>
+                  <div className={`flex items-center ${cellClassName}`}>
+                    <Link href={endpoint.docs} target="_blank">
+                      {t('dashboard.apiDocs.docsLink')} <ArrowUpRight16Regular aria-hidden="true" />
+                    </Link>
+                  </div>
+                </Fragment>;
+              })}
+            </div>
+          </ScrollArea>
+        </section>;
+      })}
     </Panel>
 
     <Panel className="grid gap-3 !p-[22px_24px] max-[680px]:!p-[18px]">
@@ -110,8 +117,11 @@ export function ApiDocsContent() {
 }
 
 function MethodBadge({ method }: { method: 'GET' | 'POST' }) {
-  return <span className="rounded inline-flex font-mono text-[11px] font-bold justify-center leading-none p-[4px_7px] w-[46px]" style={{
-    color: method === 'GET' ? 'light-dark(#0f6cbd, #75b6f7)' : 'light-dark(#107c41, #7fd99a)',
-    background: method === 'GET' ? 'light-dark(#e6f2fb, rgba(71,158,245,0.18))' : 'light-dark(#e8f5ee, rgba(84,179,111,0.18))',
-  }}>{method}</span>;
+  return <Badge
+    appearance="tint"
+    className="!font-bold !font-mono !justify-center !min-w-[48px]"
+    color={method === 'GET' ? 'brand' : 'success'}
+    size="small"
+    translate="no"
+  >{method}</Badge>;
 }
