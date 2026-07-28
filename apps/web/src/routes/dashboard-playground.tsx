@@ -300,7 +300,14 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
 
   return (
-    <FluentProvider theme={australianTheme} className="h-full min-h-0 !bg-transparent">
+    // Fluent copies this provider's className onto the portal mount node it
+    // creates under <body>, so any layout class here also sizes that node —
+    // `h-full` turned it into a full-viewport z-index 1000000 overlay that ate
+    // the pointer events its own popups needed. `contents` removes the box
+    // instead: the theme's custom properties still cascade from the element,
+    // the page grid resolves against <main>, and the mount node stays inert.
+    // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-provider/library/src/components/FluentProvider/useFluentProviderThemeStyleTag.ts#L1-L40
+    <FluentProvider theme={australianTheme} className="contents">
       <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
           <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
