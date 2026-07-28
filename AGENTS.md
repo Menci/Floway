@@ -146,7 +146,9 @@ proxies, Agent Setup, telemetry views, and data transfer. Its routes live under
 The **data plane** is the client-facing inference and model-discovery surface;
 it resolves public model ids, selects and calls upstreams, translates protocol
 shapes, and returns client-protocol responses. Its routes live under
-`packages/gateway/src/data-plane/`.
+`packages/gateway/src/data-plane/`. The public method/path manifest lives in
+`@floway-dev/protocols/common`; gateway registration and the dashboard API
+reference both consume it, so the documented route inventory cannot drift.
 
 Hono middleware is the HTTP request boundary: logger, CORS, authentication,
 validation, and top-level error shaping live under `packages/gateway/src/middleware/`
@@ -238,7 +240,8 @@ the root, `/flags`, `/model`, and `/model-prefix`; its proxy imports are
 restricted to `/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA
 does not pull in dialers, userspace TLS, or Node `crypto`. It type-imports
 gateway contracts through `/app-type`, `/dump-types`,
-`/control-plane/performance/aggregate`, and
+`/control-plane/performance/aggregate`, `/control-plane/upstreams/types`,
+`/control-plane/usage-types`, and
 `/control-plane/proxies/serialize`; `@floway-dev/gateway` stays a
 devDependency, because every one of those imports is type-only. It does not
 depend on
@@ -276,10 +279,10 @@ modules.
 
 React Router client loaders are resource barriers: authentication and every
 initial route resource resolve before the target location and component tree
-are committed, while `NavigationProgress` marks an in-flight navigation above
-the still-mounted route. `callApi` preserves the Hono client's inferred success
-payload for every JSON control-plane request; raw Fetch remains limited to
-streaming data-plane calls. The document never scrolls. Every scrollable region
+are committed. An in-flight navigation leaves the current URL and route fully
+mounted without introducing another loading surface. `callApi` preserves the Hono client's inferred success
+payload for typed JSON control-plane calls. Direct request handling is limited
+to playground data-plane streaming and dump SSE subscriptions. The document never scrolls. Every scrollable region
 declares its axes through `ScrollArea`; it enables OverlayScrollbars only where
 native scrollbars consume layout space, and otherwise retains native overlay
 scrolling inside the same explicit viewport.

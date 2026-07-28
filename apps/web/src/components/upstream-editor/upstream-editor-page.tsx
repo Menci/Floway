@@ -18,7 +18,6 @@ import { modelsAreValid } from './model-detail';
 import { UpstreamWorkspace } from './workspace';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
-import { upstreamRecordFromWire } from '../../api/types';
 import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -46,9 +45,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const toasterId = useId();
   const { dispatchToast } = useToastController(toasterId);
   const [record, setRecord] = useState(data.record);
-  const [discovered, setDiscovered] = useState<UpstreamModelConfig[]>([]);
+  const [discovered, setDiscovered] = useState(data.discovered);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsError, setModelsError] = useState<string | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const allowNavigation = useRef(false);
@@ -106,14 +105,13 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       return;
     }
     const endpoints = currentRecord.kind === 'custom' ? (values.config as typeof currentRecord.config).endpoints : {};
-    setDiscovered(discoveredModelsFromResponse(currentRecord.kind, result.data.data, endpoints));
+    setDiscovered(discoveredModelsFromResponse(result.data, endpoints));
     if (currentRecord.id !== '') {
       const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: currentRecord.id } }));
       if (refreshed.error) {
         setModelsError(refreshed.error.message);
       } else {
-        const refreshedRecord = upstreamRecordFromWire(refreshed.data);
-        setRecord(current => ({ ...current, modelsCache: refreshedRecord.modelsCache } as UpstreamRecord));
+        setRecord(current => ({ ...current, modelsCache: refreshed.data.modelsCache } as UpstreamRecord));
       }
     }
     setModelsLoading(false);
@@ -123,19 +121,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     () => refreshModelsFor(record),
     [record, refreshModelsFor],
   );
-
-  useEffect(() => {
-    const currentRecord = data.record;
-    const values = getValues();
-    const canFetch = currentRecord.kind === 'custom'
-      ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).baseUrl)
-        && (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled
-      : currentRecord.kind === 'ollama'
-        ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl)
-        : currentRecord.id !== '' && currentRecord.kind !== 'azure';
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Mounting the editor starts a catalog request; the pending state belongs to that external work.
-    if (canFetch) void refreshModelsFor(currentRecord);
-  }, [data.record, getValues, refreshModelsFor]);
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });
@@ -163,10 +148,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
     setSaving(false);
     if (result.error) { setSaveError(result.error.message); return; }
-    let saved = upstreamRecordFromWire(result.data);
+    let saved: UpstreamRecord = result.data;
     if (data.mode === 'edit') {
       const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
-      if (!full.error) saved = upstreamRecordFromWire(full.data);
+      if (!full.error) saved = full.data;
     }
     setRecord(saved);
     const savedValues = valuesFromRecord(saved);

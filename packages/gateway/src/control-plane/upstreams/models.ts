@@ -1,5 +1,6 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
+import type { ListedUpstreamModel } from './types.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProvider } from '../../data-plane/providers/registry.ts';
@@ -17,7 +18,7 @@ import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels } fr
 // not a universal upstream-id field: only the providers that shape it as
 // `{ upstreamModelId }` surface a distinct wire id here, and the rest
 // (Copilot carries its raw variant list there) report the public id.
-const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown> => {
+const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => {
   const providerData = typeof model.providerData === 'object' && model.providerData !== null ? model.providerData as { upstreamModelId?: unknown } : null;
   const wireId = typeof providerData?.upstreamModelId === 'string' && providerData.upstreamModelId.length > 0 ? providerData.upstreamModelId : model.id;
   return {
@@ -100,7 +101,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
         // separately.
         result ??= await fetchCustomModels(assertedConfig, fetcher);
       }
-      return c.json(result);
+      return c.json({ kind, data: result.data });
     }
     // Copilot / codex / claude-code / azure / ollama — use the provider factory.
     // Force through the SWR cache when the record is persisted so the
@@ -110,7 +111,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     const models = record.id !== ''
       ? await fetchUpstreamModelsCached(provider, { scheduler, fetcher, force: true })
       : await provider.instance.getProvidedModels(fetcher);
-    return c.json({ data: models.map(reshapeModelForDashboard) });
+    return c.json({ kind, data: models.map(reshapeModelForDashboard) });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);

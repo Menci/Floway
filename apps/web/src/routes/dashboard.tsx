@@ -55,8 +55,8 @@ export default function Dashboard({}: Route.ComponentProps) {
       >
         {t('dashboard.nav.skip')}
       </a>
-      <div className="grid grid-cols-[290px_minmax(0,1fr)] h-[100dvh] min-h-0 max-[900px]:grid-cols-1 max-[900px]:grid-rows-[58px_minmax(0,1fr)]">
-        <div className="max-[900px]:hidden">
+      <div className="grid grid-cols-[290px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] h-[100dvh] min-h-0 max-[900px]:grid-cols-1 max-[900px]:grid-rows-[58px_minmax(0,1fr)]">
+        <div className="min-h-0 max-[900px]:hidden">
           <Sidebar user={user} />
         </div>
         <header className="hidden max-[900px]:flex items-center gap-3 border-b border-b-solid border-fui-stroke1 px-4">

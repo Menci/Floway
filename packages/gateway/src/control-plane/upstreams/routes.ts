@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 
-import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
+import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
+import type { FullUpstreamResponse, ModelsCacheStatus, RedactedUpstreamResponse } from './types.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -23,54 +24,52 @@ import {
 } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { type CodexQuotaSnapshotMap, assertCodexUpstreamRecord, assertCodexUpstreamState, getCodexQuota } from '@floway-dev/provider-codex';
+import { assertCodexUpstreamRecord, assertCodexUpstreamState, getCodexQuota } from '@floway-dev/provider-codex';
 import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
-type CodexQuotaProjection = { codex_quota?: CodexQuotaSnapshotMap | null };
-
-type UpstreamResponse = SerializedUpstreamRecord & CodexQuotaProjection;
-
-type UpstreamWithCacheResponse = UpstreamResponse & {
-  modelsCache: {
-    fetchedAt: number | null;
-    lastError: { message: string; at: number } | null;
-  };
-};
-
 const modelsCacheForResponse = (
   cacheRow: Pick<ModelsCacheRow, 'fetchedAt' | 'lastError'> | null,
-): UpstreamWithCacheResponse['modelsCache'] => ({
+): ModelsCacheStatus => ({
   fetchedAt: cacheRow?.fetchedAt ?? null,
   lastError: cacheRow?.lastError ?? null,
 });
 
-const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuotaProjection> => {
-  if (record.kind !== 'codex') return {};
-  assertCodexUpstreamRecord(record);
-  return {
-    codex_quota: await getCodexQuota(record.id, record.config.accounts[0].chatgptAccountId),
-  };
+const redactedResponse = async (record: UpstreamRecord): Promise<RedactedUpstreamResponse> => {
+  const serialized = upstreamRecordToJson(record);
+  const modelsCache = modelsCacheForResponse(await getRepo().modelsCache.get(record.id));
+  switch (serialized.kind) {
+  case 'codex':
+    return {
+      ...serialized,
+      modelsCache,
+      codex_quota: await getCodexQuota(record.id, serialized.config.accounts[0].chatgptAccountId),
+    };
+  case 'custom': return { ...serialized, modelsCache };
+  case 'azure': return { ...serialized, modelsCache };
+  case 'copilot': return { ...serialized, modelsCache };
+  case 'claude-code': return { ...serialized, modelsCache };
+  case 'ollama': return { ...serialized, modelsCache };
+  }
 };
 
-// These projections need repository/provider I/O, which serialize.ts excludes
-// so it stays a pure persisted-record transform. The optional baseSerialize
-// override lets callers swap in upstreamRecordToFullJson to round-trip
-// unredacted secrets instead of the redacted default.
-const serializeForResponse = async (
-  record: UpstreamRecord,
-  baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
-): Promise<UpstreamWithCacheResponse> => {
-  const [cacheRow, codexQuota] = await Promise.all([
-    getRepo().modelsCache.get(record.id),
-    codexQuotaForResponse(record),
-  ]);
-  return {
-    ...baseSerialize(record),
-    modelsCache: modelsCacheForResponse(cacheRow),
-    ...codexQuota,
-  };
+const fullResponse = async (record: UpstreamRecord): Promise<FullUpstreamResponse> => {
+  const serialized = upstreamRecordToFullJson(record);
+  const modelsCache = modelsCacheForResponse(await getRepo().modelsCache.get(record.id));
+  switch (serialized.kind) {
+  case 'codex':
+    return {
+      ...serialized,
+      modelsCache,
+      codex_quota: await getCodexQuota(record.id, serialized.config.accounts[0].chatgptAccountId),
+    };
+  case 'custom': return { ...serialized, modelsCache };
+  case 'azure': return { ...serialized, modelsCache };
+  case 'copilot': return { ...serialized, modelsCache };
+  case 'claude-code': return { ...serialized, modelsCache };
+  case 'ollama': return { ...serialized, modelsCache };
+  }
 };
 
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -152,7 +151,7 @@ const validateProxyFallbackList = async (entries: readonly ProxyFallbackEntry[])
 
 export const listUpstreams = async (c: Context) => {
   const items = await getRepo().upstreams.list();
-  return c.json(await Promise.all(items.map(record => serializeForResponse(record))));
+  return c.json(await Promise.all(items.map(redactedResponse)));
 };
 
 // Picker dataset for the per-key upstream whitelist editor. Non-admin users
@@ -176,16 +175,16 @@ export const listUpstreamOptions = async (c: Context) => {
 
 export const listOptionalFlags = (c: Context) => c.json(OPTIONAL_FLAGS);
 
-// Serve the same response shape as the edit endpoint for an unpersisted
-// record. The empty cache projection keeps create and edit on one UI contract
-// without querying storage for an id that does not exist yet.
+// Supply every shared editor field for an unpersisted record. The empty cache
+// projection avoids querying storage, while persisted-only projections remain
+// exclusive to full edit responses.
 export const getUpstreamBlueprint = (c: Context) => {
   const kind = c.req.query('kind');
   if (!isValidProviderKind(kind)) {
     return c.json({ error: `kind must be one of: ${ALL_PROVIDER_KINDS.join(', ')}` }, 400);
   }
   return c.json({
-    ...upstreamRecordToFullJson(blueprintUpstreamRecord(kind)),
+    ...blueprintUpstreamRecord(kind),
     modelsCache: modelsCacheForResponse(null),
   });
 };
@@ -201,7 +200,7 @@ export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const record = await getRepo().upstreams.getById(id);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  return c.json(await serializeForResponse(record, upstreamRecordToFullJson));
+  return c.json(await fullResponse(record));
 };
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
@@ -264,7 +263,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const record = { ...upstream, config: config.value };
   await getRepo().upstreams.save(record);
   await warmModelsCache(record, c);
-  return c.json(await serializeForResponse(record), 201);
+  return c.json(await redactedResponse(record), 201);
 };
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
@@ -318,7 +317,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
 
   await getRepo().upstreams.save(next);
   await warmModelsCache(next, c);
-  return c.json(await serializeForResponse(next));
+  return c.json(await redactedResponse(next));
 };
 
 export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {

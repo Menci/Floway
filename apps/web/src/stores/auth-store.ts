@@ -17,10 +17,10 @@ interface AuthStore {
   initialize: () => Promise<AuthUser | null>;
   refresh: () => Promise<AuthUser | null>;
   primeFromLogin: (session: LoginResponse) => void;
-  setUser: (user: AuthUser) => void;
 }
 
 let sessionRequest: {
+  id: object;
   token: string;
   promise: Promise<AuthUser | null>;
 } | null = null;
@@ -43,8 +43,13 @@ const loadSession = (
   if (sessionRequest?.token === token) return sessionRequest.promise;
 
   set({ status: 'loading', token, user: state.token === token ? state.user : null, error: null });
+  const requestId = {};
   const promise = getCurrentSession().then(result => {
-    if (sessionRequest?.token === token) sessionRequest = null;
+    if (sessionRequest?.id !== requestId || getSessionToken() !== token) {
+      const current = get();
+      return current.token === getSessionToken() ? current.user : null;
+    }
+    sessionRequest = null;
     if (result.data) {
       set({ status: 'authenticated', token, user: result.data.user, error: null });
       return result.data.user;
@@ -53,10 +58,12 @@ const loadSession = (
       get().clear();
       return null;
     }
-    set({ status: 'error', token, user: null, error: result.error.message });
+    const current = get();
+    const user = current.token === token ? current.user : null;
+    set({ status: user ? 'authenticated' : 'error', token, user, error: result.error.message });
     return null;
   });
-  sessionRequest = { token, promise };
+  sessionRequest = { id: requestId, token, promise };
   return promise;
 };
 
@@ -98,10 +105,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       user: session.user,
       error: null,
     });
-  },
-
-  setUser: user => {
-    set({ status: 'authenticated', user, error: null });
   },
 }));
 

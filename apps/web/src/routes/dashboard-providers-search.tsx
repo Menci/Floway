@@ -7,7 +7,6 @@ import type { Route } from './+types/dashboard-providers-search';
 import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
-import { upstreamRecordsFromWire } from '../api/types';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
 import bingIconUrl from '../assets/bing.svg';
 import jinaIconUrl from '../assets/icons/jina.svg';
@@ -20,7 +19,6 @@ import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
-type SearchConfigTestFailure = Extract<SearchConfigTestResult, { ok: false }>;
 
 const {
   Button,
@@ -50,7 +48,7 @@ export async function clientLoader(): Promise<SearchPageLoaderData> {
   ]);
   return {
     config: configResult.data ?? DEFAULT_CONFIG,
-    upstreams: upstreamRecordsFromWire(upstreamsResult.data ?? []),
+    upstreams: upstreamsResult.data ?? [],
     models: modelsResult.data?.data ?? [],
     error: configResult.error?.message ?? upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
   };
@@ -475,10 +473,10 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                 weight="semibold"
                 style={{ color: 'light-dark(#c50f1f, #e37b84)' }}
               >
-                {(testResult as SearchConfigTestFailure).error.code}
+                {testResult.error.code}
               </Text>
               <Text size={200} className="text-fui-fg1">
-                {(testResult as SearchConfigTestFailure).error.message}
+                {testResult.error.message}
               </Text>
             </div>
           ) : null}

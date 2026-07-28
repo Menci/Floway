@@ -27,19 +27,17 @@ import { responsesHttp } from '../chat/responses/http.ts';
 import { responsesWebSocket } from '../chat/responses/websocket.ts';
 import { imagesEdits, imagesGenerations } from '../images/http.ts';
 import { serveModels } from '../models/http.ts';
-
-const CODEX_BASE_PATH = '/azure-api.codex';
+import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
 export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
-  // Codex appends `alpha/search` to this special provider base. Keep the path
-  // owned by this namespace while reusing the general data-plane handler.
+  // Register the manifest's Codex-specific search path with the general
+  // alpha-search handler.
   // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
-  mountAlphaSearchRoute(app, `${CODEX_BASE_PATH}/alpha/search`);
-  app.post(`${CODEX_BASE_PATH}/responses`, responsesHttp.generate);
-  app.post(`${CODEX_BASE_PATH}/responses/compact`, responsesHttp.compact);
-  app.get(`${CODEX_BASE_PATH}/responses`, responsesWebSocket);
-  app.post(`${CODEX_BASE_PATH}/images/generations`, imagesGenerations);
-  app.post(`${CODEX_BASE_PATH}/images/edits`, imagesEdits);
-
-  app.get(`${CODEX_BASE_PATH}/models`, serveModels);
+  mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch.paths[0]);
+  app.post(PUBLIC_DATA_PLANE_ROUTES.codexResponses.paths[0], responsesHttp.generate);
+  app.post(PUBLIC_DATA_PLANE_ROUTES.codexResponsesCompact.paths[0], responsesHttp.compact);
+  app.get(PUBLIC_DATA_PLANE_ROUTES.codexResponsesWebSocket.paths[0], responsesWebSocket);
+  app.post(PUBLIC_DATA_PLANE_ROUTES.codexImagesGenerations.paths[0], imagesGenerations);
+  app.post(PUBLIC_DATA_PLANE_ROUTES.codexImagesEdits.paths[0], imagesEdits);
+  app.get(PUBLIC_DATA_PLANE_ROUTES.codexModels.paths[0], serveModels);
 };

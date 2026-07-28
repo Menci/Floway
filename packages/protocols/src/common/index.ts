@@ -1,6 +1,7 @@
 export * from './aliases.ts';
 export * from './endpoints.ts';
 export * from './decimal.ts';
+export * from './data-plane-routes.ts';
 export * from './models.ts';
 export * from './pricing.ts';
 export * from './usage.ts';
