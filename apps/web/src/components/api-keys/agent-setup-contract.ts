@@ -1,6 +1,6 @@
 import type { InferResponseType } from 'hono/client';
 
-import { api } from '../../api/client';
+import type { api } from '../../api/client';
 
 export type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
 export type AgentSetupConfiguration = AgentSetupLease['configuration'];
