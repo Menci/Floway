@@ -67,7 +67,9 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const [pageError, setPageError] = useState(loaderData.error);
   const [refreshing, setRefreshing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ApiKey | null>(null);
+  const [rotateOpen, setRotateOpen] = useState(false);
   const [rotateTarget, setRotateTarget] = useState<ApiKey | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ApiKey | null>(null);
   const [deletingKey, setDeletingKey] = useState(false);
@@ -225,8 +227,8 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           keys={data.keys}
           onCopy={(text, tag) => void copyToClipboard(text, tag)}
           onDelete={key => { setDeleteSnapName(key.name); setDeleteTarget(key); }}
-          onEdit={setEditTarget}
-          onRotate={setRotateTarget}
+          onEdit={target => { setEditTarget(target); setEditOpen(true); }}
+          onRotate={target => { setRotateTarget(target); setRotateOpen(true); }}
           onSelect={setSelectedKeyId}
           selectedKeyId={selectedKey?.id ?? ''}
           upstreams={data.upstreams}
@@ -248,7 +250,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
 
       <KeyDialog
         apiKey={null}
-        key={createOpen ? 'create-open' : 'create-closed'}
         mode="create"
         onOpenChange={setCreateOpen}
         onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
@@ -259,26 +260,20 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       />
       <KeyDialog
         apiKey={editTarget}
-        key={editTarget?.id ?? 'edit-closed'}
         mode="edit"
-        onOpenChange={open => {
-          if (!open) setEditTarget(null);
-        }}
+        onOpenChange={setEditOpen}
         onSaved={async () => { await reload(); }}
         mutationToasts={mutationToasts}
-        open={editTarget !== null}
+        open={editOpen}
         upstreams={data.upstreams}
         userUpstreamIds={user.upstreamIds}
       />
       <RotateKeyDialog
         apiKey={rotateTarget}
-        key={rotateTarget?.id ?? 'closed'}
-        onOpenChange={open => {
-          if (!open) setRotateTarget(null);
-        }}
+        onOpenChange={setRotateOpen}
         onSaved={reload}
         mutationToasts={mutationToasts}
-        open={rotateTarget !== null}
+        open={rotateOpen}
       />
       <ConfirmDialog
         actionLabel={t('dashboard.apiKeys.actions.delete')}

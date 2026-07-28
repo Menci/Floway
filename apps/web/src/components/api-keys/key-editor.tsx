@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -103,12 +103,21 @@ export function KeyDialog({
   const {
     control,
     handleSubmit,
+    reset,
     setValue,
     formState: { errors },
   } = useForm<KeyFormValues>({
     resolver: zodResolver(schema),
     defaultValues: keyFormDefaults(apiKey),
   });
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      reset(keyFormDefaults(apiKey));
+      setError(null);
+    }
+    wasOpen.current = open;
+  }, [apiKey, open, reset]);
 
   const values = useWatch({ control }) as KeyFormValues;
   const dumpRetentionPresets = DUMP_RETENTION_PRESETS.map(preset => ({
@@ -161,7 +170,7 @@ export function KeyDialog({
   return (
     <DialogShell
       open={open}
-      onOpenChange={(_, data) => onOpenChange(data.open)}
+      onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
       title={
         <DialogTitle>

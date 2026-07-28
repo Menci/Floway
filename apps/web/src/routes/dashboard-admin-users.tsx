@@ -4,7 +4,7 @@ import {
   KeyRegular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { redirect, useOutletContext } from 'react-router';
@@ -98,7 +98,9 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const [pageError, setPageError] = useState<string | null>(loaderData.error);
   const [loading, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ControlPlaneUser | null>(null);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordTarget, setPasswordTarget] = useState<ControlPlaneUser | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ControlPlaneUser | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -176,14 +178,13 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           actorId={actor.id}
           disabled={loading || deleting}
           onDelete={setDeleteTarget}
-          onEdit={setEditTarget}
-          onResetPassword={setPasswordTarget}
+          onEdit={target => { setEditTarget(target); setEditOpen(true); }}
+          onResetPassword={target => { setPasswordTarget(target); setPasswordOpen(true); }}
           users={data.users}
         />
       </ResourceListPanel>
 
       <UserDialog
-        key={'create'}
         actorId={actor.id}
         mode="create"
         onOpenChange={setCreateOpen}
@@ -193,19 +194,18 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         user={null}
       />
       <UserDialog
-        key={editTarget?.id ?? 'closed'}
         actorId={actor.id}
         mode="edit"
-        onOpenChange={open => { if (!open) setEditTarget(null); }}
+        onOpenChange={setEditOpen}
         onSaved={afterSaved}
-        open={editTarget !== null}
+        open={editOpen}
         upstreams={data.upstreams}
         user={editTarget}
       />
-      <PasswordDialog key={passwordTarget?.id ?? 'closed'}
-        onOpenChange={open => { if (!open) setPasswordTarget(null); }}
+      <PasswordDialog
+        onOpenChange={setPasswordOpen}
         onSaved={reload}
-        open={passwordTarget !== null}
+        open={passwordOpen}
         user={passwordTarget}
       />
       <ConfirmDialog
@@ -362,11 +362,19 @@ function UserDialog({
     }),
     [mode],
   );
-  const { control, handleSubmit, setValue, formState: { errors } } =
+  const { control, handleSubmit, reset, setValue, formState: { errors } } =
     useForm<UserFormValues>({
       resolver: zodResolver(schema),
       defaultValues: userFormDefaults(user),
     });
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      reset(userFormDefaults(user));
+      setError(null);
+    }
+    wasOpen.current = open;
+  }, [open, reset, user]);
 
   const values = useWatch({ control }) as UserFormValues;
   const adminLocked = mode === 'edit' && !!user && (user.id === 1 || user.id === actorId);
@@ -412,7 +420,7 @@ function UserDialog({
           </Button>
         </DialogActions>
       }
-      onOpenChange={(_, data) => onOpenChange(data.open)}
+      onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
       open={open}
       title={<DialogTitle>{mode === 'create'
@@ -582,10 +590,18 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
     message: 'dashboard.users.validation.passwordMismatch',
     path: ['confirmation'],
   }), []);
-  const { control, handleSubmit, formState: { errors } } = useForm<PasswordFormValues>({
+  const { control, handleSubmit, reset, formState: { errors } } = useForm<PasswordFormValues>({
     resolver: zodResolver(schema),
     defaultValues: { password: '', confirmation: '' },
   });
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      reset({ password: '', confirmation: '' });
+      setError(null);
+    }
+    wasOpen.current = open;
+  }, [open, reset]);
 
   const save = async (values: PasswordFormValues) => {
     if (!user) return;
@@ -612,7 +628,7 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
           {saving ? t('dashboard.users.actions.saving') : t('dashboard.users.actions.save')}
         </Button>
       </DialogActions>}
-      onOpenChange={(_, data) => onOpenChange(data.open)}
+      onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
       open={open}
       title={<DialogTitle>{t('dashboard.users.dialog.passwordTitle', { username: user?.username ?? '' })}</DialogTitle>}
