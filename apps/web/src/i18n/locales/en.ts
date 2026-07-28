@@ -321,6 +321,7 @@ const en = {
         source: {
           generate: 'Randomly generate',
           custom: 'Custom',
+          preset: 'Retention period',
         },
         dialog: {
           createTitle: 'Create API Key',

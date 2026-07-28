@@ -309,6 +309,7 @@ const zhHansCN = {
         source: {
           generate: '随机生成',
           custom: '自定义',
+          preset: '保留时间',
         },
         dialog: {
           createTitle: '创建 API 密钥',

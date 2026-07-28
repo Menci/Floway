@@ -115,21 +115,25 @@ export const RetentionField = ({
 
   const invalid = choice === 'custom' && parseCustom(custom) === null;
 
-  return <div className="grid gap-2">
-    <Field
-      hint={description}
-      label={label}
-      validationMessage={invalid ? t('dashboard.apiKeys.retention.invalid') : undefined}
-      validationState={invalid ? 'error' : 'none'}
-    >
-      <div className="grid gap-2 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[560px]:grid-cols-1">
+  return <div aria-describedby={`${fieldId}-description`} aria-labelledby={`${fieldId}-label`} className="grid gap-2" role="group">
+    <div className="grid gap-1">
+      <Text id={`${fieldId}-label`} weight="semibold">{label}</Text>
+      <Text id={`${fieldId}-description`} size={200} className="text-fui-fg2">{description}</Text>
+    </div>
+    <div className="grid gap-2 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[560px]:grid-cols-1">
+      <Field label={t('dashboard.apiKeys.retention.preset')}>
         <Select id={`${fieldId}-preset`} value={choice} onChange={(_, data) => selectChoice(data.value as Choice)}>
           <option value="off">{offLabel}</option>
           {presets.map(preset => <option key={preset.seconds} value={`seconds:${preset.seconds}`}>{preset.label}</option>)}
           <option value="custom">{t('dashboard.apiKeys.retention.custom')}</option>
         </Select>
-        {choice === 'custom' && <Input
-          aria-label={t('dashboard.apiKeys.retention.customValue')}
+      </Field>
+      {choice === 'custom' && <Field
+        label={t('dashboard.apiKeys.retention.customValue')}
+        validationMessage={invalid ? t('dashboard.apiKeys.retention.invalid') : undefined}
+        validationState={invalid ? 'error' : 'none'}
+      >
+        <Input
           id={`${fieldId}-custom`}
           placeholder={customInputUnit === 'days' ? t('dashboard.apiKeys.retention.daysPlaceholder') : t('dashboard.apiKeys.retention.durationPlaceholder')}
           value={custom}
@@ -138,9 +142,9 @@ export const RetentionField = ({
             setEditor({ value: parsed, choice: 'custom', custom: data.value });
             onChange(parsed);
           }}
-        />}
-      </div>
-    </Field>
+        />
+      </Field>}
+    </div>
     {children !== undefined && <div className="grid gap-1">{children}</div>}
     {!invalid && typeof value === 'number' && value !== offValue && <Text size={200} className="text-fui-fg3">
       {t('dashboard.apiKeys.retention.effective', { duration: formatDuration(value) })}
