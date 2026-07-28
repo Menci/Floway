@@ -99,7 +99,7 @@ export function UpstreamWorkspace({
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
           </TabList>}
     </div>
-    <ScrollArea axes="vertical" className="min-h-0 max-[1050px]:h-auto" contentClassName="p-5" noTabIndex>
+    <ScrollArea axes="vertical" className="min-h-0 max-[1050px]:h-auto" contentClassName="px-5 py-4" noTabIndex>
       {tab === 'models' ? <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} /> : <div className="grid gap-5">
         <Text size={300} className="text-fui-fg2 leading-[1.45]">
           {t('dashboard.upstreamEditor.flags.intro')}

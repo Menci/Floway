@@ -118,7 +118,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
           {formatRelativeTime(record.startedAt, now)}
         </Text>
       </div>
-      <div className="mt-1 flex min-h-[36px] items-start gap-2 min-w-0">
+      <div className="mt-1 flex items-start gap-2 min-w-0">
         <Text size={200} className="line-clamp-2 break-words min-w-0 flex-1 text-fui-fg3 font-mono" title={`${record.method} ${record.path}`}>
           {record.path}
         </Text>

@@ -170,7 +170,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
                   <span className="block min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-fui-medium" title={displayLabel}>{displayLabel}</span>
                   {issues.some(issue => issueAffectsEntry(issue, index)) && <Badge appearance="filled" aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} color="danger" size="tiny">!</Badge>}
                 </span>
-                <span className="truncate text-fui-fg2 text-fui-base200">
+                <span className="truncate font-fui-regular text-fui-fg2 text-fui-base200">
                   {index === baseIndex
                     ? t('dashboard.upstreamEditor.models.basePricingSummary')
                     : t('dashboard.upstreamEditor.models.overridePricingSummary')}
@@ -185,24 +185,19 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
       </Button>}
     </aside>
 
-    {active && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-5 pt-3">
-      <div className="relative min-w-0">
-        <Text size={200} className="text-fui-fg2">
-          {selectedIndex === baseIndex
-            ? t('dashboard.upstreamEditor.models.basePricingDescription')
-            : t('dashboard.upstreamEditor.models.overridePricingDescription')}
-        </Text>
-        {editable && <Tooltip content={t('dashboard.upstreamEditor.models.removePricingEntry')} relationship="label">
+    {active && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-5">
+      {editable && <div className="relative h-0 min-w-0">
+        <Tooltip content={t('dashboard.upstreamEditor.models.removePricingEntry')} relationship="label">
           <Button
             appearance="subtle"
             aria-label={t('dashboard.upstreamEditor.models.removePricingEntry')}
-            className="!absolute !right-0 !top-[-6px]"
+            className="!absolute !right-0 !top-0"
             icon={<DeleteRegular />}
             onClick={removeActive}
             size="small"
           />
-        </Tooltip>}
-      </div>
+        </Tooltip>
+      </div>}
 
       <section className="grid min-w-0 gap-3" aria-labelledby={conditionsHeadingId}>
         <div className={TIGHT_STACK_CLASS}>
