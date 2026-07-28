@@ -490,7 +490,12 @@ const en = {
         pathOverridesHint:
             'Leave an entry blank to use its default /v1 path.',
         disabledModelsHint:
-            'Existing models are best toggled in the Models workspace. Use this field for stale or unavailable model IDs.',
+            'Disabled models stay hidden from the catalog and routing while their metadata remains editable.',
+        disabledModelsPlaceholder: 'Search models…',
+        disabledModelsSelected_one: '{{count}} model disabled',
+        disabledModelsSelected_other: '{{count}} models disabled',
+        disabledModelsUnavailable: 'Missing',
+        disabledModelsMissing: 'No longer in the current model catalog: {{models}}',
         prefixInvalid:
             'The prefix must end in /, use only letters, numbers, dots, underscores, hyphens, or slashes, and contain at most {{max}} characters.',
         prefixDescription:

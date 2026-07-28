@@ -1,26 +1,31 @@
-import { ArrowDownRegular, ArrowUpRegular, DeleteRegular } from '@fluentui/react-icons';
-import { useId } from 'react';
+import { ArrowDownRegular, ArrowUpRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
+import { useId, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import type { RuntimeInfo, UpstreamEditorValues } from './editor-data';
+import { publicModelId } from './editor-data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
-import type { ProxyRecord, UpstreamRecord } from '../../api/types';
+import type { ProxyRecord, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { Input, Select } from '../ui/fluent-form-controls';
+import { Combobox, Input, Select } from '../ui/fluent-form-controls';
 import { ScrollArea } from '../ui/scroll-area';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
-const { Button, Checkbox, Field, Text } = fluentComponents;
+const { Badge, Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text } = fluentComponents;
 
 export function UpstreamConfigSidebar({
+  catalogAvailable,
+  discovered,
   onPatch,
   onRefreshModels,
   proxies,
   record,
   runtime,
 }: {
+  catalogAvailable: boolean;
+  discovered: UpstreamModelConfig[];
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;
   proxies: ProxyRecord[];
@@ -28,11 +33,10 @@ export function UpstreamConfigSidebar({
   runtime: RuntimeInfo;
 }) {
   const { t } = useTranslation();
-  const { control, setValue } = useFormContext<UpstreamEditorValues>();
-  const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
-  return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName="grid gap-7 p-[18px_20px_28px]" noTabIndex>
-    <aside>
-      <div>
+  const { control } = useFormContext<UpstreamEditorValues>();
+  return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName="p-[18px_20px_28px]" noTabIndex>
+    <aside className="grid gap-7">
+      <section>
         <Field label={t('dashboard.upstreamEditor.fields.name')} required>
           <Controller
             control={control}
@@ -47,43 +51,31 @@ export function UpstreamConfigSidebar({
             )}
           />
         </Field>
-      </div>
-      <div>
-        <EditorSection
-          title={t('dashboard.upstreamEditor.sections.color')}
-          description={t('dashboard.upstreamEditor.color.description')}
-        >
-          <UpstreamColorEditor kind={record.kind} />
-        </EditorSection>
-      </div>
-      <div>
-        <EditorSection title={t('dashboard.upstreamEditor.sections.connection')}>
-          <ProviderConfigSection record={record} onPatch={onPatch} />
-          <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
-        </EditorSection>
-      </div>
-      {record.kind === 'custom' && <div>
+      </section>
+      <EditorSection
+        title={t('dashboard.upstreamEditor.sections.color')}
+        description={t('dashboard.upstreamEditor.color.description')}
+      >
+        <UpstreamColorEditor kind={record.kind} />
+      </EditorSection>
+      <EditorSection title={t('dashboard.upstreamEditor.sections.connection')}>
+        <ProviderConfigSection record={record} onPatch={onPatch} />
+        <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
+      </EditorSection>
+      {record.kind === 'custom' && (
         <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
           <ApiPathsSection record={record} onRefreshModels={onRefreshModels} />
         </EditorSection>
-      </div>}
-      <div className="grid gap-5">
-        <EditorSection
-          title={t('dashboard.upstreamEditor.sections.prefix')}
-          description={t('dashboard.upstreamEditor.prefixDescription')}
-        >
-          <ModelPrefixEditor />
-        </EditorSection>
-        <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
-          <Field>
-            <Input
-              value={disabled.join(', ')}
-              onChange={(_, data) => setValue('disabledPublicModelIds', data.value.split(',').map(v => v.trim()).filter(Boolean), { shouldDirty: true })}
-              placeholder="model-a, model-b"
-            />
-          </Field>
-        </EditorSection>
-      </div>
+      )}
+      <EditorSection
+        title={t('dashboard.upstreamEditor.sections.prefix')}
+        description={t('dashboard.upstreamEditor.prefixDescription')}
+      >
+        <ModelPrefixEditor />
+      </EditorSection>
+      <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
+        <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} />
+      </EditorSection>
     </aside>
   </ScrollArea>;
 }
@@ -104,10 +96,64 @@ function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
 }
 
 function EditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
-  return <section className="grid gap-3 pt-1">
+  return <section className="grid gap-4">
     <div className="grid gap-1"><Text as="h2" size={300} weight="semibold" className="!m-0">{title}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
     {children}
   </section>;
+}
+
+export const buildDisabledModelOptions = (
+  discovered: readonly UpstreamModelConfig[],
+  manual: readonly UpstreamModelConfig[],
+  disabled: readonly string[],
+  catalogAvailable: boolean,
+) => {
+  const availableIds = new Set([...discovered, ...manual].map(publicModelId).filter(Boolean));
+  const missingIds = catalogAvailable ? new Set(disabled.filter(id => !availableIds.has(id))) : new Set<string>();
+  return [...new Set([...availableIds, ...disabled])]
+    .toSorted((left, right) => left.localeCompare(right))
+    .map(id => ({ id, missing: missingIds.has(id) }));
+};
+
+function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvailable: boolean; discovered: UpstreamModelConfig[] }) {
+  const { t } = useTranslation();
+  const { control, setValue } = useFormContext<UpstreamEditorValues>();
+  const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
+  const manual = useWatch({ control, name: 'manualModels' });
+  const [query, setQuery] = useState('');
+  const options = useMemo(
+    () => buildDisabledModelOptions(discovered, manual, disabled, catalogAvailable),
+    [catalogAvailable, disabled, discovered, manual],
+  );
+  const filtered = options.filter(option => option.id.toLowerCase().includes(query.trim().toLowerCase()));
+  const missing = options.filter(option => option.missing).map(option => option.id);
+  return <div className="grid gap-3">
+    <Combobox
+      aria-label={t('dashboard.upstreamEditor.sections.disabledModels')}
+      multiselect
+      onChange={event => setQuery(event.target.value)}
+      onOpenChange={(_, data) => { if (!data.open) setQuery(''); }}
+      onOptionSelect={(_, data) => {
+        setValue('disabledPublicModelIds', data.selectedOptions, { shouldDirty: true });
+        setQuery('');
+      }}
+      placeholder={disabled.length === 0
+        ? t('dashboard.upstreamEditor.disabledModelsPlaceholder')
+        : t('dashboard.upstreamEditor.disabledModelsSelected', { count: disabled.length })}
+      selectedOptions={disabled}
+      value={query}
+    >
+      {filtered.map(option => <Option key={option.id} text={option.id} value={option.id}>
+        <span className="flex items-center justify-between gap-3 min-w-0 w-full">
+          <span className="font-mono min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{option.id}</span>
+          {option.missing && <Badge appearance="tint" color="warning" size="small">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</Badge>}
+        </span>
+      </Option>)}
+    </Combobox>
+    {missing.length > 0 && <MessageBar icon={<WarningRegular />} intent="warning" layout="multiline">
+      <MessageBarBody className="break-words">{t('dashboard.upstreamEditor.disabledModelsMissing', { models: missing.join(', ') })}</MessageBarBody>
+    </MessageBar>}
+  </div>;
 }
 
 function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; runtime: RuntimeInfo }) {
