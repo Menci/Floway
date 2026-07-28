@@ -148,7 +148,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
     setSaving(false);
     if (result.error) { setSaveError(result.error.message); return; }
-    let saved = result.data;
+    let saved: UpstreamRecord = result.data;
     if (data.mode === 'edit') {
       const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
       if (!full.error) saved = full.data;
