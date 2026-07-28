@@ -492,6 +492,7 @@ export default function DashboardAdminBackupRestore() {
 
       <ConfirmDialog
         actionLabel={t('dashboard.backupRestore.import.button')}
+        actionIntent="primary"
         busy={importing}
         cancelLabel={t('common.cancel')}
         message={t('dashboard.backupRestore.confirmMessage')}

@@ -160,6 +160,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
     </NavDrawer>
     <ConfirmDialog
       actionLabel={t('dashboard.logout.action')}
+      actionIntent="primary"
       message={t('dashboard.logout.message')}
       onConfirm={() => void logout()}
       onOpenChange={setLogoutOpen}

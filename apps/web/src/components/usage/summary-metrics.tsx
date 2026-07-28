@@ -3,38 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { formatSummaryMetric, metricConfig, summaryMetrics } from './chart-model';
 import type { TokenSummary, UsageMetric } from './types';
 import { fluentComponents } from '../../fluent';
-const { Text, makeStyles, mergeClasses } = fluentComponents;
-const useMetricButtonStyles = makeStyles({
-  root: {
-    backgroundColor: 'var(--colorNeutralBackground2)',
-    border: '1px solid var(--colorNeutralStroke1)',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    display: 'grid',
-    gap: '4px',
-    minHeight: '66px',
-    minWidth: '0',
-    padding: '8px 10px',
-    textAlign: 'left',
-    ':hover': {
-      border: '1px solid var(--colorBrandStroke1)',
-    },
-  },
-  activeRoot: {
-    backgroundColor: 'var(--colorBrandBackgroundInvertedHover)',
-    border: '1px solid var(--colorBrandStroke1)',
-    '@media (prefers-color-scheme: dark)': {
-      backgroundColor: 'var(--colorBrandBackground2)',
-    },
-  },
-  value: {
-    color: 'var(--colorNeutralForeground1)',
-    overflowWrap: 'anywhere',
-  },
-  activeText: {
-    color: 'var(--colorBrandForeground1)',
-  },
-});
+const { Text, ToggleButton } = fluentComponents;
 
 function SummaryMetricButton({
   active,
@@ -47,29 +16,18 @@ function SummaryMetricButton({
   onClick: () => void;
   value: string;
 }) {
-  const s = useMetricButtonStyles();
   return (
-    <button
-      aria-pressed={active}
-      className={mergeClasses(s.root, active && s.activeRoot)}
+    <ToggleButton
+      appearance="subtle"
+      checked={active}
+      className="!h-auto !justify-start !min-h-[62px] !p-2 !text-left min-w-0"
       onClick={onClick}
-      type="button"
     >
-      <Text
-        size={200}
-        weight="semibold"
-        className={mergeClasses('text-fui-fg2 leading-[1.2]', active && s.activeText)}
-      >
-        {label}
-      </Text>
-      <Text
-        size={500}
-        weight="semibold"
-        className={mergeClasses(s.value, active && s.activeText)}
-      >
-        {value}
-      </Text>
-    </button>
+      <span className="grid gap-1 min-w-0">
+        <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">{label}</Text>
+        <Text size={500} weight="semibold" className="overflow-wrap-anywhere">{value}</Text>
+      </span>
+    </ToggleButton>
   );
 }
 export function SummaryMetrics({ locale, metric, onMetricChange, summary }: { locale: string; metric: UsageMetric; onMetricChange: (metric: UsageMetric) => void; summary: TokenSummary }) {

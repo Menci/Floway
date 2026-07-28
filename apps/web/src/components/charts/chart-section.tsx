@@ -1,11 +1,11 @@
-import { ArrowRepeatAllRegular, SelectAllOffRegular, SelectAllOnRegular } from '@fluentui/react-icons';
+import { SelectAllOffRegular, SelectAllOnRegular, SquareMultipleRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
 import { colorForSlot } from './palette';
 import { invertedSeries, isolatedSeries, toggledSeries } from './series-selection';
 import { fluentComponents } from '../../fluent';
 
-const { Button, InteractionTag, InteractionTagPrimary, Text, Tooltip } = fluentComponents;
+const { InteractionTag, InteractionTagPrimary, Text, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
 
 export interface SeriesLegendEntry {
   id: string;
@@ -43,17 +43,17 @@ export function ChartSection({
     <section className="grid gap-3 min-w-0">
       <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
         <Text as="h2" size={500} weight="semibold" className="!m-0 text-fui-fg1 leading-[1.25]">{title}</Text>
-        <div className="flex items-center flex-none gap-1" aria-label={controlsLabel}>
+        <Toolbar aria-label={controlsLabel} className="!flex-none !p-0" size="small">
           <Tooltip content={t('dashboard.charts.series.all')} relationship="label">
-            <Button appearance="subtle" icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />
+            <ToolbarButton aria-label={t('dashboard.charts.series.all')} icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />
           </Tooltip>
           <Tooltip content={t('dashboard.charts.series.none')} relationship="label">
-            <Button appearance="subtle" icon={<SelectAllOffRegular />} onClick={() => onHiddenChange(new Set(ids))} />
+            <ToolbarButton aria-label={t('dashboard.charts.series.none')} icon={<SelectAllOffRegular />} onClick={() => onHiddenChange(new Set(ids))} />
           </Tooltip>
           <Tooltip content={t('dashboard.charts.series.invert')} relationship="label">
-            <Button appearance="subtle" icon={<ArrowRepeatAllRegular />} onClick={() => onHiddenChange(invertedSeries(ids, hidden))} />
+            <ToolbarButton aria-label={t('dashboard.charts.series.invert')} icon={<SquareMultipleRegular />} onClick={() => onHiddenChange(invertedSeries(ids, hidden))} />
           </Tooltip>
-        </div>
+        </Toolbar>
       </div>
 
       {entries.length
