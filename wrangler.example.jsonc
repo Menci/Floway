@@ -72,8 +72,7 @@
       "/embeddings",
       "/images/*",
       "/models",
-      "/azure-api.codex/*",
-      "/favicon.ico"
+      "/azure-api.codex/*"
     ]
   },
   "d1_databases": [

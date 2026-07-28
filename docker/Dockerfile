@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
 
+ARG NODE_VERSION=22.23.1
+
 # `node:22-*-slim` skips riscv64, so we base off Debian directly and drop
 # in the official Node.js tarball keyed on TARGETPLATFORM. `trixie-slim`
 # gives us glibc 2.41, which the sharp riscv64 prebuilt requires.
@@ -7,7 +9,7 @@ FROM debian:trixie-slim AS base
 WORKDIR /app
 
 ARG TARGETPLATFORM
-ARG NODE_VERSION=22.23.1
+ARG NODE_VERSION
 
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:/usr/local/bin:$PATH"
@@ -58,13 +60,21 @@ EXPOSE 8788
 
 CMD ["pnpm", "run", "dev:node"]
 
-# The web bundle is compiled with Vite (a devDependency), so this stage
-# takes the full install and only ships the built assets forward. It is pinned
-# to the build platform: the output is platform-independent static files, and
-# Rolldown and Lightning CSS publish no riscv64 binding, so compiling it under
-# the target architecture would both fail there and drag the whole frontend
-# build through QEMU everywhere else.
-FROM --platform=$BUILDPLATFORM base AS web-build
+# The web bundle is platform-independent, while Rolldown and Lightning CSS do
+# not publish riscv64 binaries. This stage therefore starts from a native Node
+# image for BUILDPLATFORM; inheriting `base` here would retain the TARGETPLATFORM
+# Node binary even if Docker relabelled the child stage as BUILDPLATFORM.
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-trixie-slim AS web-build
+WORKDIR /app
+ENV PNPM_HOME=/pnpm
+ENV PATH="$PNPM_HOME:/usr/local/bin:$PATH"
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json LICENSE ./
+COPY patches ./patches
+COPY apps ./apps
+COPY packages ./packages
+
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm run build:web
 
