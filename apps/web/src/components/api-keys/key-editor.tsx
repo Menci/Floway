@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useMemo, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
@@ -107,7 +107,6 @@ export function KeyDialog({
     handleSubmit,
     reset,
     setValue,
-    watch,
     formState: { errors },
   } = useForm<KeyFormValues>({
     resolver: zodResolver(schema),
@@ -125,7 +124,7 @@ export function KeyDialog({
     return () => window.clearTimeout(timer);
   }, [apiKey, open, reset]);
 
-  const values = watch();
+  const values = useWatch({ control }) as KeyFormValues;
   const dumpRetentionPresets = DUMP_RETENTION_PRESETS.map(preset => ({
     seconds: preset.seconds,
     label: t(`dashboard.apiKeys.retention.presets.${preset.labelKey}`),

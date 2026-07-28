@@ -180,7 +180,10 @@ export function RequestDetailPanel({ keyId, recordId }: DetailProps) {
 
   const requestBody = record ? renderBody(record.request.body, contentTypeOf(record.request.headers)) : EMPTY_BODY;
   const responseBody = record?.response.body.type === 'bytes' ? renderBody(record.response.body.body, contentTypeOf(record.response.headers)) : EMPTY_BODY;
-  const streamEvents: DumpStreamEvent[] = record?.response.body.type === 'stream' ? record.response.body.events : [];
+  const streamEvents = useMemo<DumpStreamEvent[]>(
+    () => record?.response.body.type === 'stream' ? record.response.body.events : [],
+    [record],
+  );
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
 

@@ -51,6 +51,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const allowNavigation = useRef(false);
+  const recordRef = useRef(record);
+  recordRef.current = record;
   const initialValues = valuesFromRecord(data.record);
   const [savedBaseline, setSavedBaseline] = useState(() => comparableValues(initialValues));
   const form = useForm<UpstreamEditorValues>({
@@ -92,7 +94,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   }, [hasUnsavedChanges]);
 
   const refreshModels = useCallback(async () => {
-    if (record.kind === 'azure') return;
+    const currentRecord = recordRef.current;
+    if (currentRecord.kind === 'azure') return;
     setModelsLoading(true);
     setModelsError(null);
     const values = getValues();
@@ -100,17 +103,17 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       authFetch('/api/upstreams/list-models', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ record: previewRecord(record, values) }),
+        body: JSON.stringify({ record: previewRecord(currentRecord, values) }),
       }));
     if (result.error) {
       setModelsLoading(false);
       setModelsError(result.error.message);
       return;
     }
-    const endpoints = record.kind === 'custom' ? (values.config as typeof record.config).endpoints : {};
-    setDiscovered(discoveredModelsFromResponse(record.kind, result.data.data, endpoints));
-    if (record.id !== '') {
-      const refreshed = await callApi<UpstreamRecord>(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
+    const endpoints = currentRecord.kind === 'custom' ? (values.config as typeof currentRecord.config).endpoints : {};
+    setDiscovered(discoveredModelsFromResponse(currentRecord.kind, result.data.data, endpoints));
+    if (currentRecord.id !== '') {
+      const refreshed = await callApi<UpstreamRecord>(() => api.api.upstreams[':id'].$get({ param: { id: currentRecord.id } }));
       if (refreshed.error) {
         setModelsError(refreshed.error.message);
       } else {
@@ -118,19 +121,20 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       }
     }
     setModelsLoading(false);
-  }, [getValues, record]);
+  }, [getValues]);
 
   useEffect(() => {
+    const currentRecord = recordRef.current;
     const values = getValues();
-    const canFetch = record.kind === 'custom'
+    const canFetch = currentRecord.kind === 'custom'
       ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).baseUrl)
         && (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled
-      : record.kind === 'ollama'
+      : currentRecord.kind === 'ollama'
         ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl)
-        : record.id !== '' && record.kind !== 'azure';
+        : currentRecord.id !== '' && currentRecord.kind !== 'azure';
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Fetching the model catalog on mount; the pending flag begins that work.
     if (canFetch) void refreshModels();
-  }, []);
+  }, [getValues, refreshModels]);
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });

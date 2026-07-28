@@ -1,5 +1,5 @@
 import { AddRegular, ArrowClockwiseRegular, DeleteRegular, EditRegular, WarningRegular } from '@fluentui/react-icons';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
@@ -42,24 +42,26 @@ export default function DashboardProvidersModelAliases() {
   const [editing, setEditing] = useState<ModelAlias | null>(null);
   const [deleting, setDeleting] = useState<ModelAlias | null>(null);
   const [mutating, setMutating] = useState(false);
+  const dataRef = useRef({ aliases, models });
+  dataRef.current = { aliases, models };
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setError(null);
     setModelsError(null);
     const [aliasResult, modelResult] = await Promise.all([
       callApi<ModelAlias[]>(() => api.api.aliases.$get()),
       callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
     ]);
-    const next = mergeModelAliasesPageData({ aliases, models }, aliasResult, modelResult);
+    const next = mergeModelAliasesPageData(dataRef.current, aliasResult, modelResult);
     setAliases(next.aliases);
     setModels(next.models);
     setError(next.aliasError);
     setModelsError(next.modelsError);
     setLoading(false);
-  };
+  }, []);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Loading the alias list on mount; the pending flag begins that work.
-  useEffect(() => { if (user.isAdmin) void load(); }, [user.isAdmin]);
+  useEffect(() => { if (user.isAdmin) void load(); }, [load, user.isAdmin]);
 
   if (!user.isAdmin) return <section className="grid gap-[18px] max-w-[960px]"><Header /><Panel className="!p-[22px_24px]"><Text weight="semibold">{t('dashboard.pages.adminOnly')}</Text><Text block className="text-fui-fg2 mt-2">{t('dashboard.pages.adminOnlyDescription')}</Text></Panel></section>;
 

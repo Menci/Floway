@@ -7,7 +7,7 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useId, useMemo, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { redirect, useOutletContext } from 'react-router';
 import { z } from 'zod';
@@ -373,13 +373,13 @@ function UserDialog({
     }),
     [mode],
   );
-  const { control, handleSubmit, setValue, watch, formState: { errors } } =
+  const { control, handleSubmit, setValue, formState: { errors } } =
     useForm<UserFormValues>({
       resolver: zodResolver(schema),
       defaultValues: userFormDefaults(user),
     });
 
-  const values = watch();
+  const values = useWatch({ control }) as UserFormValues;
   const adminLocked = mode === 'edit' && !!user && (user.id === 1 || user.id === actorId);
 
   const save = async (form: UserFormValues) => {

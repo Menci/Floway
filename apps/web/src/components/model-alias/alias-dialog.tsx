@@ -56,7 +56,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
   // Every field has a default and useFieldArray preserves complete target rows;
   // RHF still exposes useWatch as DeepPartial, so narrow at this form boundary.
   const values = useWatch({ control }) as AliasFormValues;
-  const targets = values.targets ?? [];
+  const targets = useMemo(() => values.targets ?? [], [values.targets]);
   const kind = values.kind ?? 'chat';
   const { append, fields, move, remove, replace } = useFieldArray({ control, name: 'targets' });
   const automaticMetadata = useMemo(() => computeAnnouncedMetadata(targets, kind, models), [kind, models, targets]);

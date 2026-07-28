@@ -336,7 +336,7 @@ export default function DashboardAdminBackupRestore() {
     setImportFile(null);
     setImportParsedData(null);
     setImporting(false);
-  }, [importParsedData, importMode]);
+  }, [doImport, importMode, importParsedData]);
 
   const handleImportClick = useCallback(() => {
     if (!importParsedData) return;

@@ -1,5 +1,5 @@
 import { ArrowDownRegular, ArrowUpRegular } from '@fluentui/react-icons';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { UpstreamOption } from './types';
@@ -106,11 +106,11 @@ function UpstreamOverrideTable({ available, disabled, ids, onChange }: {
 }) {
   const { t } = useTranslation();
   const rows = useMemo(() => upstreamRows(available, ids), [available, ids]);
-  const toggleUpstream = (id: string, enabled: boolean) => {
+  const toggleUpstream = useCallback((id: string, enabled: boolean) => {
     const nextIds = enabled ? [...new Set([...ids, id])] : ids.filter(candidate => candidate !== id);
     onChange({ override: true, ids: nextIds });
-  };
-  const moveUpstream = (id: string, direction: -1 | 1) => {
+  }, [ids, onChange]);
+  const moveUpstream = useCallback((id: string, direction: -1 | 1) => {
     const index = ids.indexOf(id);
     const nextIndex = index + direction;
     if (index === -1 || nextIndex < 0 || nextIndex >= ids.length) return;
@@ -118,13 +118,13 @@ function UpstreamOverrideTable({ available, disabled, ids, onChange }: {
     const [item] = next.splice(index, 1);
     next.splice(nextIndex, 0, item);
     onChange({ override: true, ids: next });
-  };
+  }, [ids, onChange]);
   const columns = useMemo(() => [
     createTableColumn<UpstreamRow>({ columnId: 'enabled', renderHeaderCell: () => t('dashboard.apiKeys.upstreams.enabled'), renderCell: row => <Checkbox checked={row.enabled} disabled={disabled} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /> }),
     createTableColumn<UpstreamRow>({ columnId: 'order', renderHeaderCell: () => t('dashboard.apiKeys.upstreams.order'), renderCell: row => { const index = ids.indexOf(row.id); return <div className="inline-flex items-center gap-1"><IconButton disabled={disabled || index <= 0} icon={<ArrowUpRegular />} label={t('dashboard.apiKeys.upstreams.moveUp')} onClick={() => moveUpstream(row.id, -1)} /><IconButton disabled={disabled || index === -1 || index >= ids.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.apiKeys.upstreams.moveDown')} onClick={() => moveUpstream(row.id, 1)} /></div>; } }),
     createTableColumn<UpstreamRow>({ columnId: 'name', compare: (a, b) => a.name.localeCompare(b.name), renderHeaderCell: () => t('dashboard.apiKeys.upstreams.name'), renderCell: row => <TableCellLayout><span className="truncate min-w-0">{row.name}</span></TableCellLayout> }),
     createTableColumn<UpstreamRow>({ columnId: 'kind', compare: (a, b) => providerLabel(a.kind).localeCompare(providerLabel(b.kind)), renderHeaderCell: () => t('dashboard.apiKeys.upstreams.kind'), renderCell: row => <ProviderBadge color={row.color} kind={row.kind} /> }),
-  ], [disabled, ids, t]);
+  ], [disabled, ids, moveUpstream, t, toggleUpstream]);
   return <UpstreamPickerTable columns={columns} rows={rows} />;
 }
 

@@ -6,7 +6,7 @@ import {
   EyeRegular,
   PlugConnectedRegular,
 } from '@fluentui/react-icons';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -362,6 +362,7 @@ function OAuthConfig({ record, onPatch }: {
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const { getValues } = useFormContext<UpstreamEditorValues>();
   const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
   const config = values.config as typeof record.config;
   const hasAccount = config.accounts.length > 0;
@@ -406,7 +407,7 @@ function OAuthConfig({ record, onPatch }: {
   const [error, setError] = useState<string | null>(null);
   const flowKind = tab === 'setup' ? 'setup-token' : 'oauth';
 
-  const prepare = async () => {
+  const prepare = useCallback(async () => {
     setBusy(true); setError(null);
     const pkce = await generatePkce();
     stashPkce(record.kind, flowKind, { verifier: pkce.verifier, state: pkce.state });
@@ -415,14 +416,14 @@ function OAuthConfig({ record, onPatch }: {
       : `/api/upstreams/claude-code/${tab === 'setup' ? 'setup-token' : 'oauth'}/authorize-url`;
     const result = await callApi<{ authorize_url: string }>(() => authFetch(path, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ record: previewRecord(record, values), challenge: pkce.challenge, state: pkce.state }),
+      body: JSON.stringify({ record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state }),
     }));
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     setAuthorizeUrl(result.data.authorize_url);
-  };
+  }, [flowKind, getValues, record, tab]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Opening the panel starts an authorize-url request; the pending flag is the start of that work.
-  useEffect(() => { if (open && tab !== 'json' && !authorizeUrl) void prepare(); }, [open, tab]);
+  useEffect(() => { if (open && tab !== 'json' && !authorizeUrl) void prepare(); }, [authorizeUrl, open, prepare, tab]);
 
   const submit = async () => {
     setBusy(true); setError(null);

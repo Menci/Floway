@@ -131,7 +131,7 @@ export function useAgentSetup(apiKeyId: string | null) {
       confirmedRef.current = sentGeneration;
       setConfirmedGeneration(sentGeneration);
     }
-  }, [adoptLease, enqueue, request, terminated]);
+  }, [adoptLease, enqueue, request, retryRunSave, terminated]);
 
   useEffect(() => { runSaveRef.current = runSave; }, [runSave]);
 
@@ -176,8 +176,9 @@ export function useAgentSetup(apiKeyId: string | null) {
     return () => clearTimeout(timer);
   }, [confirmedGeneration, draft, enqueue, generation, lease, runSave, terminated]);
 
+  const leaseToken = lease?.token;
   useEffect(() => {
-    if (!lease || terminated) return;
+    if (!leaseToken || terminated) return;
     const heartbeat = () => enqueue(async () => {
       const current = leaseRef.current;
       if (!current || document.visibilityState === 'hidden') return;
@@ -200,7 +201,7 @@ export function useAgentSetup(apiKeyId: string | null) {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [adoptLease, enqueue, lease?.token, request, terminated]);
+  }, [adoptLease, enqueue, leaseToken, request, terminated]);
 
   useEffect(() => () => {
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
