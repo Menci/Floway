@@ -16,7 +16,7 @@ loader.config({ monaco });
 configureMonacoYaml(monaco, {
   completion: true,
   enableSchemaRequest: false,
-  format: true,
+  format: { enable: true, printWidth: 120 },
   hover: true,
   validate: true,
   yamlVersion: '1.2',
