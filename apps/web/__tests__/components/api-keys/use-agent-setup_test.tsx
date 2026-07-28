@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultAgentSetupConfiguration, useAgentSetup } from '../../../src/components/api-keys/use-agent-setup';
 
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
 type SetupState = ReturnType<typeof useAgentSetup>;
 
 const lease = (expiresAt = Date.now() + 120_000) => ({
@@ -120,5 +122,58 @@ describe('Agent Setup lease lifecycle', () => {
     expect(signal?.aborted).toBe(false);
     await act(async () => root.render(<Harness apiKeyId={null} />));
     expect(signal?.aborted).toBe(true);
+  });
+
+  it('flushes one save before heartbeat when the page becomes visible', async () => {
+    const operations: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      operations.push(String(input).endsWith('/heartbeat') ? 'heartbeat' : init?.method ?? 'GET');
+      return json(lease());
+    }));
+    await act(async () => root.render(<Harness apiKeyId="key-1" />));
+    await settle();
+    operations.length = 0;
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await act(async () => current.updateDraft(configuration => ({
+      ...configuration,
+      codex: { ...configuration.codex, model: 'gpt-visible' },
+    })));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await settle();
+    expect(operations).toEqual(['PUT', 'heartbeat']);
+    await act(async () => vi.advanceTimersByTime(400));
+    await settle();
+    expect(operations).toEqual(['PUT', 'heartbeat']);
+  });
+
+  it('cancels a stale save retry after a newer edit succeeds', async () => {
+    let putCalls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        putCalls += 1;
+        return putCalls === 1 ? json({ error: 'temporary' }, 503) : json(lease());
+      }
+      return json(lease());
+    }));
+    await act(async () => root.render(<Harness apiKeyId="key-1" />));
+    await settle();
+    await act(async () => current.updateDraft(configuration => ({
+      ...configuration,
+      codex: { ...configuration.codex, model: 'first' },
+    })));
+    await act(async () => vi.advanceTimersByTime(400));
+    await settle();
+    await act(async () => current.updateDraft(configuration => ({
+      ...configuration,
+      codex: { ...configuration.codex, model: 'second' },
+    })));
+    await act(async () => vi.advanceTimersByTime(400));
+    await settle();
+    expect(putCalls).toBe(2);
+    await act(async () => vi.advanceTimersByTime(15_000));
+    await settle();
+    expect(putCalls).toBe(2);
   });
 });
