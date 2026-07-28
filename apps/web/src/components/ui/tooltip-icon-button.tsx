@@ -8,8 +8,10 @@ const useStyles = makeStyles({
   // The `:enabled` guard matters: without it the warning colour would also
   // paint a delete the operator is not allowed to press.
   danger: {
+    transitionProperty: 'background-color, border-color',
     ':enabled:hover': { color: 'var(--colorPaletteRedForeground1) !important' },
-    ':enabled:active': { color: 'var(--colorPaletteRedForeground2) !important' },
+    ':enabled:active': { color: 'var(--colorPaletteRedForeground1) !important' },
+    ':enabled:focus': { color: 'var(--colorPaletteRedForeground1) !important' },
     ':enabled:focus-visible': { color: 'var(--colorPaletteRedForeground1) !important' },
   },
 });
