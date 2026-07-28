@@ -122,7 +122,6 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
                 apiKeys={keys}
                 error={subscription.error ?? loaderData.recordsError ?? keysError}
                 hasOlder={subscription.hasOlder}
-                loading={subscription.loading}
                 onKeyChange={keyId => updateSelection(keyId)}
                 onLoadOlder={() => void subscription.loadOlder()}
                 onRecordChange={recordId => updateSelection(selectedKeyId, recordId)}

@@ -8,7 +8,6 @@ const PAGE_LIMIT = 100;
 
 export function useDumpSubscription(keyId: string | null, initialRecords: DumpMetadata[]) {
   const [records, setRecords] = useState(initialRecords);
-  const [loading, setLoading] = useState(false);
   const [hasOlder, setHasOlder] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const seenRef = useRef(new Set<string>());
@@ -23,7 +22,6 @@ export function useDumpSubscription(keyId: string | null, initialRecords: DumpMe
     setRecords(initialRecords);
     setError(null);
     setHasOlder(true);
-    setLoading(keyId !== null);
   }
 
   useEffect(() => {
@@ -45,7 +43,6 @@ export function useDumpSubscription(keyId: string | null, initialRecords: DumpMe
         seenRef.current = new Set(next.map(record => record.id));
         return next;
       });
-      setLoading(false);
       setError(null);
     });
     source.addEventListener('appended', raw => {
@@ -62,11 +59,9 @@ export function useDumpSubscription(keyId: string | null, initialRecords: DumpMe
         } catch {
           setError(data);
         }
-        setLoading(false);
         source.close();
       } else if (source.readyState === EventSource.CLOSED) {
         setError('Stream disconnected');
-        setLoading(false);
       }
     });
     return () => source.close();
@@ -93,5 +88,5 @@ export function useDumpSubscription(keyId: string | null, initialRecords: DumpMe
     }
   }, [hasOlder, keyId, records]);
 
-  return { records, loading, hasOlder, error, loadOlder };
+  return { records, hasOlder, error, loadOlder };
 }

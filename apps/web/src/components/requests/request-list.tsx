@@ -61,7 +61,6 @@ interface RequestListProps {
   records: DumpMetadata[];
   selectedRecordId: string | null;
   onRecordChange: (recordId: string) => void;
-  loading: boolean;
   hasOlder: boolean;
   error: string | null;
   onLoadOlder: () => void;
@@ -181,7 +180,7 @@ export function RequestListPanel(props: RequestListProps) {
       {props.error && <MessageBar intent="error" className="!m-2"><MessageBarBody>{props.error}</MessageBarBody></MessageBar>}
       {props.records.length === 0 ? (
         <div className="flex-1 grid place-items-center text-center p-6">
-          {!props.loading && <Text size={200} className="text-fui-fg3">{t('dashboard.requests.empty')}</Text>}
+          <Text size={200} className="text-fui-fg3">{t('dashboard.requests.empty')}</Text>
         </div>
       ) : (
         <div className="flex-1 min-h-0 relative">
