@@ -1,4 +1,4 @@
-import { ArrowClockwiseRegular, CheckmarkRegular, CopyRegular, DeleteRegular, DismissRegular, EditRegular } from '@fluentui/react-icons';
+import { ArrowClockwiseRegular, CheckmarkRegular, CopyRegular, DeleteRegular, DismissRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -8,17 +8,18 @@ import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-const { Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
+
+const {
+  Button, DataGrid, DataGridBody, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow,
+  Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, TableCellActions, TableCellLayout, Text,
+  createTableColumn, makeStyles,
+} = fluentComponents;
+
 const useStyles = makeStyles({
-  interactiveRow: {
-    cursor: 'pointer',
-    ':focus-visible': { outline: '2px solid var(--colorCompoundBrandStroke)', outlineOffset: '-2px' },
-  },
-  selectedRow: { backgroundColor: 'var(--colorBrandBackground2)' },
-  selectedDot: { backgroundColor: 'var(--colorBrandForeground1)' },
   accentText: { color: 'var(--colorBrandForeground1)' },
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },
 });
+
 export function KeysTable({
   copiedTag, copyFailedTag, keys, onCopy, onDelete, onEdit, onRotate, onSelect, selectedKeyId, upstreams,
 }: {
@@ -39,14 +40,7 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'name', compare: (a, b) => a.name.localeCompare(b.name),
         renderHeaderCell: () => t('dashboard.apiKeys.table.name'),
-        renderCell: key => (
-          <TableCellLayout>
-            <div className="inline-flex items-center gap-2 min-w-0">
-              <span className={`rounded-full flex-none h-[7px] w-[7px] ${key.id === selectedKeyId ? s.selectedDot : 'bg-transparent'}`} />
-              <span className="truncate min-w-0">{key.name}</span>
-            </div>
-          </TableCellLayout>
-        ),
+        renderCell: key => <TableCellLayout truncate>{key.name}</TableCellLayout>,
       }),
       createTableColumn<ApiKey>({
         columnId: 'key', renderHeaderCell: () => t('dashboard.apiKeys.table.key'),
@@ -59,7 +53,8 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'upstreams', renderHeaderCell: () => t('dashboard.apiKeys.table.upstreams'),
         renderCell: key => (
-          <span
+          <TableCellLayout
+            truncate
             className={
               !key.upstream_ids ? undefined
                 : key.upstream_ids.length === 0 ? s.dangerText : s.accentText
@@ -67,7 +62,7 @@ export function KeysTable({
             title={upstreamsTitle(key, upstreamById, t)}
           >
             {upstreamsText(key, upstreamById, t)}
-          </span>
+          </TableCellLayout>
         ),
       }),
       createTableColumn<ApiKey>({
@@ -75,47 +70,52 @@ export function KeysTable({
         renderHeaderCell: () => t('dashboard.apiKeys.table.created'),
         renderCell: key => <span title={dateTime(key.created_at)}>{shortDate(key.created_at)}</span>,
       }),
+      // The row's actions ride in this last cell instead of a column of their
+      // own: TableCellActions reveals them on hover and on keyboard focus, so a
+      // dedicated column would only reserve width for something usually hidden.
       createTableColumn<ApiKey>({
         columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? ''),
         renderHeaderCell: () => t('dashboard.apiKeys.table.lastUsed'),
-        renderCell: key => key.last_used_at
-          ? <span title={dateTime(key.last_used_at)}>
-              {relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })}
-            </span>
-          : <span>{t('dashboard.apiKeys.table.never')}</span>,
-      }),
-      createTableColumn<ApiKey>({
-        columnId: 'actions', renderHeaderCell: () => t('dashboard.apiKeys.table.actions'),
         renderCell: key => {
           const copyTag = `key-${key.id}`;
-          return (
-            <div className="inline-flex items-center gap-[2px]" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-              <TooltipIconButton icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
+          return <>
+            {key.last_used_at
+              ? <span title={dateTime(key.last_used_at)}>
+                  {relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })}
+                </span>
+              : <span>{t('dashboard.apiKeys.table.never')}</span>}
+            <TableCellActions>
+              <TooltipIconButton
+                icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
                 label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
-                onClick={() => onCopy(key.key, copyTag)} />
-              <TooltipIconButton icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
-              <TooltipIconButton icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
-              <TooltipIconButton icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
-            </div>
-          );
+                onClick={() => onCopy(key.key, copyTag)}
+              />
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <Button appearance="subtle" aria-label={t('dashboard.apiKeys.actions.more', { name: key.name })} icon={<MoreHorizontalRegular />} />
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItem icon={<EditRegular />} onClick={() => onEdit(key)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
+                    <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
+                    <MenuItem icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+            </TableCellActions>
+          </>;
         },
       }),
     ],
-    [copiedTag, copyFailedTag, onCopy, onDelete, onEdit, onRotate, s, selectedKeyId, t, upstreamById],
+    [copiedTag, copyFailedTag, onCopy, onDelete, onEdit, onRotate, s, t, upstreamById],
   );
 
   const columnSizingOptions = useMemo(
     () => ({
       name: { defaultWidth: 180 }, key: { defaultWidth: 160 },
-      upstreams: { defaultWidth: 240 }, actions: { defaultWidth: 200 },
+      upstreams: { defaultWidth: 240 }, lastUsed: { defaultWidth: 220 },
     }), [],
   );
-
-  const { getRows, columnSizing_unstable, tableRef } = useTableFeatures(
-    { columns, items: keys },
-    [useTableSort({}), useTableColumnSizing_unstable({ columnSizingOptions })],
-  );
-  const rows = getRows();
 
   if (keys.length === 0) {
     return <Text size={300} className="text-fui-fg3 !m-0 text-center p-[18px_0]">{t('dashboard.apiKeys.empty')}</Text>;
@@ -123,42 +123,47 @@ export function KeysTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table ref={tableRef} {...columnSizing_unstable.getTableProps()} aria-label={t('dashboard.apiKeys.table.title')} sortable>
-        <TableHeader>
-          <TableRow>
-            {columns.map(column => (
-              <TableHeaderCell key={column.columnId} {...columnSizing_unstable.getTableHeaderCellProps(column.columnId)}>
-                {column.renderHeaderCell()}
-              </TableHeaderCell>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map(({ item }, index) => (
-            <TableRow
-              aria-selected={item.id === selectedKeyId}
-              className={`${s.interactiveRow} ${item.id === selectedKeyId ? s.selectedRow : ''}`}
-              key={item.id}
-              onClick={() => onSelect(item.id)}
-              onKeyDown={event => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                onSelect(item.id);
-              }}
-              tabIndex={item.id === selectedKeyId || (selectedKeyId === '' && index === 0) ? 0 : -1}
+      <DataGrid
+        aria-label={t('dashboard.apiKeys.table.title')}
+        columns={columns}
+        columnSizingOptions={columnSizingOptions}
+        focusMode="composite"
+        getRowId={key => key.id}
+        items={keys}
+        onSelectionChange={(_, data) => {
+          const [id] = [...data.selectedItems];
+          if (typeof id === 'string') onSelect(id);
+        }}
+        resizableColumns
+        selectedItems={selectedKeyId === '' ? [] : [selectedKeyId]}
+        selectionMode="single"
+        sortable
+        subtleSelection
+      >
+        <DataGridHeader>
+          <DataGridRow selectionCell={{ 'aria-label': t('dashboard.apiKeys.table.select') }}>
+            {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+          </DataGridRow>
+        </DataGridHeader>
+        <DataGridBody<ApiKey>>
+          {({ item, rowId }) => (
+            <DataGridRow<ApiKey>
+              key={rowId}
+              selectionCell={{ radioIndicator: { 'aria-label': t('dashboard.apiKeys.table.selectNamed', { name: item.name }) } }}
             >
-              {columns.map(column => (
-                <TableCell key={column.columnId} {...columnSizing_unstable.getTableCellProps(column.columnId)}>
-                  {column.renderCell(item)}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              {({ renderCell, columnId }) => (
+                <DataGridCell focusMode={columnId === 'lastUsed' ? 'group' : 'cell'}>
+                  {renderCell(item)}
+                </DataGridCell>
+              )}
+            </DataGridRow>
+          )}
+        </DataGridBody>
+      </DataGrid>
     </ScrollArea>
   );
 }
+
 const truncateKey = (key: string) =>
   key.length <= 14 ? key : `${key.slice(0, 7)}...${key.slice(-4)}`;
 
