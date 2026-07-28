@@ -1,5 +1,5 @@
 import { billableServiceTier, type BillableUsage } from '@floway-dev/protocols/common';
-import { splitMessagesCacheCreationTokens, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
+import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
 
 // Anthropic reports `input_tokens` exclusive of both cache buckets already,
 // and splits cache creation by TTL — the two rates we are billed at.
@@ -20,13 +20,13 @@ export const billableUsageFromMessagesUsage = (usage: MessagesUsageSnapshot): Bi
 // Anthropic reports input accounting on `message_start` and output accounting
 // on `message_delta`, so the running figure is merged across both.
 export const createMessagesBillableUsageReader = (): (event: MessagesStreamEvent) => BillableUsage | null => {
-  let merged: Partial<MessagesUsageSnapshot> = {};
+  let merged = messagesUsageSnapshot();
   return event => {
     const usage = event.type === 'message_start' ? event.message.usage
       : event.type === 'message_delta' ? event.usage
         : undefined;
-    if (!usage) return null;
-    merged = { ...merged, ...usage };
-    return billableUsageFromMessagesUsage(merged as MessagesUsageSnapshot);
+    if (usage === undefined) return null;
+    merged = mergeMessagesUsageSnapshot(merged, messagesUsageSnapshot(usage));
+    return billableUsageFromMessagesUsage(merged);
   };
 };
