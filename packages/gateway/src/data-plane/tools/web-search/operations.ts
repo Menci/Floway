@@ -129,10 +129,12 @@ const LOCAL_SUPPORTED_COMMAND_FIELDS: Readonly<Record<'search_query' | 'open' | 
   find: new Set(['ref_id', 'pattern']),
 };
 
+export const UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME = 'UnsupportedLocalWebSearchFeatureError';
+
 export class UnsupportedLocalWebSearchFeatureError extends Error {
   constructor(path: string) {
     super(`The configured web search provider does not implement OpenAI search feature \`${path}\`.`);
-    this.name = 'UnsupportedLocalWebSearchFeatureError';
+    this.name = UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME;
   }
 }
 
@@ -354,6 +356,15 @@ export const schemaErrorIr = (
 ): WebSearchCallIR => ({
   action: { type: 'search', query: queryLabel, queries: [queryLabel] },
   results: [{ type: 'text_result', url: '', title, snippet }],
+});
+
+export const unsupportedLocalWebSearchFeatureIr = (
+  action: ResponsesWebSearchAction,
+  message: string,
+): WebSearchCallIR => ({
+  action,
+  results: [{ type: 'text_result', url: '', title: 'Unsupported search feature', snippet: message }],
+  outputText: message,
 });
 
 // ── Error / not-supported text ──

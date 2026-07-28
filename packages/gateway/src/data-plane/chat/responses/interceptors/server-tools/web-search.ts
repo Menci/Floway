@@ -17,6 +17,8 @@ import {
   runBackendSearchMulti,
   schemaErrorIr,
   startBatchFetch,
+  UnsupportedLocalWebSearchFeatureError,
+  unsupportedLocalWebSearchFeatureIr,
   type ParsedWebSearchOperations,
   type WebSearchCallIR,
   type WebSearchExecutionSession,
@@ -636,6 +638,15 @@ const planShimSlots = (
   try {
     assertLocalWebSearchSupport(commands);
   } catch (error) {
+    if (error instanceof UnsupportedLocalWebSearchFeatureError) {
+      return {
+        id: synthesizeWebSearchCallId(),
+        resolve: async () => unsupportedLocalWebSearchFeatureIr(
+          { type: 'search', query: Object.keys(commands).join(', ') },
+          error.message,
+        ),
+      };
+    }
     return {
       id: synthesizeWebSearchCallId(),
       resolve: async () => { throw error; },
