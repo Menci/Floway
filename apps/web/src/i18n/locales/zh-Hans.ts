@@ -530,6 +530,9 @@ const zhHansCN = {
           empty: '未配置回退出口时，流量使用直连 Fetch。',
           add: '添加回退出口',
           colo: '当前 Cloudflare colo：{{colo}}',
+          colos: 'Colo 白名单',
+          allColos: '全部 colo',
+          currentColo: '当前',
         },
         prefix: {
           unprefixed: '无前缀',

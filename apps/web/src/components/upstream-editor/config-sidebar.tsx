@@ -20,6 +20,13 @@ const useEditorSectionStyles = makeStyles({
   required: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
+const COMMON_COLO_LOCATIONS = [
+  'HKG', 'NRT', 'KIX', 'TPE', 'ICN', 'SIN', 'BKK', 'KUL',
+  'LAX', 'SJC', 'SEA', 'DFW', 'ORD', 'IAD', 'EWR', 'YYZ',
+  'LHR', 'CDG', 'AMS', 'FRA', 'MAD', 'MXP', 'WAW', 'ARN',
+  'SYD', 'AKL', 'GRU', 'JNB', 'DXB', 'BOM', 'DEL',
+] as const;
+
 export function UpstreamConfigSidebar({
   catalogAvailable,
   discovered,
@@ -180,17 +187,53 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
     aria-describedby={hint ? `${idPrefix}-hint` : undefined}
     className="grid gap-2"
   >
-    {fields.map((field, index) => <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2" key={field.id}>
-      <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Select aria-label={t('dashboard.upstreamEditor.sections.proxy')} key={item.value} defaultValue={item.value} onChange={(_, data) => item.onChange(data.value)}>{available.map(proxy => <option key={proxy.id} value={proxy.id}>{proxy.name}</option>)}</Select>} />
-      <div className="inline-flex">
-        <TooltipIconButton disabled={index === 0} icon={<ArrowUpRegular />} label={t('dashboard.upstreamEditor.actions.moveUp')} onClick={() => move(index, index - 1)} />
-        <TooltipIconButton disabled={index === fields.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.upstreamEditor.actions.moveDown')} onClick={() => move(index, index + 1)} />
-        <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.actions.remove')} onClick={() => remove(index)} />
+    {fields.map((field, index) => <div className="grid gap-2 border-0 border-t border-solid border-fui-stroke1 py-2 first:border-t-0 first:pt-0" key={field.id}>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Select aria-label={t('dashboard.upstreamEditor.sections.proxy')} key={item.value} defaultValue={item.value} onChange={(_, data) => item.onChange(data.value)}>{available.map(proxy => <option key={proxy.id} value={proxy.id}>{proxy.name}</option>)}</Select>} />
+        <div className="inline-flex">
+          <TooltipIconButton disabled={index === 0} icon={<ArrowUpRegular />} label={t('dashboard.upstreamEditor.actions.moveUp')} onClick={() => move(index, index - 1)} />
+          <TooltipIconButton disabled={index === fields.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.upstreamEditor.actions.moveDown')} onClick={() => move(index, index + 1)} />
+          <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.actions.remove')} onClick={() => remove(index)} />
+        </div>
       </div>
+      {runtime.kind === 'cloudflare' && <Controller control={control} name={`proxyFallbackList.${index}.colos`} render={({ field: item }) => <ColoCombobox current={runtime.runtimeLocation} onChange={item.onChange} value={item.value ?? []} />} />}
     </div>)}
     <Button appearance="secondary" className="!font-fui-regular" onClick={() => append({ id: 'direct_fetch' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>
     {hint && <Text id={`${idPrefix}-hint`} size={200} className="text-fui-fg2">{hint}</Text>}
   </div>;
+}
+
+function ColoCombobox({ current, onChange, value }: { current: string; onChange: (value: string[] | undefined) => void; value: string[] }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const options = [...new Set([current, ...COMMON_COLO_LOCATIONS, ...value])]
+    .filter(location => location.toLowerCase().includes(query.trim().toLowerCase()));
+  const commit = (locations: readonly string[]) => {
+    const normalized = [...new Set(locations.map(location => location.trim().toUpperCase()).filter(Boolean))];
+    onChange(normalized.length === 0 ? undefined : normalized);
+  };
+  return <Combobox
+    aria-label={t('dashboard.upstreamEditor.proxy.colos')}
+    freeform
+    multiselect
+    onChange={event => setQuery(event.target.value)}
+    onKeyDown={event => {
+      if (event.key !== 'Enter' || query.trim() === '') return;
+      event.preventDefault();
+      commit([...value, query]);
+      setQuery('');
+    }}
+    onOpenChange={(_, data) => { setOpen(data.open); setQuery(''); }}
+    onOptionSelect={(_, data) => { commit(data.selectedOptions); setQuery(''); }}
+    placeholder={t('dashboard.upstreamEditor.proxy.allColos')}
+    selectedOptions={value}
+    value={open ? query : value.length === 0 ? '' : value.join(', ')}
+  >
+    {options.map(location => <Option key={location} text={location} value={location}>
+      <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <Badge appearance="tint" color="informative" size="small">{t('dashboard.upstreamEditor.proxy.currentColo')}</Badge>}</span>
+    </Option>)}
+  </Combobox>;
 }
 
 function ModelPrefixEditor() {

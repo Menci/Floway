@@ -555,6 +555,9 @@ const en = {
           empty: 'Without a fallback entry, traffic uses direct Fetch.',
           add: 'Add fallback entry',
           colo: 'Current Cloudflare colo: {{colo}}',
+          colos: 'Colo whitelist',
+          allColos: 'All colos',
+          currentColo: 'Current',
         },
         prefix: {
           unprefixed: 'Unprefixed',
