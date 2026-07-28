@@ -19,7 +19,7 @@ const zhHansCN = {
     },
     auth: {
       adminKeyHint:
-          '用户名留空可登录默认管理员。本地开发未设置 <adminKey>ADMIN_KEY</adminKey> 时密码也可留空，否则请输入 ADMIN_KEY。',
+          '使用空用户名和 <adminKey>ADMIN_KEY</adminKey> 作为密码来登录默认管理员。',
       login: {
         title: '登录',
         subtitle: '登录到 Floway。',
