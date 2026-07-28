@@ -169,7 +169,7 @@ function countRecords(data: BackupFileData): Record<string, number> {
   return counts;
 }
 
-function parseBackupFile(
+export function parseBackupFile(
   raw: string,
 ): { ok: true; payload: BackupFile } | { ok: false; error: string } {
   let parsed: unknown;
