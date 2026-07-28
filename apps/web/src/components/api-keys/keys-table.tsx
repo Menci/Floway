@@ -1,4 +1,4 @@
-import { ArrowClockwiseRegular, CheckmarkRegular, CopyRegular, DeleteRegular, DismissRegular, EditRegular } from '@fluentui/react-icons';
+import { ArrowClockwiseRegular, CheckmarkRegular, CopyRegular, DeleteRegular, DismissRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,13 +6,16 @@ import type { UpstreamOption } from './types';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
+import { useMediaQuery } from '../../lib/use-media-query';
 import { ResourceListEmptyState } from '../ui/resource-list-toolbar';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {
+  Button,
   DataGrid, DataGridBody, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow,
-  TableCellLayout, createTableColumn, makeStyles,
+  List, ListItem, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, TableCellLayout, Text,
+  createTableColumn, makeStyles,
 } = fluentComponents;
 
 const useStyles = makeStyles({
@@ -22,6 +25,12 @@ const useStyles = makeStyles({
   },
   accentText: { color: 'var(--colorBrandForeground1)' },
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },
+  mobileItem: {
+    borderBottom: '1px solid var(--colorNeutralStroke2)',
+    borderRadius: 'var(--borderRadiusMedium)',
+    padding: '10px 8px',
+    '&[aria-selected="true"]': { backgroundColor: 'var(--colorSubtleBackgroundSelected)' },
+  },
 });
 
 export function KeysTable({
@@ -35,6 +44,7 @@ export function KeysTable({
 }) {
   const { t } = useTranslation();
   const s = useStyles();
+  const narrow = useMediaQuery('(max-width: 760px)');
   const upstreamById = useMemo(
     () => new Map(upstreams.map(upstream => [upstream.id, upstream])),
     [upstreams],
@@ -110,6 +120,45 @@ export function KeysTable({
   if (keys.length === 0) {
     return <ResourceListEmptyState>{t('dashboard.apiKeys.empty')}</ResourceListEmptyState>;
   }
+
+  if (narrow) return <List
+    aria-label={t('dashboard.apiKeys.table.title')}
+    onSelectionChange={(_, data) => {
+      if (disabled) return;
+      const id = data.selectedItems[0];
+      if (typeof id === 'string') onSelect(id);
+    }}
+    selectedItems={selectedKeyId === '' ? [] : [selectedKeyId]}
+    selectionMode="single"
+  >
+    {keys.map(key => {
+      const copyTag = `key-${key.id}`;
+      const lastUsed = key.last_used_at
+        ? relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })
+        : t('dashboard.apiKeys.table.never');
+      return <ListItem checkmark={null} className={s.mobileItem} disabledSelection={disabled} key={key.id} value={key.id}>
+        <div className="flex items-start gap-2 min-w-0 w-full">
+          <div className="grid gap-0.5 min-w-0 flex-1">
+            <Text truncate size={300}>{key.name}</Text>
+            <code className="text-fui-base200 text-fui-fg2 truncate">{truncateKey(key.key)}</code>
+            <Text truncate size={200} className="text-fui-fg2" title={upstreamsTitle(key, upstreamById, t)}>{upstreamsText(key, upstreamById, t)}</Text>
+            <Text size={200} className="text-fui-fg3">{shortDate(key.created_at)} · {lastUsed}</Text>
+          </div>
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <Button appearance="subtle" aria-label={t('dashboard.apiKeys.table.actions')} disabled={disabled} icon={<MoreHorizontalRegular />} onClick={event => event.stopPropagation()} />
+            </MenuTrigger>
+            <MenuPopover><MenuList>
+              <MenuItem icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => onCopy(key.key, copyTag)}>{t('dashboard.apiKeys.actions.copy')}</MenuItem>
+              <MenuItem icon={<EditRegular />} onClick={() => onEdit(key)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
+              <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
+              <MenuItem className={s.dangerText} icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
+            </MenuList></MenuPopover>
+          </Menu>
+        </div>
+      </ListItem>;
+    })}
+  </List>;
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
