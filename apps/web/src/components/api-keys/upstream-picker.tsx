@@ -78,6 +78,7 @@ export function UpstreamPicker({
           <HintText>{t('dashboard.apiKeys.upstreams.inheritDescription')}</HintText>
         </div>
         <Switch
+          aria-label={t('dashboard.apiKeys.upstreams.title', { count: selectedCount })}
           checked={override}
           disabled={disabled}
           onChange={(_, data) => onChange({ override: !!data.checked, ids })}
@@ -118,7 +119,7 @@ function UpstreamOverrideTable({ available, disabled, ids, onChange }: {
     onChange({ override: true, ids: next });
   }, [ids, onChange]);
   const columns = useMemo(() => [
-    createTableColumn<UpstreamRow>({ columnId: 'enabled', renderHeaderCell: () => t('dashboard.apiKeys.upstreams.enabled'), renderCell: row => <Checkbox checked={row.enabled} disabled={disabled} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /> }),
+    createTableColumn<UpstreamRow>({ columnId: 'enabled', renderHeaderCell: () => t('dashboard.apiKeys.upstreams.enabled'), renderCell: row => <Checkbox aria-label={`${t('dashboard.apiKeys.upstreams.enabled')}: ${row.name}`} checked={row.enabled} disabled={disabled} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /> }),
     createTableColumn<UpstreamRow>({ columnId: 'order', renderHeaderCell: () => t('dashboard.apiKeys.upstreams.order'), renderCell: row => { const index = ids.indexOf(row.id); return <div className="inline-flex items-center gap-1"><TooltipIconButton disabled={disabled || index <= 0} icon={<ArrowUpRegular />} label={t('dashboard.apiKeys.upstreams.moveUp')} onClick={() => moveUpstream(row.id, -1)} /><TooltipIconButton disabled={disabled || index === -1 || index >= ids.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.apiKeys.upstreams.moveDown')} onClick={() => moveUpstream(row.id, 1)} /></div>; } }),
     createTableColumn<UpstreamRow>({ columnId: 'name', compare: (a, b) => a.name.localeCompare(b.name), renderHeaderCell: () => t('dashboard.apiKeys.upstreams.name'), renderCell: row => <TableCellLayout><span className="truncate min-w-0">{row.name}</span></TableCellLayout> }),
     createTableColumn<UpstreamRow>({ columnId: 'kind', compare: (a, b) => providerLabel(a.kind).localeCompare(providerLabel(b.kind)), renderHeaderCell: () => t('dashboard.apiKeys.upstreams.kind'), renderCell: row => <ProviderBadge color={row.color} kind={row.kind} /> }),

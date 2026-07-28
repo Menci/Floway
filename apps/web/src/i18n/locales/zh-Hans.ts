@@ -1099,6 +1099,10 @@ const zhHansCN = {
         validation: {
           nameRequired: '代理名称不能为空。',
           urlRequired: '请输入代理 URL，或填写完整的结构化字段。',
+          hostRequired: '请输入代理主机。',
+          portInvalid: '请输入 1 到 65535 之间的端口。',
+          uuidInvalid: '请输入有效的 UUID。',
+          required: '此字段为必填项。',
           timeout: {
             positive: '拨号超时必须是正整数秒数。',
             maximum: '拨号超时不能超过 600 秒。',

@@ -1159,6 +1159,10 @@ const en = {
         validation: {
           nameRequired: 'Proxy name is required.',
           urlRequired: 'Enter a proxy URL or complete the structured fields.',
+          hostRequired: 'Enter a proxy host.',
+          portInvalid: 'Enter a port from 1 to 65535.',
+          uuidInvalid: 'Enter a valid UUID.',
+          required: 'This field is required.',
           timeout: {
             positive: 'Dial timeout must be a positive whole number of seconds.',
             maximum: 'Dial timeout must be at most 600 seconds.',
