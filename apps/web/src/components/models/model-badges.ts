@@ -1,6 +1,6 @@
 import { reachableTargets } from './reachability';
 import type { ControlPlaneModel } from '../../api/types';
-import { formatAliasRuleBadges, type AliasRuleBadgeField, type AliasTarget } from '@floway-dev/protocols/common';
+import { ALIAS_RULE_BADGE_FIELDS, formatAliasRuleBadges, type AliasRuleBadge, type AliasRuleBadgeField, type AliasTarget } from '@floway-dev/protocols/common';
 
 export type ModelBadge =
   | { key: string; kind: 'limit'; limit: 'context' | 'prompt' | 'output'; value: string }
@@ -9,8 +9,8 @@ export type ModelBadge =
   // would put on the wire.
   | { key: string; kind: 'aliasOfModel'; target: string }
   | { key: string; kind: 'aliasOfCount'; reachable: number; total: number }
-  | { key: string; kind: 'selection'; selection: string }
-  | { key: string; kind: 'rule'; label: string };
+  | { key: string; kind: 'selection'; selection: 'random' | 'first-available' }
+  | { key: string; kind: 'rule'; field: AliasRuleBadgeField; value: AliasRuleBadge['value'] | null; varies: boolean };
 
 const formatTokenLimit = (count: number): string => {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count % 1_000_000 === 0 ? 0 : 1)}M`;
@@ -46,22 +46,25 @@ export const effectiveUpstreams = (
 const ruleBadges = (targets: readonly AliasTarget[]): ModelBadge[] => {
   if (targets.length === 1) {
     return formatAliasRuleBadges(targets[0]!.rules)
-      .map(badge => ({ key: `rule:${badge.field}`, kind: 'rule' as const, label: badge.label }));
+      .map(badge => ({ key: `rule:${badge.field}`, kind: 'rule' as const, field: badge.field, value: badge.value, varies: false }));
   }
   const formatted = targets.map(target => new Map(
-    formatAliasRuleBadges(target.rules).map(badge => [badge.field, badge.label]),
+    formatAliasRuleBadges(target.rules).map(badge => [badge.field, badge.value]),
   ));
   const fields = new Set<AliasRuleBadgeField>();
   for (const target of targets) {
     for (const badge of formatAliasRuleBadges(target.rules)) fields.add(badge.field);
   }
-  return [...fields].map(field => {
-    const labels = formatted.map(target => target.get(field) ?? null);
-    const first = labels[0];
+  return ALIAS_RULE_BADGE_FIELDS.filter(field => fields.has(field)).map(field => {
+    const values = formatted.map(target => target.get(field));
+    const first = values[0];
+    const varies = first === undefined || values.some(value => value !== first);
     return {
       key: `rule:${field}`,
       kind: 'rule' as const,
-      label: first !== null && labels.every(label => label === first) ? first : `${field}: varies`,
+      field,
+      value: varies ? null : first!,
+      varies,
     };
   });
 };

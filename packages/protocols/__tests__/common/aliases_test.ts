@@ -44,9 +44,9 @@ describe('formatAliasRuleBadges', () => {
       reasoning: { effort: 'high', budget_tokens: 2048 },
       verbosity: 'medium',
     })).toEqual([
-      { field: 'reasoning.effort', label: 'high effort' },
-      { field: 'reasoning.budget_tokens', label: '2048tok budget' },
-      { field: 'verbosity', label: 'medium verbosity' },
+      { field: 'reasoning.effort', label: 'high effort', value: 'high' },
+      { field: 'reasoning.budget_tokens', label: '2048tok budget', value: 2048 },
+      { field: 'verbosity', label: 'medium verbosity', value: 'medium' },
     ]);
   });
 

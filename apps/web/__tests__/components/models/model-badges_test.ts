@@ -68,29 +68,36 @@ describe('model badges', () => {
     } as Partial<ControlPlaneModel>);
     const one = alias([{ target_model_id: 'a', rules: { reasoning: { effort: 'high' } } }]);
     expect(modelBadges(one, [model('a', ['u']), one], null)).toContainEqual(
-      { key: 'rule:reasoning.effort', kind: 'rule', label: 'high effort' },
+      { key: 'rule:reasoning.effort', kind: 'rule', field: 'reasoning.effort', value: 'high', varies: false },
     );
     const many = alias([
       { target_model_id: 'a', rules: { reasoning: { effort: 'high' } } },
       { target_model_id: 'b', rules: { reasoning: { effort: 'low' } } },
     ]);
     expect(modelBadges(many, [model('a', ['u']), model('b', ['u']), many], null)).toContainEqual(
-      { key: 'rule:reasoning.effort', kind: 'rule', label: 'reasoning.effort: varies' },
+      { key: 'rule:reasoning.effort', kind: 'rule', field: 'reasoning.effort', value: null, varies: true },
     );
     const partlyUnset = alias([
       { target_model_id: 'a', rules: { reasoning: { effort: 'high' } } },
       { target_model_id: 'b', rules: {} },
     ]);
     expect(modelBadges(partlyUnset, [model('a', ['u']), model('b', ['u']), partlyUnset], null)).toContainEqual(
-      { key: 'rule:reasoning.effort', kind: 'rule', label: 'reasoning.effort: varies' },
+      { key: 'rule:reasoning.effort', kind: 'rule', field: 'reasoning.effort', value: null, varies: true },
     );
     const capped = alias([
       { target_model_id: 'a', rules: { reasoning: { effort: 'high' } } },
       { target_model_id: 'b', rules: { reasoning: { effort: 'low' } } },
     ]);
     expect(modelBadges(capped, [model('a', ['u-a']), model('b', ['u-b']), capped], ['u-a'])).toContainEqual(
-      { key: 'rule:reasoning.effort', kind: 'rule', label: 'high effort' },
+      { key: 'rule:reasoning.effort', kind: 'rule', field: 'reasoning.effort', value: 'high', varies: false },
     );
+    const disjoint = alias([
+      { target_model_id: 'a', rules: { serviceTier: 'fast' } },
+      { target_model_id: 'b', rules: { reasoning: { effort: 'high' } } },
+    ]);
+    expect(modelBadges(disjoint, [model('a', ['u']), model('b', ['u']), disjoint], null)
+      .filter(badge => badge.kind === 'rule').map(badge => badge.field))
+      .toEqual(['reasoning.effort', 'serviceTier']);
   });
 
   it('lifts an alias row onto the in-cap bindings of its reachable targets', () => {

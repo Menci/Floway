@@ -12,6 +12,30 @@ const useStyles = makeStyles({
   tag: { color: tokens.colorNeutralForeground2 },
 });
 
+const ruleBadgeText = (badge: Extract<ModelBadge, { kind: 'rule' }>, t: ReturnType<typeof useTranslation>['t']): string => {
+  if (badge.varies) {
+    switch (badge.field) {
+    case 'reasoning.effort': return t('dashboard.playground.badges.ruleVaries.reasoningEffort');
+    case 'reasoning.budget_tokens': return t('dashboard.playground.badges.ruleVaries.reasoningBudget');
+    case 'reasoning.adaptive': return t('dashboard.playground.badges.ruleVaries.reasoningAdaptive');
+    case 'reasoning.summary': return t('dashboard.playground.badges.ruleVaries.reasoningSummary');
+    case 'verbosity': return t('dashboard.playground.badges.ruleVaries.verbosity');
+    case 'serviceTier': return t('dashboard.playground.badges.ruleVaries.serviceTier');
+    }
+  }
+  switch (badge.field) {
+  case 'reasoning.effort': return t('dashboard.playground.badges.rules.reasoningEffort', { value: badge.value });
+  case 'reasoning.budget_tokens': return t('dashboard.playground.badges.rules.reasoningBudget', { value: badge.value });
+  case 'reasoning.adaptive':
+    return badge.value === true
+      ? t('dashboard.playground.badges.rules.adaptive')
+      : t('dashboard.playground.badges.rules.nonAdaptive');
+  case 'reasoning.summary': return t('dashboard.playground.badges.rules.reasoningSummary', { value: badge.value });
+  case 'verbosity': return t('dashboard.playground.badges.rules.verbosity', { value: badge.value });
+  case 'serviceTier': return t('dashboard.playground.badges.rules.serviceTier', { value: badge.value });
+  }
+};
+
 const badgeText = (badge: ModelBadge, t: ReturnType<typeof useTranslation>['t']): string => {
   switch (badge.kind) {
   case 'limit':
@@ -23,9 +47,13 @@ const badgeText = (badge: ModelBadge, t: ReturnType<typeof useTranslation>['t'])
       ? t('dashboard.playground.badges.aliasOfCount', { count: badge.total })
       : t('dashboard.playground.badges.aliasOfPartial', { reachable: badge.reachable, total: badge.total });
   case 'selection':
-    return t('dashboard.playground.badges.selection', { selection: badge.selection });
+    return t('dashboard.playground.badges.selection', {
+      selection: t(badge.selection === 'first-available'
+        ? 'dashboard.playground.badges.selectionValues.firstAvailable'
+        : 'dashboard.playground.badges.selectionValues.random'),
+    });
   case 'rule':
-    return badge.label;
+    return ruleBadgeText(badge, t);
   }
 };
 

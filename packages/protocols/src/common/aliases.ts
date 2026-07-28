@@ -114,23 +114,23 @@ export interface ModelAlias {
 }
 
 // One badge per configured rule field, in the canonical order. `field`
-// names the specific rule slot so consumers can group badges without parsing
-// the human-readable label. `value` is reserved
-// for callers that want to render a separate value pill alongside the
-// label; today every part already self-describes through `label`, so
-// `value` stays undefined.
-export type AliasRuleBadgeField =
-  | 'reasoning.effort'
-  | 'reasoning.budget_tokens'
-  | 'reasoning.adaptive'
-  | 'reasoning.summary'
-  | 'verbosity'
-  | 'serviceTier';
+// names the specific rule slot and `value` preserves its typed coordinate for
+// localized renderers; `label` remains the canonical English inline form.
+export const ALIAS_RULE_BADGE_FIELDS = [
+  'reasoning.effort',
+  'reasoning.budget_tokens',
+  'reasoning.adaptive',
+  'reasoning.summary',
+  'verbosity',
+  'serviceTier',
+] as const;
+
+export type AliasRuleBadgeField = typeof ALIAS_RULE_BADGE_FIELDS[number];
 
 export interface AliasRuleBadge {
   label: string;
   field: AliasRuleBadgeField;
-  value?: string;
+  value: string | number | boolean;
 }
 
 // Inline-prose parts for an alias's rules, in the canonical field order. The
@@ -142,13 +142,13 @@ export interface AliasRuleBadge {
 // whether the dashboard renders badges or a comma-joined caption.
 const aliasRuleParts = (rules: AliasRules): AliasRuleBadge[] => {
   const parts: AliasRuleBadge[] = [];
-  if (rules.reasoning?.effort !== undefined) parts.push({ field: 'reasoning.effort', label: `${rules.reasoning.effort} effort` });
-  if (rules.reasoning?.budget_tokens !== undefined) parts.push({ field: 'reasoning.budget_tokens', label: `${rules.reasoning.budget_tokens}tok budget` });
-  if (rules.reasoning?.adaptive === true) parts.push({ field: 'reasoning.adaptive', label: 'adaptive' });
-  else if (rules.reasoning?.adaptive === false) parts.push({ field: 'reasoning.adaptive', label: 'non-adaptive' });
-  if (rules.reasoning?.summary !== undefined) parts.push({ field: 'reasoning.summary', label: `summary: ${rules.reasoning.summary}` });
-  if (rules.verbosity !== undefined) parts.push({ field: 'verbosity', label: `${rules.verbosity} verbosity` });
-  if (rules.serviceTier !== undefined) parts.push({ field: 'serviceTier', label: `${rules.serviceTier} tier` });
+  if (rules.reasoning?.effort !== undefined) parts.push({ field: 'reasoning.effort', label: `${rules.reasoning.effort} effort`, value: rules.reasoning.effort });
+  if (rules.reasoning?.budget_tokens !== undefined) parts.push({ field: 'reasoning.budget_tokens', label: `${rules.reasoning.budget_tokens}tok budget`, value: rules.reasoning.budget_tokens });
+  if (rules.reasoning?.adaptive === true) parts.push({ field: 'reasoning.adaptive', label: 'adaptive', value: true });
+  else if (rules.reasoning?.adaptive === false) parts.push({ field: 'reasoning.adaptive', label: 'non-adaptive', value: false });
+  if (rules.reasoning?.summary !== undefined) parts.push({ field: 'reasoning.summary', label: `summary: ${rules.reasoning.summary}`, value: rules.reasoning.summary });
+  if (rules.verbosity !== undefined) parts.push({ field: 'verbosity', label: `${rules.verbosity} verbosity`, value: rules.verbosity });
+  if (rules.serviceTier !== undefined) parts.push({ field: 'serviceTier', label: `${rules.serviceTier} tier`, value: rules.serviceTier });
   return parts;
 };
 
