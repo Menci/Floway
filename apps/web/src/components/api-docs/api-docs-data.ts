@@ -1,6 +1,6 @@
 import { PUBLIC_DATA_PLANE_ROUTES, type PublicDataPlaneRouteId } from '@floway-dev/protocols/common';
 
-export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'search' | 'codex';
+export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'search';
 
 export interface ApiDocsEndpoint {
   docs: string;
@@ -16,13 +16,10 @@ const codexSearchDocs = 'https://github.com/openai/codex/blob/2e1607ee2fa8099a23
 
 const endpoint = (
   route: PublicDataPlaneRouteId,
-  pathIndex: number,
   metadata: Pick<ApiDocsEndpoint, 'docs' | 'group' | 'name'> & { path?: string },
 ): ApiDocsEndpoint => {
   const manifest = PUBLIC_DATA_PLANE_ROUTES[route];
-  const registeredPath = (manifest.paths as readonly string[])[pathIndex];
-  if (registeredPath === undefined) throw new Error(`Public route ${route} has no path at index ${pathIndex}`);
-  return { route, method: manifest.method, path: metadata.path ?? registeredPath, ...metadata };
+  return { route, method: manifest.method, path: metadata.path ?? manifest.paths.join(', '), ...metadata };
 };
 
 const geminiActionPath = (action: string) =>
@@ -32,52 +29,32 @@ export const authCurlExample = (origin: string) => `curl "${origin}/v1/models" \
   -H "Authorization: Bearer $FLOWAY_API_KEY"`;
 
 export const apiDocsEndpoints: readonly ApiDocsEndpoint[] = [
-  endpoint('models', 0, { group: 'models', name: 'openAiModels', docs: `${openAi}/models/list` }),
-  endpoint('models', 1, { group: 'models', name: 'openAiModelsAlias', docs: `${openAi}/models/list` }),
-  endpoint('geminiModels', 0, { group: 'models', name: 'geminiModels', docs: 'https://ai.google.dev/api/models' }),
-  endpoint('geminiModel', 0, { group: 'models', name: 'geminiModel', docs: 'https://ai.google.dev/api/models', path: PUBLIC_DATA_PLANE_ROUTES.geminiModel.paths[0].replace(':modelId{.+}', '{model}') }),
+  endpoint('models', { group: 'models', name: 'openAiModels', docs: `${openAi}/models/list` }),
+  endpoint('geminiModels', { group: 'models', name: 'geminiModels', docs: 'https://ai.google.dev/api/models' }),
+  endpoint('geminiModel', { group: 'models', name: 'geminiModel', docs: 'https://ai.google.dev/api/models', path: PUBLIC_DATA_PLANE_ROUTES.geminiModel.paths[0].replace(':modelId{.+}', '{model}') }),
 
-  endpoint('completions', 0, { group: 'generation', name: 'openAiCompletions', docs: `${openAi}/completions/create` }),
-  endpoint('completions', 1, { group: 'generation', name: 'openAiCompletionsAlias', docs: `${openAi}/completions/create` }),
-  endpoint('chatCompletions', 0, { group: 'generation', name: 'openAiChat', docs: `${openAi}/chat/create` }),
-  endpoint('chatCompletions', 1, { group: 'generation', name: 'openAiChatAlias', docs: `${openAi}/chat/create` }),
-  endpoint('responses', 0, { group: 'generation', name: 'openAiResponses', docs: `${openAi}/responses/create` }),
-  endpoint('responses', 1, { group: 'generation', name: 'openAiResponsesAlias', docs: `${openAi}/responses/create` }),
-  endpoint('responsesCompact', 0, { group: 'generation', name: 'openAiCompact', docs: `${openAi}/responses/compact` }),
-  endpoint('responsesCompact', 1, { group: 'generation', name: 'openAiCompactAlias', docs: `${openAi}/responses/compact` }),
-  endpoint('responsesWebSocket', 0, { group: 'generation', name: 'openAiResponsesWs', docs: 'https://developers.openai.com/api/docs/guides/websocket-mode' }),
-  endpoint('responsesWebSocket', 1, { group: 'generation', name: 'openAiResponsesWsAlias', docs: 'https://developers.openai.com/api/docs/guides/websocket-mode' }),
-  endpoint('messages', 0, { group: 'generation', name: 'anthropicMessages', docs: 'https://docs.anthropic.com/en/api/messages' }),
-  endpoint('messages', 1, { group: 'generation', name: 'anthropicMessagesAlias', docs: 'https://docs.anthropic.com/en/api/messages' }),
-  endpoint('messagesCountTokens', 0, { group: 'generation', name: 'anthropicCount', docs: 'https://docs.anthropic.com/en/api/messages-count-tokens' }),
-  endpoint('messagesCountTokens', 1, { group: 'generation', name: 'anthropicCountAlias', docs: 'https://docs.anthropic.com/en/api/messages-count-tokens' }),
-  endpoint('geminiAction', 0, { group: 'generation', name: 'geminiGenerate', docs: 'https://ai.google.dev/api/generate-content', path: geminiActionPath('generateContent') }),
-  endpoint('geminiAction', 0, { group: 'generation', name: 'geminiStream', docs: 'https://ai.google.dev/api/generate-content', path: geminiActionPath('streamGenerateContent') }),
-  endpoint('geminiAction', 0, { group: 'generation', name: 'geminiCount', docs: 'https://ai.google.dev/api/tokens', path: geminiActionPath('countTokens') }),
+  endpoint('completions', { group: 'generation', name: 'openAiCompletions', docs: `${openAi}/completions/create` }),
+  endpoint('chatCompletions', { group: 'generation', name: 'openAiChat', docs: `${openAi}/chat/create` }),
+  endpoint('responses', { group: 'generation', name: 'openAiResponses', docs: `${openAi}/responses/create` }),
+  endpoint('responsesCompact', { group: 'generation', name: 'openAiCompact', docs: `${openAi}/responses/compact` }),
+  endpoint('responsesWebSocket', { group: 'generation', name: 'openAiResponsesWs', docs: 'https://developers.openai.com/api/docs/guides/websocket-mode' }),
+  endpoint('messages', { group: 'generation', name: 'anthropicMessages', docs: 'https://docs.anthropic.com/en/api/messages' }),
+  endpoint('messagesCountTokens', { group: 'generation', name: 'anthropicCount', docs: 'https://docs.anthropic.com/en/api/messages-count-tokens' }),
+  endpoint('geminiAction', { group: 'generation', name: 'geminiGenerate', docs: 'https://ai.google.dev/api/generate-content', path: geminiActionPath('generateContent') }),
+  endpoint('geminiAction', { group: 'generation', name: 'geminiStream', docs: 'https://ai.google.dev/api/generate-content', path: geminiActionPath('streamGenerateContent') }),
+  endpoint('geminiAction', { group: 'generation', name: 'geminiCount', docs: 'https://ai.google.dev/api/tokens', path: geminiActionPath('countTokens') }),
 
-  endpoint('embeddings', 0, { group: 'media', name: 'openAiEmbeddings', docs: `${openAi}/embeddings/create` }),
-  endpoint('embeddings', 1, { group: 'media', name: 'openAiEmbeddingsAlias', docs: `${openAi}/embeddings/create` }),
-  endpoint('imagesGenerations', 0, { group: 'media', name: 'openAiImageGeneration', docs: `${openAi}/images/create` }),
-  endpoint('imagesGenerations', 1, { group: 'media', name: 'openAiImageGenerationAlias', docs: `${openAi}/images/create` }),
-  endpoint('imagesEdits', 0, { group: 'media', name: 'openAiImageEdit', docs: `${openAi}/images/createEdit` }),
-  endpoint('imagesEdits', 1, { group: 'media', name: 'openAiImageEditAlias', docs: `${openAi}/images/createEdit` }),
-  endpoint('audioTranscriptions', 0, { group: 'media', name: 'openAiTranscription', docs: `${openAi}/audio/createTranscription` }),
+  endpoint('embeddings', { group: 'media', name: 'openAiEmbeddings', docs: `${openAi}/embeddings/create` }),
+  endpoint('imagesGenerations', { group: 'media', name: 'openAiImageGeneration', docs: `${openAi}/images/create` }),
+  endpoint('imagesEdits', { group: 'media', name: 'openAiImageEdit', docs: `${openAi}/images/createEdit` }),
+  endpoint('audioTranscriptions', { group: 'media', name: 'openAiTranscription', docs: `${openAi}/audio/createTranscription` }),
 
-  endpoint('cohereV1Rerank', 0, { group: 'rerank', name: 'cohereV1Rerank', docs: 'https://docs.cohere.com/reference/rerank' }),
-  endpoint('cohereV2Rerank', 0, { group: 'rerank', name: 'cohereV2Rerank', docs: 'https://docs.cohere.com/v2/reference/rerank' }),
-  endpoint('jinaV1Rerank', 0, { group: 'rerank', name: 'jinaRerank', docs: 'https://jina.ai/reranker' }),
-  endpoint('voyageV1Rerank', 0, { group: 'rerank', name: 'voyageRerank', docs: 'https://docs.voyageai.com/reference/reranker-api' }),
+  endpoint('cohereV1Rerank', { group: 'rerank', name: 'cohereV1Rerank', docs: 'https://docs.cohere.com/reference/rerank' }),
+  endpoint('cohereV2Rerank', { group: 'rerank', name: 'cohereV2Rerank', docs: 'https://docs.cohere.com/v2/reference/rerank' }),
+  endpoint('jinaV1Rerank', { group: 'rerank', name: 'jinaRerank', docs: 'https://jina.ai/reranker' }),
+  endpoint('voyageV1Rerank', { group: 'rerank', name: 'voyageRerank', docs: 'https://docs.voyageai.com/reference/reranker-api' }),
 
-  endpoint('alphaSearch', 0, { group: 'search', name: 'codexSearch', docs: codexSearchDocs }),
-  endpoint('alphaSearch', 1, { group: 'search', name: 'codexSearchV1', docs: codexSearchDocs }),
-
-  endpoint('codexAlphaSearch', 0, { group: 'codex', name: 'codexNamespaceSearch', docs: codexSearchDocs }),
-  endpoint('codexResponses', 0, { group: 'codex', name: 'codexNamespaceResponses', docs: `${openAi}/responses/create` }),
-  endpoint('codexResponsesCompact', 0, { group: 'codex', name: 'codexNamespaceCompact', docs: `${openAi}/responses/compact` }),
-  endpoint('codexResponsesWebSocket', 0, { group: 'codex', name: 'codexNamespaceWs', docs: 'https://developers.openai.com/api/docs/guides/websocket-mode' }),
-  endpoint('codexImagesGenerations', 0, { group: 'codex', name: 'codexNamespaceImageGeneration', docs: `${openAi}/images/create` }),
-  endpoint('codexImagesEdits', 0, { group: 'codex', name: 'codexNamespaceImageEdit', docs: `${openAi}/images/createEdit` }),
-  endpoint('codexModels', 0, { group: 'codex', name: 'codexNamespaceModels', docs: `${openAi}/models/list` }),
+  endpoint('alphaSearch', { group: 'search', name: 'codexSearch', docs: codexSearchDocs }),
 ];
 
 export const apiDocsGroups = [...new Set(apiDocsEndpoints.map(item => item.group))];
