@@ -1,11 +1,11 @@
 import type { Hono } from 'hono';
 
+import { mountPublicRoute } from '../public-route.ts';
 import { chatCompletionsHttp } from './chat-completions/http.ts';
 import { geminiHttp } from './gemini/http.ts';
 import { messagesHttp } from './messages/http.ts';
 import { responsesHttp } from './responses/http.ts';
 import { responsesWebSocket } from './responses/websocket.ts';
-import { mountPublicRoute } from '../public-route.ts';
 import type { AuthVars } from '../../middleware/auth.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
