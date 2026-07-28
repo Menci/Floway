@@ -22,7 +22,10 @@ import { ResourceListPanel, ResourceListToolbar } from '../components/ui/resourc
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
 
-const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, Spinner } = fluentComponents;
+const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, Spinner, Text } = fluentComponents;
+
+const proxyDraftSignature = (name: string, config: ProxyConfig, urlDraft: string | null, dialTimeout: string) =>
+  JSON.stringify([name, config, urlDraft, dialTimeout]);
 
 interface LoaderData {
   proxies: ProxyRecord[];
@@ -57,6 +60,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [initialDraft, setInitialDraft] = useState('');
   const [backoffs, setBackoffs] = useState(loaderData.backoffs);
   const [formName, setFormName] = useState('');
   const [config, setConfig] = useState<ProxyConfig>(
@@ -76,6 +80,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     : '';
   const urlInput = urlDraft ?? structuredUrl;
   const dialTimeout = parseDialTimeoutInput(dialTimeoutInput);
+  const draftDirty = initialDraft !== '' && initialDraft !== proxyDraftSignature(formName, config, urlDraft, dialTimeoutInput);
   const clearDiagnostics = useCallback(() => {
     setSaveError(null);
     setTestResult(null);
@@ -144,6 +149,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
   const openCreate = useCallback(() => {
     clearForm();
+    const blank = defaultsFor('http', { host: '', port: 0, name: '' });
+    setInitialDraft(proxyDraftSignature('', blank, null, ''));
     setDialogOpen(true);
   }, [clearForm]);
 
@@ -156,11 +163,13 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         : '',
     );
     const parsed = parseProxyInput(proxy.url);
-    setConfig(parsed.config ?? defaultsFor('http', { host: '', port: 0, name: '' }));
+    const nextConfig = parsed.config ?? defaultsFor('http', { host: '', port: 0, name: '' });
+    setConfig(nextConfig);
     setUrlDraft(proxy.url);
     setUrlError(parsed.error);
     setSaveError(null);
     setTestResult(null);
+    setInitialDraft(proxyDraftSignature(proxy.name, nextConfig, proxy.url, proxy.dial_timeout_seconds == null ? '' : String(proxy.dial_timeout_seconds)));
     setDialogOpen(true);
   }, []);
 
@@ -221,15 +230,20 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       ? await callApi(() => api.api.proxies[':id'].$patch({ param: { id: editingId }, json: body }))
       : await callApi(() => api.api.proxies.$post({ json: body }));
 
-    setSaving(false);
     if (result.error) {
       setSaveError(result.error.message);
+      setSaving(false);
       return;
     }
 
-    await refreshProxies();
     setDialogOpen(false);
+    setInitialDraft('');
     clearForm();
+    try {
+      await refreshProxies();
+    } finally {
+      setSaving(false);
+    }
   }, [clearForm, config.host, config.port, dialTimeout, editingId, formName, refreshProxies, t, urlError, urlInput]);
 
   const handleTest = useCallback(async () => {
@@ -316,7 +330,10 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       </ResourceListPanel>
 
       <DialogShell
-        actions={<DialogActions>
+        actions={<div className="grid gap-2">
+          {testResult && <MessageBar intent={testResult.ok ? 'success' : 'error'}><MessageBarBody><div className="grid gap-1"><Text size={200} weight="semibold">{testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}</Text>{testResult.ok && <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</Text>}</div></MessageBarBody></MessageBar>}
+          {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
+          <DialogActions>
           <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => setDialogOpen(false)} type="button">{t('common.cancel')}</Button>
           <Button
             className="!whitespace-nowrap"
@@ -336,9 +353,12 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           >
             {saving ? t('dashboard.proxy.actions.saving') : t('dashboard.proxy.actions.save')}
           </Button>
-        </DialogActions>}
+          </DialogActions>
+        </div>}
         onOpenChange={(_, data) => {
-          if (!saving && !testing) setDialogOpen(data.open);
+          if (saving || testing) return;
+          if (!data.open && draftDirty) return;
+          setDialogOpen(data.open);
         }}
         onSubmit={() => void handleSave()}
         open={dialogOpen}
@@ -361,8 +381,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           onNameChange={handleNameChange}
           onPortChange={setPort}
           onUrlChange={handleUrlChange}
-          saveError={saveError}
-          testResult={testResult}
           urlError={urlError}
           urlInput={urlInput}
         />

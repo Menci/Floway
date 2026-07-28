@@ -15,7 +15,7 @@ import type {
   VlessTcpTlsProxyConfig,
   VlessWsTlsProxyConfig,
 } from '@floway-dev/proxy/proxy-config';
-const { Field, MessageBar, MessageBarBody, Option, Switch, Text } = fluentComponents;
+const { Field, Option, Switch } = fluentComponents;
 export type ProxyTestResult =
   | { ok: true; egress_ip: string }
   | { ok: false; error: string };
@@ -30,8 +30,6 @@ export interface ProxyFormProps {
   onNameChange: (value: string) => void;
   onPortChange: (value: string) => void;
   onUrlChange: (value: string) => void;
-  saveError: string | null;
-  testResult: ProxyTestResult | null;
   urlError: string | null;
   urlInput: string;
 }
@@ -46,8 +44,6 @@ export function ProxyForm({
   onNameChange,
   onPortChange,
   onUrlChange,
-  saveError,
-  testResult,
   urlError,
   urlInput,
 }: ProxyFormProps) {
@@ -463,32 +459,6 @@ export function ProxyForm({
         />
       </Field>
 
-      {testResult && (
-        <MessageBar intent={testResult.ok ? 'success' : 'error'}>
-          <MessageBarBody><div className="grid gap-1">
-          <Text size={200} weight="semibold">
-            {testResult.ok
-              ? t('dashboard.proxy.test.ok')
-              : t('dashboard.proxy.test.failed', {
-                  error: testResult.error,
-                })}
-          </Text>
-          {testResult.ok && (
-            <Text size={200} className="text-fui-fg3">
-              {t('dashboard.proxy.test.egressIp', {
-                ip: testResult.egress_ip,
-              })}
-            </Text>
-          )}
-          </div></MessageBarBody>
-        </MessageBar>
-      )}
-
-      {saveError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{saveError}</MessageBarBody>
-        </MessageBar>
-      )}
     </div>
   );
 }
