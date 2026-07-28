@@ -59,21 +59,21 @@ export type {
 } from '@floway-dev/gateway/control-plane/upstreams/types';
 
 export type UpstreamRecordEnvelope = InferRequestType<
-  typeof api.api.upstreams['list-models'].$post
+  typeof api.api.upstreams['list-models']['$post']
 >['json']['record'];
 
 export type ProxyRecord = SerializedProxyRecord;
 export type BackoffRow = SerializedBackoffRow;
 
-export type ProxyConflictBody = InferResponseType<typeof api.api.proxies[':id'].$delete, 409>;
+export type ProxyConflictBody = InferResponseType<typeof api.api.proxies[':id']['$delete'], 409>;
 export type ApiKey = InferResponseType<typeof api.api.keys.$get, 200>[number];
 export type ControlPlaneUser = InferResponseType<typeof api.api.users.$get, 200>[number];
 export type UpstreamOption = InferResponseType<typeof api.api.upstreams.options.$get, 200>[number];
 
 export type ControlPlaneModel = InferResponseType<typeof api.api.models.$get, 200>['data'][number];
-export type SearchConfig = InferResponseType<typeof api.api['search-config'].$get, 200>;
+export type SearchConfig = InferResponseType<typeof api.api['search-config']['$get'], 200>;
 export type CopilotQuotaSnapshot = InferResponseType<typeof api.api.upstreams.copilot.quota.$post, 200>;
-export type DeviceFlowStart = InferResponseType<typeof api.api.upstreams.copilot.oauth['device-login'].start.$post, 200>;
+export type DeviceFlowStart = InferResponseType<typeof api.api.upstreams.copilot.oauth['device-login'].start['$post'], 200>;
 export type BackupExportResponse = InferResponseType<typeof api.api.export.$get, 200>;
 export type BackupExportData = BackupExportResponse['data'];
 export type BackupImportCounts = InferResponseType<typeof api.api.import.$post, 200>['imported'];
