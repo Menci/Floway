@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { authFetch } from '../../api/auth';
+import { callApi } from '../../api/auth';
+import { api } from '../../api/client';
 import { getSessionToken } from '../../auth/session';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
@@ -72,11 +73,15 @@ export function useDumpSubscription(keyId: string | null, initialRecords: DumpMe
     if (!keyId || !oldest || loadingOlderRef.current || !hasOlder) return;
     loadingOlderRef.current = true;
     try {
-      const response = await authFetch(
-        `/api/dump/keys/${encodeURIComponent(keyId)}/records?before=${encodeURIComponent(oldest.id)}&limit=${PAGE_LIMIT}`,
-      );
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const page = (await response.json() as { records: DumpMetadata[] }).records;
+      const result = await callApi(() => api.api.dump.keys[':keyId'].records.$get({
+        param: { keyId },
+        query: { before: oldest.id, limit: String(PAGE_LIMIT) },
+      }));
+      if (result.error) {
+        setError(result.error.message);
+        return;
+      }
+      const page = result.data.records;
       const fresh = page.filter(record => !seenRef.current.has(record.id));
       fresh.forEach(record => seenRef.current.add(record.id));
       if (page.length < PAGE_LIMIT) setHasOlder(false);
