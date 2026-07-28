@@ -73,7 +73,10 @@ const usePerformanceChartStyles = makeStyles({
   root: { '& .fui-cart__xAxis line': { pointerEvents: 'none' }, '& circle[id*="staticHighlightCircle"]': { pointerEvents: 'none', visibility: 'hidden' } },
 });
 const usePerformanceTableStyles = makeStyles({
-  numericHeader: { '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' } },
+  numericHeader: {
+    whiteSpace: 'nowrap',
+    '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end', whiteSpace: 'nowrap' },
+  },
 });
 
 interface LoaderData {
@@ -380,7 +383,7 @@ function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy:
           `claude-opus-...`, hiding which of 4.6/4.7/4.8 a row described. Sizing
           the four measure columns to their widest label leaves the rest to the
           name, which is the only column whose content has no bound. */}
-      <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${styles.numericHeader} !text-right whitespace-nowrap w-[80px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${styles.numericHeader} !text-right whitespace-nowrap w-[68px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${styles.numericHeader} !text-right whitespace-nowrap w-[84px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${styles.numericHeader} !text-right whitespace-nowrap w-[116px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
+      <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${styles.numericHeader} !text-right !w-[112px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${styles.numericHeader} !text-right !w-[88px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${styles.numericHeader} !text-right !w-[112px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${styles.numericHeader} !text-right !w-[160px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
       <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames)}</span></TableCell><TableCell className="!text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="!text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="!text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="!text-right tabular-nums">{formatTokensPerSecond(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><Text size={200} className="text-fui-fg2">{t('dashboard.performance.empty')}</Text></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;
