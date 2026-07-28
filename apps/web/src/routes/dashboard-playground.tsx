@@ -118,7 +118,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [api, setApi] = useState<PlaygroundApi>('responses');
   const [keyId, setKeyId] = useState(loaderData.keys[0]?.id ?? '');
   const [modelId, setModelId] = useState('');
-  const [modelQuery, setModelQuery] = useState('');
+  // `null` means the picker is showing its selection rather than a search
+  // term. Opening the list clears the field so the first keystroke starts a
+  // query instead of extending the selected model's display name.
+  const [modelQuery, setModelQuery] = useState<string | null>(null);
   const [messages, setMessages] = useState<PlaygroundMessage[]>([]);
   const [system, setSystem] = useState('');
   const [showSystem, setShowSystem] = useState(false);
@@ -151,7 +154,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const imageEnabled = supportsImageInput(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];
   const matchingModels = models.filter(model => {
-    const query = modelQuery.trim().toLowerCase();
+    const query = (modelQuery ?? '').trim().toLowerCase();
     return !query || model.id.toLowerCase().includes(query) || model.display_name.toLowerCase().includes(query);
   });
 
@@ -410,15 +413,15 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                 <SegmentedControl ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
               </div>
               <Field label={t('dashboard.playground.model')}>
-                <Combobox value={modelQuery || selectedModel?.display_name || ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
+                <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
                   if (!data.optionValue) return;
                   changeContext(() => {
                     setModelId(data.optionValue!);
-                    setModelQuery('');
+                    setModelQuery(null);
                     setMessages([]);
                     setEditingId(null);
                   });
-                }} onOpenChange={(_, data) => { if (!data.open) setModelQuery(''); }}>
+                }} onOpenChange={(_, data) => setModelQuery(data.open ? '' : null)}>
                   {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0"><div className="truncate">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate ${s.code}`}>{model.id}</div></div></Option>)}
                 </Combobox>
               </Field>
