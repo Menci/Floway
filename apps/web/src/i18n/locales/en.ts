@@ -115,7 +115,7 @@ const en = {
         noKey: 'Create an API Key before using the Playground.',
         noKeyOption: 'No API Keys',
         noModel: 'No model selected',
-        noModelForApi: 'No reachable chat model supports this protocol.',
+        noModelForApi: 'No reachable chat model is available.',
         apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
         settings: { connection: 'Connection', generation: 'Generation', customJson: 'Custom JSON' },
         actions: { newTopic: 'New topic', edit: 'Edit', delete: 'Delete', save: 'Save', image: 'Add image URL', send: 'Send', stop: 'Stop' },

@@ -54,7 +54,7 @@ export function ResourceListToolbar(props: ResourceListToolbarProps) {
   );
 
   return (
-    <div className="flex items-center justify-between gap-3 min-w-0 max-[560px]:flex-col max-[560px]:items-stretch">
+    <div aria-busy={refreshing} className="flex items-center justify-between gap-3 min-w-0 max-[560px]:flex-col max-[560px]:items-stretch">
       <div className="min-w-0">
         <Text block size={400} weight="semibold">{title}</Text>
         {detail !== undefined && (
@@ -64,7 +64,7 @@ export function ResourceListToolbar(props: ResourceListToolbarProps) {
       <div className="flex items-center gap-2 flex-none max-[560px]:justify-end">
         <Tooltip content={refreshLabel} relationship="label">
           <Button
-            aria-label={refreshLabel}
+            aria-label={refreshing ? `${refreshLabel}…` : refreshLabel}
             disabled={busy}
             icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
             onClick={onRefresh}
@@ -72,6 +72,7 @@ export function ResourceListToolbar(props: ResourceListToolbarProps) {
         </Tooltip>
         {props.createTrigger === undefined ? createButton : props.createTrigger(createButton)}
       </div>
+      <span aria-live="polite" className="sr-only">{refreshing ? `${refreshLabel}…` : detail}</span>
     </div>
   );
 }

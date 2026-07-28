@@ -106,7 +106,7 @@ const zhHansCN = {
         noKey: '请先创建 API 密钥，再使用 Playground。',
         noKeyOption: '没有 API 密钥',
         noModel: '未选择模型',
-        noModelForApi: '没有可达的聊天模型支持当前协议。',
+        noModelForApi: '没有可达的聊天模型。',
         apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
         settings: { connection: '连接', generation: '生成参数', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },

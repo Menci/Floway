@@ -333,7 +333,7 @@ function PerformanceChartCallout({ data, formatter, title }: {
     .toSorted((left, right) => right.y - left.y);
 
   return (
-    <div className="grid gap-2 min-w-[280px] max-w-[min(420px,calc(100vw-48px))] p-1">
+    <div className="grid gap-2 w-[min(280px,calc(100vw-48px))] min-w-0 max-w-[420px] p-1">
       <Text block size={200} weight="semibold">{title}</Text>
       <div className="grid gap-1.5">
         {rows.map(item => (
