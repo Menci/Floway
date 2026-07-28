@@ -188,7 +188,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   };
 
   return (
-    <div className="grid gap-[18px] min-w-0">
+    <div className="dashboard-page">
       <Toaster toasterId={toasterId} position="top-end" />
 
       <DashboardPageHeader

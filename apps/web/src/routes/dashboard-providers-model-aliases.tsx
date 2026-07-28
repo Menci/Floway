@@ -69,7 +69,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
   }, [catalog]);
 
   const header = <DashboardPageHeader description={t('dashboard.modelAliases.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.modelAliases.heading')} />;
-  if (!user.isAdmin) return <section className="grid gap-[18px] max-w-[960px]">{header}<AdminOnlyNotice /></section>;
+  if (!user.isAdmin) return <section className="dashboard-page max-w-[960px]">{header}<AdminOnlyNotice /></section>;
 
   const openCreate = () => { setEditing(null); setDialogOpen(true); };
   const openEdit = (alias: ModelAlias) => { setEditing(alias); setDialogOpen(true); };
@@ -89,7 +89,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     setMutating(false);
   };
 
-  return <section className="grid gap-[18px] max-w-[1120px] min-w-0">
+  return <section className="dashboard-page max-w-[1120px]">
     {header}
     {error && <MessageBar intent="error"><MessageBarBody>{t('dashboard.modelAliases.errors.message', { message: error })}</MessageBarBody></MessageBar>}
     {modelsError && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.modelAliases.errors.models', { message: modelsError })}</MessageBarBody></MessageBar>}

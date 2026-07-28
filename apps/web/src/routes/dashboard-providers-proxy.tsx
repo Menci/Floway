@@ -266,7 +266,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
   if (!user.isAdmin) {
     return (
-      <section className="grid gap-[18px] min-w-0">
+      <section className="dashboard-page">
         <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
         <AdminOnlyNotice />
       </section>
@@ -274,7 +274,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   }
 
   return (
-    <section className="grid gap-[18px] min-w-0">
+    <section className="dashboard-page">
       <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
 
       {loadError && (
@@ -296,7 +296,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
               <Button className="w-fit" onClick={() => void refreshProxies()}>{t('dashboard.proxy.actions.refresh')}</Button>
             </Panel>
           : <ProxyList proxies={proxies} onAdd={() => clearForm()} onDelete={setDeleteTarget} onEdit={handleEdit} onRefresh={() => void refreshProxies()} />}
-        <div className="grid gap-[18px] min-w-0">
+        <div className="dashboard-page">
           {editingId !== null && <ProxyBackoffPanel
             backoffs={backoffs}
             onReset={() => void refreshProxies()}

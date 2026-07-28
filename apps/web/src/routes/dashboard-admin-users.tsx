@@ -147,7 +147,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   };
 
   return (
-    <div className="grid gap-[18px] min-w-0">
+    <div className="dashboard-page">
       <DashboardPageHeader
         actions={<>
           <Tooltip content={t('dashboard.users.actions.refresh')} relationship="label">

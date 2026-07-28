@@ -98,7 +98,7 @@ export default function DashboardSettings() {
   };
 
   return (
-    <section className="grid gap-[18px] max-w-[960px] min-w-0">
+    <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader description={t('dashboard.settings.description')} eyebrow={t('dashboard.settings.eyebrow')} title={t('dashboard.nav.settings')} />
 
       <Panel className="grid w-full max-w-[480px] gap-[18px] !p-[22px_24px] max-[680px]:!p-[18px]">
