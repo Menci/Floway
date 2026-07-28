@@ -7,7 +7,7 @@ export const appLoadingCriticalCss = `
     box-sizing: border-box;
     display: grid;
     height: 100%;
-    min-height: 100vh;
+    min-height: 100dvh;
     padding: 20px;
     place-items: center;
   }

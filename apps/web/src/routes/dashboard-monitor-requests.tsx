@@ -15,7 +15,10 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
+import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
+
+export const handle = dashboardWorkspaceHandle;
 
 const { MessageBar, MessageBarBody, Text } = fluentComponents;
 

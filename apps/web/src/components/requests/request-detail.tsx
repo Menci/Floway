@@ -180,7 +180,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
     : JSON.stringify(collected.result, null, 2);
 
   return (
-    <ScrollArea className="h-full" contentClassName="min-h-full" noTabIndex>
+    <ScrollArea axes="both" className="h-full" contentClassName="min-h-full" noTabIndex>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.request')} icon={<ArrowUploadRegular />} detail={<><Text size={400} weight="semibold" className="font-mono">{record.request.method}</Text><Text size={400} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
         <HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} />

@@ -8,6 +8,9 @@ import type { UpstreamRecord } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { loadEditorAux, requireAdmin } from '../components/upstream-editor/editor-data';
 import { UpstreamEditorPage } from '../components/upstream-editor/upstream-editor-page';
+import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
+
+export const handle = dashboardWorkspaceHandle;
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   if (!getSessionToken()) throw redirect('/');

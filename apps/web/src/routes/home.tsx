@@ -4,6 +4,7 @@ import type { Route } from './+types/home';
 import { login as loginWithPassword } from '../api/auth';
 import { setSessionToken, getSessionToken } from '../auth/session';
 import { LoginForm, type LoginActionData } from '../components/login-form';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { useAuthStore } from '../stores/auth-store';
 
 export async function clientLoader() {
@@ -43,8 +44,10 @@ export function meta({}: Route.MetaArgs) {
 
 export default function Home() {
   return (
-    <main className="grid min-h-screen place-items-center p-6 max-[520px]:p-4">
-      <LoginForm />
-    </main>
+    <ScrollArea axes="vertical" className="h-[100dvh]" contentClassName="min-h-full">
+      <main className="grid min-h-full place-items-center p-6 max-[520px]:p-4">
+        <LoginForm />
+      </main>
+    </ScrollArea>
   );
 }

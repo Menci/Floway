@@ -6,7 +6,6 @@ import {
   Meta,
   Outlet,
   Scripts,
-  ScrollRestoration,
 } from 'react-router';
 
 import type { Route } from './+types/root';
@@ -84,7 +83,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <BrowserLanguageSync />
           <GradientBackground>{children}</GradientBackground>
         </FluentProvider>
-        <ScrollRestoration />
         <Scripts />
       </body>
     </html>

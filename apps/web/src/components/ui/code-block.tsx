@@ -8,6 +8,7 @@ import 'prismjs/components/prism-powershell';
 import 'prismjs/components/prism-toml';
 
 import { fluentComponents } from '../../fluent';
+import { ScrollArea } from './scroll-area';
 
 const { Button, makeStyles } = fluentComponents;
 
@@ -37,10 +38,8 @@ const useStyles = makeStyles({
     fontSize: '12px',
     lineHeight: '1.55',
     margin: 0,
-    maxHeight: '340px',
     minHeight: '142px',
     minWidth: 0,
-    overflow: 'auto',
     padding: '12px',
     tabSize: '2',
   },
@@ -84,12 +83,14 @@ export function CodeBlock({ code, copied, copyFailed, disabled = false, language
           {copyFailed ? t('dashboard.apiKeys.copy.failed') : copied ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
         </Button>
       </div>
-      <pre className={`language-${language} ${s.pre} !m-0`}>
-        <code
-          className={`language-${language} ${s.code}`}
-          dangerouslySetInnerHTML={{ __html: highlighted }}
-        />
-      </pre>
+      <ScrollArea axes="both" className="max-h-[340px]">
+        <pre className={`language-${language} ${s.pre} !m-0`}>
+          <code
+            className={`language-${language} ${s.code}`}
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        </pre>
+      </ScrollArea>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import 'prismjs/components/prism-toml';
 import 'prismjs/components/prism-typescript';
 
 import { fluentComponents } from '../../fluent';
+import { ScrollArea } from '../ui/scroll-area';
 
 const { makeStyles, tokens } = fluentComponents;
 
@@ -89,7 +90,6 @@ const useStyles = makeStyles({
   },
   tableScroll: {
     minWidth: 0,
-    overflowX: 'auto',
     marginTop: tokens.spacingVerticalM,
     marginBottom: tokens.spacingVerticalM,
   },
@@ -114,7 +114,6 @@ const useStyles = makeStyles({
     marginTop: tokens.spacingVerticalM,
     marginBottom: tokens.spacingVerticalM,
     maxWidth: '100%',
-    overflow: 'auto',
     padding: tokens.spacingHorizontalM,
     '& pre': { margin: 0 },
     '& code': {
@@ -169,7 +168,7 @@ function MarkdownCode({ children, className, streaming, ...props }: MarkdownCode
 
 function MarkdownPre({ children }: ComponentProps<'pre'>) {
   const s = useStyles();
-  return <div className={s.codeBlock}><pre>{children}</pre></div>;
+  return <ScrollArea axes="both" className={s.codeBlock}><pre>{children}</pre></ScrollArea>;
 }
 
 type PlaygroundMarkdownProps = {
@@ -189,7 +188,7 @@ export const PlaygroundMarkdown = memo(function PlaygroundMarkdown({ content, st
     code: props => <MarkdownCode {...props} streaming={streaming} />,
     img: () => null,
     pre: MarkdownPre,
-    table: ({ children }) => <div className={s.tableScroll}><table className={s.table}>{children}</table></div>,
+    table: ({ children }) => <ScrollArea axes="horizontal" className={s.tableScroll}><table className={s.table}>{children}</table></ScrollArea>,
     td: ({ children, ...props }) => <td {...props} className={s.tableCell}>{children}</td>,
     th: ({ children, ...props }) => <th {...props} className={`${s.tableCell} ${s.tableHeader}`}>{children}</th>,
   }), [s, streaming]);

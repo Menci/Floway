@@ -4,9 +4,11 @@ import { ScrollArea } from './scroll-area';
 
 export function ErrorShell({ children }: PropsWithChildren) {
   return (
-    <main className="mx-auto max-w-[960px] pt-16 px-4 pb-4">
-      {children}
-    </main>
+    <ScrollArea axes="vertical" className="h-[100dvh]" contentClassName="min-h-full">
+      <main className="mx-auto max-w-[960px] min-h-full pt-16 px-4 pb-4">
+        {children}
+      </main>
+    </ScrollArea>
   );
 }
 

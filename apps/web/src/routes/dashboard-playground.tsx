@@ -37,7 +37,10 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
+import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { australianDarkTheme, australianLightTheme } from '../theme';
+
+export const handle = dashboardWorkspaceHandle;
 
 const {
   Button,

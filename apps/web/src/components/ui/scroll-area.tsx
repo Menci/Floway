@@ -5,10 +5,11 @@ import 'overlayscrollbars/overlayscrollbars.css';
 
 OverlayScrollbars.plugin(ClickScrollPlugin);
 
-type ScrollAxes = 'both' | 'horizontal' | 'vertical';
+export type ScrollAxes = 'both' | 'horizontal' | 'vertical';
+export const scrollAreaHostClassName = 'floway-scroll-area relative overflow-hidden';
 
 interface ScrollAreaProps extends PropsWithChildren {
-  axes?: ScrollAxes;
+  axes: ScrollAxes;
   className?: string;
   contentClassName?: string;
   noTabIndex?: boolean;
@@ -37,8 +38,33 @@ const overflowFor = (axes: ScrollAxes) => ({
   y: axes === 'horizontal' ? 'hidden' as const : 'scroll' as const,
 });
 
+export const initializeScrollArea = (
+  host: HTMLDivElement,
+  viewport: HTMLDivElement,
+  axes: ScrollAxes,
+  noTabIndex: boolean,
+) => {
+  if (measureNativeScrollbar() === 0) {
+    host.removeAttribute('data-overlayscrollbars-initialize');
+    return;
+  }
+  const instance = OverlayScrollbars({ target: host, elements: { viewport } }, {
+    overflow: overflowFor(axes),
+    scrollbars: {
+      autoHide: 'leave',
+      autoHideSuspend: true,
+      clickScroll: true,
+    },
+  }, {
+    initialized(current) {
+      if (noTabIndex) current.elements().viewport.removeAttribute('tabindex');
+    },
+  });
+  return () => instance.destroy();
+};
+
 export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function ScrollArea({
-  axes = 'both',
+  axes,
   children,
   className = '',
   contentClassName = '',
@@ -52,29 +78,13 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
     const host = hostRef.current;
     const viewport = viewportRef.current;
     if (!host || !viewport) return;
-    if (measureNativeScrollbar() === 0) {
-      host.removeAttribute('data-overlayscrollbars-initialize');
-      return;
-    }
-    const instance = OverlayScrollbars({ target: host, elements: { viewport } }, {
-      overflow: overflowFor(axes),
-      scrollbars: {
-        autoHide: 'leave',
-        autoHideSuspend: true,
-        clickScroll: true,
-      },
-    }, {
-      initialized(current) {
-        if (noTabIndex) current.elements().viewport.removeAttribute('tabindex');
-      },
-    });
-    return () => instance.destroy();
+    return initializeScrollArea(host, viewport, axes, noTabIndex);
   }, [axes, noTabIndex]);
 
   const overflow = overflowFor(axes);
   return (
     <div
-      className={`floway-scroll-area relative overflow-hidden ${className}`}
+      className={`${scrollAreaHostClassName} ${className}`}
       data-overlayscrollbars-initialize=""
       ref={hostRef}
     >

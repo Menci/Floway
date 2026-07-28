@@ -5,7 +5,7 @@ import {
   DismissCircleRegular,
   TimerRegular,
 } from '@fluentui/react-icons';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { List } from 'react-window';
@@ -25,6 +25,7 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useNow } from '../../lib/use-now';
 import { Select } from '../ui/fluent-form-controls';
+import { initializeScrollArea, scrollAreaHostClassName } from '../ui/scroll-area';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
@@ -150,16 +151,24 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
 export function RequestListPanel(props: RequestListProps) {
   const { t } = useTranslation();
   const s = useStyles();
-  const listRef = useRef<ListImperativeAPI | null>(null);
+  const [listRef, setListRef] = useState<ListImperativeAPI | null>(null);
+  const scrollHostRef = useRef<HTMLDivElement>(null);
   const now = useNow(30_000);
 
   const selectByIndex = useCallback((index: number) => {
     const record = props.records[index];
     if (!record) return;
     props.onRecordChange(record.id);
-    listRef.current?.scrollToRow({ align: 'smart', index });
-    window.requestAnimationFrame(() => listRef.current?.element?.querySelector<HTMLElement>(`[data-record-index="${index}"]`)?.focus());
+    listRef?.scrollToRow({ align: 'smart', index });
+    window.requestAnimationFrame(() => listRef?.element?.querySelector<HTMLElement>(`[data-record-index="${index}"]`)?.focus());
   }, [listRef, props]);
+
+  useLayoutEffect(() => {
+    const host = scrollHostRef.current;
+    const viewport = listRef?.element;
+    if (!host || !viewport) return;
+    return initializeScrollArea(host, viewport, 'vertical', true);
+  }, [listRef]);
 
   const rowProps = useMemo<RowProps>(() => ({
     now,
@@ -183,12 +192,12 @@ export function RequestListPanel(props: RequestListProps) {
           <Text size={200} className="text-fui-fg3">{t('dashboard.requests.empty')}</Text>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 relative">
+        <div className={`${scrollAreaHostClassName} flex-1 min-h-0`} data-overlayscrollbars-initialize="" ref={scrollHostRef}>
           <List
             aria-label={t('dashboard.requests.listLabel')}
             className={s.list}
             defaultHeight={620}
-            listRef={listRef}
+            listRef={setListRef}
             onRowsRendered={({ stopIndex }) => {
               if (props.hasOlder && stopIndex >= props.records.length - 8) props.onLoadOlder();
             }}

@@ -5,7 +5,7 @@ import {
   Navigate,
   Outlet,
   redirect,
-  useLocation,
+  useMatches,
   useOutletContext,
 } from 'react-router';
 
@@ -16,6 +16,7 @@ import { FlowayLogo } from '../components/logo';
 import { Sidebar } from '../components/sidebar';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
+import { isDashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { useAuthStore } from '../stores/auth-store';
 
 const { Button, DrawerBody, OverlayDrawer } = fluentComponents;
@@ -42,10 +43,7 @@ export default function Dashboard({}: Route.ComponentProps) {
   const { t } = useTranslation();
   const user = useAuthStore(state => state.user);
   const [navigationOpen, setNavigationOpen] = useState(false);
-  const { pathname } = useLocation();
-  const upstreamEditor = /^\/dashboard\/providers\/upstreams\/(?:new\/[^/]+|[^/]+)$/.test(pathname);
-  const requestsInspector = pathname === '/dashboard/monitor/requests';
-  const playground = pathname === '/dashboard/playground';
+  const workspace = useMatches().some(match => isDashboardWorkspaceHandle(match.handle));
 
   if (!user) return <Navigate replace to="/" />;
 
@@ -73,10 +71,10 @@ export default function Dashboard({}: Route.ComponentProps) {
         <ScrollArea
           axes="vertical"
           className="min-h-0"
-          contentClassName={upstreamEditor || requestsInspector || playground ? 'h-full' : 'min-h-full'}
+          contentClassName={workspace ? 'h-full' : 'min-h-full'}
           noTabIndex
         >
-          <main id="dashboard-main" tabIndex={-1} className={upstreamEditor || requestsInspector || playground
+          <main id="dashboard-main" tabIndex={-1} className={workspace
             ? 'h-full min-h-0 p-[22px_28px_28px] max-[680px]:p-4'
             : 'min-h-full p-[22px_28px_28px] max-[680px]:p-4'}>
             <Outlet context={{ user } satisfies DashboardOutletContext} />
