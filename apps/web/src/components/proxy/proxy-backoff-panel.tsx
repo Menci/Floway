@@ -54,11 +54,11 @@ export const ProxyBackoffPanel = ({ backoffs, onReset, proxyId }: {
     onReset();
   };
 
-  return <section className="grid gap-2" aria-label={t('dashboard.proxies.backoff.title')}>
+  return <section className="grid gap-2" aria-label={t('dashboard.proxy.backoff.title')}>
     <div className="flex items-center justify-between gap-2">
-      <Text weight="semibold">{t('dashboard.proxies.backoff.title')}</Text>
+      <Text weight="semibold">{t('dashboard.proxy.backoff.title')}</Text>
       <Button appearance="subtle" icon={<ArrowResetRegular />} onClick={() => void reset()} size="small">
-        {t('dashboard.proxies.backoff.resetAll')}
+        {t('dashboard.proxy.backoff.resetAll')}
       </Button>
     </div>
 
@@ -69,15 +69,15 @@ export const ProxyBackoffPanel = ({ backoffs, onReset, proxyId }: {
           <span className="min-w-0 flex-1 truncate font-mono text-fui-base200" title={row.upstream_id}>{row.upstream_id}</span>
           <Text size={200} className="text-fui-fg2">
             {remaining <= 0
-              ? t('dashboard.proxies.backoff.expiring')
-              : t('dashboard.proxies.backoff.remaining', { duration: formatCountdown(remaining) })}
+              ? t('dashboard.proxy.backoff.expiring')
+              : t('dashboard.proxy.backoff.remaining', { duration: formatCountdown(remaining) })}
           </Text>
-          <Text size={200} className="text-fui-fg3">{t('dashboard.proxies.backoff.failures', { count: row.fail_count })}</Text>
+          <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.backoff.failures', { count: row.fail_count })}</Text>
           {row.last_error && <Tooltip content={row.last_error} relationship="description">
             <Text size={200} className="max-w-[220px] truncate text-fui-fg3">{row.last_error}</Text>
           </Tooltip>}
           <Button appearance="subtle" onClick={() => void reset(row.upstream_id)} size="small">
-            {t('dashboard.proxies.backoff.reset')}
+            {t('dashboard.proxy.backoff.reset')}
           </Button>
         </li>;
       })}
