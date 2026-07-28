@@ -38,8 +38,8 @@ test('inclusive output usage splits reasoning into a disjoint count', () => {
 });
 
 test('cache-write usage splits the 1-hour subset from the wire total', () => {
-  expect(splitCacheWriteTokens(9, { cacheWrite1hTokenCount: 5 })).toEqual({ cacheWrite: 4, cacheWrite1h: 5 });
-  expect(splitCacheWriteTokens(undefined, undefined)).toEqual({ cacheWrite: 0, cacheWrite1h: 0 });
-  expect(() => splitCacheWriteTokens(4, { cacheWrite1hTokenCount: 5 })).toThrowError('exceed');
-  expect(() => splitCacheWriteTokens(undefined, { cacheWrite1hTokenCount: 1 })).toThrowError('require');
+  expect(splitCacheWriteTokens(9, 5)).toEqual({ cacheWrite: 4, cacheWrite1h: 5 });
+  expect(splitCacheWriteTokens(undefined, 0)).toEqual({ cacheWrite: 0, cacheWrite1h: 0 });
+  expect(() => splitCacheWriteTokens(4, 5)).toThrowError('exceed');
+  expect(() => splitCacheWriteTokens(undefined, 1)).toThrowError('require');
 });

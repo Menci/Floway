@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { wrapMessagesAffinityEgress } from './affinity/egress.ts';
-import { createMessagesStreamUsageState, tokenUsageFromMessagesFrame, tokenUsageFromMessagesUsage, type MessagesStreamUsageState } from './usage.ts';
+import { tokenUsageFromBillableUsage } from './usage.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -46,15 +46,14 @@ export const respondMessages = async (
   }
 
   const state = new SourceStreamState();
-  const usageState = createMessagesStreamUsageState();
-  const observed = observeMessagesFrames(result.events, state, usageState, wantsStream, ctx);
+  const observed = observeMessagesFrames(result.events, state, wantsStream, ctx);
   const frames = wrapMessagesAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {
       const response = await collectMessagesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      const usage = tokenUsageFromMessagesUsage(response.usage);
+      const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
       return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
@@ -79,9 +78,9 @@ export const respondMessages = async (
       if (failed) {
         ctx.dump?.failed(`messages stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        ctx.dump?.success(metadata.modelIdentity, state.usage);
+        ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
       }
-      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
     }
   });
 };
@@ -105,7 +104,6 @@ const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEvent>) => f
 const observeMessagesFrames = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   state: SourceStreamState,
-  usageState: MessagesStreamUsageState,
   observeUsage: boolean,
   ctx: GatewayCtx,
 ) {
@@ -113,9 +111,6 @@ const observeMessagesFrames = async function* (
     ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && frame.event.type === 'error';
     if (failed) state.failed = true;
-    if (observeUsage) {
-      state.rememberUsage(tokenUsageFromMessagesFrame(frame, usageState));
-    }
     if (isMessagesTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
     if (isMessagesTerminalFrame(frame)) return;

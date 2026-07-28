@@ -4,7 +4,7 @@ import { wrapNativeResponsesClientOutput } from './client-output.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
-import { tokenUsageFromResponsesResult } from './usage.ts';
+import { tokenUsageFromBillableUsage } from './usage.ts';
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
@@ -436,9 +436,9 @@ const respondResponsesWebSocket = async (input: {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
     if (failed) ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
-    else ctx.dump?.success(metadata.modelIdentity, state.usage);
+    else ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
     ctx.dump?.finalize(failed ? 500 : 200, []);
-    settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
+    settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
   }
 };
 
@@ -453,7 +453,7 @@ const observeResponsesWebSocketFrames = async function* (
       const event = frame.event;
       const failed = event.type === 'error' || event.type === 'response.failed';
       if (failed) state.failed = true;
-      if ('response' in event) state.rememberUsage(tokenUsageFromResponsesResult(event.response));
+      if ('response' in event) state.rememberUsage(null);
       if (isResponsesTerminalEvent(event) && !failed) state.completed = true;
     }
     yield frame;

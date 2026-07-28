@@ -32,7 +32,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hi' } } },
       { type: 'event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: ' there' } } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'messages', ctx);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'messages', ctx, () => null);
     const collected = await drainEvents(result);
     expect(collected).toEqual(frames);
     expect(ctx.attempt.firstOutputTokenAt).not.toBe(null);
@@ -44,7 +44,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { type: 'response.created' } },
       { type: 'event', event: { type: 'response.output_item.added' } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx, () => null);
     await drainEvents(result);
     expect(ctx.attempt.firstOutputTokenAt).toBe(null);
   });
@@ -56,7 +56,7 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
       { type: 'event', event: { choices: [{ delta: { content: 'b' } }] } },
       { type: 'event', event: { choices: [{ delta: { content: 'c' } }] } },
     ];
-    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'chat-completions', ctx);
+    const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'chat-completions', ctx, () => null);
     if (result.type !== 'events') throw new Error(`expected events result, got ${result.type}`);
     const stampsAfterEachFrame: (number | null)[] = [];
     for await (const _ of result.events) stampsAfterEachFrame.push(ctx.attempt.firstOutputTokenAt);

@@ -1,22 +1,15 @@
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
-import { splitInclusiveInputTokens, USAGE_BILLING } from '@floway-dev/protocols/common';
-import type { GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import type { BillableUsage } from '@floway-dev/protocols/common';
 
-export const tokenUsageFromGeminiUsageMetadata = (metadata: GeminiUsageMetadata) => {
-  const billing = metadata[USAGE_BILLING];
-  const cacheWrite = billing?.cacheWriteTokenCount ?? 0;
-  const cacheWrite1h = billing?.cacheWrite1hTokenCount ?? 0;
-  const { input, cacheRead } = splitInclusiveInputTokens(
-    metadata.promptTokenCount ?? 0,
-    metadata.cachedContentTokenCount,
-    cacheWrite + cacheWrite1h,
-  );
-  return tokenUsage({
-    input,
-    input_cache_read: cacheRead,
-    input_cache_write: cacheWrite,
-    input_cache_write_1h: cacheWrite1h,
-    output: (metadata.candidatesTokenCount ?? 0) + (metadata.thoughtsTokenCount ?? 0),
-    tier: billing?.serviceTier,
+// `BillableUsage` is already the canonical exclusive/split shape, so pricing is
+// a rename rather than a computation. It is the sole input: the usage Floway
+// sends the client is a wire projection and is never read here.
+export const tokenUsageFromBillableUsage = (billable: BillableUsage | undefined) =>
+  billable === undefined ? null : tokenUsage({
+    input: billable.input,
+    input_cache_read: billable.cacheRead,
+    input_cache_write: billable.cacheWrite,
+    input_cache_write_1h: billable.cacheWrite1h,
+    output: billable.output,
+    ...(billable.tier !== undefined ? { tier: billable.tier } : {}),
   });
-};

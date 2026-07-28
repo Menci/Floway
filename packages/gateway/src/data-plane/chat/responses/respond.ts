@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { wrapNativeResponsesClientOutput } from './client-output.ts';
-import { tokenUsageFromResponsesResult } from './usage.ts';
+import { tokenUsageFromBillableUsage } from './usage.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -11,7 +11,7 @@ import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../sha
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type ResponsesStreamEvent, responsesResultFromStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
@@ -52,7 +52,7 @@ export const respondResponses = async (
     try {
       const response = await collectResponsesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      const usage = tokenUsageFromResponsesResult(response);
+      const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed || response.status === 'failed');
       return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
@@ -77,9 +77,9 @@ export const respondResponses = async (
       if (failed) {
         ctx.dump?.failed(`responses stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        ctx.dump?.success(metadata.modelIdentity, state.usage);
+        ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
       }
-      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
     }
   });
 
@@ -125,10 +125,6 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
     ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
     if (failed) state.failed = true;
-    if (observeUsage) {
-      const response = frame.type === 'event' ? responsesResultFromStreamEvent(frame.event) : null;
-      state.rememberUsage(response !== null ? tokenUsageFromResponsesResult(response) : null);
-    }
     if (isResponsesTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
     if (isResponsesTerminalFrame(frame)) return;

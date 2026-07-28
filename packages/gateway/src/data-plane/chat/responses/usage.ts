@@ -1,25 +1,15 @@
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
-import { billableServiceTier, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING } from '@floway-dev/protocols/common';
-import type { ResponsesResult } from '@floway-dev/protocols/responses';
+import type { BillableUsage } from '@floway-dev/protocols/common';
 
-// service_tier reports the tier actually served and therefore selects the
-// matching pricing entry rather than the tier originally requested.
-// https://developers.openai.com/api/docs/guides/priority-processing
-export const tokenUsageFromResponsesResult = (response: ResponsesResult) => {
-  const usage = response.usage;
-  if (!usage) return null;
-  const { input, cacheRead, cacheWrite } = splitInclusiveInputTokens(
-    usage.input_tokens,
-    usage.input_tokens_details?.cached_tokens,
-    usage.input_tokens_details?.cache_write_tokens,
-  );
-  const writes = splitCacheWriteTokens(cacheWrite, usage[USAGE_BILLING]);
-  return tokenUsage({
-    input,
-    input_cache_read: cacheRead,
-    input_cache_write: writes.cacheWrite,
-    input_cache_write_1h: writes.cacheWrite1h,
-    output: usage.output_tokens,
-    tier: billableServiceTier(response.service_tier),
+// `BillableUsage` is already the canonical exclusive/split shape, so pricing is
+// a rename rather than a computation. It is the sole input: the usage Floway
+// sends the client is a wire projection and is never read here.
+export const tokenUsageFromBillableUsage = (billable: BillableUsage | undefined) =>
+  billable === undefined ? null : tokenUsage({
+    input: billable.input,
+    input_cache_read: billable.cacheRead,
+    input_cache_write: billable.cacheWrite,
+    input_cache_write_1h: billable.cacheWrite1h,
+    output: billable.output,
+    ...(billable.tier !== undefined ? { tier: billable.tier } : {}),
   });
-};

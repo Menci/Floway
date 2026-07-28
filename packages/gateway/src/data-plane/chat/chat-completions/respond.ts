@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { wrapChatCompletionsAffinityEgress } from './affinity/egress.ts';
-import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
+import { tokenUsageFromBillableUsage } from './usage.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -50,7 +50,7 @@ export const respondChatCompletions = async (
     try {
       const response = await collectChatCompletionsProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
+      const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
       return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
@@ -75,9 +75,9 @@ export const respondChatCompletions = async (
       if (failed) {
         ctx.dump?.failed(`chat-completions stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        ctx.dump?.success(metadata.modelIdentity, state.usage);
+        ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
       }
-      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
     }
   });
 };
@@ -108,9 +108,6 @@ const observeChatCompletionsFrames = async function* (frames: AsyncIterable<Prot
     ctx.dump?.frame(frame);
     const failed = isChatCompletionsFailureFrame(frame);
     if (failed) state.failed = true;
-    if (observeUsage) {
-      state.rememberUsage(frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage ? tokenUsageFromChatCompletionsUsage(frame.event.usage, frame.event.service_tier) : null);
-    }
     if (isChatCompletionsTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
     if (isChatCompletionsTerminalFrame(frame)) return;

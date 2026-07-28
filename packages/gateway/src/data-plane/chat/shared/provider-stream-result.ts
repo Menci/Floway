@@ -1,30 +1,51 @@
 import { isFirstOutputTokenFrame } from './first-output-token.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
+import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventResult, readUpstreamApiError, type ChatTargetApi, type EventResultMetadata, type ExecuteResult, type ModelCandidate, type ProviderStreamResult } from '@floway-dev/provider';
 
 export const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
   candidate: ModelCandidate,
   targetApi: ChatTargetApi,
   ctx: GatewayCtx,
+  // Reads the upstream's own usage off one of its events, in the upstream's
+  // own protocol. This is the only place pricing figures are produced; nothing
+  // downstream re-derives them from the translated result the client receives.
+  readBillableUsage: (event: TEvent) => BillableUsage | null,
 ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');
   if (!providerResult.ok) {
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
   }
+  const identity = telemetryModelIdentity(candidate, providerResult.modelKey);
+  let resolveFinal!: (metadata: EventResultMetadata) => void;
+  const finalMetadata = new Promise<EventResultMetadata>(resolve => { resolveFinal = resolve; });
   const stampedEvents = (async function* () {
-    for await (const frame of providerResult.events) {
-      if (ctx.attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
-        ctx.attempt.firstOutputTokenAt = performance.now();
+    // Only a report carrying real counts replaces the running figure, so a
+    // trailing empty usage frame cannot wipe a good one.
+    let billableUsage: BillableUsage | undefined;
+    try {
+      for await (const frame of providerResult.events) {
+        if (ctx.attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
+          ctx.attempt.firstOutputTokenAt = performance.now();
+        }
+        if (frame.type === 'event') {
+          const reported = readBillableUsage(frame.event);
+          if (reported !== null) billableUsage = reported;
+        }
+        yield frame;
       }
-      yield frame;
+    } finally {
+      resolveFinal({
+        modelIdentity: identity,
+        ...(context !== undefined ? { performance: context } : {}),
+        ...(billableUsage !== undefined ? { billableUsage } : {}),
+      });
     }
   })();
-  return eventResult(
-    stampedEvents,
-    telemetryModelIdentity(candidate, providerResult.modelKey),
-    { performance: context, headers: providerResult.headers },
-  );
+  return {
+    ...eventResult(stampedEvents, identity, { performance: context, headers: providerResult.headers }),
+    finalMetadata,
+  };
 };

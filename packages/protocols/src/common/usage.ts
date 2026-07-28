@@ -9,21 +9,30 @@ export const billableServiceTier = (tier: string | null | undefined): string | n
   return normalized === '' || normalized === 'default' || normalized === 'standard' ? null : tier;
 };
 
-// Symbol-keyed billing facts survive in-process translation and reassembly but
-// are omitted by JSON serialization, so protocol clients see only native fields.
-export const USAGE_BILLING = Symbol('usage-billing');
-
-export interface UsageBillingMetadata {
-  cacheWriteTokenCount?: number;
-  cacheWrite1hTokenCount?: number;
-  serviceTier?: string;
+// The complete, canonical view of what an upstream turn cost, read from that
+// upstream's own usage in its own protocol. Pricing reads this and nothing
+// else — in particular it never reads the usage Floway sends the client, which
+// is a wire projection whose protocol may have no field for a bucket we are
+// billed for: an Anthropic 1-hour cache write reaching a Responses client, or
+// a cache-write count or service tier reaching Gemini, which has neither.
+//
+// Counts are exclusive — `input` excludes `cacheRead` and both cache-write
+// buckets — because that is how the buckets are priced, rather than how any
+// one protocol happens to report its totals.
+export interface BillableUsage {
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cacheWrite1h: number;
+  output: number;
+  reasoning?: number;
+  tier?: string;
 }
 
 export const splitCacheWriteTokens = (
   totalCacheWriteTokens: number | undefined,
-  billing: UsageBillingMetadata | undefined,
+  cacheWrite1h: number,
 ): { cacheWrite: number; cacheWrite1h: number } => {
-  const cacheWrite1h = billing?.cacheWrite1hTokenCount ?? 0;
   if (!Number.isSafeInteger(cacheWrite1h) || cacheWrite1h < 0) {
     throw new RangeError(`1-hour cache-write tokens must be a non-negative safe integer: ${cacheWrite1h}`);
   }
