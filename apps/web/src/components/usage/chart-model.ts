@@ -8,7 +8,7 @@ import {
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,
 } from '../charts/dashboard-time';
-import { colorForSlot } from '../charts/palette';
+import { usageColorForSlot } from '../charts/palette';
 import type { DecimalString } from '@floway-dev/protocols/common';
 
 export const metricConfig: Record<
@@ -127,7 +127,7 @@ export function buildTokenChart({
             chartTitle: '',
             lineChartData: series.map(({ entry, data }) => ({
               legend: entry.label,
-              color: colorForSlot(entry.colorSlot),
+              color: usageColorForSlot(entry.colorSlot),
               lineOptions: { strokeWidth: 2, curve: curveLinear },
               data: data.flatMap((value, index) => value === null ? [] : [{
                 x: buckets[index]!.date,
@@ -150,7 +150,8 @@ function areaChartData(
     chartTitle: '',
     lineChartData: series.map(({ entry, data }) => ({
       legend: entry.label,
-      color: colorForSlot(entry.colorSlot),
+      color: usageColorForSlot(entry.colorSlot),
+      lineOptions: { strokeWidth: 2, curve: curveLinear },
       data: data.flatMap((value, index) => value === null ? [] : [{
         x: buckets[index]!.date,
         y: value,
@@ -308,11 +309,14 @@ function keyChartEntries(
     .forEach((id, index) => slotById.set(id, orderedIds.length + index));
 
   return [...new Set(presentKeyIds)]
-    .map(id => ({
-      id,
-      label: redactKeys ? id.slice(0, 6) : meta.get(id)?.name ?? id.slice(0, 8),
-      colorSlot: slotById.get(id)!,
-    }))
+    .map(id => {
+      const colorSlot = slotById.get(id)!;
+      return {
+        id,
+        label: redactKeys ? `${id.startsWith('user-') ? 'user' : 'key'}-${colorSlot + 1}` : meta.get(id)?.name ?? id.slice(0, 8),
+        colorSlot,
+      };
+    })
     .sort((a, b) => a.colorSlot - b.colorSlot);
 }
 

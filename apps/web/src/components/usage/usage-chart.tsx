@@ -15,6 +15,8 @@ const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'v
 const useAreaBoundaryStyles = makeStyles({
   root: {
     '& path[id*="-line-"]': { opacity: '1 !important', strokeWidth: '2px' },
+    '& path[id*="-graph-"]': { fillOpacity: '0.42 !important', opacity: '1 !important' },
+    '& circle:not([id*="staticHighlightCircle"])': { r: '2px !important', strokeWidth: '1.5px' },
   },
 });
 
@@ -54,7 +56,6 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
             data={chart.plot.data}
             height={size.height}
             hideLegend
-            legendProps={{ selectedLegends: visibleLegends, canSelectMultipleLegends: true }}
             margins={chartMargins}
             mode="tonexty"
             onRenderCalloutPerStack={lineCallout}

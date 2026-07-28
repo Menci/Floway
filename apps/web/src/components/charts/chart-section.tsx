@@ -19,6 +19,7 @@ export interface SeriesLegendEntry {
 export function ChartSection({
   children,
   controlsLabel,
+  colorForEntry = colorForSlot,
   emptyText,
   entries,
   hidden,
@@ -27,6 +28,7 @@ export function ChartSection({
 }: {
   children: React.ReactNode;
   controlsLabel: string;
+  colorForEntry?: (slot: number) => string;
   emptyText: string;
   entries: readonly SeriesLegendEntry[];
   hidden: Set<string>;
@@ -63,7 +65,7 @@ export function ChartSection({
                   icon={<span
                     aria-hidden="true"
                     className="inline-block rounded-full h-[8px] w-[8px] mx-[4px] flex-shrink-0"
-                    style={{ backgroundColor: colorForSlot(entry.colorSlot) }}
+                    style={{ backgroundColor: colorForEntry(entry.colorSlot) }}
                   />}
                   title={t('dashboard.charts.series.toggleHint')}
                   // A double-click delivers its two clicks first; both land on

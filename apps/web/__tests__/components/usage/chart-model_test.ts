@@ -75,6 +75,28 @@ describe('cost chart series', () => {
   });
 });
 
+describe('redacted series labels', () => {
+  it('keeps users distinct when their ids share a prefix', () => {
+    const records = ['user-10', 'user-11'].map((keyId, index) => ({
+      ...record({ input_tokens: String(index + 1) }),
+      keyId,
+    }));
+    const model = buildTokenChart({
+      records,
+      metadata: [{ id: 'user-10', name: 'Alice' }, { id: 'user-11', name: 'Bob' }],
+      models: [],
+      groupKey: 'keyId',
+      hiddenOwn: new Set(),
+      hiddenOther: new Set(),
+      redactKeys: true,
+      metric: 'total',
+      range: 'today',
+      buckets: [bucket],
+    });
+    expect(model.entries.map(entry => entry.label)).toEqual(['user-1', 'user-2']);
+  });
+});
+
 describe('bucket callout figures', () => {
   // Token counts are decimal strings, so a `+` between two of them concatenates
   // digits instead of failing to compile. Pin the arithmetic on values whose
