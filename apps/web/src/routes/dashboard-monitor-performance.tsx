@@ -34,7 +34,6 @@ import {
 } from '../components/performance/performance-data';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Select } from '../components/ui/fluent-form-controls';
-import { OutlineCard } from '../components/ui/outline-card';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { SegmentedControl } from '../components/ui/segmented-control';
@@ -244,10 +243,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         </div>
       </div>
       <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
-        {summaryCards.map(([label, value]) => <OutlineCard className="!p-[10px] min-w-0" key={label}>
+        {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
           <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">{t(`dashboard.performance.summary.${label}`)}</Text>
           <Text size={500} weight="semibold" className="font-mono overflow-wrap-anywhere">{value}</Text>
-        </OutlineCard>)}
+        </div>)}
       </div>
     </Panel>
     <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">

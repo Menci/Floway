@@ -1,13 +1,11 @@
 import { ArrowRepeatAllRegular, SelectAllOffRegular, SelectAllOnRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
-import { useUnclippedChartFrame } from './chart-frame-styles';
 import { colorForSlot } from './palette';
 import { invertedSeries, isolatedSeries, toggledSeries } from './series-selection';
 import { fluentComponents } from '../../fluent';
-import { OutlineCard } from '../ui/outline-card';
 
-const { Button, InteractionTag, InteractionTagPrimary, mergeClasses, Text, Tooltip } = fluentComponents;
+const { Button, InteractionTag, InteractionTagPrimary, Text, Tooltip } = fluentComponents;
 
 export interface SeriesLegendEntry {
   id: string;
@@ -36,7 +34,6 @@ export function ChartSection({
   title: string;
 }) {
   const { t } = useTranslation();
-  const frameStyles = useUnclippedChartFrame();
   const ids = entries.map(entry => entry.id);
   const isolate = (id: string) => onHiddenChange(isolatedSeries(ids, hidden, id));
 
@@ -82,10 +79,7 @@ export function ChartSection({
           </div>
         : <Text size={200} className="text-fui-fg2">{emptyText}</Text>}
 
-      {/* The plot frame must not clip: the chart's hover callout is an
-          absolutely positioned popover inside it, and a clipping ancestor
-          becomes the boundary Fluent sizes that popover against. */}
-      <OutlineCard className={mergeClasses(frameStyles.root, 'min-h-[320px] min-w-0')}>{children}</OutlineCard>
+      <div className="min-h-[320px] min-w-0">{children}</div>
     </section>
   );
 }
