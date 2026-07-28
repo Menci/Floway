@@ -695,7 +695,9 @@ const zhHansCN = {
           imageInput: '图像输入',
           reasoning: '思考',
           effortLevels: '思考强度',
-          customEffortPlaceholder: '自定义...',
+          supportedEfforts: '支持的思考强度',
+          defaultEffort: '默认思考强度',
+          effortPlaceholder: '选择或输入思考强度…',
           budgetTokens: '思考 Token 预算',
           adaptive: '自适应',
           mandatory: '强制思考',
@@ -747,7 +749,6 @@ const zhHansCN = {
               '思考强度至少需要一个支持值，且默认值必须包含在支持列表中。',
           invalidBudget: '最大思考 Token 预算不能小于最小值。',
           invalidContract: '模型 ID、类型、端点与 Rerank 目标必须组成有效的模型配置。',
-          removeEffort: '移除 {{level}} 思考强度',
           delete: '删除手动模型',
         },
         copilot: {

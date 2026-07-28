@@ -1,4 +1,4 @@
-import { DeleteRegular, DismissRegular } from '@fluentui/react-icons';
+import { DeleteRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -13,9 +13,8 @@ import type {
   UpstreamRecord,
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { Input, Select } from '../ui/fluent-form-controls';
+import { Combobox, Input, Select } from '../ui/fluent-form-controls';
 import { SegmentedControl } from '../ui/segmented-control';
-import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { modelsField } from '@floway-dev/provider';
 import type { Flag } from '@floway-dev/provider/flags';
 
@@ -25,6 +24,7 @@ const {
   Field,
   MessageBar,
   MessageBarBody,
+  Option,
   Switch,
   Text,
   makeStyles,
@@ -255,23 +255,52 @@ function NumberField({ label, onChange, placeholder, readOnly, value }: { label:
 }
 
 function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; effort: NonNullable<UpstreamChatConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatConfig['reasoning']>['effort']) => void; t: ReturnType<typeof useTranslation>['t'] }) {
-  const [custom, setCustom] = useState('');
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const supported = effort.supported;
-  const add = (level: string) => { const value = level.trim(); if (value && !supported.includes(value)) onChange({ supported: [...supported, value], default: effort.default || value }); };
-  return <div className="grid gap-3 border-l-2 border-l-solid border-fui-stroke1 pl-4">
-    <div className="flex flex-wrap gap-2">{supported.map(level => <div className="inline-flex items-center" key={level}>
-      <Button disabled={!editable} appearance={effort.default === level ? 'primary' : 'secondary'} size="small" onClick={() => onChange({ ...effort, default: level })}>{level}</Button>
-      <TooltipIconButton
+  const options = [...new Set([...reasoningPresets, ...supported])]
+    .filter(level => level.toLowerCase().includes(query.trim().toLowerCase()));
+  const setSupported = (next: string[]) => onChange({
+    supported: next,
+    default: next.includes(effort.default) ? effort.default : next[0] ?? '',
+  });
+  const add = (raw: string) => {
+    const level = raw.trim();
+    if (level && !supported.includes(level)) setSupported([...supported, level]);
+    setQuery('');
+  };
+  return <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] gap-4 max-[760px]:grid-cols-1">
+    <Field label={t('dashboard.upstreamEditor.models.supportedEfforts')}>
+      <Combobox
         disabled={!editable}
-        icon={<DismissRegular />}
-        label={t('dashboard.upstreamEditor.models.removeEffort', { level })}
-        onClick={() => {
-          const next = supported.filter(item => item !== level);
-          onChange({ supported: next, default: effort.default === level ? next[0] ?? '' : effort.default });
+        freeform
+        multiselect
+        onChange={event => setQuery(event.target.value)}
+        onKeyDown={event => {
+          if (event.key !== 'Enter' || query.trim() === '') return;
+          event.preventDefault();
+          add(query);
         }}
-      />
-    </div>)}</div>
-    {editable && <div className="flex flex-wrap gap-2">{reasoningPresets.filter(level => !supported.includes(level)).map(level => <Button key={level} size="small" onClick={() => add(level)}>+ {level}</Button>)}<Input className="!w-[130px]" placeholder={t('dashboard.upstreamEditor.models.customEffortPlaceholder')} size="small" value={custom} onChange={(_, data) => setCustom(data.value)} /><Button size="small" onClick={() => { add(custom); setCustom(''); }}>{t('dashboard.upstreamEditor.models.add')}</Button></div>}
+        onOpenChange={(_, data) => {
+          setOpen(data.open);
+          setQuery('');
+        }}
+        onOptionSelect={(_, data) => {
+          setSupported(data.selectedOptions);
+          setQuery('');
+        }}
+        placeholder={t('dashboard.upstreamEditor.models.effortPlaceholder')}
+        selectedOptions={supported}
+        value={open ? query : supported.join(', ')}
+      >
+        {options.map(level => <Option key={level} text={level} value={level}>{level}</Option>)}
+      </Combobox>
+    </Field>
+    <Field label={t('dashboard.upstreamEditor.models.defaultEffort')}>
+      <Select disabled={!editable || supported.length === 0} value={effort.default} onChange={(_, data) => onChange({ ...effort, default: data.value })}>
+        {supported.map(level => <option key={level} value={level}>{level}</option>)}
+      </Select>
+    </Field>
   </div>;
 }
 

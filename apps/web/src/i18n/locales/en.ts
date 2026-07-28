@@ -721,7 +721,9 @@ const en = {
           imageInput: 'Image input',
           reasoning: 'Reasoning',
           effortLevels: 'Effort levels',
-          customEffortPlaceholder: 'custom...',
+          supportedEfforts: 'Supported effort levels',
+          defaultEffort: 'Default effort',
+          effortPlaceholder: 'Select or enter an effort level…',
           budgetTokens: 'Budget tokens',
           adaptive: 'Adaptive',
           mandatory: 'Mandatory',
@@ -786,7 +788,6 @@ const en = {
           invalidBudget:
               'Maximum reasoning budget must be greater than or equal to the minimum.',
           invalidContract: 'Model ID, kind, endpoints, and rerank target must form a valid model configuration.',
-          removeEffort: 'Remove {{level}} effort',
           delete: 'Delete manual model',
         },
         copilot: {
