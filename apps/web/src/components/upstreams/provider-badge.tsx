@@ -10,7 +10,7 @@ import githubCopilotIconUrl from '../../assets/githubcopilot.svg';
 import ollamaIconUrl from '../../assets/ollama.svg';
 import { fluentComponents } from '../../fluent';
 
-const { makeStyles, Text } = fluentComponents;
+const { Tag, makeStyles, mergeClasses, tokens } = fluentComponents;
 
 type ProviderBadgeKind = UpstreamProviderKind | null;
 type ProviderTone = UpstreamColorPreset | 'zinc';
@@ -86,6 +86,15 @@ const useStyles = makeStyles({
       filter: 'invert(1)',
     },
   },
+  // The tone classes paint the identity color; Fluent's outline appearance
+  // supplies the geometry. Narrow columns get an ellipsis rather than a
+  // pill that outgrows its cell.
+  tag: { maxWidth: '100%' },
+  tagText: {
+    fontWeight: tokens.fontWeightSemibold,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
 });
 
 export const providerLabel = (kind: ProviderBadgeKind) =>
@@ -116,16 +125,18 @@ export function ProviderBadge({ color, kind, label, title }: {
   const visibleLabel = label ?? providerName;
 
   return (
-    <span
-      className={`${styles[tone]} inline-flex items-center gap-[5px] rounded-full border border-solid max-w-full min-h-[22px] py-0.5 px-2 whitespace-nowrap leading-[1.2]`}
+    <Tag
+      appearance="outline"
+      shape="circular"
+      size="small"
+      className={mergeClasses(styles[tone], styles.tag)}
       style={isHexColor(color) ? customColorStyle(color) : undefined}
       title={title ?? visibleLabel}
+      icon={<ProviderIcon kind={kind} className="h-4 w-4" />}
+      primaryText={{ className: styles.tagText }}
     >
-      <ProviderIcon kind={kind} className="h-[14px] w-[14px]" />
-      <Text size={200} weight="semibold" truncate wrap={false} className="min-w-0">
-        {visibleLabel}
-      </Text>
-    </span>
+      {visibleLabel}
+    </Tag>
   );
 }
 
