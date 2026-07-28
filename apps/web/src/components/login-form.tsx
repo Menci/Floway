@@ -99,6 +99,7 @@ export function LoginForm() {
           name="username"
           render={({ field }) => (
             <Field
+              label={t('auth.login.username')}
               validationMessage={usernameError ? t(usernameError) : undefined}
               validationState={usernameError ? 'error' : undefined}
             >
@@ -120,6 +121,7 @@ export function LoginForm() {
           name="password"
           render={({ field }) => (
             <Field
+              label={t('auth.login.password')}
               validationMessage={passwordError ? t(passwordError) : undefined}
               validationState={passwordError ? 'error' : undefined}
             >

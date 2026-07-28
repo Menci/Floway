@@ -158,7 +158,7 @@ const zhHansCN = {
         newPassword: '新密码',
         confirmPassword: '确认密码',
         otherDevices: '当前以你的账户登录的其他设备将会退出登录。',
-        save: '保存',
+        save: '修改密码',
         saving: '正在保存...',
         passwordUpdated: '密码已更新，其他设备已退出登录。',
         validation: {

@@ -168,7 +168,7 @@ const en = {
         newPassword: 'New password',
         confirmPassword: 'Confirm password',
         otherDevices: 'Other devices currently logged in as you will be signed out.',
-        save: 'Save',
+        save: 'Change password',
         saving: 'Saving...',
         passwordUpdated: 'Password updated. Other devices have been signed out.',
         validation: {
