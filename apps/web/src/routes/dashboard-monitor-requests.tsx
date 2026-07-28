@@ -1,3 +1,4 @@
+import { DismissRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, redirect, useSearchParams } from 'react-router';
@@ -16,11 +17,12 @@ import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
+import { useMediaQuery } from '../lib/use-media-query';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
 
 export const handle = dashboardWorkspaceHandle;
 
-const { MessageBar, MessageBarBody, Text } = fluentComponents;
+const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, MessageBar, MessageBarBody, OverlayDrawer, Text } = fluentComponents;
 
 interface LoaderData {
   collected: CollectedStream | null;
@@ -75,6 +77,8 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const [searchParams, setSearchParams] = useSearchParams();
   const [keys, setKeys] = useState(loaderData.keys);
   const [keysError, setKeysError] = useState(loaderData.error);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const narrow = useMediaQuery('(max-width: 900px)');
   const selectedRecordId = searchParams.get('record');
   const selectedKeyId = keys.some(key => key.id === loaderData.selectedKeyId)
     ? loaderData.selectedKeyId
@@ -115,7 +119,31 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
             <Link to="/dashboard/services/api-keys" className="text-fui-fg2">{t('dashboard.requests.goToApiKeys')}</Link>
           </div>
         </Panel>
-      ) : selectedKeyId ? (
+      ) : selectedKeyId ? narrow ? <>
+        <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
+          <RequestListPanel
+            apiKeys={keys}
+            error={subscription.error ?? loaderData.recordsError ?? keysError}
+            hasOlder={subscription.hasOlder}
+            onKeyChange={keyId => { setDetailOpen(false); updateSelection(keyId); }}
+            onLoadOlder={() => void subscription.loadOlder()}
+            onRecordChange={recordId => { updateSelection(selectedKeyId, recordId); setDetailOpen(true); }}
+            records={subscription.records}
+            selectedKeyId={selectedKeyId}
+            selectedRecordId={selectedRecordId}
+          />
+        </Panel>
+        <OverlayDrawer onOpenChange={(_, data) => setDetailOpen(data.open)} open={detailOpen && selectedRecordId !== null} position="end" size="full">
+          <DrawerHeader>
+            <DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.requests.closeDetails')} icon={<DismissRegular />} onClick={() => setDetailOpen(false)} />}>
+              {t('dashboard.requests.detailTitle')}
+            </DrawerHeaderTitle>
+          </DrawerHeader>
+          <DrawerBody className="!p-0 min-h-0">
+            <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
+          </DrawerBody>
+        </OverlayDrawer>
+      </> : (
         <ScrollArea axes="horizontal" className="min-h-0 p-1 -m-1">
           <div className="h-full min-w-[1080px] grid grid-cols-[minmax(700px,1fr)_360px] gap-3">
             <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">

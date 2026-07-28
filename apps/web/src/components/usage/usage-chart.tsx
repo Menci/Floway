@@ -31,7 +31,8 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
-  const tickValues = useMemo(() => chartTickValues(chart.buckets, chart.buckets.length <= 24 ? 6 : 7).map(bucket => bucket.date), [chart.buckets]);
+  const tickCount = Math.max(2, Math.min(chart.buckets.length <= 24 ? 6 : 7, Math.floor(Math.max(0, size.width - chartMargins.left - chartMargins.right) / 120)));
+  const tickValues = useMemo(() => chartTickValues(chart.buckets, tickCount).map(bucket => bucket.date), [chart.buckets, tickCount]);
   const dateFormatter = useCallback((date: Date) => formatAxisDate(date, chart.range, locale), [chart.range, locale]);
 
   const renderCallout = useCallback((point: CalloutPoint | null) => (
