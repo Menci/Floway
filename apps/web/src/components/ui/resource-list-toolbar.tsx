@@ -62,3 +62,7 @@ export function ResourceListToolbar({
     </div>
   );
 }
+
+export function ResourceListEmptyState({ children }: { children: ReactNode }) {
+  return <Text block size={300} className="text-fui-fg2 py-2">{children}</Text>;
+}

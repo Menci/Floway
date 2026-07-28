@@ -305,7 +305,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
       <Panel className="grid gap-[14px] min-w-0 !p-[18px] overflow-hidden">
         <ResourceListToolbar
-          createLabel={t('dashboard.proxy.addTitle')}
+          createLabel={t('dashboard.proxy.actions.create')}
           detail={t('dashboard.proxy.count', { count: proxies.length })}
           onCreate={openCreate}
           onRefresh={() => void refresh()}

@@ -1106,6 +1106,7 @@ const zhHansCN = {
           },
         },
         actions: {
+          create: '新建代理',
           save: '保存代理',
           saving: '保存中…',
           saveSuccess: '代理已保存。',
@@ -1116,7 +1117,7 @@ const zhHansCN = {
           delete: '删除',
           deleteNamed: '删除代理 {{name}}',
           deleting: '删除中…',
-          refresh: '刷新',
+          refresh: '刷新代理',
         },
         test: {
           ok: '连接成功',

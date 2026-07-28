@@ -24,7 +24,7 @@ import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
-import { ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { ResourceListEmptyState, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
@@ -266,7 +266,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         </MessageBar>
       )}
 
-      <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
+      <Panel className="grid gap-[14px] min-w-0 !p-[18px] overflow-hidden">
         <ResourceListToolbar
           createLabel={t('dashboard.upstreams.actions.create')}
           createTrailingIcon={<ChevronDownRegular className="ml-1.5" />}
@@ -352,11 +352,7 @@ function UpstreamsTable({
   const modelCounts = useMemo(() => buildModelCounts(data.upstreams, data.models), [data.models, data.upstreams]);
 
   if (data.upstreams.length === 0) {
-    return (
-      <div className="grid justify-items-center gap-3 text-center p-[28px_18px]">
-        <Text size={300} className="text-fui-fg3">{t('dashboard.upstreams.empty')}</Text>
-      </div>
-    );
+    return <ResourceListEmptyState>{t('dashboard.upstreams.empty')}</ResourceListEmptyState>;
   }
 
   return (
@@ -368,7 +364,7 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
             <TableHeaderCell className="!w-[180px]">{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableHeaderCell className="!w-[110px]">{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[68px]">{t('dashboard.upstreams.table.actions')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[88px]">{t('dashboard.upstreams.table.actions')}</TableHeaderCell>
           </TableRow>
         </TableHeader>
         <TableBody>

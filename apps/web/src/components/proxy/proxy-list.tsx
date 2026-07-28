@@ -5,6 +5,7 @@ import { hostPortLabel, KIND_COLORS } from './proxy-config';
 import type { ProxyRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ScrollArea } from '../ui/scroll-area';
+import { ResourceListEmptyState } from '../ui/resource-list-toolbar';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 
@@ -30,7 +31,7 @@ export function ProxyList({
   const { t } = useTranslation();
 
   if (proxies.length === 0) {
-    return <Text className="text-fui-fg2">{t('dashboard.proxy.empty')}</Text>;
+    return <ResourceListEmptyState>{t('dashboard.proxy.empty')}</ResourceListEmptyState>;
   }
 
   return (

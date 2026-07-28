@@ -1167,6 +1167,7 @@ const en = {
           },
         },
         actions: {
+          create: 'New Proxy',
           save: 'Save Proxy',
           saving: 'Saving…',
           saveSuccess: 'Proxy saved.',
@@ -1177,7 +1178,7 @@ const en = {
           delete: 'Delete',
           deleteNamed: 'Delete proxy {{name}}',
           deleting: 'Deleting…',
-          refresh: 'Refresh',
+          refresh: 'Refresh proxies',
         },
         test: {
           ok: 'Connection OK',
