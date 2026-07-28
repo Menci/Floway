@@ -296,7 +296,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           onRefresh={() => void handleReload()}
           refreshLabel={t('dashboard.upstreams.actions.refresh')}
           refreshing={mutation?.kind === 'reload'}
-          title={t('dashboard.upstreams.table.title')}
+          title={t('dashboard.nav.upstreams')}
         />
         <UpstreamsTable
           busy={busy}
@@ -356,10 +356,11 @@ function UpstreamsTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[780px]">
+      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[930px]">
         <TableHeader>
           <TableRow>
             <TableHeaderCell className="!w-[130px]">{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[150px]">{t('dashboard.upstreams.table.provider')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
             <TableHeaderCell className="!w-[180px]">{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableHeaderCell className="!w-[110px]">{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
@@ -371,7 +372,7 @@ function UpstreamsTable({
             <TableRow className="h-14" key={record.id}>
               <TableCell>
                 <div className="inline-flex items-center gap-1">
-                  <Text size={200} className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
+                  <Text size={300} className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
                   <TooltipIconButton
                     disabled={busy || index === 0}
                     icon={<ArrowUpRegular />}
@@ -386,14 +387,15 @@ function UpstreamsTable({
                   />
                 </div>
               </TableCell>
+              <TableCell><ProviderBadge color={record.color} kind={record.kind} /></TableCell>
               <TableCell>
-                <div className="grid gap-[3px] min-w-0 max-w-[520px] justify-items-start">
+                <div className="grid gap-[3px] min-w-0 max-w-[520px]">
                   <Link
-                    className="min-w-0 max-w-full no-underline"
+                    className="text-fui-fg1 no-underline hover:underline truncate"
                     title={record.name}
                     to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
                   >
-                    <ProviderBadge color={record.color} kind={record.kind} label={record.name} />
+                    {record.name}
                   </Link>
                   <Text size={200} className="text-fui-fg3 truncate max-w-full" title={upstreamSummary(record, t)}>
                     {upstreamSummary(record, t)}
