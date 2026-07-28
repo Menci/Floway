@@ -149,12 +149,23 @@ const providerIconUrls: Record<UpstreamProviderKind, string | null> = {
   ollama: ollamaIconUrl,
 };
 
-const maskedIconStyle = (url: string): React.CSSProperties => ({
+// ServerRegular paints 16px high inside its 20px box. These source-specific
+// scales normalize every vendor silhouette to that optical height even though
+// all source SVGs declare the same 24×24 viewBox.
+const providerIconMaskSizes: Record<Exclude<UpstreamProviderKind, 'custom'>, string> = {
+  azure: '85% 85%',
+  copilot: '100% 100%',
+  codex: '80% 80%',
+  'claude-code': '80% 80%',
+  ollama: '86% 86%',
+};
+
+const maskedIconStyle = (url: string, size: string): React.CSSProperties => ({
   backgroundColor: 'currentColor',
   maskImage: `url(${url})`,
   WebkitMaskImage: `url(${url})`,
-  maskSize: 'contain',
-  WebkitMaskSize: 'contain',
+  maskSize: size,
+  WebkitMaskSize: size,
   maskRepeat: 'no-repeat',
   WebkitMaskRepeat: 'no-repeat',
   maskPosition: 'center',
@@ -173,5 +184,5 @@ export function ProviderIcon({
   if (kind === 'custom') return <ServerRegular className={baseClassName} />;
   const iconUrl = providerIconUrls[kind];
   if (iconUrl === null) return null;
-  return <span aria-hidden className={baseClassName} style={maskedIconStyle(iconUrl)} />;
+  return <span aria-hidden className={baseClassName} style={maskedIconStyle(iconUrl, providerIconMaskSizes[kind])} />;
 }
