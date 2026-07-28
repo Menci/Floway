@@ -60,6 +60,7 @@ test('/api/search-usage in self-by-key mode includes per-key metadata for the ac
 
   assertEquals(response.status, 200);
   const body = await response.json();
+  assertEquals(body.view, 'self-by-key');
   assertEquals(body.activeProvider, 'web-iq');
   assertEquals(body.keys, [
     { id: apiKey.id, name: apiKey.name, createdAt: apiKey.createdAt },
@@ -103,6 +104,7 @@ test('/api/search-usage all-by-user view with include_user_metadata=1 includes u
 
   assertEquals(response.status, 200);
   const body = await response.json();
+  assertEquals(body.view, 'all-by-user');
   assertEquals(Array.isArray(body.records), true);
   assertEquals(Array.isArray(body.users), true);
   assertEquals(body.users.length >= 2, true);

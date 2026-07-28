@@ -1,168 +1,24 @@
+import type {
+  BlueprintSerializedUpstreamRecord,
+  FullSerializedUpstreamRecord,
+  RedactedSerializedUpstreamRecord,
+} from './types.ts';
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import type { SerializedUpstreamRecord } from './types.ts';
-import type { FlagDefaults, FlagOverrides, ModelPrefixConfig, ProxyFallbackEntry, UpstreamColor, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { FlagOverrides, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
+import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
+import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
+import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/provider-copilot';
+import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
-export type { SerializedUpstreamRecord } from './types.ts';
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+export type { FullSerializedUpstreamRecord } from './types.ts';
 
 const clone = <T>(value: T): T => structuredClone(value);
+const hasSecret = (value: string | undefined | null): boolean => typeof value === 'string' && value.length > 0;
 
-const hasSecret = (value: unknown): boolean => typeof value === 'string' && value.length > 0;
-
-const assertAccountsArray = (upstream: UpstreamRecord, accounts: unknown): Record<string, unknown>[] => {
-  if (!Array.isArray(accounts)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed accounts: expected array`);
-  }
-  return accounts.map((account, index) => {
-    if (!isRecord(account)) {
-      throw new Error(`Upstream ${upstream.id} (${upstream.kind}) account[${index}] is malformed: expected object`);
-    }
-    return account;
-  });
-};
-
-const serializeOpaqueRecord = (upstream: UpstreamRecord, field: string, value: unknown): Record<string, unknown> | null => {
-  if (value === null) return null;
-  if (!isRecord(value)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed ${field}: expected object or null`);
-  }
-  return clone(value);
-};
-
-const redactedConfig = (upstream: UpstreamRecord): unknown => {
-  if (!isRecord(upstream.config)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed config: expected object`);
-  }
-  const config = upstream.config;
-
-  switch (upstream.kind) {
-  case 'custom':
-    return {
-      ...(config.baseUrl !== undefined ? { baseUrl: clone(config.baseUrl) } : {}),
-      ...(config.authStyle !== undefined ? { authStyle: clone(config.authStyle) } : {}),
-      ...(config.endpoints !== undefined ? { endpoints: clone(config.endpoints) } : {}),
-      ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
-      ...(config.modelsFetch !== undefined ? { modelsFetch: clone(config.modelsFetch) } : {}),
-      ...(config.models !== undefined ? { models: clone(config.models) } : {}),
-      apiKeySet: hasSecret(config.apiKey),
-    };
-  case 'azure':
-    return {
-      ...(config.endpoint !== undefined ? { endpoint: clone(config.endpoint) } : {}),
-      ...(config.models !== undefined ? { models: clone(config.models) } : {}),
-      apiKeySet: hasSecret(config.apiKey),
-    };
-  case 'copilot':
-    return {
-      ...(config.user !== undefined ? { user: clone(config.user) } : {}),
-      githubTokenSet: hasSecret(config.githubToken),
-    };
-  case 'codex':
-    // refresh_token lives in state and is redacted by redactedState.
-    return {
-      accounts: assertAccountsArray(upstream, config.accounts).map(a => ({
-        ...(a.email !== undefined ? { email: clone(a.email) } : {}),
-        ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
-        ...(a.chatgptUserId !== undefined ? { chatgptUserId: clone(a.chatgptUserId) } : {}),
-        ...(a.planType !== undefined ? { planType: clone(a.planType) } : {}),
-      })),
-    };
-  case 'claude-code':
-    // refreshToken lives in state and is redacted by redactedState.
-    return {
-      accounts: assertAccountsArray(upstream, config.accounts).map(a => ({
-        ...(a.email !== undefined ? { email: clone(a.email) } : {}),
-        ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
-        ...(a.organizationUuid !== undefined ? { organizationUuid: clone(a.organizationUuid) } : {}),
-        ...(a.subscriptionType !== undefined ? { subscriptionType: clone(a.subscriptionType) } : {}),
-        ...(a.rateLimitTier !== undefined ? { rateLimitTier: clone(a.rateLimitTier) } : {}),
-      })),
-    };
-  case 'ollama':
-    return {
-      ...(config.baseUrl !== undefined ? { baseUrl: clone(config.baseUrl) } : {}),
-      ...(config.models !== undefined ? { models: clone(config.models) } : {}),
-      apiKeySet: hasSecret(config.apiKey),
-    };
-  default: {
-    const exhaustive: never = upstream.kind;
-    throw new Error(`Unknown upstream provider for redaction: ${String(exhaustive)}`);
-  }
-  }
-};
-
-const redactedState = (upstream: UpstreamRecord): unknown => {
-  if (upstream.state === null || upstream.state === undefined) return null;
-  if (!isRecord(upstream.state)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed state: expected object`);
-  }
-  const state = upstream.state;
-
-  switch (upstream.kind) {
-  case 'codex':
-    return {
-      accounts: assertAccountsArray(upstream, state.accounts).map(a => ({
-        ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
-        ...(a.state !== undefined ? { state: clone(a.state) } : {}),
-        ...(a.state_message !== undefined ? { state_message: clone(a.state_message) } : {}),
-        state_updated_at: clone(a.state_updated_at),
-        refresh_token_set: hasSecret(a.refresh_token),
-      })),
-    };
-  case 'claude-code':
-    return {
-      accounts: assertAccountsArray(upstream, state.accounts).map(a => {
-        // accessToken.token is dropped; expiresAt + refreshedAt are surfaced to the dashboard.
-        const accessToken = a.accessToken === null
-          ? null
-          : isRecord(a.accessToken)
-            ? { expiresAt: clone(a.accessToken.expiresAt), refreshedAt: clone(a.accessToken.refreshedAt) }
-            : (() => { throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed accessToken: expected object or null`); })();
-        return {
-          ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
-          ...(a.tokenKind !== undefined ? { tokenKind: clone(a.tokenKind) } : {}),
-          ...(a.state !== undefined ? { state: clone(a.state) } : {}),
-          ...(a.stateMessage !== undefined ? { stateMessage: clone(a.stateMessage) } : {}),
-          stateUpdatedAt: clone(a.stateUpdatedAt),
-          refreshTokenSet: hasSecret(a.refreshToken),
-          accessToken,
-          quotaSnapshot: serializeOpaqueRecord(upstream, 'quotaSnapshot', a.quotaSnapshot),
-          // usageProbeSnapshot's wire shape is owned by Anthropic's
-          // /api/oauth/usage endpoint and evolves on their schedule, so we
-          // round-trip the entry without re-shaping any inner fields.
-          usageProbeSnapshot: serializeOpaqueRecord(upstream, 'usageProbeSnapshot', a.usageProbeSnapshot),
-        };
-      }),
-    };
-  case 'copilot': {
-    // Expose only the per-tier baseUrl the dashboard renders an account-type
-    // badge from. Bearer token + expiry stay server-side: short-lived auth
-    // material has no presentation use.
-    const token = serializeOpaqueRecord(upstream, 'copilotToken', state.copilotToken);
-    const baseUrl = typeof token?.baseUrl === 'string' ? token.baseUrl : null;
-    return { copilotToken: baseUrl !== null ? { baseUrl } : null };
-  }
-  case 'custom':
-  case 'azure':
-  case 'ollama':
-    // These kinds carry no state at all — no credential rotation, quota
-    // snapshot, or OAuth account slot to keep server-side.
-    return null;
-  default: {
-    const exhaustive: never = upstream.kind;
-    throw new Error(`Unknown upstream provider for state redaction: ${String(exhaustive)}`);
-  }
-  }
-};
-
-const serializeBase = (
-  upstream: UpstreamRecord,
-  config: unknown,
-  state: unknown,
-): SerializedUpstreamRecord => ({
+const serializeBase = (upstream: UpstreamRecord) => ({
   id: upstream.id,
-  kind: upstream.kind,
   name: upstream.name,
   enabled: upstream.enabled,
   sort_order: upstream.sortOrder,
@@ -171,42 +27,159 @@ const serializeBase = (
   flag_overrides: { ...upstream.flagOverrides },
   flag_defaults: flagDefaultsForKind(upstream.kind),
   disabled_public_model_ids: [...upstream.disabledPublicModelIds],
-  proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined ? { id: entry.id } : { id: entry.id, colos: [...entry.colos] }),
+  proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined
+    ? { id: entry.id }
+    : { id: entry.id, colos: [...entry.colos] }),
   model_prefix: upstream.modelPrefix === null ? null : clone(upstream.modelPrefix),
   color: upstream.color,
-  config,
-  state,
-} as SerializedUpstreamRecord);
+});
 
-export const upstreamRecordToJson = (upstream: UpstreamRecord): SerializedUpstreamRecord =>
-  serializeBase(upstream, redactedConfig(upstream), redactedState(upstream));
+const stateless = (upstream: UpstreamRecord): null => {
+  if (upstream.state !== null) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.kind}) must not carry runtime state`);
+  }
+  return null;
+};
 
-export const upstreamRecordToFullJson = (upstream: UpstreamRecord): SerializedUpstreamRecord =>
-  serializeBase(upstream, clone(upstream.config), clone(upstream.state));
+export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializedUpstreamRecord => {
+  const base = serializeBase(upstream);
+  switch (upstream.kind) {
+  case 'custom': {
+    const { config } = assertCustomUpstreamRecord(upstream);
+    return {
+      ...base,
+      kind: 'custom',
+      config: {
+        baseUrl: config.baseUrl,
+        authStyle: config.authStyle,
+        endpoints: clone(config.endpoints),
+        ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
+        modelsFetch: clone(config.modelsFetch),
+        models: clone(config.models),
+        apiKeySet: config.authStyle !== 'none' && hasSecret(config.apiKey),
+      },
+      state: stateless(upstream),
+    };
+  }
+  case 'azure': {
+    const { config } = assertAzureUpstreamRecord(upstream);
+    return {
+      ...base,
+      kind: 'azure',
+      config: { endpoint: config.endpoint, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
+      state: stateless(upstream),
+    };
+  }
+  case 'copilot': {
+    const { config } = assertCopilotUpstreamRecord(upstream);
+    let state: Extract<RedactedSerializedUpstreamRecord, { kind: 'copilot' }>['state'] = null;
+    if (upstream.state !== null) {
+      assertCopilotUpstreamState(upstream.state);
+      state = { copilotToken: upstream.state.copilotToken === null ? null : { baseUrl: upstream.state.copilotToken.baseUrl } };
+    }
+    return {
+      ...base,
+      kind: 'copilot',
+      config: { user: clone(config.user), githubTokenSet: hasSecret(config.githubToken) },
+      state,
+    };
+  }
+  case 'codex': {
+    assertCodexUpstreamRecord(upstream);
+    assertCodexUpstreamState(upstream.state);
+    const state = {
+      accounts: upstream.state.accounts.map(account => ({
+        chatgptAccountId: account.chatgptAccountId,
+        state: account.state,
+        ...(account.state_message !== undefined ? { state_message: account.state_message } : {}),
+        state_updated_at: account.state_updated_at,
+        refresh_token_set: hasSecret(account.refresh_token),
+      })),
+    };
+    return { ...base, kind: 'codex', config: clone(upstream.config), state };
+  }
+  case 'claude-code': {
+    assertClaudeCodeUpstreamRecord(upstream);
+    assertClaudeCodeUpstreamState(upstream.state);
+    const state = {
+      accounts: upstream.state.accounts.map(account => ({
+        accountUuid: account.accountUuid,
+        tokenKind: account.tokenKind,
+        state: account.state,
+        ...(account.stateMessage !== undefined ? { stateMessage: account.stateMessage } : {}),
+        stateUpdatedAt: account.stateUpdatedAt,
+        refreshTokenSet: hasSecret(account.refreshToken),
+        accessToken: account.accessToken === null
+          ? null
+          : { expiresAt: account.accessToken.expiresAt, refreshedAt: account.accessToken.refreshedAt },
+        quotaSnapshot: clone(account.quotaSnapshot),
+        usageProbeSnapshot: clone(account.usageProbeSnapshot),
+      })),
+    };
+    return { ...base, kind: 'claude-code', config: clone(upstream.config), state };
+  }
+  case 'ollama': {
+    const { config } = assertOllamaUpstreamRecord(upstream);
+    return {
+      ...base,
+      kind: 'ollama',
+      config: { baseUrl: config.baseUrl, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
+      state: stateless(upstream),
+    };
+  }
+  }
+};
 
-// Shape-complete per-kind UpstreamRecord default, never persisted. Serves the
-// GET /api/upstreams/blueprint endpoint so the create page consumes the same
-// SerializedUpstreamRecord shape edit does — the front-end draft variable is
-// uniform across create and edit, and no write-path invariants have to be
-// satisfied. Operator-typed text starts empty; every other slot takes the
-// kind's own default rather than a blank (`authStyle: 'bearer'`,
-// `modelsFetch: { enabled: false }`, a zero-value Copilot `user` object), so
-// the draft is a well-formed record before anything is typed or any OAuth
-// flow completes.
-export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRecord => {
-  const base = {
-    id: '',
-    name: '',
-    enabled: false,
-    sortOrder: 0,
-    createdAt: '',
-    updatedAt: '',
-    flagOverrides: {} as FlagOverrides,
-    disabledPublicModelIds: [] as string[],
-    proxyFallbackList: [] as ProxyFallbackEntry[],
-    modelPrefix: null,
-    color: null,
-  };
+export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializedUpstreamRecord => {
+  const base = serializeBase(upstream);
+  switch (upstream.kind) {
+  case 'custom': {
+    const record = assertCustomUpstreamRecord(upstream);
+    return { ...base, kind: 'custom', config: clone(record.config), state: stateless(upstream) };
+  }
+  case 'azure': {
+    const record = assertAzureUpstreamRecord(upstream);
+    return { ...base, kind: 'azure', config: clone(record.config), state: stateless(upstream) };
+  }
+  case 'copilot': {
+    const record = assertCopilotUpstreamRecord(upstream);
+    if (record.state !== null) assertCopilotUpstreamState(record.state);
+    return { ...base, kind: 'copilot', config: clone(record.config), state: clone(record.state) };
+  }
+  case 'codex': {
+    assertCodexUpstreamRecord(upstream);
+    assertCodexUpstreamState(upstream.state);
+    return { ...base, kind: 'codex', config: clone(upstream.config), state: clone(upstream.state) };
+  }
+  case 'claude-code': {
+    assertClaudeCodeUpstreamRecord(upstream);
+    assertClaudeCodeUpstreamState(upstream.state);
+    return { ...base, kind: 'claude-code', config: clone(upstream.config), state: clone(upstream.state) };
+  }
+  case 'ollama': {
+    const record = assertOllamaUpstreamRecord(upstream);
+    return { ...base, kind: 'ollama', config: clone(record.config), state: stateless(upstream) };
+  }
+  }
+};
+
+const blueprintBase = (kind: UpstreamProviderKind) => ({
+  id: '',
+  name: '',
+  enabled: false,
+  sort_order: 0,
+  created_at: '',
+  updated_at: '',
+  flag_overrides: {} as FlagOverrides,
+  flag_defaults: flagDefaultsForKind(kind),
+  disabled_public_model_ids: [] as string[],
+  proxy_fallback_list: [] as ProxyFallbackEntry[],
+  model_prefix: null,
+  color: null,
+});
+
+export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSerializedUpstreamRecord => {
+  const base = blueprintBase(kind);
   switch (kind) {
   case 'copilot':
     return { ...base, kind, config: { githubToken: '', user: { login: '', avatar_url: '', name: null, id: 0 } }, state: null };
@@ -220,9 +193,5 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRec
     return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
   case 'ollama':
     return { ...base, kind, config: { baseUrl: '', apiKey: '', models: [] }, state: null };
-  default: {
-    const exhaustive: never = kind;
-    throw new Error(`Unknown upstream provider kind: ${String(exhaustive)}`);
-  }
   }
 };

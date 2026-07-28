@@ -5,7 +5,6 @@
 // aggregate, administrators only).
 
 import { aggregateWebSearchUsageByKey, aggregateWebSearchUsageByUser } from './aggregate.ts';
-import type { SearchUsageByKeyResponse, SearchUsageByUserResponse } from '../usage-types.ts';
 import { loadWebSearchConfig } from '../../data-plane/tools/web-search/config.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -13,6 +12,7 @@ import { isWebSearchProviderName, WEB_SEARCH_PROVIDER_NAMES } from '../../shared
 import type { webSearchUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
 import { resolveUsageView } from '../shared/usage-view.ts';
+import type { SearchUsageByKeyResponse, SearchUsageByUserResponse } from '../usage-types.ts';
 
 export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>) => {
   const query = c.req.valid('query');
@@ -47,6 +47,7 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
       .sort((a, b) => a.id - b.id);
     const webSearchConfig = await loadWebSearchConfig();
     return c.json({
+      view: 'all-by-user',
       records,
       users: userMetadata,
       activeProvider: webSearchConfig.provider,
@@ -86,6 +87,7 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
   const keyMetadata = keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt })).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 
   return c.json({
+    view: 'self-by-key',
     records: recordsWithKeyMetadata,
     keys: keyMetadata,
     activeProvider: webSearchConfig.provider,

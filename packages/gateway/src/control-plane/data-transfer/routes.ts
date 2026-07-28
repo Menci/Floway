@@ -26,7 +26,7 @@ import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.
 import { isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
-import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
+import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, type PricingSelector } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
@@ -52,7 +52,7 @@ interface ExportPayload {
   data: {
     users: User[];
     apiKeys: ApiKey[];
-    upstreams: SerializedUpstreamRecord[];
+    upstreams: FullSerializedUpstreamRecord[];
     proxies: SerializedProxy[];
     usage: UsageRecord[];
     searchUsage: WebSearchUsageRecord[];

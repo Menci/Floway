@@ -73,6 +73,7 @@ test('/api/token-usage self-by-key surfaces soft-deleted keys metadata to their 
 
   assertEquals(response.status, 200);
   const body = await response.json();
+  assertEquals(body.view, 'self-by-key');
   // The deleted key's name surfaces alongside the row even though listByUserId
   // active-only would have hidden it.
   const matched = body.records.find((r: { keyId: string }) => r.keyId === apiKey.id);

@@ -741,6 +741,7 @@ const zhHansCN = {
             'active': '正常',
             'heavy': '用量偏高（{{percent}}%）',
             'rateLimited': '限流至 {{time}}',
+            'account-id-mismatch': '所配置的账号不在状态中 —— 请重新导入以恢复',
             'session-terminated': '会话已终止 —— 请重新导入以恢复',
             'refresh-failed': '刷新失败 —— 请重新导入以恢复',
           },

@@ -37,6 +37,8 @@ export interface UpstreamEditorLoaderData extends EditorAuxData {
   mode: 'create' | 'edit';
   record: UpstreamRecord;
   nextSortOrder: number;
+  discovered: UpstreamModelConfig[];
+  modelsError: string | null;
 }
 
 export interface UpstreamEditorValues {
@@ -86,6 +88,28 @@ export async function loadEditorAux(): Promise<EditorAuxData> {
     runtime: runtime.data!,
     upstreams: upstreams.data!,
   };
+}
+
+export async function loadInitialModelCatalog(record: UpstreamRecord) {
+  const values = valuesFromRecord(record);
+  const canFetch = record.kind === 'custom'
+    ? Boolean(record.config.baseUrl) && record.config.modelsFetch.enabled
+    : record.kind === 'ollama'
+      ? Boolean(record.config.baseUrl)
+      : record.id !== '' && record.kind !== 'azure';
+  if (!canFetch) return { discovered: [], modelsError: null, record };
+
+  const result = await callApi(() => api.api.upstreams['list-models'].$post({
+    json: { record: previewRecord(record, values) },
+  }));
+  if (result.error) return { discovered: [], modelsError: result.error.message, record };
+
+  const endpoints = record.kind === 'custom' ? record.config.endpoints : {};
+  const discovered = discoveredModelsFromResponse(result.data, endpoints);
+  const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
+  return refreshed.error
+    ? { discovered, modelsError: refreshed.error.message, record }
+    : { discovered, modelsError: null, record: refreshed.data };
 }
 
 export function valuesFromRecord(record: UpstreamRecord): UpstreamEditorValues {

@@ -1,5 +1,4 @@
 import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons';
-import type { InferResponseType } from 'hono/client';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
@@ -7,13 +6,10 @@ import { redirect } from 'react-router';
 import type { Route } from './+types/dashboard-admin-backup-restore';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
-import type {
-  BackupExportData,
-  BackupExportResponse,
-  BackupImportCounts,
-} from '../api/types';
+import type { BackupImportCounts } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
+import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
@@ -129,52 +125,19 @@ const PREVIEW_LABEL_KEYS = [
   'searchUsage',
   'performance',
 ] as const;
-// Annotated with the gateway's own literal so a bump there fails this
-// assignment rather than silently leaving the dashboard rejecting every fresh
-// backup file as unreadable.
-const EXPORT_VERSION: InferResponseType<typeof api.api.export.$get, 200>['version'] = 18;
-
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function countRecords(data: BackupExportData): Record<string, number> {
+function countRecords(data: BackupFileData): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const key of PREVIEW_LABEL_KEYS) {
-    const value = data[key as keyof BackupExportData];
+    const value = data[key];
     counts[key] = Array.isArray(value) ? value.length : 0;
   }
   return counts;
-}
-
-function parseBackupFile(
-  raw: string,
-): { ok: true; payload: BackupExportResponse } | { ok: false; error: string } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
-  }
-
-  if (
-    !parsed ||
-    typeof parsed !== 'object' ||
-    !('version' in parsed) ||
-    !('data' in parsed) ||
-    !('exportedAt' in parsed)
-  ) {
-    return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
-  }
-
-  const record = parsed as Record<string, unknown>;
-  if (record.version !== EXPORT_VERSION) {
-    return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
-  }
-
-  return { ok: true, payload: parsed as BackupExportResponse };
 }
 
 export default function DashboardAdminBackupRestore() {
@@ -186,7 +149,7 @@ export default function DashboardAdminBackupRestore() {
   const [exportError, setExportError] = useState<string | null>(null);
 
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importParsedData, setImportParsedData] = useState<BackupExportResponse | null>(null);
+  const [importParsedData, setImportParsedData] = useState<BackupFile | null>(null);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -236,9 +199,9 @@ export default function DashboardAdminBackupRestore() {
 
       const reader = new FileReader();
       reader.onload = () => {
-        const result = parseBackupFile(reader.result as string);
+        const result = typeof reader.result === 'string' ? parseBackupFile(reader.result) : { ok: false as const };
         if (!result.ok) {
-          setImportError(result.error);
+          setImportError('dashboard.backupRestore.import.errorInvalidFile');
           setImportFile(null);
           setImportParsedData(null);
           return;
@@ -301,7 +264,7 @@ export default function DashboardAdminBackupRestore() {
 
     const result = await callApi(() => api.api.import.$post({
       json: {
-        version: EXPORT_VERSION,
+        version: BACKUP_FILE_VERSION,
         mode: importMode,
         data: importParsedData.data,
       },

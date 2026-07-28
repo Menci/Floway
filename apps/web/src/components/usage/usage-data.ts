@@ -9,17 +9,14 @@ import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import { dashboardRangeQuery } from '../charts/dashboard-time';
 import type {
-  SearchUsageByKeyResponse,
-  SearchUsageByUserResponse,
   TokenUsageByKeyResponse,
-  TokenUsageByUserResponse,
 } from '@floway-dev/gateway/control-plane/usage-types';
 
 export const emptyUsageResponse = (): UsageResponse => ({ records: [], keys: [] });
 export const emptySearchUsageResponse = (): SearchUsageResponse => ({ records: [], keys: [], activeProvider: 'disabled' });
 const userBucketId = (userId: number) => `user-${userId}`;
 
-const metricsFromWire = (
+export const metricsFromWire = (
   metrics: TokenUsageByKeyResponse['records'][number]['metrics'],
 ): DisplayUsageRecord['metrics'] => Object.fromEntries(
   metrics.map(({ metric, quantity }) => [metric, quantity]),
@@ -31,8 +28,14 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
       callApi(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
       callApi(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
     ]);
-    const usageData = usageRes.data as TokenUsageByUserResponse | undefined;
-    const searchData = searchRes.data as SearchUsageByUserResponse | undefined;
+    const usageData = usageRes.error ? null : usageRes.data;
+    const searchData = searchRes.error ? null : searchRes.data;
+    if (usageData !== null && (Array.isArray(usageData) || usageData.view !== 'all-by-user')) {
+      throw new TypeError('Token usage response does not match the requested all-by-user view');
+    }
+    if (searchData !== null && (Array.isArray(searchData) || searchData.view !== 'all-by-user')) {
+      throw new TypeError('Search usage response does not match the requested all-by-user view');
+    }
     return {
       usage: usageData ? {
         records: usageData.records.map(({ userId, ...record }) => ({
@@ -54,8 +57,14 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
     callApi(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view } })),
     callApi(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view } })),
   ]);
-  const usageData = usageRes.data as TokenUsageByKeyResponse | undefined;
-  const searchData = searchRes.data as SearchUsageByKeyResponse | undefined;
+  const usageData = usageRes.error ? null : usageRes.data;
+  const searchData = searchRes.error ? null : searchRes.data;
+  if (usageData !== null && (Array.isArray(usageData) || usageData.view !== 'self-by-key')) {
+    throw new TypeError('Token usage response does not match the requested self-by-key view');
+  }
+  if (searchData !== null && (Array.isArray(searchData) || searchData.view !== 'self-by-key')) {
+    throw new TypeError('Search usage response does not match the requested self-by-key view');
+  }
   return {
     usage: usageData ? {
       records: usageData.records.map(record => ({ ...record, metrics: metricsFromWire(record.metrics) })),

@@ -1,10 +1,9 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
+import type { InferRequestType, InferResponseType } from 'hono/client';
+
+import type { api } from './client';
 import type { SerializedBackoffRow, SerializedProxyRecord } from '@floway-dev/gateway/control-plane/proxies/serialize';
-import type {
-  ProxyFallbackEntry,
-  UpstreamRecord,
-} from '@floway-dev/gateway/control-plane/upstreams/types';
 import type {
   AliasRules,
   AliasSelection,
@@ -60,113 +59,20 @@ export type {
   UpstreamRecord,
 } from '@floway-dev/gateway/control-plane/upstreams/types';
 
-// Zod's passthrough request schema widens this action envelope with a string
-// index signature. Keep that request-only shape separate from the precise
-// discriminated response record.
-export type UpstreamRecordEnvelope = {
-  id: string;
-  kind: string;
-  config: unknown;
-  state: unknown;
-  proxy_fallback_list?: ProxyFallbackEntry[];
-  [key: string]: unknown;
-};
-
-export const toRecordEnvelope = (record: UpstreamRecord): UpstreamRecordEnvelope => ({ ...record });
+export type UpstreamRecordEnvelope = InferRequestType<
+  typeof api.api.upstreams['list-models']['$post']
+>['json']['record'];
 
 export type ProxyRecord = SerializedProxyRecord;
 export type BackoffRow = SerializedBackoffRow;
 
-export interface ProxyConflictBody {
-  error: string;
-  referencing_upstream_ids?: string[];
-}
+export type ProxyConflictBody = InferResponseType<typeof api.api.proxies[':id']['$delete'], 409>;
+export type ApiKey = InferResponseType<typeof api.api.keys.$get, 200>[number];
+export type ControlPlaneUser = InferResponseType<typeof api.api.users.$get, 200>[number];
+export type UpstreamOption = InferResponseType<typeof api.api['upstream-options']['$get'], 200>[number];
 
-export interface ApiKey {
-  id: string;
-  name: string;
-  key: string;
-  created_at: string;
-  last_used_at: string | null;
-  upstream_ids: string[] | null;
-  dump_retention_seconds: number | null;
-  responses_retention_seconds: number;
-}
-
-export interface ControlPlaneUser {
-  id: number;
-  username: string;
-  isAdmin: boolean;
-  upstreamIds: string[] | null;
-  createdAt: string;
-}
-
-export interface UpstreamOption {
-  id: string;
-  name: string;
-  kind: UpstreamProviderKind;
-  enabled: boolean;
-  color: UpstreamColor | null;
-}
-
-export interface ControlPlaneModel extends PublicModel {
-  upstreams: { kind: UpstreamProviderKind; id: string; name: string; color: UpstreamColor | null }[];
-}
-
-export interface SearchConfig {
-  provider: 'disabled' | 'tavily' | 'web-iq' | 'jina';
-  tavily: { apiKey: string };
-  webIq: { apiKey: string };
-  jina: { apiKey: string };
-  passthroughOpenAiSearch: { enabled: boolean; upstreamId: string; model: string };
-}
-
-export interface CopilotQuotaSnapshot {
-  quota_snapshots?: {
-    premium_interactions?: {
-      entitlement: number;
-      remaining: number;
-      reset_date?: string;
-    };
-  };
-}
-
-export interface DeviceFlowStart {
-  user_code: string;
-  verification_uri: string;
-  device_code: string;
-  interval: number;
-}
-
-export interface BackupExportData {
-  users: unknown[];
-  apiKeys: unknown[];
-  upstreams: unknown[];
-  proxies: unknown[];
-  usage: unknown[];
-  searchUsage: unknown[];
-  performance?: unknown[];
-  performanceIncluded: boolean;
-  searchConfig: unknown;
-}
-
-export interface BackupExportResponse {
-  version: number;
-  exportedAt: string;
-  data: BackupExportData;
-}
-
-export interface BackupImportCounts {
-  users: number;
-  apiKeys: number;
-  upstreams: number;
-  proxies: number;
-  usage: number;
-  searchUsage: number;
-  performance: number;
-}
-
-export interface BackupImportResponse {
-  ok: true;
-  imported: BackupImportCounts;
-}
+export type ControlPlaneModel = InferResponseType<typeof api.api.models.$get, 200>['data'][number];
+export type SearchConfig = InferResponseType<typeof api.api['search-config']['$get'], 200>;
+export type CopilotQuotaSnapshot = InferResponseType<typeof api.api.upstreams.copilot.quota.$post, 200>;
+export type DeviceFlowStart = InferResponseType<typeof api.api.upstreams.copilot.oauth['device-login']['start']['$post'], 200>;
+export type BackupImportCounts = InferResponseType<typeof api.api.import.$post, 200>['imported'];
