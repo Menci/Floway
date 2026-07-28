@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 
-const { Button, Dialog, DialogSurface, DialogTitle, makeStyles } = fluentComponents;
+const { Button, Dialog, DialogSurface, DialogTitle, Spinner, makeStyles } = fluentComponents;
 
 const useStyles = makeStyles({
   body: {
@@ -24,6 +24,7 @@ const useStyles = makeStyles({
 
 export function ConfirmDialog({
   actionLabel,
+  busy = false,
   cancelLabel,
   message,
   onCancel,
@@ -33,6 +34,7 @@ export function ConfirmDialog({
   title,
 }: {
   actionLabel: string;
+  busy?: boolean;
   cancelLabel?: string;
   message: string;
   onCancel?: () => void;
@@ -45,7 +47,7 @@ export function ConfirmDialog({
   const s = useStyles();
 
   return (
-    <Dialog open={open} onOpenChange={(_, data) => onOpenChange(data.open)}>
+    <Dialog open={open} onOpenChange={(_, data) => !busy && onOpenChange(data.open)}>
       <DialogSurface className="overflow-hidden !p-0 !w-[min(430px,calc(100vw-48px))]">
         <div className={s.body}>
           <DialogTitle
@@ -62,12 +64,15 @@ export function ConfirmDialog({
           <Button
             appearance="primary"
             className="font-fui-regular my-1 !w-full"
+            disabled={busy}
+            icon={busy ? <Spinner size="tiny" /> : undefined}
             onClick={onConfirm}
           >
             {actionLabel}
           </Button>
           <Button
             className="font-fui-regular my-1 !w-full"
+            disabled={busy}
             onClick={() => {
               if (onCancel) onCancel();
               else onOpenChange(false);

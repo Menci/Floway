@@ -51,6 +51,7 @@ export default function DashboardServicesApiKeys() {
   const [editTarget, setEditTarget] = useState<ApiKey | null>(null);
   const [rotateTarget, setRotateTarget] = useState<ApiKey | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ApiKey | null>(null);
+  const [deletingKey, setDeletingKey] = useState(false);
   const [deleteSnapName, setDeleteSnapName] = useState('');
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [copyFailedTag, setCopyFailedTag] = useState<string | null>(null);
@@ -183,9 +184,11 @@ export default function DashboardServicesApiKeys() {
 
   const deleteKey = async (key: ApiKey) => {
     setPageError(null);
+    setDeletingKey(true);
     const toastId = mutationToasts.start('delete', key.name);
     const result = await callApi<{ ok: true }>(() =>
       authFetch(`/api/keys/${encodeURIComponent(key.id)}`, { method: 'DELETE' }));
+    setDeletingKey(false);
     if (result.error) {
       mutationToasts.fail(toastId, 'delete', key.name, result.error.message);
       setPageError(result.error.message);
@@ -319,14 +322,15 @@ export default function DashboardServicesApiKeys() {
           />
           <ConfirmDialog
             actionLabel={t('dashboard.apiKeys.actions.delete')}
+            busy={deletingKey}
             message={t('dashboard.apiKeys.delete.message', {
               name: deleteSnapName,
             })}
             onConfirm={() => {
-              if (deleteTarget) void deleteKey(deleteTarget);
+              if (deleteTarget && !deletingKey) void deleteKey(deleteTarget);
             }}
             onOpenChange={open => {
-              if (!open) setDeleteTarget(null);
+              if (!open && !deletingKey) setDeleteTarget(null);
             }}
             open={deleteTarget !== null}
             title={t('dashboard.apiKeys.delete.title')}

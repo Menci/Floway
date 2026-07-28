@@ -7,7 +7,16 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 const { Button, Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, Tooltip, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
-const useStyles = makeStyles({ selectedRow: { backgroundColor: 'var(--colorBrandBackground2)' }, selectedDot: { backgroundColor: 'var(--colorBrandForeground1)' }, accentText: { color: 'var(--colorBrandForeground1)' }, dangerText: { color: 'var(--colorPaletteRedForeground1)' } });
+const useStyles = makeStyles({
+  interactiveRow: {
+    cursor: 'pointer',
+    ':focus-visible': { outline: '2px solid var(--colorCompoundBrandStroke)', outlineOffset: '-2px' },
+  },
+  selectedRow: { backgroundColor: 'var(--colorBrandBackground2)' },
+  selectedDot: { backgroundColor: 'var(--colorBrandForeground1)' },
+  accentText: { color: 'var(--colorBrandForeground1)' },
+  dangerText: { color: 'var(--colorPaletteRedForeground1)' },
+});
 export function KeysTable({
   copiedTag, copyFailedTag, keys, onCopy, onDelete, onEdit, onRotate, onSelect, selectedKeyId, upstreams,
 }: {
@@ -78,7 +87,7 @@ export function KeysTable({
         renderCell: key => {
           const copyTag = `key-${key.id}`;
           return (
-            <div className="inline-flex items-center gap-[2px]" onClick={event => event.stopPropagation()}>
+            <div className="inline-flex items-center gap-[2px]" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
               <IconButton icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
                 label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
                 onClick={() => onCopy(key.key, copyTag)} />
@@ -124,7 +133,18 @@ export function KeysTable({
         </TableHeader>
         <TableBody>
           {rows.map(({ item }) => (
-            <TableRow className={item.id === selectedKeyId ? s.selectedRow : undefined} key={item.id} onClick={() => onSelect(item.id)}>
+            <TableRow
+              aria-selected={item.id === selectedKeyId}
+              className={`${s.interactiveRow} ${item.id === selectedKeyId ? s.selectedRow : ''}`}
+              key={item.id}
+              onClick={() => onSelect(item.id)}
+              onKeyDown={event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                onSelect(item.id);
+              }}
+              tabIndex={item.id === selectedKeyId ? 0 : -1}
+            >
               {columns.map(column => (
                 <TableCell key={column.columnId} {...columnSizing_unstable.getTableCellProps(column.columnId)}>
                   {column.renderCell(item)}

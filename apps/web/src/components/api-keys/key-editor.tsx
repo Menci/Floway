@@ -21,15 +21,15 @@ interface UpdateKeyBody { name: string; upstream_ids: string[] | null; dump_rete
 const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
 
 const DUMP_RETENTION_PRESETS = [
-  { seconds: 3600, label: '1 hour' },
-  { seconds: 6 * 3600, label: '6 hours' },
-  { seconds: 24 * 3600, label: '24 hours' },
-  { seconds: 7 * 86400, label: '7 days' },
+  { seconds: 3600, labelKey: 'oneHour' },
+  { seconds: 6 * 3600, labelKey: 'sixHours' },
+  { seconds: 24 * 3600, labelKey: 'oneDay' },
+  { seconds: 7 * 86400, labelKey: 'sevenDays' },
 ] as const;
 
 const RESPONSES_RETENTION_PRESETS = [
-  { seconds: 7 * 86400, label: '7 days' },
-  { seconds: 30 * 86400, label: '30 days' },
+  { seconds: 7 * 86400, labelKey: 'sevenDays' },
+  { seconds: 30 * 86400, labelKey: 'thirtyDays' },
 ] as const;
 export function KeyDialog({
   apiKey,
@@ -126,6 +126,14 @@ export function KeyDialog({
   }, [apiKey, open, reset]);
 
   const values = watch();
+  const dumpRetentionPresets = DUMP_RETENTION_PRESETS.map(preset => ({
+    seconds: preset.seconds,
+    label: t(`dashboard.apiKeys.retention.presets.${preset.labelKey}`),
+  }));
+  const responsesRetentionPresets = RESPONSES_RETENTION_PRESETS.map(preset => ({
+    seconds: preset.seconds,
+    label: t(`dashboard.apiKeys.retention.presets.${preset.labelKey}`),
+  }));
   const retentionWarning = retentionWarningText(
     apiKey?.dump_retention_seconds ?? null,
     values.dumpRetention,
@@ -247,12 +255,12 @@ export function KeyDialog({
             label={t('dashboard.apiKeys.form.retention')}
             offLabel={t('dashboard.apiKeys.retention.offCapture')}
             offValue={null}
-            presets={DUMP_RETENTION_PRESETS}
+            presets={dumpRetentionPresets}
             value={field.value}
             onChange={field.onChange}
           >
             {retentionWarning !== null && (
-              <Text role="status" size={200} className="text-fui-fg2">{retentionWarning}</Text>
+              <MessageBar intent="warning"><MessageBarBody>{retentionWarning}</MessageBarBody></MessageBar>
             )}
             {apiKey !== null && field.value !== null && field.value !== 'invalid' && (
               <Link href={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
@@ -275,18 +283,12 @@ export function KeyDialog({
             minimumSeconds={86400}
             offLabel={t('dashboard.apiKeys.retention.offPersist')}
             offValue={0}
-            presets={RESPONSES_RETENTION_PRESETS}
+            presets={responsesRetentionPresets}
             value={field.value}
             onChange={field.onChange}
           />
         )}
       />
-
-      {retentionWarning && (
-        <MessageBar intent="warning">
-          <MessageBarBody>{retentionWarning}</MessageBarBody>
-        </MessageBar>
-      )}
 
       {error && (
         <MessageBar intent="error">

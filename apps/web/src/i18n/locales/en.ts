@@ -8,8 +8,14 @@ const en = {
       language: 'Language',
       english: 'English',
       simplifiedChinese: '简体中文',
-      loading: 'Loading...',
+      loading: 'Loading…',
       cancel: 'Cancel',
+      errors: {
+        title: 'Error',
+        unexpectedTitle: 'Something went wrong',
+        unexpectedDescription: 'An unexpected error occurred.',
+        notFound: 'The requested page could not be found.',
+      },
     },
     auth: {
       adminKeyHint:
@@ -46,6 +52,9 @@ const en = {
       },
       nav: {
         label: 'Dashboard navigation',
+        open: 'Open navigation',
+        close: 'Close navigation',
+        skip: 'Skip to main content',
         playground: 'Playground',
         upstreams: 'Upstreams',
         search: 'Search',
@@ -309,6 +318,7 @@ const en = {
           inheritsTitle: 'Inherits the global upstream order',
         },
         retention: {
+          presets: { oneHour: '1 hour', sixHours: '6 hours', oneDay: '1 day', sevenDays: '7 days', thirtyDays: '30 days' },
           offCapture: 'Off (do not capture)',
           offPersist: 'Off (do not persist)',
           customValue: 'Custom retention value',
@@ -965,6 +975,7 @@ const en = {
           error: 'Import failed.',
           errorInvalidFile:
               'The selected file is not a valid Floway backup file.',
+          errorReadFile: 'The selected backup file could not be read.',
           previewLabel: {
             users: 'Users',
             apiKeys: 'API Keys',

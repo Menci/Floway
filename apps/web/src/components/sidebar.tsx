@@ -10,6 +10,7 @@ import {
   DatabaseArrowUpRegular,
   DataUsageFilled,
   DataUsageRegular,
+  DismissRegular,
   DocumentTextFilled,
   DocumentTextRegular,
   GaugeFilled,
@@ -124,7 +125,7 @@ const navGroups: NavGroup[] = [
 
 const accountIcon = bundleIcon(PersonFilled, PersonRegular);
 
-export function Sidebar({ user }: { user: AuthUser }) {
+export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: AuthUser }) {
   const { t } = useTranslation();
   const styles = useSidebarStyles();
   const { pathname } = useLocation();
@@ -138,6 +139,13 @@ export function Sidebar({ user }: { user: AuthUser }) {
     >
       <div className="flex items-center min-h-[48px] px-[10px] pb-[17px]">
         <FlowayLogo size="compact" />
+        {onNavigate && <Button
+          appearance="subtle"
+          aria-label={t('dashboard.nav.close')}
+          className="ml-auto"
+          icon={<DismissRegular />}
+          onClick={onNavigate}
+        />}
       </div>
       <nav className="h-full min-h-0 overflow-x-hidden overflow-y-auto p-[2px_4px_14px] [scrollbar-gutter:stable]">
         {navGroups.map((group, groupIndex) => {
@@ -161,7 +169,7 @@ export function Sidebar({ user }: { user: AuthUser }) {
               )}
               <div className="grid gap-[2px]">
                 {items.map(item => (
-                  <SidebarNavLink currentPath={pathname} item={item} key={item.to} />
+                  <SidebarNavLink currentPath={pathname} item={item} key={item.to} onNavigate={onNavigate} />
                 ))}
               </div>
             </section>
@@ -177,6 +185,7 @@ export function Sidebar({ user }: { user: AuthUser }) {
             icon: accountIcon,
           }}
           label={user.username}
+          onNavigate={onNavigate}
         />
         <Button
           appearance="subtle"
@@ -206,10 +215,12 @@ function SidebarNavLink({
   currentPath,
   item,
   label,
+  onNavigate,
 }: {
   currentPath: string;
   item: NavItem;
   label?: string;
+  onNavigate?: () => void;
 }) {
   const { t } = useTranslation();
   const styles = useSidebarStyles();
@@ -232,6 +243,7 @@ function SidebarNavLink({
       }
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={onNavigate}
       to={item.to}
     >
       <span

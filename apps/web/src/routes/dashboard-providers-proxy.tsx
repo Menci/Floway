@@ -425,6 +425,7 @@ export default function DashboardProvidersProxy() {
               ? t('dashboard.proxy.actions.deleting')
               : t('dashboard.proxy.actions.delete')
           }
+          busy={deleting}
           message={t('dashboard.proxy.delete.message', {
             name: deleteTarget.name,
           })}

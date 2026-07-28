@@ -96,7 +96,7 @@ export default function DashboardProvidersModelAliases() {
       })}</TableBody></Table></div>}
     </Panel>}
     <AliasDialog key={dialogOpen ? (editing?.name ?? 'new') : 'closed'} aliases={aliases} models={models} onOpenChange={setDialogOpen} onSaved={load} open={dialogOpen} record={editing} />
-    <ConfirmDialog open={deleting !== null} onOpenChange={open => !open && !mutating && setDeleting(null)} title={t('dashboard.modelAliases.delete.title')} message={t('dashboard.modelAliases.delete.message', { name: deleting?.name ?? '' })} actionLabel={mutating ? t('dashboard.modelAliases.actions.deleting') : t('dashboard.modelAliases.actions.delete')} onConfirm={() => void deleteAlias()} />
+    <ConfirmDialog busy={mutating} open={deleting !== null} onOpenChange={open => !open && !mutating && setDeleting(null)} title={t('dashboard.modelAliases.delete.title')} message={t('dashboard.modelAliases.delete.message', { name: deleting?.name ?? '' })} actionLabel={mutating ? t('dashboard.modelAliases.actions.deleting') : t('dashboard.modelAliases.actions.delete')} onConfirm={() => void deleteAlias()} />
   </section>;
 }
 

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   isRouteErrorResponse,
   Links,
@@ -18,7 +19,7 @@ import { flowayDarkTheme, flowayLightTheme } from './theme';
 import './i18n';
 import 'virtual:uno.css';
 
-const { FluentProvider } = fluentComponents;
+const { FluentProvider, Spinner } = fluentComponents;
 
 export const links: Route.LinksFunction = () => [];
 
@@ -51,6 +52,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta charSet="utf-8" />
         <meta name="darkreader-lock" content="true" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
         <Meta />
         <Links />
         <style>{`
@@ -81,16 +84,24 @@ export default function App() {
   );
 }
 
+export function HydrateFallback() {
+  const { t } = useTranslation();
+  return <main className="min-h-screen grid place-items-center">
+    <Spinner label={t('common.loading')} />
+  </main>;
+}
+
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = 'Oops!';
-  let details = 'An unexpected error occurred.';
+  const { t } = useTranslation();
+  let message = t('common.errors.unexpectedTitle');
+  let details = t('common.errors.unexpectedDescription');
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? '404' : 'Error';
+    message = error.status === 404 ? '404' : t('common.errors.title');
     details =
       error.status === 404
-        ? 'The requested page could not be found.'
+        ? t('common.errors.notFound')
         : error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;

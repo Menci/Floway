@@ -47,7 +47,9 @@ const useDropzoneStyles = makeStyles({
     ...shorthands.border('2px', 'dashed', 'var(--colorNeutralStroke1)'),
     ...shorthands.borderRadius('8px'),
     cursor: 'pointer',
+    color: 'inherit',
     display: 'flex',
+    font: 'inherit',
     flexDirection: 'column',
     gap: '8px',
     justifyContent: 'center',
@@ -96,11 +98,15 @@ const useModeCardStyles = makeStyles({
   },
   card: {
     backgroundColor: 'var(--colorNeutralBackground2)',
+    borderStyle: 'none',
     ...shorthands.borderRadius('8px'),
     cursor: 'pointer',
     display: 'grid',
+    color: 'inherit',
+    font: 'inherit',
     gap: '4px',
     padding: '14px 16px',
+    textAlign: 'left',
     transition: 'box-shadow .15s',
     ':hover': {
       boxShadow: '0 0 0 1px var(--colorNeutralStroke1)',
@@ -151,7 +157,7 @@ function parseBackupFile(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { ok: false, error: 'The selected file is not a valid Floway backup file.' };
+    return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
   }
 
   if (
@@ -161,12 +167,12 @@ function parseBackupFile(
     !('data' in parsed) ||
     !('exportedAt' in parsed)
   ) {
-    return { ok: false, error: 'The selected file is not a valid Floway backup file.' };
+    return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
   }
 
   const record = parsed as Record<string, unknown>;
   if (record.version !== EXPORT_VERSION) {
-    return { ok: false, error: 'The selected file is not a valid Floway backup file.' };
+    return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
   }
 
   return { ok: true, payload: parsed as BackupExportResponse };
@@ -255,7 +261,7 @@ export default function DashboardAdminBackupRestore() {
         setImportParsedData(result.payload);
       };
       reader.onerror = () => {
-        setImportError('Failed to read the selected file.');
+        setImportError('dashboard.backupRestore.import.errorReadFile');
       };
       reader.readAsText(file);
     },
@@ -428,18 +434,15 @@ export default function DashboardAdminBackupRestore() {
         </Text>
 
         {/* Drop zone */}
-        <div
+        <button
           className={`${dz.root} ${dragOver ? dz.active : ''} ${importing ? dz.disabled : ''}`}
-          role="button"
-          tabIndex={0}
+          disabled={importing}
           onClick={openFilePicker}
-          onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') openFilePicker();
-          }}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           aria-label={t('dashboard.backupRestore.import.dropzone')}
+          type="button"
         >
           <input
             ref={fileInputRef}
@@ -457,7 +460,7 @@ export default function DashboardAdminBackupRestore() {
               ? t('dashboard.backupRestore.import.dropzoneActive')
               : t('dashboard.backupRestore.import.dropzone')}
           </Text>
-        </div>
+        </button>
 
         {/* File info & preview */}
         {importParsedData && importFile && (
@@ -504,14 +507,11 @@ export default function DashboardAdminBackupRestore() {
                 {t('dashboard.backupRestore.import.mode')}
               </Text>
               <div className={`${mc.wrapper} mt-[8px]`}>
-                <div
+                <button
                   className={`${mc.card} ${importMode === 'merge' ? mc.cardSelected : ''}`}
-                  role="button"
-                  tabIndex={0}
+                  disabled={importing}
                   onClick={() => setImportMode('merge')}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' || e.key === ' ') setImportMode('merge');
-                  }}
+                  type="button"
                 >
                   <Text size={300} weight="semibold">
                     {t('dashboard.backupRestore.import.modeMerge')}
@@ -519,15 +519,12 @@ export default function DashboardAdminBackupRestore() {
                   <Text size={200} className="text-fui-fg3">
                     {t('dashboard.backupRestore.import.modeMergeDesc')}
                   </Text>
-                </div>
-                <div
+                </button>
+                <button
                   className={`${mc.card} ${importMode === 'replace' ? mc.cardSelected : ''}`}
-                  role="button"
-                  tabIndex={0}
+                  disabled={importing}
                   onClick={() => setImportMode('replace')}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' || e.key === ' ') setImportMode('replace');
-                  }}
+                  type="button"
                 >
                   <Text size={300} weight="semibold">
                     {t('dashboard.backupRestore.import.modeReplace')}
@@ -535,7 +532,7 @@ export default function DashboardAdminBackupRestore() {
                   <Text size={200} className="text-fui-fg3">
                     {t('dashboard.backupRestore.import.modeReplaceDesc')}
                   </Text>
-                </div>
+                </button>
               </div>
             </div>
 
@@ -568,7 +565,7 @@ export default function DashboardAdminBackupRestore() {
         {importError && (
           <MessageBar intent="error">
             <MessageBarBody>
-              {t('dashboard.backupRestore.import.error')} {importError}
+              {t(importError)}
             </MessageBarBody>
           </MessageBar>
         )}
@@ -585,6 +582,7 @@ export default function DashboardAdminBackupRestore() {
       {/* Confirm dialog for replace mode */}
       <ConfirmDialog
         actionLabel={t('dashboard.backupRestore.import.button')}
+        busy={importing}
         cancelLabel={t('common.cancel')}
         message={t('dashboard.backupRestore.confirmMessage')}
         onConfirm={() => {

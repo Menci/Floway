@@ -226,6 +226,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         actionLabel={deleting
           ? t('dashboard.users.actions.deleting')
           : t('dashboard.users.actions.delete')}
+        busy={deleting}
         message={t('dashboard.users.delete.message', {
           username: deleteTarget?.username ?? '',
         })}

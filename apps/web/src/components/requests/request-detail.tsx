@@ -82,7 +82,13 @@ function CopyButton({ text }: { text: string }) {
   };
   return (
     <Tooltip content={copied ? t('dashboard.requests.copied') : t('dashboard.requests.copy')} relationship="label">
-      <Button appearance="subtle" icon={copied ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => void copy()} size="small" />
+      <Button
+        appearance="subtle"
+        aria-label={copied ? t('dashboard.requests.copied') : t('dashboard.requests.copy')}
+        icon={copied ? <CheckmarkRegular /> : <CopyRegular />}
+        onClick={() => void copy()}
+        size="small"
+      />
     </Tooltip>
   );
 }

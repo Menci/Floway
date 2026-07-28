@@ -20,6 +20,12 @@ export interface RetentionPreset {
 
 type Choice = 'off' | 'custom' | `seconds:${number}`;
 
+interface RetentionEditorState {
+  choice: Choice;
+  custom: string;
+  value: RetentionValue;
+}
+
 const formatDuration = (seconds: number): string => {
   if (seconds % SECONDS_PER_DAY === 0) return `${seconds / SECONDS_PER_DAY}d`;
   if (seconds % 3600 === 0) return `${seconds / 3600}h`;
@@ -33,6 +39,19 @@ const choiceFor = (value: RetentionValue, offValue: 0 | null, presets: readonly 
   if (value === null) throw new TypeError('Retention field received null for a zero-off field');
   return presets.some(preset => preset.seconds === value) ? `seconds:${value}` : 'custom';
 };
+
+const editorStateFor = (
+  value: RetentionValue,
+  offValue: 0 | null,
+  presets: readonly RetentionPreset[],
+  customInputUnit: 'duration' | 'days',
+): RetentionEditorState => ({
+  value,
+  choice: choiceFor(value, offValue, presets),
+  custom: typeof value === 'number' && value !== offValue && !presets.some(preset => preset.seconds === value)
+    ? (customInputUnit === 'days' ? String(value / SECONDS_PER_DAY) : formatDuration(value))
+    : '',
+});
 
 export const RetentionField = ({
   children,
@@ -61,12 +80,11 @@ export const RetentionField = ({
 }) => {
   const { t } = useTranslation();
   const fieldId = useId();
-  const [choice, setChoice] = useState<Choice>(() => choiceFor(value, offValue, presets));
-  const [custom, setCustom] = useState(() => (
-    typeof value === 'number' && value !== offValue && !presets.some(preset => preset.seconds === value)
-      ? (customInputUnit === 'days' ? String(value / SECONDS_PER_DAY) : formatDuration(value))
-      : ''
-  ));
+  const [editor, setEditor] = useState(() => editorStateFor(value, offValue, presets, customInputUnit));
+  if (editor.value !== value) {
+    setEditor(editorStateFor(value, offValue, presets, customInputUnit));
+  }
+  const { choice, custom } = editor;
 
   const parseCustom = (input: string): number | null => {
     const seconds = customInputUnit === 'duration'
@@ -79,17 +97,20 @@ export const RetentionField = ({
   };
 
   const selectChoice = (next: Choice) => {
-    setChoice(next);
     if (next === 'off') {
-      setCustom('');
+      setEditor({ value: offValue, choice: next, custom: '' });
       onChange(offValue);
       return;
     }
     if (next === 'custom') {
-      onChange(parseCustom(custom) ?? 'invalid');
+      const parsed = parseCustom(custom) ?? 'invalid';
+      setEditor({ value: parsed, choice: next, custom });
+      onChange(parsed);
       return;
     }
-    onChange(Number(next.slice('seconds:'.length)));
+    const seconds = Number(next.slice('seconds:'.length));
+    setEditor({ value: seconds, choice: next, custom: '' });
+    onChange(seconds);
   };
 
   const invalid = choice === 'custom' && parseCustom(custom) === null;
@@ -113,8 +134,9 @@ export const RetentionField = ({
           placeholder={customInputUnit === 'days' ? t('dashboard.apiKeys.retention.daysPlaceholder') : t('dashboard.apiKeys.retention.durationPlaceholder')}
           value={custom}
           onChange={(_, data) => {
-            setCustom(data.value);
-            onChange(parseCustom(data.value) ?? 'invalid');
+            const parsed = parseCustom(data.value) ?? 'invalid';
+            setEditor({ value: parsed, choice: 'custom', custom: data.value });
+            onChange(parsed);
           }}
         />}
       </div>

@@ -357,6 +357,7 @@ export default function DashboardProvidersUpstreams() {
                 ? t('dashboard.upstreams.actions.deleting')
                 : t('dashboard.upstreams.actions.delete')
             }
+            busy={mutation?.kind === 'delete'}
             message={t('dashboard.upstreams.delete.message', { name: deleteTarget?.name ?? '' })}
             onConfirm={() => {
               if (deleteTarget && !busy) void deleteUpstream(deleteTarget);

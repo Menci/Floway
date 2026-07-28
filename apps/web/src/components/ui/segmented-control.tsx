@@ -1,3 +1,6 @@
+import { useRef } from 'react';
+import type { KeyboardEvent } from 'react';
+
 import { fluentComponents } from '../../fluent';
 
 const { makeStyles } = fluentComponents;
@@ -38,14 +41,37 @@ export function SegmentedControl({
   value: string;
 }) {
   const s = useStyles();
+  const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const tabStop = items.find(item => item.value === value && !item.disabled)?.value
+    ?? items.find(item => !item.disabled)?.value;
+
+  const move = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let target: number | null = null;
+    let step = 1;
+    if (event.key === 'Home') target = 0;
+    if (event.key === 'End') { target = items.length - 1; step = -1; }
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') target = index + 1;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') { target = index - 1; step = -1; }
+    if (target === null) return;
+    event.preventDefault();
+    for (let offset = 0; offset < items.length; offset += 1) {
+      const candidate = (target + offset * step + items.length) % items.length;
+      const item = items[candidate];
+      if (!item || item.disabled) continue;
+      onChange(item.value);
+      buttonRefs.current[candidate]?.focus();
+      return;
+    }
+  };
 
   return (
     <div
       aria-label={ariaLabel}
       className={`inline-flex gap-0.5 rounded-lg max-w-full min-h-[34px] overflow-x-auto p-0.5 ${s.segmented}`}
+      aria-orientation="horizontal"
       role="tablist"
     >
-      {items.map(item => (
+      {items.map((item, index) => (
         <button
           aria-selected={value === item.value}
           disabled={item.disabled}
@@ -56,7 +82,10 @@ export function SegmentedControl({
           }
           key={item.value}
           onClick={() => !item.disabled && onChange(item.value)}
+          onKeyDown={event => move(event, index)}
+          ref={element => { buttonRefs.current[index] = element; }}
           role="tab"
+          tabIndex={tabStop === item.value ? 0 : -1}
           type="button"
         >
           {item.label}

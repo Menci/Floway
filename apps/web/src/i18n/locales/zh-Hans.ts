@@ -8,8 +8,14 @@ const zhHansCN = {
       language: '语言',
       english: 'English',
       simplifiedChinese: '简体中文',
-      loading: '加载中...',
+      loading: '加载中…',
       cancel: '取消',
+      errors: {
+        title: '错误',
+        unexpectedTitle: '出现错误',
+        unexpectedDescription: '发生了意外错误。',
+        notFound: '找不到请求的页面。',
+      },
     },
     auth: {
       adminKeyHint:
@@ -46,6 +52,9 @@ const zhHansCN = {
       },
       nav: {
         label: 'Dashboard 导航',
+        open: '打开导航',
+        close: '关闭导航',
+        skip: '跳到主要内容',
         playground: '对话',
         upstreams: '上游',
         search: '搜索',
@@ -295,6 +304,7 @@ const zhHansCN = {
           inheritsTitle: '继承全局上游顺序',
         },
         retention: {
+          presets: { oneHour: '1 小时', sixHours: '6 小时', oneDay: '1 天', sevenDays: '7 天', thirtyDays: '30 天' },
           offCapture: '关闭（不记录）',
           offPersist: '关闭（不持久化）',
           customValue: '自定义保留时长',
@@ -922,6 +932,7 @@ const zhHansCN = {
           success: '导入成功完成。',
           error: '导入失败。',
           errorInvalidFile: '所选文件不是有效的 Floway 备份文件。',
+          errorReadFile: '无法读取所选备份文件。',
           previewLabel: {
             users: '用户',
             apiKeys: 'API 密钥',
