@@ -331,8 +331,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       </Field>
     </SettingsSection>
     <SettingsSection title={t('dashboard.playground.settings.customJson')}>
-      <Field label={t('dashboard.playground.settings.customJson')} validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
-        <Textarea className={s.code} resize="vertical" rows={9} value={customDraft} onChange={(_, data) => {
+      <Field validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
+        <Textarea aria-label={t('dashboard.playground.settings.customJson')} className={s.code} resize="vertical" rows={9} value={customDraft} onChange={(_, data) => {
           setCustomDraft(data.value);
           setCustomError(null);
         }} />
