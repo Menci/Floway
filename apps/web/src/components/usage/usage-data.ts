@@ -28,12 +28,14 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
       callApi(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
       callApi(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
     ]);
-    const usageData = usageRes.data && !Array.isArray(usageRes.data) && usageRes.data.view === 'all-by-user'
-      ? usageRes.data
-      : undefined;
-    const searchData = searchRes.data && !Array.isArray(searchRes.data) && searchRes.data.view === 'all-by-user'
-      ? searchRes.data
-      : undefined;
+    const usageData = usageRes.error ? null : usageRes.data;
+    const searchData = searchRes.error ? null : searchRes.data;
+    if (usageData !== null && (Array.isArray(usageData) || usageData.view !== 'all-by-user')) {
+      throw new TypeError('Token usage response does not match the requested all-by-user view');
+    }
+    if (searchData !== null && (Array.isArray(searchData) || searchData.view !== 'all-by-user')) {
+      throw new TypeError('Search usage response does not match the requested all-by-user view');
+    }
     return {
       usage: usageData ? {
         records: usageData.records.map(({ userId, ...record }) => ({
@@ -55,12 +57,14 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
     callApi(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view } })),
     callApi(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view } })),
   ]);
-  const usageData = usageRes.data && !Array.isArray(usageRes.data) && usageRes.data.view === 'self-by-key'
-    ? usageRes.data
-    : undefined;
-  const searchData = searchRes.data && !Array.isArray(searchRes.data) && searchRes.data.view === 'self-by-key'
-    ? searchRes.data
-    : undefined;
+  const usageData = usageRes.error ? null : usageRes.data;
+  const searchData = searchRes.error ? null : searchRes.data;
+  if (usageData !== null && (Array.isArray(usageData) || usageData.view !== 'self-by-key')) {
+    throw new TypeError('Token usage response does not match the requested self-by-key view');
+  }
+  if (searchData !== null && (Array.isArray(searchData) || searchData.view !== 'self-by-key')) {
+    throw new TypeError('Search usage response does not match the requested self-by-key view');
+  }
   return {
     usage: usageData ? {
       records: usageData.records.map(record => ({ ...record, metrics: metricsFromWire(record.metrics) })),

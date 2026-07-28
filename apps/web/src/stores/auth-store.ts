@@ -53,7 +53,9 @@ const loadSession = (
       get().clear();
       return null;
     }
-    set({ status: 'error', token, user: null, error: result.error.message });
+    const current = get();
+    const user = current.token === token ? current.user : null;
+    set({ status: user ? 'authenticated' : 'error', token, user, error: result.error.message });
     return null;
   });
   sessionRequest = { token, promise };
