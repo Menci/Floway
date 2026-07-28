@@ -8,8 +8,6 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 const TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
 const INPUT_TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
 
-export const hasTokenUsage = (usage: TokenUsage): boolean => TOKEN_USAGE_KEYS.some(key => (usage[key] ?? 0) > 0);
-
 // Drop zero / undefined token categories so a usage map only carries the metrics
 // actually billed. `tier` (a non-numeric service-tier marker) survives the
 // filter so service-tier selector entries resolve at recording time.

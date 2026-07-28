@@ -453,7 +453,6 @@ const observeResponsesWebSocketFrames = async function* (
       const event = frame.event;
       const failed = event.type === 'error' || event.type === 'response.failed';
       if (failed) state.failed = true;
-      if ('response' in event) state.rememberUsage(null);
       if (isResponsesTerminalEvent(event) && !failed) state.completed = true;
     }
     yield frame;

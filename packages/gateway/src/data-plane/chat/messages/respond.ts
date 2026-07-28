@@ -46,7 +46,7 @@ export const respondMessages = async (
   }
 
   const state = new SourceStreamState();
-  const observed = observeMessagesFrames(result.events, state, wantsStream, ctx);
+  const observed = observeMessagesFrames(result.events, state, ctx);
   const frames = wrapMessagesAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
@@ -104,7 +104,6 @@ const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEvent>) => f
 const observeMessagesFrames = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   state: SourceStreamState,
-  observeUsage: boolean,
   ctx: GatewayCtx,
 ) {
   for await (const frame of frames) {

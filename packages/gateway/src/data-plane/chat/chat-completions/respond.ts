@@ -43,7 +43,7 @@ export const respondChatCompletions = async (
   }
 
   const state = new SourceStreamState();
-  const observed = observeChatCompletionsFrames(result.events, state, wantsStream, ctx);
+  const observed = observeChatCompletionsFrames(result.events, state, ctx);
   const frames = wrapChatCompletionsAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
@@ -103,7 +103,7 @@ const isChatCompletionsFailureFrame = (frame: ProtocolFrame<ChatCompletionsStrea
 
 const isChatCompletionsTerminalFrame = (frame: ProtocolFrame<ChatCompletionsStreamEvent>) => frame.type === 'done' || isChatCompletionsFailureFrame(frame);
 
-const observeChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
+const observeChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     const failed = isChatCompletionsFailureFrame(frame);

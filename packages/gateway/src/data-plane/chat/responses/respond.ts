@@ -45,7 +45,7 @@ export const respondResponses = async (
   }
 
   const state = new SourceStreamState();
-  const observed = observeResponsesFrames(result.events, state, wantsStream, ctx);
+  const observed = observeResponsesFrames(result.events, state, ctx);
   const frames = wrapNativeResponsesClientOutput(observed, ctx);
 
   if (!wantsStream) {
@@ -120,7 +120,7 @@ const internalResponsesStreamErrorFrame = (error: unknown) => {
 
 const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
 
-const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
+const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');

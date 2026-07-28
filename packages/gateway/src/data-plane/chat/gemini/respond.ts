@@ -46,7 +46,7 @@ export const respondGemini = async (
   }
 
   const state = new SourceStreamState();
-  const observed = observeGeminiFrames(result.events, state, wantsStream, ctx);
+  const observed = observeGeminiFrames(result.events, state, ctx);
   const frames = wrapGeminiAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
@@ -185,7 +185,7 @@ const geminiStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(caugh
 
 const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
 
-const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
+const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && isGeminiErrorEvent(frame.event);
