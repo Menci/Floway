@@ -124,6 +124,8 @@ const navGroups: NavGroup[] = [
 ];
 
 const accountIcon = bundleIcon(PersonFilled, PersonRegular);
+const sidebarRowClassName = 'relative grid grid-cols-[4px_20px_minmax(0,1fr)] items-center gap-2 rounded-lg text-fui-base300 font-fui-medium min-h-[38px] px-3 pl-2';
+const sidebarIconClassName = 'absolute inset-0 text-current text-xl h-5 w-5';
 
 export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: AuthUser }) {
   const { t } = useTranslation();
@@ -187,17 +189,23 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           label={user.username}
           onNavigate={onNavigate}
         />
-        <Button
-          appearance="subtle"
-          className="!grid !grid-cols-[4px_20px_minmax(0,1fr)] !items-center !justify-items-stretch !gap-2 !min-h-[38px] !px-3 !pl-2 !w-full text-fui-base300 font-fui-medium"
+        <button
+          className={mergeClasses(
+            sidebarRowClassName,
+            'border-0 bg-transparent cursor-pointer text-fui-fg1 w-full',
+            styles.navLink,
+          )}
           onClick={() => setLogoutOpen(true)}
+          type="button"
         >
           <span className="block h-[18px] w-[3px]" aria-hidden="true" />
-          <SignOutRegular className="h-5 w-5 text-xl" aria-hidden="true" />
+          <span className="relative h-5 w-5">
+            <SignOutRegular className={sidebarIconClassName} aria-hidden="true" />
+          </span>
           <Text className="!text-left" truncate wrap={false}>
             {t('dashboard.logout.label')}
           </Text>
-        </Button>
+        </button>
       </footer>
       <ConfirmDialog
         actionLabel={t('dashboard.logout.action')}
@@ -234,7 +242,8 @@ function SidebarNavLink({
       aria-current={active ? 'page' : undefined}
       className={({ isPending }) =>
         mergeClasses(
-          'relative grid grid-cols-[4px_20px_minmax(0,1fr)] items-center gap-2 rounded-lg text-fui-base300 font-fui-medium min-h-[38px] px-3 pl-2 no-underline',
+          sidebarRowClassName,
+          'no-underline',
           'focus-visible:outline-offset-2',
           styles.navLink,
           active && styles.activeNavLink,
@@ -255,12 +264,12 @@ function SidebarNavLink({
       />
       <span className="relative h-5 w-5">
         <Icon
-          className="absolute inset-0 text-current text-xl h-5 w-5 transition-opacity duration-200"
+          className={`${sidebarIconClassName} transition-opacity duration-200`}
           filled={false}
           style={{ opacity: showFilled ? 0 : 1 }}
         />
         <Icon
-          className="absolute inset-0 text-current text-xl h-5 w-5 transition-opacity duration-200"
+          className={`${sidebarIconClassName} transition-opacity duration-200`}
           filled={true}
           style={{ opacity: showFilled ? 1 : 0 }}
         />
