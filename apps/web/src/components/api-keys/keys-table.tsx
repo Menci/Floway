@@ -15,6 +15,10 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
+  // Fluent gives every cell `flex: 1 1 0`, so an equal share of the row goes to
+  // a column that only ever holds four icon buttons. Let this one keep its
+  // content width and sit against the row's trailing edge.
+  actionsCell: { flexGrow: 0, flexBasis: 'auto', justifyContent: 'flex-end' },
   accentText: { color: 'var(--colorBrandForeground1)' },
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },
 });
@@ -122,7 +126,11 @@ export function KeysTable({
       >
         <DataGridHeader>
           <DataGridRow selectionCell={{ 'aria-label': t('dashboard.apiKeys.table.select') }}>
-            {({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}
+            {({ renderHeaderCell, columnId }) => (
+              <DataGridHeaderCell className={columnId === 'actions' ? s.actionsCell : undefined}>
+                {renderHeaderCell()}
+              </DataGridHeaderCell>
+            )}
           </DataGridRow>
         </DataGridHeader>
         <DataGridBody<ApiKey>>
@@ -132,7 +140,10 @@ export function KeysTable({
               selectionCell={{ radioIndicator: { 'aria-label': t('dashboard.apiKeys.table.selectNamed', { name: item.name }) } }}
             >
               {({ renderCell, columnId }) => (
-                <DataGridCell focusMode={columnId === 'actions' ? 'group' : 'cell'}>
+                <DataGridCell
+                  className={columnId === 'actions' ? s.actionsCell : undefined}
+                  focusMode={columnId === 'actions' ? 'group' : 'cell'}
+                >
                   {renderCell(item)}
                 </DataGridCell>
               )}
