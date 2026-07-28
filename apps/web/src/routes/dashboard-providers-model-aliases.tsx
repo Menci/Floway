@@ -17,8 +17,8 @@ import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
+import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 
 const { MessageBar, MessageBarBody, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip } = fluentComponents;

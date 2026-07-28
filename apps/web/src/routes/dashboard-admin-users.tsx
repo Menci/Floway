@@ -15,18 +15,18 @@ import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneUser, UpstreamOption } from '../api/types';
 import { getSessionToken } from '../auth/session';
+import type { Route } from './+types/dashboard-admin-users';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
 import { Input } from '../components/ui/fluent-form-controls';
 import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
+import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
-import type { Route } from './+types/dashboard-admin-users';
 
 const {
   Badge,

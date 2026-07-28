@@ -18,8 +18,8 @@ import {
   type CollectedStream,
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
-import { ScrollArea } from '../ui/scroll-area';
 import { prismTokenStyles } from '../ui/prism-token-styles';
+import { ScrollArea } from '../ui/scroll-area';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import 'prismjs/components/prism-json';
 

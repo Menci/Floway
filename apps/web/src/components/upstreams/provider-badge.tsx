@@ -1,3 +1,4 @@
+import type { TagProps } from '@fluentui/react-components';
 import { ServerRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
@@ -10,7 +11,6 @@ import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
 import { Chip } from '../ui/chip';
-import type { TagProps } from '@fluentui/react-components';
 
 const { makeStyles, tokens } = fluentComponents;
 

@@ -6,8 +6,8 @@ import type { UpstreamOption } from './types';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
-import { ScrollArea } from '../ui/scroll-area';
 import { ResourceListEmptyState } from '../ui/resource-list-toolbar';
+import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {

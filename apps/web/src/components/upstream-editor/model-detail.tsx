@@ -127,100 +127,100 @@ export function ModelDetail({
       </header>
 
       {section === 'flags' ? <FeatureFlagsEditor
-          defaults={record.flag_defaults}
-          inherited={upstreamFlags}
-          flags={flags}
-          readOnly={!editable}
-          value={row.config.flagOverrides ?? {}}
-          onChange={flagOverrides => patch({ flagOverrides: Object.keys(flagOverrides).length === 0 ? undefined : flagOverrides })}
-        /> : <>
-      {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
+        defaults={record.flag_defaults}
+        inherited={upstreamFlags}
+        flags={flags}
+        readOnly={!editable}
+        value={row.config.flagOverrides ?? {}}
+        onChange={flagOverrides => patch({ flagOverrides: Object.keys(flagOverrides).length === 0 ? undefined : flagOverrides })}
+      /> : <>
+        {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
 
-      <ModelEditorSection title={t('dashboard.upstreamEditor.models.identity')}>
-        <div className="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
-          <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.displayName')}>
-            <Input className="!w-full" placeholder={t('dashboard.upstreamEditor.models.displayNamePlaceholder')} readOnly={!editable} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
-          </Field>
-          <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.kind')}>
-            <Select key={row.config.kind} disabled={!editable} defaultValue={row.config.kind} onChange={(_, data) => setKind(data.value as UpstreamModelConfig['kind'])}>
-              <option value="chat">Chat</option><option value="embedding">Embedding</option><option value="image">Image</option><option value="transcription">Transcription</option>
-              {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
-              {record.kind === 'custom' && <option value="rerank">Rerank</option>}
-            </Select>
-          </Field>
-          <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')}>
-            <Input className="!w-full" placeholder={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deploymentPlaceholder') : t('dashboard.upstreamEditor.models.upstreamIdPlaceholder')} readOnly={!editable || row.hasAuto} value={row.config.upstreamModelId} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
-          </Field>
-          <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.publicId')}>
-            <Input className="!w-full" placeholder={row.config.upstreamModelId || t('dashboard.upstreamEditor.models.publicIdPlaceholder')} readOnly={!editable} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
-          </Field>
-        </div>
-      </ModelEditorSection>
-
-      {/* Embedding, transcription, and rerank each address exactly one
-          endpoint, so there is nothing for the operator to choose. */}
-      {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <ModelEditorSection title={t('dashboard.upstreamEditor.models.endpoints')}>
-        <div className="grid grid-cols-2 gap-2 max-[680px]:grid-cols-1">
-          {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
-            checked={key in row.config.endpoints}
-            disabled={!editable}
-            key={key}
-            label={{ children: label, className: styles.endpointLabel }}
-            onChange={(_, data) => {
-              const endpoints = { ...row.config.endpoints };
-              if (data.checked) endpoints[key] = {}; else delete endpoints[key];
-              patch({ endpoints });
-            }}
-          />)}
-        </div>
-      </ModelEditorSection>}
-
-      {row.config.kind === 'rerank' && row.config.rerankTarget && <ModelEditorSection title={t('dashboard.upstreamEditor.models.rerankTarget')}>
-        <RerankTargetEditor disabled={!editable} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
-      </ModelEditorSection>}
-
-      {row.config.kind !== 'image' && <ModelEditorSection title={t('dashboard.upstreamEditor.models.capabilities')}>
-        <div className="grid grid-cols-3 gap-4 max-[760px]:grid-cols-1">
-          <NumberField label={t('dashboard.upstreamEditor.models.contextWindow')} placeholder="e.g. 1050000" readOnly={!editable} value={row.config.limits?.max_context_window_tokens} onChange={raw => updateLimit('max_context_window_tokens', raw)} />
-          <NumberField label={t('dashboard.upstreamEditor.models.promptTokens')} placeholder="e.g. 922000" readOnly={!editable} value={row.config.limits?.max_prompt_tokens} onChange={raw => updateLimit('max_prompt_tokens', raw)} />
-          <NumberField label={t('dashboard.upstreamEditor.models.outputTokens')} placeholder="e.g. 128000" readOnly={!editable} value={row.config.limits?.max_output_tokens} onChange={raw => updateLimit('max_output_tokens', raw)} />
-        </div>
-        {row.config.kind === 'chat' && <>
-          <Switch
-            checked={row.config.chat?.modalities?.input.includes('image') === true}
-            disabled={!editable}
-            label={t('dashboard.upstreamEditor.models.imageInput')}
-            onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined }) })}
-          />
-          <div className="grid gap-3">
-            <Text weight="semibold">{t('dashboard.upstreamEditor.models.reasoning')}</Text>
-            <div className="flex flex-wrap gap-4">
-              <Switch checked={effort !== undefined} disabled={!editable || mandatory} label={t('dashboard.upstreamEditor.models.effortLevels')} onChange={(_, data) => updateReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
-              <Switch checked={budget !== undefined} disabled={!editable || mandatory} label={t('dashboard.upstreamEditor.models.budgetTokens')} onChange={(_, data) => updateReasoning({ budget_tokens: data.checked ? {} : undefined })} />
-              <Switch checked={row.config.chat?.reasoning?.adaptive === true} disabled={!editable || mandatory} label={t('dashboard.upstreamEditor.models.adaptive')} onChange={(_, data) => updateReasoning({ adaptive: data.checked ? true : undefined })} />
-              <Switch checked={mandatory} disabled={!editable || controlledReasoning} label={t('dashboard.upstreamEditor.models.mandatory')} onChange={(_, data) => updateReasoning(data.checked ? { mandatory: true } : { mandatory: undefined })} />
-            </div>
-            {effort && <EffortEditor editable={editable} effort={effort} onChange={next => updateReasoning({ effort: next })} t={t} />}
-            {budget && <div className="grid grid-cols-2 gap-4 max-w-[420px]">
-              <NumberField label={t('dashboard.upstreamEditor.models.minimum')} placeholder="e.g. 1024" readOnly={!editable} value={budget.min} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'min', raw) })} />
-              <NumberField label={t('dashboard.upstreamEditor.models.maximum')} placeholder="e.g. 32000" readOnly={!editable} value={budget.max} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'max', raw) })} />
-            </div>}
+        <ModelEditorSection title={t('dashboard.upstreamEditor.models.identity')}>
+          <div className="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
+            <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.displayName')}>
+              <Input className="!w-full" placeholder={t('dashboard.upstreamEditor.models.displayNamePlaceholder')} readOnly={!editable} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
+            </Field>
+            <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.kind')}>
+              <Select key={row.config.kind} disabled={!editable} defaultValue={row.config.kind} onChange={(_, data) => setKind(data.value as UpstreamModelConfig['kind'])}>
+                <option value="chat">Chat</option><option value="embedding">Embedding</option><option value="image">Image</option><option value="transcription">Transcription</option>
+                {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
+                {record.kind === 'custom' && <option value="rerank">Rerank</option>}
+              </Select>
+            </Field>
+            <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')}>
+              <Input className="!w-full" placeholder={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deploymentPlaceholder') : t('dashboard.upstreamEditor.models.upstreamIdPlaceholder')} readOnly={!editable || row.hasAuto} value={row.config.upstreamModelId} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
+            </Field>
+            <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.publicId')}>
+              <Input className="!w-full" placeholder={row.config.upstreamModelId || t('dashboard.upstreamEditor.models.publicIdPlaceholder')} readOnly={!editable} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
+            </Field>
           </div>
-        </>}
-      </ModelEditorSection>}
+        </ModelEditorSection>
 
-      <ModelEditorSection title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
-        <PricingEditor
-          editable={editable}
-          kind={row.config.kind}
-          onChange={pricing => patch({ pricing })}
-          value={row.config.pricing}
-        />
-      </ModelEditorSection>
+        {/* Embedding, transcription, and rerank each address exactly one
+          endpoint, so there is nothing for the operator to choose. */}
+        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <ModelEditorSection title={t('dashboard.upstreamEditor.models.endpoints')}>
+          <div className="grid grid-cols-2 gap-2 max-[680px]:grid-cols-1">
+            {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
+              checked={key in row.config.endpoints}
+              disabled={!editable}
+              key={key}
+              label={{ children: label, className: styles.endpointLabel }}
+              onChange={(_, data) => {
+                const endpoints = { ...row.config.endpoints };
+                if (data.checked) endpoints[key] = {}; else delete endpoints[key];
+                patch({ endpoints });
+              }}
+            />)}
+          </div>
+        </ModelEditorSection>}
 
-      {editable && <Button appearance="secondary" icon={<DeleteRegular />} onClick={onDelete}>
-        {t('dashboard.upstreamEditor.models.delete')}
-      </Button>}
+        {row.config.kind === 'rerank' && row.config.rerankTarget && <ModelEditorSection title={t('dashboard.upstreamEditor.models.rerankTarget')}>
+          <RerankTargetEditor disabled={!editable} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
+        </ModelEditorSection>}
+
+        {row.config.kind !== 'image' && <ModelEditorSection title={t('dashboard.upstreamEditor.models.capabilities')}>
+          <div className="grid grid-cols-3 gap-4 max-[760px]:grid-cols-1">
+            <NumberField label={t('dashboard.upstreamEditor.models.contextWindow')} placeholder="e.g. 1050000" readOnly={!editable} value={row.config.limits?.max_context_window_tokens} onChange={raw => updateLimit('max_context_window_tokens', raw)} />
+            <NumberField label={t('dashboard.upstreamEditor.models.promptTokens')} placeholder="e.g. 922000" readOnly={!editable} value={row.config.limits?.max_prompt_tokens} onChange={raw => updateLimit('max_prompt_tokens', raw)} />
+            <NumberField label={t('dashboard.upstreamEditor.models.outputTokens')} placeholder="e.g. 128000" readOnly={!editable} value={row.config.limits?.max_output_tokens} onChange={raw => updateLimit('max_output_tokens', raw)} />
+          </div>
+          {row.config.kind === 'chat' && <>
+            <Switch
+              checked={row.config.chat?.modalities?.input.includes('image') === true}
+              disabled={!editable}
+              label={t('dashboard.upstreamEditor.models.imageInput')}
+              onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined }) })}
+            />
+            <div className="grid gap-3">
+              <Text weight="semibold">{t('dashboard.upstreamEditor.models.reasoning')}</Text>
+              <div className="flex flex-wrap gap-4">
+                <Switch checked={effort !== undefined} disabled={!editable || mandatory} label={t('dashboard.upstreamEditor.models.effortLevels')} onChange={(_, data) => updateReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
+                <Switch checked={budget !== undefined} disabled={!editable || mandatory} label={t('dashboard.upstreamEditor.models.budgetTokens')} onChange={(_, data) => updateReasoning({ budget_tokens: data.checked ? {} : undefined })} />
+                <Switch checked={row.config.chat?.reasoning?.adaptive === true} disabled={!editable || mandatory} label={t('dashboard.upstreamEditor.models.adaptive')} onChange={(_, data) => updateReasoning({ adaptive: data.checked ? true : undefined })} />
+                <Switch checked={mandatory} disabled={!editable || controlledReasoning} label={t('dashboard.upstreamEditor.models.mandatory')} onChange={(_, data) => updateReasoning(data.checked ? { mandatory: true } : { mandatory: undefined })} />
+              </div>
+              {effort && <EffortEditor editable={editable} effort={effort} onChange={next => updateReasoning({ effort: next })} t={t} />}
+              {budget && <div className="grid grid-cols-2 gap-4 max-w-[420px]">
+                <NumberField label={t('dashboard.upstreamEditor.models.minimum')} placeholder="e.g. 1024" readOnly={!editable} value={budget.min} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'min', raw) })} />
+                <NumberField label={t('dashboard.upstreamEditor.models.maximum')} placeholder="e.g. 32000" readOnly={!editable} value={budget.max} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'max', raw) })} />
+              </div>}
+            </div>
+          </>}
+        </ModelEditorSection>}
+
+        <ModelEditorSection title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
+          <PricingEditor
+            editable={editable}
+            kind={row.config.kind}
+            onChange={pricing => patch({ pricing })}
+            value={row.config.pricing}
+          />
+        </ModelEditorSection>
+
+        {editable && <Button appearance="secondary" icon={<DeleteRegular />} onClick={onDelete}>
+          {t('dashboard.upstreamEditor.models.delete')}
+        </Button>}
       </>}
     </div>
   );

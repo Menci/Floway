@@ -1,5 +1,6 @@
-import { modelsField, type UpstreamModelConfig } from '@floway-dev/provider';
 import { parse, stringify } from 'yaml';
+
+import { modelsField, type UpstreamModelConfig } from '@floway-dev/provider';
 
 // Bulk paste of a manual model list — migrating from another gateway's export,
 // or from a script that generates one. Auto rows resolve live from the

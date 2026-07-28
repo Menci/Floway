@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ProviderBadge } from './provider-badge';
 import { KIND_DEFAULT_TONES } from './upstream-paint';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../utils/color';
 import { Input } from '../ui/fluent-form-controls';
-import { ProviderBadge } from './provider-badge';
 import { UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider/model';
 
 const {

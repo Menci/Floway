@@ -21,11 +21,11 @@ import { parseModels, serializeModels } from './models-yaml';
 import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { formatFullTime, formatRelativeTime } from '../requests/format';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Input } from '../ui/fluent-form-controls';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { ConfirmDialog } from '../ui/confirm-dialog';
 import type { Flag } from '@floway-dev/provider/flags';
 
 const {
@@ -90,10 +90,10 @@ export function UpstreamWorkspace({
             if (data.value === 'back') setModelView('list');
             else setModelDetailTab(data.value as ModelDetailTab);
           }}>
-              <Tab icon={<ArrowLeftRegular />} value="back">{t('dashboard.upstreamEditor.models.back')}</Tab>
-              <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
-              <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
-            </TabList>
+            <Tab icon={<ArrowLeftRegular />} value="back">{t('dashboard.upstreamEditor.models.back')}</Tab>
+            <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
+            <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
+          </TabList>
         : <TabList selectedValue={tab} onTabSelect={(_, data) => setTab(data.value as typeof tab)}>
             <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
