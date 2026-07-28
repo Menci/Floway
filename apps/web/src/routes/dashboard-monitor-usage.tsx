@@ -205,8 +205,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     [buckets, hiddenKeys, loadedRange, redactKeys, search],
   );
 
-  const activeProvider = search.activeProvider ?? 'disabled';
-  const showSearch = activeProvider !== 'disabled';
+  // The panel follows the data, not the switch: recorded search traffic stays
+  // visible after the operator turns search off or moves to another provider.
+  const showSearch = searchChart.entries.length > 0;
   const chartTitle =
     view === 'all-by-user'
       ? t('dashboard.usage.charts.byUser')
@@ -316,7 +317,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
             hidden={hiddenKeys}
             onHiddenChange={setHiddenKeys}
             title={t('dashboard.usage.charts.searchWithProvider', {
-              provider: formatProvider(activeProvider),
+              provider: searchChart.providers.map(formatProvider).join(' · '),
             })}
             valueFormatter={value => formatCount(value, locale)}
           />

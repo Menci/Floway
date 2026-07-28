@@ -38,7 +38,6 @@ export interface SearchUsageRecord {
 export interface SearchUsageResponse {
   records: SearchUsageRecord[];
   keys: Array<{ id: string; name: string; createdAt?: string }>;
-  activeProvider: string;
 }
 
 export interface UsageBucket { key: string; label: string; date: Date }
@@ -74,12 +73,15 @@ export interface TokenSummary {
   cacheCreation: DecimalString;
 }
 export interface ChartEntry { id: string; label: string; colorSlot: number }
-export interface UsageChartModel {
+interface ChartModelBase {
   entries: ChartEntry[];
   data: ChartProps;
   details: Map<string, Map<string, TokenCounters>>;
   buckets: UsageBucket[];
-  kind: 'token' | 'search';
   range: UsageRange;
   stacked: boolean;
 }
+// A search chart names the providers whose records it actually plotted, which
+// is a property of the window's data rather than of the current configuration.
+export type SearchChartModel = ChartModelBase & { kind: 'search'; providers: string[] };
+export type UsageChartModel = ChartModelBase & ({ kind: 'token' } | { kind: 'search'; providers: string[] });

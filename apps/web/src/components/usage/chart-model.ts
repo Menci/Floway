@@ -1,6 +1,6 @@
 import { curveMonotoneX } from 'd3-shape';
 
-import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenCounters, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
+import type { ChartEntry, DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenCounters, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
 import {
@@ -149,20 +149,28 @@ export function buildSearchChart({
   redactKeys: boolean;
   range: UsageRange;
   buckets: UsageBucket[];
-}): UsageChartModel {
+}): SearchChartModel {
   const groups = new Map<string, Map<string, number>>();
   const presentGroups = new Set<string>();
+  const providers = new Set<string>();
+  const bucketKeys = new Set(buckets.map(bucket => bucket.key));
   const meta = new Map<string, { name?: string; createdAt?: string }>();
   for (const key of search.keys) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
 
+  // Whichever provider recorded a search, the record is real usage and belongs
+  // on the chart. Gating on the currently configured provider would erase the
+  // history of every provider the operator has since switched away from — and
+  // hide the panel entirely once search is turned off, even though the window
+  // still holds the traffic that happened while it was on.
   for (const record of search.records) {
-    if (record.provider !== search.activeProvider) continue;
+    const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
+    if (!bucketKeys.has(bucket)) continue;
+    providers.add(record.provider);
     presentGroups.add(record.keyId);
     meta.set(record.keyId, {
       name: record.keyName ?? meta.get(record.keyId)?.name,
       createdAt: record.keyCreatedAt ?? meta.get(record.keyId)?.createdAt,
     });
-    const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
     const bucketValues = groups.get(record.keyId) ?? new Map<string, number>();
     bucketValues.set(bucket, (bucketValues.get(bucket) ?? 0) + record.requests);
     groups.set(record.keyId, bucketValues);
@@ -192,6 +200,7 @@ export function buildSearchChart({
     buckets,
     details,
     kind: 'search',
+    providers: [...providers].sort(),
     range,
     stacked: true,
     data: {

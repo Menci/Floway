@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/chart-model';
+import { buildSearchChart, buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/chart-model';
 import type { DisplayUsageRecord, UsageBucket } from '../../../src/components/usage/types';
 
 const bucket: UsageBucket = {
@@ -93,5 +93,38 @@ describe('bucket callout figures', () => {
       output_tokens: '600000',
       output_image_tokens: '7000000',
     })]));
+  });
+});
+
+describe('search chart', () => {
+  const searchRecord = (provider: string, requests: number) => ({
+    provider,
+    keyId: 'key-1',
+    keyName: 'Key 1',
+    hour: '2026-07-28T04',
+    requests,
+  });
+  const searchChart = (records: ReturnType<typeof searchRecord>[]) => buildSearchChart({
+    search: { records, keys: [{ id: 'key-1', name: 'Key 1' }] },
+    hiddenKeys: new Set(),
+    redactKeys: false,
+    range: 'today',
+    buckets: [bucket],
+  });
+
+  it('plots recorded traffic from every provider, not just the configured one', () => {
+    const chart = searchChart([searchRecord('tavily', 3), searchRecord('microsoft-grounding', 4)]);
+    expect(chart.providers).toEqual(['microsoft-grounding', 'tavily']);
+    expect(chart.data.lineChartData![0]!.data).toEqual([expect.objectContaining({ y: 7 })]);
+  });
+
+  it('reports no series when the window holds no search traffic', () => {
+    expect(searchChart([]).entries).toEqual([]);
+  });
+
+  it('ignores records that fall outside the plotted window', () => {
+    const chart = searchChart([{ ...searchRecord('tavily', 5), hour: '2026-07-20T04' }]);
+    expect(chart.entries).toEqual([]);
+    expect(chart.providers).toEqual([]);
   });
 });
