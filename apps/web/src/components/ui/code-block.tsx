@@ -1,6 +1,7 @@
 import { CheckmarkRegular, CopyRegular, DismissRegular } from '@fluentui/react-icons';
 import Prism from 'prismjs';
 import { useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-json';
@@ -25,6 +26,7 @@ const useStyles = makeStyles({
     backgroundColor: 'var(--colorNeutralBackground2)',
     borderBottom: '1px solid var(--colorNeutralStroke1)',
     display: 'flex',
+    gap: '8px',
     justifyContent: 'space-between',
     minHeight: '38px',
     padding: '4px 8px 4px 12px',
@@ -39,7 +41,6 @@ const useStyles = makeStyles({
     fontSize: '12px',
     lineHeight: '1.55',
     margin: 0,
-    minHeight: '142px',
     minWidth: 0,
     padding: '12px',
     tabSize: '2',
@@ -60,11 +61,13 @@ interface CodeBlockProps {
   copied: boolean;
   copyFailed: boolean;
   disabled?: boolean;
+  /** Replaces the language caption in the header bar, for switchers that pick which code this block shows. */
+  header?: ReactNode;
   language: string;
   onCopy: () => void;
 }
 
-export function CodeBlock({ code, copied, copyFailed, disabled = false, language, onCopy }: CodeBlockProps) {
+export function CodeBlock({ code, copied, copyFailed, disabled = false, header, language, onCopy }: CodeBlockProps) {
   const { t } = useTranslation();
   const s = useStyles();
   const highlighted = useMemo(() => {
@@ -75,7 +78,7 @@ export function CodeBlock({ code, copied, copyFailed, disabled = false, language
   return (
     <div className={s.root}>
       <div aria-live="polite" className={s.header}>
-        <span className={s.lang}>{language}</span>
+        {header ?? <span className={s.lang}>{language}</span>}
         <Button
           appearance="subtle"
           disabled={disabled}
