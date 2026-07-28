@@ -39,7 +39,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     (max, item) => Math.max(max, item.sort_order),
     -1,
   ) + 1;
-  return { ...aux, mode: 'create' as const, record, nextSortOrder };
+  return { ...aux, mode: 'create' as const, record, nextSortOrder, discovered: [], modelsError: null };
 }
 
 export function meta({}: Route.MetaArgs) {

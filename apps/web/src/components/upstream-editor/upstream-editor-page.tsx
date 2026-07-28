@@ -45,9 +45,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const toasterId = useId();
   const { dispatchToast } = useToastController(toasterId);
   const [record, setRecord] = useState(data.record);
-  const [discovered, setDiscovered] = useState<UpstreamModelConfig[]>([]);
+  const [discovered, setDiscovered] = useState(data.discovered);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsError, setModelsError] = useState<string | null>(data.modelsError);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const allowNavigation = useRef(false);
@@ -121,19 +121,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     () => refreshModelsFor(record),
     [record, refreshModelsFor],
   );
-
-  useEffect(() => {
-    const currentRecord = data.record;
-    const values = getValues();
-    const canFetch = currentRecord.kind === 'custom'
-      ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).baseUrl)
-        && (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled
-      : currentRecord.kind === 'ollama'
-        ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl)
-        : currentRecord.id !== '' && currentRecord.kind !== 'azure';
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Mounting the editor starts a catalog request; the pending state belongs to that external work.
-    if (canFetch) void refreshModelsFor(currentRecord);
-  }, [data.record, getValues, refreshModelsFor]);
 
   const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });
