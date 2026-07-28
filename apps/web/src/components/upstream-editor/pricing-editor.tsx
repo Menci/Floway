@@ -153,9 +153,9 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
       <Toolbar aria-label={t('dashboard.upstreamEditor.models.pricingRules')} className="!min-h-8 !p-0" size="small">
         <Text as="h4" size={300} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.pricingRules')}</Text>
         <Badge appearance="tint" color="informative" size="small">{drafts.length}</Badge>
-        {editable && <ToolbarButton className="!ml-auto" icon={<AddRegular />} onClick={addEntry}>
-          {t('dashboard.upstreamEditor.models.addPricingOverride')}
-        </ToolbarButton>}
+        {editable && <Tooltip content={t('dashboard.upstreamEditor.models.addPricingOverride')} relationship="label">
+          <ToolbarButton aria-label={t('dashboard.upstreamEditor.models.addPricingOverride')} className="!ml-auto" icon={<AddRegular />} onClick={addEntry} />
+        </Tooltip>}
       </Toolbar>
       <TabList
         aria-label={t('dashboard.upstreamEditor.models.pricingRules')}
