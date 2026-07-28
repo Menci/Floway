@@ -18,6 +18,7 @@ import { PlaygroundComposer } from '../components/playground/playground-composer
 import {
   availableModels,
   createWireFetch,
+  defaultMaxOutputTokens,
   generationOptions,
   maximumOutputTokens,
   parseCustomJson,
@@ -233,7 +234,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         model: selectedModel.id,
         system: system.trim(),
         messages: context,
-        options: generationOptions(api, settings),
+        options: generationOptions(api, settings, defaultMaxOutputTokens(selectedModel)),
         signal: controller.signal,
         fetchImpl: wireFetch,
       })) {
@@ -292,7 +293,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
   return (
     <FluentProvider theme={australianTheme} className="h-full min-h-0 !bg-transparent">
-      <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px]">
+      <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
           <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
             <div className="min-w-0">
@@ -407,7 +408,12 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             <Field label={t('dashboard.playground.model')}>
               <Combobox value={modelQuery || selectedModel?.display_name || ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
                 if (!data.optionValue) return;
-                changeContext(() => { setModelId(data.optionValue!); setModelQuery(''); });
+                changeContext(() => {
+                  setModelId(data.optionValue!);
+                  setModelQuery('');
+                  setMessages([]);
+                  setEditingId(null);
+                });
               }} onOpenChange={(_, data) => { if (!data.open) setModelQuery(''); }}>
                 {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0"><div className="truncate">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate ${s.code}`}>{model.id}</div></div></Option>)}
               </Combobox>
@@ -416,12 +422,12 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
           <SettingsSection title={t('dashboard.playground.settings.generation')}>
             <OptionalNumber initialValue={1} label={t('dashboard.playground.parameters.temperature')} value={settings.temperature} min={0} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, temperature: value }))} />
-            <OptionalNumber initialValue={Math.min(4096, outputLimit ?? 4096)} label={t('dashboard.playground.parameters.maxOutputTokens')} value={settings.maxOutputTokens} min={1} max={outputLimit} step={1} onChange={value => setSettings(current => ({ ...current, maxOutputTokens: value }))} />
+            <OptionalNumber initialValue={defaultMaxOutputTokens(selectedModel)} label={t('dashboard.playground.parameters.maxOutputTokens')} value={settings.maxOutputTokens} min={1} max={outputLimit} step={1} onChange={value => setSettings(current => ({ ...current, maxOutputTokens: value }))} />
             <OptionalNumber initialValue={1} label={t('dashboard.playground.parameters.topP')} value={settings.topP} min={0} max={1} step={0.05} onChange={value => setSettings(current => ({ ...current, topP: value }))} />
-            <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.frequencyPenalty')} value={settings.frequencyPenalty} disabled={api === 'messages'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, frequencyPenalty: value }))} />
-            <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.presencePenalty')} value={settings.presencePenalty} disabled={api === 'messages'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, presencePenalty: value }))} />
+            <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.frequencyPenalty')} value={settings.frequencyPenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, frequencyPenalty: value }))} />
+            <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.presencePenalty')} value={settings.presencePenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, presencePenalty: value }))} />
             <Field label={t('dashboard.playground.parameters.stopSequences')}>
-              <Input value={settings.stopSequences?.join(', ') ?? ''} placeholder={t('dashboard.playground.parameters.unset')} onChange={(_, data) => setSettings(current => ({ ...current, stopSequences: data.value.split(',').map(value => value.trim()).filter(Boolean) || undefined }))} />
+              <Input disabled={api === 'responses'} value={settings.stopSequences?.join(', ') ?? ''} placeholder={t('dashboard.playground.parameters.unset')} onChange={(_, data) => setSettings(current => ({ ...current, stopSequences: data.value.split(',').map(value => value.trim()).filter(Boolean) || undefined }))} />
             </Field>
             <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
               <Select value={settings.reasoningEffort ?? ''} disabled={!effortOptions.length} onChange={(_, data) => setSettings(current => ({ ...current, reasoningEffort: data.value || undefined }))}>

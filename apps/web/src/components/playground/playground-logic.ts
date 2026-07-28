@@ -1,5 +1,6 @@
 
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
+import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 export type PlaygroundApi = 'responses' | 'chatCompletions' | 'messages';
 
@@ -70,6 +71,13 @@ export function supportsImageInput(model: ControlPlaneModel | null): boolean {
 
 export function maximumOutputTokens(model: ControlPlaneModel | null): number | undefined {
   return model?.limits.max_output_tokens;
+}
+
+export function defaultMaxOutputTokens(model: ControlPlaneModel | null): number {
+  const advertised = maximumOutputTokens(model);
+  return advertised === undefined
+    ? MESSAGES_FALLBACK_MAX_TOKENS
+    : Math.min(advertised, MESSAGES_FALLBACK_MAX_TOKENS);
 }
 
 const reservedFields: Record<PlaygroundApi, readonly string[]> = {
@@ -179,7 +187,11 @@ export function createWireFetch(custom: Record<string, unknown>, api?: Playgroun
 // Wire-native generation options per protocol. Naming them the way each
 // protocol names them keeps reasoning effort, stop handling and token caps
 // visible on the request instead of behind a client abstraction.
-export function generationOptions(api: PlaygroundApi, settings: PlaygroundSettings): Record<string, unknown> {
+export function generationOptions(
+  api: PlaygroundApi,
+  settings: PlaygroundSettings,
+  messagesMaxTokens = MESSAGES_FALLBACK_MAX_TOKENS,
+): Record<string, unknown> {
   const { temperature, maxOutputTokens, topP, frequencyPenalty, presencePenalty, stopSequences, reasoningEffort } = settings;
   const shared = {
     ...(temperature !== undefined && { temperature }),
@@ -189,9 +201,12 @@ export function generationOptions(api: PlaygroundApi, settings: PlaygroundSettin
   if (api === 'messages') {
     return {
       ...shared,
-      ...(maxOutputTokens !== undefined && { max_tokens: maxOutputTokens }),
+      max_tokens: maxOutputTokens ?? messagesMaxTokens,
       ...(stopSequences?.length && { stop_sequences: stopSequences }),
-      ...(reasoningEffort && { thinking: { type: 'enabled', effort: reasoningEffort } }),
+      ...(reasoningEffort && {
+        thinking: { type: 'enabled' },
+        output_config: { effort: reasoningEffort },
+      }),
     };
   }
 

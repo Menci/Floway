@@ -71,7 +71,7 @@ export default function Dashboard({}: Route.ComponentProps) {
     <div className="grid grid-cols-[290px_minmax(0,1fr)] h-screen min-h-0">
       <Sidebar user={user} />
       <main className={upstreamEditor || requestsInspector || playground
-        ? 'min-h-0 overflow-hidden p-[22px_28px_28px]'
+        ? 'min-h-0 overflow-hidden p-[22px_28px_28px] max-[1100px]:overflow-y-auto'
         : 'min-h-0 overflow-y-auto p-[22px_28px_28px] [scrollbar-gutter:stable]'}>
         <Outlet context={{ user } satisfies DashboardOutletContext} />
       </main>

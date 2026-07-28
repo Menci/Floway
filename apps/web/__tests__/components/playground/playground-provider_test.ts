@@ -119,6 +119,36 @@ describe('playground wire requests', () => {
     }))).rejects.toThrow('upstream refused');
   });
 
+  it('surfaces a Responses failed envelope instead of returning empty text', async () => {
+    vi.stubGlobal('fetch', async () => new Response(
+      sseBody([{
+        type: 'response.failed',
+        response: {
+          id: 'resp_1',
+          object: 'response',
+          created_at: 1,
+          model: 'test-model',
+          status: 'failed',
+          output: [],
+          error: { code: 'server_error', message: 'generation failed' },
+          incomplete_details: null,
+        },
+      }]),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    ));
+
+    await expect(collect(streamPlaygroundText({
+      api: 'responses',
+      apiKey: 'secret',
+      model: 'test-model',
+      system: '',
+      messages: [{ id: '1', role: 'user', text: 'hello' }],
+      options: {},
+      signal: new AbortController().signal,
+      fetchImpl: createWireFetch({}, 'responses'),
+    }))).rejects.toThrow('generation failed');
+  });
+
   it('surfaces a non-2xx body rather than a bare status', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       JSON.stringify({ error: { message: 'no such model' } }),

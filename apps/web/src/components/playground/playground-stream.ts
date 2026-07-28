@@ -1,7 +1,7 @@
 import type { PlaygroundApi, PlaygroundMessage } from './playground-logic';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { parseSSEStream } from '@floway-dev/protocols/common';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 export interface PlaygroundRequest {
@@ -44,7 +44,7 @@ const contentFor = (message: PlaygroundMessage, api: PlaygroundApi): unknown => 
 const bodyFor = ({ api, model, system, messages, options }: PlaygroundRequest): unknown => {
   const turns = messages.map(message => ({ role: message.role, content: contentFor(message, api) }));
   if (api === 'messages') {
-    return { model, stream: true, ...(system ? { system } : {}), messages: turns, ...options };
+    return { model, stream: true, max_tokens: MESSAGES_FALLBACK_MAX_TOKENS, ...(system ? { system } : {}), messages: turns, ...options };
   }
   if (api === 'responses') {
     return { model, stream: true, ...(system ? { instructions: system } : {}), input: turns, ...options };
@@ -83,6 +83,14 @@ const errorMessage = (payload: unknown): string | null => {
   return null;
 };
 
+const streamFailureMessage = (api: PlaygroundApi, payload: unknown): string | null => {
+  const direct = errorMessage(payload);
+  if (direct !== null || api !== 'responses' || !payload || typeof payload !== 'object') return direct;
+  const event = payload as ResponsesStreamEvent;
+  if (event.type !== 'response.failed') return null;
+  return event.response.error?.message ?? 'Response failed';
+};
+
 // Streams assistant text for whichever chat protocol the playground is
 // pointed at. The gateway owns these codecs, so the wire shapes come from
 // @floway-dev/protocols rather than a third-party client that would hide the
@@ -118,7 +126,7 @@ export const streamPlaygroundText = async function* (request: PlaygroundRequest)
     } catch {
       continue;
     }
-    const failure = errorMessage(payload);
+    const failure = streamFailureMessage(api, payload);
     if (failure !== null) throw new Error(failure);
     const delta = textDelta(api, payload);
     if (delta) yield delta;

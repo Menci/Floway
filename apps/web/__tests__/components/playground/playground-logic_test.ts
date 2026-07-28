@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ApiKey, ControlPlaneModel } from '../../../src/api/types';
 import {
   availableModels,
+  defaultMaxOutputTokens,
   effectiveUpstreamCap,
   generationOptions,
   maximumOutputTokens,
@@ -62,11 +63,11 @@ describe('parameters and capabilities', () => {
     expect(generationOptions('chatCompletions', { reasoningEffort: 'high', maxOutputTokens: 100, frequencyPenalty: 1, stopSequences: ['x'] }))
       .toEqual({ max_completion_tokens: 100, frequency_penalty: 1, stop: ['x'], reasoning_effort: 'high' });
     expect(generationOptions('messages', { reasoningEffort: 'max', maxOutputTokens: 100, stopSequences: ['x'] }))
-      .toEqual({ max_tokens: 100, stop_sequences: ['x'], thinking: { type: 'enabled', effort: 'max' } });
+      .toEqual({ max_tokens: 100, stop_sequences: ['x'], thinking: { type: 'enabled' }, output_config: { effort: 'max' } });
   });
 
   it('omits the penalties Messages has no wire field for', () => {
-    expect(generationOptions('messages', { frequencyPenalty: 1, presencePenalty: 1 })).toEqual({});
+    expect(generationOptions('messages', { frequencyPenalty: 1, presencePenalty: 1 }, 2048)).toEqual({ max_tokens: 2048 });
   });
 
   it('forwards an unknown reasoning effort rather than gating it', () => {
@@ -77,5 +78,6 @@ describe('parameters and capabilities', () => {
     expect(supportsImageInput(model('unknown', []))).toBe(true);
     expect(supportsImageInput(model('text', [], { chat: { modalities: { input: ['text'], output: ['text'] } } }))).toBe(false);
     expect(maximumOutputTokens(model('limited', [], { limits: { max_output_tokens: 4096 } }))).toBe(4096);
+    expect(defaultMaxOutputTokens(model('limited', [], { limits: { max_output_tokens: 2048 } }))).toBe(2048);
   });
 });
