@@ -25,6 +25,7 @@ const useStyles = makeStyles({
     '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' },
   },
   accentText: { color: 'var(--colorBrandForeground1)' },
+  dangerButton: { color: 'var(--colorPaletteRedForeground1)' },
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
@@ -100,7 +101,7 @@ export function KeysTable({
               />
               <TooltipIconButton icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
               <TooltipIconButton icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
-              <TooltipIconButton icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
+              <TooltipIconButton className={s.dangerButton} icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
             </div>
           );
         },
