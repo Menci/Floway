@@ -20,10 +20,11 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
   // change, so the badge has to re-evaluate on its own.
   const now = useNow(QUOTA_REFRESH_MS);
   const account = record.config.accounts[0];
-  const credential = findCredential(record);
+  const lookup = findCredential(record);
+  const credential = lookup.kind === 'present' ? lookup.credential : null;
   const entries = quotaEntries(record.codex_quota, now);
   const credits = latestCredits(record.codex_quota);
-  const status = accountStatus(credential, entries);
+  const status = accountStatus(lookup, entries);
 
   const statusLabel = status.reason === 'heavy'
     ? t('dashboard.upstreamEditor.codex.status.heavy', { percent: status.percent })

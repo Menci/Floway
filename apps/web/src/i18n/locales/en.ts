@@ -779,6 +779,7 @@ const en = {
             active: 'Active',
             heavy: 'Heavy usage ({{percent}}%)',
             rateLimited: 'Rate-limited until {{time}}',
+            'account-id-mismatch': 'Configured account is missing — re-import to recover',
             'session-terminated': 'Session terminated — re-import to recover',
             'refresh-failed': 'Refresh failed — re-import to recover',
           },

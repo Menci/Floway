@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseBackupFile } from '../../src/routes/dashboard-admin-backup-restore';
+import { parseBackupFile } from '../../src/components/backup-restore/backup-file';
 
 const data = {
   users: [],

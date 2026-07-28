@@ -22,6 +22,7 @@ import { type AuthVars, apiKeyFromContext, effectiveUpstreamIdsFromContext } fro
 import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { mountPublicRoute } from '../public-route.ts';
 import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
 import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
@@ -151,7 +152,7 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
 type AlphaSearchRoute = typeof PUBLIC_DATA_PLANE_ROUTES.alphaSearch | typeof PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch;
 
 export const mountAlphaSearchRoute = (app: Hono<{ Variables: AuthVars }>, route: AlphaSearchRoute) => {
-  for (const path of route.paths) app.on(route.method, path, zValidator('json', alphaSearchRequestSchema), alphaSearch);
+  mountPublicRoute(route, (method, path) => app.on(method, path, zValidator('json', alphaSearchRequestSchema), alphaSearch));
 };
 
 export const mountAlphaSearchRoutes = (app: Hono<{ Variables: AuthVars }>) => {

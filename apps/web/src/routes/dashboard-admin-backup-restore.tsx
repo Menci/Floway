@@ -2,7 +2,6 @@ import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons'
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
-import { z } from 'zod';
 
 import type { Route } from './+types/dashboard-admin-backup-restore';
 import { callApi } from '../api/auth';
@@ -10,6 +9,7 @@ import { api } from '../api/client';
 import type { BackupImportCounts } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
+import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
@@ -125,35 +125,6 @@ const PREVIEW_LABEL_KEYS = [
   'searchUsage',
   'performance',
 ] as const;
-const EXPORT_VERSION = 17;
-
-const backupFileSchema = z.object({
-  version: z.literal(EXPORT_VERSION),
-  exportedAt: z.string(),
-  data: z.object({
-    users: z.array(z.unknown()),
-    apiKeys: z.array(z.unknown()),
-    upstreams: z.array(z.unknown()),
-    proxies: z.array(z.unknown()),
-    usage: z.array(z.unknown()),
-    searchUsage: z.array(z.unknown()),
-    performance: z.array(z.unknown()).optional(),
-    performanceIncluded: z.boolean(),
-    searchConfig: z.unknown(),
-  }).strict().superRefine((data, ctx) => {
-    if (data.performanceIncluded !== (data.performance !== undefined)) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'performance must be present exactly when performanceIncluded is true',
-        path: ['performance'],
-      });
-    }
-  }),
-}).strict();
-
-type BackupFile = z.infer<typeof backupFileSchema>;
-type BackupFileData = BackupFile['data'];
-
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -167,23 +138,6 @@ function countRecords(data: BackupFileData): Record<string, number> {
     counts[key] = Array.isArray(value) ? value.length : 0;
   }
   return counts;
-}
-
-export function parseBackupFile(
-  raw: string,
-): { ok: true; payload: BackupFile } | { ok: false; error: string } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
-  }
-
-  const result = backupFileSchema.safeParse(parsed);
-  if (!result.success) {
-    return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
-  }
-  return { ok: true, payload: result.data };
 }
 
 export default function DashboardAdminBackupRestore() {
@@ -245,9 +199,9 @@ export default function DashboardAdminBackupRestore() {
 
       const reader = new FileReader();
       reader.onload = () => {
-        const result = parseBackupFile(reader.result as string);
+        const result = typeof reader.result === 'string' ? parseBackupFile(reader.result) : { ok: false as const };
         if (!result.ok) {
-          setImportError(result.error);
+          setImportError('dashboard.backupRestore.import.errorInvalidFile');
           setImportFile(null);
           setImportParsedData(null);
           return;
@@ -310,7 +264,7 @@ export default function DashboardAdminBackupRestore() {
 
     const result = await callApi(() => api.api.import.$post({
       json: {
-        version: EXPORT_VERSION,
+        version: BACKUP_FILE_VERSION,
         mode: importMode,
         data: importParsedData.data,
       },

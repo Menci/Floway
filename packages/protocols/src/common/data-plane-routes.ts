@@ -29,3 +29,4 @@ export const PUBLIC_DATA_PLANE_ROUTES = {
 } as const;
 
 export type PublicDataPlaneRouteId = keyof typeof PUBLIC_DATA_PLANE_ROUTES;
+export type PublicDataPlaneRoute = typeof PUBLIC_DATA_PLANE_ROUTES[PublicDataPlaneRouteId];
