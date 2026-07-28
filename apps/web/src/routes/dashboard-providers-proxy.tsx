@@ -318,8 +318,9 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
       <DialogShell
         actions={<DialogActions>
-          <Button disabled={saving || testing} onClick={() => setDialogOpen(false)} type="button">{t('common.cancel')}</Button>
+          <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => setDialogOpen(false)} type="button">{t('common.cancel')}</Button>
           <Button
+            className="!whitespace-nowrap"
             disabled={!canTest || saving || testing}
             icon={testing ? <Spinner size="tiny" /> : undefined}
             onClick={() => void handleTest()}
@@ -329,6 +330,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           </Button>
           <Button
             appearance="primary"
+            className="!whitespace-nowrap"
             disabled={saving || testing}
             icon={saving ? <Spinner size="tiny" /> : undefined}
             type="submit"
