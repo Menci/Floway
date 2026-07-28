@@ -12,12 +12,18 @@ import { useElementSize } from '../charts/use-element-size';
 
 const { makeStyles } = fluentComponents;
 const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' } });
+const useAreaBoundaryStyles = makeStyles({
+  root: {
+    '& path[id*="-line-"]': { opacity: '1 !important', strokeWidth: '2px' },
+  },
+});
 
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
 
 export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
   const { i18n, t } = useTranslation();
   const chartStateStyles = useChartStateStyles();
+  const areaBoundaryStyles = useAreaBoundaryStyles();
   const chartRootStyles = useUnclippedChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
@@ -40,7 +46,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   if (size.width < 120) return <div className="h-[320px] min-w-0 w-full" ref={setHost} />;
 
   return (
-    <div className="h-[320px] min-w-0 w-full" ref={setHost}>
+    <div className={`${areaBoundaryStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>
       {!hasData ? <div className={chartStateStyles.root}>{t('dashboard.usage.empty')}</div>
         : chart.plot.form === 'area' ? (
           <AreaChart
