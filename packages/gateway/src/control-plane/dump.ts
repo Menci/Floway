@@ -29,7 +29,7 @@ const ownedKey = async (c: Context): Promise<{ id: string; error: null } | { id:
 export const dumpRoutes = new Hono()
   .get('/keys/:keyId/records', zValidator('query', listQuery), async c => {
     const owned = await ownedKey(c);
-    if (owned.error) return c.json({ error: owned.error }, 404);
+    if (owned.id === null) return c.json({ error: owned.error }, 404);
     const { limit, before } = c.req.valid('query');
     const records = await getDumpStore().list(owned.id, {
       limit: limit ?? LIST_LIMIT_DEFAULT,
@@ -39,7 +39,7 @@ export const dumpRoutes = new Hono()
   })
   .get('/keys/:keyId/records/:recordId', async c => {
     const owned = await ownedKey(c);
-    if (owned.error) return c.json({ error: owned.error }, 404);
+    if (owned.id === null) return c.json({ error: owned.error }, 404);
     const record = await getDumpStore().get(owned.id, c.req.param('recordId')!);
     if (!record) return c.json({ error: 'Record not found' }, 404);
     return c.json(dumpRecordToWire(record));
@@ -49,7 +49,7 @@ export const dumpRoutes = new Hono()
     // accepts the session token via `?session=` (path-pinned in
     // authMiddleware).
     const owned = await ownedKey(c);
-    if (owned.error) return c.json({ error: owned.error }, 404);
+    if (owned.id === null) return c.json({ error: owned.error }, 404);
 
     // Subscribe first, then read the snapshot, so the live broker covers
     // anything new while the snapshot supplies history.

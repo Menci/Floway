@@ -20,7 +20,7 @@ describe('API Docs catalog', () => {
       '/voyage/v1/rerank',
       '/alpha/search',
       '/azure-api.codex/responses',
-    ]) expect(paths.has(path)).toBe(true);
+    ] as const) expect(paths.has(path)).toBe(true);
   });
 
   it('renders a paste-ready authentication command', () => {

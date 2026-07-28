@@ -99,7 +99,7 @@ export function ApiDocsContent() {
                 const example = apiDocsExamples[exampleId];
                 return <div className="grid gap-2" key={exampleId}>
                   <Text size={300} weight="semibold">{t(`dashboard.apiDocs.examples.${example.title}`)}</Text>
-                  <CodeBlock code={example.code} copied={copied === example.id} copyFailed={copyFailed === example.id} language={example.language} onCopy={() => void copy(example.id, example.code)} />
+                  <CodeBlock code={example.code} copied={copied === exampleId} copyFailed={copyFailed === exampleId} language={example.language} onCopy={() => void copy(exampleId, example.code)} />
                 </div>;
               })}
             </div>
