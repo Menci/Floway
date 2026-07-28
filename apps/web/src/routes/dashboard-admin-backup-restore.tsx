@@ -1,4 +1,5 @@
 import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons';
+import type { InferResponseType } from 'hono/client';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
@@ -128,7 +129,10 @@ const PREVIEW_LABEL_KEYS = [
   'searchUsage',
   'performance',
 ] as const;
-const EXPORT_VERSION = 17;
+// Annotated with the gateway's own literal so a bump there fails this
+// assignment rather than silently leaving the dashboard rejecting every fresh
+// backup file as unreadable.
+const EXPORT_VERSION: InferResponseType<typeof api.api.export.$get, 200>['version'] = 18;
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
