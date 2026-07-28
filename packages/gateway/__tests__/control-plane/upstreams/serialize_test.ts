@@ -95,7 +95,7 @@ test('upstreamRecordToJson redacts Copilot GitHub token inside config and expose
   assertEquals(result.kind, 'copilot');
   if (result.kind !== 'copilot' || result.state === null) throw new Error('Expected a Copilot response with state');
   const { config, state } = result;
-  assertEquals(config.githubToken, undefined);
+  assertEquals('githubToken' in config, false);
   assertEquals(config.githubTokenSet, true);
   assertEquals('accountType' in config, false);
   assertEquals(config.user, {
@@ -145,8 +145,8 @@ test('upstreamRecordToJson serializes a Copilot row whose state lacks copilotTok
 
 test('upstreamRecordToFullJson includes provider config secrets for export', () => {
   const result = upstreamRecordToFullJson(custom);
-  const config = result.config as Record<string, unknown>;
-
+  if (result.kind !== 'custom') throw new Error('Expected a Custom response');
+  const { config } = result;
   assertEquals(result.id, 'up_custom_test');
   assertEquals(config.apiKey, 'sk-secret-token-12345');
   assertEquals(config.apiKeySet, undefined);
