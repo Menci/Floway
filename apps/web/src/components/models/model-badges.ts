@@ -39,10 +39,9 @@ export const effectiveUpstreams = (
   }));
 };
 
-// A single-target alias renders one badge per configured rule; a multi-target
-// alias collapses any field whose targets disagree into "<field>: varies", so
-// the row states what the resolver will apply rather than one arbitrary target's
-// configuration.
+// One reachable target renders its configured rules; multiple reachable
+// targets collapse disagreements to "varies", so the row describes the active
+// resolver candidates rather than an unreachable target's configuration.
 const ruleBadges = (targets: readonly AliasTarget[]): ModelBadge[] => {
   if (targets.length === 1) {
     return formatAliasRuleBadges(targets[0]!.rules)
