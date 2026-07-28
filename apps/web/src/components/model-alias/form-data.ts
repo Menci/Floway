@@ -1,4 +1,9 @@
+import type { InferRequestType } from 'hono/client';
+
+import type { api } from '../../api/client';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, ModelAlias, ModelKind } from '../../api/types';
+
+type AliasWriteBody = InferRequestType<typeof api.api.aliases.$post>['json'];
 
 export interface AliasFormValues {
   name: string;
@@ -36,7 +41,7 @@ export function aliasDefaults(alias: ModelAlias | null): AliasFormValues {
   };
 }
 
-export function aliasBody(values: AliasFormValues, existing: ModelAlias | null) {
+export function aliasBody(values: AliasFormValues, existing: ModelAlias | null): AliasWriteBody {
   const trimRules = (rules: AliasTarget['rules']): AliasTarget['rules'] => {
     const reasoning = rules.reasoning ? Object.fromEntries(Object.entries(rules.reasoning).filter(([, value]) => value !== undefined && value !== '')) : undefined;
     return {
@@ -51,7 +56,7 @@ export function aliasBody(values: AliasFormValues, existing: ModelAlias | null) 
     visible_in_models_list: values.visible,
     targets: values.targets.map(target => ({
       target_model_id: target.target_model_id.trim(),
-      rules: values.kind === 'chat' ? trimRules(target.rules) : {},
+      rules: values.kind === 'chat' ? { ...trimRules(target.rules) } : {},
     })),
     announced_metadata: values.manualMetadata && values.kind !== 'image' ? values.announcedMetadata : null,
     sort_order: existing?.sort_order ?? 0,

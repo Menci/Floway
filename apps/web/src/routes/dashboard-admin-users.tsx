@@ -381,21 +381,18 @@ function UserDialog({
     setSaving(true);
     setError(null);
     const upstreamIds = form.upstreamOverride ? form.upstreamIds : null;
-    const body = mode === 'create'
-      ? {
+    const result = mode === 'create'
+      ? await callApi(() => api.api.users.$post({ json: {
           username: form.username.trim(),
           password: form.password,
           isAdmin: form.isAdmin,
           upstreamIds,
-        }
-      : {
+        } }))
+      : await callApi(() => api.api.users[':id'].$patch({ param: { id: String(user!.id) }, json: {
           username: form.username.trim(),
           ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
           upstreamIds,
-        };
-    const result = mode === 'create'
-      ? await callApi(() => api.api.users.$post({ json: body }))
-      : await callApi(() => api.api.users[':id'].$patch({ param: { id: String(user!.id) }, json: body }));
+        } }));
     setSaving(false);
     if (result.error) {
       setError(result.error.message);

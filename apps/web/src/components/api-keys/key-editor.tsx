@@ -11,7 +11,7 @@ import type { MutationToastController, UpstreamOption } from './types';
 import { UpstreamPicker } from './upstream-picker';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
-import type { ApiKey } from '../../api/types';
+import { apiKeyFromWire, type ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
@@ -155,7 +155,7 @@ export function KeyDialog({
     }
     onOpenChange(false);
     mutationToasts.succeed(toastId, mutationKind, common.name);
-    await onSaved(result.data);
+    await onSaved(apiKeyFromWire(result.data));
   };
 
   return (

@@ -29,15 +29,17 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
       callApi(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
       callApi(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
     ]);
+    const usageData = usageRes.data as UsageByUserResponse | undefined;
+    const searchData = searchRes.data as SearchUsageByUserResponse | undefined;
     return {
-      usage: usageRes.data ? {
-        records: usageRes.data.records.map(record => ({ ...record, keyId: userBucketId(record.userId), userId: undefined })),
-        keys: usageRes.data.users.map(user => ({ id: userBucketId(user.id), name: user.username })),
+      usage: usageData ? {
+        records: usageData.records.map(record => ({ ...record, keyId: userBucketId(record.userId), userId: undefined })),
+        keys: usageData.users.map(user => ({ id: userBucketId(user.id), name: user.username })),
       } as UsageResponse : emptyUsageResponse(),
-      search: searchRes.data ? {
-        records: searchRes.data.records.map(record => ({ ...record, keyId: userBucketId(record.userId), userId: undefined })),
-        keys: searchRes.data.users.map(user => ({ id: userBucketId(user.id), name: user.username })),
-        activeProvider: searchRes.data.activeProvider,
+      search: searchData ? {
+        records: searchData.records.map(record => ({ ...record, keyId: userBucketId(record.userId), userId: undefined })),
+        keys: searchData.users.map(user => ({ id: userBucketId(user.id), name: user.username })),
+        activeProvider: searchData.activeProvider,
       } as SearchUsageResponse : emptySearchUsageResponse(),
       error: usageRes.error?.message ?? searchRes.error?.message ?? null,
     };
@@ -47,8 +49,8 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
     callApi(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view } })),
   ]);
   return {
-    usage: usageRes.data ?? emptyUsageResponse(),
-    search: searchRes.data ?? emptySearchUsageResponse(),
+    usage: usageRes.data as UsageResponse | undefined ?? emptyUsageResponse(),
+    search: searchRes.data as SearchUsageResponse | undefined ?? emptySearchUsageResponse(),
     error: usageRes.error?.message ?? searchRes.error?.message ?? null,
   };
 }

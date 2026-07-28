@@ -217,11 +217,22 @@ const discoveredCustomModelEndpoints = (
 
 export function discoveredModelsFromResponse(
   kind: UpstreamProviderKind,
-  data: UpstreamModelConfig[] | CustomRawModel[],
+  data: readonly unknown[],
   endpoints: ModelEndpoints,
 ): UpstreamModelConfig[] {
-  if (kind !== 'custom') return data as UpstreamModelConfig[];
-  return (data as CustomRawModel[]).map(model => {
+  if (kind !== 'custom') return data.map(value => {
+    if (!value || typeof value !== 'object') throw new TypeError('Upstream model response must be an object');
+    const model = value as Partial<UpstreamModelConfig>;
+    if (typeof model.upstreamModelId !== 'string' || typeof model.kind !== 'string' || !model.endpoints) {
+      throw new TypeError('Upstream model response is missing its required fields');
+    }
+    return value as UpstreamModelConfig;
+  });
+  return data.map(value => {
+    if (!value || typeof value !== 'object' || typeof (value as { id?: unknown }).id !== 'string') {
+      throw new TypeError('Custom model response is missing its id');
+    }
+    const model = value as CustomRawModel;
     const modelEndpoints = discoveredCustomModelEndpoints(model.kind, endpoints);
     return {
       upstreamModelId: model.id,

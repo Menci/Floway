@@ -8,6 +8,7 @@ import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type {
   BackupExportData,
+  BackupExportResponse,
   BackupImportCounts,
 } from '../api/types';
 import { getSessionToken } from '../auth/session';
