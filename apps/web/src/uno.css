@@ -1,1 +1,6 @@
 @unocss;
+
+.fui-TableHeaderCell,
+.fui-TableHeaderCell__button {
+  font-weight: var(--fontWeightSemibold) !important;
+}

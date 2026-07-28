@@ -363,7 +363,7 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
             <TableHeaderCell className="!w-[180px]">{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableHeaderCell className="!w-[110px]">{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.upstreams.table.actions')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[88px] !text-right">{t('dashboard.upstreams.table.actions')}</TableHeaderCell>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -413,7 +413,7 @@ function UpstreamsTable({
                 />
               </TableCell>
               <TableCell>
-                <div className="flex items-center justify-center gap-[2px]">
+                <div className="flex items-center justify-end gap-[2px]">
                   <TooltipIconButton
                     disabled={busy}
                     icon={<EditRegular />}
@@ -464,14 +464,14 @@ function ModelStatus({
   return (
     <Tooltip content={detail} relationship="description">
       <span className="inline-flex items-center gap-[6px] min-w-0 w-fit max-w-full">
-        <Text size={200} weight="semibold" className="whitespace-nowrap">
+        <Text size={300} className="whitespace-nowrap">
           {modelsAvailable
             ? t('dashboard.upstreams.models.count', { count })
             : t('dashboard.upstreams.models.unavailable')}
         </Text>
         {healthy
-          ? <CheckmarkCircleRegular className={`${s.ready} flex-none`} aria-label={t('dashboard.upstreams.cache.ready')} />
-          : <WarningRegular className={`${s.warning} flex-none`} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
+          ? <CheckmarkCircleRegular className={`${s.ready} block flex-none`} fontSize={16} aria-label={t('dashboard.upstreams.cache.ready')} />
+          : <WarningRegular className={`${s.warning} block flex-none`} fontSize={16} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
       </span>
     </Tooltip>
   );

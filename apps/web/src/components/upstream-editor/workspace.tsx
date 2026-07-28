@@ -272,13 +272,13 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table className="w-full min-w-[860px] table-fixed">
-        <TableHeader><TableRow><TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[25%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.upstreamEditor.models.actions')}</TableHeaderCell></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHeaderCell className="!w-[88px]">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[25%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableHeaderCell className="!w-[88px] !text-right">{t('dashboard.upstreamEditor.models.actions')}</TableHeaderCell></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
-            <TableCell><div className="flex justify-center"><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} size="small" /></div></TableCell>
+            <TableCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} size="small" /></TableCell>
             <TableCell className="!overflow-hidden">
               <button
-                className="block bg-transparent border-0 cursor-pointer font-fui-semibold min-w-0 max-w-full overflow-hidden p-0 text-ellipsis text-fui-fg1 text-left whitespace-nowrap hover:underline"
+                className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full overflow-hidden p-0 text-ellipsis text-fui-base300 text-fui-fg1 text-left whitespace-nowrap hover:underline"
                 onClick={() => { setSelected(row.key); onViewChange('detail'); }}
                 title={row.config.display_name ?? id}
                 type="button"
@@ -286,10 +286,10 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
                 {row.config.display_name ?? id}
               </button>
             </TableCell>
-            <TableCell>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</TableCell>
-            <TableCell className="!overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block text-xs min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
-            <TableCell><Text size={200}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCell>
-            <TableCell><div className="flex justify-center gap-1"><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); onViewChange('detail'); }} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => setDeleteTarget(row)} />}</div></TableCell>
+            <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCell>
+            <TableCell className="!overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block text-fui-base300 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
+            <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCell>
+            <TableCell><div className="flex justify-end gap-1"><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); onViewChange('detail'); }} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => setDeleteTarget(row)} />}</div></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>
@@ -300,9 +300,12 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
 
 function ModelsCacheStatus({ cache }: { cache: UpstreamRecord['modelsCache'] }) {
   const { t } = useTranslation();
-  const label = cache.fetchedAt === null
+  const elapsed = cache.fetchedAt === null ? null : formatRelativeTime(cache.fetchedAt);
+  const label = elapsed === null
     ? t('dashboard.upstreamEditor.models.cacheNever')
-    : t('dashboard.upstreamEditor.models.cacheFetched', { time: formatRelativeTime(cache.fetchedAt) });
+    : elapsed === 'now'
+      ? t('dashboard.upstreamEditor.models.cacheFetchedNow')
+      : t('dashboard.upstreamEditor.models.cacheFetched', { time: elapsed });
   const detail = cache.lastError
     ? t('dashboard.upstreamEditor.models.cacheErrorDetail', { message: cache.lastError.message, time: formatFullTime(cache.lastError.at) })
     : cache.fetchedAt === null ? label : formatFullTime(cache.fetchedAt);

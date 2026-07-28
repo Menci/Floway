@@ -17,8 +17,8 @@ const {
 
 const useStyles = makeStyles({
   actionsCell: {
-    justifyContent: 'center',
-    '& .fui-TableHeaderCell__button': { justifyContent: 'center' },
+    justifyContent: 'flex-end',
+    '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' },
   },
   accentText: { color: 'var(--colorBrandForeground1)' },
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },
@@ -50,7 +50,7 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'key', renderHeaderCell: () => t('dashboard.apiKeys.table.key'),
         renderCell: key => (
-          <code className="bg-fui-bg2 border border-fui-stroke1 rounded-md text-fui-fg2 inline-block font-mono text-xs max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap p-[2px_6px]">
+          <code className="bg-fui-bg2 border border-fui-stroke1 rounded-md text-fui-fg2 inline-block font-mono text-fui-base300 max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap p-[2px_6px]">
             {truncateKey(key.key)}
           </code>
         ),
@@ -140,7 +140,6 @@ export function KeysTable({
         <DataGridBody<ApiKey>>
           {({ item, rowId }) => (
             <DataGridRow<ApiKey>
-              className="h-14"
               key={rowId}
               selectionCell={{ radioIndicator: { 'aria-label': t('dashboard.apiKeys.table.selectNamed', { name: item.name }) } }}
             >

@@ -262,7 +262,7 @@ function UsersTable({
             <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.created')}</TableHeaderCell>
-            <TableHeaderCell className="!text-center !w-[116px]">
+            <TableHeaderCell className="!text-right !w-[116px]">
               {t('dashboard.users.table.actions')}
             </TableHeaderCell>
           </TableRow>
@@ -274,7 +274,7 @@ function UsersTable({
               <TableRow className="h-14" key={user.id}>
                 <TableCell>
                   <TableCellLayout>
-                    <span className="font-fui-semibold truncate">{user.username}</span>
+                    <span className="truncate">{user.username}</span>
                   </TableCellLayout>
                 </TableCell>
                 <TableCell>
@@ -293,7 +293,7 @@ function UsersTable({
                   </span>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center justify-center gap-1">
+                  <div className="flex items-center justify-end gap-1">
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<EditRegular />}

@@ -43,7 +43,7 @@ export function ProxyList({
           <TableRow>
             <TableHeaderCell>{t('dashboard.proxy.form.name')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.proxy.form.address')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.proxy.columns.actions')}</TableHeaderCell>
+            <TableHeaderCell className="!w-[88px] !text-right">{t('dashboard.proxy.columns.actions')}</TableHeaderCell>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -55,7 +55,7 @@ export function ProxyList({
             };
 
             return (
-              <TableRow className="h-14" key={proxy.id}>
+              <TableRow key={proxy.id}>
                 <TableCell className="!overflow-hidden">
                   <div className="flex items-center gap-2 min-w-0">
                     <span
@@ -64,7 +64,7 @@ export function ProxyList({
                     >
                       {t(`dashboard.proxy.kind.${kind}` as never, kind)}
                     </span>
-                    <Text className="truncate" title={proxy.name} weight="semibold">{proxy.name}</Text>
+                    <Text className="truncate" title={proxy.name}>{proxy.name}</Text>
                   </div>
                 </TableCell>
                 <TableCell className="!overflow-hidden">
@@ -73,7 +73,7 @@ export function ProxyList({
                   </Text>
                 </TableCell>
                 <TableCell>
-                  <div className="flex justify-center gap-1">
+                  <div className="flex justify-end gap-1">
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<EditRegular />}
