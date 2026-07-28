@@ -196,6 +196,7 @@ export interface ResponsesFunctionToolCallItem {
   id?: string;
   call_id: string;
   name: string;
+  namespace?: string;
   arguments: string;
   status: 'completed' | 'in_progress' | 'incomplete';
   caller?: ResponsesToolCaller | null;
@@ -941,6 +942,7 @@ export interface ResponsesOutputFunctionCall {
   id?: string;
   call_id: string;
   name: string;
+  namespace?: string;
   arguments: string;
   status: string;
   caller?: ResponsesToolCaller | null;

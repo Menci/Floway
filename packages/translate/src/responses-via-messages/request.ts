@@ -56,7 +56,7 @@ export interface TargetRequestResult {
   customToolNames: Set<string>;
   namespaceToolNames: {
     sourceToTarget: Map<string, string>;
-    targetToSource: Map<string, string>;
+    targetToSource: Map<string, { namespace: string; name: string }>;
   };
 }
 
@@ -242,14 +242,16 @@ const translateResponsesInput = async (
         content: agentMessageContent(item),
       }, loadRemoteImage));
       break;
-    case 'function_call':
+    case 'function_call': {
+      const sourceName = item.namespace === undefined ? item.name : `${item.namespace}.${item.name}`;
       appendAssistantBlock(messages, {
         type: 'tool_use',
         id: item.call_id,
-        name: namespaceSourceToTarget.get(item.name) ?? item.name,
+        name: namespaceSourceToTarget.get(sourceName) ?? item.name,
         input: parseToolArgumentsObject(item.arguments),
       });
       break;
+    }
     case 'function_call_output':
       appendUserBlock(messages, {
         type: 'tool_result',
@@ -386,7 +388,7 @@ const translateTools = (
       const sourceName = `${tool.name}.${functionTool.name}`;
       const targetName = uniqueToolName(namespaceTargetName(tool.name, functionTool.name), reservedNames);
       namespaceToolNames.sourceToTarget.set(sourceName, targetName);
-      namespaceToolNames.targetToSource.set(targetName, sourceName);
+      namespaceToolNames.targetToSource.set(targetName, { namespace: tool.name, name: functionTool.name });
       out.push({
         name: targetName,
         ...(typeof functionTool.description === 'string' ? { description: functionTool.description } : {}),

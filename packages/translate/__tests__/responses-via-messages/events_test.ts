@@ -773,7 +773,7 @@ test('flattened namespace tool calls recover their source Responses name', () =>
     'resp_test',
     'claude-test',
     new Set(),
-    new Map([['web_run', 'web.run']]),
+    new Map([['web_run', { namespace: 'web', name: 'run' }]]),
   );
 
   translateMessagesEventToResponsesEvents(
@@ -792,7 +792,8 @@ test('flattened namespace tool calls recover their source Responses name', () =>
   const [item] = state.completedItems;
   assertEquals(item.type, 'function_call');
   if (item.type !== 'function_call') throw new Error('expected function_call');
-  assertEquals(item.name, 'web.run');
+  assertEquals(item.namespace, 'web');
+  assertEquals(item.name, 'run');
   assertEquals(item.arguments, '{"search_query":[]}');
 });
 

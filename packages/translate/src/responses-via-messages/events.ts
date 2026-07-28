@@ -65,6 +65,7 @@ type OutputBlockInfo =
     itemId: string;
     toolCallId: string;
     toolName: string;
+    toolNamespace?: string;
     toolArguments: string;
   }
   | {
@@ -88,7 +89,7 @@ interface MessagesToResponsesStreamState {
   stopReason?: MessagesMessageDeltaEvent['delta']['stop_reason'];
   stopDetails?: MessagesRefusalStopDetails | null;
   customToolNames: ReadonlySet<string>;
-  namespaceTargetToSource: ReadonlyMap<string, string>;
+  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }>;
 }
 
 const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesResult['status']): ResponsesResult => {
@@ -198,18 +199,19 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
     }
 
     const itemId = createRandomResponsesItemId('function_call');
-    const sourceToolName = state.namespaceTargetToSource.get(event.content_block.name) ?? event.content_block.name;
+    const sourceTool = state.namespaceTargetToSource.get(event.content_block.name);
     const info: OutputBlockInfo = {
       type: 'tool_use',
       outputIndex,
       itemId,
       toolCallId: event.content_block.id,
-      toolName: sourceToolName,
+      toolName: sourceTool?.name ?? event.content_block.name,
+      ...(sourceTool !== undefined ? { toolNamespace: sourceTool.namespace } : {}),
       toolArguments: '',
     };
     state.blockMap.set(event.index, info);
 
-    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress'));
+    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress', info.toolNamespace));
   }
   case 'fallback':
     state.model = event.content_block.to.model;
@@ -347,7 +349,7 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
     return responses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
   }
 
-  const item = responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed');
+  const item = responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed', info.toolNamespace);
 
   state.completedItems.push(item);
 
@@ -358,7 +360,7 @@ export const createMessagesToResponsesStreamState = (
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
-  namespaceTargetToSource: ReadonlyMap<string, string> = new Map(),
+  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
 ): MessagesToResponsesStreamState => ({
   responseId,
   model,
@@ -420,7 +422,7 @@ export const translateToSourceEvents = async function* (
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
-  namespaceTargetToSource: ReadonlyMap<string, string> = new Map(),
+  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   const state = createMessagesToResponsesStreamState(responseId, model, customToolNames, namespaceTargetToSource);
 

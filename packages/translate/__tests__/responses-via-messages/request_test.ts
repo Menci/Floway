@@ -608,7 +608,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
     ...minimalPayload,
     input: [
       { type: 'message', role: 'user', content: 'search' },
-      { type: 'function_call', call_id: 'call_web', name: 'web.run', arguments: '{"search_query":[]}', status: 'completed' },
+      { type: 'function_call', call_id: 'call_web', namespace: 'web', name: 'run', arguments: '{"search_query":[]}', status: 'completed' },
     ],
     tools: [
       { type: 'function', name: 'web_run', parameters: { type: 'object' }, strict: false },
@@ -618,7 +618,7 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   });
 
   assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
-  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', 'web.run']]));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run' }]]));
   assertEquals(result.target.tools, [
     {
       name: 'web_run',
