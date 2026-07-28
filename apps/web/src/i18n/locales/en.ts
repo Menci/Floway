@@ -650,9 +650,14 @@ const en = {
                   'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
             },
             'demote-developer-to-system': {
-              label: 'Rewrite developer Roles',
+              label: 'Demote developer role to system',
               description:
-                  'The latest OpenAI API specification includes the `developer` role (`role`), but some upstreams do not support it.\nEnable this option to rewrite `developer` as `system` before sending requests to the upstream.\nFor example, Codex system prompts use the `developer` role, while DeepSeek does not support it; enable this option in that case.',
+                  'Rewrite messages with the `developer` role to `system` for upstreams that do not recognize the developer role.',
+            },
+            'promote-system-to-developer': {
+              label: 'Promote system role to developer',
+              description:
+                  'Rewrite messages with the `system` role to `developer` for upstreams that reject system-role input while accepting the developer role.',
             },
             'strip-billing-attribution': {
               label: 'Remove Claude Code Billing Attribution',

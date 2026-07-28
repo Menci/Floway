@@ -29,6 +29,7 @@ const flagGroups: readonly { id: FlagGroupId; flagIds: readonly string[] }[] = [
       'disable-reasoning-on-forced-tool-choice',
       'demote-interleaved-system-to-user',
       'demote-developer-to-system',
+      'promote-system-to-developer',
     ],
   },
   {
@@ -121,7 +122,7 @@ export function FeatureFlagsEditor({
         <Text as="h2" size={300} weight="semibold" className="!m-0 px-1">
           {t(`dashboard.upstreamEditor.flags.groups.${group.id}`)}
         </Text>
-        <div className="overflow-hidden rounded-lg border border-solid border-fui-stroke1 bg-fui-bg2">
+        <div>
           {group.flags.map(renderFlag)}
         </div>
       </section>
@@ -131,7 +132,7 @@ export function FeatureFlagsEditor({
         <Text as="h2" size={300} weight="semibold" className="!m-0 px-1">
           {t('dashboard.upstreamEditor.flags.groups.other')}
         </Text>
-        <div className="overflow-hidden rounded-lg border border-solid border-fui-stroke1 bg-fui-bg2">
+        <div>
           {otherFlags.map(renderFlag)}
         </div>
       </section>
