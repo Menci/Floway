@@ -170,13 +170,11 @@ const en = {
           label: 'Floway users',
           username: 'Username',
           role: 'Role',
-          telemetry: 'Global telemetry',
           upstreams: 'Upstream access',
           created: 'Created',
           actions: 'Actions',
         },
         role: { admin: 'Administrator', operator: 'Operator' },
-        state: { enabled: 'Enabled', scoped: 'Own data only' },
         upstreams: {
           all: 'All upstreams',
           count_one: '{{count}} upstream',
@@ -202,9 +200,6 @@ const en = {
               'Can manage users, upstreams, search configuration, and data transfer.',
           userOneLocked: 'The seed administrator cannot be demoted.',
           selfLocked: 'You cannot demote your own account.',
-          telemetry: 'Global telemetry visibility',
-          telemetryDescription: "Can view other users' usage and performance.",
-          telemetryAdmin: 'Administrators always have global telemetry visibility.',
         },
         validation: {
           username: 'Use 1-64 letters, numbers, underscores, dots, or hyphens.',

@@ -161,13 +161,11 @@ const zhHansCN = {
           label: 'Floway 用户',
           username: '用户名',
           role: '角色',
-          telemetry: '全局观测',
           upstreams: '上游权限',
           created: '创建时间',
           actions: '操作',
         },
         role: { admin: '管理员', operator: '操作员' },
-        state: { enabled: '已启用', scoped: '仅自己的数据' },
         upstreams: {
           all: '全部上游',
           count_one: '{{count}} 个上游',
@@ -191,9 +189,6 @@ const zhHansCN = {
           administratorDescription: '可以管理用户、上游、搜索配置和数据迁移。',
           userOneLocked: '初始管理员不能被降级。',
           selfLocked: '不能降级自己的账号。',
-          telemetry: '全局观测权限',
-          telemetryDescription: '可以查看其他用户的用量与性能数据。',
-          telemetryAdmin: '管理员始终拥有全局观测权限。',
         },
         validation: {
           username: '用户名须为 1-64 位字母、数字、下划线、点或连字符。',

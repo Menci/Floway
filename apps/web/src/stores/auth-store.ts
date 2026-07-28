@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { type AuthUser, type LoginResponse } from '../api/auth';
 import { getCurrentSession, api } from '../api/client';
-import { clearSessionToken, getSessionToken } from '../auth/session';
+import { clearSessionToken, getSessionToken, onSessionInvalidated } from '../auth/session';
 
 type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'unauthenticated' | 'error';
 
@@ -122,3 +122,5 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     set({ status: 'authenticated', user, error: null });
   },
 }));
+
+onSessionInvalidated(() => useAuthStore.getState().clear());

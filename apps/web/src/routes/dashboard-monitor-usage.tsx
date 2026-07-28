@@ -30,7 +30,7 @@ export default function DashboardMonitorUsage() {
   const { i18n, t } = useTranslation();
   const { user } = useDashboardOutletContext();
   const clearAuth = useAuthStore(state => state.clear);
-  const initialView: UsageView = user.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
+  const initialView: UsageView = user.isAdmin ? 'all-by-user' : 'self-by-key';
   const [view, setView] = useState<UsageView>(initialView);
   const [range, setRange] = useState<UsageRange>('today');
   const [loadedRange, setLoadedRange] = useState<UsageRange>('today');
@@ -52,7 +52,7 @@ export default function DashboardMonitorUsage() {
 
   const errorStyles = useErrorStyles();
 
-  const canSwitchView = user.canViewGlobalTelemetry;
+  const canSwitchView = user.isAdmin;
   const locale = localeForLanguage(i18n.language);
 
   const refresh = useCallback(async () => {

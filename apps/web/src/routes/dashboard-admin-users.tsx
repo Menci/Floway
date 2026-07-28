@@ -62,7 +62,6 @@ interface UserFormValues {
   username: string;
   password: string;
   isAdmin: boolean;
-  canViewGlobalTelemetry: boolean;
   upstreamOverride: boolean;
   upstreamIds: string[];
 }
@@ -269,12 +268,11 @@ function UsersTable({
 
   return (
     <div className="min-w-0 overflow-x-auto">
-      <Table aria-label={t('dashboard.users.table.label')} className="min-w-[850px]">
+      <Table aria-label={t('dashboard.users.table.label')} className="min-w-[720px]">
         <TableHeader>
           <TableRow>
             <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.telemetry')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.created')}</TableHeaderCell>
             <TableHeaderCell className="!text-right">
@@ -295,11 +293,6 @@ function UsersTable({
                 <TableCell>
                   <Badge appearance="tint" color={user.isAdmin ? 'brand' : 'informative'}>
                     {t(`dashboard.users.role.${user.isAdmin ? 'admin' : 'operator'}`)}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge appearance="tint" color={user.isAdmin || user.canViewGlobalTelemetry ? 'success' : 'subtle'}>
-                    {t(`dashboard.users.state.${user.isAdmin || user.canViewGlobalTelemetry ? 'enabled' : 'scoped'}`)}
                   </Badge>
                 </TableCell>
                 <TableCell>
@@ -367,7 +360,6 @@ function UserDialog({
       username: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/, 'dashboard.users.validation.username'),
       password: z.string().max(1024, 'dashboard.users.validation.passwordMax'),
       isAdmin: z.boolean(),
-      canViewGlobalTelemetry: z.boolean(),
       upstreamOverride: z.boolean(),
       upstreamIds: z.array(z.string()),
     }).superRefine((value, ctx) => {
@@ -398,13 +390,11 @@ function UserDialog({
           username: form.username.trim(),
           password: form.password,
           isAdmin: form.isAdmin,
-          canViewGlobalTelemetry: form.canViewGlobalTelemetry,
           upstreamIds,
         }
       : {
           username: form.username.trim(),
           ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
-          canViewGlobalTelemetry: form.canViewGlobalTelemetry,
           upstreamIds,
         };
     const result = await callApi<ControlPlaneUser | { user: ControlPlaneUser }>(() =>
@@ -470,7 +460,7 @@ function UserDialog({
           )}
         />
       )}
-      <div className="grid grid-cols-2 gap-3 max-[640px]:grid-cols-1">
+      <div className="grid gap-3">
         <PermissionToggle
           checked={values.isAdmin}
           description={adminLocked
@@ -479,15 +469,6 @@ function UserDialog({
           disabled={saving || adminLocked}
           label={t('dashboard.users.form.administrator')}
           onChange={checked => setValue('isAdmin', checked, { shouldValidate: true })}
-        />
-        <PermissionToggle
-          checked={values.isAdmin || values.canViewGlobalTelemetry}
-          description={values.isAdmin
-            ? t('dashboard.users.form.telemetryAdmin')
-            : t('dashboard.users.form.telemetryDescription')}
-          disabled={saving || values.isAdmin}
-          label={t('dashboard.users.form.telemetry')}
-          onChange={checked => setValue('canViewGlobalTelemetry', checked, { shouldValidate: true })}
         />
       </div>
       <UpstreamAccessPicker
@@ -699,7 +680,6 @@ function userFormDefaults(user: ControlPlaneUser | null): UserFormValues {
     username: user?.username ?? '',
     password: '',
     isAdmin: user?.isAdmin ?? false,
-    canViewGlobalTelemetry: user?.canViewGlobalTelemetry ?? false,
     upstreamOverride: user?.upstreamIds !== null && user?.upstreamIds !== undefined,
     upstreamIds: user?.upstreamIds ?? [],
   };

@@ -75,7 +75,7 @@ export default function DashboardMonitorPerformance() {
   const clearAuth = useAuthStore(state => state.clear);
   const [searchParams, setSearchParams] = useSearchParams();
   const initialState = useMemo(() => parsePerformanceUrlState(searchParams), []);
-  const view: PerformanceView = user.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
+  const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
   const [range, setRange] = useState<PerformanceRange>(initialState.range);
   const [loadedRange, setLoadedRange] = useState<PerformanceRange>(initialState.range);
   // Stamped by each completed load; the initial value only has to be a

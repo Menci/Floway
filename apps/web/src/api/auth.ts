@@ -1,14 +1,13 @@
 import {
-  clearSessionToken,
   flowaySessionHeader,
   getSessionToken,
+  invalidateSession,
 } from '../auth/session';
 
 export interface AuthUser {
   id: number;
   username: string;
   isAdmin: boolean;
-  canViewGlobalTelemetry: boolean;
   upstreamIds: string[] | null;
 }
 
@@ -43,7 +42,7 @@ export const authFetch = async (
 
   const response = await fetch(input, { ...init, headers });
   if (response.status === 401) {
-    clearSessionToken();
+    invalidateSession();
   }
   return response;
 };
