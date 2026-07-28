@@ -3,7 +3,6 @@ import { wrapNativeResponsesClientOutput } from './client-output.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
-import { tokenUsageFromResponsesResult } from './usage.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -88,7 +87,7 @@ export const responsesServe = {
     return {
       ...result,
       result: clientResult,
-      usage: tokenUsageFromResponsesResult(clientResult),
+      usage: result.usage,
     };
   },
 };

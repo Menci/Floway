@@ -3,27 +3,51 @@
 // https://developers.openai.com/api/docs/guides/priority-processing
 // https://docs.claude.com/en/api/service-tiers
 // https://docs.claude.com/en/build-with-claude/fast-mode
+// A response can span several upstream turns — the server-tool shim's ReAct
+// loop, a compaction round trip — and we are billed for every one.
+export const sumBillableUsage = (a: BillableUsage | undefined, b: BillableUsage | undefined): BillableUsage | undefined => {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return {
+    input: a.input + b.input,
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    cacheWrite1h: a.cacheWrite1h + b.cacheWrite1h,
+    output: a.output + b.output,
+    // A tier cannot be summed; the latest turn's is the one served.
+    ...(b.tier ?? a.tier ? { tier: b.tier ?? a.tier } : {}),
+  };
+};
+
 export const billableServiceTier = (tier: string | null | undefined): string | null => {
   if (tier == null) return null;
   const normalized = tier.trim().toLowerCase();
   return normalized === '' || normalized === 'default' || normalized === 'standard' ? null : tier;
 };
 
-// Symbol-keyed billing facts survive in-process translation and reassembly but
-// are omitted by JSON serialization, so protocol clients see only native fields.
-export const USAGE_BILLING = Symbol('usage-billing');
-
-export interface UsageBillingMetadata {
-  cacheWriteTokenCount?: number;
-  cacheWrite1hTokenCount?: number;
-  serviceTier?: string;
+// The complete, canonical view of what an upstream turn cost, read from that
+// upstream's own usage in its own protocol. Pricing reads this and nothing
+// else — in particular it never reads the usage Floway sends the client, which
+// is a wire projection whose protocol may have no field for a bucket we are
+// billed for: an Anthropic 1-hour cache write reaching a Responses client, or
+// a cache-write count or service tier reaching Gemini, which has neither.
+//
+// Counts are exclusive — `input` excludes `cacheRead` and both cache-write
+// buckets — because that is how the buckets are priced, rather than how any
+// one protocol happens to report its totals.
+export interface BillableUsage {
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cacheWrite1h: number;
+  output: number;
+  tier?: string;
 }
 
 export const splitCacheWriteTokens = (
   totalCacheWriteTokens: number | undefined,
-  billing: UsageBillingMetadata | undefined,
+  cacheWrite1h: number,
 ): { cacheWrite: number; cacheWrite1h: number } => {
-  const cacheWrite1h = billing?.cacheWrite1hTokenCount ?? 0;
   if (!Number.isSafeInteger(cacheWrite1h) || cacheWrite1h < 0) {
     throw new RangeError(`1-hour cache-write tokens must be a non-negative safe integer: ${cacheWrite1h}`);
   }

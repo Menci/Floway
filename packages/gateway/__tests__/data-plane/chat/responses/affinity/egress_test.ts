@@ -13,7 +13,8 @@ const frames = async function* (values: ProtocolFrame<ResponsesStreamEvent>[]) {
 };
 
 const immediateCodec: AffinityEgressCodec = {
-  wrap: async value => `wrapped:${value ?? 'synthetic'}`,
+  wrap: async (value, _affinity, _domain, options) =>
+    `wrapped:${value ?? (options?.syntheticItem === true ? 'synthetic-item' : 'synthetic-slot')}`,
 };
 
 const response = (output: ResponsesResult['output'], status: ResponsesResult['status'] = 'completed'): ResponsesResult => ({
@@ -122,7 +123,7 @@ describe('Responses affinity egress', () => {
     ]);
     expect(output[0]).toMatchObject({ event: { output_index: 0, item: { type: 'reasoning' } } });
     expect(output[1]).toMatchObject({
-      event: { output_index: 0, item: { type: 'reasoning', encrypted_content: 'wrapped:synthetic' } },
+      event: { output_index: 0, item: { type: 'reasoning', encrypted_content: 'wrapped:synthetic-item' } },
     });
     expect(output[2]).toMatchObject({ event: { output_index: 1, item: message } });
     expect(output[5]).toMatchObject({ event: { response: { output: [{ type: 'reasoning' }, message] } } });
@@ -139,8 +140,8 @@ describe('Responses affinity egress', () => {
 
     expect(output).toHaveLength(3);
     expect(output[0]).not.toMatchObject({ event: { item: { fingerprint: expect.anything() } } });
-    expect(output[1]).toMatchObject({ event: { item: { fingerprint: 'wrapped:synthetic' } } });
-    expect(output[2]).toMatchObject({ event: { response: { output: [{ fingerprint: 'wrapped:synthetic' }] } } });
+    expect(output[1]).toMatchObject({ event: { item: { fingerprint: 'wrapped:synthetic-slot' } } });
+    expect(output[2]).toMatchObject({ event: { response: { output: [{ fingerprint: 'wrapped:synthetic-slot' }] } } });
   });
 
   test('does not synthesize carriers for later program items', async () => {
