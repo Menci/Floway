@@ -34,7 +34,7 @@ import { streamPlaygroundText } from '../components/playground/playground-stream
 import { Combobox, Input, Select, Textarea } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { SegmentedControl } from '../components/ui/segmented-control';
+import { ChoiceGroup } from '../components/ui/choice-group';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
@@ -414,7 +414,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               </Field>
               <div className="grid gap-0.5">
                 <Text weight="semibold">{t('dashboard.playground.api')}</Text>
-                <SegmentedControl ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
+                <ChoiceGroup ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
               </div>
               <Field label={t('dashboard.playground.model')}>
                 <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {

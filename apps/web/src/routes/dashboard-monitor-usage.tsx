@@ -9,7 +9,7 @@ import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
-import { SegmentedControl } from '../components/ui/segmented-control';
+import { ChoiceGroup } from '../components/ui/choice-group';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
 import { ChartSection } from '../components/usage/chart-section';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
@@ -243,7 +243,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
               {t('dashboard.usage.tokenUsage')}
             </Text>
             {canSwitchView && (
-              <SegmentedControl
+              <ChoiceGroup
                 ariaLabel={t('dashboard.usage.view.label')}
                 items={[
                   {
@@ -275,7 +275,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
             </Tooltip>
           </div>
 
-          <SegmentedControl
+          <ChoiceGroup
             ariaLabel={t('dashboard.usage.range.label')}
             items={[
               { value: 'today', label: t('dashboard.usage.range.today') },

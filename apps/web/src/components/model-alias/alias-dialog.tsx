@@ -16,7 +16,7 @@ import type { ControlPlaneModel, ModelAlias, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input, Select } from '../ui/fluent-form-controls';
-import { SegmentedControl } from '../ui/segmented-control';
+import { ChoiceGroup } from '../ui/choice-group';
 import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
 const { Accordion, AccordionHeader, AccordionItem, AccordionPanel, Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Switch, Text } = fluentComponents;
@@ -109,7 +109,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
       <Controller control={control} name="name" render={({ field }) => <Field required label={t('dashboard.modelAliases.form.name')} validationMessage={errors.name?.message ? t(errors.name.message) : undefined} validationState={errors.name ? 'error' : undefined}><Input {...field} className="font-mono" disabled={saving} placeholder={t('dashboard.modelAliases.form.namePlaceholder')} /></Field>} />
       <Controller control={control} name="displayName" render={({ field }) => <Field label={t('dashboard.modelAliases.form.displayName')}><Input {...field} disabled={saving} placeholder={values.name || t('dashboard.modelAliases.form.displayPlaceholder')} /></Field>} />
       <Controller control={control} name="kind" render={({ field }) => <Field label={t('dashboard.modelAliases.form.kind')}><Select disabled={saving} value={field.value} onChange={(_, data) => changeKind(data.value as ModelKind)}>{MODEL_KINDS.map(modelKind => <option key={modelKind} value={modelKind}>{t(`dashboard.modelAliases.kind.${modelKind}`)}</option>)}</Select></Field>} />
-      <Field label={t('dashboard.modelAliases.form.selection')}><SegmentedControl ariaLabel={t('dashboard.modelAliases.form.selection')} value={values.selection} onChange={value => setValue('selection', value as AliasFormValues['selection'])} items={[{ value: 'first-available', label: t('dashboard.modelAliases.selection.first') }, { value: 'random', label: t('dashboard.modelAliases.selection.random') }]} /></Field>
+      <Field label={t('dashboard.modelAliases.form.selection')}><ChoiceGroup ariaLabel={t('dashboard.modelAliases.form.selection')} value={values.selection} onChange={value => setValue('selection', value as AliasFormValues['selection'])} items={[{ value: 'first-available', label: t('dashboard.modelAliases.selection.first') }, { value: 'random', label: t('dashboard.modelAliases.selection.random') }]} /></Field>
     </div>
     <section className="grid gap-2" role="group" aria-labelledby="alias-targets-heading">
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><Text id="alias-targets-heading" size={400} weight="semibold">{t('dashboard.modelAliases.target.heading')}</Text><Text block size={200} className="text-fui-fg2">{t('dashboard.modelAliases.target.description')}</Text></div><Button className="!whitespace-nowrap flex-none" icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button></div>

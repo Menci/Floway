@@ -36,7 +36,7 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Select } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { SegmentedControl } from '../components/ui/segmented-control';
+import { ChoiceGroup } from '../components/ui/choice-group';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
@@ -214,13 +214,13 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
       <div className="flex flex-wrap items-center gap-2 justify-between">
-        <SegmentedControl ariaLabel={t('dashboard.performance.metric.label')} items={[
+        <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
           { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
           { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
         ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
         <div className="flex flex-wrap items-center gap-2">
-          <SegmentedControl ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-          <SegmentedControl ariaLabel={t('dashboard.performance.range.label')} items={[
+          <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+          <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
             { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
           ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
         </div>

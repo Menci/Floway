@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { KeySource } from './key-source';
 import { fluentComponents } from '../../fluent';
 import { Input } from '../ui/fluent-form-controls';
-import { SegmentedControl } from '../ui/segmented-control';
+import { ChoiceGroup } from '../ui/choice-group';
 
 const { Text, makeStyles } = fluentComponents;
 const useStyles = makeStyles({ fieldError: { color: 'var(--colorPaletteRedForeground1)' } });
@@ -36,7 +36,7 @@ export function KeySourceControl({
       className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 min-w-0 max-[620px]:grid-cols-1"
       role="group"
     >
-      <SegmentedControl
+      <ChoiceGroup
         ariaLabel={label}
         items={[
           { value: 'generate', label: t('dashboard.apiKeys.source.generate'), disabled },
