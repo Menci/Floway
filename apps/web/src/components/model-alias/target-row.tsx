@@ -48,13 +48,13 @@ export function AliasTargetRow({
 
   return (
     <div className="rounded-lg border border-solid border-fui-stroke1 overflow-hidden" role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
-      <div className="grid grid-cols-[32px_minmax(180px,1fr)_auto] gap-2 items-center p-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[32px_minmax(180px,1fr)_134px] gap-2 items-center p-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
         <Button
           appearance="subtle"
           aria-expanded={expanded}
           aria-label={t('dashboard.modelAliases.target.toggle')}
           disabled={disabled || kind !== 'chat'}
-          icon={<ChevronDownRegular className={expanded ? 'rotate-180' : ''} />}
+          icon={<ChevronDownRegular className={expanded ? 'rotate-180' : ''} fontSize={20} />}
           onClick={() => setExpanded(value => !value)}
           size="small"
         />
@@ -69,15 +69,17 @@ export function AliasTargetRow({
         >
           {options.map(id => <Option key={id} text={id}>{id}</Option>)}
         </Combobox>
-        <div className="flex items-center gap-0.5 max-[620px]:col-span-2 max-[620px]:justify-end">
-          {modelWarning && <Tooltip content={t(`dashboard.modelAliases.warnings.${modelWarning.key}`, modelWarning.values)} relationship="description"><span className="inline-flex"><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} /></span></Tooltip>}
-          <Button appearance="subtle" aria-label={t('dashboard.modelAliases.target.moveUp')} disabled={disabled || isFirst} icon={<ArrowUpRegular />} onClick={() => onMove(-1)} size="small" />
-          <Button appearance="subtle" aria-label={t('dashboard.modelAliases.target.moveDown')} disabled={disabled || isLast} icon={<ArrowDownRegular />} onClick={() => onMove(1)} size="small" />
-          <Button appearance="subtle" aria-label={t('dashboard.modelAliases.target.remove')} disabled={disabled || isSole} icon={<DeleteRegular />} onClick={onRemove} size="small" />
+        <div className="grid grid-cols-4 gap-0.5 w-[134px] max-[620px]:col-span-2 max-[620px]:justify-self-end">
+          {modelWarning
+            ? <Tooltip content={t(`dashboard.modelAliases.warnings.${modelWarning.key}`, modelWarning.values)} relationship="description"><span className="grid h-8 w-8 place-items-center"><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} fontSize={20} /></span></Tooltip>
+            : <span aria-hidden className="h-8 w-8" />}
+          <Button appearance="subtle" aria-label={t('dashboard.modelAliases.target.moveUp')} disabled={disabled || isFirst} icon={<ArrowUpRegular fontSize={20} />} onClick={() => onMove(-1)} size="small" />
+          <Button appearance="subtle" aria-label={t('dashboard.modelAliases.target.moveDown')} disabled={disabled || isLast} icon={<ArrowDownRegular fontSize={20} />} onClick={() => onMove(1)} size="small" />
+          <Button appearance="subtle" aria-label={t('dashboard.modelAliases.target.remove')} disabled={disabled || isSole} icon={<DeleteRegular fontSize={20} />} onClick={onRemove} size="small" />
         </div>
       </div>
       {expanded && kind === 'chat' && (
-        <div className="grid grid-cols-2 gap-3 m-2 mt-0 p-3 rounded-lg bg-fui-bg2 max-[620px]:grid-cols-1">
+        <div className="grid grid-cols-2 gap-3 m-2 mt-0 p-3 rounded-lg max-[620px]:grid-cols-1">
           <RuleCombobox label={t('dashboard.modelAliases.rules.effort')} value={target.rules.reasoning?.effort ?? ''} items={suggestions.effort} disabled={disabled} warning={warningFor('reasoning.effort')} onChange={value => patchReasoning({ effort: value || undefined })} />
           <Field label={t('dashboard.modelAliases.rules.budget')} validationMessage={warningFor('reasoning.budget_tokens') ? t(`dashboard.modelAliases.warnings.${warningFor('reasoning.budget_tokens')!.key}`, warningFor('reasoning.budget_tokens')!.values) : undefined} validationState={warningFor('reasoning.budget_tokens') ? 'warning' : undefined}>
             <Input disabled={disabled} inputMode="numeric" min={0} type="number" value={target.rules.reasoning?.budget_tokens?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: data.value === '' ? undefined : Number(data.value) })} />
