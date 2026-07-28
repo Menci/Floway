@@ -7,6 +7,7 @@ import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-powershell';
 import 'prismjs/components/prism-toml';
 
+import { prismTokenStyles } from './prism-token-styles';
 import { ScrollArea } from './scroll-area';
 import { fluentComponents } from '../../fluent';
 
@@ -44,9 +45,11 @@ const useStyles = makeStyles({
     tabSize: '2',
   },
   code: {
+    ...prismTokenStyles,
     '& .token.table': {
       display: 'inline',
     },
+    color: 'var(--colorNeutralForeground1)',
     fontFamily: 'monospace',
     whiteSpace: 'pre',
   },

@@ -174,9 +174,6 @@ importers:
       overlayscrollbars:
         specifier: 2.13.0
         version: 2.13.0(patch_hash=0989d8ab263bb64de03bfa5ce05a0492b7a0b2211ac83be29beaf137c31b2e22)
-      prism-themes:
-        specifier: ^1.9.0
-        version: 1.9.0
       prismjs:
         specifier: ^1.30.0
         version: 1.30.0
@@ -4218,9 +4215,6 @@ packages:
   pretty-format@27.5.1:
     resolution: {integrity: sha512-Qb1gy5OrP5+zDf2Bvnzdl3jsTf1qXVMazbvCoKhtKqVs4/YK4ozX4gKQJJVyNe+cajNPn0KoC0MC3FUmaHWEmQ==}
     engines: {node: ^10.13.0 || ^12.13.0 || ^14.15.0 || >=15.0.0}
-
-  prism-themes@1.9.0:
-    resolution: {integrity: sha512-tX2AYsehKDw1EORwBps+WhBFKc2kxfoFpQAjxBndbZKr4fRmMkv47XN0BghC/K1qwodB1otbe4oF23vUTFDokw==}
 
   prismjs@1.30.0:
     resolution: {integrity: sha512-DEvV2ZF2r2/63V+tK8hQvrR2ZGn10srHbXviTlcv7Kpzw8jWiNTqbVgjO3IY8RxrrOUF8VPMQQFysYYYv0YZxw==}
@@ -9548,8 +9542,6 @@ snapshots:
       ansi-regex: 5.0.1
       ansi-styles: 5.2.0
       react-is: 17.0.2
-
-  prism-themes@1.9.0: {}
 
   prismjs@1.30.0: {}
 
