@@ -54,6 +54,10 @@ export interface TargetRequestResult {
    * `custom_tool_call` outputs.
    */
   customToolNames: Set<string>;
+  namespaceToolNames: {
+    sourceToTarget: Map<string, string>;
+    targetToSource: Map<string, string>;
+  };
 }
 
 const translateUserMessage = async (message: ResponsesInputMessage, loadRemoteImage: RemoteImageLoader): Promise<MessagesUserMessage> => {
@@ -189,7 +193,11 @@ const appendUserBlock = (messages: MessagesMessage[], block: MessagesToolResultB
   messages.push({ role: 'user', content: [block] });
 };
 
-const translateResponsesInput = async (input: ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<{ messages: MessagesMessage[]; systemBlocks: MessagesTextBlock[] }> => {
+const translateResponsesInput = async (
+  input: ResponsesInputItem[],
+  loadRemoteImage: RemoteImageLoader,
+  namespaceSourceToTarget: ReadonlyMap<string, string>,
+): Promise<{ messages: MessagesMessage[]; systemBlocks: MessagesTextBlock[] }> => {
   // Hoist the leading contiguous run of system/developer input messages into
   // systemBlocks (→ top-level Messages.system), preserving each input_text
   // part as its own MessagesTextBlock so part boundaries survive the hoist.
@@ -238,7 +246,7 @@ const translateResponsesInput = async (input: ResponsesInputItem[], loadRemoteIm
       appendAssistantBlock(messages, {
         type: 'tool_use',
         id: item.call_id,
-        name: item.name,
+        name: namespaceSourceToTarget.get(item.name) ?? item.name,
         input: parseToolArgumentsObject(item.arguments),
       });
       break;
@@ -295,17 +303,46 @@ const translateResponsesInput = async (input: ResponsesInputItem[], loadRemoteIm
   return { messages, systemBlocks };
 };
 
-const translateTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): MessagesTool[] | undefined => {
-  // Translated Messages targets do not currently have a faithful bridge
-  // for hosted/deferred Responses tools (`web_search`, `tool_search`,
-  // `namespace`, `image_generation`, and future builtin names). Native
-  // Responses targets receive those entries unchanged; this translator
-  // narrows to function and Freeform `custom` tools, recording the latter
-  // in `customToolNames` so the events translator can reverse the wrap.
-  // The shim's web_search function tool reaches this code under
-  // its resolved name as an ordinary function tool — no special carve-out
-  // needed.
+const namespaceTargetName = (namespace: string, tool: string): string =>
+  `${namespace}_${tool}`.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
+
+const uniqueToolName = (preferred: string, reserved: Set<string>): string => {
+  if (!reserved.has(preferred)) {
+    reserved.add(preferred);
+    return preferred;
+  }
+  for (let suffix = 2; ; suffix++) {
+    const candidate = `${preferred}_${suffix}`;
+    if (!reserved.has(candidate)) {
+      reserved.add(candidate);
+      return candidate;
+    }
+  }
+};
+
+const translateTools = (
+  tools: ResponsesTool[] | null | undefined,
+  customToolNames: Set<string>,
+): {
+  tools: MessagesTool[] | undefined;
+  namespaceToolNames: TargetRequestResult['namespaceToolNames'];
+} => {
+  // Messages has no namespace container. Flatten each namespace function to
+  // a collision-safe Messages tool name and retain a bidirectional map so
+  // request history and target events recover the source `namespace.tool`
+  // identity. Other hosted/deferred Responses tools still require their own
+  // boundary shim before this translator.
   const out: MessagesTool[] = [];
+  const namespaceToolNames: TargetRequestResult['namespaceToolNames'] = {
+    sourceToTarget: new Map(),
+    targetToSource: new Map(),
+  };
+  const reservedNames = new Set(
+    (tools ?? []).flatMap(tool =>
+      (tool.type === 'function' || tool.type === 'custom') && typeof tool.name === 'string'
+        ? [tool.name]
+        : []),
+  );
 
   for (const tool of tools ?? []) {
     if (tool.type === 'function') {
@@ -324,13 +361,51 @@ const translateTools = (tools: ResponsesTool[] | null | undefined, customToolNam
         description: tool.description,
         input_schema: buildCustomToolInputSchema(tool.format),
       });
+      continue;
+    }
+    if (tool.type !== 'namespace') continue;
+    if (typeof tool.name !== 'string' || !Array.isArray(tool.tools)) {
+      throw new TranslatorInputError('Cannot translate a namespace tool without a string name and tools array to Messages.');
+    }
+    for (const child of tool.tools) {
+      if (child === null || typeof child !== 'object' || (child as { type?: unknown }).type !== 'function') {
+        throw new TranslatorInputError(`Cannot translate non-function child in namespace '${tool.name}' to Messages.`);
+      }
+      const functionTool = child as {
+        name?: unknown;
+        description?: unknown;
+        parameters?: unknown;
+        strict?: unknown;
+      };
+      if (typeof functionTool.name !== 'string'
+        || functionTool.parameters === null
+        || typeof functionTool.parameters !== 'object'
+        || Array.isArray(functionTool.parameters)) {
+        throw new TranslatorInputError(`Cannot translate malformed function child in namespace '${tool.name}' to Messages.`);
+      }
+      const sourceName = `${tool.name}.${functionTool.name}`;
+      const targetName = uniqueToolName(namespaceTargetName(tool.name, functionTool.name), reservedNames);
+      namespaceToolNames.sourceToTarget.set(sourceName, targetName);
+      namespaceToolNames.targetToSource.set(targetName, sourceName);
+      out.push({
+        name: targetName,
+        ...(typeof functionTool.description === 'string' ? { description: functionTool.description } : {}),
+        input_schema: functionTool.parameters as Record<string, unknown>,
+        ...(typeof functionTool.strict === 'boolean' ? { strict: functionTool.strict } : {}),
+      });
     }
   }
 
-  return out.length > 0 ? out : undefined;
+  return {
+    tools: out.length > 0 ? out : undefined,
+    namespaceToolNames,
+  };
 };
 
-const translateToolChoice = (toolChoice: ResponsesToolChoice | null | undefined): MessagesPayload['tool_choice'] => {
+const translateToolChoice = (
+  toolChoice: ResponsesToolChoice | null | undefined,
+  namespaceSourceToTarget: ReadonlyMap<string, string>,
+): MessagesPayload['tool_choice'] => {
   if (!toolChoice) return undefined;
 
   if (typeof toolChoice === 'string') {
@@ -349,7 +424,7 @@ const translateToolChoice = (toolChoice: ResponsesToolChoice | null | undefined)
   // Both function and wrapped custom tools land on the target as named tool
   // choices since they share the function-tool wire shape after translation.
   if (toolChoice.type === 'function' || toolChoice.type === 'custom') {
-    return toolChoice.name ? { type: 'tool', name: toolChoice.name } : undefined;
+    return toolChoice.name ? { type: 'tool', name: namespaceSourceToTarget.get(toolChoice.name) ?? toolChoice.name } : undefined;
   }
   return undefined;
 };
@@ -358,8 +433,12 @@ export const buildTargetRequest = async (source: ResponsesRequestPayload, option
   const payload = canonicalizeResponsesPayload(source);
   rejectProgrammaticResponsesPayload(payload, 'Messages');
   const customToolNames = new Set<string>();
-  const { messages, systemBlocks: hoistedSystemBlocks } = await translateResponsesInput(payload.input, options.loadRemoteImage ?? unavailableRemoteImageLoader);
-  const tools = translateTools(payload.tools, customToolNames);
+  const { tools, namespaceToolNames } = translateTools(payload.tools, customToolNames);
+  const { messages, systemBlocks: hoistedSystemBlocks } = await translateResponsesInput(
+    payload.input,
+    options.loadRemoteImage ?? unavailableRemoteImageLoader,
+    namespaceToolNames.sourceToTarget,
+  );
   // `payload.instructions` is the Responses canonical system field; leading
   // system/developer input items contribute additional blocks immediately
   // after it. Each source — the instructions field and each leading input
@@ -409,11 +488,11 @@ export const buildTargetRequest = async (source: ResponsesRequestPayload, option
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     stream: true,
     tools,
-    tool_choice: translateToolChoice(payload.tool_choice),
+    tool_choice: translateToolChoice(payload.tool_choice, namespaceToolNames.sourceToTarget),
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...serviceTierFields,
   };
 
-  return { target, customToolNames };
+  return { target, customToolNames, namespaceToolNames };
 };

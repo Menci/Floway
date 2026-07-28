@@ -14,16 +14,16 @@ export const translateResponsesViaMessages: TranslateTrip<
   { fallbackMaxOutputTokens?: number; loadRemoteImage: RemoteImageLoader }
 > = async (src, ctx) => {
   const responseId = synthesizeResponseId();
-  // customToolNames is produced inside the request translator (it sees the
-  // tools first) and read by the events translator so wrapped function calls
-  // can be projected back into `custom_tool_call` outputs.
-  const { target, customToolNames } = await buildTargetRequest(src, {
+  // Tool-name maps are produced inside the request translator (it sees the
+  // tools first) and read by the events translator so wrapped custom calls and
+  // flattened namespace calls recover their source Responses identities.
+  const { target, customToolNames, namespaceToolNames } = await buildTargetRequest(src, {
     fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens,
     loadRemoteImage: ctx.loadRemoteImage,
   });
 
   return {
     target,
-    events: frames => translateToSourceEvents(frames, responseId, ctx.model, customToolNames),
+    events: frames => translateToSourceEvents(frames, responseId, ctx.model, customToolNames, namespaceToolNames.targetToSource),
   };
 };

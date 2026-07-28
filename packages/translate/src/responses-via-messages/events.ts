@@ -88,6 +88,7 @@ interface MessagesToResponsesStreamState {
   stopReason?: MessagesMessageDeltaEvent['delta']['stop_reason'];
   stopDetails?: MessagesRefusalStopDetails | null;
   customToolNames: ReadonlySet<string>;
+  namespaceTargetToSource: ReadonlyMap<string, string>;
 }
 
 const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesResult['status']): ResponsesResult => {
@@ -197,12 +198,13 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
     }
 
     const itemId = createRandomResponsesItemId('function_call');
+    const sourceToolName = state.namespaceTargetToSource.get(event.content_block.name) ?? event.content_block.name;
     const info: OutputBlockInfo = {
       type: 'tool_use',
       outputIndex,
       itemId,
       toolCallId: event.content_block.id,
-      toolName: event.content_block.name,
+      toolName: sourceToolName,
       toolArguments: '',
     };
     state.blockMap.set(event.index, info);
@@ -352,7 +354,12 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
   return responses.functionCallDone(state, info.outputIndex, info.itemId, info.toolArguments, item);
 };
 
-export const createMessagesToResponsesStreamState = (responseId: string, model: string, customToolNames: ReadonlySet<string> = new Set()): MessagesToResponsesStreamState => ({
+export const createMessagesToResponsesStreamState = (
+  responseId: string,
+  model: string,
+  customToolNames: ReadonlySet<string> = new Set(),
+  namespaceTargetToSource: ReadonlyMap<string, string> = new Map(),
+): MessagesToResponsesStreamState => ({
   responseId,
   model,
   outputIndex: 0,
@@ -362,6 +369,7 @@ export const createMessagesToResponsesStreamState = (responseId: string, model: 
   completedItems: [],
   usage: messagesUsageSnapshot(),
   customToolNames,
+  namespaceTargetToSource,
 });
 
 export const translateMessagesEventToResponsesEvents = (event: MessagesStreamEvent, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
@@ -412,8 +420,9 @@ export const translateToSourceEvents = async function* (
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
+  namespaceTargetToSource: ReadonlyMap<string, string> = new Map(),
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const state = createMessagesToResponsesStreamState(responseId, model, customToolNames);
+  const state = createMessagesToResponsesStreamState(responseId, model, customToolNames, namespaceTargetToSource);
 
   for await (const event of upstreamMessagesEventsUntilTerminal(frames)) {
     for (const translated of translateMessagesEventToResponsesEvents(event, state)) {
