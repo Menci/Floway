@@ -412,23 +412,6 @@ export interface DeviceFlowStart {
   interval: number;
 }
 
-// Return shape of POST /api/upstreams/copilot/oauth/device-login/poll.
-// `complete` carries a `patch` the caller merges into its draft record;
-// the same patch is targeted-persisted server-side when the caller's
-// record has an id.
-export type DeviceFlowPoll =
-  | { status: 'pending' }
-  | { status: 'slow_down'; interval: number }
-  | { status: 'error'; error: string }
-  | {
-    status: 'complete';
-    user: CopilotUser;
-    patch: {
-      config: CopilotUpstreamConfig;
-      state: CopilotUpstreamState;
-    };
-  };
-
 // Backup / restore DTOs — the frontend is a pass-through and does not introspect
 // individual records, so the data arrays use unknown[].
 
