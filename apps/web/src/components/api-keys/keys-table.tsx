@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { UpstreamOption } from './types';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 const { Button, Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, Tooltip, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
 const useStyles = makeStyles({ selectedRow: { backgroundColor: 'var(--colorBrandBackground2)' }, selectedDot: { backgroundColor: 'var(--colorBrandForeground1)' }, accentText: { color: 'var(--colorBrandForeground1)' }, dangerText: { color: 'var(--colorPaletteRedForeground1)' } });
 export function KeysTable({
@@ -61,13 +62,15 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'created', compare: (a, b) => a.created_at.localeCompare(b.created_at),
         renderHeaderCell: () => t('dashboard.apiKeys.table.created'),
-        renderCell: key => <span title={fullDateTime(key.created_at)}>{shortDate(key.created_at)}</span>,
+        renderCell: key => <span title={dateTime(key.created_at)}>{shortDate(key.created_at)}</span>,
       }),
       createTableColumn<ApiKey>({
         columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? ''),
         renderHeaderCell: () => t('dashboard.apiKeys.table.lastUsed'),
         renderCell: key => key.last_used_at
-          ? <span title={fullDateTime(key.last_used_at)}>{relativeTime(key.last_used_at, t)}</span>
+          ? <span title={dateTime(key.last_used_at)}>
+              {relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })}
+            </span>
           : <span>{t('dashboard.apiKeys.table.never')}</span>,
       }),
       createTableColumn<ApiKey>({
@@ -160,33 +163,6 @@ function IconButton({
 }
 const truncateKey = (key: string) =>
   key.length <= 14 ? key : `${key.slice(0, 7)}...${key.slice(-4)}`;
-
-const shortDate = (value: string | null | undefined) =>
-  value
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
-    : '';
-
-const fullDateTime = (value: string | null | undefined) =>
-  value
-    ? new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }).format(new Date(value))
-    : '';
-
-const relativeTime = (
-  value: string,
-  t: ReturnType<typeof useTranslation>['t'],
-) => {
-  const diffSeconds = Math.round((new Date(value).getTime() - Date.now()) / 1000);
-  const abs = Math.abs(diffSeconds);
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-  if (abs < 60) return formatter.format(diffSeconds, 'second');
-  if (abs < 3600) return formatter.format(Math.round(diffSeconds / 60), 'minute');
-  if (abs < 86400) return formatter.format(Math.round(diffSeconds / 3600), 'hour');
-  if (abs < 2592000) return formatter.format(Math.round(diffSeconds / 86400), 'day');
-  return t('dashboard.apiKeys.table.usedOn', { date: shortDate(value) });
-};
 
 const upstreamsText = (
   key: ApiKey,

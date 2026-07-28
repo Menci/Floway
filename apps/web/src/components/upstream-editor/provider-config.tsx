@@ -10,6 +10,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
+import { ClaudeCodeAccountCard } from './claude-code-account-card';
 import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './editor-data';
 import { previewRecord } from './editor-data';
@@ -379,6 +380,22 @@ function OAuthConfig({ record, onPatch }: {
     onPatch(result.data.patch, record.id !== '');
   };
   const [open, setOpen] = useState(!hasAccount);
+  const [probing, setProbing] = useState(false);
+
+  // Anthropic's `/api/oauth/usage` is the same source the CLI's `/status`
+  // reads, and it costs an upstream call, so it only runs when an operator
+  // asks. The gateway persists the snapshot itself once the upstream exists.
+  const probeQuota = async () => {
+    setProbing(true);
+    setError(null);
+    const result = await callApi<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch('/api/upstreams/claude-code/probe', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ record: previewRecord(record, values) }),
+    }));
+    setProbing(false);
+    if (result.error) { setError(result.error.message); return; }
+    onPatch(result.data.patch, record.id !== '');
+  };
   const [tab, setTab] = useState(record.kind === 'codex' ? 'json' : 'oauth');
   const [json, setJson] = useState('');
   const [callback, setCallback] = useState('');
@@ -438,7 +455,11 @@ function OAuthConfig({ record, onPatch }: {
   return <div className="grid gap-4">
     {hasAccount && (record.kind === 'codex'
       ? <AccountSummary kind="codex" title={(config as Extract<UpstreamRecord, { kind: 'codex' }>['config']).accounts[0].email} subtitle={(config as Extract<UpstreamRecord, { kind: 'codex' }>['config']).accounts[0].planType} />
-      : <AccountSummary kind="claude-code" title={(config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config']).accounts[0].email ?? (config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config']).accounts[0].accountUuid.slice(0, 8)} subtitle={(config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config']).accounts[0].subscriptionType ?? 'Claude Code'} />)}
+      : <ClaudeCodeAccountCard
+          onRefreshQuota={() => void probeQuota()}
+          probing={probing}
+          record={{ ...record, kind: 'claude-code', config: config as Extract<UpstreamRecord, { kind: 'claude-code' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state'] }}
+        />)}
     {hasAccount && record.id === '' && <ReadyToSaveHint kind={record.kind} />}
     {hasAccount && <div className="flex flex-wrap items-center gap-2">
       <Button appearance="primary" disabled={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>

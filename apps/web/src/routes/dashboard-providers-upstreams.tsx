@@ -28,6 +28,7 @@ import { PageLoadingPanel } from '../components/ui/page-loading-panel';
 import { Panel } from '../components/ui/panel';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
+import { dateTime } from '../lib/format-time';
 
 const {
   Button,
@@ -502,10 +503,10 @@ function ModelStatus({
   const detail = record.modelsCache.lastError
     ? t('dashboard.upstreams.cache.failedDetail', {
         message: record.modelsCache.lastError.message,
-        time: fullDateTime(record.modelsCache.lastError.at),
+        time: dateTime(record.modelsCache.lastError.at),
       })
     : record.modelsCache.fetchedAt !== null
-      ? t('dashboard.upstreams.cache.readyDetail', { time: fullDateTime(record.modelsCache.fetchedAt) })
+      ? t('dashboard.upstreams.cache.readyDetail', { time: dateTime(record.modelsCache.fetchedAt) })
       : t('dashboard.upstreams.cache.emptyDetail');
 
   return (
@@ -598,5 +599,3 @@ const upstreamSummary = (record: UpstreamRecord, t: ReturnType<typeof useTransla
   }
   }
 };
-
-const fullDateTime = (value: number): string => new Date(value).toLocaleString();
