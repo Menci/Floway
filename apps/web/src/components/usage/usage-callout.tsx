@@ -10,9 +10,11 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
   if (!point?.rows.length) return null;
   const bucketKey = bucketKeyForCallout(point.x, chart.buckets);
   const bucketDetails = bucketKey ? chart.details.get(bucketKey) : undefined;
-  // Zero segments are carried in every stack so a series keeps its position;
-  // they carry no information in the callout, so they are dropped here.
-  const rows = point.rows.filter(row => row.value > 0).sort((a, b) => b.value - a.value);
+  // Zero-height bar segments only preserve stack position. A line point at 0%
+  // is a measured value and remains visible in its callout.
+  const rows = (chart.plot.form === 'bars' ? point.rows.filter(row => row.value > 0) : point.rows)
+    .sort((a, b) => b.value - a.value);
+  if (rows.length === 0) return null;
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(760px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-[6px] p-1">
       <Text size={200} weight="semibold">
