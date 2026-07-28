@@ -5,8 +5,8 @@ import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './sha
 import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ModelsCacheRow } from '../../repo/types.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import type { ModelsCacheRow } from '../../repo/types.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
