@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getCurrentSession: vi.fn(),
@@ -15,9 +15,30 @@ import { useAuthStore } from '../../src/stores/auth-store';
 
 const oldUser = { id: 1, username: 'old', isAdmin: true, upstreamIds: null };
 const newUser = { id: 2, username: 'new', isAdmin: true, upstreamIds: null };
+const originalLocalStorage = Object.getOwnPropertyDescriptor(window, 'localStorage');
+const storage = new Map<string, string>();
 
 describe('auth store request ownership', () => {
+  beforeAll(() => {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        clear: () => { storage.clear(); },
+        getItem: (key: string) => storage.get(key) ?? null,
+        key: (index: number) => [...storage.keys()][index] ?? null,
+        get length() { return storage.size; },
+        removeItem: (key: string) => { storage.delete(key); },
+        setItem: (key: string, value: string) => { storage.set(key, value); },
+      } satisfies Storage,
+    });
+  });
+
+  afterAll(() => {
+    if (originalLocalStorage) Object.defineProperty(window, 'localStorage', originalLocalStorage);
+  });
+
   beforeEach(() => {
+    storage.clear();
     mocks.getCurrentSession.mockReset();
     mocks.logout.mockReset();
     useAuthStore.getState().clear();
