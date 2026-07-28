@@ -18,7 +18,7 @@ import { modelsAreValid } from './model-detail';
 import { UpstreamWorkspace } from './workspace';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
-import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
+import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Panel } from '../ui/panel';

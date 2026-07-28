@@ -1,8 +1,8 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
-import type { SerializedBackoffRow, SerializedProxyRecord } from '@floway-dev/gateway/control-plane/proxies/serialize';
-import type { InferRequestType, InferResponseType } from 'hono/client';
 import type { api } from './client';
+
+import type { SerializedBackoffRow, SerializedProxyRecord } from '@floway-dev/gateway/control-plane/proxies/serialize';
 import type {
   AliasRules,
   AliasSelection,
@@ -22,6 +22,7 @@ import type {
 import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/provider';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
+import type { InferRequestType, InferResponseType } from 'hono/client';
 
 export type { BillingMetric, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };

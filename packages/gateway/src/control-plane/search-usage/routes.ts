@@ -5,7 +5,6 @@
 // aggregate, administrators only).
 
 import { aggregateWebSearchUsageByKey, aggregateWebSearchUsageByUser } from './aggregate.ts';
-import type { SearchUsageByKeyResponse, SearchUsageByUserResponse } from '../usage-types.ts';
 import { loadWebSearchConfig } from '../../data-plane/tools/web-search/config.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -13,6 +12,7 @@ import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import type { webSearchUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
 import { resolveUsageView } from '../shared/usage-view.ts';
+import type { SearchUsageByKeyResponse, SearchUsageByUserResponse } from '../usage-types.ts';
 
 export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>) => {
   const query = c.req.valid('query');
