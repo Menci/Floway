@@ -1,6 +1,6 @@
 
-import type { ApiKey, ControlPlaneModel } from '../../api/types';
-import { effectiveUpstreamCap, isModelReachable } from '../models/reachability';
+import type { ControlPlaneModel } from '../../api/types';
+import { isModelReachable } from '../models/reachability';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 export type PlaygroundApi = 'responses' | 'chatCompletions' | 'messages';
@@ -16,11 +16,9 @@ export const playgroundApis: PlaygroundApi[] = ['responses', 'chatCompletions', 
 
 export function availableModels(
   catalog: readonly ControlPlaneModel[],
-  key: ApiKey | null,
-  userUpstreamIds: readonly string[] | null,
+  cap: readonly string[] | null,
   api: PlaygroundApi,
 ): ControlPlaneModel[] {
-  const cap = effectiveUpstreamCap(key?.upstream_ids ?? null, userUpstreamIds);
   return catalog.filter(
     model => model.kind === 'chat' && api in model.endpoints && isModelReachable(model, catalog, cap),
   );

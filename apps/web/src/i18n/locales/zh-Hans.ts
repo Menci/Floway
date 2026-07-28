@@ -114,6 +114,15 @@ const zhHansCN = {
           reasoningEffort: '推理强度',
           providerDefault: 'Provider 默认值',
         },
+        badges: {
+          context: '上下文：{{value}}',
+          prompt: '输入：{{value}}',
+          output: '输出：{{value}}',
+          aliasOfModel: '别名指向：{{target}}',
+          aliasOfCount_other: '别名指向：{{count}} 个模型',
+          aliasOfPartial: '别名指向：{{total}} 个模型中的 {{reachable}} 个',
+          selection: '选择策略：{{selection}}',
+        },
         customJsonHint: '协议原生字段会覆盖上方控件的值。',
         errors: {
           imageUnsupported: '当前模型不支持图片输入。',

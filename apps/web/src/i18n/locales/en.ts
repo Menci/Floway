@@ -123,6 +123,16 @@ const en = {
           reasoningEffort: 'Reasoning effort',
           providerDefault: 'Provider default',
         },
+        badges: {
+          context: 'context: {{value}}',
+          prompt: 'prompt: {{value}}',
+          output: 'output: {{value}}',
+          aliasOfModel: 'alias of: {{target}}',
+          aliasOfCount_one: 'alias of: {{count}} model',
+          aliasOfCount_other: 'alias of: {{count}} models',
+          aliasOfPartial: 'alias of: {{reachable}} / {{total}} models',
+          selection: 'selection: {{selection}}',
+        },
         customJsonHint: 'Protocol-native fields override the controls above.',
         errors: {
           imageUnsupported: 'This model does not support image input.',

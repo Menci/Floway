@@ -14,6 +14,8 @@ import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
+import { ModelInfoBadges } from '../components/models/model-info-badges';
+import { effectiveUpstreamCap } from '../components/models/reachability';
 import { PlaygroundComposer } from '../components/playground/playground-composer';
 import {
   availableModels,
@@ -137,9 +139,13 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedKey = loaderData.keys.find(key => key.id === keyId) ?? null;
+  const cap = useMemo(
+    () => effectiveUpstreamCap(selectedKey?.upstream_ids ?? null, user.upstreamIds),
+    [selectedKey, user.upstreamIds],
+  );
   const models = useMemo(
-    () => availableModels(loaderData.models, selectedKey, user.upstreamIds, api),
-    [api, loaderData.models, selectedKey, user.upstreamIds],
+    () => availableModels(loaderData.models, cap, api),
+    [api, cap, loaderData.models],
   );
   const selectedModel = models.find(model => model.id === modelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
@@ -294,11 +300,12 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     <FluentProvider theme={australianTheme} className="h-full min-h-0 !bg-transparent">
       <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
-          <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
+          <div className={`min-w-0 px-4 py-3 grid gap-2 ${s.toolbar}`}>
             <div className="min-w-0">
               <Text as="h1" size={500} weight="semibold" className="!m-0 block">{t('dashboard.nav.playground')}</Text>
-              <Text size={200} className="text-fui-fg2 block truncate">{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
+              <Text size={200} className={`text-fui-fg2 block truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
             </div>
+            {selectedModel && <ModelInfoBadges cap={cap} catalog={loaderData.models} model={selectedModel} />}
           </div>
           <div className="px-4 py-2 grid gap-2">
             <button

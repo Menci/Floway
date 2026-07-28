@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ApiKey, ControlPlaneModel } from '../../../src/api/types';
+import type { ControlPlaneModel } from '../../../src/api/types';
 import {
   availableModels,
   defaultMaxOutputTokens,
@@ -16,10 +16,6 @@ const model = (id: string, upstreams: string[], extra: Partial<ControlPlaneModel
   upstreams: upstreams.map(upstream => ({ id: upstream, name: upstream, kind: 'custom', color: null })),
   ...extra,
 });
-const key = (upstream_ids: string[] | null): ApiKey => ({
-  id: 'key', name: 'Key', key: 'secret', created_at: '', last_used_at: null,
-  upstream_ids, dump_retention_seconds: null, responses_retention_seconds: 0,
-});
 
 describe('playground reachability', () => {
   it('resolves aliases and filters endpoint support', () => {
@@ -29,9 +25,9 @@ describe('playground reachability', () => {
       aliasedFrom: { selection: 'first-available', targets: [{ target_model_id: 'real', rules: {} }] },
     });
     const chatOnly = model('chat', ['a'], { endpoints: { chatCompletions: {} } });
-    expect(availableModels([real, alias, chatOnly], key(['a']), ['a'], 'responses').map(m => m.id))
+    expect(availableModels([real, alias, chatOnly], ['a'], 'responses').map(m => m.id))
       .toEqual(['real', 'alias']);
-    expect(availableModels([real, alias], key(['b']), null, 'responses')).toEqual([]);
+    expect(availableModels([real, alias], ['b'], 'responses')).toEqual([]);
   });
 });
 
