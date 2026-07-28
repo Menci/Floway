@@ -209,6 +209,31 @@ test('createWebIqWebSearchProvider maps 413 to request_too_large', async () => {
   );
 });
 
+test('createWebIqWebSearchProvider surfaces the envelope userMessage rather than raw JSON', async () => {
+  // Shape captured from POST https://api.microsoft.ai/v3/search/web with an
+  // invalid key. None of its keys are the generic ones, so without the
+  // envelope rung the operator would read the whole body.
+  await withMockedFetch(
+    () => jsonResponse({
+      errorCode: 'AuthInvalidApiKey',
+      errorCategory: 'UserError',
+      userMessage: 'Invalid API key provided.',
+      technicalDetails: 'Invalid API key',
+      retryAfter: null,
+      requestId: '6a68d5eb52c34a62a2d8a4c09c6d2dd2',
+      traceId: '6a68d5eb52c34a62a2d8a4c09c6d2dd2',
+    }, 401),
+    async () => {
+      const provider = createWebIqWebSearchProvider('ms-test');
+      assertEquals(await provider.search({ query: 'React documentation' }), {
+        type: 'error',
+        errorCode: 'unavailable',
+        message: 'Invalid API key provided.',
+      });
+    },
+  );
+});
+
 test('createWebIqWebSearchProvider surfaces malformed payload as an error', async () => {
   await withMockedFetch(
     () => jsonResponse({ message: 'unexpected' }),

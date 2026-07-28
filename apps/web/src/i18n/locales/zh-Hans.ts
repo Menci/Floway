@@ -1001,6 +1001,8 @@ const zhHansCN = {
         testing: '测试中…',
         testDisabledHint: '选择提供商以启用测试。',
         testResults: '测试结果',
+        testedProvider: '提供商：{{provider}}',
+        testedQuery: '查询：{{query}}',
         testSuccess: '连接测试成功 — 返回 {{count}} 条结果。',
         testFailed: '测试失败：{{message}}',
         pageAge: '{{age}} 前',

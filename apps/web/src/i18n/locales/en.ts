@@ -1053,6 +1053,8 @@ const en = {
         testing: 'Testing…',
         testDisabledHint: 'Select a provider to enable testing.',
         testResults: 'Test Results',
+        testedProvider: 'Provider: {{provider}}',
+        testedQuery: 'Query: {{query}}',
         testSuccess:
             'Connection test successful — {{count}} results returned.',
         testFailed: 'Test failed: {{message}}',
