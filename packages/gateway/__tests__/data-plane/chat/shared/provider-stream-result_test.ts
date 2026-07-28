@@ -67,3 +67,21 @@ describe('providerStreamResultToExecuteResult (first-output-token stamping)', ()
     expect(stampsAfterEachFrame[2]).toBe(stampsAfterEachFrame[0]);
   });
 });
+
+test('an abandoned stream still settles its metadata instead of hanging the caller', async () => {
+  // Every streaming response resolves its cost through finalMetadata, and the
+  // respond layer awaits it in a finally. A transport that walks away without
+  // closing the generator would hang that await forever.
+  const abort = new AbortController();
+  const ctx = { ...mockGatewayCtx(), abortSignal: abort.signal };
+  const frames: ProtocolFrame<unknown>[] = [{ type: 'event', event: { type: 'response.created' } }];
+
+  const result = await providerStreamResultToExecuteResult(okStreamResult(iter(frames)), stubModelCandidate(), 'responses', ctx, () => null);
+  expect(result.type).toBe('events');
+  if (result.type !== 'events') return;
+
+  // Never iterate the events; just abandon them.
+  abort.abort();
+
+  expect((await result.finalMetadata!).modelIdentity).toBeDefined();
+});

@@ -21,10 +21,22 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   const identity = telemetryModelIdentity(candidate, providerResult.modelKey);
   let resolveFinal!: (metadata: EventResultMetadata) => void;
   const finalMetadata = new Promise<EventResultMetadata>(resolve => { resolveFinal = resolve; });
+  // Only a report carrying real counts replaces the running figure, so a
+  // trailing empty usage frame cannot wipe a good one. Held outside the
+  // generator so an abandoned stream can still settle with what it saw.
+  let billableUsage: BillableUsage | undefined;
+  const settleMetadata = (): void => resolveFinal({
+    modelIdentity: identity,
+    ...(context !== undefined ? { performance: context } : {}),
+    ...(billableUsage !== undefined ? { billableUsage } : {}),
+  });
+  // Every streaming response now resolves its cost here, and the respond
+  // layer awaits it in a `finally`. A transport that walks away without
+  // closing the generator would otherwise hang that await forever, so the
+  // abort settles it too; whichever fires first wins, and the later call is a
+  // no-op.
+  ctx.abortSignal?.addEventListener('abort', settleMetadata, { once: true });
   const stampedEvents = (async function* () {
-    // Only a report carrying real counts replaces the running figure, so a
-    // trailing empty usage frame cannot wipe a good one.
-    let billableUsage: BillableUsage | undefined;
     try {
       for await (const frame of providerResult.events) {
         if (ctx.attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
@@ -37,11 +49,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
         yield frame;
       }
     } finally {
-      resolveFinal({
-        modelIdentity: identity,
-        ...(context !== undefined ? { performance: context } : {}),
-        ...(billableUsage !== undefined ? { billableUsage } : {}),
-      });
+      settleMetadata();
     }
   })();
   return {
