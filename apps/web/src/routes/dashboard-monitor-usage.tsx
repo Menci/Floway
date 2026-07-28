@@ -1,7 +1,7 @@
 import { ArrowClockwiseRegular, EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect } from 'react-router';
+import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-usage';
 import { useDashboardOutletContext } from './dashboard';
@@ -19,29 +19,51 @@ import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
 
-const { Button, makeStyles, Text, Tooltip } = fluentComponents;
-const useErrorStyles = makeStyles({ root: { backgroundColor: 'var(--colorPaletteRedBackground2)', border: '1px solid var(--colorPaletteRedBorder1)', borderRadius: '8px', color: 'var(--colorPaletteRedForeground1)', padding: '10px 12px' } });
+const { Button, MessageBar, MessageBarBody, Text, Tooltip } = fluentComponents;
+const usageMetricValues: UsageMetric[] = ['requests', 'cost', 'total', 'input', 'output', 'prefill', 'cached', 'cachedRate', 'cacheCreation', 'cacheHitRate'];
+const usageRangeValues: UsageRange[] = ['today', '7d', '30d'];
 
 type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
   loadedAt: number;
+  metric: UsageMetric;
   range: UsageRange;
+  redactKeys: boolean;
+  hiddenKeys: string[];
+  hiddenModels: string[];
   view: UsageView;
 };
 
-export async function clientLoader(): Promise<LoaderData> {
+export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
   const user = await useAuthStore.getState().initialize();
   if (!user) throw redirect('/');
-  const view: UsageView = user.isAdmin ? 'all-by-user' : 'self-by-key';
-  const range: UsageRange = 'today';
+  const search = new URL(request.url).searchParams;
+  const requestedView = search.get('view');
+  const view: UsageView = user.isAdmin && requestedView === 'self-by-key' ? 'self-by-key' : user.isAdmin ? 'all-by-user' : 'self-by-key';
+  const requestedRange = search.get('range') as UsageRange | null;
+  const range = requestedRange && usageRangeValues.includes(requestedRange) ? requestedRange : 'today';
+  const requestedMetric = search.get('metric') as UsageMetric | null;
+  const metric = requestedMetric && usageMetricValues.includes(requestedMetric) ? requestedMetric : 'total';
   const loadedAt = Date.now();
-  return { ...await loadUsagePageData(view, range, loadedAt), loadedAt, range, view };
+  return {
+    ...await loadUsagePageData(view, range, loadedAt),
+    loadedAt,
+    metric,
+    range,
+    redactKeys: search.get('redact') === '1',
+    hiddenKeys: search.getAll('hideKey'),
+    hiddenModels: search.getAll('hideModel'),
+    view,
+  };
 }
 export function meta({}: Route.MetaArgs) { return [{ title: 'Usage | Floway' }]; }
+export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: ShouldRevalidateFunctionArgs) =>
+  currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
 
 export default function DashboardMonitorUsage({ loaderData }: Route.ComponentProps) {
   const { i18n, t } = useTranslation();
   const { user } = useDashboardOutletContext();
+  const [, setSearchParams] = useSearchParams();
   const clearAuth = useAuthStore(state => state.clear);
   const [view, setView] = useState<UsageView>(loaderData.view);
   const [range, setRange] = useState<UsageRange>(loaderData.range);
@@ -50,16 +72,14 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [usage, setUsage] = useState(loaderData.usage);
   const [search, setSearch] = useState(loaderData.search);
   const [models, setModels] = useState<ControlPlaneModel[]>(loaderData.models);
-  const [metric, setMetric] = useState<UsageMetric>('total');
-  const [redactKeys, setRedactKeys] = useState(false);
-  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set());
-  const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set());
+  const [metric, setMetric] = useState<UsageMetric>(loaderData.metric);
+  const [redactKeys, setRedactKeys] = useState(loaderData.redactKeys);
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set(loaderData.hiddenKeys));
+  const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set(loaderData.hiddenModels));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(loaderData.error);
   const requestIdRef = useRef(0);
   const mountedRef = useRef(false);
-
-  const errorStyles = useErrorStyles();
 
   const canSwitchView = user.isAdmin;
   const locale = localeForLanguage(i18n.language);
@@ -122,6 +142,14 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   useEffect(() => {
     if (error === 'HTTP 401') clearAuth();
   }, [clearAuth, error]);
+
+  useEffect(() => {
+    const next = new URLSearchParams({ view, range, metric });
+    if (redactKeys) next.set('redact', '1');
+    for (const id of [...hiddenKeys].sort()) next.append('hideKey', id);
+    for (const id of [...hiddenModels].sort()) next.append('hideModel', id);
+    setSearchParams(next, { replace: true });
+  }, [hiddenKeys, hiddenModels, metric, range, redactKeys, setSearchParams, view]);
 
   const buckets = useMemo(
     () => dashboardBuckets(loadedRange, loadedAt, locale),
@@ -234,7 +262,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
         title={t('dashboard.nav.usage')}
       />
 
-      {error && <div className={errorStyles.root}>{error}</div>}
+      {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
 
       <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
         <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
