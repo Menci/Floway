@@ -4,7 +4,7 @@ import { curveMonotoneX } from 'd3-shape';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect, useSearchParams } from 'react-router';
+import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-performance';
 import { callApi } from '../api/auth';
@@ -83,14 +83,14 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   return {
     error: overview.error?.message ?? upstreams.error?.message ?? null,
     loadedAt,
-    overview: overview.data ?? emptyPerformanceOverview,
+    overview: overview.data ?? emptyPerformanceOverview(),
     state: { ...state, groupBy },
     upstreamNames: upstreams.data ?? [],
     view,
   };
 }
 
-export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: Route.ShouldRevalidateArgs) =>
+export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: ShouldRevalidateFunctionArgs) =>
   currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
 
 export function meta({}: Route.MetaArgs) {
