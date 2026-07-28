@@ -672,6 +672,7 @@ const zhHansCN = {
               '推理强度至少需要一个支持值，且默认值必须包含在支持列表中。',
           invalidBudget: '最大推理 Token 预算不能小于最小值。',
           invalidContract: '模型 ID、类型、端点与 Rerank 目标必须组成有效的模型配置。',
+          removeEffort: '移除 {{level}} 推理强度',
           delete: '删除手动模型',
         },
         copilot: {

@@ -1,4 +1,4 @@
-import { ArrowLeftRegular, DeleteRegular } from '@fluentui/react-icons';
+import { ArrowLeftRegular, DeleteRegular, DismissRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,6 +15,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { Input, Select } from '../ui/fluent-form-controls';
 import { SegmentedControl } from '../ui/segmented-control';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { modelsField } from '@floway-dev/provider';
 import type { Flag } from '@floway-dev/provider/flags';
 
@@ -261,7 +262,18 @@ function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; ef
   const supported = effort.supported;
   const add = (level: string) => { const value = level.trim(); if (value && !supported.includes(value)) onChange({ supported: [...supported, value], default: effort.default || value }); };
   return <div className="grid gap-3 border-l-2 border-l-solid border-fui-stroke1 pl-4">
-    <div className="flex flex-wrap gap-2">{supported.map(level => <Button key={level} disabled={!editable} appearance={effort.default === level ? 'primary' : 'secondary'} size="small" onClick={() => onChange({ ...effort, default: level })}>{level}<span onClick={event => { event.stopPropagation(); const next = supported.filter(item => item !== level); onChange({ supported: next, default: effort.default === level ? next[0] ?? '' : effort.default }); }}> ×</span></Button>)}</div>
+    <div className="flex flex-wrap gap-2">{supported.map(level => <div className="inline-flex items-center" key={level}>
+      <Button disabled={!editable} appearance={effort.default === level ? 'primary' : 'secondary'} size="small" onClick={() => onChange({ ...effort, default: level })}>{level}</Button>
+      <TooltipIconButton
+        disabled={!editable}
+        icon={<DismissRegular />}
+        label={t('dashboard.upstreamEditor.models.removeEffort', { level })}
+        onClick={() => {
+          const next = supported.filter(item => item !== level);
+          onChange({ supported: next, default: effort.default === level ? next[0] ?? '' : effort.default });
+        }}
+      />
+    </div>)}</div>
     {editable && <div className="flex flex-wrap gap-2">{reasoningPresets.filter(level => !supported.includes(level)).map(level => <Button key={level} size="small" onClick={() => add(level)}>+ {level}</Button>)}<Input className="!w-[130px]" placeholder={t('dashboard.upstreamEditor.models.customEffortPlaceholder')} size="small" value={custom} onChange={(_, data) => setCustom(data.value)} /><Button size="small" onClick={() => { add(custom); setCustom(''); }}>{t('dashboard.upstreamEditor.models.add')}</Button></div>}
   </div>;
 }

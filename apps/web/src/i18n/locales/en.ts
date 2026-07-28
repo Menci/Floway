@@ -709,6 +709,7 @@ const en = {
           invalidBudget:
               'Maximum reasoning budget must be greater than or equal to the minimum.',
           invalidContract: 'Model ID, kind, endpoints, and rerank target must form a valid model configuration.',
+          removeEffort: 'Remove {{level}} effort',
           delete: 'Delete manual model',
         },
         copilot: {

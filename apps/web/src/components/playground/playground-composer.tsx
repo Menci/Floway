@@ -156,6 +156,7 @@ export function PlaygroundComposer({
           onClick={onNewTopic}
         >
           <img
+            alt=""
             aria-hidden="true"
             className={s.broomIcon}
             src={broomUrl}
