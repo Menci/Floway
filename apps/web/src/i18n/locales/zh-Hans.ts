@@ -648,7 +648,7 @@ const zhHansCN = {
           refresh: '刷新模型',
           cacheNever: '从未获取',
           cacheFetchedNow: '刚刚获取',
-          cacheFetched: '{{time}} 前已获取',
+          cacheFetched: '获取于{{time}}',
           cacheFailed: '上次获取失败',
           cacheErrorDetail: '{{time}} — {{message}}',
           listingFailed: '无法从上游获取模型列表。',

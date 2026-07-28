@@ -303,7 +303,7 @@ function ModelsCacheStatus({ cache }: { cache: UpstreamRecord['modelsCache'] }) 
   const elapsed = cache.fetchedAt === null ? null : formatRelativeTime(cache.fetchedAt);
   const label = elapsed === null
     ? t('dashboard.upstreamEditor.models.cacheNever')
-    : elapsed === 'now'
+    : Date.now() - cache.fetchedAt! < 10_000
       ? t('dashboard.upstreamEditor.models.cacheFetchedNow')
       : t('dashboard.upstreamEditor.models.cacheFetched', { time: elapsed });
   const detail = cache.lastError

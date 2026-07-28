@@ -21,9 +21,9 @@ export function totalTokens(meta: DumpMetadata): number | null {
 
 export function formatBytes(value: number): string {
   if (value < 1024) return `${value} B`;
-  if (value < 1024 ** 2) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
-  if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(value < 10 * 1024 ** 2 ? 1 : 0)} MB`;
-  return `${(value / 1024 ** 3).toFixed(2)} GB`;
+  if (value < 1024 ** 2) return `${formatNumber(value / 1024, value < 10 * 1024 ? 1 : 0)} KB`;
+  if (value < 1024 ** 3) return `${formatNumber(value / 1024 ** 2, value < 10 * 1024 ** 2 ? 1 : 0)} MB`;
+  return `${formatNumber(value / 1024 ** 3, 2)} GB`;
 }
 
 export function formatDuration(value: number): string {
@@ -33,22 +33,20 @@ export function formatDuration(value: number): string {
 }
 
 export function formatTokens(value: number): string {
-  if (value < 1000) return String(value);
-  if (value < 10_000) return `${(value / 1000).toFixed(1)} K`;
-  if (value < 1_000_000) return `${Math.round(value / 1000)} K`;
-  return `${(value / 1_000_000).toFixed(1)} M`;
+  return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 }
 
 export function formatRelativeTime(timestamp: number, now = Date.now()): string {
   const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));
-  if (seconds < 10) return 'now';
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'narrow' });
+  if (seconds < 60) return formatter.format(-seconds, 'second');
+  if (seconds < 3600) return formatter.format(-Math.floor(seconds / 60), 'minute');
+  if (seconds < 86_400) return formatter.format(-Math.floor(seconds / 3600), 'hour');
+  return formatter.format(-Math.floor(seconds / 86_400), 'day');
 }
+
+const formatNumber = (value: number, maximumFractionDigits: number): string =>
+  new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(value);
 
 export function formatFullTime(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, {

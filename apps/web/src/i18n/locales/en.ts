@@ -673,7 +673,7 @@ const en = {
           refresh: 'Refresh models',
           cacheNever: 'Never fetched',
           cacheFetchedNow: 'Fetched just now',
-          cacheFetched: 'Fetched {{time}} ago',
+          cacheFetched: 'Fetched {{time}}',
           cacheFailed: 'Last fetch failed',
           cacheErrorDetail: '{{time}} — {{message}}',
           listingFailed: 'Could not fetch the model list from the upstream.',
