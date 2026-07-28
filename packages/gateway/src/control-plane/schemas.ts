@@ -558,9 +558,9 @@ export const resetBackoffBody = z.object({
 // --- search config ---
 
 export const webSearchConfigSchema = z.object({
-  provider: z.enum(['disabled', 'tavily', 'microsoft-grounding', 'jina']),
+  provider: z.enum(['disabled', 'tavily', 'web-iq', 'jina']),
   tavily: z.object({ apiKey: z.string() }),
-  microsoftGrounding: z.object({ apiKey: z.string() }),
+  webIq: z.object({ apiKey: z.string() }),
   jina: z.object({ apiKey: z.string() }),
   passthroughOpenAiSearch: z.object({
     enabled: z.boolean(),

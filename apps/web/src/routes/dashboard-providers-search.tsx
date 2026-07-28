@@ -8,8 +8,8 @@ import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
-import bingIconUrl from '../assets/bing.svg';
 import jinaIconUrl from '../assets/icons/jina.svg';
+import microsoftIconUrl from '../assets/icons/microsoft.svg';
 import tavilyIconUrl from '../assets/icons/tavily.svg';
 import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
@@ -62,7 +62,7 @@ export function meta({}: Route.MetaArgs) {
 const DEFAULT_CONFIG: SearchConfig = {
   provider: 'disabled',
   tavily: { apiKey: '' },
-  microsoftGrounding: { apiKey: '' },
+  webIq: { apiKey: '' },
   jina: { apiKey: '' },
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
@@ -99,13 +99,13 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     setApiKey: (c, k) => ({ ...c, tavily: { apiKey: k } }),
   },
   {
-    value: 'microsoft-grounding',
-    labelKey: 'dashboard.searchConfig.provider.microsoftGrounding',
-    iconUrl: bingIconUrl,
-    descKey: 'dashboard.searchConfig.providerDescMicrosoftGrounding',
-    url: 'https://www.microsoft.com/en-us/bing/apis',
-    getApiKey: c => c.microsoftGrounding.apiKey,
-    setApiKey: (c, k) => ({ ...c, microsoftGrounding: { apiKey: k } }),
+    value: 'web-iq',
+    labelKey: 'dashboard.searchConfig.provider.webIq',
+    iconUrl: microsoftIconUrl,
+    descKey: 'dashboard.searchConfig.providerDescWebIq',
+    url: 'https://webiq.microsoft.ai/profiles',
+    getApiKey: c => c.webIq.apiKey,
+    setApiKey: (c, k) => ({ ...c, webIq: { apiKey: k } }),
   },
   {
     value: 'jina',

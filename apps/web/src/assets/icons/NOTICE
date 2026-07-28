@@ -1,5 +1,6 @@
-The SVGs in this directory are taken verbatim from lobe-icons, which Iconify
-does not carry in any collection.
+The SVGs in this directory are taken from lobe-icons, which Iconify does not
+carry in any collection. Only microsoft.svg is modified: upstream titles it
+"Azure".
 
   https://github.com/lobehub/lobe-icons
 

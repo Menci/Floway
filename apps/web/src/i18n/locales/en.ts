@@ -1025,7 +1025,7 @@ const en = {
         provider: {
           disabled: 'Disabled',
           tavily: 'Tavily',
-          microsoftGrounding: 'Microsoft Grounding',
+          webIq: 'Microsoft Web IQ',
           jina: 'Jina',
         },
         passthrough: {
@@ -1037,8 +1037,8 @@ const en = {
         },
         providerDescTavily:
             'Tavily is a search engine optimized for LLMs and RAG workflows.',
-        providerDescMicrosoftGrounding:
-            'Microsoft Grounding leverages Bing Search APIs for grounding LLM responses.',
+        providerDescWebIq:
+            'Microsoft Web IQ provides web search and page retrieval APIs built for AI agents.',
         providerDescJina:
             'Jina AI provides web search and content extraction APIs.',
         getKeyLink: 'Get API key →',

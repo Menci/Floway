@@ -218,7 +218,7 @@ const WEB_SEARCH_USAGE_1: WebSearchUsageRecord = {
 };
 
 const WEB_SEARCH_USAGE_2: WebSearchUsageRecord = {
-  provider: 'microsoft-grounding',
+  provider: 'web-iq',
   keyId: 'key-b',
   action: 'fetch_page',
   hour: '2026-01-01T11',
@@ -361,7 +361,7 @@ test('export includes full upstream configs and omits performance by default', a
   await repo.webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'tvly-test' },
-    microsoftGrounding: { apiKey: 'ms-test' },
+    webIq: { apiKey: 'ms-test' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -429,7 +429,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   await repo.webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'old' },
-    microsoftGrounding: { apiKey: '' },
+    webIq: { apiKey: '' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -442,9 +442,9 @@ test('import replace writes upstreams and clears replaced collections', async ()
     searchUsage: [WEB_SEARCH_USAGE_2],
     performanceIncluded: false,
     searchConfig: {
-      provider: 'microsoft-grounding',
+      provider: 'web-iq',
       tavily: { apiKey: '' },
-      microsoftGrounding: { apiKey: 'ms-new' },
+      webIq: { apiKey: 'ms-new' },
       jina: { apiKey: '' },
       passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
     },
@@ -460,9 +460,9 @@ test('import replace writes upstreams and clears replaced collections', async ()
   assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_2]);
   assertEquals(await repo.responsesItems.lookupMany('key-a', [STORED_RESPONSES_ITEM.id], 0), []);
   assertEquals(await repo.webSearchConfig.get(), {
-    provider: 'microsoft-grounding',
+    provider: 'web-iq',
     tavily: { apiKey: '' },
-    microsoftGrounding: { apiKey: 'ms-new' },
+    webIq: { apiKey: 'ms-new' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -1351,7 +1351,7 @@ test('a full v17 export re-imports verbatim — the export→import round trip i
   const config = {
     provider: 'tavily' as const,
     tavily: { apiKey: 'tk' },
-    microsoftGrounding: { apiKey: '' },
+    webIq: { apiKey: '' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   };
