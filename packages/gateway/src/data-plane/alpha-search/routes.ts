@@ -25,7 +25,7 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
 import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
-import { assertLocalWebSearchSupport, executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
+import { assertLocalWebSearchSupport, executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
 
@@ -105,7 +105,14 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
     return relayFetchedResponse(response);
   }
 
-  assertLocalWebSearchSupport(body.commands ?? {});
+  try {
+    assertLocalWebSearchSupport(body.commands ?? {});
+  } catch (error) {
+    if (error instanceof UnsupportedLocalWebSearchFeatureError) {
+      return c.json({ encrypted_output: null, output: error.message });
+    }
+    throw error;
+  }
 
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const session: WebSearchExecutionSession = {

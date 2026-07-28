@@ -290,7 +290,7 @@ describe('/alpha/search data plane', () => {
       expect(blocks.length).toBeGreaterThan(1);
     });
 
-    it('rejects unimplemented command kinds without hitting the provider', async () => {
+    it('returns unimplemented command kinds as exact model-facing output without hitting the provider', async () => {
       const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
@@ -299,9 +299,9 @@ describe('/alpha/search data plane', () => {
       const response = await postSearch(app, apiKey.key, {
         commands: { screenshot: [{ ref_id: 'https://example.com', pageno: 0 }], response_length: 'short' },
       });
-      expect(response.status).toBe(500);
-      const body = await response.json() as { error: { message: string } };
-      expect(body.error.message).toBe('The configured web search provider does not implement OpenAI search feature `commands.screenshot`.');
+      expect(response.status).toBe(200);
+      const body = await response.json() as SearchResponseBody;
+      expect(body.output).toBe('The configured web search provider does not implement OpenAI search feature `commands.screenshot`.');
       expect(stub.calls).toHaveLength(0);
     });
 
