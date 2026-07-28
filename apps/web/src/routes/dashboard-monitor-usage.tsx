@@ -214,7 +214,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       : t('dashboard.usage.charts.byKey');
 
   return (
-    <section className="grid gap-[18px] min-w-0">
+    <section className="dashboard-page">
       <DashboardPageHeader
         actions={<>
           <Tooltip

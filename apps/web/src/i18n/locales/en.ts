@@ -19,7 +19,7 @@ const en = {
     },
     auth: {
       adminKeyHint:
-          'Leave the username blank for the default administrator. In local development without <adminKey>ADMIN_KEY</adminKey>, leave the password blank too; otherwise enter ADMIN_KEY.',
+          'Sign in as the default administrator with a blank username and <adminKey>ADMIN_KEY</adminKey> as the password.',
       login: {
         title: 'Sign in',
         subtitle: 'Sign in to Floway.',
@@ -120,15 +120,18 @@ const en = {
         settings: { connection: 'Connection', generation: 'Generation', customJson: 'Custom JSON' },
         actions: { newTopic: 'New topic', edit: 'Edit', delete: 'Delete', save: 'Save', image: 'Add image URL', send: 'Send', stop: 'Stop' },
         parameters: {
-          temperature: 'Temperature',
-          maxOutputTokens: 'Max output tokens',
-          topP: 'Top P',
-          frequencyPenalty: 'Frequency penalty',
-          presencePenalty: 'Presence penalty',
-          stopSequences: 'Stop sequences',
           reasoningEffort: 'Reasoning effort',
           providerDefault: 'Provider default',
-          unset: 'Not set',
+        },
+        badges: {
+          context: 'Context {{value}}',
+          prompt: 'Prompt {{value}}',
+          output: 'Output {{value}}',
+          aliasOfModel: 'Alias of {{target}}',
+          aliasOfCount_one: 'Alias of {{count}} model',
+          aliasOfCount_other: 'Alias of {{count}} models',
+          aliasOfPartial: 'Alias of {{reachable}} of {{total}} models',
+          selection: 'Selection: {{selection}}',
         },
         customJsonHint: 'Protocol-native fields override the controls above.',
         errors: {
@@ -163,20 +166,20 @@ const en = {
         docsLink: 'Docs',
         authentication: {
           title: 'Base URL and authentication',
-          description: 'Use an API key created under Services → API Keys. Credential sources are checked in the order shown below.',
+          description: 'Use an API key created under Services → API Keys.',
           baseUrl: 'Base URL',
-          warning: 'Dashboard session tokens and ADMIN_KEY are not data-plane credentials. Browser WebSocket clients may use ?key= because the handshake cannot set arbitrary headers.',
+          warning: 'Dashboard session tokens and ADMIN_KEY are not data-plane credentials.',
         },
-        groups: { models: 'Model discovery', generation: 'Text and multimodal generation', media: 'Embeddings, images, and audio', rerank: 'Rerank protocols', search: 'Codex search', codex: 'Codex provider namespace' },
+        groups: { models: 'Model discovery', generation: 'Text and multimodal generation', media: 'Embeddings, images, and audio', rerank: 'Rerank protocols', search: 'Codex search' },
         endpointNames: {
-          openAiModels: 'OpenAI model list', openAiModelsAlias: 'OpenAI model list alias', geminiModels: 'Gemini model list', geminiModel: 'Gemini model details',
-          openAiCompletions: 'OpenAI Completions', openAiCompletionsAlias: 'Completions alias', openAiChat: 'OpenAI Chat Completions', openAiChatAlias: 'Chat Completions alias',
-          openAiResponses: 'OpenAI Responses', openAiResponsesAlias: 'Responses alias', openAiCompact: 'Responses compaction', openAiCompactAlias: 'Responses compaction alias', openAiResponsesWs: 'Responses WebSocket', openAiResponsesWsAlias: 'Responses WebSocket alias',
-          anthropicMessages: 'Anthropic Messages', anthropicMessagesAlias: 'Messages alias', anthropicCount: 'Anthropic Count Tokens', anthropicCountAlias: 'Count Tokens alias',
+          openAiModels: 'OpenAI model list', geminiModels: 'Gemini model list', geminiModel: 'Gemini model details',
+          openAiCompletions: 'OpenAI Completions', openAiChat: 'OpenAI Chat Completions',
+          openAiResponses: 'OpenAI Responses', openAiCompact: 'Responses compaction', openAiResponsesWs: 'Responses WebSocket',
+          anthropicMessages: 'Anthropic Messages', anthropicCount: 'Anthropic Count Tokens',
           geminiGenerate: 'Gemini generateContent', geminiStream: 'Gemini streamGenerateContent (SSE)', geminiCount: 'Gemini countTokens',
-          openAiEmbeddings: 'OpenAI Embeddings', openAiEmbeddingsAlias: 'Embeddings alias', openAiImageGeneration: 'OpenAI Image Generations', openAiImageGenerationAlias: 'Image Generations alias', openAiImageEdit: 'OpenAI Image Edits', openAiImageEditAlias: 'Image Edits alias', openAiTranscription: 'OpenAI Audio Transcriptions',
+          openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI Image Generations', openAiImageEdit: 'OpenAI Image Edits', openAiTranscription: 'OpenAI Audio Transcriptions',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
-          codexSearch: 'Codex alpha search', codexSearchV1: 'Codex alpha search /v1 alias', codexNamespaceSearch: 'Codex provider search', codexNamespaceResponses: 'Codex provider Responses', codexNamespaceCompact: 'Codex provider compaction', codexNamespaceWs: 'Codex provider WebSocket', codexNamespaceImageGeneration: 'Codex provider image generation', codexNamespaceImageEdit: 'Codex provider image edit', codexNamespaceModels: 'Codex provider models',
+          codexSearch: 'Codex alpha search',
         },
         reference: {
           openai: { title: 'OpenAI text APIs' }, anthropic: { title: 'Anthropic Messages' }, gemini: { title: 'Google Gemini' }, media: { title: 'Embeddings, images, and audio' }, rerank: { title: 'Rerank dialects' }, search: { title: 'Codex alpha search' }, websocket: { title: 'Responses WebSocket and state' },
@@ -306,6 +309,8 @@ const en = {
           created: 'Created',
           lastUsed: 'Last Used',
           actions: 'Actions',
+          select: 'Select a key',
+          selectNamed: 'Select {{name}}',
           never: 'Never',
           usedOn: 'Used on {{date}}',
         },
@@ -374,8 +379,8 @@ const en = {
               'Saving will immediately delete captured requests older than the new window.',
         },
         configuration: {
-          title: 'Connecting to Coding Agent',
-          selected: 'The snippets below will use the <strong>{{name}}</strong> key.',
+          title: 'Setup Your Agents',
+          usingKey: 'This uses the <strong>{{name}}</strong> API key.',
           claudeCode: 'Claude Code',
           codex: 'Codex',
           claudeHint: 'Merge the env block into ~/.claude/settings.json or .claude/settings.json.',
@@ -384,7 +389,7 @@ const en = {
           codexWindowsAuthHint: 'Windows PowerShell: store the same provider token without changing the official account login.',
         },
         agentSetup: {
-          accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', unavailable: '{{id}} (unavailable)',
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', unavailable: '{{id}} (unavailable)',
         },
         rotate: {
           title: 'Rotate API Key',
@@ -779,6 +784,7 @@ const en = {
             active: 'Active',
             heavy: 'Heavy usage ({{percent}}%)',
             rateLimited: 'Rate-limited until {{time}}',
+            'account-id-mismatch': 'Configured account is missing — re-import to recover',
             'session-terminated': 'Session terminated — re-import to recover',
             'refresh-failed': 'Refresh failed — re-import to recover',
           },
@@ -1025,7 +1031,7 @@ const en = {
         provider: {
           disabled: 'Disabled',
           tavily: 'Tavily',
-          microsoftGrounding: 'Microsoft Grounding',
+          webIq: 'Microsoft Web IQ',
           jina: 'Jina',
         },
         passthrough: {
@@ -1037,8 +1043,8 @@ const en = {
         },
         providerDescTavily:
             'Tavily is a search engine optimized for LLMs and RAG workflows.',
-        providerDescMicrosoftGrounding:
-            'Microsoft Grounding leverages Bing Search APIs for grounding LLM responses.',
+        providerDescWebIq:
+            'Microsoft Web IQ provides web search and page retrieval APIs built for AI agents.',
         providerDescJina:
             'Jina AI provides web search and content extraction APIs.',
         getKeyLink: 'Get API key →',
@@ -1052,6 +1058,8 @@ const en = {
         testing: 'Testing…',
         testDisabledHint: 'Select a provider to enable testing.',
         testResults: 'Test Results',
+        testedProvider: 'Provider: {{provider}}',
+        testedQuery: 'Query: {{query}}',
         testSuccess:
             'Connection test successful — {{count}} results returned.',
         testFailed: 'Test failed: {{message}}',

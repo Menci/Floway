@@ -539,7 +539,7 @@ function formatPlottedCost(value: number): string {
 }
 
 export function formatProvider(provider: string): string {
-  if (provider === 'microsoft-grounding') return 'Microsoft Grounding';
+  if (provider === 'web-iq') return 'Microsoft Web IQ';
   if (provider === 'tavily') return 'Tavily';
   if (provider === 'jina') return 'Jina';
   return provider;

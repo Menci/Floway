@@ -17,6 +17,7 @@
     "@fluentui/react-charts": "^9.3.22",
     "@fluentui/react-components": "^9.74.4",
     "@fluentui/react-icons": "^2.0.334",
+    "@fontsource-variable/cascadia-code": "^5.3.0",
     "@hookform/resolvers": "^5.5.7",
     "@react-router/node": "8.3.0",
     "d3-shape": "^3.2.0",
@@ -24,7 +25,6 @@
     "i18next": "^26.3.6",
     "isbot": "^5.2.1",
     "overlayscrollbars": "2.13.0",
-    "prism-themes": "^1.9.0",
     "prismjs": "^1.30.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -46,6 +46,7 @@
     "@types/prismjs": "^1.26.6",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@unocss/postcss": "^66.7.5",
     "happy-dom": "^20.11.1",
     "unocss": "^66.7.5",
     "vite": "^8.1.5"

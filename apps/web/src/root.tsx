@@ -24,7 +24,8 @@ import { scrollAreaCss } from './components/ui/scroll-area';
 import { fluentComponents } from './fluent';
 import { flowayDarkTheme, flowayLightTheme } from './theme';
 import './i18n';
-import 'virtual:uno.css';
+import '@fontsource-variable/cascadia-code';
+import './uno.css';
 
 const { FluentProvider } = fluentComponents;
 

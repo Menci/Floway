@@ -1,19 +1,33 @@
 import { fluentComponents } from '../../fluent';
 
-const { Button, Tooltip } = fluentComponents;
+const { Button, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
-export function TooltipIconButton({ className, disabled, icon, label, onClick }: {
+const useStyles = makeStyles({
+  // A destructive action reads as destructive when the operator reaches for
+  // it: resident red would shout from every row and break its rhythm.
+  // The `:enabled` guard matters: without it the warning colour would also
+  // paint a delete the operator is not allowed to press.
+  danger: {
+    ':enabled:hover': { color: 'var(--colorPaletteRedForeground1)' },
+    ':enabled:hover:active': { color: 'var(--colorPaletteRedForeground2)' },
+    ':enabled:focus-visible': { color: 'var(--colorPaletteRedForeground1)' },
+  },
+});
+
+export function TooltipIconButton({ className, danger = false, disabled, icon, label, onClick }: {
   className?: string;
+  danger?: boolean;
   disabled?: boolean;
   icon: React.ReactElement;
   label: string;
-  onClick: () => void;
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
+  const s = useStyles();
   return <Tooltip content={label} relationship="label">
     <Button
       appearance="subtle"
       aria-label={label}
-      className={className}
+      className={mergeClasses(danger && s.danger, className)}
       disabled={disabled}
       icon={icon}
       onClick={onClick}

@@ -149,7 +149,7 @@ const assertObjectHasOnly = (
   }
 };
 
-// The local Tavily, Jina, and Microsoft Grounding adapters implement the
+// The local Tavily, Jina, and Web IQ adapters implement the
 // common text-search/open/find subset. OpenAI's complete command object remains
 // valid for alpha-search passthrough; reaching a local adapter with any other
 // command or nested command parameter is an explicit error so no request field
@@ -443,7 +443,7 @@ export const renderWebSearchCallOutput = (ir: WebSearchCallIR): string =>
 
 // ── Domain filtering ──
 
-// Suffix-match per Tavily and Microsoft Grounding search-side filter
+// Suffix-match per Tavily and Web IQ search-side filter
 // semantics: `example.com` matches `example.com`, `www.example.com`, and
 // `sub.example.com`, but NOT `evil-example.com`.
 const matchesAnyDomain = (hostname: string, domains: readonly string[]): boolean => {

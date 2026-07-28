@@ -12,6 +12,7 @@ import 'prismjs/components/prism-toml';
 import 'prismjs/components/prism-typescript';
 
 import { fluentComponents } from '../../fluent';
+import { prismTokenStyles } from '../ui/prism-token-styles';
 import { ScrollArea } from '../ui/scroll-area';
 
 const { makeStyles, tokens } = fluentComponents;
@@ -123,23 +124,7 @@ const useStyles = makeStyles({
       lineHeight: tokens.lineHeightBase400,
       whiteSpace: 'pre',
     },
-    '& .token.comment, & .token.prolog, & .token.doctype, & .token.cdata': {
-      color: tokens.colorNeutralForeground3,
-    },
-    '& .token.punctuation': { color: tokens.colorNeutralForeground2 },
-    '& .token.property, & .token.tag, & .token.constant, & .token.symbol, & .token.deleted': {
-      color: tokens.colorPaletteRedForeground2,
-    },
-    '& .token.boolean, & .token.number': { color: tokens.colorPalettePurpleForeground2 },
-    '& .token.selector, & .token.attr-name, & .token.string, & .token.char, & .token.builtin, & .token.inserted': {
-      color: tokens.colorPaletteGreenForeground2,
-    },
-    '& .token.operator, & .token.entity, & .token.url, & .language-css .token.string': {
-      color: tokens.colorPaletteMarigoldForeground2,
-    },
-    '& .token.atrule, & .token.attr-value, & .token.keyword': { color: tokens.colorBrandForeground1 },
-    '& .token.function, & .token.class-name': { color: tokens.colorPaletteBlueForeground2 },
-    '& .token.regex, & .token.important, & .token.variable': { color: tokens.colorPaletteMarigoldForeground2 },
+    ...prismTokenStyles,
   },
 });
 

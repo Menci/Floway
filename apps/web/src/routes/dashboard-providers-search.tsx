@@ -8,24 +8,26 @@ import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
-import bingIconUrl from '../assets/bing.svg';
 import jinaIconUrl from '../assets/icons/jina.svg';
+import microsoftIconUrl from '../assets/icons/microsoft.svg';
 import tavilyIconUrl from '../assets/icons/tavily.svg';
 import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { Dropdown, Input, Select } from '../components/ui/fluent-form-controls';
+import { Dropdown, Input } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
 
 const {
+  Badge,
   Button,
   Field,
   Link,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Option,
   Spinner,
   Switch,
@@ -61,7 +63,7 @@ export function meta({}: Route.MetaArgs) {
 const DEFAULT_CONFIG: SearchConfig = {
   provider: 'disabled',
   tavily: { apiKey: '' },
-  microsoftGrounding: { apiKey: '' },
+  webIq: { apiKey: '' },
   jina: { apiKey: '' },
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
@@ -98,13 +100,13 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     setApiKey: (c, k) => ({ ...c, tavily: { apiKey: k } }),
   },
   {
-    value: 'microsoft-grounding',
-    labelKey: 'dashboard.searchConfig.provider.microsoftGrounding',
-    iconUrl: bingIconUrl,
-    descKey: 'dashboard.searchConfig.providerDescMicrosoftGrounding',
-    url: 'https://www.microsoft.com/en-us/bing/apis',
-    getApiKey: c => c.microsoftGrounding.apiKey,
-    setApiKey: (c, k) => ({ ...c, microsoftGrounding: { apiKey: k } }),
+    value: 'web-iq',
+    labelKey: 'dashboard.searchConfig.provider.webIq',
+    iconUrl: microsoftIconUrl,
+    descKey: 'dashboard.searchConfig.providerDescWebIq',
+    url: 'https://webiq.microsoft.ai/profiles',
+    getApiKey: c => c.webIq.apiKey,
+    setApiKey: (c, k) => ({ ...c, webIq: { apiKey: k } }),
   },
   {
     value: 'jina',
@@ -144,9 +146,16 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   );
 
   const activeOption = findProviderOption(draft.provider);
+  // The tested provider is whatever the gateway echoed back, which need not be
+  // one this build knows about; an unrecognized id is shown verbatim rather
+  // than collapsed onto a familiar one.
+  const testedOption = PROVIDER_OPTIONS.find(option => option.value === testResult?.provider);
+  const testedProviderLabel = testedOption ? t(testedOption.labelKey) : testResult?.provider;
   const eligibleUpstreams = useMemo(() => eligibleSearchUpstreams(upstreams, models), [models, upstreams]);
   const modelsForSelectedUpstream = useMemo(() => models.filter(model =>
     model.kind === 'chat' && model.upstreams.some(binding => binding.id === draft.passthroughOpenAiSearch.upstreamId)), [draft.passthroughOpenAiSearch.upstreamId, models]);
+  const selectedUpstream = eligibleUpstreams.find(upstream => upstream.id === draft.passthroughOpenAiSearch.upstreamId);
+  const selectedModel = modelsForSelectedUpstream.find(model => model.id === draft.passthroughOpenAiSearch.model);
 
   const setPassthroughUpstream = useCallback((upstreamId: string, preferredModel?: string) => {
     const candidates = models.filter(model => model.kind === 'chat'
@@ -234,7 +243,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
 
   if (!user.isAdmin) {
     return (
-      <section className="grid gap-[18px] max-w-[960px] min-w-0">
+      <section className="dashboard-page max-w-[960px]">
         <DashboardPageHeader
           description={t('dashboard.searchConfig.description')}
           eyebrow={t('dashboard.groups.providers')}
@@ -246,7 +255,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   }
 
   return (
-    <section className="grid gap-[18px] max-w-[960px] min-w-0">
+    <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader
         description={t('dashboard.searchConfig.description')}
         eyebrow={t('dashboard.groups.providers')}
@@ -328,14 +337,41 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           </div>
           {draft.passthroughOpenAiSearch.enabled && <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
             <Field label={t('dashboard.searchConfig.passthrough.upstream')}>
-              <Select value={draft.passthroughOpenAiSearch.upstreamId} onChange={(_, data) => setPassthroughUpstream(data.value)}>
-                {eligibleUpstreams.map(upstream => <option key={upstream.id} value={upstream.id}>{upstream.name}</option>)}
-              </Select>
+              <Dropdown
+                onOptionSelect={(_, data) => data.optionValue && setPassthroughUpstream(data.optionValue)}
+                selectedOptions={[draft.passthroughOpenAiSearch.upstreamId]}
+                value={selectedUpstream?.name ?? ''}
+              >
+                {eligibleUpstreams.map(upstream => (
+                  <Option key={upstream.id} text={upstream.name} value={upstream.id}>
+                    <DescribedOptionLabel
+                      description={t(`dashboard.upstreams.providers.${upstream.kind}`)}
+                      label={upstream.name}
+                    />
+                  </Option>
+                ))}
+              </Dropdown>
             </Field>
             <Field label={t('dashboard.searchConfig.passthrough.model')}>
-              <Select value={draft.passthroughOpenAiSearch.model} onChange={(_, data) => setDraft(current => ({ ...current, passthroughOpenAiSearch: { ...current.passthroughOpenAiSearch, model: data.value } }))}>
-                {modelsForSelectedUpstream.map(model => <option key={model.id} value={model.id}>{model.display_name ?? model.id}</option>)}
-              </Select>
+              <Dropdown
+                onOptionSelect={(_, data) => {
+                  const model = data.optionValue;
+                  if (!model) return;
+                  setDraft(current => ({ ...current, passthroughOpenAiSearch: { ...current.passthroughOpenAiSearch, model } }));
+                  setSaveSuccess(false);
+                }}
+                selectedOptions={[draft.passthroughOpenAiSearch.model]}
+                value={selectedModel ? modelLabel(selectedModel) : ''}
+              >
+                {modelsForSelectedUpstream.map(model => (
+                  <Option key={model.id} text={modelLabel(model)} value={model.id}>
+                    <DescribedOptionLabel
+                      description={modelLabel(model) === model.id ? undefined : model.id}
+                      label={modelLabel(model)}
+                    />
+                  </Option>
+                ))}
+              </Dropdown>
             </Field>
           </div>}
           {eligibleUpstreams.length === 0 && <Text size={200} className="text-fui-fg3">{t('dashboard.searchConfig.passthrough.empty')}</Text>}
@@ -390,30 +426,12 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           </Text>
 
           <div className="flex items-center gap-[8px] flex-wrap">
-            {testResult.ok ? (
-              <span
-                className="text-[10px] font-bold uppercase px-[6px] py-[2px] rounded-[3px]"
-                style={{
-                  backgroundColor: 'light-dark(#ddf6dd, #1b3a1b)',
-                  color: 'light-dark(#0b6a0b, #6fcf6f)',
-                }}
-              >
-                OK
-              </span>
-            ) : (
-              <span
-                className="text-[10px] font-bold uppercase px-[6px] py-[2px] rounded-[3px]"
-                style={{
-                  backgroundColor: 'light-dark(#fde7e9, #3d1517)',
-                  color: 'light-dark(#c50f1f, #e37b84)',
-                }}
-              >
-                Error
-              </span>
-            )}
+            <Badge appearance="tint" color={testResult.ok ? 'success' : 'danger'} size="small">
+              {testResult.ok ? 'OK' : 'Error'}
+            </Badge>
             <Text size={200} className="text-fui-fg3">
-              Provider: {testResult.provider}
-              {testResult.query ? ` · Query: ${testResult.query}` : ''}
+              {t('dashboard.searchConfig.testedProvider', { provider: testedProviderLabel })}
+              {testResult.query ? ` · ${t('dashboard.searchConfig.testedQuery', { query: testResult.query })}` : ''}
             </Text>
           </div>
 
@@ -461,28 +479,33 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
               </div>
             )
           ) : !testResult.ok ? (
-            <div
-              className="rounded-lg border border-solid p-[12px_14px] grid gap-[4px]"
-              style={{
-                borderColor: 'light-dark(#c50f1f, #e37b84)',
-                backgroundColor: 'light-dark(#fde7e9, #3d1517)',
-              }}
-            >
-              <Text
-                size={200}
-                weight="semibold"
-                style={{ color: 'light-dark(#c50f1f, #e37b84)' }}
-              >
-                {testResult.error.code}
-              </Text>
-              <Text size={200} className="text-fui-fg1">
+            <MessageBar intent="error">
+              <MessageBarBody>
+                <MessageBarTitle>{testResult.error.code}</MessageBarTitle>
                 {testResult.error.message}
-              </Text>
-            </div>
+              </MessageBarBody>
+            </MessageBar>
           ) : null}
         </Panel>
       )}
     </section>
+  );
+}
+
+// A model's display name is often just its id; showing both would read as a
+// stutter, so the second line only appears when it carries something new.
+const modelLabel = (model: ControlPlaneModel) => model.display_name ?? model.id;
+
+function DescribedOptionLabel({ description, label }: { description?: string; label: string }) {
+  return (
+    <span className="grid gap-[2px] min-w-0">
+      <span className="truncate">{label}</span>
+      {description && (
+        <Text size={100} className="text-fui-fg3 truncate">
+          {description}
+        </Text>
+      )}
+    </span>
   );
 }
 

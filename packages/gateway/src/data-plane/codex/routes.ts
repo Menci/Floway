@@ -27,6 +27,7 @@ import { responsesHttp } from '../chat/responses/http.ts';
 import { responsesWebSocket } from '../chat/responses/websocket.ts';
 import { imagesEdits, imagesGenerations } from '../images/http.ts';
 import { serveModels } from '../models/http.ts';
+import { mountPublicRoute } from '../public-route.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
 export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
@@ -34,10 +35,10 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   // alpha-search handler.
   // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
   mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch);
-  app.on(PUBLIC_DATA_PLANE_ROUTES.codexResponses.method, PUBLIC_DATA_PLANE_ROUTES.codexResponses.paths[0], responsesHttp.generate);
-  app.on(PUBLIC_DATA_PLANE_ROUTES.codexResponsesCompact.method, PUBLIC_DATA_PLANE_ROUTES.codexResponsesCompact.paths[0], responsesHttp.compact);
-  app.on(PUBLIC_DATA_PLANE_ROUTES.codexResponsesWebSocket.method, PUBLIC_DATA_PLANE_ROUTES.codexResponsesWebSocket.paths[0], responsesWebSocket);
-  app.on(PUBLIC_DATA_PLANE_ROUTES.codexImagesGenerations.method, PUBLIC_DATA_PLANE_ROUTES.codexImagesGenerations.paths[0], imagesGenerations);
-  app.on(PUBLIC_DATA_PLANE_ROUTES.codexImagesEdits.method, PUBLIC_DATA_PLANE_ROUTES.codexImagesEdits.paths[0], imagesEdits);
-  app.on(PUBLIC_DATA_PLANE_ROUTES.codexModels.method, PUBLIC_DATA_PLANE_ROUTES.codexModels.paths[0], serveModels);
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexResponses, (method, path) => app.on(method, path, responsesHttp.generate));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexResponsesCompact, (method, path) => app.on(method, path, responsesHttp.compact));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexResponsesWebSocket, (method, path) => app.on(method, path, responsesWebSocket));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexImagesGenerations, (method, path) => app.on(method, path, imagesGenerations));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexImagesEdits, (method, path) => app.on(method, path, imagesEdits));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexModels, (method, path) => app.on(method, path, serveModels));
 };

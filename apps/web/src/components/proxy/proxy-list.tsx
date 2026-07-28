@@ -5,6 +5,7 @@ import { hostPortLabel, KIND_COLORS } from './proxy-config';
 import type { ProxyRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Panel } from '../ui/panel';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 const { Button, Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, Tooltip } = fluentComponents;
 
@@ -20,7 +21,7 @@ export function ProxyList({ onAdd, onDelete, onEdit, onRefresh, proxies }: { onA
       return <TableRow aria-label={`${t('dashboard.proxy.actions.edit')}: ${proxy.name}`} className="cursor-pointer hover:bg-fui-bg2" key={proxy.id} onClick={() => onEdit(proxy)} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onEdit(proxy); } }} tabIndex={0}>
         <TableCell><TableCellLayout><div className="flex items-center gap-[8px] min-w-0"><span className="text-fui-base200 font-fui-semibold uppercase px-[6px] py-[2px] rounded-[3px] flex-none" style={{ backgroundColor: colors.bg, color: colors.fg }}>{t(`dashboard.proxy.kind.${kind}` as never, kind)}</span><Text size={300} weight="semibold" className="truncate">{proxy.name}</Text></div></TableCellLayout></TableCell>
         <TableCell><Text size={200} className="text-fui-fg3">{hostPortLabel(proxy.url)}</Text></TableCell>
-        <TableCell><div className="flex items-center justify-end"><Button appearance="transparent" aria-label={t('dashboard.proxy.actions.delete')} icon={<DeleteRegular />} onClick={event => { event.stopPropagation(); onDelete(proxy); }} size="small" /></div></TableCell>
+        <TableCell><div className="flex items-center justify-end"><TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.proxy.actions.delete')} onClick={event => { event.stopPropagation(); onDelete(proxy); }} /></div></TableCell>
       </TableRow>;
     })}</TableBody></Table>}
   </Panel>;

@@ -239,7 +239,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   }
 
   return (
-    <div className="grid gap-[18px] min-w-0">
+    <div className="dashboard-page">
       <Toaster toasterId={toasterId} position="top-end" />
 
       <DashboardPageHeader
@@ -433,6 +433,7 @@ function UpstreamsTable({
                     onClick={() => onEdit(record)}
                   />
                   <TooltipIconButton
+                    danger
                     disabled={busy}
                     icon={mutation?.kind === 'delete' && mutation.id === record.id ? <Spinner size="tiny" /> : <DeleteRegular />}
                     label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })}

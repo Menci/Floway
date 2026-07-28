@@ -1,5 +1,4 @@
 import { reactRouter } from '@react-router/dev/vite';
-import UnoCSS from 'unocss/vite';
 import { defineConfig, type Plugin } from 'vite';
 
 // Prism ships its language components as scripts that mutate a global `Prism`
@@ -35,6 +34,7 @@ const wranglerOrigin = 'http://127.0.0.1:8788';
 const wranglerProxiedPaths = [
   '/api',
   '/auth',
+  '/favicon.ico',
   '/v1',
   '/v2',
   '/v1beta',
@@ -53,7 +53,40 @@ const wranglerProxiedPaths = [
 ];
 
 export default defineConfig({
-  plugins: [prismComponentsEsm(), UnoCSS({ mode: 'per-module' }), reactRouter()],
+  // React Router discovers route modules lazily. Pre-bundle their browser
+  // dependencies at startup so the first visit to a route never makes Vite
+  // re-optimize and reload the already-mounted dashboard.
+  optimizeDeps: {
+    include: [
+      '@fluentui/react-charts',
+      '@fluentui/react-components',
+      '@fluentui/react-icons',
+      '@hookform/resolvers/zod',
+      'd3-shape',
+      'hono/client',
+      'i18next',
+      'overlayscrollbars',
+      'prismjs',
+      'prismjs/components/prism-bash',
+      'prismjs/components/prism-json',
+      'prismjs/components/prism-markdown',
+      'prismjs/components/prism-powershell',
+      'prismjs/components/prism-toml',
+      'prismjs/components/prism-typescript',
+      'react',
+      'react-dom/client',
+      'react-hook-form',
+      'react-i18next',
+      'react-markdown',
+      'react-router',
+      'react-window',
+      'remark-gfm',
+      'remend',
+      'zod',
+      'zustand',
+    ],
+  },
+  plugins: [prismComponentsEsm(), reactRouter()],
   server: {
     port: 5174,
     proxy: Object.fromEntries(wranglerProxiedPaths.map(p => [p, { target: wranglerOrigin, changeOrigin: true }])),

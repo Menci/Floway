@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { cloneAgentSetupConfiguration, defaultAgentSetupConfiguration, type AgentSetupConfiguration, type AgentSetupLease } from './agent-setup-contract';
 import { applyLocalAgentSetupChanges } from './agent-setup-draft';
@@ -13,6 +13,7 @@ import codexIconUrl from '../../assets/codex.svg';
 import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Combobox, Select } from '../ui/fluent-form-controls';
+import { infoLabelSlot } from '../ui/info-label';
 
 const { Button, Field, MessageBar, MessageBarBody, Option, Switch, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
@@ -22,7 +23,11 @@ const NONE = '__floway_none__';
 // cannot collide with an opaque model id.
 const MODEL_DEFAULT = '\u0000default';
 const NO_MODEL_MATCHES = '\u0000no-matches';
-const SINGLE_FIELD_CLASS = 'w-full max-w-[420px]';
+// Every configuration field shares one column track, so the pickers line up
+// whatever their labels and values are. The tracks floor at zero because a
+// combobox reports the width of its input as min-content, which would
+// otherwise push the grid past the panel.
+const FIELD_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[720px]:grid-cols-[minmax(0,1fr)]';
 // cleanupPeriodDays is a numeric top-level Claude Code setting.
 // https://code.claude.com/docs/en/settings#available-settings
 const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['cleanupPeriodDays']>[];
@@ -73,62 +78,88 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
 
   const scripts = setup.lease?.scripts[agent];
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
+  // Both shells comment with `#`, so a command that is not ready yet says why
+  // inside the block it will occupy rather than above it.
   const command = scriptPath
     ? agentSetupCommand(typeof window === 'undefined' ? 'http://localhost:5173' : window.location.origin, scriptPath, platform)
-    : '';
+    : `# ${t(selectedKey ? 'dashboard.apiKeys.agentSetup.commandPending' : 'dashboard.apiKeys.agentSetup.selectKey')}`;
 
-  return <div className="grid gap-4 min-w-0">
-    <div className="grid gap-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <TabList selectedValue={agent} onTabSelect={(_, data) => setAgent(data.value === 'codex' ? 'codex' : 'claude')}>
+  return <div className="grid gap-[14px] min-w-0">
+    <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
+      <Text size={500} weight="semibold" className="text-fui-fg1 leading-[1.25] min-w-0">
+        {t('dashboard.apiKeys.configuration.title')}
+      </Text>
+      <TabList aria-label={t('dashboard.apiKeys.agentSetup.accessMethod')} onTabSelect={(_, data) => setView(data.value === 'snippets' ? 'snippets' : 'setup')} selectedValue={view} size="small">
+        <Tab value="setup">{t('dashboard.apiKeys.agentSetup.setupTab')}</Tab>
+        <Tab value="snippets">{t('dashboard.apiKeys.agentSetup.snippetsTab')}</Tab>
+      </TabList>
+    </div>
+
+    <div className="grid gap-5 min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[720px]:grid-cols-1">
+      <nav className="grid content-start">
+        <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value === 'codex' ? 'codex' : 'claude')} selectedValue={agent} vertical>
           <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />
           <AgentTab icon={codexIconUrl} label={t('dashboard.apiKeys.configuration.codex')} value="codex" />
         </TabList>
+      </nav>
+
+      <div className="grid gap-4 min-w-0 content-start grid-cols-[minmax(0,1fr)]">
+        {setup.noSelectableKey && <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.noKey')}</MessageBarBody></MessageBar>}
+        {setup.terminated && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiKeys.agentSetup.expired')}</MessageBarBody></MessageBar>}
+        {setup.createError && !setup.lease
+          ? <MessageBar intent="error"><MessageBarBody><span className="inline-flex items-center gap-2 flex-wrap">{setup.createError}<Button appearance="secondary" onClick={setup.retryCreate} size="small">{t('dashboard.apiKeys.agentSetup.retry')}</Button></span></MessageBarBody></MessageBar>
+          : setup.error && <MessageBar intent="error"><MessageBarBody>{setup.error}</MessageBarBody></MessageBar>}
+
+        <section className="grid gap-3">
+          <Text as="h3" size={300} weight="semibold" className="!m-0">{t('dashboard.apiKeys.agentSetup.modelSelection')}</Text>
+          <AgentConfigurationFields agent={agent} configuration={activeDraft} models={models} onChange={updateConfiguration} />
+        </section>
+
+        {view === 'snippets' && selectedKey
+          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={activeDraft} copiedTag={copiedTag} copyFailedTag={copyFailedTag} onCopy={onCopy} onPlatformChange={setPlatform} platform={platform} />
+          : view === 'snippets'
+            ? <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.selectKey')}</MessageBarBody></MessageBar>
+            : <div className="border-t border-t-solid border-fui-stroke1 pt-4">
+                <CodeBlock
+                  code={command}
+                  copied={copiedTag === `agent-setup-${agent}-${platform}`}
+                  copyFailed={copyFailedTag === `agent-setup-${agent}-${platform}`}
+                  disabled={!setup.canCopy}
+                  header={<PlatformTabs onChange={setPlatform} platform={platform} />}
+                  language={platform === 'unix' ? 'bash' : 'powershell'}
+                  onCopy={() => setup.canCopy && onCopy(command, `agent-setup-${agent}-${platform}`)}
+                />
+              </div>}
+
+        {(selectedKey !== null || view === 'setup') && (
+          <Text size={200} className="text-fui-fg2">
+            {selectedKey && <>
+              <Trans
+                components={{ strong: <strong className="font-fui-semibold" /> }}
+                i18nKey="dashboard.apiKeys.configuration.usingKey"
+                values={{ name: selectedKey.name }}
+              />
+              {view === 'setup' && ' '}
+            </>}
+            {view === 'setup' && t('dashboard.apiKeys.agentSetup.expires')}
+          </Text>
+        )}
       </div>
-      <Field className="w-full max-w-[260px]" label={{ children: t('dashboard.apiKeys.agentSetup.accessMethod'), className: 'font-fui-semibold' }}>
-        <Select value={view} onChange={(_, data) => setView(data.value === 'snippets' ? 'snippets' : 'setup')}>
-          <option value="setup">{t('dashboard.apiKeys.agentSetup.setupTab')}</option>
-          <option value="snippets">{t('dashboard.apiKeys.agentSetup.snippetsTab')}</option>
-        </Select>
-      </Field>
     </div>
-
-    {!selectedKey && <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.selectKey')}</MessageBarBody></MessageBar>}
-    {setup.noSelectableKey && <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.noKey')}</MessageBarBody></MessageBar>}
-    {setup.terminated && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiKeys.agentSetup.expired')}</MessageBarBody></MessageBar>}
-    {setup.createError && !setup.lease
-      ? <MessageBar intent="error"><MessageBarBody><span className="inline-flex items-center gap-2 flex-wrap">{setup.createError}<Button appearance="secondary" onClick={setup.retryCreate} size="small">{t('dashboard.apiKeys.agentSetup.retry')}</Button></span></MessageBarBody></MessageBar>
-      : setup.error && <MessageBar intent="error"><MessageBarBody>{setup.error}</MessageBarBody></MessageBar>}
-
-    <section className="grid gap-3">
-      <Text as="h3" size={300} weight="semibold" className="!m-0">{t('dashboard.apiKeys.agentSetup.modelSelection')}</Text>
-      <AgentConfigurationFields agent={agent} configuration={activeDraft} models={models} onChange={updateConfiguration} />
-    </section>
-
-    {view === 'snippets' && selectedKey
-      ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={activeDraft} copiedTag={copiedTag} copyFailedTag={copyFailedTag} onCopy={onCopy} onPlatformChange={setPlatform} platform={platform} />
-      : view === 'snippets'
-        ? <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.selectKey')}</MessageBarBody></MessageBar>
-        : <div className="grid gap-3 border-t border-t-solid border-fui-stroke1 pt-4">
-            <div className="flex items-end justify-between gap-3 flex-wrap">
-              <Field className="min-w-[190px]" label={t('dashboard.apiKeys.agentSetup.platform')}>
-                <Select value={platform} onChange={(_, data) => setPlatform(data.value === 'windows' ? 'windows' : 'unix')}>
-                  <option value="unix">macOS / Linux</option>
-                  <option value="windows">Windows</option>
-                </Select>
-              </Field>
-              <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.agentSetup.expires')}</Text>
-            </div>
-            <CodeBlock
-              code={command}
-              copied={copiedTag === `agent-setup-${agent}-${platform}`}
-              copyFailed={copyFailedTag === `agent-setup-${agent}-${platform}`}
-              disabled={!setup.canCopy}
-              language={platform === 'unix' ? 'bash' : 'powershell'}
-              onCopy={() => setup.canCopy && onCopy(command, `agent-setup-${agent}-${platform}`)}
-            />
-          </div>}
   </div>;
+}
+
+function PlatformTabs({ onChange, platform }: { onChange: (platform: Platform) => void; platform: Platform }) {
+  const { t } = useTranslation();
+  return <TabList
+    aria-label={t('dashboard.apiKeys.agentSetup.platform')}
+    onTabSelect={(_, data) => onChange(data.value === 'windows' ? 'windows' : 'unix')}
+    selectedValue={platform}
+    size="small"
+  >
+    <Tab value="unix">macOS / Linux</Tab>
+    <Tab value="windows">Windows</Tab>
+  </TabList>;
 }
 
 function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, copyFailedTag, onCopy, onPlatformChange, platform }: {
@@ -158,16 +189,10 @@ function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, copyFail
   return <div className="grid gap-3 border-t border-t-solid border-fui-stroke1 pt-4">
     <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.codexConfigHint')}</Text>
     <CodeBlock code={config} copied={copiedTag === 'agent-snippet-codex'} copyFailed={copyFailedTag === 'agent-snippet-codex'} language="toml" onCopy={() => onCopy(config, 'agent-snippet-codex')} />
-    <Field className="min-w-[190px] max-w-[260px]" label={t('dashboard.apiKeys.agentSetup.platform')}>
-      <Select value={platform} onChange={(_, data) => onPlatformChange(data.value === 'windows' ? 'windows' : 'unix')}>
-        <option value="unix">macOS / Linux</option>
-        <option value="windows">Windows</option>
-      </Select>
-    </Field>
     <Text size={200} className="text-fui-fg2">
       {t(platform === 'windows' ? 'dashboard.apiKeys.configuration.codexWindowsAuthHint' : 'dashboard.apiKeys.configuration.codexAuthHint')}
     </Text>
-    <CodeBlock code={credential} copied={copiedTag === credentialTag} copyFailed={copyFailedTag === credentialTag} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => onCopy(credential, credentialTag)} />
+    <CodeBlock code={credential} copied={copiedTag === credentialTag} copyFailed={copyFailedTag === credentialTag} header={<PlatformTabs onChange={onPlatformChange} platform={platform} />} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => onCopy(credential, credentialTag)} />
   </div>;
 }
 
@@ -242,22 +267,18 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   const effortOptions = codexModel?.chat?.reasoning?.effort?.supported ?? [];
 
   if (agent === 'claude') return <div className="grid gap-5">
-    <div className="grid gap-3">
-      <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
-        <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} models={models} family="claude" picker="default" value={configuration.claudeCode.model} onChange={model => patchClaude({ model })} />
-        <Field label={t('dashboard.apiKeys.agentSetup.reasoningEffort')}>
-          <Select value={configuration.claudeCode.effortLevel ?? NONE} onChange={(_, data) => patchClaude({ effortLevel: data.value === NONE ? null : data.value as NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']> })}>
-            <option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</option>
-            {(['low', 'medium', 'high', 'xhigh'] as const).map(effort => <option key={effort} value={effort}>{effort}</option>)}
-          </Select>
-        </Field>
-      </div>
-      <div className="grid grid-cols-4 gap-3 max-[980px]:grid-cols-2 max-[560px]:grid-cols-1">
-        <ModelSelect label={t('dashboard.apiKeys.agentSetup.fableModel')} models={models} family="claude" picker="fable" value={configuration.claudeCode.defaultFableModel} onChange={model => patchClaude({ defaultFableModel: model })} />
-        <ModelSelect label={t('dashboard.apiKeys.agentSetup.opusModel')} models={models} family="claude" picker="opus" value={configuration.claudeCode.defaultOpusModel} onChange={model => patchClaude({ defaultOpusModel: model })} />
-        <ModelSelect label={t('dashboard.apiKeys.agentSetup.sonnetModel')} models={models} family="claude" picker="sonnet" value={configuration.claudeCode.defaultSonnetModel} onChange={model => patchClaude({ defaultSonnetModel: model })} />
-        <ModelSelect label={t('dashboard.apiKeys.agentSetup.haikuModel')} models={models} family="claude" picker="haiku" value={configuration.claudeCode.defaultHaikuModel} onChange={model => patchClaude({ defaultHaikuModel: model })} />
-      </div>
+    <div className={FIELD_GRID_CLASS}>
+      <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} models={models} family="claude" picker="default" value={configuration.claudeCode.model} onChange={model => patchClaude({ model })} />
+      <ModelSelect label={t('dashboard.apiKeys.agentSetup.fableModel')} models={models} family="claude" picker="fable" value={configuration.claudeCode.defaultFableModel} onChange={model => patchClaude({ defaultFableModel: model })} />
+      <ModelSelect label={t('dashboard.apiKeys.agentSetup.opusModel')} models={models} family="claude" picker="opus" value={configuration.claudeCode.defaultOpusModel} onChange={model => patchClaude({ defaultOpusModel: model })} />
+      <ModelSelect label={t('dashboard.apiKeys.agentSetup.sonnetModel')} models={models} family="claude" picker="sonnet" value={configuration.claudeCode.defaultSonnetModel} onChange={model => patchClaude({ defaultSonnetModel: model })} />
+      <ModelSelect label={t('dashboard.apiKeys.agentSetup.haikuModel')} models={models} family="claude" picker="haiku" value={configuration.claudeCode.defaultHaikuModel} onChange={model => patchClaude({ defaultHaikuModel: model })} />
+      <Field label={t('dashboard.apiKeys.agentSetup.reasoningEffort')}>
+        <Select value={configuration.claudeCode.effortLevel ?? NONE} onChange={(_, data) => patchClaude({ effortLevel: data.value === NONE ? null : data.value as NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']> })}>
+          <option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</option>
+          {(['low', 'medium', 'high', 'xhigh'] as const).map(effort => <option key={effort} value={effort}>{effort}</option>)}
+        </Select>
+      </Field>
     </div>
     <section className="grid gap-3">
       <Text as="h4" size={300} weight="semibold" className="!m-0">{t('dashboard.apiKeys.agentSetup.miscSettings')}</Text>
@@ -267,34 +288,36 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
         label={t('dashboard.apiKeys.agentSetup.modelDiscovery')}
         onChange={checked => patchClaude({ modelDiscovery: checked })}
       />
-      <Field className={SINGLE_FIELD_CLASS} hint={t('dashboard.apiKeys.agentSetup.cleanupRetentionHint')} label={t('dashboard.apiKeys.agentSetup.cleanupRetention')}>
-        <Select
-          value={configuration.claudeCode.cleanupPeriodDays?.toString() ?? NONE}
-          onChange={(_, data) => {
-            if (data.value === NONE) {
-              patchClaude({ cleanupPeriodDays: null });
-              return;
-            }
-            const period = claudeCleanupPeriods.find(candidate => candidate.toString() === data.value);
-            if (period !== undefined) patchClaude({ cleanupPeriodDays: period });
-          }}
-        >
-          <option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</option>
-          {claudeCleanupPeriods.map(period => (
-            <option key={period} value={period}>{t('dashboard.apiKeys.agentSetup.cleanupDays', { count: period })}</option>
-          ))}
-        </Select>
-      </Field>
       <SwitchSetting
         checked={configuration.claudeCode.optOutAiAttribution}
         description={t('dashboard.apiKeys.agentSetup.optOutAiAttributionHint')}
         label={t('dashboard.apiKeys.agentSetup.optOutAiAttribution')}
         onChange={checked => patchClaude({ optOutAiAttribution: checked })}
       />
+      <div className={FIELD_GRID_CLASS}>
+        <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.cleanupRetention'), t('dashboard.apiKeys.agentSetup.cleanupRetentionHint')) }}>
+          <Select
+            value={configuration.claudeCode.cleanupPeriodDays?.toString() ?? NONE}
+            onChange={(_, data) => {
+              if (data.value === NONE) {
+                patchClaude({ cleanupPeriodDays: null });
+                return;
+              }
+              const period = claudeCleanupPeriods.find(candidate => candidate.toString() === data.value);
+              if (period !== undefined) patchClaude({ cleanupPeriodDays: period });
+            }}
+          >
+            <option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</option>
+            {claudeCleanupPeriods.map(period => (
+              <option key={period} value={period}>{t('dashboard.apiKeys.agentSetup.cleanupDays', { count: period })}</option>
+            ))}
+          </Select>
+        </Field>
+      </div>
     </section>
   </div>;
 
-  return <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
+  return <div className={FIELD_GRID_CLASS}>
     <ModelSelect label={t('dashboard.apiKeys.agentSetup.defaultModel')} models={models} family="codex" picker="default" value={configuration.codex.model} onChange={model => patchCodex({ model })} />
     <Field label={t('dashboard.apiKeys.agentSetup.reasoningEffort')}>
       <Combobox freeform value={configuration.codex.reasoningEffort ?? ''} onChange={event => patchCodex({ reasoningEffort: event.target.value === '' ? null : event.target.value })} onOptionSelect={(_, data) => patchCodex({ reasoningEffort: data.optionText === '' || data.optionText === undefined ? null : data.optionText })}>
@@ -310,10 +333,11 @@ function SwitchSetting({ checked, description, label, onChange }: {
   label: string;
   onChange: (checked: boolean) => void;
 }) {
-  return <div className="grid gap-1">
-    <Switch checked={checked} label={label} onChange={(_, data) => onChange(data.checked)} />
-    <Text size={200} className="text-fui-fg2">{description}</Text>
-  </div>;
+  return <Switch
+    checked={checked}
+    label={{ children: infoLabelSlot(label, description) }}
+    onChange={(_, data) => onChange(data.checked)}
+  />;
 }
 
 function ModelSelect({ family, label, models, onChange, picker, value }: {

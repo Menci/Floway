@@ -14,24 +14,24 @@ import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
+import { ModelInfoBadges } from '../components/models/model-info-badges';
+import { effectiveUpstreamCap } from '../components/models/reachability';
 import { PlaygroundComposer } from '../components/playground/playground-composer';
 import {
   availableModels,
   createWireFetch,
   defaultMaxOutputTokens,
   generationOptions,
-  maximumOutputTokens,
   parseCustomJson,
   playgroundApis,
   supportsImageInput,
   type PlaygroundApi,
   type PlaygroundMessage,
-  type PlaygroundSettings,
 } from '../components/playground/playground-logic';
 import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
-import { Combobox, Input, Select, SpinButton, Textarea } from '../components/ui/fluent-form-controls';
+import { Combobox, Input, Select, Textarea } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { SegmentedControl } from '../components/ui/segmented-control';
@@ -49,7 +49,6 @@ const {
   MessageBar,
   MessageBarBody,
   Option,
-  Switch,
   Text,
   makeStyles,
   tokens,
@@ -119,7 +118,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [api, setApi] = useState<PlaygroundApi>('responses');
   const [keyId, setKeyId] = useState(loaderData.keys[0]?.id ?? '');
   const [modelId, setModelId] = useState('');
-  const [modelQuery, setModelQuery] = useState('');
+  // `null` means the picker is showing its selection rather than a search
+  // term. Opening the list clears the field so the first keystroke starts a
+  // query instead of extending the selected model's display name.
+  const [modelQuery, setModelQuery] = useState<string | null>(null);
   const [messages, setMessages] = useState<PlaygroundMessage[]>([]);
   const [system, setSystem] = useState('');
   const [showSystem, setShowSystem] = useState(false);
@@ -132,7 +134,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     responses: '{}', chatCompletions: '{}', messages: '{}',
   });
   const [customError, setCustomError] = useState<string | null>(null);
-  const [settings, setSettings] = useState<PlaygroundSettings>({});
+  const [reasoningEffort, setReasoningEffort] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editImage, setEditImage] = useState('');
@@ -140,16 +142,19 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedKey = loaderData.keys.find(key => key.id === keyId) ?? null;
+  const cap = useMemo(
+    () => effectiveUpstreamCap(selectedKey?.upstream_ids ?? null, user.upstreamIds),
+    [selectedKey, user.upstreamIds],
+  );
   const models = useMemo(
-    () => availableModels(loaderData.models, selectedKey, user.upstreamIds, api),
-    [api, loaderData.models, selectedKey, user.upstreamIds],
+    () => availableModels(loaderData.models, cap, api),
+    [api, cap, loaderData.models],
   );
   const selectedModel = models.find(model => model.id === modelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
-  const outputLimit = maximumOutputTokens(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];
   const matchingModels = models.filter(model => {
-    const query = modelQuery.trim().toLowerCase();
+    const query = (modelQuery ?? '').trim().toLowerCase();
     return !query || model.id.toLowerCase().includes(query) || model.display_name.toLowerCase().includes(query);
   });
 
@@ -236,7 +241,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         model: selectedModel.id,
         system: system.trim(),
         messages: context,
-        options: generationOptions(api, settings, defaultMaxOutputTokens(selectedModel)),
+        options: generationOptions(api, reasoningEffort || undefined, defaultMaxOutputTokens(selectedModel)),
         signal: controller.signal,
         fetchImpl: wireFetch,
       })) {
@@ -295,13 +300,20 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
 
   return (
-    <FluentProvider theme={australianTheme} className="h-full min-h-0 !bg-transparent">
+    // Fluent copies this provider's className onto the portal mount node it
+    // creates under <body>, so any layout class here also sizes that node —
+    // `h-full` turned it into a full-viewport z-index 1000000 overlay that ate
+    // the pointer events its own popups needed. `contents` removes the box
+    // instead: the theme's custom properties still cascade from the element,
+    // the page grid resolves against <main>, and the mount node stays inert.
+    // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-provider/library/src/components/FluentProvider/useFluentProviderThemeStyleTag.ts#L1-L40
+    <FluentProvider theme={australianTheme} className="contents">
       <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
           <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
             <div className="min-w-0">
               <Text as="h1" size={500} weight="semibold" className="!m-0 block">{t('dashboard.nav.playground')}</Text>
-              <Text size={200} className="text-fui-fg2 block truncate">{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
+              <Text size={200} className={`text-fui-fg2 block truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
             </div>
           </div>
           <div className="px-4 py-2 grid gap-2">
@@ -407,34 +419,24 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                 <SegmentedControl ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
               </div>
               <Field label={t('dashboard.playground.model')}>
-                <Combobox value={modelQuery || selectedModel?.display_name || ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
+                <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
                   if (!data.optionValue) return;
                   changeContext(() => {
                     setModelId(data.optionValue!);
-                    setModelQuery('');
+                    setModelQuery(null);
                     setMessages([]);
                     setEditingId(null);
                   });
-                }} onOpenChange={(_, data) => { if (!data.open) setModelQuery(''); }}>
-                  {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0"><div className="truncate">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate ${s.code}`}>{model.id}</div></div></Option>)}
+                }} onOpenChange={(_, data) => setModelQuery(data.open ? '' : null)}>
+                  {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0 grid gap-1"><div className="truncate leading-[var(--lineHeightBase300)]">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate leading-[var(--lineHeightBase200)] ${s.code}`}>{model.id}</div></div></Option>)}
                 </Combobox>
               </Field>
+              {selectedModel && <ModelInfoBadges cap={cap} catalog={loaderData.models} model={selectedModel} />}
             </SettingsSection>
 
             <SettingsSection title={t('dashboard.playground.settings.generation')}>
-              <OptionalNumber initialValue={1} label={t('dashboard.playground.parameters.temperature')} value={settings.temperature} min={0} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, temperature: value }))} />
-              <OptionalNumber initialValue={defaultMaxOutputTokens(selectedModel)} label={t('dashboard.playground.parameters.maxOutputTokens')} value={settings.maxOutputTokens} min={1} max={outputLimit} step={1} onChange={value => setSettings(current => ({ ...current, maxOutputTokens: value }))} />
-              <OptionalNumber initialValue={1} label={t('dashboard.playground.parameters.topP')} value={settings.topP} min={0} max={1} step={0.05} onChange={value => setSettings(current => ({ ...current, topP: value }))} />
-              <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.frequencyPenalty')} value={settings.frequencyPenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, frequencyPenalty: value }))} />
-              <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.presencePenalty')} value={settings.presencePenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, presencePenalty: value }))} />
-              <Field label={t('dashboard.playground.parameters.stopSequences')}>
-                <Input disabled={api === 'responses'} value={settings.stopSequences?.join(', ') ?? ''} placeholder={t('dashboard.playground.parameters.unset')} onChange={(_, data) => {
-                  const stopSequences = data.value.split(',').map(value => value.trim()).filter(Boolean);
-                  setSettings(current => ({ ...current, stopSequences: stopSequences.length ? stopSequences : undefined }));
-                }} />
-              </Field>
               <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
-                <Select value={settings.reasoningEffort ?? ''} disabled={!effortOptions.length} onChange={(_, data) => setSettings(current => ({ ...current, reasoningEffort: data.value || undefined }))}>
+                <Select value={reasoningEffort} disabled={!effortOptions.length} onChange={(_, data) => setReasoningEffort(data.value)}>
                   <option value="">{t('dashboard.playground.parameters.providerDefault')}</option>
                   {effortOptions.map(effort => <option key={effort} value={effort}>{effort}</option>)}
                 </Select>
@@ -462,17 +464,4 @@ function SettingsSection({ children, title }: { children: React.ReactNode; title
 
 function EmptyState({ text }: { text: string }) {
   return <div className="h-full min-h-[180px] grid place-items-center text-center px-6"><Text className="text-fui-fg2">{text}</Text></div>;
-}
-
-function OptionalNumber({ disabled, initialValue, label, max, min, onChange, step, value }: {
-  disabled?: boolean; initialValue: number; label: string; max?: number; min: number; onChange: (value: number | undefined) => void; step: number; value?: number;
-}) {
-  const { t } = useTranslation();
-  return <div className="grid grid-cols-[minmax(0,1fr)_116px] items-end gap-2 min-w-0">
-    <Switch checked={value !== undefined} disabled={disabled} label={label} onChange={(_, data) => onChange(data.checked ? initialValue : undefined)} />
-    <SpinButton aria-label={label} disabled={disabled === true || value === undefined} value={value ?? null} min={min} max={max} step={step} placeholder={t('dashboard.playground.parameters.unset')} onChange={(_, data) => {
-      const next = data.value ?? (data.displayValue ? Number(data.displayValue) : undefined);
-      if (next !== undefined && Number.isFinite(next)) onChange(next);
-    }} />
-  </div>;
 }

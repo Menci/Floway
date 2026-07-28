@@ -1,10 +1,13 @@
-import { defineConfig, presetWind3, transformerDirectives, transformerVariantGroup } from 'unocss';
+import { defineConfig, presetWind3 } from 'unocss';
 
 export default defineConfig({
   presets: [
     presetWind3(),
   ],
   theme: {
+    fontFamily: {
+      mono: 'var(--fontFamilyMonospace)',
+    },
     fontSize: {
       'fui-base200': 'var(--fontSizeBase200)',
       'fui-base300': 'var(--fontSizeBase300)',
@@ -14,6 +17,11 @@ export default defineConfig({
     },
   },
   shortcuts: {
+    // A route's own content region. `min-w-0` alone lets the region shrink but
+    // leaves its single column at `auto`, which grows to the widest child's
+    // min-content — one long message bar then pushes the whole page past the
+    // viewport. The explicit track floors that column at zero.
+    'dashboard-page': 'grid gap-[18px] min-w-0 grid-cols-[minmax(0,1fr)]',
     'text-fui-fg1': 'text-[var(--colorNeutralForeground1)]',
     'text-fui-fg2': 'text-[var(--colorNeutralForeground2)]',
     'text-fui-fg3': 'text-[var(--colorNeutralForeground3)]',
@@ -32,7 +40,10 @@ export default defineConfig({
     ['font-fui-medium', { 'font-weight': 'var(--fontWeightMedium)' }],
     ['font-fui-semibold', { 'font-weight': 'var(--fontWeightSemibold)' }],
   ],
-  transformers: [transformerDirectives(), transformerVariantGroup()],
+  // The PostCSS integration reads these globs itself and never sees the module
+  // graph, so a class only ships if a file here spells it out. It also applies
+  // no source-level transformers: utilities must appear verbatim in the source,
+  // not as variant groups.
   content: {
     filesystem: ['src/**/*.{ts,tsx}'],
   },

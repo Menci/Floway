@@ -44,7 +44,7 @@ const useStyles = makeStyles({
   code: {
     backgroundColor: 'var(--colorNeutralBackground1)',
     color: 'var(--colorNeutralForeground1)',
-    fontFamily: 'monospace',
+    fontFamily: 'var(--fontFamilyMonospace)',
     fontSize: '12px',
     lineHeight: 1.55,
     margin: 0,
@@ -53,7 +53,7 @@ const useStyles = makeStyles({
     tabSize: 2,
     whiteSpace: 'pre',
   },
-  headers: { borderCollapse: 'collapse', fontFamily: 'monospace', fontSize: '12px', width: '100%' },
+  headers: { borderCollapse: 'collapse', fontFamily: 'var(--fontFamilyMonospace)', fontSize: '12px', width: '100%' },
   headerRow: { borderBottom: '1px solid var(--colorNeutralStroke3)' },
   headerName: { color: 'var(--colorNeutralForeground3)', padding: '7px 14px 7px 16px', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'nowrap', width: '190px' },
   headerValue: { color: 'var(--colorNeutralForeground1)', padding: '7px 16px 7px 0', verticalAlign: 'top', whiteSpace: 'nowrap' },

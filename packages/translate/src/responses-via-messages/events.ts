@@ -3,7 +3,7 @@ import * as responses from '../shared/responses-via/responses-event-builder.ts';
 import { messagesRefusalResponsesError } from '../shared/via-messages/refusal.ts';
 import { openAIServiceTierFromMessagesUsage } from '../shared/via-messages/service-tier.ts';
 import { inclusiveMessagesInputUsage } from '../shared/via-messages/usage.ts';
-import { eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   mergeMessagesUsageSnapshot,
   messagesUsageSnapshot,
@@ -123,7 +123,6 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
             },
           }
         : {}),
-      ...(cacheWrite1h > 0 ? { [USAGE_BILLING]: { cacheWrite1hTokenCount: cacheWrite1h } } : {}),
     },
     ...(serviceTier !== undefined ? { serviceTier } : {}),
     ...(status === 'failed' ? { error: messagesRefusalResponsesError(state.stopDetails) } : {}),

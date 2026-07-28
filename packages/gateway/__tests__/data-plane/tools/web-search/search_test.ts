@@ -35,7 +35,7 @@ test('runWebSearchAndRecordUsage records provider error results', async () => {
   initRepo(repo);
 
   const result = await runWebSearchAndRecordUsage({
-    providerName: 'microsoft-grounding',
+    providerName: 'web-iq',
     keyId: 'key_b',
     request: { query: 'React' },
     provider: stubProvider(() =>
@@ -49,7 +49,7 @@ test('runWebSearchAndRecordUsage records provider error results', async () => {
   assertEquals(result.type, 'error');
   const records = await repo.webSearchUsage.listAll();
   assertEquals(records.length, 1);
-  assertEquals(records[0].provider, 'microsoft-grounding');
+  assertEquals(records[0].provider, 'web-iq');
   assertEquals(records[0].keyId, 'key_b');
   assertEquals(records[0].requests, 1);
 });

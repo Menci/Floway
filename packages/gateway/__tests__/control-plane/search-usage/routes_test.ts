@@ -19,7 +19,7 @@ const seedWebSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryR
 
   await repo.webSearchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'search', hour: '2026-03-15T10', requests: 2 });
   await repo.webSearchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'fetch_page', hour: '2026-03-15T10', requests: 3 });
-  await repo.webSearchUsage.set({ provider: 'microsoft-grounding', keyId: 'key_other', action: 'search', hour: '2026-03-15T11', requests: 4 });
+  await repo.webSearchUsage.set({ provider: 'web-iq', keyId: 'key_other', action: 'search', hour: '2026-03-15T11', requests: 4 });
 };
 
 test('/api/search-usage scopes to the actor\'s keys when called with an API key', async () => {
@@ -47,9 +47,9 @@ test('/api/search-usage in self-by-key mode includes per-key metadata for the ac
   const { repo, apiKey } = await setupAppTest();
   await seedWebSearchUsage(repo, apiKey.id);
   await repo.webSearchConfig.save({
-    provider: 'microsoft-grounding',
+    provider: 'web-iq',
     tavily: { apiKey: 'tvly-test' },
-    microsoftGrounding: { apiKey: 'ms-test' },
+    webIq: { apiKey: 'ms-test' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -61,7 +61,7 @@ test('/api/search-usage in self-by-key mode includes per-key metadata for the ac
   assertEquals(response.status, 200);
   const body = await response.json();
   assertEquals(body.view, 'self-by-key');
-  assertEquals(body.activeProvider, 'microsoft-grounding');
+  assertEquals(body.activeProvider, 'web-iq');
   assertEquals(body.keys, [
     { id: apiKey.id, name: apiKey.name, createdAt: apiKey.createdAt },
   ]);
@@ -87,11 +87,11 @@ test('/api/search-usage all-by-user view aggregates across keys per user', async
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  // Two distinct rows: tavily/user2 (apiKey.userId === 2) and microsoft-grounding/user1.
+  // Two distinct rows: tavily/user2 (apiKey.userId === 2) and web-iq/user1.
   // Aggregation summed both actions for the tavily row. Sort order is hour, userId, provider.
   assertEquals(body, [
     { provider: 'tavily', userId: 2, hour: '2026-03-15T10', requests: 5 },
-    { provider: 'microsoft-grounding', userId: 1, hour: '2026-03-15T11', requests: 4 },
+    { provider: 'web-iq', userId: 1, hour: '2026-03-15T11', requests: 4 },
   ]);
 });
 

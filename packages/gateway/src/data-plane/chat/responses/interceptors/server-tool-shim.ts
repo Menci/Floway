@@ -5,7 +5,7 @@ import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomResponsesItemId,
   type CanonicalResponsesPayload,
@@ -155,7 +155,7 @@ export interface TurnSummary {
   terminalStatus: UpstreamTerminal;
 }
 
-type LatestUpstreamMetadata = Pick<EventResultMetadata, 'modelIdentity' | 'performance'>;
+type LatestUpstreamMetadata = Pick<EventResultMetadata, 'modelIdentity' | 'performance' | 'billableUsage'>;
 
 export const createMergeState = (): MergeState => ({
   sequenceNumber: 0,
@@ -849,6 +849,16 @@ async function* materializeServerToolItems(
   }
 }
 
+// `finalMetadata` resolves when that turn's stream ends; the shim has already
+// drained it before reaching here, so awaiting it cannot deadlock.
+const accumulateBillableUsage = async (
+  metadata: LatestUpstreamMetadata,
+  result: Extract<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>, { type: 'events' }>,
+): Promise<void> => {
+  const turn = result.finalMetadata === undefined ? undefined : (await result.finalMetadata).billableUsage;
+  metadata.billableUsage = sumBillableUsage(metadata.billableUsage, turn);
+};
+
 async function* runMultiTurnLoop(args: {
   ctx: ResponsesInvocation;
   run: InterceptorRun<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
@@ -856,6 +866,7 @@ async function* runMultiTurnLoop(args: {
   loopState: ServerToolLoopState;
   demoteForcedServerToolChoiceAfterFirstTurn: boolean;
   turn1Iter: AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, TurnSummary>;
+  firstResult: Extract<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>, { type: 'events' }>;
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>;
   store: StatefulResponsesStore;
   canonicalInput: ResponsesInputItem[];
@@ -868,6 +879,10 @@ async function* runMultiTurnLoop(args: {
   let midStreamError: unknown = undefined;
   try {
     let currentTurn: TurnSummary = yield* turn1Iter;
+    // Each turn resolves its own cost once its stream has drained, and the
+    // shim consumes them one at a time, so the running total is complete by
+    // the time the loop reaches its terminal.
+    await accumulateBillableUsage(metadata, args.firstResult);
     merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     while (true) {
       const turn = currentTurn;
@@ -929,6 +944,7 @@ async function* runMultiTurnLoop(args: {
       }
       metadata.modelIdentity = nextResult.modelIdentity;
       metadata.performance = nextResult.performance;
+      await accumulateBillableUsage(metadata, nextResult);
       currentTurn = yield* consumeTurnStreaming(nextResult.events, merge, false, dispatchers, loopState, active);
       merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     }
@@ -1031,6 +1047,7 @@ export const withResponsesServerToolShim = (
       loopState,
       demoteForcedServerToolChoiceAfterFirstTurn,
       turn1Iter,
+      firstResult,
       dispatchers,
       store: gatewayCtx.store,
       canonicalInput,

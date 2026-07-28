@@ -1,8 +1,6 @@
 import { AddRegular } from '@fluentui/react-icons';
-import prismVsStyles from 'prism-themes/themes/prism-vs.css?url';
-import prismVscDarkPlusStyles from 'prism-themes/themes/prism-vsc-dark-plus.css?url';
 import { useEffect, useId, useRef, useState } from 'react';
-import { Trans, useTranslation } from 'react-i18next';
+import { useTranslation } from 'react-i18next';
 import { redirect, useOutletContext } from 'react-router';
 
 import type { DashboardOutletContext } from './dashboard';
@@ -56,7 +54,6 @@ export async function clientLoader(): Promise<LoaderData> {
   return { ...data, selectedKeyId, setupError: setup.error?.message ?? null, setupLease: setup.data ?? null };
 }
 export function meta({}: Route.MetaArgs) { return [{ title: 'API Keys | Floway' }]; }
-export function links() { return [{ rel: 'stylesheet', href: prismVsStyles, media: '(prefers-color-scheme: light)' }, { rel: 'stylesheet', href: prismVscDarkPlusStyles, media: '(prefers-color-scheme: dark)' }]; }
 
 export default function DashboardServicesApiKeys({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
@@ -188,7 +185,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   };
 
   return (
-    <div className="grid gap-[18px] min-w-0">
+    <div className="dashboard-page">
       <Toaster toasterId={toasterId} position="top-end" />
 
       <DashboardPageHeader
@@ -233,22 +230,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       </Panel>
 
       <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
-        <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-          <div className="grid gap-[5px] min-w-0">
-            <Text size={500} weight="semibold" className="text-fui-fg1 leading-[1.25]">
-              {t('dashboard.apiKeys.configuration.title')}
-            </Text>
-            {selectedKey && (
-              <Text size={200} className="text-fui-fg2">
-                <Trans
-                  components={{ strong: <strong className="font-fui-semibold" /> }}
-                  i18nKey="dashboard.apiKeys.configuration.selected"
-                  values={{ name: selectedKey.name }}
-                />
-              </Text>
-            )}
-          </div>
-        </div>
         <AgentSetupCard
           copiedTag={copiedTag}
           copyFailedTag={copyFailedTag}

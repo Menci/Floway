@@ -88,23 +88,8 @@ const opaqueBlobLocations = async (
   return locations;
 };
 
-const isEmptyOriginlessReasoningCarrier = (
-  item: ResponsesInputItem & Record<string, unknown>,
-  decisions: readonly {
-    readonly location: ResponsesBlobLocation;
-    readonly selected: ReturnType<typeof blobForExactCandidate>;
-  }[],
-): boolean => {
-  if (item.type !== 'reasoning' || !Array.isArray(item.summary) || item.summary.length !== 0) return false;
-  const originlessTopLevel = decisions.some(({ location, selected }) =>
-    location.contentIndex === undefined
-    && location.slot === 'encrypted_content'
-    && location.decoded.kind === 'owned'
-    && location.decoded.value === undefined
-    && !selected.present);
-  if (!originlessTopLevel) return false;
-  return Object.keys(item).every(key => ['type', 'id', 'summary', 'encrypted_content'].includes(key));
-};
+const isSyntheticItem = (locations: readonly ResponsesBlobLocation[]): boolean =>
+  locations.some(location => location.decoded.kind === 'owned' && location.decoded.syntheticItem === true);
 
 export const prepareResponsesAffinity = async (
   payload: CanonicalResponsesPayload,
@@ -120,6 +105,7 @@ export const prepareResponsesAffinity = async (
       candidatePayload.input = candidatePayload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
         const itemLocations = byItem.get(itemIndex);
         if (itemLocations === undefined) return [item];
+        if (isSyntheticItem(itemLocations)) return [];
 
         const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
         const decisions = itemLocations.map(location => ({
@@ -148,7 +134,7 @@ export const prepareResponsesAffinity = async (
           });
         }
 
-        return isEmptyOriginlessReasoningCarrier(replacement, decisions) ? [] : [replacement];
+        return [replacement];
       });
       return candidatePayload;
     },

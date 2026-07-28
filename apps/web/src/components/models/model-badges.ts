@@ -1,0 +1,89 @@
+import { reachableTargets } from './reachability';
+import type { ControlPlaneModel } from '../../api/types';
+import { formatAliasRuleBadges, type AliasRuleBadgeField } from '@floway-dev/protocols/common';
+
+export type ModelBadge =
+  | { key: string; kind: 'limit'; limit: 'context' | 'prompt' | 'output'; value: string }
+  // Sole reachable target: the raw model id, not its display name, so the badge
+  // mirrors what the operator typed into the alias target and what a client
+  // would put on the wire.
+  | { key: string; kind: 'aliasOfModel'; target: string }
+  | { key: string; kind: 'aliasOfCount'; reachable: number; total: number }
+  | { key: string; kind: 'selection'; selection: string }
+  | { key: string; kind: 'rule'; label: string };
+
+const formatTokenLimit = (count: number): string => {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(count % 1_000 === 0 ? 0 : 1)}k`;
+  return String(count);
+};
+
+// The upstreams a request for this model would actually reach. A real model
+// advertises its own bindings; an alias carries none on the wire — the server
+// lifts that information onto the targets — so the union of its reachable
+// targets' in-cap bindings is what gives an alias the same badge shape a real
+// model has.
+export const effectiveUpstreams = (
+  model: ControlPlaneModel,
+  catalog: readonly ControlPlaneModel[],
+  cap: readonly string[] | null,
+): readonly ControlPlaneModel['upstreams'][number][] => {
+  if (model.aliasedFrom === undefined) return model.upstreams;
+  const seen = new Set<string>();
+  return reachableTargets(model, catalog, cap).flatMap(target => target.upstreams.filter(binding => {
+    if ((cap !== null && !cap.includes(binding.id)) || seen.has(binding.id)) return false;
+    seen.add(binding.id);
+    return true;
+  }));
+};
+
+// A single-target alias renders one badge per configured rule; a multi-target
+// alias collapses any field whose targets disagree into "<field>: varies", so
+// the row states what the resolver will apply rather than one arbitrary target's
+// configuration.
+const ruleBadges = (targets: ControlPlaneModel['aliasedFrom'] & object): ModelBadge[] => {
+  if (targets.targets.length === 1) {
+    return formatAliasRuleBadges(targets.targets[0]!.rules)
+      .map(badge => ({ key: `rule:${badge.field}`, kind: 'rule' as const, label: badge.label }));
+  }
+  const byField = new Map<AliasRuleBadgeField, Set<string>>();
+  for (const target of targets.targets) {
+    for (const badge of formatAliasRuleBadges(target.rules)) {
+      const labels = byField.get(badge.field) ?? new Set<string>();
+      labels.add(badge.label);
+      byField.set(badge.field, labels);
+    }
+  }
+  return [...byField].map(([field, labels]) => ({
+    key: `rule:${field}`,
+    kind: 'rule' as const,
+    label: labels.size === 1 ? [...labels][0]! : `${field}: varies`,
+  }));
+};
+
+export const modelBadges = (
+  model: ControlPlaneModel,
+  catalog: readonly ControlPlaneModel[],
+  cap: readonly string[] | null,
+): ModelBadge[] => {
+  const badges: ModelBadge[] = ([
+    ['context', model.limits.max_context_window_tokens],
+    ['prompt', model.limits.max_prompt_tokens],
+    ['output', model.limits.max_output_tokens],
+  ] as const).flatMap(([limit, value]) => value === undefined
+    ? []
+    : [{ key: `limit:${limit}`, kind: 'limit' as const, limit, value: formatTokenLimit(value) }]);
+
+  const alias = model.aliasedFrom;
+  if (alias === undefined) return badges;
+
+  const reachable = reachableTargets(model, catalog, cap);
+  const sole = reachable.length === 1 ? reachable[0]! : null;
+  badges.push(sole === null
+    ? { key: 'aliasOf', kind: 'aliasOfCount', reachable: reachable.length, total: alias.targets.length }
+    : { key: 'aliasOf', kind: 'aliasOfModel', target: sole.id });
+  // The selection strategy only decides anything when the resolver has more
+  // than one candidate to pick between.
+  if (sole === null) badges.push({ key: 'selection', kind: 'selection', selection: alias.selection });
+  return [...badges, ...ruleBadges(alias)];
+};
