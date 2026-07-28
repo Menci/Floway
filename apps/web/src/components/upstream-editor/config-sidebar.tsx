@@ -13,7 +13,11 @@ import { ScrollArea } from '../ui/scroll-area';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
-const { Badge, Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text } = fluentComponents;
+const { Badge, Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text, makeStyles } = fluentComponents;
+
+const useEditorSectionStyles = makeStyles({
+  required: { color: 'var(--colorPaletteRedForeground1)' },
+});
 
 export function UpstreamConfigSidebar({
   catalogAvailable,
@@ -36,23 +40,24 @@ export function UpstreamConfigSidebar({
   const { control } = useFormContext<UpstreamEditorValues>();
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName="p-[18px_20px_28px]" noTabIndex>
     <aside className="grid gap-7">
-      <section>
-        <Field label={t('dashboard.upstreamEditor.fields.name')} required>
-          <Controller
-            control={control}
-            name="name"
-            rules={{ required: true }}
-            render={({ field }) => (
-              <Input
-                value={field.value}
-                onBlur={field.onBlur}
-                onChange={(_, data) => field.onChange(data.value)}
-              />
-            )}
-          />
-        </Field>
-      </section>
+      <EditorSection required title={t('dashboard.upstreamEditor.fields.name')}>
+        <Controller
+          control={control}
+          name="name"
+          rules={{ required: true }}
+          render={({ field }) => (
+            <Input
+              aria-label={t('dashboard.upstreamEditor.fields.name')}
+              required
+              value={field.value}
+              onBlur={field.onBlur}
+              onChange={(_, data) => field.onChange(data.value)}
+            />
+          )}
+        />
+      </EditorSection>
       <EditorSection
+        inline
         title={t('dashboard.upstreamEditor.sections.color')}
         description={t('dashboard.upstreamEditor.color.description')}
       >
@@ -60,6 +65,8 @@ export function UpstreamConfigSidebar({
       </EditorSection>
       <EditorSection title={t('dashboard.upstreamEditor.sections.connection')}>
         <ProviderConfigSection record={record} onPatch={onPatch} />
+      </EditorSection>
+      <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')}>
         <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
       </EditorSection>
       {record.kind === 'custom' && (
@@ -95,9 +102,10 @@ function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
   </div>} />;
 }
 
-function EditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
-  return <section className="grid gap-4">
-    <div className="grid gap-1"><Text as="h2" size={300} weight="semibold" className="!m-0">{title}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
+function EditorSection({ children, description, inline = false, required = false, title }: { children: React.ReactNode; description?: string; inline?: boolean; required?: boolean; title: string }) {
+  const styles = useEditorSectionStyles();
+  return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
+    <div className="grid gap-1"><Text as="h2" size={300} weight="semibold" className="!m-0">{title}{required && <span aria-hidden className={styles.required}> *</span>}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
     {children}
   </section>;
 }
@@ -169,11 +177,8 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
   const hint = runtime.kind === 'cloudflare' ? t('dashboard.upstreamEditor.proxy.colo', { colo: runtime.runtimeLocation }) : null;
   return <div
     aria-describedby={hint ? `${idPrefix}-hint` : undefined}
-    aria-labelledby={`${idPrefix}-label`}
     className="grid gap-2"
-    role="group"
   >
-    <Text id={`${idPrefix}-label`}>{t('dashboard.upstreamEditor.sections.proxy')}</Text>
     {fields.length === 0 && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.proxy.empty')}</Text>}
     {fields.map((field, index) => <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2" key={field.id}>
       <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Select aria-label={t('dashboard.upstreamEditor.sections.proxy')} key={item.value} defaultValue={item.value} onChange={(_, data) => item.onChange(data.value)}>{available.map(proxy => <option key={proxy.id} value={proxy.id}>{proxy.name}</option>)}</Select>} />

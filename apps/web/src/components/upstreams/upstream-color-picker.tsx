@@ -1,4 +1,3 @@
-import { ChevronDownRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -72,12 +71,9 @@ export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }:
           <Button
             appearance="outline"
             aria-label={`${t('dashboard.upstreamEditor.color.label')}: ${visibleLabel}`}
-            className="!justify-start !w-full"
-            icon={<span aria-hidden className="ml-auto inline-flex items-center gap-2"><span className="block h-4 w-4 rounded border border-solid border-fui-stroke1" style={{ backgroundColor: effectiveColor }} /><ChevronDownRegular /></span>}
-            iconPosition="after"
-          >
-            <span className="min-w-0 flex-1 text-left truncate">{visibleLabel}</span>
-          </Button>
+            className="!min-w-8 !p-1.5"
+            icon={<span aria-hidden className="block h-5 w-5 rounded border border-solid border-fui-stroke1" style={{ backgroundColor: effectiveColor }} />}
+          />
         </PopoverTrigger>
         <PopoverSurface className="!p-4 w-[min(360px,calc(100vw-32px))]">
           <div className="grid gap-3">
