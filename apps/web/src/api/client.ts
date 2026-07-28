@@ -9,9 +9,7 @@ import type { AppType } from '@floway-dev/gateway/app-type';
 // the { error } envelope, non-JSON bodies and the single 401 path.
 const client = hc<AppType>('/', { fetch: authFetch });
 
-export type ApiClient = typeof client;
-
-export const api: ApiClient = client;
+export const api = client;
 
 export const getCurrentSession = (): Promise<ApiResult<MeResponse>> =>
   callApi<MeResponse>(() => api.auth.me.$get());

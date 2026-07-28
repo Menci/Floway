@@ -1,18 +1,8 @@
-// Two snapshot sources sit on a Claude Code credential, populated by different
-// paths:
-//
-// - `quotaSnapshot` is header-derived — the gateway parses every /v1/messages
-//   response's `anthropic-ratelimit-unified-*` headers into a fixed schema.
-// - `usageProbeSnapshot` is the verbatim body of an operator-driven probe
-//   against Anthropic's `/api/oauth/usage` endpoint, keyed by `five_hour` /
-//   `seven_day` / `seven_day_sonnet`. The field set evolves with the upstream
-//   CLI version, so nothing here asserts the inner shape.
-//
-// When both carry a window, the newer `fetchedAt` wins: the probe is the
-// official `/status` source and is freshest right after a refresh click, while
-// the header-derived snapshot is freshest after any real model call. Fields
-// are never merged across the two — they shape the same window differently and
-// a half-and-half reading would mislead.
+// Header and probe snapshots describe the same independently-resetting quota
+// windows with different shapes. The official SDK keeps five-hour, seven-day,
+// Sonnet, Opus, and overage windows separate, so each displayed window comes
+// wholly from its newest snapshot rather than merging fields across sources:
+// https://github.com/anthropics/claude-agent-sdk-python/blob/f8b9ec923982082a02c485924e0f60367949c3a1/src/claude_agent_sdk/types.py#L1270-L1300
 
 import type {
   ClaudeCodeAccountCredentialSummary,
@@ -24,8 +14,8 @@ export type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
 export const HEAVY_USAGE_THRESHOLD_PERCENT = 80;
 
-// `subscriptionType` and `rateLimitTier` are independent fields per the
-// upstream CLI: plan name vs. usage-multiplier tier.
+// The profile wire keeps plan and rate-limit tier separate:
+// https://github.com/Wei-Shaw/claude-relay-service/blob/7dc21cf2820a6784831f289442a38d58fe827f34/src/services/account/claudeAccountService.js#L2241
 const RATE_LIMIT_TIER_SUFFIX: Record<string, string> = {
   default_claude_max_5x: '5×',
   default_claude_max_20x: '20×',
@@ -65,9 +55,7 @@ export interface ProbeSnapshot {
   fiveHour: ProbeWindow | null;
   sevenDay: ProbeWindow | null;
   sevenDaySonnet: ProbeWindow | null;
-  // The upstream JSON minus the three known windows. Surfaced verbatim so a
-  // new field (`priorIsUsingOverage`, `hadPriorUtilizationData`, …) is visible
-  // without a dashboard change.
+  // Unknown probe fields remain visible in the raw disclosure.
   extras: Record<string, unknown>;
 }
 
@@ -99,9 +87,7 @@ export type WindowKey = 'fiveHour' | 'sevenDay' | 'sevenDaySonnet';
 
 export interface WindowRow {
   key: WindowKey;
-  // 0..100 regardless of source: the response headers report utilization as a
-  // 0..1 fraction while the probe reports the same metric pre-multiplied, so
-  // rendering can stay scale-agnostic.
+  // Normalized to 0..100 at the source boundary.
   percent: number;
   resetAt: string | null;
   status: string | null;
@@ -140,7 +126,6 @@ export const quotaWindows = (credential: ClaudeCodeAccountCredentialSummary | nu
   if (fiveHour) rows.push(fiveHour);
   const sevenDay = pickWindow('sevenDay', quota?.sevenDay, headerFetchedAt, probe?.sevenDay, probeFetchedAt);
   if (sevenDay) rows.push(sevenDay);
-  // `seven_day_sonnet` rides only on the probe; there is no header counterpart.
   const sonnet = probe?.sevenDaySonnet;
   const sonnetUtilization = sonnet?.utilization ?? null;
   if (sonnetUtilization !== null && probeFetchedAt !== null) {
@@ -159,27 +144,22 @@ export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[]): A
   const credential = lookup.kind === 'present' ? lookup.credential : null;
   if (credential?.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.stateMessage };
   if (credential?.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.stateMessage };
-  // Primary `status: rejected` means the plan window itself is exhausted — the
-  // upstream will 429 the next request. `overage.status: rejected` is NOT a
-  // limit signal; it is the steady state for any plan account that has not
-  // bought extra credits.
+  // `rejected` on the primary status means a limit was hit; overage is a
+  // separate optional window in the official SDK contract linked above.
   if (credential?.quotaSnapshot?.data.status === 'rejected') return { tone: 'danger', reason: 'exhausted' };
   const heaviest = windows.length ? Math.max(...windows.map(row => row.percent)) : null;
   if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
   return { tone: 'success', reason: 'active' };
 };
 
-// `out_of_credits` is the steady-state pair of `overage.status: rejected` —
-// every plan account without purchased credits reports it, so surfacing it
-// would make the normal case look broken. Any other value (a code we have not
-// seen, a future Anthropic signal) surfaces verbatim.
+// The official SDK fixture pairs rejected optional overage with
+// `out_of_credits`; primary status remains the account-limit signal:
+// https://github.com/anthropics/claude-agent-sdk-python/blob/f8b9ec923982082a02c485924e0f60367949c3a1/tests/test_rate_limit_event_repro.py#L48-L68
 export const actionableDisabledReason = (credential: ClaudeCodeAccountCredentialSummary | null): string | null => {
   const reason = credential?.quotaSnapshot?.data.overage?.disabledReason ?? null;
   return reason === null || reason === 'out_of_credits' ? null : reason;
 };
 
-// JSON-stringify each value so a nested object stays readable in the raw
-// disclosure.
 export const rawEntries = (source: Record<string, unknown> | undefined): [string, string][] =>
   Object.entries(source ?? {})
     .map(([key, value]): [string, string] => [key, typeof value === 'string' ? value : JSON.stringify(value)])

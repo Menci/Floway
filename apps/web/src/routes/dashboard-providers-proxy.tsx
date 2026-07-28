@@ -10,6 +10,7 @@ import type { Route } from './+types/dashboard-providers-proxy';
 import { defaultsFor, isValidPort, parseDialTimeoutInput, parseProxyInput, type FormKind } from '../components/proxy/proxy-config';
 import { PageLoadingPanel } from '../components/ui/page-loading-panel';
 import { Panel } from '../components/ui/panel';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { fluentComponents } from '../fluent';
 import { useDashboardOutletContext } from './dashboard';
 import { getSessionToken } from '../auth/session';
@@ -22,15 +23,6 @@ import { formatProxyUri } from '@floway-dev/proxy/url';
 
 const { Button, MessageBar, MessageBarBody, Text } = fluentComponents;
 
-function ProxyPageHeader() {
-  const { t } = useTranslation();
-  return <header className="grid gap-[6px]"><Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">{t('dashboard.groups.providers')}</Text><Text size={700} weight="semibold">{t('dashboard.proxy.heading')}</Text><Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">{t('dashboard.proxy.description')}</Text></header>;
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export async function clientLoader() { if (!getSessionToken()) throw redirect('/'); return null; }
 export function meta({}: Route.MetaArgs) { return [{ title: 'Proxy | Floway' }]; }
 
@@ -38,16 +30,13 @@ export default function DashboardProvidersProxy() {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
 
-  // ---- data ----
   const [proxies, setProxies] = useState<ProxyRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // ---- form ----
   const [editingId, setEditingId] = useState<string | null>(null);
   const [backoffs, setBackoffs] = useState<BackoffRow[]>([]);
   const [formName, setFormName] = useState('');
-  // Config is always set — defaults to HTTP so the structured form is always visible.
   const [config, setConfig] = useState<ProxyConfig>(
     defaultsFor('http', { host: '', port: 0, name: '' }),
   );
@@ -55,12 +44,10 @@ export default function DashboardProvidersProxy() {
   const [urlError, setUrlError] = useState<string | null>(null);
   const [dialTimeoutInput, setDialTimeoutInput] = useState('');
 
-  // ---- save ----
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // ---- test ----
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
@@ -85,12 +72,10 @@ export default function DashboardProvidersProxy() {
     setTestResult(current => current?.ok ? current : null);
   }
 
-  // ---- delete ----
   const [deleteTarget, setDeleteTarget] = useState<ProxyRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // ---- load data ----
   const refreshProxies = useCallback(async () => {
     setLoadError(null);
     const [proxiesRes, backoffsRes] = await Promise.all([
@@ -121,8 +106,6 @@ export default function DashboardProvidersProxy() {
     };
   }, []);
 
-  // ---- form: protocol switch ----
-
   const updateStructuredConfig = useCallback<Dispatch<SetStateAction<ProxyConfig>>>(update => {
     setConfig(update);
     setUrlDraft(null);
@@ -142,8 +125,6 @@ export default function DashboardProvidersProxy() {
     },
     [updateStructuredConfig],
   );
-
-  // ---- form: per-kind field updaters ----
 
   const setPort = useCallback((raw: string) => {
     const trimmed = raw.trim();
@@ -192,8 +173,6 @@ export default function DashboardProvidersProxy() {
     setUrlError(parsed.error);
     if (parsed.config) setConfig(parsed.config);
   }, []);
-
-  // ---- save ----
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -249,8 +228,6 @@ export default function DashboardProvidersProxy() {
     await refreshProxies();
   }, [formName, urlInput, urlError, dialTimeout, editingId, clearForm, refreshProxies, t]);
 
-  // ---- test ----
-
   const handleTest = useCallback(async () => {
     const builtUrl = urlInput.trim();
 
@@ -286,8 +263,6 @@ export default function DashboardProvidersProxy() {
     }
   }, [dialTimeout, urlInput]);
 
-  // ---- delete ----
-
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -319,16 +294,13 @@ export default function DashboardProvidersProxy() {
     await refreshProxies();
   }, [deleteTarget, refreshProxies, t]);
 
-  // ---- derived form state ----
-
   const canTest = urlInput.trim() !== '' && urlError === null && dialTimeout.error === null && config.host.trim() !== '' && isValidPort(config.port);
   const canSave = formName.trim() !== '' && canTest;
 
-  // ---- admin guard ----
   if (!user.isAdmin) {
     return (
       <section className="grid gap-[18px] min-w-0">
-        <ProxyPageHeader />
+        <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
         <Panel className="!p-[22px_24px]">
           <div className="grid gap-[10px] max-w-[680px]">
             <Text
@@ -347,30 +319,25 @@ export default function DashboardProvidersProxy() {
     );
   }
 
-  // ---- loading ----
   if (loading) {
     return (
       <section className="grid gap-[18px] min-w-0">
-        <ProxyPageHeader />
+        <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
         <PageLoadingPanel label={t('common.loading')} />
       </section>
     );
   }
 
-  // ---- main render ----
   return (
     <section className="grid gap-[18px] min-w-0">
-      {/* Page header */}
-      <ProxyPageHeader />
+      <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
 
-      {/* Load error */}
       {loadError && (
         <MessageBar intent="error">
           <MessageBarBody>{loadError}</MessageBarBody>
         </MessageBar>
       )}
 
-      {/* Delete conflict error */}
       {deleteError && (
         <MessageBar intent="error">
           <MessageBarBody>{deleteError}</MessageBarBody>
@@ -417,7 +384,6 @@ export default function DashboardProvidersProxy() {
         </div>
       </div>
 
-      {/* Delete confirmation dialog */}
       {deleteTarget && (
         <ConfirmDialog
           actionLabel={

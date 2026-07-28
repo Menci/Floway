@@ -24,12 +24,15 @@ export function stashPkce(provider: string, kind: string, value: { verifier: str
 export function recallPkce(provider: string, kind: string, state: string) {
   const raw = sessionStorage.getItem(storageKey(provider, kind));
   if (!raw) return null;
-  try {
-    const value = JSON.parse(raw) as { verifier: string; state: string };
-    return value.state === state ? value : null;
-  } catch {
-    return null;
+  const value = JSON.parse(raw) as unknown;
+  if (!value || typeof value !== 'object') throw new TypeError('Stored PKCE state must be an object');
+  const record = value as Record<string, unknown>;
+  if (typeof record.verifier !== 'string' || typeof record.state !== 'string') {
+    throw new TypeError('Stored PKCE state must contain verifier and state strings');
   }
+  return record.state === state
+    ? { verifier: record.verifier, state: record.state }
+    : null;
 }
 
 export function clearPkce(provider: string, kind: string) {

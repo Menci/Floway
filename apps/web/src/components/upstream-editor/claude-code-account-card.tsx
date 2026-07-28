@@ -55,8 +55,6 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
     <div className="flex items-start gap-3">
       <ProviderIcon kind="claude-code" className="h-8 w-8 shrink-0" />
       <div className="grid gap-1 min-w-0 flex-1">
-        {/* Email is null when the access token lacks `user:profile`; the short
-            account uuid is the stable identifier that still names the account. */}
         <Text weight="semibold" truncate>{account.email ?? accountUuidShort}</Text>
         <div className="flex flex-wrap items-center gap-2">
           {credential?.tokenKind === 'setup-token' && <Badge appearance="tint" color="important" size="small" title={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')}>
@@ -107,10 +105,6 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
       </div>)}
     </div>}
 
-    {/* `overage.status: rejected` paired with `disabledReason: out_of_credits`
-        is the steady state for a plan account that has not bought extra
-        credits, so these chips appear only when a value is operator-
-        actionable. The raw disclosure below still carries every number. */}
     <div className="flex flex-wrap items-center gap-2 empty:hidden">
       {quota?.representativeClaim && <Badge appearance="outline" size="small">
         {t('dashboard.upstreamEditor.claudeCode.representative', { claim: quota.representativeClaim })}

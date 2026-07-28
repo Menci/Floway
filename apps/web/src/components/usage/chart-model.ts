@@ -166,12 +166,12 @@ export function buildTokenChart({
   const series = visibleEntries
     .map(entry => ({
       entry,
-      data: buckets.map(bucket => values.get(bucket.key)?.get(entry.id) ?? 0),
+      data: buckets.map(bucket => values.get(bucket.key)?.get(entry.id) ?? (isPercent ? null : 0)),
     }))
     .filter(({ data, entry }) =>
       isPercent
-        ? data.some(value => value > 0)
-        : data.some(value => value > 0) || hasRequests(details, entry.id));
+        ? data.some(value => value !== null)
+        : data.some(value => value !== null && value > 0) || hasRequests(details, entry.id));
 
   return {
     entries,
@@ -186,12 +186,12 @@ export function buildTokenChart({
         legend: entry.label,
         color: colorForSlot(entry.colorSlot),
         lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
-        data: data.map((value, index) => ({
+        data: data.flatMap((value, index) => value === null ? [] : [{
           x: buckets[index]!.date,
           y: value,
           xAxisCalloutData: buckets[index]!.label,
           yAxisCalloutData: String(value),
-        })),
+        }]),
       })),
     },
   };
@@ -277,7 +277,7 @@ function aggregateTokenRecords(
   range: UsageRange,
   buckets: UsageBucket[],
 ) {
-  const values = new Map<string, Map<string, number>>();
+  const values = new Map<string, Map<string, number | null>>();
   const details = new Map<string, Map<string, TokenDetail>>();
   for (const bucket of buckets) {
     values.set(bucket.key, new Map());
@@ -305,7 +305,7 @@ function aggregateTokenRecords(
     for (const [bucket, bucketDetails] of details) {
       const bucketValues = values.get(bucket)!;
       for (const [group, detail] of bucketDetails) {
-        bucketValues.set(group, tokenDetailMetricValue(detail, metric) ?? 0);
+        bucketValues.set(group, tokenDetailMetricValue(detail, metric));
       }
     }
   }
@@ -340,7 +340,7 @@ function keyChartEntries(
     .map(id => ({
       id,
       label: redactKeys ? id.slice(0, 6) : meta.get(id)?.name ?? id.slice(0, 8),
-      colorSlot: slotById.get(id) ?? 0,
+      colorSlot: slotById.get(id)!,
     }))
     .sort((a, b) => a.colorSlot - b.colorSlot);
 }

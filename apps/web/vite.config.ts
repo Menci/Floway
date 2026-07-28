@@ -3,9 +3,8 @@ import UnoCSS from 'unocss/vite';
 import { defineConfig, type Plugin } from 'vite';
 
 // Prism ships its language components as scripts that mutate a global `Prism`
-// rather than as modules, so a bundler that treats them as ESM drops the
-// registration silently. Prepending the import gives each one the global it
-// expects.
+// rather than as modules. Prepending the import supplies that required binding:
+// https://github.com/PrismJS/prism/blob/76dde18a575831c91491895193f56081ac08b0c5/components/prism-json.js#L1-L27
 const prismComponentsEsm = (): Plugin => ({
   name: 'prism-components-esm',
   enforce: 'pre',

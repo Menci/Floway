@@ -1,26 +1,8 @@
-/**
- * Single import surface for Fluent UI React.
- *
- * `@fluentui/react-components` ships both CJS (`lib-commonjs/index.js`) and
- * ESM (`lib/index.js`). A production build resolves the ESM entry and named
- * imports work directly. Vite's dev-time dependency prebundle does not
- * reliably detect all 1200+ named exports through esbuild, and when it misses
- * them it wraps the whole `module.exports` object behind `default` instead —
- * at which point `import { FluentProvider }` fails with:
- *
- * ```
- * Named export 'FluentProvider' not found. The requested module
- * '@fluentui/react-components' is a CommonJS module...
- * ```
- *
- * Taking the namespace and probing it covers every shape: the named export
- * when esbuild found it, `default` when it wrapped CJS, and
- * `module.exports` for older bundlers.
- *
- * Components destructure what they need — `const { Button, Text } =
- * fluentComponents;` — so no call site repeats this and none of them depend on
- * which module format resolved.
- */
+// Fluent publishes distinct ESM and CommonJS entrypoints, while Vite may expose
+// a CommonJS `module.exports` object through `default`. Normalize that boundary
+// once so dev prebundling and production imports share one component surface.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-components/package.json#L89-L102
+// https://github.com/vitejs/vite/blob/5e7fe129a4dde4f41934083b25e490059985f4e6/docs/guide/troubleshooting.md#L290-L300
 import * as fluentNamespace from '@fluentui/react-components';
 
 type FluentComponents = typeof import('@fluentui/react-components');

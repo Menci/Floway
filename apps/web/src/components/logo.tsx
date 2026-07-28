@@ -27,22 +27,15 @@ const useMarkStyles = makeStyles({
 
 interface FlowayLogoProps {
   size?: 'default' | 'compact';
-  className?: string;
 }
 
-export function FlowayLogo({ size = 'default', className }: FlowayLogoProps) {
+export function FlowayLogo({ size = 'default' }: FlowayLogoProps) {
   const compact = size === 'compact';
   const ms = useMarkStyles();
 
   return (
     <div
-      className={[
-        'inline-flex items-center min-w-0 text-fui-fg2',
-        compact ? 'gap-2.5' : 'gap-2',
-        className ?? '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      className={`inline-flex items-center min-w-0 text-fui-fg2 ${compact ? 'gap-2.5' : 'gap-2'}`}
     >
       <span
         className={`${ms.root} ${compact ? ms.compact : ''}`}

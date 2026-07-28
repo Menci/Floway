@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, clearGroupedFilter, emptyPerformanceFilters, parsePerformanceUrlState, performanceValue, serializePerformanceUrlState } from '../../../src/components/performance/performance-data';
+import { buildPerformanceQuery, clearGroupedFilter, parsePerformanceUrlState, performanceValue, serializePerformanceUrlState } from '../../../src/components/performance/performance-data';
 
 describe('performance overview query', () => {
   it('sends group-by and all active filters using the new API shape', () => {
@@ -22,7 +22,7 @@ describe('performance overview query', () => {
   });
 
   it('clears filters hidden by the selected grouping', () => {
-    const filters = { ...emptyPerformanceFilters(), userId: '2', keyId: 'key_1' };
+    const filters = { model: '', upstream: '', operation: '', runtimeLocation: '', userId: '2', keyId: 'key_1' };
     expect(clearGroupedFilter(filters, 'userId')).toMatchObject({ userId: '', keyId: '' });
   });
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from './cli-configuration';
+import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from './codex-credential-snippets';
 import { agentSetupCommand, useAgentSetup, type AgentSetupConfiguration } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
@@ -266,8 +266,7 @@ function SwitchSetting({ checked, description, label, onChange }: {
   </div>;
 }
 
-function ModelSelect({ className, family, label, models, onChange, picker, value }: {
-  className?: string;
+function ModelSelect({ family, label, models, onChange, picker, value }: {
   family: 'claude' | 'codex';
   label: string;
   models: ControlPlaneModel[];
@@ -284,7 +283,7 @@ function ModelSelect({ className, family, label, models, onChange, picker, value
   const filtered = useMemo(() => filterModelOptions(options, query), [options, query]);
   const defaultVisible = query === '' || defaultLabel.toLocaleLowerCase().includes(query.toLocaleLowerCase());
 
-  return <Field className={className} label={label}>
+  return <Field label={label}>
     <Combobox
       open={open}
       selectedOptions={[selected?.value ?? MODEL_DEFAULT]}
@@ -294,7 +293,7 @@ function ModelSelect({ className, family, label, models, onChange, picker, value
       onOpenChange={(_, data) => { setOpen(data.open); setQuery(''); }}
       onOptionSelect={(_, data) => {
         if (data.optionValue === MODEL_DEFAULT) onChange(null);
-        else if (options.some(option => option.value === data.optionValue)) onChange(data.optionValue ?? null);
+        else if (typeof data.optionValue === 'string' && options.some(option => option.value === data.optionValue)) onChange(data.optionValue);
         setOpen(false);
         setQuery('');
       }}

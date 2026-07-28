@@ -8,11 +8,9 @@ export default defineConfig({
       scale: 1.2,
       warn: true,
       collections: {
-        // Brand marks Iconify has no coverage for at all — a search across every
-        // collection returns nothing for either. Vendored from lobe-icons
-        // (MIT), which publishes them as monochrome currentColor paths so they
-        // sit beside simple-icons without a seam:
-        // https://github.com/lobehub/lobe-icons/tree/v1.94.0/packages/static-svg/icons
+        // Vendored from lobe-icons under MIT:
+        // https://github.com/lobehub/lobe-icons/blob/c31a6f365a3f585a03248addae77df4e83694dbc/packages/static-svg/icons/jina.svg#L1
+        // https://github.com/lobehub/lobe-icons/blob/c31a6f365a3f585a03248addae77df4e83694dbc/packages/static-svg/icons/tavily.svg#L1
         brand: FileSystemIconLoader('./src/assets/icons'),
       },
     }),
@@ -33,7 +31,6 @@ export default defineConfig({
     'bg-fui-bg1': 'bg-[var(--colorNeutralBackground1)]',
     'bg-fui-bg2': 'bg-[var(--colorNeutralBackground2)]',
     'border-fui-stroke1': 'border-[var(--colorNeutralStroke1)]',
-    // Sidebar nav
     'text-fui-nav-default': 'text-[light-dark(#3f3f46,#ffffff)]',
     'text-fui-nav-hover': 'text-[light-dark(#242424,#ffffff)]',
     'text-fui-nav-active': 'text-[light-dark(#111827,#ffffff)]',

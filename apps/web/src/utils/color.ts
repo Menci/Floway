@@ -11,8 +11,6 @@ import { UPSTREAM_COLOR_HEX_REGEX } from '@floway-dev/provider/model';
 // the same rule the control-plane schema enforces.
 export const HEX_RE = UPSTREAM_COLOR_HEX_REGEX;
 
-export const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
-
 export const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
   const c = v * s;
   const hp = h / 60;

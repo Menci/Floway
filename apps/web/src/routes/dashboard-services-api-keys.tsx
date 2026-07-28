@@ -18,6 +18,7 @@ import { modelsForAgentSetup } from '../components/api-keys/model-reachability';
 import { RotateKeyDialog } from '../components/api-keys/rotate-key-dialog';
 import type { ApiKeysPageData, MutationToastController, UpstreamOption } from '../components/api-keys/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { PageLoadingPanel } from '../components/ui/page-loading-panel';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
@@ -203,19 +204,8 @@ export default function DashboardServicesApiKeys() {
     <div className="grid gap-[18px] min-w-0">
       <Toaster toasterId={toasterId} position="top-end" />
 
-      <header className="flex items-start gap-[18px] justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-        <div className="grid gap-1 min-w-0">
-          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">
-            {t('dashboard.groups.services')}
-          </Text>
-          <Text size={700} weight="semibold">
-            {t('dashboard.nav.apiKeys')}
-          </Text>
-          <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-            {t('dashboard.pages.apiKeys')}
-          </Text>
-        </div>
-        <div className="flex items-center flex-none max-[900px]:justify-start">
+      <DashboardPageHeader
+        actions={
           <Button
             appearance="primary"
             disabled={initialLoading}
@@ -224,8 +214,11 @@ export default function DashboardServicesApiKeys() {
           >
             {t('dashboard.apiKeys.actions.create')}
           </Button>
-        </div>
-      </header>
+        }
+        description={t('dashboard.pages.apiKeys')}
+        eyebrow={t('dashboard.groups.services')}
+        title={t('dashboard.nav.apiKeys')}
+      />
 
       {initialLoading ? (
         <PageLoadingPanel label={t('common.loading')} />

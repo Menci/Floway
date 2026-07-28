@@ -88,7 +88,8 @@ const reservedFields: Record<PlaygroundApi, readonly string[]> = {
 
 export type CustomJsonResult =
   | { value: Record<string, unknown>; error: null }
-  | { value: null; error: 'invalid' | 'object' | 'reserved'; fields?: string[] };
+  | { value: null; error: 'invalid' | 'object' }
+  | { value: null; error: 'reserved'; fields: string[] };
 
 export function parseCustomJson(api: PlaygroundApi, source: string): CustomJsonResult {
   let parsed: unknown;

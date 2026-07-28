@@ -64,6 +64,9 @@ CMD ["pnpm", "run", "dev:node"]
 # not publish riscv64 binaries. This stage therefore starts from a native Node
 # image for BUILDPLATFORM; inheriting `base` here would retain the TARGETPLATFORM
 # Node binary even if Docker relabelled the child stage as BUILDPLATFORM.
+# https://github.com/rolldown/rolldown/blob/f09947ab017d6df74299f691853dcfc4f4f0f86e/packages/rolldown/package.json#L147-L167
+# https://github.com/parcel-bundler/lightningcss/blob/c6a0c3cebf3395635e61075d2c81a96a710d4910/scripts/build-npm.js#L7-L45
+# https://github.com/docker/docs/blob/cf508182bf559e87e89dfa67052941b092439aea/_vendor/github.com/moby/buildkit/frontend/dockerfile/docs/reference.md#L2701-L2715
 FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-trixie-slim AS web-build
 WORKDIR /app
 ENV PNPM_HOME=/pnpm

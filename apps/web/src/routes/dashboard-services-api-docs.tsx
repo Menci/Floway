@@ -2,6 +2,7 @@ import { ArrowUpRight16Regular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
 import { Panel } from '../components/ui/panel';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { fluentComponents } from '../fluent';
 
 const { Link, Text } = fluentComponents;
@@ -13,7 +14,6 @@ type EndpointRow = {
   docs: string;
 };
 
-// Static reference for the public gateway endpoints exposed by Floway.
 const endpoints: EndpointRow[] = [
   {
     method: 'POST',
@@ -92,17 +92,7 @@ export default function DashboardServicesApiDocs() {
 
   return (
     <section className="grid gap-[18px] max-w-[960px] min-w-0">
-      <header className="grid gap-[6px]">
-        <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-          {t('dashboard.groups.services')}
-        </Text>
-        <Text size={700} weight="semibold">
-          {t('dashboard.nav.apiDocs')}
-        </Text>
-        <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-          {t('dashboard.pages.apiDocs')}
-        </Text>
-      </header>
+      <DashboardPageHeader description={t('dashboard.pages.apiDocs')} eyebrow={t('dashboard.groups.services')} title={t('dashboard.nav.apiDocs')} />
       <Panel className="grid gap-[14px] !p-[22px_24px] max-[680px]:!p-[18px]">
         <Text size={400} weight="semibold">
           {t('dashboard.apiDocs.endpointsTitle')}

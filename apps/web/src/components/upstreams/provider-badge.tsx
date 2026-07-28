@@ -1,6 +1,7 @@
 import { ServerRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
+import { KIND_DEFAULT_TONES } from './upstream-paint';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types';
 import azureIconUrl from '../../assets/azure-color.svg';
 import claudeIconUrl from '../../assets/claude-color.svg';
@@ -14,13 +15,13 @@ const { makeStyles, Text } = fluentComponents;
 type ProviderBadgeKind = UpstreamProviderKind | null;
 type ProviderTone = UpstreamColorPreset | 'zinc';
 
-const providerMeta: Record<UpstreamProviderKind, { label: string; tone: ProviderTone }> = {
-  custom: { label: 'Custom', tone: 'amber' },
-  azure: { label: 'Azure', tone: 'emerald' },
-  copilot: { label: 'Copilot', tone: 'cyan' },
-  codex: { label: 'Codex', tone: 'violet' },
-  'claude-code': { label: 'Claude Code', tone: 'orange' },
-  ollama: { label: 'Ollama', tone: 'rose' },
+const providerLabels: Record<UpstreamProviderKind, string> = {
+  custom: 'Custom',
+  azure: 'Azure',
+  copilot: 'Copilot',
+  codex: 'Codex',
+  'claude-code': 'Claude Code',
+  ollama: 'Ollama',
 };
 
 const useStyles = makeStyles({
@@ -88,7 +89,7 @@ const useStyles = makeStyles({
 });
 
 export const providerLabel = (kind: ProviderBadgeKind) =>
-  kind === null ? 'Unknown' : providerMeta[kind].label;
+  kind === null ? 'Unknown' : providerLabels[kind];
 
 const customColorStyle = (color: `#${string}`) => ({
   '--provider-color': color,
@@ -108,9 +109,10 @@ export function ProviderBadge({ color = null, kind, label, title }: {
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
-  const meta = kind === null ? { label: 'Unknown', tone: 'zinc' as const } : providerMeta[kind];
-  const tone: ProviderTone = color && !isHexColor(color) ? color : meta.tone;
-  const providerName = t(`provider.${kind ?? 'unknown'}`, meta.label);
+  const tone: ProviderTone = color && !isHexColor(color)
+    ? color
+    : kind === null ? 'zinc' : KIND_DEFAULT_TONES[kind];
+  const providerName = t(`provider.${kind ?? 'unknown'}`, providerLabel(kind));
   const visibleLabel = label ?? providerName;
 
   return (

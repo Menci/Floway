@@ -57,10 +57,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     defaultValues: initialValues,
     mode: 'onBlur',
   });
-  const { control, getValues, handleSubmit, reset, setValue } = form;
+  const { control, getValues, handleSubmit, reset, setValue, formState: { errors } } = form;
   const name = useWatch({ control, name: 'name' });
   const currentValues = useWatch({ control }) as UpstreamEditorValues;
-  const hasUnsavedChanges = comparableValues(currentValues) !== savedBaseline;
+  const hasUnsavedChanges = comparableValues(currentValues) !== savedBaseline || errors.color !== undefined;
 
   const blocker = useBlocker(useCallback(
     () => hasUnsavedChanges && !allowNavigation.current,
@@ -180,6 +180,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     } else {
       showSavedToast();
     }
+  }, () => {
+    if (errors.color) setSaveError(t('dashboard.upstreamEditor.validation.color'));
   })();
 
   const leave = () => void navigate('/dashboard/providers/upstreams');

@@ -40,10 +40,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     });
   },
 
-  // The server session outlives local state, so it is revoked first. A failed
-  // revoke still clears locally: the user asked to be signed out of this
-  // browser, and leaving them signed in because the network blipped is worse
-  // than a session the gateway expires on its own.
+  // Local logout intent takes precedence when server-side revocation fails;
+  // the gateway will expire any surviving session independently.
   logout: async () => {
     try {
       await api.auth.logout.$post();

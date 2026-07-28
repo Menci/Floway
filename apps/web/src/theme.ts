@@ -40,6 +40,3 @@ export const australianDarkTheme = { ...createDarkTheme(australianBrand), ...fon
 
 export const flowayLightTheme = { ...webLightTheme, ...fontOverrides };
 export const flowayDarkTheme = { ...webDarkTheme, ...fontOverrides };
-
-/** @deprecated use flowayLightTheme or flowayDarkTheme instead */
-export const flowayTheme = flowayLightTheme;

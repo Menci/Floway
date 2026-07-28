@@ -15,7 +15,7 @@ import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Link } = fluentComponents;
-interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: RetentionValue }
+interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: Exclude<RetentionValue, null> }
 interface CreateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; responses_retention_seconds: number; key_source: KeySource; custom_key?: string }
 interface UpdateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; responses_retention_seconds: number }
 const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
@@ -71,7 +71,7 @@ export function KeyDialog({
           upstreamOverride: z.boolean(),
           upstreamIds: z.array(z.string()),
           dumpRetention: z.union([z.number(), z.null(), z.literal('invalid')]),
-          responsesRetention: z.union([z.number(), z.null(), z.literal('invalid')]),
+          responsesRetention: z.union([z.number(), z.literal('invalid')]),
         })
         .superRefine((value, ctx) => {
           if (value.upstreamOverride && value.upstreamIds.length === 0) {
@@ -135,7 +135,7 @@ export function KeyDialog({
       name: values.name.trim(),
       upstream_ids: values.upstreamOverride ? values.upstreamIds : null,
       dump_retention_seconds: values.dumpRetention,
-      responses_retention_seconds: values.responsesRetention ?? 0,
+      responses_retention_seconds: values.responsesRetention,
     };
     const mutationKind = isCreate ? 'create' : 'edit';
     const toastId = mutationToasts.start(mutationKind, common.name);

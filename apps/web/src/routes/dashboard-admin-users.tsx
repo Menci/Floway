@@ -18,6 +18,7 @@ import { api, getCurrentSession } from '../api/client';
 import type { ControlPlaneUser, UpstreamOption } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
 import { Input } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
@@ -143,19 +144,8 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
 
   return (
     <div className="grid gap-[18px] min-w-0">
-      <header className="flex items-start gap-[18px] justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-        <div className="grid gap-1 min-w-0">
-          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">
-            {t('dashboard.groups.admin')}
-          </Text>
-          <Text as="h1" size={700} weight="semibold" className="!m-0">
-            {t('dashboard.nav.users')}
-          </Text>
-          <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-            {t('dashboard.pages.users')}
-          </Text>
-        </div>
-        <div className="flex items-center gap-2 flex-none">
+      <DashboardPageHeader
+        actions={<>
           <Tooltip content={t('dashboard.users.actions.refresh')} relationship="label">
             <Button
               appearance="subtle"
@@ -172,8 +162,11 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           >
             {t('dashboard.users.actions.create')}
           </Button>
-        </div>
-      </header>
+        </>}
+        description={t('dashboard.pages.users')}
+        eyebrow={t('dashboard.groups.admin')}
+        title={t('dashboard.nav.users')}
+      />
 
       {pageError && (
         <MessageBar intent="error">

@@ -127,11 +127,10 @@ export const proxyUrlPlaceholder = (config: ProxyConfig): string => {
   }
 };
 
-/** Derive host:port label from parsed config for list display (no secrets). */
+// Never expose proxy credentials in list labels.
 export const hostPortLabel = (url: string): string => {
   const parsed = parseSavedUrl(url);
   if (parsed) return `${parsed.host}:${parsed.port}`;
-  // Fallback: try URL constructor and strip credentials
   try {
     const u = new URL(url);
     u.username = '';
@@ -141,8 +140,6 @@ export const hostPortLabel = (url: string): string => {
     return url;
   }
 };
-
-// ---- kind badge colours ----
 
 export const KIND_COLORS: Record<string, { bg: string; fg: string }> = {
   HTTP: { bg: 'light-dark(#dbeafe, #1e3a5f)', fg: 'light-dark(#1e40af, #93c5fd)' },

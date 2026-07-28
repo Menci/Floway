@@ -137,10 +137,6 @@ export const resolvePerformanceGroup = (
   return group;
 };
 
-export const emptyPerformanceFilters = (): PerformanceFilters => ({
-  model: '', upstream: '', operation: '', runtimeLocation: '', userId: '', keyId: '',
-});
-
 const oneOf = <T extends string>(value: string | null, allowed: readonly T[], fallback: T): T =>
   value !== null && (allowed as readonly string[]).includes(value) ? value as T : fallback;
 

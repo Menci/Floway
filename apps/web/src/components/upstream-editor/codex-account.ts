@@ -1,6 +1,7 @@
-// Codex reports quota per active limit, keyed by limit name, and the gateway
-// stores whichever snapshots it has observed on the record's `codex_quota`
-// slot. Nothing here calls upstream — real Codex traffic populates the map.
+// Codex groups primary/secondary windows by limit id while credits come from
+// account-wide headers:
+// https://github.com/openai/codex/blob/f2bee854a73666e1c3e922a853dda591b1a25fcf/codex-rs/codex-api/src/rate_limits.rs#L27-L100
+// https://github.com/openai/codex/blob/f2bee854a73666e1c3e922a853dda591b1a25fcf/codex-rs/codex-api/src/rate_limits.rs#L217-L228
 
 import type {
   CodexAccountCredentialState,
@@ -62,8 +63,7 @@ export const quotaEntries = (quota: CodexQuotaSnapshotMap | null | undefined, no
       ].filter((entry): entry is QuotaWindow => entry !== null),
     }));
 
-// Credits are an account-wide balance rather than a per-limit one, so the
-// freshest observation across all limits is the account's balance.
+// The freshest limit observation carries the freshest account-wide credits.
 export const latestCredits = (quota: CodexQuotaSnapshotMap | null | undefined): CodexQuotaSnapshot | null => {
   let newest: CodexQuotaSnapshot | null = null;
   let newestObservedAt = Number.NEGATIVE_INFINITY;

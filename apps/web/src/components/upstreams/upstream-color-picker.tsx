@@ -38,7 +38,7 @@ const isHex = (value: UpstreamColor | null): value is `#${string}` => value?.sta
 export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }: {
   kind: UpstreamProviderKind;
   onChange: (color: UpstreamColor | null) => void;
-  onValidityChange?: (invalid: boolean) => void;
+  onValidityChange: (invalid: boolean) => void;
   value: UpstreamColor | null;
 }) => {
   const { t } = useTranslation();
@@ -52,7 +52,7 @@ export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }:
   const commitHex = (next: string) => {
     setHexDraft(next);
     const invalid = !HEX_RE.test(next);
-    onValidityChange?.(invalid);
+    onValidityChange(invalid);
     if (!invalid) onChange(next as UpstreamColor);
   };
 
@@ -69,7 +69,7 @@ export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }:
       // ColorSwatch values are strings; 'inherit' stands for the null override.
       onSelectionChange={(_, data) => {
         setCustom(false);
-        onValidityChange?.(false);
+        onValidityChange(false);
         onChange(data.selectedValue === 'inherit' ? null : (data.selectedValue as UpstreamColorPreset));
       }}
     >
@@ -98,7 +98,7 @@ export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }:
         setCustom(data.checked);
         if (data.checked) commitHex(hexDraft);
         else {
-          onValidityChange?.(false);
+          onValidityChange(false);
           onChange(null);
         }
       }}

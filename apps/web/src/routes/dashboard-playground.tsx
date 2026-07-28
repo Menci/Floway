@@ -195,7 +195,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     const customResult = parseCustomJson(api, customDrafts[api]);
     if (customResult.error) {
       const message = customResult.error === 'reserved'
-        ? t('dashboard.playground.errors.customReserved', { fields: customResult.fields?.join(', ') })
+        ? t('dashboard.playground.errors.customReserved', { fields: customResult.fields.join(', ') })
         : t(`dashboard.playground.errors.custom${customResult.error === 'invalid' ? 'Invalid' : 'Object'}`);
       setCustomError(message);
       return;
@@ -427,7 +427,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.frequencyPenalty')} value={settings.frequencyPenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, frequencyPenalty: value }))} />
             <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.presencePenalty')} value={settings.presencePenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, presencePenalty: value }))} />
             <Field label={t('dashboard.playground.parameters.stopSequences')}>
-              <Input disabled={api === 'responses'} value={settings.stopSequences?.join(', ') ?? ''} placeholder={t('dashboard.playground.parameters.unset')} onChange={(_, data) => setSettings(current => ({ ...current, stopSequences: data.value.split(',').map(value => value.trim()).filter(Boolean) || undefined }))} />
+              <Input disabled={api === 'responses'} value={settings.stopSequences?.join(', ') ?? ''} placeholder={t('dashboard.playground.parameters.unset')} onChange={(_, data) => {
+                const stopSequences = data.value.split(',').map(value => value.trim()).filter(Boolean);
+                setSettings(current => ({ ...current, stopSequences: stopSequences.length ? stopSequences : undefined }));
+              }} />
             </Field>
             <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
               <Select value={settings.reasoningEffort ?? ''} disabled={!effortOptions.length} onChange={(_, data) => setSettings(current => ({ ...current, reasoningEffort: data.value || undefined }))}>

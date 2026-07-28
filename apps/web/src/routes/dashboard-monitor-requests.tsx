@@ -10,6 +10,7 @@ import { getSessionToken } from '../auth/session';
 import { RequestDetailPanel } from '../components/requests/request-detail';
 import { RequestListPanel } from '../components/requests/request-list';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { PageLoadingPanel } from '../components/ui/page-loading-panel';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
@@ -31,21 +32,6 @@ export async function clientLoader(): Promise<LoaderData> {
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Requests | Floway' }];
-}
-
-function RequestsPageHeader() {
-  const { t } = useTranslation();
-  return (
-    <header className="grid gap-[6px] min-w-0">
-      <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-        {t('dashboard.groups.monitor')}
-      </Text>
-      <Text size={700} weight="semibold">{t('dashboard.nav.requests')}</Text>
-      <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-        {t('dashboard.pages.requests')}
-      </Text>
-    </header>
-  );
 }
 
 export default function DashboardMonitorRequests({ loaderData }: Route.ComponentProps) {
@@ -87,7 +73,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
 
   return (
     <section className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)] gap-[18px] min-w-0">
-      <RequestsPageHeader />
+      <DashboardPageHeader description={t('dashboard.pages.requests')} eyebrow={t('dashboard.groups.monitor')} title={t('dashboard.nav.requests')} />
       {keysError && !keys ? (
         <MessageBar intent="error"><MessageBarBody>{keysError}</MessageBarBody></MessageBar>
       ) : keys?.length === 0 ? (

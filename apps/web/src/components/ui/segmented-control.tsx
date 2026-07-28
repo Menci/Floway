@@ -56,8 +56,8 @@ export function SegmentedControl({
     event.preventDefault();
     for (let offset = 0; offset < items.length; offset += 1) {
       const candidate = (target + offset * step + items.length) % items.length;
-      const item = items[candidate];
-      if (!item || item.disabled) continue;
+      const item = items[candidate]!;
+      if (item.disabled) continue;
       onChange(item.value);
       buttonRefs.current[candidate]?.focus();
       return;

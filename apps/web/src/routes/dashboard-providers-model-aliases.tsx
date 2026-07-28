@@ -13,6 +13,7 @@ import { AliasDialog } from '../components/model-alias/alias-dialog';
 import { mergeModelAliasesPageData } from '../components/model-alias/load-data';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { PageLoadingPanel } from '../components/ui/page-loading-panel';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
@@ -65,7 +66,8 @@ export default function DashboardProvidersModelAliases() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Loading the alias list on mount; the pending flag begins that work.
   useEffect(() => { if (user.isAdmin) void load(); }, [load, user.isAdmin]);
 
-  if (!user.isAdmin) return <section className="grid gap-[18px] max-w-[960px]"><Header /><Panel className="!p-[22px_24px]"><Text weight="semibold">{t('dashboard.pages.adminOnly')}</Text><Text block className="text-fui-fg2 mt-2">{t('dashboard.pages.adminOnlyDescription')}</Text></Panel></section>;
+  const header = <DashboardPageHeader description={t('dashboard.modelAliases.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.modelAliases.heading')} />;
+  if (!user.isAdmin) return <section className="grid gap-[18px] max-w-[960px]">{header}<Panel className="!p-[22px_24px]"><Text weight="semibold">{t('dashboard.pages.adminOnly')}</Text><Text block className="text-fui-fg2 mt-2">{t('dashboard.pages.adminOnlyDescription')}</Text></Panel></section>;
 
   const openCreate = () => { setEditing(null); setDialogOpen(true); };
   const openEdit = (alias: ModelAlias) => { setEditing(alias); setDialogOpen(true); };
@@ -86,7 +88,7 @@ export default function DashboardProvidersModelAliases() {
   };
 
   return <section className="grid gap-[18px] max-w-[1120px] min-w-0">
-    <Header />
+    {header}
     {error && <MessageBar intent="error"><MessageBarBody>{t('dashboard.modelAliases.errors.message', { message: error })}</MessageBarBody></MessageBar>}
     {modelsError && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.modelAliases.errors.models', { message: modelsError })}</MessageBarBody></MessageBar>}
     {loading ? <PageLoadingPanel label={t('common.loading')} /> : <Panel className="overflow-hidden">
@@ -102,9 +104,4 @@ export default function DashboardProvidersModelAliases() {
     <AliasDialog key={dialogOpen ? (editing?.name ?? 'new') : 'closed'} aliases={aliases} models={models} onOpenChange={setDialogOpen} onSaved={load} open={dialogOpen} record={editing} />
     <ConfirmDialog busy={mutating} open={deleting !== null} onOpenChange={open => !open && !mutating && setDeleting(null)} title={t('dashboard.modelAliases.delete.title')} message={t('dashboard.modelAliases.delete.message', { name: deleting?.name ?? '' })} actionLabel={mutating ? t('dashboard.modelAliases.actions.deleting') : t('dashboard.modelAliases.actions.delete')} onConfirm={() => void deleteAlias()} />
   </section>;
-}
-
-function Header() {
-  const { t } = useTranslation();
-  return <header className="grid gap-[6px]"><Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">{t('dashboard.groups.providers')}</Text><Text size={700} weight="semibold">{t('dashboard.modelAliases.heading')}</Text><Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">{t('dashboard.modelAliases.description')}</Text></header>;
 }

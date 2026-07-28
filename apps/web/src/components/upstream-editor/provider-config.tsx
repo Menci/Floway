@@ -266,7 +266,7 @@ function EndpointPicker() {
   const { control, getValues, setValue } = useFormContext<UpstreamEditorValues>();
   const config = useWatch({ control, name: 'config' });
   const customConfig = config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
-  const value = customConfig.endpoints ?? {};
+  const value = customConfig.endpoints;
   return <div className="grid gap-1" role="group" aria-labelledby={`${idPrefix}-label`}>
     <Text id={`${idPrefix}-label`} size={300}>
       {t('dashboard.upstreamEditor.fields.defaultEndpoints')}
@@ -283,7 +283,7 @@ function EndpointPicker() {
           label={{ children: label, className: styles.endpointCheckbox }}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
-            const next = { ...(latestConfig.endpoints ?? {}) };
+            const next = { ...latestConfig.endpoints };
             if (data.checked) next[key] = {}; else delete next[key];
             setValue('config', { ...latestConfig, endpoints: next }, { shouldDirty: true });
           }} />;
@@ -385,9 +385,8 @@ function OAuthConfig({ record, onPatch }: {
   const [open, setOpen] = useState(!hasAccount);
   const [probing, setProbing] = useState(false);
 
-  // Anthropic's `/api/oauth/usage` is the same source the CLI's `/status`
-  // reads, and it costs an upstream call, so it only runs when an operator
-  // asks. The gateway persists the snapshot itself once the upstream exists.
+  // Quota probes make an upstream call only on operator request; the gateway
+  // persists the resulting snapshot once the upstream exists.
   const probeQuota = async () => {
     setProbing(true);
     setError(null);

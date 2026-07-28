@@ -10,9 +10,9 @@ import { Panel } from '../ui/panel';
 
 const { Button, MessageBar, MessageBarBody, ProgressBar, Text } = fluentComponents;
 
-// Copilot meters premium interactions separately from the subscription, and a
-// refused request is usually this counter rather than anything Floway did. The
-// snapshot is fetched on demand because it costs an upstream call.
+// Copilot's own client derives premium-interaction usage from the on-demand
+// `copilot_internal/user` snapshot:
+// https://github.com/microsoft/vscode-copilot-chat/blob/5863f5a7088958050792b5dccbe8b46c6e13eccc/src/platform/chat/common/chatQuotaServiceImpl.ts#L83-L120
 export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, { kind: 'copilot' }> }) => {
   const { t } = useTranslation();
   const [quota, setQuota] = useState<CopilotQuotaSnapshot | null>(null);

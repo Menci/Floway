@@ -13,6 +13,7 @@ import type {
 } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 import { useDashboardOutletContext } from './dashboard';
@@ -36,10 +37,6 @@ export async function clientLoader() {
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Backup and Restore | Floway' }];
 }
-
-// ---------------------------------------------------------------------------
-// makeStyles
-// ---------------------------------------------------------------------------
 
 const useDropzoneStyles = makeStyles({
   root: {
@@ -121,10 +118,6 @@ const useModeCardStyles = makeStyles({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 const PREVIEW_LABEL_KEYS = [
   'users',
   'apiKeys',
@@ -179,20 +172,14 @@ function parseBackupFile(
   return { ok: true, payload: parsed as BackupExportResponse };
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export default function DashboardAdminBackupRestore() {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
 
-  // Export state
   const [includePerformance, setIncludePerformance] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
-  // Import state
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importParsedData, setImportParsedData] = useState<BackupExportResponse | null>(null);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
@@ -200,21 +187,14 @@ export default function DashboardAdminBackupRestore() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<BackupImportCounts | null>(null);
 
-  // Drop zone
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Confirm dialog
   const [confirmOpen, setConfirmOpen] = useState(false);
-
-  // Styles
   const dz = useDropzoneStyles();
   const pg = usePreviewGridStyles();
   const mc = useModeCardStyles();
 
-  // ---- admin guard ----
-
-  // ---- export handler ----
   const handleExport = useCallback(async () => {
     setExporting(true);
     setExportError(null);
@@ -243,7 +223,6 @@ export default function DashboardAdminBackupRestore() {
     setExporting(false);
   }, [includePerformance]);
 
-  // ---- import file handling ----
   const handleFile = useCallback(
     (file: File) => {
       setImportError(null);
@@ -308,7 +287,6 @@ export default function DashboardAdminBackupRestore() {
     fileInputRef.current?.click();
   }, []);
 
-  // ---- import submit ----
   const doImport = useCallback(async () => {
     if (!importParsedData) return;
     setImporting(true);
@@ -347,20 +325,12 @@ export default function DashboardAdminBackupRestore() {
     void doImport();
   }, [doImport, importMode, importParsedData]);
 
-  // ---- render ----
   const previewCounts = importParsedData ? countRecords(importParsedData.data) : null;
 
   if (!user.isAdmin) {
     return (
       <section className="grid gap-[18px] max-w-[960px] min-w-0">
-        <header className="grid gap-[6px]">
-          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-            {t('dashboard.groups.admin')}
-          </Text>
-          <Text size={700} weight="semibold">
-            {t('dashboard.backupRestore.heading')}
-          </Text>
-        </header>
+        <DashboardPageHeader eyebrow={t('dashboard.groups.admin')} title={t('dashboard.backupRestore.heading')} />
         <Panel className="!p-[22px_24px]">
           <div className="grid gap-[10px] max-w-[680px]">
             <Text size={300} weight="semibold" style={{ color: 'light-dark(#0f6cbd, #75b6f7)' }}>
@@ -377,17 +347,8 @@ export default function DashboardAdminBackupRestore() {
 
   return (
     <section className="grid gap-[18px] max-w-[960px] min-w-0">
-      {/* Page header */}
-      <header className="grid gap-[6px]">
-        <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-          {t('dashboard.groups.admin')}
-        </Text>
-        <Text size={700} weight="semibold">
-          {t('dashboard.backupRestore.heading')}
-        </Text>
-      </header>
+      <DashboardPageHeader eyebrow={t('dashboard.groups.admin')} title={t('dashboard.backupRestore.heading')} />
 
-      {/* Export panel */}
       <Panel className="!p-[22px_24px] grid gap-[16px]">
         <Text size={400} weight="semibold">
           {t('dashboard.backupRestore.export.heading')}
@@ -425,7 +386,6 @@ export default function DashboardAdminBackupRestore() {
         </div>
       </Panel>
 
-      {/* Import panel */}
       <Panel className="!p-[22px_24px] grid gap-[16px]">
         <Text size={400} weight="semibold">
           {t('dashboard.backupRestore.import.heading')}
@@ -434,7 +394,6 @@ export default function DashboardAdminBackupRestore() {
           {t('dashboard.backupRestore.import.description')}
         </Text>
 
-        {/* Drop zone */}
         <button
           className={`${dz.root} ${dragOver ? dz.active : ''} ${importing ? dz.disabled : ''}`}
           disabled={importing}
@@ -463,7 +422,6 @@ export default function DashboardAdminBackupRestore() {
           </Text>
         </button>
 
-        {/* File info & preview */}
         {importParsedData && importFile && (
           <>
             <div className="flex items-center gap-[12px]">
@@ -483,7 +441,6 @@ export default function DashboardAdminBackupRestore() {
               </Button>
             </div>
 
-            {/* Preview grid */}
             <div>
               <Text size={300} weight="semibold">
                 {t('dashboard.backupRestore.import.preview')}
@@ -502,7 +459,6 @@ export default function DashboardAdminBackupRestore() {
               </div>
             </div>
 
-            {/* Mode selector */}
             <div>
               <Text size={300} weight="semibold">
                 {t('dashboard.backupRestore.import.mode')}
@@ -537,7 +493,6 @@ export default function DashboardAdminBackupRestore() {
               </div>
             </div>
 
-            {/* Replace warning */}
             {importMode === 'replace' && (
               <MessageBar intent="warning">
                 <MessageBarBody>
@@ -546,7 +501,6 @@ export default function DashboardAdminBackupRestore() {
               </MessageBar>
             )}
 
-            {/* Import button */}
             <div>
               <Button
                 appearance={importMode === 'replace' ? 'primary' : 'primary'}
@@ -562,7 +516,6 @@ export default function DashboardAdminBackupRestore() {
           </>
         )}
 
-        {/* Messages */}
         {importError && (
           <MessageBar intent="error">
             <MessageBarBody>
@@ -580,7 +533,6 @@ export default function DashboardAdminBackupRestore() {
         )}
       </Panel>
 
-      {/* Confirm dialog for replace mode */}
       <ConfirmDialog
         actionLabel={t('dashboard.backupRestore.import.button')}
         busy={importing}

@@ -9,6 +9,7 @@ import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { PageLoadingPanel } from '../components/ui/page-loading-panel';
 import { Panel } from '../components/ui/panel';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
 import { ChartSection } from '../components/usage/chart-section';
@@ -204,19 +205,8 @@ export default function DashboardMonitorUsage() {
 
   return (
     <section className="grid gap-[18px] min-w-0">
-      <header className="flex items-start justify-between gap-[18px] min-w-0">
-        <div className="grid gap-[6px] min-w-0">
-          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-            {t('dashboard.groups.monitor')}
-          </Text>
-          <Text size={700} weight="semibold">
-            {t('dashboard.nav.usage')}
-          </Text>
-          <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-            {t('dashboard.pages.usage')}
-          </Text>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+      <DashboardPageHeader
+        actions={<>
           {loading && !initialLoading && <Spinner size="tiny" label={t('dashboard.usage.refreshing')} />}
           <Tooltip
             content={t('dashboard.usage.actions.refresh')}
@@ -229,8 +219,11 @@ export default function DashboardMonitorUsage() {
               onClick={() => void refresh()}
             />
           </Tooltip>
-        </div>
-      </header>
+        </>}
+        description={t('dashboard.pages.usage')}
+        eyebrow={t('dashboard.groups.monitor')}
+        title={t('dashboard.nav.usage')}
+      />
 
       {initialLoading ? (
         <PageLoadingPanel label={t('common.loading')} />

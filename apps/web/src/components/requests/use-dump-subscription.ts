@@ -33,7 +33,7 @@ export function useDumpSubscription(keyId: string | null) {
     if (!keyId) return;
 
     const token = getSessionToken();
-    if (!token) return;
+    if (!token) throw new Error('Authenticated dump subscription has no session token');
     const source = new EventSource(`/api/dump/keys/${encodeURIComponent(keyId)}/stream?session=${encodeURIComponent(token)}`);
 
     source.addEventListener('snapshot', raw => {

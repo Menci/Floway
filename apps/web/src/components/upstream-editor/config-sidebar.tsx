@@ -89,9 +89,17 @@ export function UpstreamConfigSidebar({
 }
 
 function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
-  const { control } = useFormContext<UpstreamEditorValues>();
+  const { clearErrors, control, setError } = useFormContext<UpstreamEditorValues>();
   return <Controller control={control} name="color" render={({ field }) => <div className="grid gap-3">
-    <UpstreamColorPicker kind={kind} value={field.value ?? null} onChange={field.onChange} />
+    <UpstreamColorPicker
+      kind={kind}
+      value={field.value}
+      onChange={field.onChange}
+      onValidityChange={invalid => {
+        if (invalid) setError('color', { type: 'validate' });
+        else clearErrors('color');
+      }}
+    />
     <div className="flex items-center gap-2"><ProviderBadge color={field.value} kind={kind} /></div>
   </div>} />;
 }

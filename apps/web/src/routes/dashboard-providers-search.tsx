@@ -9,10 +9,11 @@ import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
 import bingIconUrl from '../assets/bing.svg';
-import jinaIconUrl from '../assets/jina.svg';
-import tavilyIconUrl from '../assets/tavily.svg';
+import jinaIconUrl from '../assets/icons/jina.svg';
+import tavilyIconUrl from '../assets/icons/tavily.svg';
 import { getSessionToken } from '../auth/session';
 import { Dropdown, Input, Select } from '../components/ui/fluent-form-controls';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
@@ -56,10 +57,6 @@ export async function clientLoader(): Promise<SearchPageLoaderData> {
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Provider Search | Floway' }];
 }
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const DEFAULT_CONFIG: SearchConfig = {
   provider: 'disabled',
@@ -130,48 +127,19 @@ function findProviderOption(
   );
 }
 
-function SearchPageHeader() {
-  const { t } = useTranslation();
-
-  return (
-    <header className="grid gap-[6px]">
-      <Text
-        size={200}
-        weight="semibold"
-        className="text-fui-fg2 leading-[1.2] uppercase"
-      >
-        {t('dashboard.groups.providers')}
-      </Text>
-      <Text size={700} weight="semibold">
-        {t('dashboard.searchConfig.heading')}
-      </Text>
-      <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-        {t('dashboard.searchConfig.description')}
-      </Text>
-    </header>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export default function DashboardProvidersSearch({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
 
-  // Draft state
   const [draft, setDraft] = useState<SearchConfig>(loaderData.config);
   const upstreams = loaderData.upstreams;
   const models = loaderData.models;
   const loadError = loaderData.error;
 
-  // Save state
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Test state
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<SearchConfigTestResult | null>(
     null,
@@ -186,9 +154,10 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     const candidates = models.filter(model => model.kind === 'chat'
       && model.upstreams.some(binding => binding.id === upstreamId));
     const model = candidates.find(candidate => candidate.id === preferredModel) ?? candidates[0];
+    if (!model) throw new Error(`Search passthrough upstream ${upstreamId} has no chat model`);
     setDraft(current => ({
       ...current,
-      passthroughOpenAiSearch: { enabled: true, upstreamId, model: model?.id ?? '' },
+      passthroughOpenAiSearch: { enabled: true, upstreamId, model: model.id },
     }));
     setSaveSuccess(false);
   }, [models]);
@@ -200,10 +169,10 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     }
     const selected = eligibleUpstreams.find(upstream => upstream.id === draft.passthroughOpenAiSearch.upstreamId)
       ?? eligibleUpstreams[0];
-    if (selected) setPassthroughUpstream(selected.id, draft.passthroughOpenAiSearch.model);
+    if (!selected) throw new Error('Search passthrough requires an eligible upstream');
+    setPassthroughUpstream(selected.id, draft.passthroughOpenAiSearch.model);
   }, [draft.passthroughOpenAiSearch, eligibleUpstreams, setPassthroughUpstream]);
 
-  // Handlers
   const handleProviderChange = useCallback(
     (_: unknown, data: { optionValue?: string }) => {
       if (data.optionValue) {
@@ -265,11 +234,14 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     }
   }, [draft]);
 
-  // ---- admin guard ----
   if (!user.isAdmin) {
     return (
       <section className="grid gap-[18px] max-w-[960px] min-w-0">
-        <SearchPageHeader />
+        <DashboardPageHeader
+          description={t('dashboard.searchConfig.description')}
+          eyebrow={t('dashboard.groups.providers')}
+          title={t('dashboard.searchConfig.heading')}
+        />
         <Panel className="!p-[22px_24px]">
           <div className="grid gap-[10px] max-w-[680px]">
             <Text
@@ -288,13 +260,14 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     );
   }
 
-  // ---- main render ----
   return (
     <section className="grid gap-[18px] max-w-[960px] min-w-0">
-      {/* Page header */}
-      <SearchPageHeader />
+      <DashboardPageHeader
+        description={t('dashboard.searchConfig.description')}
+        eyebrow={t('dashboard.groups.providers')}
+        title={t('dashboard.searchConfig.heading')}
+      />
 
-      {/* Config panel */}
       <Panel className="!p-[22px_24px] grid gap-[16px]">
         {loadError && (
           <MessageBar intent="error">
@@ -302,7 +275,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           </MessageBar>
         )}
 
-        {/* Provider selector */}
         <Field label={t('dashboard.searchConfig.providerLabel')}>
           <Dropdown
             button={{
@@ -325,7 +297,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           </Dropdown>
         </Field>
 
-        {/* Provider description + get key link */}
         {activeOption.descKey && (
           <div className="grid gap-[4px]">
             <Text size={200} className="text-fui-fg3">
@@ -339,7 +310,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           </div>
         )}
 
-        {/* API Key input */}
         {draft.provider === 'disabled' ? (
           <Field label={t('dashboard.searchConfig.apiKeyLabel')}>
             <Input
@@ -386,7 +356,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           {eligibleUpstreams.length === 0 && <Text size={200} className="text-fui-fg3">{t('dashboard.searchConfig.passthrough.empty')}</Text>}
         </section>
 
-        {/* Actions */}
         <div className="flex flex-col gap-[10px] sm:flex-row sm:items-center">
           <Button
             appearance="primary"
@@ -415,7 +384,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           </Text>
         )}
 
-        {/* Messages */}
         {saveError && (
           <MessageBar intent="error">
             <MessageBarBody>{saveError}</MessageBarBody>
@@ -430,14 +398,12 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
         )}
       </Panel>
 
-      {/* Test results */}
       {testResult && (
         <Panel className="!p-[22px_24px] grid gap-[14px]">
           <Text size={400} weight="semibold">
             {t('dashboard.searchConfig.testResults')}
           </Text>
 
-          {/* Status badge + meta */}
           <div className="flex items-center gap-[8px] flex-wrap">
             {testResult.ok ? (
               <span
@@ -466,7 +432,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
             </Text>
           </div>
 
-          {/* Results */}
           {testResult.ok && testResult.results ? (
             testResult.results.length === 0 ? (
               <Text size={200} className="text-fui-fg3">

@@ -19,7 +19,7 @@ const PROTOCOL_LABELS: Record<RerankProtocol, string> = {
 };
 
 export const RerankTargetEditor = ({ disabled, onChange, value }: {
-  disabled?: boolean;
+  disabled: boolean;
   onChange: (target: RerankTarget) => void;
   value: RerankTarget;
 }) => {

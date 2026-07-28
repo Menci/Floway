@@ -80,7 +80,6 @@ export function ProxyForm({
           : t('dashboard.proxy.addTitle')}
       </Text>
 
-      {/* Name */}
       <Field label={t('dashboard.proxy.form.name')}>
         <Input
           onChange={(_, d) => onNameChange(d.value)}
@@ -102,7 +101,6 @@ export function ProxyForm({
         />
       </Field>
 
-      {/* Protocol selector */}
       <Field label={t('dashboard.proxy.form.protocol')}>
         <Dropdown
           onOptionSelect={onKindChange}
@@ -117,7 +115,6 @@ export function ProxyForm({
         </Dropdown>
       </Field>
 
-      {/* Host + Port (common to all kinds) */}
       <div className="grid grid-cols-1 gap-[12px] sm:grid-cols-[1fr_8rem]">
         <Field
           label={t('dashboard.proxy.form.host')}
@@ -141,7 +138,6 @@ export function ProxyForm({
         </Field>
       </div>
 
-      {/* ---- HTTP / HTTPS ---- */}
       {config.kind === 'http' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field label={t('dashboard.proxy.form.username')}>
@@ -170,7 +166,6 @@ export function ProxyForm({
         </div>
       )}
 
-      {/* ---- SOCKS5 ---- */}
       {config.kind === 'socks5' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field label={t('dashboard.proxy.form.username')}>
@@ -199,7 +194,6 @@ export function ProxyForm({
         </div>
       )}
 
-      {/* ---- Shadowsocks ---- */}
       {config.kind === 'ss' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field label={t('dashboard.proxy.form.method')}>
@@ -242,7 +236,6 @@ export function ProxyForm({
         </div>
       )}
 
-      {/* ---- Shadowsocks 2022 ---- */}
       {config.kind === 'ss2022' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field label={t('dashboard.proxy.form.method')}>
@@ -289,7 +282,6 @@ export function ProxyForm({
         </div>
       )}
 
-      {/* ---- Trojan ---- */}
       {config.kind === 'trojan' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
@@ -339,7 +331,6 @@ export function ProxyForm({
         </div>
       )}
 
-      {/* ---- VLESS / TLS ---- */}
       {config.kind === 'vless-tcp' && (
         <Field
           label={t('dashboard.proxy.form.uuid')}
@@ -358,7 +349,6 @@ export function ProxyForm({
         </Field>
       )}
 
-      {/* ---- VLESS / WebSocket ---- */}
       {config.kind === 'vless-ws' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
@@ -410,7 +400,6 @@ export function ProxyForm({
         </div>
       )}
 
-      {/* ---- VLESS / REALITY ---- */}
       {config.kind === 'reality' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
@@ -481,7 +470,6 @@ export function ProxyForm({
         </div>
       )}
 
-      {/* Dial timeout */}
       <Field
         hint={t('dashboard.proxy.form.timeoutHint')}
         label={t('dashboard.proxy.form.timeout')}
@@ -496,7 +484,6 @@ export function ProxyForm({
         />
       </Field>
 
-      {/* Actions */}
       <div className="flex flex-wrap items-center gap-[10px]">
         <Button
           appearance="primary"
@@ -528,7 +515,6 @@ export function ProxyForm({
         )}
       </div>
 
-      {/* Test result */}
       {testResult && (
         <div
           className="rounded-lg border border-solid p-[12px_14px] grid gap-[4px]"
@@ -566,7 +552,6 @@ export function ProxyForm({
         </div>
       )}
 
-      {/* Save feedback */}
       {saveError && (
         <MessageBar intent="error">
           <MessageBarBody>{saveError}</MessageBarBody>

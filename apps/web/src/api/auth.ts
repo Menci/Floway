@@ -103,7 +103,6 @@ export const login = (body: {
       body: JSON.stringify(body),
     }));
 
-// Mirrors PATCH /api/users/me/password in the Floway control plane.
 export const changeOwnPassword = (body: {
   currentPassword: string;
   newPassword: string;

@@ -1,16 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { clamp01, HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../src/utils/color';
-
-describe('clamp01', () => {
-  it('clamps negatives to 0 and >1 to 1; passes middle through', () => {
-    expect(clamp01(-1)).toBe(0);
-    expect(clamp01(0)).toBe(0);
-    expect(clamp01(0.5)).toBe(0.5);
-    expect(clamp01(1)).toBe(1);
-    expect(clamp01(2)).toBe(1);
-  });
-});
+import { HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../src/utils/color';
 
 describe('HEX_RE', () => {
   it('accepts 6-digit hex in either case', () => {

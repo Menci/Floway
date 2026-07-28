@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { Route } from './+types/dashboard-settings';
 import { changeOwnPassword } from '../api/auth';
 import { Input } from '../components/ui/fluent-form-controls';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
@@ -98,17 +99,7 @@ export default function DashboardSettings() {
 
   return (
     <section className="grid gap-[18px] max-w-[960px] min-w-0">
-      <header className="grid gap-[6px]">
-        <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
-          {t('dashboard.settings.eyebrow')}
-        </Text>
-        <Text size={700} weight="semibold">
-          {t('dashboard.nav.settings')}
-        </Text>
-        <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-          {t('dashboard.settings.description')}
-        </Text>
-      </header>
+      <DashboardPageHeader description={t('dashboard.settings.description')} eyebrow={t('dashboard.settings.eyebrow')} title={t('dashboard.nav.settings')} />
 
       <Panel className="grid w-full max-w-[480px] gap-[18px] !p-[22px_24px] max-[680px]:!p-[18px]">
         <Text size={400} weight="semibold">

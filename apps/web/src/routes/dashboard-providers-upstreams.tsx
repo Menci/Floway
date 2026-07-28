@@ -24,6 +24,7 @@ import type {
 } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { PageLoadingPanel } from '../components/ui/page-loading-panel';
 import { Panel } from '../components/ui/panel';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
@@ -266,19 +267,8 @@ export default function DashboardProvidersUpstreams() {
     <div className="grid gap-[18px] min-w-0">
       <Toaster toasterId={toasterId} position="top-end" />
 
-      <header className="flex items-start gap-[18px] justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-        <div className="grid gap-1 min-w-0">
-          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">
-            {t('dashboard.groups.providers')}
-          </Text>
-          <Text as="h1" size={700} weight="semibold" className="!m-0">
-            {t('dashboard.nav.upstreams')}
-          </Text>
-          <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">
-            {t('dashboard.pages.upstreams')}
-          </Text>
-        </div>
-        <div className="flex items-center gap-2 flex-none max-[900px]:justify-start">
+      <DashboardPageHeader
+        actions={<>
           <Tooltip content={t('dashboard.upstreams.actions.refresh')} relationship="label">
             <Button
               appearance="subtle"
@@ -313,8 +303,11 @@ export default function DashboardProvidersUpstreams() {
               </MenuList>
             </MenuPopover>
           </Menu>
-        </div>
-      </header>
+        </>}
+        description={t('dashboard.pages.upstreams')}
+        eyebrow={t('dashboard.groups.providers')}
+        title={t('dashboard.nav.upstreams')}
+      />
 
       {initialLoading ? (
         <PageLoadingPanel label={t('common.loading')} />
@@ -451,7 +444,7 @@ function UpstreamsTable({
               </TableCell>
               <TableCell><ProviderBadge color={record.color} kind={record.kind} /></TableCell>
               <TableCell>
-                <ModelStatus count={modelCounts.get(record.id) ?? null} modelsAvailable={data.models !== null} record={record} />
+                <ModelStatus count={modelCounts.get(record.id)!} modelsAvailable={data.models !== null} record={record} />
               </TableCell>
               <TableCell>
                 <Switch
@@ -577,7 +570,7 @@ const buildModelCounts = (
   for (const model of models) {
     for (const binding of model.upstreams) {
       const record = upstreams.find(item => item.id === binding.id);
-      if (record && record.kind !== 'azure') counts.set(record.id, (counts.get(record.id) ?? 0) + 1);
+      if (record && record.kind !== 'azure') counts.set(record.id, counts.get(record.id)! + 1);
     }
   }
   return counts;
