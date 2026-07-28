@@ -476,11 +476,8 @@ const en = {
         },
         color: {
           description: 'Choose how this upstream is distinguished across the console.',
-          mode: 'Color',
           inherit: 'Provider default',
           custom: 'Custom hex',
-          hex: 'Hex color',
-          invalid: 'Enter a color in #RRGGBB format.',
           label: 'Badge color',
           hue: 'Hue',
           saturation: 'Saturation',

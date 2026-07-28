@@ -5,11 +5,11 @@ import { useTranslation } from 'react-i18next';
 
 import type { RuntimeInfo, UpstreamEditorValues } from './editor-data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
-import type { ProxyRecord, UpstreamColor, UpstreamColorPreset, UpstreamRecord } from '../../api/types';
+import type { ProxyRecord, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Input, Select } from '../ui/fluent-form-controls';
 import { ProviderBadge } from '../upstreams/provider-badge';
-import { UPSTREAM_COLOR_HEX_REGEX, UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider/model';
+import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
 const { Button, Checkbox, Field, Text } = fluentComponents;
@@ -89,49 +89,11 @@ export function UpstreamConfigSidebar({
 }
 
 function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
-  const { t } = useTranslation();
   const { control } = useFormContext<UpstreamEditorValues>();
-  return <Controller control={control} name="color" render={({ field }) => {
-    const custom = field.value?.startsWith('#') ? field.value : '';
-    const selection = custom ? 'custom' : field.value ?? 'inherit';
-    const invalid = custom !== '' && !UPSTREAM_COLOR_HEX_REGEX.test(custom);
-    return <div className="grid gap-3">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 min-w-0">
-        <Field className="flex-1 min-w-0" label={t('dashboard.upstreamEditor.color.mode')}>
-          <Select
-            value={selection}
-            onChange={(_, data) => {
-              if (data.value === 'inherit') field.onChange(null);
-              else if (data.value === 'custom') field.onChange('#0F6CBD' satisfies UpstreamColor);
-              else field.onChange(data.value as UpstreamColorPreset);
-            }}
-          >
-            <option value="inherit">{t('dashboard.upstreamEditor.color.inherit')}</option>
-            {UPSTREAM_COLOR_PRESETS.map(preset => <option key={preset} value={preset}>{t(`dashboard.upstreamEditor.color.preset.${preset}`)}</option>)}
-            <option value="custom">{t('dashboard.upstreamEditor.color.custom')}</option>
-          </Select>
-        </Field>
-        <div className="flex h-8 items-center">
-          <ProviderBadge color={field.value} kind={kind} />
-        </div>
-      </div>
-      {selection === 'custom' && <Field
-        label={t('dashboard.upstreamEditor.color.hex')}
-        validationMessage={invalid ? t('dashboard.upstreamEditor.color.invalid') : undefined}
-        validationState={invalid ? 'error' : undefined}
-      >
-        <Input
-          maxLength={7}
-          value={custom}
-          onBlur={() => {
-            if (UPSTREAM_COLOR_HEX_REGEX.test(custom)) field.onChange(custom.toUpperCase() as UpstreamColor);
-          }}
-          onChange={(_, data) => field.onChange(data.value as UpstreamColor)}
-          placeholder="#0F6CBD"
-        />
-      </Field>}
-    </div>;
-  }} />;
+  return <Controller control={control} name="color" render={({ field }) => <div className="grid gap-3">
+    <UpstreamColorPicker kind={kind} value={field.value ?? null} onChange={field.onChange} />
+    <div className="flex items-center gap-2"><ProviderBadge color={field.value} kind={kind} /></div>
+  </div>} />;
 }
 
 function EditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {

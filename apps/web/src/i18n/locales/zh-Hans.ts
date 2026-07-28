@@ -453,11 +453,8 @@ const zhHansCN = {
         },
         color: {
           description: '选择在控制台中区分此上游的颜色。',
-          mode: '颜色',
           inherit: '提供商默认值',
           custom: '自定义十六进制',
-          hex: '十六进制颜色',
-          invalid: '请输入 #RRGGBB 格式的颜色。',
           'label': '徽章颜色',
           'hue': '色相',
           'saturation': '饱和度',

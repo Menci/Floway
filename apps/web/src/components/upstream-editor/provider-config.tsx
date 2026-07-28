@@ -26,6 +26,7 @@ import type {
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
+import { SecretInput } from '../ui/secret-input';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
 
 const {
@@ -214,8 +215,8 @@ function SecretField({ name, optional, secretSet }: { name: string; optional?: b
       control={control}
       name={name as never}
       render={({ field }) => (
-        <Input
-          type={visible ? 'text' : 'password'}
+        <SecretInput
+          revealed={visible}
           value={typeof field.value === 'string' ? field.value : ''}
           onBlur={field.onBlur}
           onChange={(_, data) => field.onChange(data.value)}

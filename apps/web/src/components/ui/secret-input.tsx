@@ -10,7 +10,7 @@ type InputProps = ComponentProps<typeof Input>;
 // stays readOnly until the user actually reaches for it: an empty readOnly
 // input is not a fill target, and the guard re-arms on blur if nothing was
 // entered.
-export const SecretInput = ({ onChange, value, ...rest }: InputProps) => {
+export const SecretInput = ({ onChange, revealed, value, ...rest }: InputProps & { revealed?: boolean }) => {
   const [guardLocked, setGuardLocked] = useState(true);
   const hasValue = String(value ?? '').length > 0;
   const unlock = () => setGuardLocked(false);
@@ -47,7 +47,7 @@ export const SecretInput = ({ onChange, value, ...rest }: InputProps) => {
     }}
     readOnly={rest.readOnly ?? (!rest.disabled && guardLocked && !hasValue)}
     spellCheck={false}
-    type="password"
+    type={revealed ? 'text' : 'password'}
     value={value}
   />;
 };
