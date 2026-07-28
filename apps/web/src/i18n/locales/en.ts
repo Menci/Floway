@@ -672,6 +672,7 @@ const en = {
           },
         },
         models: {
+          details: 'Model details',
           editAsJson: 'Edit as JSON',
           editWithUi: 'Edit with UI',
           jsonHint: 'Manual models only. Auto-discovered models resolve from the upstream and are not listed here.',

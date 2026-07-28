@@ -1,5 +1,6 @@
 import {
   AddRegular,
+  ArrowLeftRegular,
   ArrowSyncRegular,
   CheckmarkCircleRegular,
   CodeRegular,
@@ -50,6 +51,9 @@ interface ModelRow {
   hasAuto: boolean;
 }
 
+type ModelView = 'list' | 'detail' | 'json';
+type ModelDetailTab = 'details' | 'flags';
+
 export function UpstreamWorkspace({
   discovered,
   flags,
@@ -67,15 +71,32 @@ export function UpstreamWorkspace({
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<'models' | 'flags'>('models');
+  const [modelView, setModelView] = useState<ModelView>('list');
+  const [modelDetailTab, setModelDetailTab] = useState<ModelDetailTab>('details');
+  const showModelDetail = modelView === 'detail';
+  const changeModelView = (next: ModelView) => {
+    setModelView(next);
+    if (next === 'detail') setModelDetailTab('details');
+  };
   return <section className="grid grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 max-[1050px]:h-auto">
     <div className="border-b border-b-solid border-fui-stroke1 px-5 pt-2">
-      <TabList selectedValue={tab} onTabSelect={(_, data) => setTab(data.value as typeof tab)}>
-        <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
-        <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
-      </TabList>
+      {showModelDetail
+        ? <div className="flex items-center gap-3">
+            <Button appearance="transparent" icon={<ArrowLeftRegular />} onClick={() => setModelView('list')}>
+              {t('dashboard.upstreamEditor.models.back')}
+            </Button>
+            <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => setModelDetailTab(data.value as ModelDetailTab)}>
+              <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
+              <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
+            </TabList>
+          </div>
+        : <TabList selectedValue={tab} onTabSelect={(_, data) => setTab(data.value as typeof tab)}>
+            <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
+            <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
+          </TabList>}
     </div>
     <ScrollArea axes="vertical" className="min-h-0 max-[1050px]:h-auto" contentClassName="p-5" noTabIndex>
-      {tab === 'models' ? <ModelsWorkspace discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} record={record} /> : <div className="grid gap-5">
+      {tab === 'models' ? <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} /> : <div className="grid gap-5">
         <Text size={300} className="text-fui-fg2 leading-[1.45]">
           {t('dashboard.upstreamEditor.flags.intro')}
         </Text>
@@ -85,13 +106,16 @@ export function UpstreamWorkspace({
   </section>;
 }
 
-function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record }: {
+function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onRefresh, onViewChange, record, view }: {
+  detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
   error: string | null;
   flags: Flag[];
   loading: boolean;
   onRefresh: () => void;
+  onViewChange: (view: ModelView) => void;
   record: UpstreamRecord;
+  view: ModelView;
 }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<UpstreamEditorValues>();
@@ -100,7 +124,6 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
   const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
-  const [view, setView] = useState<'list' | 'detail' | 'json'>('list');
   const [json, setJson] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -170,7 +193,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
       if (!parsed.ok) { setJsonError(parsed.message); return; }
       replace(parsed.models);
       setJsonError(null);
-      setView('list');
+      onViewChange('list');
     };
     return <div className="grid gap-4 min-w-0">
       <div className="flex flex-wrap items-center gap-3">
@@ -195,7 +218,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
     </div>;
   }
 
-  if (view === 'detail' && activeDetailRow) return <ModelDetail row={activeDetailRow} readOnly={readOnly} onBack={() => setView('list')} onDelete={() => { if (activeDetailRow.manualIndex !== null) remove(activeDetailRow.manualIndex); setView('list'); }} onSourceChange={source => setModelSource(activeDetailRow, source)} onUpdate={value => {
+  if (view === 'detail' && activeDetailRow) return <ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} onDelete={() => { if (activeDetailRow.manualIndex !== null) remove(activeDetailRow.manualIndex); onViewChange('list'); }} onSourceChange={source => setModelSource(activeDetailRow, source)} onUpdate={value => {
     if (activeDetailRow.manualIndex === null) return;
     setValue(`manualModels.${activeDetailRow.manualIndex}`, value, {
       shouldDirty: true,
@@ -208,7 +231,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
       <div className="grid gap-0.5"><Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.title')}</Text><Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}</Text></div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {!readOnly && <Button icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
-        {!readOnly && <Button icon={<CodeRegular />} onClick={() => { setJson(serializeModels(manual)); setJsonError(null); setView('json'); }}>{t('dashboard.upstreamEditor.models.editAsJson')}</Button>}
+        {!readOnly && <Button icon={<CodeRegular />} onClick={() => { setJson(serializeModels(manual)); setJsonError(null); onViewChange('json'); }}>{t('dashboard.upstreamEditor.models.editAsJson')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
           <Button disabled={loading || !autoFetchEnabled} icon={loading ? <Spinner size="tiny" /> : <ArrowSyncRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
@@ -235,7 +258,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
             <TableCell className="!overflow-hidden">
               <button
                 className="block bg-transparent border-0 cursor-pointer font-fui-semibold min-w-0 max-w-full overflow-hidden p-0 text-ellipsis text-fui-fg1 text-left whitespace-nowrap hover:underline"
-                onClick={() => { setSelected(row.key); setView('detail'); }}
+                onClick={() => { setSelected(row.key); onViewChange('detail'); }}
                 title={row.config.display_name ?? id}
                 type="button"
               >
@@ -245,7 +268,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
             <TableCell className="!overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block text-xs min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
             <TableCell><Text size={200}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCell>
             <TableCell>{row.config.kind}</TableCell>
-            <TableCell><div className="flex justify-center"><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); setView('detail'); }} /></div></TableCell>
+            <TableCell><div className="flex justify-center"><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); onViewChange('detail'); }} /></div></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>

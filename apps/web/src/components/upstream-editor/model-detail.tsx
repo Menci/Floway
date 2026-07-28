@@ -1,4 +1,4 @@
-import { ArrowLeftRegular, DeleteRegular, DismissRegular } from '@fluentui/react-icons';
+import { DeleteRegular, DismissRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -48,23 +48,23 @@ const reasoningPresets = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', '
 
 export function ModelDetail({
   flags,
-  onBack,
   onDelete,
   onSourceChange,
   onUpdate,
   readOnly,
   record,
   row,
+  section,
   upstreamFlags,
 }: {
   flags: Flag[];
-  onBack: () => void;
   onDelete: () => void;
   onSourceChange: (source: 'auto' | 'manual') => void;
   onUpdate: (value: UpstreamModelConfig) => void;
   readOnly: boolean;
   record: UpstreamRecord;
   row: ModelDetailRow;
+  section: 'details' | 'flags';
   upstreamFlags: UpstreamRecord['flag_overrides'];
 }) {
   const { t } = useTranslation();
@@ -115,15 +115,12 @@ export function ModelDetail({
   const controlledReasoning = effort !== undefined || budget !== undefined || row.config.chat?.reasoning?.adaptive === true;
 
   return (
-    <div className="grid gap-5 min-w-0">
-      <div className="flex items-center gap-3 min-w-0">
-        <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={onBack}>
-          {t('dashboard.upstreamEditor.models.back')}
-        </Button>
-        <Text size={600} weight="semibold" truncate className="min-w-0">
+    <div className="grid gap-4 min-w-0">
+      <header className="flex items-start justify-between gap-4 min-w-0">
+        <Text as="h1" size={600} weight="semibold" truncate className="!m-0 min-w-0">
           {row.config.display_name ?? publicModelId(row.config)}
         </Text>
-        <div className="ml-auto flex-none">
+        <div className="flex-none">
           <SegmentedControl
             ariaLabel={t('dashboard.upstreamEditor.models.source')}
             items={[
@@ -134,8 +131,26 @@ export function ModelDetail({
             onChange={source => onSourceChange(source as 'auto' | 'manual')}
           />
         </div>
-      </div>
+      </header>
 
+      {section === 'flags' ? <ModelEditorSection title={t('dashboard.upstreamEditor.models.flags')} description={t('dashboard.upstreamEditor.models.flagsHint')}>
+        {editable && <Switch
+          checked={row.config.flagOverrides !== undefined}
+          label={t('dashboard.upstreamEditor.models.enableFlagOverrides')}
+          onChange={(_, data) => {
+            if (data.checked) patch({ flagOverrides: savedFlagOverrides });
+            else { setSavedFlagOverrides(row.config.flagOverrides ?? {}); patch({ flagOverrides: undefined }); }
+          }}
+        />}
+        {(!editable || row.config.flagOverrides !== undefined) && <FeatureFlagsEditor
+          defaults={record.flag_defaults}
+          inherited={upstreamFlags}
+          flags={flags}
+          readOnly={!editable}
+          value={row.config.flagOverrides ?? {}}
+          onChange={flagOverrides => { setSavedFlagOverrides(flagOverrides); patch({ flagOverrides }); }}
+        />}
+      </ModelEditorSection> : <>
       {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
 
       <ModelEditorSection title={t('dashboard.upstreamEditor.models.identity')}>
@@ -162,7 +177,7 @@ export function ModelDetail({
       {/* Embedding, transcription, and rerank each address exactly one
           endpoint, so there is nothing for the operator to choose. */}
       {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <ModelEditorSection title={t('dashboard.upstreamEditor.models.endpoints')}>
-        <div className="grid gap-1">
+        <div className="grid grid-cols-2 gap-2 max-[680px]:grid-cols-1">
           {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
             checked={key in row.config.endpoints}
             disabled={!editable}
@@ -220,34 +235,16 @@ export function ModelDetail({
         />
       </ModelEditorSection>
 
-      <ModelEditorSection title={t('dashboard.upstreamEditor.models.flags')} description={t('dashboard.upstreamEditor.models.flagsHint')}>
-        {editable && <Switch
-          checked={row.config.flagOverrides !== undefined}
-          label={t('dashboard.upstreamEditor.models.enableFlagOverrides')}
-          onChange={(_, data) => {
-            if (data.checked) patch({ flagOverrides: savedFlagOverrides });
-            else { setSavedFlagOverrides(row.config.flagOverrides ?? {}); patch({ flagOverrides: undefined }); }
-          }}
-        />}
-        {(!editable || row.config.flagOverrides !== undefined) && <FeatureFlagsEditor
-          defaults={record.flag_defaults}
-          inherited={upstreamFlags}
-          flags={flags}
-          readOnly={!editable}
-          value={row.config.flagOverrides ?? {}}
-          onChange={flagOverrides => { setSavedFlagOverrides(flagOverrides); patch({ flagOverrides }); }}
-        />}
-      </ModelEditorSection>
-
       {editable && <Button appearance="secondary" icon={<DeleteRegular />} onClick={onDelete}>
         {t('dashboard.upstreamEditor.models.delete')}
       </Button>}
+      </>}
     </div>
   );
 }
 
 function ModelEditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
-  return <section className="grid gap-4 py-2">
+  return <section className="grid gap-3">
     <div className="grid gap-1"><Text as="h2" size={400} weight="semibold" className="!m-0">{title}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
     {children}
   </section>;

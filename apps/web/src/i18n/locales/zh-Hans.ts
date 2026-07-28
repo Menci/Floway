@@ -647,6 +647,7 @@ const zhHansCN = {
           },
         },
         models: {
+          details: '模型详情',
           editAsJson: '编辑 JSON',
           editWithUi: '使用界面编辑',
           jsonHint: '仅包含手动模型。自动发现的模型由上游解析，不在此列出。',
