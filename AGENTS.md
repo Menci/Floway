@@ -265,18 +265,28 @@ them. ESLint checks both script trees and every package Vitest config; the
 workspace-root `eslint.config.ts` and `vitest.config.ts` sit outside every
 checked TypeScript project and are ignored.
 
-The dashboard imports every Fluent component through `apps/web/src/fluent.ts`
-and every form control through `components/ui/fluent-form-controls.tsx`, which
-adds the shared minimum-width reset. One Fluent `Field` wraps exactly one
-control; a composite editor uses `role="group"` with `aria-labelledby`. Shared
-surfaces and type use the `fui-*` UnoCSS tokens; provider identity colors come
-from typed upstream color metadata and the owning Fluent components. Generic
-primitives live in `components/ui/`, and ESLint keeps them from importing a
-Floway domain module — a primitive that knows a domain concept belongs in that
-domain's directory. User-visible strings go through `react-i18next` in `en` and
-`zh-Hans`; a locale ships only if somebody here can review it, and the parity
-suite requires every plural key to supply the `other` form each language
-actually has.
+The dashboard imports Fluent components through `apps/web/src/fluent.ts` and
+form controls through `components/ui/fluent-form-controls.tsx`, which applies
+the shared minimum-width reset. One Fluent `Field` wraps exactly one control; a
+composite editor uses `role="group"` with `aria-labelledby`. Shared surfaces and
+type use the `fui-*` UnoCSS tokens; provider identity colors come from typed
+upstream color metadata and the owning Fluent components. Generic primitives
+live in `components/ui/`, and ESLint keeps them from importing Floway domain
+modules.
+
+React Router client loaders are resource barriers: authentication and every
+initial route resource resolve before the target location and component tree
+are committed, while `NavigationProgress` marks an in-flight navigation above
+the still-mounted route. `callApi` preserves the Hono client's inferred success
+payload; endpoints addressed by a raw URL use `callJson<T>` and own the explicit
+wire type at that boundary. The document never scrolls. Every scrollable region
+declares its axes through `ScrollArea`; it enables OverlayScrollbars only where
+native scrollbars consume layout space, and otherwise retains native overlay
+scrolling inside the same explicit viewport.
+
+User-visible strings go through `react-i18next` in `en` and `zh-Hans`; a locale
+ships only if somebody here can review it, and the parity suite requires every
+plural key to supply the `other` form each language actually has.
 
 Client-carried affinity is a source-protocol membrane. Shared codec, candidate
 narrowing, and affinity request context live under
