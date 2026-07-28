@@ -15,11 +15,15 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  // The header and the body are separate flex rows, so a column may only be
-  // content-sized through the shared sizing state below; styling alone would
-  // size the header to its label and the body to its buttons and skew every
-  // column. This just parks the buttons at the column's trailing edge.
-  actionsCell: { justifyContent: 'flex-end' },
+  // Both rows carry this class, so the column stays the same width in each and
+  // the grid keeps its alignment; it only parks the buttons at the row's
+  // trailing edge instead of the column's leading one.
+  actionsCell: {
+    justifyContent: 'flex-end',
+    // The header cell delegates its width to an inner button, so the label
+    // needs the same alignment to stay above the buttons it names.
+    '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' },
+  },
   accentText: { color: 'var(--colorBrandForeground1)' },
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },
 });
@@ -105,20 +109,6 @@ export function KeysTable({
     [copiedTag, copyFailedTag, onCopy, onDelete, onEdit, onRotate, s, t, upstreamById],
   );
 
-  // Column widths come from one sizing state that both the header and the body
-  // read, which is what keeps them aligned. Leftover container width lands on
-  // the last column, so the actions column absorbs it and right-aligns inside.
-  const columnSizingOptions = useMemo(
-    () => ({
-      name: { minWidth: 120, idealWidth: 280 },
-      key: { minWidth: 120, idealWidth: 200 },
-      upstreams: { minWidth: 120, idealWidth: 420 },
-      created: { minWidth: 120, idealWidth: 150 },
-      lastUsed: { minWidth: 110, idealWidth: 170 },
-      actions: { minWidth: 150, idealWidth: 150 },
-    }), [],
-  );
-
   if (keys.length === 0) {
     return <Text size={300} className="text-fui-fg3 !m-0 text-center p-[18px_0]">{t('dashboard.apiKeys.empty')}</Text>;
   }
@@ -128,7 +118,6 @@ export function KeysTable({
       <DataGrid
         aria-label={t('dashboard.apiKeys.table.title')}
         columns={columns}
-        columnSizingOptions={columnSizingOptions}
         focusMode="composite"
         getRowId={key => key.id}
         items={keys}
@@ -136,7 +125,6 @@ export function KeysTable({
           const [id] = [...data.selectedItems];
           if (typeof id === 'string') onSelect(id);
         }}
-        resizableColumns
         selectedItems={selectedKeyId === '' ? [] : [selectedKeyId]}
         selectionMode="single"
         sortable
