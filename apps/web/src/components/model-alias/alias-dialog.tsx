@@ -10,7 +10,7 @@ import { aliasBody, aliasDefaults, blankTarget, metadataForKind, type AliasFormV
 import { MetadataEditor } from './metadata-editor';
 import { AliasTargetRow } from './target-row';
 import { computeAliasWarnings, realModelIdsOfKind } from './warnings';
-import { authFetch, callApi } from '../../api/auth';
+import { authFetch, callJson } from '../../api/auth';
 import type { ControlPlaneModel, ModelAlias, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
@@ -81,7 +81,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
   const save = async (form: AliasFormValues) => {
     setSaving(true); setServerError(null);
     const body = aliasBody(form, record);
-    const result = await callApi<ModelAlias>(() => authFetch(record ? `/api/aliases/${encodeURIComponent(record.name)}` : '/api/aliases', { method: record ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+    const result = await callJson<ModelAlias>(() => authFetch(record ? `/api/aliases/${encodeURIComponent(record.name)}` : '/api/aliases', { method: record ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
     setSaving(false);
     if (result.error) { setServerError(result.error.message); return; }
     onOpenChange(false); await onSaved();

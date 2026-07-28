@@ -16,7 +16,7 @@ import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './editor-data';
 import { previewRecord } from './editor-data';
 import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
-import { authFetch, callApi } from '../../api/auth';
+import { authFetch, callApi, callJson } from '../../api/auth';
 import { api } from '../../api/client';
 import type {
   DeviceFlowPoll,
@@ -320,7 +320,7 @@ function CopilotConfig({ record, onPatch }: {
   useEffect(() => stop, []);
 
   const poll = async (deviceCode: string, interval: number) => {
-    const result = await callApi<DeviceFlowPoll>(() => authFetch('/api/upstreams/copilot/oauth/device-login/poll', {
+    const result = await callJson<DeviceFlowPoll>(() => authFetch('/api/upstreams/copilot/oauth/device-login/poll', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ record: previewRecord(record, values as UpstreamEditorValues), deviceCode }),
     }));
@@ -332,7 +332,7 @@ function CopilotConfig({ record, onPatch }: {
   };
   const start = async () => {
     stop(); setBusy(true); setError(null);
-    const result = await callApi<DeviceFlowStart>(() => api.api.upstreams.copilot.oauth['device-login'].start.$post());
+    const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].start.$post());
     if (result.error) { setBusy(false); setError(result.error.message); return; }
     setFlow(result.data);
     timer.current = window.setTimeout(() => void poll(result.data.device_code, result.data.interval), result.data.interval * 1000);
@@ -374,7 +374,7 @@ function OAuthConfig({ record, onPatch }: {
     const path = record.kind === 'codex'
       ? '/api/upstreams/codex/oauth/refresh'
       : '/api/upstreams/claude-code/oauth/refresh';
-    const result = await callApi<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch(path, {
+    const result = await callJson<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch(path, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ record: previewRecord(record, values) }),
     }));
@@ -390,7 +390,7 @@ function OAuthConfig({ record, onPatch }: {
   const probeQuota = async () => {
     setProbing(true);
     setError(null);
-    const result = await callApi<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch('/api/upstreams/claude-code/probe', {
+    const result = await callJson<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch('/api/upstreams/claude-code/probe', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ record: previewRecord(record, values) }),
     }));
@@ -413,7 +413,7 @@ function OAuthConfig({ record, onPatch }: {
     const path = record.kind === 'codex'
       ? '/api/upstreams/codex/oauth/authorize-url'
       : `/api/upstreams/claude-code/${tab === 'setup' ? 'setup-token' : 'oauth'}/authorize-url`;
-    const result = await callApi<{ authorize_url: string }>(() => authFetch(path, {
+    const result = await callJson<{ authorize_url: string }>(() => authFetch(path, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state }),
     }));
@@ -444,7 +444,7 @@ function OAuthConfig({ record, onPatch }: {
     } catch (cause) {
       setBusy(false); setError(cause instanceof Error ? cause.message : String(cause)); return;
     }
-    const result = await callApi<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch(path, {
+    const result = await callJson<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch(path, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     }));
     setBusy(false);

@@ -15,7 +15,7 @@ import { Link, Navigate, redirect, useLocation, useNavigate } from 'react-router
 
 import type { Route } from './+types/dashboard-providers-upstreams';
 import { useDashboardOutletContext } from './dashboard';
-import { authFetch, callApi } from '../api/auth';
+import { authFetch, callApi, callJson } from '../api/auth';
 import { api } from '../api/client';
 import type {
   ControlPlaneModel,
@@ -219,7 +219,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const deleteUpstream = async (record: UpstreamRecord) => {
     setMutation({ kind: 'delete', id: record.id });
     setPageError(null);
-    const result = await callApi<{ ok: true }>(() =>
+    const result = await callApi(() =>
       api.api.upstreams[':id'].$delete({ param: { id: record.id } }));
     if (result.error) {
       setPageError(t('dashboard.upstreams.errors.delete', { message: result.error.message }));
@@ -495,8 +495,8 @@ function ModelStatus({
 
 async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
   const [upstreamsResult, modelsResult] = await Promise.all([
-    callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
-    callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
+    callApi(() => api.api.upstreams.$get()),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
   return {
     upstreams: [...(upstreamsResult.data ?? [])].sort(compareUpstreams),
@@ -507,7 +507,7 @@ async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
 }
 
 const patchUpstream = (id: string, body: { enabled?: boolean; sort_order?: number }) =>
-  callApi<UpstreamRecord>(() =>
+  callJson<UpstreamRecord>(() =>
     authFetch(`/api/upstreams/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import { useDashboardOutletContext } from './dashboard';
-import { authFetch, callApi } from '../api/auth';
+import { authFetch, callApi, callJson } from '../api/auth';
 import { api } from '../api/client';
 import type { ProxyConflictBody, ProxyRecord, BackoffRow } from '../api/types';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
@@ -31,8 +31,8 @@ interface LoaderData {
 
 const loadPageData = async (): Promise<LoaderData> => {
   const [proxiesRes, backoffsRes] = await Promise.all([
-    callApi<ProxyRecord[]>(() => api.api.proxies.$get()),
-    callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
+    callApi(() => api.api.proxies.$get()),
+    callApi(() => api.api.proxies.backoffs.$get()),
   ]);
   return {
     proxies: proxiesRes.data ?? [],
@@ -95,8 +95,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   const refreshProxies = useCallback(async () => {
     setLoadError(null);
     const [proxiesRes, backoffsRes] = await Promise.all([
-      callApi<ProxyRecord[]>(() => api.api.proxies.$get()),
-      callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
+      callApi(() => api.api.proxies.$get()),
+      callApi(() => api.api.proxies.backoffs.$get()),
     ]);
     if (proxiesRes.data) setProxies(proxiesRes.data);
     if (backoffsRes.data) setBackoffs(backoffsRes.data);
@@ -203,7 +203,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     };
 
     const isEdit = editingId !== null;
-    const result = await callApi<ProxyRecord>(() =>
+    const result = await callJson<ProxyRecord>(() =>
       authFetch(
         isEdit
           ? `/api/proxies/${encodeURIComponent(editingId!)}`
@@ -238,7 +238,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       body.dial_timeout_seconds = dialTimeout.value;
     }
 
-    const result = await callApi<ProxyTestResult>(() => authFetch('/api/proxies/test', {
+    const result = await callJson<ProxyTestResult>(() => authFetch('/api/proxies/test', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -252,7 +252,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setDeleting(true);
     setDeleteError(null);
 
-    const result = await callApi<{ ok: true }>(() =>
+    const result = await callJson<{ ok: true }>(() =>
       authFetch(`/api/proxies/${encodeURIComponent(deleteTarget.id)}`, {
         method: 'DELETE',
       }));

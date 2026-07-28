@@ -78,8 +78,8 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const loadedAt = Date.now();
   const query = buildPerformanceQuery(view, state.range, groupBy, state.filters, loadedAt);
   const [overview, upstreams] = await Promise.all([
-    callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({ query: Object.fromEntries(query) })),
-    callApi<UpstreamName[]>(() => api.api.upstreams.$get()),
+    callApi(() => api.api.performance.overview.$get({ query: Object.fromEntries(query) })),
+    callApi(() => api.api.upstreams.$get()),
   ]);
   return {
     error: overview.error?.message ?? upstreams.error?.message ?? null,
@@ -126,7 +126,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setLoading(true);
     setError(null);
     const search = buildPerformanceQuery(view, range, groupBy, filters, requestedAt);
-    const result = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({ query: Object.fromEntries(search) }));
+    const result = await callApi(() => api.api.performance.overview.$get({ query: Object.fromEntries(search) }));
     if (requestId !== requestIdRef.current) return;
     if (result.error) setError(result.error.message);
     else {

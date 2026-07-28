@@ -18,6 +18,7 @@ import type {
 } from '@floway-dev/protocols/common';
 import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/provider';
 import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
+import type { SerializedBackoffRow, SerializedProxyRecord } from '@floway-dev/gateway/control-plane/proxies/serialize';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
@@ -319,26 +320,8 @@ export type UpstreamRecordEnvelope = {
 
 export const toRecordEnvelope = (record: UpstreamRecord): UpstreamRecordEnvelope => ({ ...record });
 
-// Mirrors @floway-dev/gateway/control-plane/proxies/serialize. Keep this narrow
-// until this app needs the gateway Hono RPC type; pulling gateway in just for
-// these DTOs drags the whole backend package graph into the frontend workspace.
-export interface ProxyRecord {
-  id: string;
-  name: string;
-  url: string;
-  created_at: string;
-  updated_at: string;
-  dial_timeout_seconds: number | null;
-}
-
-export interface BackoffRow {
-  proxy_id: string;
-  upstream_id: string;
-  fail_count: number;
-  expires_at: number;
-  last_error: string | null;
-  last_error_at: number | null;
-}
+export type ProxyRecord = SerializedProxyRecord;
+export type BackoffRow = SerializedBackoffRow;
 
 // 409 body returned by DELETE /api/proxies/:id when the row is referenced
 // by an upstream's fallback list.

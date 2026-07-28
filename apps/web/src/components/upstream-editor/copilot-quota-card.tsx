@@ -22,7 +22,7 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
   const load = async () => {
     setLoading(true);
     setError(null);
-    const { data, error: failure } = await callApi<CopilotQuotaSnapshot>(
+    const { data, error: failure } = await callApi(
       () => api.api.upstreams.copilot.quota.$post({ json: { record: { id: record.id, kind: 'copilot', config: record.config, state: record.state ?? null } } }),
     );
     setLoading(false);

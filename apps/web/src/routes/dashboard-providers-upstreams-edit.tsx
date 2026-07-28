@@ -12,7 +12,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   if (!getSessionToken()) throw redirect('/');
   if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   const [recordResult, aux] = await Promise.all([
-    callApi<UpstreamRecord>(() => api.api.upstreams[':id'].$get({ param: { id: params.id } })),
+    callApi(() => api.api.upstreams[':id'].$get({ param: { id: params.id } })),
     loadEditorAux(),
   ]);
   if (recordResult.error?.status === 404) {

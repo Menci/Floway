@@ -16,7 +16,7 @@ import {
 } from './editor-data';
 import { modelsAreValid } from './model-detail';
 import { UpstreamWorkspace } from './workspace';
-import { authFetch, callApi } from '../../api/auth';
+import { authFetch, callApi, callJson } from '../../api/auth';
 import { api } from '../../api/client';
 import type { CustomRawModel, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -96,7 +96,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setModelsLoading(true);
     setModelsError(null);
     const values = getValues();
-    const result = await callApi<{ data: UpstreamModelConfig[] } | { data: CustomRawModel[] }>(() =>
+    const result = await callJson<{ data: UpstreamModelConfig[] } | { data: CustomRawModel[] }>(() =>
       authFetch('/api/upstreams/list-models', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -110,7 +110,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     const endpoints = currentRecord.kind === 'custom' ? (values.config as typeof currentRecord.config).endpoints : {};
     setDiscovered(discoveredModelsFromResponse(currentRecord.kind, result.data.data, endpoints));
     if (currentRecord.id !== '') {
-      const refreshed = await callApi<UpstreamRecord>(() => api.api.upstreams[':id'].$get({ param: { id: currentRecord.id } }));
+      const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: currentRecord.id } }));
       if (refreshed.error) {
         setModelsError(refreshed.error.message);
       } else {
@@ -160,13 +160,13 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     if (data.mode === 'create' && (record.kind === 'codex' || record.kind === 'claude-code') && (values.config as Extract<UpstreamRecord, { kind: 'codex' | 'claude-code' }>['config']).accounts.length === 0) { setSaveError(t('dashboard.upstreamEditor.validation.credential')); return; }
     setSaving(true); setSaveError(null);
     const result = data.mode === 'create'
-      ? await callApi<UpstreamRecord>(() => api.api.upstreams.$post({ json: createBody(record, values, data.nextSortOrder) }))
-      : await callApi<UpstreamRecord>(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
+      ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values, data.nextSortOrder) }))
+      : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
     setSaving(false);
     if (result.error) { setSaveError(result.error.message); return; }
     let saved = result.data;
     if (data.mode === 'edit') {
-      const full = await callApi<UpstreamRecord>(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
+      const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
       if (!full.error) saved = full.data;
     }
     setRecord(saved);

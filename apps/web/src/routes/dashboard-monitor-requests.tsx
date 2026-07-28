@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, redirect, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-requests';
-import { authFetch, callApi } from '../api/auth';
+import { authFetch, callApi, callJson } from '../api/auth';
 import { api } from '../api/client';
 import type { ApiKey } from '../api/types';
 import { getSessionToken } from '../auth/session';
@@ -32,7 +32,7 @@ interface LoaderData {
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
-  const keysResult = await callApi<ApiKey[]>(() => api.api.keys.$get());
+  const keysResult = await callApi(() => api.api.keys.$get());
   const keys = keysResult.data?.filter(key => key.dump_retention_seconds !== null) ?? [];
   const url = new URL(request.url);
   const requestedKeyId = url.searchParams.get('key');
@@ -42,9 +42,9 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     return { collected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
   }
   const [recordsResult, recordResult] = await Promise.all([
-    callApi<{ records: DumpMetadata[] }>(() => authFetch(`/api/dump/keys/${encodeURIComponent(selectedKeyId)}/records?limit=100`)),
+    callJson<{ records: DumpMetadata[] }>(() => authFetch(`/api/dump/keys/${encodeURIComponent(selectedKeyId)}/records?limit=100`)),
     recordId
-      ? callApi<DumpRecord>(() => authFetch(`/api/dump/keys/${encodeURIComponent(selectedKeyId)}/records/${encodeURIComponent(recordId)}`))
+      ? callJson<DumpRecord>(() => authFetch(`/api/dump/keys/${encodeURIComponent(selectedKeyId)}/records/${encodeURIComponent(recordId)}`))
       : Promise.resolve(null),
   ]);
   const record = recordResult?.data ?? null;
@@ -87,7 +87,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
 
   useEffect(() => {
     const refresh = async () => {
-      const result = await callApi<ApiKey[]>(() => api.api.keys.$get());
+      const result = await callApi(() => api.api.keys.$get());
       if (result.error) setKeysError(result.error.message);
       else {
         setKeys(result.data.filter(key => key.dump_retention_seconds !== null));

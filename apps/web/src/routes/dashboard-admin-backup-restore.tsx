@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-admin-backup-restore';
-import { authFetch, callApi } from '../api/auth';
+import { authFetch, callJson } from '../api/auth';
 import type {
   BackupExportData,
   BackupExportResponse,
@@ -201,7 +201,7 @@ export default function DashboardAdminBackupRestore() {
     setExportError(null);
 
     const qs = includePerformance ? '?include_performance=1' : '';
-    const result = await callApi<BackupExportResponse>(() => authFetch(`/api/export${qs}`));
+    const result = await callJson<BackupExportResponse>(() => authFetch(`/api/export${qs}`));
 
     if (result.error) {
       setExportError(result.error.message);
@@ -294,7 +294,7 @@ export default function DashboardAdminBackupRestore() {
     setImportError(null);
     setImportSuccess(null);
 
-    const result = await callApi<BackupImportResponse>(() =>
+    const result = await callJson<BackupImportResponse>(() =>
       authFetch('/api/import', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

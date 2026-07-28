@@ -73,8 +73,8 @@ interface LoaderData { keys: ApiKey[]; models: ControlPlaneModel[]; error: strin
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
   const [keys, models] = await Promise.all([
-    callApi<ApiKey[]>(() => api.api.keys.$get()),
-    callApi<ModelsResponse>(() => api.api.models.$get({ query: {} })),
+    callApi(() => api.api.keys.$get()),
+    callApi(() => api.api.models.$get({ query: {} })),
   ]);
   return {
     keys: keys.data ?? [],

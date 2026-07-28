@@ -70,11 +70,11 @@ export async function requireAdmin() {
 
 export async function loadEditorAux(): Promise<EditorAuxData> {
   const [flags, proxies, backoffs, runtime, upstreams] = await Promise.all([
-    callApi<Flag[]>(() => api.api.upstreams.flags.$get()),
-    callApi<ProxyRecord[]>(() => api.api.proxies.$get()),
-    callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
-    callApi<RuntimeInfo>(() => api.api['runtime-info'].$get()),
-    callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
+    callApi(() => api.api.upstreams.flags.$get()),
+    callApi(() => api.api.proxies.$get()),
+    callApi(() => api.api.proxies.backoffs.$get()),
+    callApi(() => api.api['runtime-info'].$get()),
+    callApi(() => api.api.upstreams.$get()),
   ]);
   const error = flags.error ?? proxies.error ?? backoffs.error ?? runtime.error ?? upstreams.error;
   if (error) throw new Error(error.message);

@@ -22,7 +22,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 
   const provider = params.provider as UpstreamProviderKind;
   const [recordResult, aux] = await Promise.all([
-    callApi<UpstreamRecord>(() =>
+    callApi(() =>
       api.api.upstreams.blueprint.$get({ query: { kind: provider } })),
     loadEditorAux(),
   ]);

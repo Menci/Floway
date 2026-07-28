@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cloneAgentSetupConfiguration, type AgentSetupConfiguration, type AgentSetupLease } from './agent-setup-contract';
-import { callApi } from '../../api/auth';
+import { callJson } from '../../api/auth';
 import { api } from '../../api/client';
 
 interface ActiveRequest {
@@ -100,7 +100,7 @@ export function useAgentSetup(
     };
     activeRequestsRef.current.add(requestState);
     try {
-      return await callApi<T>(() => send(controller.signal));
+      return await callJson<T>(() => send(controller.signal));
     } finally {
       clearTimeout(requestState.timeout);
       activeRequestsRef.current.delete(requestState);

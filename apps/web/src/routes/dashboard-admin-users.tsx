@@ -13,7 +13,7 @@ import { redirect, useOutletContext } from 'react-router';
 import { z } from 'zod';
 
 import type { DashboardOutletContext } from './dashboard';
-import { authFetch, callApi } from '../api/auth';
+import { authFetch, callApi, callJson } from '../api/auth';
 import { api, getCurrentSession } from '../api/client';
 import type { ControlPlaneUser, UpstreamOption } from '../api/types';
 import { getSessionToken } from '../auth/session';
@@ -133,7 +133,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const deleteUser = async (target: ControlPlaneUser) => {
     setDeleting(true);
     setPageError(null);
-    const result = await callApi<{ ok: true }>(() =>
+    const result = await callApi(() =>
       api.api.users[':id'].$delete({ param: { id: String(target.id) } }));
     setDeleting(false);
     if (result.error) {
@@ -393,7 +393,7 @@ function UserDialog({
           ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
           upstreamIds,
         };
-    const result = await callApi<ControlPlaneUser | { user: ControlPlaneUser }>(() =>
+    const result = await callJson<ControlPlaneUser | { user: ControlPlaneUser }>(() =>
       authFetch(mode === 'create' ? '/api/users' : `/api/users/${user!.id}`, {
         method: mode === 'create' ? 'POST' : 'PATCH',
         headers: { 'content-type': 'application/json' },
@@ -599,7 +599,7 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
     if (!user) return;
     setSaving(true);
     setError(null);
-    const result = await callApi<ControlPlaneUser>(() =>
+    const result = await callJson<ControlPlaneUser>(() =>
       authFetch(`/api/users/${user.id}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
@@ -662,8 +662,8 @@ function userFormDefaults(user: ControlPlaneUser | null): UserFormValues {
 
 async function loadUsersPageData(): Promise<UsersPageData> {
   const [usersResult, upstreamsResult] = await Promise.all([
-    callApi<ControlPlaneUser[]>(() => api.api.users.$get()),
-    callApi<UpstreamOption[]>(() => api.api['upstream-options'].$get()),
+    callApi(() => api.api.users.$get()),
+    callApi(() => api.api['upstream-options'].$get()),
   ]);
   return {
     users: usersResult.data ?? [],

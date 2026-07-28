@@ -30,8 +30,8 @@ interface LoaderData {
 
 const loadPageData = async (current: LoaderData['catalog']): Promise<LoaderData> => {
   const [aliasResult, modelResult] = await Promise.all([
-    callApi<ModelAlias[]>(() => api.api.aliases.$get()),
-    callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
+    callApi(() => api.api.aliases.$get()),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
   const catalog = mergeModelAliasesPageData(current, aliasResult, modelResult);
   return {

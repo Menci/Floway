@@ -9,7 +9,7 @@ import { KeySourceControl } from './key-source-control';
 import { RetentionField, type RetentionValue } from './retention-field';
 import type { MutationToastController, UpstreamOption } from './types';
 import { UpstreamPicker } from './upstream-picker';
-import { authFetch, callApi } from '../../api/auth';
+import { authFetch, callJson } from '../../api/auth';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
@@ -140,7 +140,7 @@ export function KeyDialog({
     const mutationKind = isCreate ? 'create' : 'edit';
     const toastId = mutationToasts.start(mutationKind, common.name);
     const result = isCreate
-      ? await callApi<ApiKey>(() =>
+      ? await callJson<ApiKey>(() =>
           authFetch('/api/keys', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -149,7 +149,7 @@ export function KeyDialog({
               ...keyWriteBody(values.keySource, values.customKey),
             } satisfies CreateKeyBody),
           }))
-      : await callApi<ApiKey>(() =>
+      : await callJson<ApiKey>(() =>
           authFetch(`/api/keys/${encodeURIComponent(apiKey!.id)}`, {
             method: 'PATCH',
             headers: { 'content-type': 'application/json' },

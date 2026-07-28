@@ -43,9 +43,9 @@ interface SearchPageLoaderData {
 export async function clientLoader(): Promise<SearchPageLoaderData> {
   if (!getSessionToken()) throw redirect('/');
   const [configResult, upstreamsResult, modelsResult] = await Promise.all([
-    callApi<SearchConfig>(() => api.api['search-config'].$get()),
-    callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
-    callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
+    callApi(() => api.api['search-config'].$get()),
+    callApi(() => api.api.upstreams.$get()),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
   return {
     config: configResult.data ?? DEFAULT_CONFIG,
@@ -200,7 +200,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(false);
-    const result = await callApi<SearchConfig>(() =>
+    const result = await callApi(() =>
       api.api['search-config'].$put({ json: draft }));
     setSaving(false);
     if (result.error) {

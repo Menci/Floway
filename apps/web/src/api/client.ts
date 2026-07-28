@@ -12,4 +12,4 @@ const client = hc<AppType>('/', { fetch: authFetch });
 export const api = client;
 
 export const getCurrentSession = (): Promise<ApiResult<MeResponse>> =>
-  callApi<MeResponse>(() => api.auth.me.$get());
+  callApi(() => api.auth.me.$get());

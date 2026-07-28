@@ -7,7 +7,7 @@ import type {
   UsageView,
 } from './types';
 import type { AuthUser } from '../../api/auth';
-import { authFetch, callApi } from '../../api/auth';
+import { authFetch, callJson } from '../../api/auth';
 import type { ControlPlaneModel } from '../../api/types';
 
 interface UsageByUserResponse {
@@ -27,7 +27,7 @@ const userBucketId = (userId: number) => `user-${userId}`;
 
 const requestJson = <T>(path: string, query?: Record<string, string>) => {
   const search = new URLSearchParams(query);
-  return callApi<T>(() => authFetch(search.size ? `${path}?${search}` : path));
+  return callJson<T>(() => authFetch(search.size ? `${path}?${search}` : path));
 };
 
 async function fetchUsageForView(view: UsageView, start: string, end: string) {

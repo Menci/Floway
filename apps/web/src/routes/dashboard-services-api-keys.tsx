@@ -6,7 +6,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { redirect, useOutletContext } from 'react-router';
 
 import type { DashboardOutletContext } from './dashboard';
-import { authFetch, callApi } from '../api/auth';
+import { authFetch, callApi, callJson } from '../api/auth';
 import { api } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
@@ -34,9 +34,9 @@ interface LoaderData extends ApiKeysPageData {
 
 const loadInitialPageData = async (): Promise<ApiKeysPageData> => {
   const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
-    callApi<ApiKey[]>(() => api.api.keys.$get()),
-    callApi<UpstreamOption[]>(() => api.api['upstream-options'].$get()),
-    callApi<ModelsResponse>(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
+    callApi(() => api.api.keys.$get()),
+    callApi(() => api.api['upstream-options'].$get()),
+    callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
   ]);
   const error = keysRes.error?.message ?? upstreamsRes.error?.message ?? modelsRes.error?.message ?? null;
   return {
@@ -53,7 +53,7 @@ export async function clientLoader(): Promise<LoaderData> {
   const stored = localStorage.getItem(selectedKeyStorageKey) ?? '';
   const selectedKeyId = data.keys.some(key => key.id === stored) ? stored : '';
   if (!selectedKeyId) return { ...data, selectedKeyId, setupError: null, setupLease: null };
-  const setup = await callApi<AgentSetupLease>(() => api.api.setup.$post({ json: { apiKeyId: selectedKeyId } }));
+  const setup = await callApi(() => api.api.setup.$post({ json: { apiKeyId: selectedKeyId } }));
   return { ...data, selectedKeyId, setupError: setup.error?.message ?? null, setupLease: setup.data ?? null };
 }
 export function meta({}: Route.MetaArgs) { return [{ title: 'API Keys | Floway' }]; }
@@ -131,9 +131,9 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const reload = async () => {
     setPageError(null);
     const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
-      callApi<ApiKey[]>(() => api.api.keys.$get()),
-      callApi<UpstreamOption[]>(() => api.api['upstream-options'].$get()),
-      callApi<ModelsResponse>(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
+      callApi(() => api.api.keys.$get()),
+      callApi(() => api.api['upstream-options'].$get()),
+      callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
     ]);
 
     const error =
@@ -176,7 +176,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     setPageError(null);
     setDeletingKey(true);
     const toastId = mutationToasts.start('delete', key.name);
-    const result = await callApi<{ ok: true }>(() =>
+    const result = await callJson<{ ok: true }>(() =>
       authFetch(`/api/keys/${encodeURIComponent(key.id)}`, { method: 'DELETE' }));
     setDeletingKey(false);
     if (result.error) {

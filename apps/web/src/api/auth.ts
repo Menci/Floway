@@ -47,7 +47,16 @@ export const authFetch = async (
   return response;
 };
 
-export const callApi = async <T>(
+type SuccessfulJson<TResponse extends Response> = TResponse extends {
+  status: infer Status;
+  json(): Promise<infer Body>;
+}
+  ? Status extends number
+    ? `${Status}` extends `2${string}` ? Body : never
+    : never
+  : never;
+
+const callResponse = async <T>(
   fn: () => Promise<Response>,
 ): Promise<ApiResult<T>> => {
   let response: Response;
@@ -92,11 +101,20 @@ export const callApi = async <T>(
   }
 };
 
+export const callApi = <TResponse extends Response>(
+  fn: () => Promise<TResponse>,
+): Promise<ApiResult<SuccessfulJson<TResponse>>> =>
+  callResponse<SuccessfulJson<TResponse>>(fn);
+
+export const callJson = <T>(
+  fn: () => Promise<Response>,
+): Promise<ApiResult<T>> => callResponse<T>(fn);
+
 export const login = (body: {
   username: string;
   password: string;
 }): Promise<ApiResult<LoginResponse>> =>
-  callApi<LoginResponse>(() =>
+  callJson<LoginResponse>(() =>
     fetch('/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -107,7 +125,7 @@ export const changeOwnPassword = (body: {
   currentPassword: string;
   newPassword: string;
 }): Promise<ApiResult<{ ok: true }>> =>
-  callApi<{ ok: true }>(() =>
+  callApi(() =>
     authFetch('/api/users/me/password', {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
