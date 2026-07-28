@@ -271,6 +271,8 @@ const zhHansCN = {
           customKey: '自定义 API 密钥',
           customKeyPlaceholder: '粘贴自定义 API 密钥',
           retention: '记录请求转储',
+          responsesRetention: 'Stateful Responses 保留',
+          responsesRetentionHint: '该 key 的 Responses 条目可被后续请求按 id 引用的时长。关闭表示不做持久化。',
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录。',
           retentionCustom: '自定义保留时间',
@@ -297,6 +299,13 @@ const zhHansCN = {
           inheritsTitle: '继承全局上游顺序',
         },
         retention: {
+          offCapture: '关闭（不记录）',
+          offPersist: '关闭（不持久化）',
+          customValue: '自定义保留时长',
+          durationPlaceholder: '例如 30m、2h、3d',
+          daysPlaceholder: '例如 14',
+          invalid: '请输入有效的保留时长。',
+          effective: '保留 {{duration}}。',
           off: '关闭',
           '1h': '1 小时',
           '6h': '6 小时',

@@ -6,20 +6,31 @@ import { z } from 'zod';
 
 import { keyWriteBody, type KeySource } from './key-source';
 import { KeySourceControl } from './key-source-control';
+import { RetentionField, type RetentionValue } from './retention-field';
 import type { MutationToastController, UpstreamOption } from './types';
 import { UpstreamPicker } from './upstream-picker';
 import { authFetch, callApi } from '../../api/auth';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
-import { Input, Select } from '../ui/fluent-form-controls';
-const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody } = fluentComponents;
-type RetentionPreset = 'off' | '1h' | '6h' | '24h' | '7d' | 'custom';
-interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; retentionPreset: RetentionPreset; retentionCustom: string }
-interface CreateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; key_source: KeySource; custom_key?: string }
-interface UpdateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null }
-const retentionPresetSeconds = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800 } as const;
-const dumpRetentionMaxSeconds = 10 * 365 * 24 * 60 * 60;
+import { Input } from '../ui/fluent-form-controls';
+const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Text } = fluentComponents;
+interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: RetentionValue }
+interface CreateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; responses_retention_seconds: number; key_source: KeySource; custom_key?: string }
+interface UpdateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; responses_retention_seconds: number }
+const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
+
+const DUMP_RETENTION_PRESETS = [
+  { seconds: 3600, label: '1 hour' },
+  { seconds: 6 * 3600, label: '6 hours' },
+  { seconds: 24 * 3600, label: '24 hours' },
+  { seconds: 7 * 86400, label: '7 days' },
+] as const;
+
+const RESPONSES_RETENTION_PRESETS = [
+  { seconds: 7 * 86400, label: '7 days' },
+  { seconds: 30 * 86400, label: '30 days' },
+] as const;
 export function KeyDialog({
   apiKey,
   mode,
@@ -60,8 +71,8 @@ export function KeyDialog({
           customKey: z.string(),
           upstreamOverride: z.boolean(),
           upstreamIds: z.array(z.string()),
-          retentionPreset: z.enum(['off', '1h', '6h', '24h', '7d', 'custom']),
-          retentionCustom: z.string(),
+          dumpRetention: z.union([z.number(), z.null(), z.literal('invalid')]),
+          responsesRetention: z.union([z.number(), z.null(), z.literal('invalid')]),
         })
         .superRefine((value, ctx) => {
           if (value.upstreamOverride && value.upstreamIds.length === 0) {
@@ -78,15 +89,14 @@ export function KeyDialog({
               path: ['customKey'],
             });
           }
-          if (
-            value.retentionPreset === 'custom' &&
-            parseDuration(value.retentionCustom) === null
-          ) {
-            ctx.addIssue({
-              code: 'custom',
-              message: 'dashboard.apiKeys.validation.retentionInvalid',
-              path: ['retentionCustom'],
-            });
+          for (const field of ['dumpRetention', 'responsesRetention'] as const) {
+            if (value[field] === 'invalid') {
+              ctx.addIssue({
+                code: 'custom',
+                message: 'dashboard.apiKeys.validation.retentionInvalid',
+                path: [field],
+              });
+            }
           }
         }),
     [isCreate],
@@ -116,23 +126,22 @@ export function KeyDialog({
   }, [apiKey, open, reset]);
 
   const values = watch();
-  const proposedRetention = retentionSecondsFromForm(values);
   const retentionWarning = retentionWarningText(
     apiKey?.dump_retention_seconds ?? null,
-    proposedRetention,
+    values.dumpRetention,
     t,
   );
 
   const save = async (values: KeyFormValues) => {
-    const retention = retentionSecondsFromForm(values);
-    if (retention === 'invalid') return;
+    if (values.dumpRetention === 'invalid' || values.responsesRetention === 'invalid') return;
 
     setSaving(true);
     setError(null);
     const common = {
       name: values.name.trim(),
       upstream_ids: values.upstreamOverride ? values.upstreamIds : null,
-      dump_retention_seconds: retention,
+      dump_retention_seconds: values.dumpRetention,
+      responses_retention_seconds: values.responsesRetention ?? 0,
     };
     const mutationKind = isCreate ? 'create' : 'edit';
     const toastId = mutationToasts.start(mutationKind, common.name);
@@ -229,52 +238,44 @@ export function KeyDialog({
         />
       )}
 
-      <div className="grid gap-3 grid-cols-2 min-w-0 max-[900px]:grid-cols-1">
-        <Controller
-          control={control}
-          name="retentionPreset"
-          render={({ field }) => (
-            <Field
-              hint={t('dashboard.apiKeys.form.retentionHint')}
-              label={t('dashboard.apiKeys.form.retention')}
-            >
-              <Select {...field} disabled={saving}>
-                <option value="off">{t('dashboard.apiKeys.retention.off')}</option>
-                <option value="1h">{t('dashboard.apiKeys.retention.1h')}</option>
-                <option value="6h">{t('dashboard.apiKeys.retention.6h')}</option>
-                <option value="24h">{t('dashboard.apiKeys.retention.24h')}</option>
-                <option value="7d">{t('dashboard.apiKeys.retention.7d')}</option>
-                <option value="custom">
-                  {t('dashboard.apiKeys.retention.custom')}
-                </option>
-              </Select>
-            </Field>
-          )}
-        />
-        {values.retentionPreset === 'custom' && (
-          <Controller
-            control={control}
-            name="retentionCustom"
-            render={({ field }) => (
-              <Field
-                label={t('dashboard.apiKeys.form.retentionCustom')}
-                validationMessage={
-                  errors.retentionCustom?.message
-                    ? t(errors.retentionCustom.message)
-                    : undefined
-                }
-                validationState={errors.retentionCustom ? 'error' : undefined}
-              >
-                <Input
-                  {...field}
-                  disabled={saving}
-                  placeholder={t('dashboard.apiKeys.form.retentionPlaceholder')}
-                />
-              </Field>
+      <Controller
+        control={control}
+        name="dumpRetention"
+        render={({ field }) => (
+          <RetentionField
+            description={t('dashboard.apiKeys.form.retentionHint')}
+            label={t('dashboard.apiKeys.form.retention')}
+            offLabel={t('dashboard.apiKeys.retention.offCapture')}
+            offValue={null}
+            presets={DUMP_RETENTION_PRESETS}
+            value={field.value}
+            onChange={field.onChange}
+          >
+            {retentionWarning !== null && (
+              <Text role="status" size={200} className="text-fui-fg2">{retentionWarning}</Text>
             )}
+          </RetentionField>
+        )}
+      />
+
+      <Controller
+        control={control}
+        name="responsesRetention"
+        render={({ field }) => (
+          <RetentionField
+            customInputUnit="days"
+            description={t('dashboard.apiKeys.form.responsesRetentionHint')}
+            label={t('dashboard.apiKeys.form.responsesRetention')}
+            maximumSeconds={RESPONSES_RETENTION_MAX_SECONDS}
+            minimumSeconds={86400}
+            offLabel={t('dashboard.apiKeys.retention.offPersist')}
+            offValue={0}
+            presets={RESPONSES_RETENTION_PRESETS}
+            value={field.value}
+            onChange={field.onChange}
           />
         )}
-      </div>
+      />
 
       {retentionWarning && (
         <MessageBar intent="warning">
@@ -292,51 +293,15 @@ export function KeyDialog({
 }
 
 const keyFormDefaults = (apiKey: ApiKey | null): KeyFormValues => {
-  const retention = retentionPresetFromValue(apiKey?.dump_retention_seconds ?? null);
   return {
     name: apiKey?.name ?? '',
     keySource: 'generate',
     customKey: '',
     upstreamOverride: apiKey?.upstream_ids !== null && apiKey?.upstream_ids !== undefined,
     upstreamIds: apiKey?.upstream_ids ?? [],
-    retentionPreset: retention.preset,
-    retentionCustom: retention.custom,
+    dumpRetention: apiKey?.dump_retention_seconds ?? null,
+    responsesRetention: apiKey?.responses_retention_seconds ?? 0,
   };
-};
-
-const retentionPresetFromValue = (
-  seconds: number | null,
-): { preset: RetentionPreset; custom: string } => {
-  if (seconds === null) return { preset: 'off', custom: '' };
-  for (const [preset, value] of Object.entries(retentionPresetSeconds)) {
-    if (value === seconds) return { preset: preset as RetentionPreset, custom: '' };
-  }
-  if (seconds % 86400 === 0) return { preset: 'custom', custom: `${seconds / 86400}d` };
-  if (seconds % 3600 === 0) return { preset: 'custom', custom: `${seconds / 3600}h` };
-  if (seconds % 60 === 0) return { preset: 'custom', custom: `${seconds / 60}m` };
-  return { preset: 'custom', custom: `${seconds}s` };
-};
-
-const retentionSecondsFromForm = (
-  values: Pick<KeyFormValues, 'retentionPreset' | 'retentionCustom'>,
-): number | null | 'invalid' => {
-  if (values.retentionPreset === 'off') return null;
-  if (values.retentionPreset === 'custom') {
-    return parseDuration(values.retentionCustom) ?? 'invalid';
-  }
-  return retentionPresetSeconds[values.retentionPreset];
-};
-
-const parseDuration = (value: string): number | null => {
-  const trimmed = value.trim().toLowerCase();
-  const match = /^(\d+)\s*([smhd])?$/.exec(trimmed);
-  if (!match) return null;
-  const amount = Number(match[1]);
-  if (!Number.isSafeInteger(amount) || amount <= 0) return null;
-  const unit = match[2] ?? 's';
-  const multiplier = unit === 'd' ? 86400 : unit === 'h' ? 3600 : unit === 'm' ? 60 : 1;
-  const seconds = amount * multiplier;
-  return seconds <= dumpRetentionMaxSeconds ? seconds : null;
 };
 
 const retentionWarningText = (

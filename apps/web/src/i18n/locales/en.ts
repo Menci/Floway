@@ -282,6 +282,8 @@ const en = {
           customKey: 'Custom API key',
           customKeyPlaceholder: 'Paste custom API key',
           retention: 'Request dump retention',
+          responsesRetention: 'Stateful Responses retention',
+          responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id. Off means nothing is persisted.',
           retentionHint:
               'When enabled, model-invoking requests through this key are captured for the configured window.',
           retentionCustom: 'Custom retention',
@@ -311,6 +313,13 @@ const en = {
           inheritsTitle: 'Inherits the global upstream order',
         },
         retention: {
+          offCapture: 'Off (do not capture)',
+          offPersist: 'Off (do not persist)',
+          customValue: 'Custom retention value',
+          durationPlaceholder: 'e.g. 30m, 2h, 3d',
+          daysPlaceholder: 'e.g. 14',
+          invalid: 'Enter a valid retention window.',
+          effective: 'Keeps data for {{duration}}.',
           off: 'Off',
           '1h': '1 hour',
           '6h': '6 hours',

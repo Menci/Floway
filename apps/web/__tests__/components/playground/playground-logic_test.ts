@@ -19,7 +19,7 @@ const model = (id: string, upstreams: string[], extra: Partial<ControlPlaneModel
 });
 const key = (upstream_ids: string[] | null): ApiKey => ({
   id: 'key', name: 'Key', key: 'secret', created_at: '', last_used_at: null,
-  upstream_ids, dump_retention_seconds: null,
+  upstream_ids, dump_retention_seconds: null, responses_retention_seconds: 0,
 });
 
 describe('playground reachability', () => {

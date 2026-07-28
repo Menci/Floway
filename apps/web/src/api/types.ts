@@ -355,6 +355,8 @@ export interface ApiKey {
   last_used_at: string | null;
   upstream_ids: string[] | null;
   dump_retention_seconds: number | null;
+  // Zero means Stateful Responses are not persisted for this key.
+  responses_retention_seconds: number;
 }
 
 // Raw admin projection returned by GET /api/users. Unlike /auth/me, the
