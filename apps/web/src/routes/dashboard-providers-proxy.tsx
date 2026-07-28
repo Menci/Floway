@@ -17,11 +17,13 @@ import { defaultsFor, isValidPort, parseDialTimeoutInput, parseProxyInput, type 
 import { ProxyForm, type ProxyTestResult } from '../components/proxy/proxy-form';
 import { ProxyList } from '../components/proxy/proxy-list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
+import { DialogShell } from '../components/ui/dialog-shell';
 import { Panel } from '../components/ui/panel';
+import { ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
 
-const { Button, MessageBar, MessageBarBody, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, Spinner } = fluentComponents;
 
 interface LoaderData {
   proxies: ProxyRecord[];
@@ -55,6 +57,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   const [loadError, setLoadError] = useState(loaderData.error);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [backoffs, setBackoffs] = useState(loaderData.backoffs);
   const [formName, setFormName] = useState('');
   const [config, setConfig] = useState<ProxyConfig>(
@@ -66,31 +69,23 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ProxyTestResult | null>(null);
-
-  // Save/Test diagnostics describe one exact draft. Once the operator edits
-  // any field, remove stale failures (and the saved confirmation) so the form
-  // no longer presents feedback for values that are not on screen anymore.
   const structuredUrl = config.host.trim()
     ? formatProxyUri({ ...config, name: formName.trim() })
     : '';
   const urlInput = urlDraft ?? structuredUrl;
   const dialTimeout = parseDialTimeoutInput(dialTimeoutInput);
-  const draftSignature = JSON.stringify([config, dialTimeoutInput, formName, urlDraft]);
-  const [diagnosedDraft, setDiagnosedDraft] = useState(draftSignature);
-  if (diagnosedDraft !== draftSignature) {
-    setDiagnosedDraft(draftSignature);
+  const clearDiagnostics = useCallback(() => {
     setSaveError(null);
-    setSaveSuccess(false);
-    setTestResult(current => current?.ok ? current : null);
-  }
+    setTestResult(null);
+  }, []);
 
   const [deleteTarget, setDeleteTarget] = useState<ProxyRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const refreshProxies = useCallback(async () => {
     setLoadError(null);
@@ -103,11 +98,18 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setLoadError(proxiesRes.error?.message ?? backoffsRes.error?.message ?? null);
   }, []);
 
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshProxies();
+    setRefreshing(false);
+  }, [refreshProxies]);
+
   const updateStructuredConfig = useCallback<Dispatch<SetStateAction<ProxyConfig>>>(update => {
     setConfig(update);
     setUrlDraft(null);
     setUrlError(null);
-  }, []);
+    clearDiagnostics();
+  }, [clearDiagnostics]);
 
   const handleKindChange = useCallback(
     (_: unknown, data: { optionValue?: string }) => {
@@ -129,7 +131,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     updateStructuredConfig(prev => ({ ...prev, port: Number.isFinite(n) ? n : 0 } as ProxyConfig));
   }, [updateStructuredConfig]);
 
-  const clearForm = useCallback((saved = false) => {
+  const clearForm = useCallback(() => {
     const blank = defaultsFor('http', { host: '', port: 0, name: '' });
     setEditingId(null);
     setFormName('');
@@ -137,11 +139,14 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setUrlDraft(null);
     setUrlError(null);
     setDialTimeoutInput('');
-    setDiagnosedDraft(JSON.stringify([blank, '', '', null]));
-    setSaveSuccess(saved);
     setSaveError(null);
     setTestResult(null);
   }, []);
+
+  const openCreate = useCallback(() => {
+    clearForm();
+    setDialogOpen(true);
+  }, [clearForm]);
 
   const handleEdit = useCallback((proxy: ProxyRecord) => {
     setEditingId(proxy.id);
@@ -155,12 +160,13 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setConfig(parsed.config ?? defaultsFor('http', { host: '', port: 0, name: '' }));
     setUrlDraft(proxy.url);
     setUrlError(parsed.error);
-    setSaveSuccess(false);
     setSaveError(null);
     setTestResult(null);
+    setDialogOpen(true);
   }, []);
 
   const handleUrlChange = useCallback((value: string) => {
+    clearDiagnostics();
     setUrlDraft(value);
     if (!value.trim()) {
       setUrlError(null);
@@ -169,12 +175,21 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     const parsed = parseProxyInput(value.trim());
     setUrlError(parsed.error);
     if (parsed.config) setConfig(parsed.config);
-  }, []);
+  }, [clearDiagnostics]);
+
+  const handleNameChange = useCallback((value: string) => {
+    clearDiagnostics();
+    setFormName(value);
+  }, [clearDiagnostics]);
+
+  const handleDialTimeoutChange = useCallback((value: string) => {
+    clearDiagnostics();
+    setDialTimeoutInput(value);
+  }, [clearDiagnostics]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     setSaveError(null);
-    setSaveSuccess(false);
 
     const trimmedName = formName.trim();
     if (!trimmedName) {
@@ -184,7 +199,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     }
 
     const builtUrl = urlInput.trim();
-    if (!builtUrl || urlError) {
+    if (!builtUrl || urlError || !config.host.trim() || !isValidPort(config.port)) {
       setSaveError(urlError ?? t('dashboard.proxy.validation.urlRequired'));
       setSaving(false);
       return;
@@ -213,9 +228,10 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       return;
     }
 
-    clearForm(true);
     await refreshProxies();
-  }, [formName, urlInput, urlError, dialTimeout, editingId, clearForm, refreshProxies, t]);
+    setDialogOpen(false);
+    clearForm();
+  }, [clearForm, config.host, config.port, dialTimeout, editingId, formName, refreshProxies, t, urlError, urlInput]);
 
   const handleTest = useCallback(async () => {
     const builtUrl = urlInput.trim();
@@ -262,8 +278,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   }, [deleteTarget, refreshProxies, t]);
 
   const canTest = urlInput.trim() !== '' && urlError === null && dialTimeout.error === null && config.host.trim() !== '' && isValidPort(config.port);
-  const canSave = formName.trim() !== '' && canTest;
-
   if (!user.isAdmin) {
     return (
       <section className="dashboard-page">
@@ -289,45 +303,69 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         </MessageBar>
       )}
 
-      <div className="grid grid-cols-[minmax(0,1fr)_420px] gap-[18px] items-start min-w-0 max-[900px]:grid-cols-1">
-        {loadError && proxies.length === 0
-          ? <Panel className="grid gap-3 !p-[22px_24px]">
-              <Text className="text-fui-fg2">{loadError}</Text>
-              <Button className="w-fit" onClick={() => void refreshProxies()}>{t('dashboard.proxy.actions.refresh')}</Button>
-            </Panel>
-          : <ProxyList proxies={proxies} onAdd={() => clearForm()} onDelete={setDeleteTarget} onEdit={handleEdit} onRefresh={() => void refreshProxies()} />}
-        <div className="dashboard-page">
-          {editingId !== null && <ProxyBackoffPanel
+      <Panel className="grid gap-[14px] min-w-0 !p-[18px] overflow-hidden">
+        <ResourceListToolbar
+          createLabel={t('dashboard.proxy.addTitle')}
+          detail={t('dashboard.proxy.count', { count: proxies.length })}
+          onCreate={openCreate}
+          onRefresh={() => void refresh()}
+          refreshLabel={t('dashboard.proxy.actions.refresh')}
+          refreshing={refreshing}
+          title={t('dashboard.proxy.listTitle')}
+        />
+        <ProxyList proxies={proxies} onDelete={setDeleteTarget} onEdit={handleEdit} />
+      </Panel>
+
+      <DialogShell
+        actions={<DialogActions>
+          <Button disabled={saving || testing} onClick={() => setDialogOpen(false)} type="button">{t('common.cancel')}</Button>
+          <Button
+            disabled={!canTest || saving || testing}
+            icon={testing ? <Spinner size="tiny" /> : undefined}
+            onClick={() => void handleTest()}
+            type="button"
+          >
+            {testing ? t('dashboard.proxy.actions.testing') : t('dashboard.proxy.actions.test')}
+          </Button>
+          <Button
+            appearance="primary"
+            disabled={saving || testing}
+            icon={saving ? <Spinner size="tiny" /> : undefined}
+            type="submit"
+          >
+            {saving ? t('dashboard.proxy.actions.saving') : t('dashboard.proxy.actions.save')}
+          </Button>
+        </DialogActions>}
+        onOpenChange={(_, data) => {
+          if (!saving && !testing) setDialogOpen(data.open);
+        }}
+        onSubmit={() => void handleSave()}
+        open={dialogOpen}
+        title={<DialogTitle>{editingId === null ? t('dashboard.proxy.addTitle') : t('dashboard.proxy.editTitle')}</DialogTitle>}
+      >
+        {editingId !== null && (
+          <ProxyBackoffPanel
             backoffs={backoffs}
             onReset={() => void refreshProxies()}
             proxyId={editingId}
-          />}
-          <ProxyForm
-            canSave={canSave}
-            canTest={canTest}
-            config={config}
-            dialTimeoutInput={dialTimeoutInput}
-            editing={editingId !== null}
-            formName={formName}
-            onCancel={() => clearForm()}
-            onConfigChange={updateStructuredConfig}
-            onDialTimeoutChange={setDialTimeoutInput}
-            onKindChange={handleKindChange}
-            onNameChange={setFormName}
-            onPortChange={setPort}
-            onSave={() => void handleSave()}
-            onTest={() => void handleTest()}
-            onUrlChange={handleUrlChange}
-            saveError={saveError}
-            saveSuccess={saveSuccess}
-            saving={saving}
-            testResult={testResult}
-            testing={testing}
-            urlError={urlError}
-            urlInput={urlInput}
           />
-        </div>
-      </div>
+        )}
+        <ProxyForm
+          config={config}
+          dialTimeoutInput={dialTimeoutInput}
+          formName={formName}
+          onConfigChange={updateStructuredConfig}
+          onDialTimeoutChange={handleDialTimeoutChange}
+          onKindChange={handleKindChange}
+          onNameChange={handleNameChange}
+          onPortChange={setPort}
+          onUrlChange={handleUrlChange}
+          saveError={saveError}
+          testResult={testResult}
+          urlError={urlError}
+          urlInput={urlInput}
+        />
+      </DialogShell>
 
       {deleteTarget && (
         <ConfirmDialog

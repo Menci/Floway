@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, isValidPort, isValidUuid, orUndef, proxyUrlPlaceholder } from './proxy-config';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
-import { Panel } from '../ui/panel';
 import type {
   HttpProxyConfig,
   ProxyConfig,
@@ -16,57 +15,39 @@ import type {
   VlessTcpTlsProxyConfig,
   VlessWsTlsProxyConfig,
 } from '@floway-dev/proxy/proxy-config';
-const { Button, Field, MessageBar, MessageBarBody, Option, Spinner, Switch, Text } = fluentComponents;
+const { Field, MessageBar, MessageBarBody, Option, Switch, Text } = fluentComponents;
 export type ProxyTestResult =
   | { ok: true; egress_ip: string }
   | { ok: false; error: string };
 
 export interface ProxyFormProps {
-  canSave: boolean;
-  canTest: boolean;
   config: ProxyConfig;
   dialTimeoutInput: string;
-  editing: boolean;
   formName: string;
-  onCancel: () => void;
   onConfigChange: Dispatch<SetStateAction<ProxyConfig>>;
   onDialTimeoutChange: (value: string) => void;
   onKindChange: (_: unknown, data: { optionValue?: string }) => void;
   onNameChange: (value: string) => void;
   onPortChange: (value: string) => void;
-  onSave: () => void;
-  onTest: () => void;
   onUrlChange: (value: string) => void;
   saveError: string | null;
-  saveSuccess: boolean;
-  saving: boolean;
   testResult: ProxyTestResult | null;
-  testing: boolean;
   urlError: string | null;
   urlInput: string;
 }
 
 export function ProxyForm({
-  canSave,
-  canTest,
   config,
   dialTimeoutInput,
-  editing,
   formName,
-  onCancel,
   onConfigChange: setConfig,
   onDialTimeoutChange,
   onKindChange,
   onNameChange,
   onPortChange,
-  onSave,
-  onTest,
   onUrlChange,
   saveError,
-  saveSuccess,
-  saving,
   testResult,
-  testing,
   urlError,
   urlInput,
 }: ProxyFormProps) {
@@ -77,13 +58,7 @@ export function ProxyForm({
   const uuidNeeded = config.kind === 'vless-tcp' || config.kind === 'vless-ws' || config.kind === 'reality';
   const uuidInvalid = uuidNeeded && !isValidUuid((config as { uuid: string }).uuid);
   return (
-    <Panel className="!p-[22px_24px] grid gap-[16px] w-full min-w-0">
-      <Text size={400} weight="semibold">
-        {editing
-          ? t('dashboard.proxy.editTitle')
-          : t('dashboard.proxy.addTitle')}
-      </Text>
-
+    <div className="grid gap-4 min-w-0">
       <Field label={t('dashboard.proxy.form.name')}>
         <Input
           onChange={(_, d) => onNameChange(d.value)}
@@ -488,37 +463,6 @@ export function ProxyForm({
         />
       </Field>
 
-      <div className="flex flex-wrap items-center gap-[10px]">
-        <Button
-          appearance="primary"
-          disabled={saving || !canSave}
-          icon={saving ? <Spinner size="tiny" /> : undefined}
-          onClick={onSave}
-        >
-          {saving
-            ? t('dashboard.proxy.actions.saving')
-            : t('dashboard.proxy.actions.save')}
-        </Button>
-        <Button
-          disabled={!canTest || testing}
-          icon={testing ? <Spinner size="tiny" /> : undefined}
-          onClick={onTest}
-        >
-          {testing
-            ? t('dashboard.proxy.actions.testing')
-            : t('dashboard.proxy.actions.test')}
-        </Button>
-        {editing && (
-          <Button
-            appearance="outline"
-            className="ml-auto"
-            onClick={onCancel}
-          >
-            {t('dashboard.proxy.cancelEdit')}
-          </Button>
-        )}
-      </div>
-
       {testResult && (
         <div
           className="rounded-lg border border-solid p-[12px_14px] grid gap-[4px]"
@@ -561,13 +505,6 @@ export function ProxyForm({
           <MessageBarBody>{saveError}</MessageBarBody>
         </MessageBar>
       )}
-      {saveSuccess && (
-        <MessageBar intent="success">
-          <MessageBarBody>
-            {t('dashboard.proxy.actions.saveSuccess')}
-          </MessageBarBody>
-        </MessageBar>
-      )}
-    </Panel>
+    </div>
   );
 }
