@@ -6,6 +6,85 @@ import type { MessagesMessageDeltaEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
+const failedResponse = (code: string, message: string): ResponsesResult => ({
+  id: 'resp_failed',
+  object: 'response',
+  model: 'gpt-test',
+  output: [],
+  status: 'failed',
+  error: { code, message },
+  incomplete_details: null,
+});
+
+test.each([
+  ['cyber_policy', 'cyber'],
+  ['bio_policy', 'bio'],
+] as const)('Responses %s failure becomes a Messages %s refusal', (code, category) => {
+  const state = createResponsesToMessagesStreamState();
+  const events = translateResponsesStreamEventToMessagesEvents({
+    type: 'response.failed',
+    response: failedResponse(code, 'Policy refusal.'),
+  }, state);
+
+  assertEquals(events, [
+    {
+      type: 'message_delta',
+      delta: {
+        stop_reason: 'refusal',
+        stop_details: { type: 'refusal', category, explanation: 'Policy refusal.' },
+        stop_sequence: null,
+      },
+      usage: { input_tokens: 0, output_tokens: 0 },
+    },
+    { type: 'message_stop' },
+  ]);
+});
+
+test('Responses refusal lifecycle becomes Messages refusal metadata without visible text', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = [
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.delta',
+      item_id: 'msg_refusal',
+      output_index: 0,
+      content_index: 0,
+      delta: 'Cannot help.',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.done',
+      item_id: 'msg_refusal',
+      output_index: 0,
+      content_index: 0,
+      refusal: 'Cannot help.',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.completed',
+      response: {
+        id: 'resp_refusal',
+        object: 'response',
+        model: 'gpt-test',
+        output: [],
+        status: 'completed',
+        error: null,
+        incomplete_details: null,
+      },
+    }, state),
+  ];
+
+  assertEquals(events, [
+    {
+      type: 'message_delta',
+      delta: {
+        stop_reason: 'refusal',
+        stop_details: { type: 'refusal', category: null, explanation: 'Cannot help.' },
+        stop_sequence: null,
+      },
+      usage: { input_tokens: 0, output_tokens: 0 },
+    },
+    { type: 'message_stop' },
+  ]);
+});
+
 test('Responses reasoning stream without readable summary emits a redacted_thinking carrier', () => {
   const state = createResponsesToMessagesStreamState();
 
@@ -755,4 +834,39 @@ test('stream `error` event with a mundane message → api_error carrying that me
     type: 'error',
     error: { type: 'api_error', message: 'transient upstream hiccup' },
   }]);
+});
+
+test('multiple Responses refusal parts compose one Messages explanation in output order', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = [
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.delta', item_id: 'msg_1', output_index: 1, content_index: 0, delta: 'later',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.done', item_id: 'msg_1', output_index: 1, content_index: 0, refusal: 'later',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.delta', item_id: 'msg_0', output_index: 0, content_index: 1, delta: 'second ',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.done', item_id: 'msg_0', output_index: 0, content_index: 1, refusal: 'second ',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.delta', item_id: 'msg_0', output_index: 0, content_index: 0, delta: 'first ',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.refusal.done', item_id: 'msg_0', output_index: 0, content_index: 0, refusal: 'first ',
+    }, state),
+    ...translateResponsesStreamEventToMessagesEvents({
+      type: 'response.completed',
+      response: {
+        id: 'resp_refusal_parts', object: 'response', model: 'gpt-test', output: [], status: 'completed', error: null, incomplete_details: null,
+      },
+    }, state),
+  ];
+
+  const delta = events.find((event): event is MessagesMessageDeltaEvent => event.type === 'message_delta');
+  assertEquals(delta?.delta.stop_details, {
+    type: 'refusal', category: null, explanation: 'first second later',
+  });
 });

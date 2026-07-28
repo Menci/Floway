@@ -1,6 +1,6 @@
 import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
 import type {
-  MessagesAssistantContentBlock,
+  MessagesAssistantInputContentBlock,
   MessagesTextBlock,
   MessagesUserContentBlock,
 } from '@floway-dev/protocols/messages';
@@ -28,11 +28,11 @@ import type {
  */
 
 type CacheableBlock = Extract<
-  MessagesUserContentBlock | MessagesAssistantContentBlock,
+  MessagesUserContentBlock | MessagesAssistantInputContentBlock,
   { cache_control?: unknown }
 >;
 
-const isCacheableBlock = (block: MessagesUserContentBlock | MessagesAssistantContentBlock): block is CacheableBlock =>
+const isCacheableBlock = (block: MessagesUserContentBlock | MessagesAssistantInputContentBlock): block is CacheableBlock =>
   block.type === 'text' || block.type === 'image' || block.type === 'tool_use' || block.type === 'tool_result';
 
 export const withTopLevelCacheControlApplied: CopilotMessagesBoundaryInterceptor = async (ctx, _env, run) => {
@@ -47,7 +47,7 @@ export const withTopLevelCacheControlApplied: CopilotMessagesBoundaryInterceptor
 
     if (typeof message.content === 'string') {
       const block: MessagesTextBlock = { type: 'text', text: message.content, cache_control: topLevel };
-      message.content = [block] as MessagesUserContentBlock[] | MessagesAssistantContentBlock[];
+      message.content = [block] as MessagesUserContentBlock[] | MessagesAssistantInputContentBlock[];
       return await run();
     }
 

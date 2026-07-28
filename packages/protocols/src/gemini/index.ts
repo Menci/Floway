@@ -86,7 +86,15 @@ export interface GeminiResult {
 export interface GeminiCandidate {
   content: GeminiContent;
   finishReason?: GeminiFinishReason;
+  finishMessage?: string;
+  safetyRatings?: GeminiSafetyRating[];
   index: number;
+}
+
+export interface GeminiSafetyRating {
+  category: string;
+  probability: string;
+  blocked?: boolean;
 }
 
 export type GeminiFinishReason = 'STOP' | 'MAX_TOKENS' | 'SAFETY' | 'RECITATION' | 'OTHER' | 'MALFORMED_FUNCTION_CALL' | 'FINISH_REASON_UNSPECIFIED';

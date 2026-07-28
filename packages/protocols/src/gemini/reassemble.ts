@@ -37,6 +37,8 @@ const mergeCandidate = (candidates: Map<number, GeminiCandidateWithExtras>, inco
         parts: [],
       },
       ...(incoming.finishReason !== undefined ? { finishReason: incoming.finishReason } : {}),
+      ...(incoming.finishMessage !== undefined ? { finishMessage: incoming.finishMessage } : {}),
+      ...(incoming.safetyRatings !== undefined ? { safetyRatings: incoming.safetyRatings.map(rating => ({ ...rating })) } : {}),
     };
     for (const part of incoming.content.parts) {
       appendPart(candidate.content.parts, part);
@@ -57,6 +59,8 @@ const mergeCandidate = (candidates: Map<number, GeminiCandidateWithExtras>, inco
   if (incoming.finishReason !== undefined) {
     existing.finishReason = incoming.finishReason;
   }
+  if (incoming.finishMessage !== undefined) existing.finishMessage = incoming.finishMessage;
+  if (incoming.safetyRatings !== undefined) existing.safetyRatings = incoming.safetyRatings.map(rating => ({ ...rating }));
   const extras = existing.__extras ?? {};
   captureExtras(incoming as unknown as Record<string, unknown>, GEMINI_CANDIDATE_KEYS, extras);
   if (Object.keys(extras).length > 0) existing.__extras = extras;

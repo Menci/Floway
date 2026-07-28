@@ -1,8 +1,8 @@
 import { chatCompletionsContentToResponsesInputContent, chatCompletionsContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { scalarToResponsesReasoningItem, translateChatCompletionsReasoningItems } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { ChatCompletionsPayload, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
-import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesInputReasoning, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
+import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputItem, ResponsesInputReasoning, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 const translateChatTools = (tools?: ChatCompletionsTool[] | null): ResponsesTool[] | null =>
   tools?.length
@@ -19,6 +19,29 @@ const translateChatTools = (tools?: ChatCompletionsTool[] | null): ResponsesTool
 
 const translateChatToolChoice = (choice?: ChatCompletionsPayload['tool_choice']): ResponsesToolChoice =>
   choice == null ? 'auto' : typeof choice === 'string' ? choice : { type: 'function', name: choice.function.name };
+
+const translateAssistantContent = (message: ChatCompletionsMessage): ResponsesInputContent[] => {
+  const content: ResponsesInputContent[] = [];
+  let hasRefusalPart = false;
+
+  if (typeof message.content === 'string') {
+    if (message.content) content.push({ type: 'output_text', text: message.content });
+  } else if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (part.type === 'text') content.push({ type: 'output_text', text: part.text });
+      else if (part.type === 'refusal') {
+        content.push({ type: 'refusal', refusal: part.refusal });
+        hasRefusalPart = true;
+      }
+    }
+  }
+
+  if (message.refusal !== undefined && message.refusal !== null && !hasRefusalPart) {
+    content.push({ type: 'refusal', refusal: message.refusal });
+  }
+
+  return content;
+};
 
 export const buildTargetRequest = (payload: ChatCompletionsPayload): CanonicalResponsesPayload => {
   const instructions: string[] = [];
@@ -47,6 +70,7 @@ export const buildTargetRequest = (payload: ChatCompletionsPayload): CanonicalRe
     }
 
     if (message.role === 'assistant') {
+      const assistantContent = translateAssistantContent(message);
       const reasoningItems = translateChatCompletionsReasoningItems<ResponsesInputReasoning>(message.reasoning_items);
       const scalarReasoning = scalarToResponsesReasoningItem<ResponsesInputReasoning>(message.reasoning_text);
       if (reasoningItems) {
@@ -56,12 +80,11 @@ export const buildTargetRequest = (payload: ChatCompletionsPayload): CanonicalRe
       }
 
       if (message.tool_calls?.length) {
-        const text = chatCompletionsContentToText(message.content);
-        if (text) {
+        if (assistantContent.length > 0) {
           input.push({
             type: 'message',
             role: 'assistant',
-            content: [{ type: 'output_text', text }],
+            content: assistantContent,
           });
         }
 
@@ -78,11 +101,10 @@ export const buildTargetRequest = (payload: ChatCompletionsPayload): CanonicalRe
         continue;
       }
 
-      const text = chatCompletionsContentToText(message.content);
       input.push({
         type: 'message',
         role: 'assistant',
-        content: text ? [{ type: 'output_text', text }] : '',
+        content: assistantContent.length > 0 ? assistantContent : '',
       });
       continue;
     }

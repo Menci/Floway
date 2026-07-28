@@ -1,7 +1,7 @@
 import { memoizedDataUrlCompressor } from '../image-compression.ts';
 import { targetSizeForResponsesChat } from '../image-size.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
-import type { ResponsesInputContent, ResponsesInputImage } from '@floway-dev/protocols/responses';
+import type { ResponsesInputContent, ResponsesInputImage, ResponsesToolOutputContent } from '@floway-dev/protocols/responses';
 import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
 // A cyber-policy retry re-enters this boundary with the same nested image
@@ -49,8 +49,8 @@ const compressInlineImages = async (ctx: ResponsesBoundaryCtx): Promise<void> =>
     });
     return rewritten;
   };
-  const rewriteParts = (parts: ResponsesInputContent[]): ResponsesInputContent[] =>
-    parts.map(part => hasCompressedImage(part) ? rewriteImage(part) : part);
+  const rewriteParts = <TPart extends ResponsesInputContent | ResponsesToolOutputContent>(parts: TPart[]): TPart[] =>
+    parts.map(part => hasCompressedImage(part) ? rewriteImage(part) as TPart : part);
 
   ctx.payload = {
     ...ctx.payload,

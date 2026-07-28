@@ -221,12 +221,13 @@ export const parseStrictJsonObject = (json: string, subject: string): Record<str
 
 // Shape a single-candidate Gemini stream event. Lives in shared because both
 // gemini-via-messages and gemini-via-responses produce the same envelope.
-export const geminiCandidateEvent = (parts: GeminiPart[], finishReason?: GeminiFinishReason, usageMetadata?: GeminiUsageMetadata): GeminiStreamEvent => ({
+export const geminiCandidateEvent = (parts: GeminiPart[], finishReason?: GeminiFinishReason, usageMetadata?: GeminiUsageMetadata, finishMessage?: string): GeminiStreamEvent => ({
   candidates: [
     {
       index: 0,
       content: { role: 'model', parts },
       ...(finishReason !== undefined ? { finishReason } : {}),
+      ...(finishMessage !== undefined ? { finishMessage } : {}),
     },
   ],
   ...(usageMetadata !== undefined ? { usageMetadata } : {}),

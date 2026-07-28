@@ -6,7 +6,7 @@ import { parseToolArgumentsObject } from '../shared/via-messages/tool-arguments.
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { RemoteImageLoader } from '../types.ts';
 import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
-import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
+import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantInputContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 
 interface BuildTargetRequestOptions {
   loadRemoteImage?: RemoteImageLoader;
@@ -19,15 +19,22 @@ interface BuildTargetRequestOptions {
   fallbackMaxOutputTokens?: number;
 }
 
-const buildAssistantBlocks = (message: ChatCompletionsMessage): MessagesAssistantContentBlock[] => {
-  const blocks: MessagesAssistantContentBlock[] = [];
+const buildAssistantBlocks = (message: ChatCompletionsMessage): MessagesAssistantInputContentBlock[] => {
+  const blocks: MessagesAssistantInputContentBlock[] = [];
   const thinkingBlock = messagesThinkingBlockFromChatCompletionsScalarReasoning(message.reasoning_text, message.reasoning_opaque);
 
   if (thinkingBlock) blocks.push(thinkingBlock);
 
-  if (typeof message.content === 'string' && message.content) {
-    blocks.push({ type: 'text', text: message.content });
+  if (typeof message.content === 'string') {
+    if (message.content) blocks.push({ type: 'text', text: message.content });
+  } else if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (part.type === 'text') blocks.push({ type: 'text', text: part.text });
+      else if (part.type === 'refusal') blocks.push({ type: 'text', text: part.refusal });
+    }
   }
+
+  if (message.refusal) blocks.push({ type: 'text', text: message.refusal });
 
   for (const toolCall of message.tool_calls ?? []) {
     blocks.push({

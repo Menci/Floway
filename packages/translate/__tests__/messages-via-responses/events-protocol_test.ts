@@ -92,7 +92,7 @@ test('translateToSourceEvents stops after Responses terminal', async () => {
   );
 });
 
-test('translateToSourceEvents preserves refusal text from JSON fallback', async () => {
+test('translateToSourceEvents preserves refusal semantics from JSON fallback', async () => {
   async function* stream() {
     yield* responsesResultToEvents({
       id: 'resp_refusal',
@@ -118,17 +118,18 @@ test('translateToSourceEvents preserves refusal text from JSON fallback', async 
     });
   }
 
-  const text: string[] = [];
+  let refusalDelta: Extract<MessagesStreamEvent, { type: 'message_delta' }> | undefined;
 
   for await (const frame of translateToSourceEvents(stream())) {
     if (frame.type !== 'event') continue;
-    if (frame.event.type !== 'content_block_delta') continue;
-    if (frame.event.delta.type !== 'text_delta') continue;
-
-    text.push(frame.event.delta.text);
+    if (frame.event.type === 'message_delta') refusalDelta = frame.event;
   }
 
-  assertEquals(text.join(''), 'No.');
+  assertEquals(refusalDelta?.delta, {
+    stop_reason: 'refusal',
+    stop_details: { type: 'refusal', category: null, explanation: 'No.' },
+    stop_sequence: null,
+  });
 });
 
 test('translateToSourceEvents translates Responses failed terminal to Messages error', async () => {

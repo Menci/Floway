@@ -279,7 +279,17 @@ test('translateToSourceEvents maps max token and refusal finish reasons', async 
     }),
   ]);
 
-  const refusalFrames = await collect([eventFrame(messageStart()), eventFrame({ type: 'message_delta', delta: { stop_reason: 'refusal' } }), eventFrame({ type: 'message_stop' })]);
+  const refusalFrames = await collect([eventFrame(messageStart()), eventFrame({
+    type: 'message_delta',
+    delta: {
+      stop_reason: 'refusal',
+      stop_details: {
+        type: 'refusal',
+        category: 'bio',
+        explanation: 'This request could enable biological harm.',
+      },
+    },
+  }), eventFrame({ type: 'message_stop' })]);
 
   assertEquals(refusalFrames, [
     geminiFrame({
@@ -288,6 +298,7 @@ test('translateToSourceEvents maps max token and refusal finish reasons', async 
           index: 0,
           content: { role: 'model', parts: [] },
           finishReason: 'SAFETY',
+          finishMessage: 'This request could enable biological harm.',
         },
       ],
     }),

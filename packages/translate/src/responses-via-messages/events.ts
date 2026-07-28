@@ -1,5 +1,6 @@
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
+import { messagesRefusalResponsesError } from '../shared/via-messages/refusal.ts';
 import { openAIServiceTierFromMessagesUsage } from '../shared/via-messages/service-tier.ts';
 import { inclusiveMessagesInputUsage } from '../shared/via-messages/usage.ts';
 import { eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -13,6 +14,7 @@ import type {
   MessagesContentBlockStopEvent,
   MessagesMessageDeltaEvent,
   MessagesMessageStartEvent,
+  MessagesRefusalStopDetails,
   MessagesStreamEvent,
   MessagesTextCitation,
   MessagesUsageSnapshot,
@@ -84,6 +86,7 @@ interface MessagesToResponsesStreamState {
   completedItems: ResponsesOutputItem[];
   usage: MessagesUsageSnapshot;
   stopReason?: MessagesMessageDeltaEvent['delta']['stop_reason'];
+  stopDetails?: MessagesRefusalStopDetails | null;
   customToolNames: ReadonlySet<string>;
 }
 
@@ -121,10 +124,12 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
       ...(cacheWrite1h > 0 ? { [USAGE_BILLING]: { cacheWrite1hTokenCount: cacheWrite1h } } : {}),
     },
     ...(serviceTier !== undefined ? { serviceTier } : {}),
+    ...(status === 'failed' ? { error: messagesRefusalResponsesError(state.stopDetails) } : {}),
   });
 };
 
 const handleMessageStart = (event: MessagesMessageStartEvent, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
+  state.model = event.message.model;
   state.usage = messagesUsageSnapshot(event.message.usage);
 
   const response = buildResult(state, 'in_progress');
@@ -204,6 +209,9 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
 
     return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress'));
   }
+  case 'fallback':
+    state.model = event.content_block.to.model;
+    return [];
   default:
     return [];
   }
@@ -370,13 +378,18 @@ export const translateMessagesEventToResponsesEvents = (event: MessagesStreamEve
     if (event.delta.stop_reason !== undefined) {
       state.stopReason = event.delta.stop_reason;
     }
+    if (event.delta.stop_details !== undefined) {
+      state.stopDetails = event.delta.stop_details;
+    }
     if (event.usage) {
       state.usage = mergeMessagesUsageSnapshot(state.usage, event.usage);
     }
     return [];
   }
   case 'message_stop': {
-    const status: ResponsesResult['status'] = state.stopReason === 'max_tokens' ? 'incomplete' : 'completed';
+    const status: ResponsesResult['status'] = state.stopReason === 'refusal'
+      ? 'failed'
+      : state.stopReason === 'max_tokens' ? 'incomplete' : 'completed';
     const response = buildResult(state, status);
 
     return responses.terminal(state, response);

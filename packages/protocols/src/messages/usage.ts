@@ -2,6 +2,32 @@ export interface MessagesUsageServerToolUse {
   web_search_requests?: number;
 }
 
+export interface MessagesUsageIteration {
+  type: string;
+  model?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  } | null;
+  [key: string]: unknown;
+}
+
+// The beta usage union includes model attempts, advisor attempts, and
+// compaction entries, and remains additively extensible. Floway only needs an
+// isolated opaque snapshot, not a closed projection of those variants.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/messages/messages.ts#L1724-L1829
+export const cloneMessagesUsageIterations = (iterations: MessagesUsageIteration[] | null): MessagesUsageIteration[] | null =>
+  iterations?.map(iteration => ({
+    ...iteration,
+    ...(iteration.cache_creation === undefined || iteration.cache_creation === null
+      ? {}
+      : { cache_creation: { ...iteration.cache_creation } }),
+  })) ?? null;
+
 export interface MessagesUsage {
   input_tokens: number;
   output_tokens: number;
@@ -20,6 +46,7 @@ export interface MessagesUsage {
   // https://docs.claude.com/en/build-with-claude/fast-mode
   speed?: 'standard' | 'fast' | (string & {});
   server_tool_use?: MessagesUsageServerToolUse;
+  iterations?: MessagesUsageIteration[] | null;
 }
 
 export interface MessagesCacheCreationUsage {
@@ -36,6 +63,7 @@ export interface MessagesUsageSnapshot extends MessagesCacheCreationUsage {
   cache_read_input_tokens?: number;
   service_tier?: string;
   speed?: string;
+  iterations?: MessagesUsageIteration[] | null;
 }
 
 export const messagesUsageSnapshot = (usage?: MessagesUsageSnapshot): MessagesUsageSnapshot => usage === undefined
@@ -43,6 +71,7 @@ export const messagesUsageSnapshot = (usage?: MessagesUsageSnapshot): MessagesUs
   : {
       ...usage,
       ...(usage.cache_creation === undefined ? {} : { cache_creation: { ...usage.cache_creation } }),
+      ...(usage.iterations === undefined ? {} : { iterations: cloneMessagesUsageIterations(usage.iterations) }),
     };
 
 export const mergeMessagesUsageSnapshot = (
@@ -55,6 +84,7 @@ export const mergeMessagesUsageSnapshot = (
   ...(delta.cache_read_input_tokens === undefined ? {} : { cache_read_input_tokens: delta.cache_read_input_tokens }),
   ...(delta.cache_creation_input_tokens === undefined ? {} : { cache_creation_input_tokens: delta.cache_creation_input_tokens }),
   ...(delta.cache_creation === undefined ? {} : { cache_creation: { ...delta.cache_creation } }),
+  ...(delta.iterations === undefined ? {} : { iterations: cloneMessagesUsageIterations(delta.iterations) }),
   ...(delta.speed === undefined && delta.service_tier === undefined
     ? {}
     : { speed: delta.speed, service_tier: delta.service_tier }),

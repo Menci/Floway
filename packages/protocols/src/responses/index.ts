@@ -133,7 +133,7 @@ export type CanonicalResponsesPayload = Omit<ResponsesPayload, 'input'> & {
   input: ResponsesInputItem[];
 };
 
-export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
+export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile | ResponsesOutputRefusal;
 
 // Explicit content breakpoints inherit their lifetime from
 // `prompt_cache_options.ttl`. The mode stays open-string for forward
@@ -207,7 +207,7 @@ export interface ResponsesFunctionCallOutputItem {
   call_id: string;
   // Multimodal tool outputs carry an array of content parts (e.g. a screenshot
   // tool returning `input_image` parts) in addition to the plain-string form.
-  output: string | ResponsesInputContent[];
+  output: string | ResponsesToolOutputContent[];
   status?: 'completed' | 'incomplete';
   caller?: ResponsesToolCaller | null;
 }
@@ -922,7 +922,7 @@ interface ResponsesOutputText {
   text: string;
 }
 
-interface ResponsesOutputRefusal {
+export interface ResponsesOutputRefusal {
   type: 'refusal';
   refusal: string;
 }
@@ -1089,6 +1089,20 @@ type ResponsesStreamEventVariant =
     output_index: number;
     content_index: number;
     text: string;
+  }
+  | {
+    type: 'response.refusal.delta';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    delta: string;
+  }
+  | {
+    type: 'response.refusal.done';
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    refusal: string;
   }
   | {
     type: 'response.output_text.annotation.added';

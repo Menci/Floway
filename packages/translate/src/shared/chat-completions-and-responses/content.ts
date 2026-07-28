@@ -19,14 +19,20 @@ export const chatCompletionsContentToResponsesInputContent = (content: string | 
   if (!Array.isArray(content) || content.length === 0) return '';
 
   return content.map(
-    (part): ResponsesInputContent =>
-      part.type === 'text'
-        ? { type: 'input_text', text: part.text }
-        : {
-            type: 'input_image',
-            image_url: part.image_url.url,
-            detail: part.image_url.detail ?? 'auto',
-          },
+    (part): ResponsesInputContent => {
+      switch (part.type) {
+      case 'text':
+        return { type: 'input_text', text: part.text };
+      case 'refusal':
+        return { type: 'refusal', refusal: part.refusal };
+      case 'image_url':
+        return {
+          type: 'input_image',
+          image_url: part.image_url.url,
+          detail: part.image_url.detail ?? 'auto',
+        };
+      }
+    },
   );
 };
 
@@ -38,7 +44,7 @@ export const responsesContentToChatCompletionsContent = (content: string | Respo
     throw new TranslatorInputError('Cannot translate input_file content to Chat Completions.');
   }
 
-  return content.some(part => part.type === 'input_image')
+  return content.some(part => part.type === 'input_image' || part.type === 'refusal')
     ? content.map(
         (part): ChatCompletionsContentPart => {
           if (part.type === 'input_image') {
@@ -61,6 +67,7 @@ export const responsesContentToChatCompletionsContent = (content: string | Respo
               },
             };
           }
+          if (part.type === 'refusal') return { type: 'refusal', refusal: part.refusal };
           return { type: 'text', text: part.text };
         },
       )

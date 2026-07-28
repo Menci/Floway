@@ -109,6 +109,8 @@ interface ChatCompletionsToMessagesStreamState {
   // https://github.com/caozhiyuan/copilot-api/blob/main/src/routes/messages/stream-translation.ts#L240
   deferredContent?: string;
   pendingFinishReason?: ChatCompletionsStreamEvent['choices'][0]['finish_reason'];
+  refusalText: string;
+  sawRefusal: boolean;
   pendingUsage?: ChatCompletionsStreamEvent['usage'];
   // Captured from any chunk's service_tier for speed pass-through.
   upstreamServiceTier?: string;
@@ -332,11 +334,22 @@ const emitFinalMessageIfReady = (state: ChatCompletionsToMessagesStreamState, ev
   if (state.upstreamServiceTier === 'fast') usage.speed = 'fast';
   else if (state.upstreamServiceTier !== undefined) usage.service_tier = state.upstreamServiceTier;
 
+  const refused = state.sawRefusal || state.pendingFinishReason === 'content_filter';
+
   events.push(
     {
       type: 'message_delta',
       delta: {
-        stop_reason: mapChatCompletionsFinishReasonToMessagesStopReason(state.pendingFinishReason),
+        stop_reason: refused ? 'refusal' : mapChatCompletionsFinishReasonToMessagesStopReason(state.pendingFinishReason),
+        ...(refused
+          ? {
+              stop_details: {
+                type: 'refusal' as const,
+                category: null,
+                explanation: state.refusalText || null,
+              },
+            }
+          : {}),
         stop_sequence: null,
       },
       usage,
@@ -353,6 +366,8 @@ export const createChatCompletionsToMessagesStreamState = (): ChatCompletionsToM
   contentBlockIndex: 0,
   toolCalls: {},
   deferredAfterThinking: [],
+  refusalText: '',
+  sawRefusal: false,
 });
 
 export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatCompletionsStreamEvent, state: ChatCompletionsToMessagesStreamState): MessagesStreamEvent[] => {
@@ -394,6 +409,10 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
   handleReasoningDelta(choice.delta, state, events);
 
   const content = choice.delta.content;
+  if (choice.delta.refusal !== undefined && choice.delta.refusal !== null) {
+    state.sawRefusal = true;
+    state.refusalText += choice.delta.refusal;
+  }
   const toolCalls = choice.delta.tool_calls;
   const hasToolCallDelta = Boolean(toolCalls?.length);
 

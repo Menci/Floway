@@ -224,14 +224,14 @@ test('translateToSourceEvents preserves refusal text from JSON fallback', async 
     });
   }
 
-  const text: string[] = [];
+  const refusal: string[] = [];
 
   for await (const frame of translateToSourceEvents(stream())) {
     if (frame.type !== 'event') continue;
-    text.push(frame.event.choices[0]?.delta.content ?? '');
+    refusal.push(frame.event.choices[0]?.delta.refusal ?? '');
   }
 
-  assertEquals(text.join(''), 'No.');
+  assertEquals(refusal.join(''), 'No.');
 });
 
 test('translateToSourceEvents preserves deferred reasoning and stream usage', async () => {

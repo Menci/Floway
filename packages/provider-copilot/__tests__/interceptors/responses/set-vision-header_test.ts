@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withVisionHeaderSet } from '../../../src/interceptors/responses/set-vision-header.ts';
 import type { ResponsesBoundaryCtx } from '../../../src/interceptors/responses/types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputItem, ResponsesStreamEvent, ResponsesToolOutputContent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -22,8 +22,8 @@ const invocation = (payload: CanonicalResponsesPayload): ResponsesBoundaryCtx =>
 
 const contentContainers = {
   message: (content: ResponsesInputContent[]): ResponsesInputItem => ({ type: 'message', role: 'user', content }),
-  function_output: (output: ResponsesInputContent[]): ResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
-  custom_output: (output: ResponsesInputContent[]): ResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
+  function_output: (output: ResponsesToolOutputContent[]): ResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
+  custom_output: (output: ResponsesToolOutputContent[]): ResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
 };
 
 test.each(Object.entries(contentContainers))('Responses vision header detects images in %s', async (_name, wrap) => {

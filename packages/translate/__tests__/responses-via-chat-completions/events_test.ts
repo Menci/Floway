@@ -53,6 +53,40 @@ const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   }
 };
 
+test('translateChatCompletionsChunkToResponsesEvents preserves refusal output lifecycle', () => {
+  const events = translate([
+    chunk({ role: 'assistant', content: null, refusal: '' }),
+    chunk({ refusal: 'Cannot ' }),
+    chunk({ refusal: 'help.' }),
+    chunk({}, 'stop'),
+  ]);
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
+
+  assertEquals(events.filter(event => event.type === 'response.refusal.delta').map(event => (event as Extract<ResponsesStreamEvent, { type: 'response.refusal.delta' }>).delta), ['Cannot ', 'help.']);
+  assertEquals(completed?.response.output, [{
+    type: 'message',
+    id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+    role: 'assistant',
+    content: [{ type: 'refusal', refusal: 'Cannot help.' }],
+  }]);
+  assertEquals(completed?.response.output_text, '');
+});
+
+test('translateChatCompletionsChunkToResponsesEvents preserves an empty refusal item', () => {
+  const events = translate([
+    chunk({ role: 'assistant', content: null, refusal: '' }),
+    chunk({}, 'stop'),
+  ]);
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
+
+  assertEquals(completed?.response.output, [{
+    type: 'message',
+    id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+    role: 'assistant',
+    content: [{ type: 'refusal', refusal: '' }],
+  }]);
+});
+
 test('translateChatCompletionsChunkToResponsesEvents preserves tool call deltas and terminal output', () => {
   const events = translate([
     chunk({ role: 'assistant' }),
