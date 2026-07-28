@@ -79,9 +79,6 @@ describe('credential lookup', () => {
     expect(lookup).toEqual({ kind: 'uuid-mismatch', expectedAccountUuid: ACCOUNT_UUID });
   });
 
-  it('distinguishes missing state from a mismatched account', () => {
-    expect(lookUpCredential(record(null)).kind).toBe('missing-state');
-  });
 });
 
 describe('quota windows', () => {

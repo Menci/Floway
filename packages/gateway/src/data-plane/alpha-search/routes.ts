@@ -148,12 +148,12 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
   return c.json({ encrypted_output: null, output: blocks.join('\n\n') });
 };
 
-export const mountAlphaSearchRoute = (app: Hono<{ Variables: AuthVars }>, path: string) => {
-  app.post(path, zValidator('json', alphaSearchRequestSchema), alphaSearch);
+type AlphaSearchRoute = typeof PUBLIC_DATA_PLANE_ROUTES.alphaSearch | typeof PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch;
+
+export const mountAlphaSearchRoute = (app: Hono<{ Variables: AuthVars }>, route: AlphaSearchRoute) => {
+  for (const path of route.paths) app.on(route.method, path, zValidator('json', alphaSearchRequestSchema), alphaSearch);
 };
 
 export const mountAlphaSearchRoutes = (app: Hono<{ Variables: AuthVars }>) => {
-  for (const path of PUBLIC_DATA_PLANE_ROUTES.alphaSearch.paths) {
-    mountAlphaSearchRoute(app, path);
-  }
+  mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.alphaSearch);
 };

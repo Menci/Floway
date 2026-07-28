@@ -140,8 +140,16 @@ const backupFileSchema = z.object({
     performance: z.array(z.unknown()).optional(),
     performanceIncluded: z.boolean(),
     searchConfig: z.unknown(),
+  }).strict().superRefine((data, ctx) => {
+    if (data.performanceIncluded !== (data.performance !== undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'performance must be present exactly when performanceIncluded is true',
+        path: ['performance'],
+      });
+    }
   }),
-});
+}).strict();
 
 type BackupFile = z.infer<typeof backupFileSchema>;
 type BackupFileData = BackupFile['data'];

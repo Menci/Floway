@@ -1,14 +1,18 @@
 import { expect, expectTypeOf, test } from 'vitest';
 
-import { upstreamRecordToFullJson, upstreamRecordToJson, type SerializedUpstreamRecord } from '../../../src/control-plane/upstreams/serialize.ts';
+import { upstreamRecordToFullJson, upstreamRecordToJson, type FullSerializedUpstreamRecord } from '../../../src/control-plane/upstreams/serialize.ts';
+import type { RedactedSerializedUpstreamRecord } from '../../../src/control-plane/upstreams/types.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const timestamp = '2026-04-29T00:00:00.000Z';
 
-test('SerializedUpstreamRecord excludes route-layer response projections', () => {
-  expectTypeOf<'modelsCache' extends keyof SerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
-  expectTypeOf<'codex_quota' extends keyof SerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
+test('serialized records exclude route-layer response projections and redacted access tokens', () => {
+  expectTypeOf<'modelsCache' extends keyof FullSerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
+  expectTypeOf<'codex_quota' extends keyof FullSerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
+  type ClaudeState = Extract<RedactedSerializedUpstreamRecord, { kind: 'claude-code' }>['state'];
+  type AccessToken = ClaudeState['accounts'][number]['accessToken'];
+  expectTypeOf<'token' extends keyof NonNullable<AccessToken> ? true : false>().toEqualTypeOf<false>();
 });
 
 const custom: UpstreamRecord = {
@@ -249,4 +253,9 @@ test('upstreamRecordToJson throws when codex state.accounts is not an array', ()
     state: { accounts: 'not-an-array' },
   });
   expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
+});
+
+test('persisted subscription upstreams require credential state', () => {
+  expect(() => upstreamRecordToJson(codexBase({}))).toThrow(/CodexUpstreamState must be a plain object/);
+  expect(() => upstreamRecordToFullJson(claudeCodeBase({}))).toThrow(/ClaudeCodeUpstreamState must be a plain object/);
 });

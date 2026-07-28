@@ -8,8 +8,7 @@ import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-ut
 
 type JsonObject = Record<string, any>;
 
-// Every action endpoint takes a `record` envelope — the wire projection of
-// SerializedUpstreamRecord. Two build paths: a blueprint-shaped envelope for
+// Every action endpoint takes a `record` envelope. Two build paths: a blueprint-shaped envelope for
 // create-flow tests (`record.id === ''`), and a full-record envelope for
 // edit-flow tests (`record.id !== ''`) built from a repo-fetched row.
 const envelopeFromRecord = (record: UpstreamRecord): Record<string, unknown> => upstreamRecordToFullJson(record) as unknown as Record<string, unknown>;
