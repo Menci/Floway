@@ -133,7 +133,7 @@ export function KeysTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map(({ item }) => (
+          {rows.map(({ item }, index) => (
             <TableRow
               aria-selected={item.id === selectedKeyId}
               className={`${s.interactiveRow} ${item.id === selectedKeyId ? s.selectedRow : ''}`}
@@ -144,7 +144,7 @@ export function KeysTable({
                 event.preventDefault();
                 onSelect(item.id);
               }}
-              tabIndex={item.id === selectedKeyId ? 0 : -1}
+              tabIndex={item.id === selectedKeyId || (selectedKeyId === '' && index === 0) ? 0 : -1}
             >
               {columns.map(column => (
                 <TableCell key={column.columnId} {...columnSizing_unstable.getTableCellProps(column.columnId)}>

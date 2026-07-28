@@ -57,8 +57,7 @@ export default function DashboardServicesApiKeys() {
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [copyFailedTag, setCopyFailedTag] = useState<string | null>(null);
 
-  const selectedKey =
-    data.keys.find(key => key.id === selectedKeyId) ?? data.keys[0] ?? null;
+  const selectedKey = data.keys.find(key => key.id === selectedKeyId) ?? null;
   const agentSetupModels = selectedKey
     ? modelsForAgentSetup(data.models, selectedKey.upstream_ids, user.upstreamIds)
     : [];
@@ -134,7 +133,7 @@ export default function DashboardServicesApiKeys() {
     };
     setData(next);
     setSelectedKeyId(current =>
-      next.keys.some(key => key.id === current) ? current : next.keys[0]?.id ?? '');
+      next.keys.some(key => key.id === current) ? current : '');
   };
 
   useEffect(() => {
@@ -159,7 +158,7 @@ export default function DashboardServicesApiKeys() {
         error,
       };
       setData(next);
-      setSelectedKeyId(current => next.keys.some(key => key.id === current) ? current : next.keys[0]?.id ?? '');
+      setSelectedKeyId(current => next.keys.some(key => key.id === current) ? current : '');
       setPageError(error);
       setInitialLoading(false);
     })();
@@ -275,6 +274,7 @@ export default function DashboardServicesApiKeys() {
             </div>
             <AgentSetupCard
               copiedTag={copiedTag}
+              copyFailedTag={copyFailedTag}
               models={agentSetupModels}
               onCopy={(text, tag) => void copyToClipboard(text, tag)}
               selectedKey={selectedKey}

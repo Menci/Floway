@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from './codex-credential-snippets';
-import { agentSetupCommand, useAgentSetup, type AgentSetupConfiguration } from './use-agent-setup';
+import { buildAgentModelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
+import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform';
+import { agentSetupCommand, defaultAgentSetupConfiguration, useAgentSetup, type AgentSetupConfiguration } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
@@ -12,7 +14,7 @@ import { Combobox, Select } from '../ui/fluent-form-controls';
 
 const { Button, Field, MessageBar, MessageBarBody, Option, Spinner, Switch, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
-type Platform = 'unix' | 'windows';
+type Platform = AgentSetupPlatform;
 const NONE = '__floway_none__';
 // Model overrides reject NUL at the gateway boundary, so these UI-only values
 // cannot collide with an opaque model id.
@@ -26,8 +28,16 @@ const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNu
 // Ref: https://code.claude.com/docs/en/settings#attribution-settings
 const claudeAttributionOptOut = { commit: '', pr: '', sessionUrl: false } as const;
 
-export function AgentSetupCard({ copiedTag, models, onCopy, selectedKey }: {
+const cloneConfiguration = (configuration: AgentSetupConfiguration): AgentSetupConfiguration => structuredClone(configuration);
+const copyChangedFields = <T extends object>(target: T, current: T, baseline: T) => {
+  for (const key of Object.keys(current) as (keyof T)[]) {
+    if (!Object.is(current[key], baseline[key])) target[key] = current[key];
+  }
+};
+
+export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selectedKey }: {
   copiedTag: string | null;
+  copyFailedTag: string | null;
   models: ControlPlaneModel[];
   onCopy: (text: string, tag: string) => void;
   selectedKey: ApiKey | null;
@@ -35,8 +45,34 @@ export function AgentSetupCard({ copiedTag, models, onCopy, selectedKey }: {
   const { t } = useTranslation();
   const [view, setView] = useState<'setup' | 'snippets'>('setup');
   const [agent, setAgent] = useState<Agent>('claude');
-  const [platform, setPlatform] = useState<Platform>(() => typeof navigator !== 'undefined' && /Win/i.test(navigator.platform) ? 'windows' : 'unix');
+  const [platform, setPlatform] = useState<Platform>(() => typeof navigator === 'undefined'
+    ? 'unix'
+    : detectAgentSetupPlatform(navigator.platform, navigator.userAgent));
+  const [localDraft, setLocalDraft] = useState(() => defaultAgentSetupConfiguration());
+  const localDraftBaseline = useRef(cloneConfiguration(localDraft));
+  const appliedLease = useRef<string | null>(null);
   const setup = useAgentSetup(selectedKey?.id ?? null);
+
+  useEffect(() => {
+    if (!selectedKey || !setup.lease || !setup.draft) return;
+    const leaseKey = `${selectedKey.id}:${setup.lease.token}`;
+    if (appliedLease.current === leaseKey) return;
+    appliedLease.current = leaseKey;
+    setup.updateDraft(current => {
+      const merged = cloneConfiguration(current);
+      copyChangedFields(merged.claudeCode, localDraft.claudeCode, localDraftBaseline.current.claudeCode);
+      copyChangedFields(merged.codex, localDraft.codex, localDraftBaseline.current.codex);
+      merged.apiKeyId = selectedKey.id;
+      return merged;
+    });
+    localDraftBaseline.current = cloneConfiguration(localDraft);
+  }, [localDraft, selectedKey, setup.draft, setup.lease, setup.updateDraft]);
+
+  const activeDraft = selectedKey && setup.draft ? setup.draft : localDraft;
+  const updateConfiguration = (update: (current: AgentSetupConfiguration) => AgentSetupConfiguration) => {
+    if (selectedKey && setup.draft) setup.updateDraft(update);
+    else setLocalDraft(current => update(cloneConfiguration(current)));
+  };
 
   const scripts = setup.lease?.scripts[agent];
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
@@ -62,18 +98,20 @@ export function AgentSetupCard({ copiedTag, models, onCopy, selectedKey }: {
     </div>
 
     {!selectedKey && <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.selectKey')}</MessageBarBody></MessageBar>}
-    {selectedKey && !setup.lease && !setup.error && !setup.noSelectableKey && <span className="inline-flex items-center gap-2 text-fui-fg2"><Spinner size="tiny" />{t('dashboard.apiKeys.agentSetup.preparing')}</span>}
+    {selectedKey && !setup.lease && !setup.createError && !setup.noSelectableKey && <span className="inline-flex items-center gap-2 text-fui-fg2"><Spinner size="tiny" />{t('dashboard.apiKeys.agentSetup.preparing')}</span>}
     {setup.noSelectableKey && <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.noKey')}</MessageBarBody></MessageBar>}
     {setup.terminated && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiKeys.agentSetup.expired')}</MessageBarBody></MessageBar>}
-    {setup.error && <MessageBar intent="error"><MessageBarBody><span className="inline-flex items-center gap-2 flex-wrap">{setup.error}<Button appearance="secondary" onClick={setup.retryCreate} size="small">{t('dashboard.apiKeys.agentSetup.retry')}</Button></span></MessageBarBody></MessageBar>}
+    {setup.createError && !setup.lease
+      ? <MessageBar intent="error"><MessageBarBody><span className="inline-flex items-center gap-2 flex-wrap">{setup.createError}<Button appearance="secondary" onClick={setup.retryCreate} size="small">{t('dashboard.apiKeys.agentSetup.retry')}</Button></span></MessageBarBody></MessageBar>
+      : setup.error && <MessageBar intent="error"><MessageBarBody>{setup.error}</MessageBarBody></MessageBar>}
 
-    {setup.draft && <section className="grid gap-3">
+    <section className="grid gap-3">
       <Text as="h3" size={300} weight="semibold" className="!m-0">{t('dashboard.apiKeys.agentSetup.modelSelection')}</Text>
-      <AgentConfigurationFields agent={agent} configuration={setup.draft} models={models} onChange={setup.updateDraft} />
-    </section>}
+      <AgentConfigurationFields agent={agent} configuration={activeDraft} models={models} onChange={updateConfiguration} />
+    </section>
 
-    {view === 'snippets' && selectedKey && setup.draft
-      ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={setup.draft} copiedTag={copiedTag} onCopy={onCopy} onPlatformChange={setPlatform} platform={platform} />
+    {view === 'snippets' && selectedKey
+      ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={activeDraft} copiedTag={copiedTag} copyFailedTag={copyFailedTag} onCopy={onCopy} onPlatformChange={setPlatform} platform={platform} />
       : view === 'snippets'
         ? <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.selectKey')}</MessageBarBody></MessageBar>
         : <div className="grid gap-3 border-t border-t-solid border-fui-stroke1 pt-4">
@@ -89,6 +127,7 @@ export function AgentSetupCard({ copiedTag, models, onCopy, selectedKey }: {
             <CodeBlock
               code={command}
               copied={copiedTag === `agent-setup-${agent}-${platform}`}
+              copyFailed={copyFailedTag === `agent-setup-${agent}-${platform}`}
               disabled={!setup.canCopy}
               language={platform === 'unix' ? 'bash' : 'powershell'}
               onCopy={() => setup.canCopy && onCopy(command, `agent-setup-${agent}-${platform}`)}
@@ -97,11 +136,12 @@ export function AgentSetupCard({ copiedTag, models, onCopy, selectedKey }: {
   </div>;
 }
 
-function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, onCopy, onPlatformChange, platform }: {
+function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, copyFailedTag, onCopy, onPlatformChange, platform }: {
   agent: Agent;
   apiKey: string;
   configuration: AgentSetupConfiguration;
   copiedTag: string | null;
+  copyFailedTag: string | null;
   onCopy: (text: string, tag: string) => void;
   onPlatformChange: (platform: Platform) => void;
   platform: Platform;
@@ -112,7 +152,7 @@ function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, onCopy, 
     const snippet = buildAgentClaudeSnippet(origin, apiKey, configuration.claudeCode);
     return <div className="grid gap-2 border-t border-t-solid border-fui-stroke1 pt-4">
       <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.claudeHint')}</Text>
-      <CodeBlock code={snippet} copied={copiedTag === 'agent-snippet-claude'} language="json" onCopy={() => onCopy(snippet, 'agent-snippet-claude')} />
+      <CodeBlock code={snippet} copied={copiedTag === 'agent-snippet-claude'} copyFailed={copyFailedTag === 'agent-snippet-claude'} language="json" onCopy={() => onCopy(snippet, 'agent-snippet-claude')} />
     </div>;
   }
   const config = buildAgentCodexSnippet(origin, configuration.codex);
@@ -122,7 +162,7 @@ function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, onCopy, 
   const credentialTag = platform === 'windows' ? 'agent-snippet-codex-windows' : 'agent-snippet-codex-unix';
   return <div className="grid gap-3 border-t border-t-solid border-fui-stroke1 pt-4">
     <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.codexConfigHint')}</Text>
-    <CodeBlock code={config} copied={copiedTag === 'agent-snippet-codex'} language="toml" onCopy={() => onCopy(config, 'agent-snippet-codex')} />
+    <CodeBlock code={config} copied={copiedTag === 'agent-snippet-codex'} copyFailed={copyFailedTag === 'agent-snippet-codex'} language="toml" onCopy={() => onCopy(config, 'agent-snippet-codex')} />
     <Field className="min-w-[190px] max-w-[260px]" label={t('dashboard.apiKeys.agentSetup.platform')}>
       <Select value={platform} onChange={(_, data) => onPlatformChange(data.value === 'windows' ? 'windows' : 'unix')}>
         <option value="unix">macOS / Linux</option>
@@ -132,7 +172,7 @@ function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, onCopy, 
     <Text size={200} className="text-fui-fg2">
       {t(platform === 'windows' ? 'dashboard.apiKeys.configuration.codexWindowsAuthHint' : 'dashboard.apiKeys.configuration.codexAuthHint')}
     </Text>
-    <CodeBlock code={credential} copied={copiedTag === credentialTag} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => onCopy(credential, credentialTag)} />
+    <CodeBlock code={credential} copied={copiedTag === credentialTag} copyFailed={copyFailedTag === credentialTag} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => onCopy(credential, credentialTag)} />
   </div>;
 }
 
@@ -165,7 +205,8 @@ export const buildAgentCodexSnippet = (origin: string, config: AgentSetupConfigu
   '[model_providers.floway]',
   'name = "Floway"',
   `base_url = ${JSON.stringify(`${origin}/azure-api.codex`)}`,
-  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] }',
+  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] } # Linux & macOS',
+  '# auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME \'.codex\' }; [IO.File]::ReadAllText((Join-Path $h \'floway-token\'))"] } # Windows: uncomment and remove the line above',
   'wire_api = "responses"',
   'supports_websockets = true',
   'http_headers = { "x-openai-actor-authorization" = "1" }',
@@ -188,7 +229,9 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
   const { t } = useTranslation();
   const patchClaude = (patch: Partial<AgentSetupConfiguration['claudeCode']>) => onChange(current => ({ ...current, claudeCode: { ...current.claudeCode, ...patch } }));
   const patchCodex = (patch: Partial<AgentSetupConfiguration['codex']>) => onChange(current => ({ ...current, codex: { ...current.codex, ...patch } }));
-  const codexModel = models.find(model => model.id === configuration.codex.model);
+  const codexModel = configuration.codex.model
+    ? models.find(model => model.id === configuration.codex.model)
+    : rankAgentSetupModels(models, { family: 'codex' })[0];
   const effortOptions = codexModel?.chat?.reasoning?.effort?.supported ?? [];
 
   if (agent === 'claude') return <div className="grid gap-5">
@@ -271,7 +314,7 @@ function ModelSelect({ family, label, models, onChange, picker, value }: {
   label: string;
   models: ControlPlaneModel[];
   onChange: (value: string | null) => void;
-  picker: 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku';
+  picker: ClaudePicker;
   value: string | null;
 }) {
   const { t } = useTranslation();
@@ -321,21 +364,6 @@ export const filterModelOptions = (options: readonly ModelOption[], query: strin
     || option.value.toLocaleLowerCase().includes(needle));
 };
 
-export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku') => {
-  const target = { default: 0, fable: 0, opus: 1, sonnet: 2, haiku: 3 }[picker];
-  const rows = [...new Map(models.filter(model => model.kind === 'chat').map(model => [model.id, model])).values()];
-  rows.sort((a, b) => rankModel(a.id, family, target) - rankModel(b.id, family, target));
-  return rows.map(model => {
-    const context = model.limits.max_context_window_tokens ?? (model.limits.max_prompt_tokens ?? 0) + (model.limits.max_output_tokens ?? 0);
-    const value = family === 'claude' && picker !== 'haiku' && context >= 1_000_000 ? `${model.id}[1m]` : model.id;
-    return { value, label: model.id };
-  });
-};
-
-const rankModel = (id: string, family: 'claude' | 'codex', target: number) => {
-  const lower = id.toLowerCase();
-  if (family === 'codex') return /(^|\/)gpt-5/.test(lower) ? 0 : 100;
-  if (!/(^|\/)claude-/.test(lower)) return 100;
-  const tier = lower.includes('fable') ? 0 : lower.includes('opus') ? 1 : lower.includes('sonnet') ? 2 : lower.includes('haiku') ? 3 : 4;
-  return Math.abs(tier - target);
-};
+export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex', picker: ClaudePicker) =>
+  buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
+    .map(option => ({ value: option.value, label: option.modelId }));

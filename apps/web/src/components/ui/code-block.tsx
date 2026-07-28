@@ -1,4 +1,4 @@
-import { CheckmarkRegular, CopyRegular } from '@fluentui/react-icons';
+import { CheckmarkRegular, CopyRegular, DismissRegular } from '@fluentui/react-icons';
 import Prism from 'prismjs';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -56,12 +56,13 @@ const useStyles = makeStyles({
 interface CodeBlockProps {
   code: string;
   copied: boolean;
+  copyFailed: boolean;
   disabled?: boolean;
   language: string;
   onCopy: () => void;
 }
 
-export function CodeBlock({ code, copied, disabled = false, language, onCopy }: CodeBlockProps) {
+export function CodeBlock({ code, copied, copyFailed, disabled = false, language, onCopy }: CodeBlockProps) {
   const { t } = useTranslation();
   const s = useStyles();
   const highlighted = useMemo(() => {
@@ -76,11 +77,11 @@ export function CodeBlock({ code, copied, disabled = false, language, onCopy }: 
         <Button
           appearance="subtle"
           disabled={disabled}
-          icon={copied ? <CheckmarkRegular /> : <CopyRegular />}
+          icon={copyFailed ? <DismissRegular /> : copied ? <CheckmarkRegular /> : <CopyRegular />}
           onClick={onCopy}
           size="small"
         >
-          {copied ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
+          {copyFailed ? t('dashboard.apiKeys.copy.failed') : copied ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
         </Button>
       </div>
       <pre className={`language-${language} ${s.pre} !m-0`}>
