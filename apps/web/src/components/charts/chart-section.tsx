@@ -45,11 +45,11 @@ export function ChartSection({
           <Tooltip content={t('dashboard.charts.series.all')} relationship="label">
             <Button appearance="subtle" icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />
           </Tooltip>
-          <Tooltip content={t('dashboard.charts.series.invert')} relationship="label">
-            <Button appearance="subtle" icon={<ArrowRepeatAllRegular />} onClick={() => onHiddenChange(invertedSeries(ids, hidden))} />
-          </Tooltip>
           <Tooltip content={t('dashboard.charts.series.none')} relationship="label">
             <Button appearance="subtle" icon={<SelectAllOffRegular />} onClick={() => onHiddenChange(new Set(ids))} />
+          </Tooltip>
+          <Tooltip content={t('dashboard.charts.series.invert')} relationship="label">
+            <Button appearance="subtle" icon={<ArrowRepeatAllRegular />} onClick={() => onHiddenChange(invertedSeries(ids, hidden))} />
           </Tooltip>
         </div>
       </div>
