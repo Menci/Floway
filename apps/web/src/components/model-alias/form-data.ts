@@ -58,7 +58,9 @@ export function aliasBody(values: AliasFormValues, existing: ModelAlias | null):
       target_model_id: target.target_model_id.trim(),
       rules: values.kind === 'chat' ? { ...trimRules(target.rules) } : {},
     })),
-    announced_metadata: values.manualMetadata && values.kind !== 'image' ? values.announcedMetadata : null,
+    announced_metadata: values.manualMetadata && values.kind !== 'image'
+      ? structuredClone(values.announcedMetadata) as AliasWriteBody['announced_metadata']
+      : null,
     sort_order: existing?.sort_order ?? 0,
   };
 }
