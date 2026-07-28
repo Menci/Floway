@@ -39,30 +39,6 @@ const useStyles = makeStyles({
       cursor: 'not-allowed',
     },
   },
-  imageButton: {
-    color: 'light-dark(#2770ea, #244b8f)',
-    backgroundColor: 'transparent',
-    border: 0,
-    '&:hover': {
-      color: 'light-dark(#1b4aef, #203581)',
-      backgroundColor: tokens.colorNeutralBackground1Hover,
-    },
-    '&:disabled': {
-      color: tokens.colorNeutralForegroundDisabled,
-      cursor: 'not-allowed',
-    },
-  },
-  newTopicButton: {
-    color: tokens.colorNeutralForegroundOnBrand,
-    backgroundImage: 'linear-gradient(to right, light-dark(#2770ea, #244b8f), light-dark(#1b4aef, #203581))',
-    border: 0,
-    boxShadow: tokens.shadow4,
-    transitionProperty: 'filter, opacity, transform',
-    transitionDuration: tokens.durationFaster,
-    '&:hover': { filter: 'brightness(1.06)' },
-    '&:active': { transform: 'translateY(1px)' },
-    '&:disabled': { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' },
-  },
   broomIcon: {
     display: 'block',
     filter: 'brightness(0) invert(1)',
@@ -133,6 +109,7 @@ export function PlaygroundComposer({
       {showImage && (
         <div className="flex gap-2 px-1">
           <Input
+            aria-label={imagePlaceholder}
             className="!flex-1"
             type="url"
             value={imageUrl}
@@ -150,20 +127,17 @@ export function PlaygroundComposer({
         </div>
       )}
       <div className="flex items-stretch gap-2 min-w-0">
-        <button
-          type="button"
-          className={`min-h-[44px] shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 font-fui-regular text-fui-base400 ${s.newTopicButton}`}
+        <Button
+          appearance="primary"
+          className="!min-h-[44px] shrink-0"
           disabled={newTopicDisabled}
+          icon={<img alt="" aria-hidden="true" className={s.broomIcon} src={broomUrl} />}
           onClick={onNewTopic}
+          shape="circular"
+          size="large"
         >
-          <img
-            alt=""
-            aria-hidden="true"
-            className={s.broomIcon}
-            src={broomUrl}
-          />
-          <span>{newTopicLabel}</span>
-        </button>
+          {newTopicLabel}
+        </Button>
         <div className={`min-w-0 flex-1 min-h-[44px] rounded-full pl-5 pr-1 py-1 flex items-center gap-2 ${s.inputShell}`}>
           <ScrollArea axes="vertical" className="min-w-0 flex-1 max-h-[144px]" noTabIndex>
             <textarea
@@ -185,25 +159,24 @@ export function PlaygroundComposer({
           </ScrollArea>
           <div className="shrink-0 flex items-center gap-0">
             <Tooltip content={imageEnabled ? imageLabel : imageUnsupportedLabel} relationship="label">
-              <button
-                type="button"
+              <Button
+                appearance="subtle"
                 aria-label={imageLabel}
-                className={`w-[34px] h-[34px] shrink-0 rounded-full grid place-items-center text-fui-base600 ${s.imageButton}`}
                 disabled={!imageEnabled || sending}
+                icon={<ImageRegular />}
                 onClick={onToggleImage}
-              >
-                <ImageRegular />
-              </button>
+                shape="circular"
+              />
             </Tooltip>
             <Tooltip content={sending ? stopLabel : sendLabel} relationship="label">
-              <button
-                type="button"
-                className={`w-[34px] h-[34px] shrink-0 rounded-full grid place-items-center text-fui-base500 ${s.imageButton}`}
+              <Button
+                appearance="primary"
+                aria-label={sending ? stopLabel : sendLabel}
                 disabled={!sending && !canSend}
+                icon={sending ? <StopRegular /> : <SendRegular />}
                 onClick={sending ? onStop : onSend}
-              >
-                {sending ? <StopRegular /> : <SendRegular />}
-              </button>
+                shape="circular"
+              />
             </Tooltip>
           </div>
         </div>

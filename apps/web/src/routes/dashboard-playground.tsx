@@ -38,14 +38,12 @@ import { ChoiceGroup } from '../components/ui/choice-group';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
-import { australianDarkTheme, australianLightTheme } from '../theme';
 
 export const handle = dashboardWorkspaceHandle;
 
 const {
   Button,
   Field,
-  FluentProvider,
   MessageBar,
   MessageBarBody,
   Option,
@@ -53,21 +51,6 @@ const {
   makeStyles,
   tokens,
 } = fluentComponents;
-
-function useAustralianTheme() {
-  const [dark, setDark] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches,
-  );
-
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (event: MediaQueryListEvent) => setDark(event.matches);
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, []);
-
-  return dark ? australianDarkTheme : australianLightTheme;
-}
 
 interface LoaderData { keys: ApiKey[]; models: ControlPlaneModel[]; error: string | null }
 
@@ -103,7 +86,13 @@ const useStyles = makeStyles({
     color: 'light-dark(#2770ea, #244b8f)',
     '&:hover': { color: 'light-dark(#1b4aef, #203581)' },
   },
-  messageActions: { opacity: 0, transitionProperty: 'opacity', transitionDuration: tokens.durationFaster },
+  messageActions: {
+    opacity: 0,
+    transitionProperty: 'opacity',
+    transitionDuration: tokens.durationFaster,
+    '@media (hover: none)': { opacity: 1 },
+    '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0s' },
+  },
   messageRow: { '&:hover .playground-message-actions, &:focus-within .playground-message-actions': { opacity: 1 } },
   code: { fontFamily: tokens.fontFamilyMonospace },
 });
@@ -113,7 +102,6 @@ const randomId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Mat
 export default function DashboardPlayground({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
-  const australianTheme = useAustralianTheme();
   const s = useStyles();
   const [api, setApi] = useState<PlaygroundApi>('responses');
   const [keyId, setKeyId] = useState(loaderData.keys[0]?.id ?? '');
@@ -171,7 +159,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   }
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
   }, [messages, sending]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -298,14 +289,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
 
   return (
-    // Fluent copies this provider's className onto the portal mount node it
-    // creates under <body>, so any layout class here also sizes that node —
-    // `h-full` turned it into a full-viewport z-index 1000000 overlay that ate
-    // the pointer events its own popups needed. `contents` removes the box
-    // instead: the theme's custom properties still cascade from the element,
-    // the page grid resolves against <main>, and the mount node stays inert.
-    // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-provider/library/src/components/FluentProvider/useFluentProviderThemeStyleTag.ts#L1-L40
-    <FluentProvider theme={australianTheme} className="contents">
+    <>
       <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
           <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
@@ -348,8 +332,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                     <PlaygroundMessageCard role={message.role}>
                       {editingId === message.id ? (
                         <div className="grid gap-2">
-                          <Textarea resize="vertical" rows={3} value={editText} onChange={(_, data) => setEditText(data.value)} />
-                          {message.role === 'user' && imageEnabled && <Input type="url" value={editImage} placeholder={t('dashboard.playground.imagePlaceholder')} onChange={(_, data) => setEditImage(data.value)} />}
+                          <Textarea aria-label={t('dashboard.playground.actions.edit')} resize="vertical" rows={3} value={editText} onChange={(_, data) => setEditText(data.value)} />
+                          {message.role === 'user' && imageEnabled && <Input aria-label={t('dashboard.playground.actions.image')} type="url" value={editImage} placeholder={t('dashboard.playground.imagePlaceholder')} onChange={(_, data) => setEditImage(data.value)} />}
                           <div className="flex justify-end gap-2">
                             <Button size="small" onClick={() => setEditingId(null)}>{t('common.cancel')}</Button>
                             <Button size="small" appearance="primary" disabled={!editText.trim() && !editImage.trim()} onClick={() => saveEdit(message.id)}>{t('dashboard.playground.actions.save')}</Button>
@@ -447,7 +431,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             </SettingsSection>
 
             <SettingsSection title={t('dashboard.playground.settings.customJson')}>
-              <Field validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
+              <Field label={t('dashboard.playground.settings.customJson')} validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
                 <Textarea className={s.code} resize="vertical" rows={9} value={customDraft} onChange={(_, data) => {
                   setCustomDraft(data.value);
                   setCustomError(null);
@@ -457,7 +441,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           </ScrollArea>
         </Panel>
       </section>
-    </FluentProvider>
+    </>
   );
 }
 
