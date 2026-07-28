@@ -2,7 +2,9 @@ import {
   ChevronDownRegular,
   ChevronUpRegular,
   DeleteRegular,
+  DismissRegular,
   EditRegular,
+  SettingsRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -38,15 +40,20 @@ import { ChoiceGroup } from '../components/ui/choice-group';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
+import { useMediaQuery } from '../lib/use-media-query';
 
 export const handle = dashboardWorkspaceHandle;
 
 const {
   Button,
+  DrawerBody,
+  DrawerHeader,
+  DrawerHeaderTitle,
   Field,
   MessageBar,
   MessageBarBody,
   Option,
+  OverlayDrawer,
   Text,
   makeStyles,
   tokens,
@@ -124,8 +131,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editImage, setEditImage] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const narrow = useMediaQuery('(max-width: 1100px)');
 
   const selectedKey = loaderData.keys.find(key => key.id === keyId) ?? null;
   const cap = useMemo(
@@ -288,6 +297,49 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const canSend = Boolean(selectedKey && selectedModel && (draft.trim() || imageUrl.trim()));
   const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
 
+  const settingsContent = <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="!p-4 grid content-start gap-5" noTabIndex>
+    <SettingsSection title={t('dashboard.playground.settings.connection')}>
+      <Field label={t('dashboard.playground.key')}>
+        <Select value={keyId} disabled={!loaderData.keys.length} onChange={(_, data) => changeContext(() => setKeyId(data.value))}>
+          {!loaderData.keys.length && <option value="">{t('dashboard.playground.noKeyOption')}</option>}
+          {loaderData.keys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
+        </Select>
+      </Field>
+      <Field label={t('dashboard.playground.api')}>
+        <ChoiceGroup ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
+      </Field>
+      <Field label={t('dashboard.playground.model')}>
+        <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
+          if (!data.optionValue) return;
+          changeContext(() => {
+            setModelId(data.optionValue!);
+            setModelQuery(null);
+            setMessages([]);
+            setEditingId(null);
+          });
+        }} onOpenChange={(_, data) => setModelQuery(data.open ? '' : null)}>
+          {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0 grid gap-1"><div className="truncate leading-[var(--lineHeightBase300)]">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate leading-[var(--lineHeightBase200)] ${s.code}`}>{model.id}</div></div></Option>)}
+        </Combobox>
+      </Field>
+      {selectedModel && <ModelInfoBadges cap={cap} catalog={loaderData.models} model={selectedModel} />}
+    </SettingsSection>
+    <SettingsSection title={t('dashboard.playground.settings.generation')}>
+      <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
+        <Combobox freeform placeholder={t('dashboard.playground.parameters.providerDefault')} value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value)} onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}>
+          {effortOptions.map(effort => <Option key={effort}>{effort}</Option>)}
+        </Combobox>
+      </Field>
+    </SettingsSection>
+    <SettingsSection title={t('dashboard.playground.settings.customJson')}>
+      <Field label={t('dashboard.playground.settings.customJson')} validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
+        <Textarea className={s.code} resize="vertical" rows={9} value={customDraft} onChange={(_, data) => {
+          setCustomDraft(data.value);
+          setCustomError(null);
+        }} />
+      </Field>
+    </SettingsSection>
+  </ScrollArea>;
+
   return (
     <>
       <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
@@ -297,6 +349,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               <Text as="h1" block size={700} weight="semibold" className="!m-0">{t('dashboard.nav.playground')}</Text>
               <Text block size={200} className={`text-fui-fg2 truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
             </div>
+            {narrow && <Button appearance="subtle" aria-label={t('dashboard.playground.settings.title')} className="!ml-auto" icon={<SettingsRegular />} onClick={() => setSettingsOpen(true)} />}
           </div>
           <div className="px-4 py-2 grid gap-2">
             <button
@@ -387,59 +440,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           </div>
         </div>
 
-        <Panel className="min-h-0 overflow-hidden !p-0">
-          <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="!p-4 grid content-start gap-5" noTabIndex>
-            <SettingsSection title={t('dashboard.playground.settings.connection')}>
-              <Field label={t('dashboard.playground.key')}>
-                <Select value={keyId} disabled={!loaderData.keys.length} onChange={(_, data) => changeContext(() => setKeyId(data.value))}>
-                  {!loaderData.keys.length && <option value="">{t('dashboard.playground.noKeyOption')}</option>}
-                  {loaderData.keys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
-                </Select>
-              </Field>
-              <div className="grid gap-0.5">
-                <Text weight="semibold">{t('dashboard.playground.api')}</Text>
-                <ChoiceGroup ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
-              </div>
-              <Field label={t('dashboard.playground.model')}>
-                <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
-                  if (!data.optionValue) return;
-                  changeContext(() => {
-                    setModelId(data.optionValue!);
-                    setModelQuery(null);
-                    setMessages([]);
-                    setEditingId(null);
-                  });
-                }} onOpenChange={(_, data) => setModelQuery(data.open ? '' : null)}>
-                  {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0 grid gap-1"><div className="truncate leading-[var(--lineHeightBase300)]">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate leading-[var(--lineHeightBase200)] ${s.code}`}>{model.id}</div></div></Option>)}
-                </Combobox>
-              </Field>
-              {selectedModel && <ModelInfoBadges cap={cap} catalog={loaderData.models} model={selectedModel} />}
-            </SettingsSection>
-
-            <SettingsSection title={t('dashboard.playground.settings.generation')}>
-              <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
-                <Combobox
-                  freeform
-                  placeholder={t('dashboard.playground.parameters.providerDefault')}
-                  value={reasoningEffort}
-                  onChange={event => setReasoningEffort(event.target.value)}
-                  onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}
-                >
-                  {effortOptions.map(effort => <Option key={effort}>{effort}</Option>)}
-                </Combobox>
-              </Field>
-            </SettingsSection>
-
-            <SettingsSection title={t('dashboard.playground.settings.customJson')}>
-              <Field label={t('dashboard.playground.settings.customJson')} validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
-                <Textarea className={s.code} resize="vertical" rows={9} value={customDraft} onChange={(_, data) => {
-                  setCustomDraft(data.value);
-                  setCustomError(null);
-                }} />
-              </Field>
-            </SettingsSection>
-          </ScrollArea>
-        </Panel>
+        {narrow ? <OverlayDrawer onOpenChange={(_, data) => setSettingsOpen(data.open)} open={settingsOpen} position="end" size="medium">
+          <DrawerHeader><DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.playground.settings.close')} icon={<DismissRegular />} onClick={() => setSettingsOpen(false)} />}>{t('dashboard.playground.settings.title')}</DrawerHeaderTitle></DrawerHeader>
+          <DrawerBody className="!p-0 min-h-0">{settingsContent}</DrawerBody>
+        </OverlayDrawer> : <Panel className="min-h-0 overflow-hidden !p-0">{settingsContent}</Panel>}
       </section>
     </>
   );

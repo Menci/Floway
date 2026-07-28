@@ -108,7 +108,7 @@ const zhHansCN = {
         noModel: '未选择模型',
         noModelForApi: '没有可达的聊天模型。',
         apis: { responses: 'Responses', chatCompletions: 'Chat Completions', messages: 'Messages' },
-        settings: { connection: '连接', generation: '生成参数', customJson: '自定义 JSON' },
+        settings: { title: 'Playground 设置', close: '关闭 Playground 设置', connection: '连接', generation: '生成参数', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
         parameters: {
           reasoningEffort: '思考强度',
