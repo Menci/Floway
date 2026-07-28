@@ -845,6 +845,7 @@ const zhHansCN = {
         listLabel: '已捕获的请求',
         empty: '尚未记录任何请求。',
         unknownModel: '未知模型',
+        status: { success: '请求成功', warning: '请求警告', error: '请求失败' },
         duration: '耗时：{{value}}ms',
         requestBytes: '请求载荷：{{value}} 字节',
         responseBytes: '响应载荷：{{value}} 字节',

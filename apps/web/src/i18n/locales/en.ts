@@ -885,6 +885,7 @@ const en = {
         listLabel: 'Captured requests',
         empty: 'No requests recorded yet.',
         unknownModel: 'Unknown model',
+        status: { success: 'Successful request', warning: 'Request warning', error: 'Failed request' },
         duration: 'Duration: {{value}}ms',
         requestBytes: 'Request payload: {{value}} bytes',
         responseBytes: 'Response payload: {{value}} bytes',

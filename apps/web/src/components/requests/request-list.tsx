@@ -110,7 +110,8 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
       tabIndex={selected || (selectedId === null && index === 0) ? 0 : -1}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <StatusIcon className={s[severity]} />
+        <StatusIcon aria-hidden="true" className={s[severity]} />
+        <span className="sr-only">{t(`dashboard.requests.status.${severity}`)}</span>
         <Text size={300} className="truncate min-w-0 font-mono">
           {record.model ?? t('dashboard.requests.unknownModel')}
         </Text>
@@ -132,13 +133,13 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
       </div>
       <div className="mt-1 flex items-center gap-3 min-w-0 text-fui-fg3">
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.duration', { value: record.durationMs })}>
-          <TimerRegular /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
+          <TimerRegular aria-hidden="true" /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
         </span>
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.requestBytes', { value: record.requestBytes })}>
-          <ArrowUploadRegular /> <Text size={200}>{formatBytes(record.requestBytes)}</Text>
+          <ArrowUploadRegular aria-hidden="true" /> <Text size={200}>{formatBytes(record.requestBytes)}</Text>
         </span>
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.responseBytes', { value: record.responseBytes })}>
-          <ArrowDownloadRegular /> <Text size={200}>{formatBytes(record.responseBytes)}</Text>
+          <ArrowDownloadRegular aria-hidden="true" /> <Text size={200}>{formatBytes(record.responseBytes)}</Text>
         </span>
         <Text size={200} className={mergeClasses('ml-auto truncate', rowError ? s.error : 'text-fui-fg3')} title={rowError ?? undefined}>
           {rowError ?? (tokens === null ? '-' : `${formatTokens(tokens)} tok`)}
