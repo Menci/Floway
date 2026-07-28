@@ -1,8 +1,6 @@
-export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'search' | 'codex';
-
 export interface ApiDocsEndpoint {
   docs: string;
-  group: ApiDocsGroup;
+  group: string;
   method: 'GET' | 'POST';
   name: string;
   path: string;
@@ -11,7 +9,9 @@ export interface ApiDocsEndpoint {
 const openAi = 'https://platform.openai.com/docs/api-reference';
 const codexSearchDocs = 'https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L8-L29';
 
-export const apiDocsEndpoints: ApiDocsEndpoint[] = [
+export const authCurlExample = (origin: string) => `curl "${origin}/v1/models" \\\n+  -H "Authorization: Bearer $FLOWAY_API_KEY"`;
+
+export const apiDocsEndpoints = [
   { group: 'models', method: 'GET', path: '/v1/models', name: 'openAiModels', docs: `${openAi}/models/list` },
   { group: 'models', method: 'GET', path: '/models', name: 'openAiModelsAlias', docs: `${openAi}/models/list` },
   { group: 'models', method: 'GET', path: '/v1beta/models', name: 'geminiModels', docs: 'https://ai.google.dev/api/models' },
@@ -58,26 +58,30 @@ export const apiDocsEndpoints: ApiDocsEndpoint[] = [
   { group: 'codex', method: 'POST', path: '/azure-api.codex/images/generations', name: 'codexNamespaceImageGeneration', docs: `${openAi}/images/create` },
   { group: 'codex', method: 'POST', path: '/azure-api.codex/images/edits', name: 'codexNamespaceImageEdit', docs: `${openAi}/images/createEdit` },
   { group: 'codex', method: 'GET', path: '/azure-api.codex/models', name: 'codexNamespaceModels', docs: `${openAi}/models/list` },
-];
+] as const satisfies readonly ApiDocsEndpoint[];
+
+export type ApiDocsGroup = typeof apiDocsEndpoints[number]['group'];
+export const apiDocsGroups = [...new Set(apiDocsEndpoints.map(endpoint => endpoint.group))];
 
 export interface ApiDocsExample {
   code: string;
-  id: string;
   language: 'bash' | 'json';
   title: string;
 }
 
-export const apiDocsExamples: ApiDocsExample[] = [
-  { id: 'completions', title: 'completions', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Hello"\n}' },
-  { id: 'chat', title: 'chat', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
-  { id: 'responses', title: 'responses', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": "Hello",\n  "stream": true\n}' },
-  { id: 'messages', title: 'messages', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "max_tokens": 1024,\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
-  { id: 'gemini', title: 'gemini', language: 'json', code: '{\n  "contents": [{ "role": "user", "parts": [{ "text": "Hello" }] }]\n}' },
-  { id: 'embeddings', title: 'embeddings', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": ["First document", "Second document"]\n}' },
-  { id: 'imageGeneration', title: 'imageGeneration', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "A glass city at sunrise"\n}' },
-  { id: 'imageEdit', title: 'imageEdit', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Add a rainbow",\n  "images": [{ "image_url": "https://example.com/input.png" }]\n}' },
-  { id: 'audio', title: 'audio', language: 'bash', code: 'curl "$FLOWAY_BASE_URL/v1/audio/transcriptions" \\\n  -H "Authorization: Bearer $FLOWAY_API_KEY" \\\n  -F "model=MODEL_ID" \\\n  -F "file=@speech.mp3"' },
-  { id: 'rerank', title: 'rerank', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "query": "What is Floway?",\n  "documents": ["Document one", "Document two"]\n}' },
-  { id: 'search', title: 'search', language: 'json', code: '{\n  "commands": {\n    "search_query": [{ "q": "latest LLM gateway news" }]\n  }\n}' },
-  { id: 'websocket', title: 'websocket', language: 'json', code: '{\n  "type": "response.create",\n  "response": { "model": "MODEL_ID", "input": "Hello" }\n}' },
-];
+export const apiDocsExamples = {
+  completions: { title: 'completions', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Hello"\n}' },
+  chat: { title: 'chat', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
+  responses: { title: 'responses', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": "Hello",\n  "stream": true\n}' },
+  messages: { title: 'messages', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "max_tokens": 1024,\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
+  gemini: { title: 'gemini', language: 'json', code: '{\n  "contents": [{ "role": "user", "parts": [{ "text": "Hello" }] }]\n}' },
+  embeddings: { title: 'embeddings', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": ["First document", "Second document"]\n}' },
+  imageGeneration: { title: 'imageGeneration', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "A glass city at sunrise"\n}' },
+  imageEdit: { title: 'imageEdit', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Add a rainbow",\n  "images": [{ "image_url": "https://example.com/input.png" }]\n}' },
+  audio: { title: 'audio', language: 'bash', code: 'curl "$FLOWAY_BASE_URL/v1/audio/transcriptions" \\\n  -H "Authorization: Bearer $FLOWAY_API_KEY" \\\n  -F "model=MODEL_ID" \\\n  -F "file=@speech.mp3"' },
+  rerank: { title: 'rerank', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "query": "What is Floway?",\n  "documents": ["Document one", "Document two"]\n}' },
+  search: { title: 'search', language: 'json', code: '{\n  "commands": {\n    "search_query": [{ "q": "latest LLM gateway news" }]\n  }\n}' },
+  websocket: { title: 'websocket', language: 'json', code: '{\n  "type": "response.create",\n  "response": { "model": "MODEL_ID", "input": "Hello" }\n}' },
+} as const satisfies Record<string, ApiDocsExample>;
+
+export type ApiDocsExampleId = keyof typeof apiDocsExamples;

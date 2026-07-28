@@ -59,6 +59,10 @@ const useStyles = makeStyles({
   },
 });
 
+// OAuth 2.0 device flow slow_down increases the current polling interval by five seconds.
+// https://www.rfc-editor.org/rfc/rfc8628#section-3.5
+const DEVICE_FLOW_SLOW_DOWN_SECONDS = 5;
+
 export function ProviderConfigSection({
   record,
   onPatch,
@@ -325,12 +329,7 @@ function CopilotConfig({ record, onPatch }: {
     if (result.error) { timer.current = window.setTimeout(() => void poll(deviceCode, interval), interval * 1000); return; }
     if (result.data.status === 'complete') { setBusy(false); onPatch(result.data.patch, record.id !== ''); return; }
     if (result.data.status === 'slow_down') {
-      if (result.data.interval === undefined) {
-        setBusy(false);
-        setError('Copilot returned slow_down without a polling interval.');
-        return;
-      }
-      const next = result.data.interval + 1;
+      const next = (result.data.interval ?? interval) + DEVICE_FLOW_SLOW_DOWN_SECONDS;
       timer.current = window.setTimeout(() => void poll(deviceCode, next), next * 1000);
       return;
     }

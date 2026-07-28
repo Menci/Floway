@@ -278,8 +278,8 @@ React Router client loaders are resource barriers: authentication and every
 initial route resource resolve before the target location and component tree
 are committed, while `NavigationProgress` marks an in-flight navigation above
 the still-mounted route. `callApi` preserves the Hono client's inferred success
-payload; endpoints addressed by a raw URL use `callJson<T>` and own the explicit
-wire type at that boundary. The document never scrolls. Every scrollable region
+payload for every JSON control-plane request; raw Fetch remains limited to
+streaming data-plane calls. The document never scrolls. Every scrollable region
 declares its axes through `ScrollArea`; it enables OverlayScrollbars only where
 native scrollbars consume layout space, and otherwise retains native overlay
 scrolling inside the same explicit viewport.

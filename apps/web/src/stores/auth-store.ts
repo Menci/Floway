@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { StoreApi } from 'zustand';
 
 import { type AuthUser, type LoginResponse } from '../api/auth';
 import { getCurrentSession, api } from '../api/client';
@@ -14,6 +15,7 @@ interface AuthStore {
   clear: () => void;
   logout: () => Promise<void>;
   initialize: () => Promise<AuthUser | null>;
+  refresh: () => Promise<AuthUser | null>;
   primeFromLogin: (session: LoginResponse) => void;
   setUser: (user: AuthUser) => void;
 }
@@ -22,6 +24,41 @@ let sessionRequest: {
   token: string;
   promise: Promise<AuthUser | null>;
 } | null = null;
+
+const loadSession = (
+  set: StoreApi<AuthStore>['setState'],
+  get: StoreApi<AuthStore>['getState'],
+  force: boolean,
+): Promise<AuthUser | null> => {
+  const token = getSessionToken();
+  if (!token) {
+    get().clear();
+    return Promise.resolve(null);
+  }
+
+  const state = get();
+  if (!force && state.status === 'authenticated' && state.token === token && state.user) {
+    return Promise.resolve(state.user);
+  }
+  if (sessionRequest?.token === token) return sessionRequest.promise;
+
+  set({ status: 'loading', token, user: state.token === token ? state.user : null, error: null });
+  const promise = getCurrentSession().then(result => {
+    if (sessionRequest?.token === token) sessionRequest = null;
+    if (result.data) {
+      set({ status: 'authenticated', token, user: result.data.user, error: null });
+      return result.data.user;
+    }
+    if (result.error.status === 401) {
+      get().clear();
+      return null;
+    }
+    set({ status: 'error', token, user: null, error: result.error.message });
+    return null;
+  });
+  sessionRequest = { token, promise };
+  return promise;
+};
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
   status: 'idle',
@@ -50,61 +87,8 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
   },
 
-  initialize: () => {
-    const token = getSessionToken();
-    if (!token) {
-      get().clear();
-      return Promise.resolve(null);
-    }
-
-    const state = get();
-    if (
-      state.status === 'authenticated' &&
-      state.token === token &&
-      state.user
-    ) {
-      return Promise.resolve(state.user);
-    }
-
-    if (sessionRequest?.token === token) return sessionRequest.promise;
-
-    set({
-      status: 'loading',
-      token,
-      user: state.token === token ? state.user : null,
-      error: null,
-    });
-
-    const promise = getCurrentSession().then(result => {
-      if (sessionRequest?.token === token) sessionRequest = null;
-
-      if (result.data) {
-        set({
-          status: 'authenticated',
-          token,
-          user: result.data.user,
-          error: null,
-        });
-        return result.data.user;
-      }
-
-      if (result.error.status === 401) {
-        get().clear();
-        return null;
-      }
-
-      set({
-        status: 'error',
-        token,
-        user: null,
-        error: result.error.message,
-      });
-      return null;
-    });
-
-    sessionRequest = { token, promise };
-    return promise;
-  },
+  initialize: () => loadSession(set, get, false),
+  refresh: () => loadSession(set, get, true),
 
   primeFromLogin: session => {
     sessionRequest = null;
