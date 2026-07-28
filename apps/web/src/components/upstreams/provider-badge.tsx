@@ -101,8 +101,8 @@ const customColorStyle = (color: `#${string}`) => ({
 const isHexColor = (color: UpstreamColor | null): color is `#${string}` =>
   color?.startsWith('#') === true;
 
-export function ProviderBadge({ color = null, kind, label, title }: {
-  color?: UpstreamColor | null;
+export function ProviderBadge({ color, kind, label, title }: {
+  color: UpstreamColor | null;
   kind: ProviderBadgeKind;
   label?: string;
   title?: string;
@@ -134,11 +134,10 @@ export function ProviderIcon({
   className,
 }: {
   kind: ProviderBadgeKind;
-  className?: string;
+  className: string;
 }) {
   const styles = useStyles();
-  const sizeClassName = className ?? 'h-[14px] w-[14px]';
-  const baseClassName = `block flex-none ${sizeClassName}`;
+  const baseClassName = `block flex-none ${className}`;
   if (kind === 'custom') return <ServerRegular className={baseClassName} />;
   if (kind === 'azure') return <img alt="" src={azureIconUrl} className={baseClassName} />;
   if (kind === 'copilot') return <img alt="" src={githubCopilotIconUrl} className={`${styles.monochromeIcon} ${baseClassName}`} />;

@@ -22,6 +22,7 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
 import { Input } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
+import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
@@ -301,17 +302,17 @@ function UsersTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-1">
-                    <IconButton
+                    <TooltipIconButton
                       icon={<EditRegular />}
                       label={t('dashboard.users.actions.edit')}
                       onClick={() => onEdit(user)}
                     />
-                    <IconButton
+                    <TooltipIconButton
                       icon={<KeyRegular />}
                       label={t('dashboard.users.actions.resetPassword')}
                       onClick={() => onResetPassword(user)}
                     />
-                    <IconButton
+                    <TooltipIconButton
                       className={s.dangerButton}
                       disabled={protectedUser}
                       icon={<DeleteRegular />}
@@ -645,27 +646,6 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
       )} />
       {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     </DialogShell>
-  );
-}
-
-function IconButton({ className, disabled, icon, label, onClick }: {
-  className?: string;
-  disabled?: boolean;
-  icon: React.ReactElement;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip content={label} relationship="label">
-      <Button
-        appearance="subtle"
-        aria-label={label}
-        className={className}
-        disabled={disabled}
-        icon={icon}
-        onClick={onClick}
-      />
-    </Tooltip>
   );
 }
 

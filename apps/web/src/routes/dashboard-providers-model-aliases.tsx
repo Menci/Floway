@@ -9,6 +9,7 @@ import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, ModelAlias } from '../api/types';
 import { getSessionToken } from '../auth/session';
+import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { AliasDialog } from '../components/model-alias/alias-dialog';
 import { mergeModelAliasesPageData } from '../components/model-alias/load-data';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
@@ -67,7 +68,7 @@ export default function DashboardProvidersModelAliases() {
   useEffect(() => { if (user.isAdmin) void load(); }, [load, user.isAdmin]);
 
   const header = <DashboardPageHeader description={t('dashboard.modelAliases.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.modelAliases.heading')} />;
-  if (!user.isAdmin) return <section className="grid gap-[18px] max-w-[960px]">{header}<Panel className="!p-[22px_24px]"><Text weight="semibold">{t('dashboard.pages.adminOnly')}</Text><Text block className="text-fui-fg2 mt-2">{t('dashboard.pages.adminOnlyDescription')}</Text></Panel></section>;
+  if (!user.isAdmin) return <section className="grid gap-[18px] max-w-[960px]">{header}<AdminOnlyNotice /></section>;
 
   const openCreate = () => { setEditing(null); setDialogOpen(true); };
   const openEdit = (alias: ModelAlias) => { setEditing(alias); setDialogOpen(true); };

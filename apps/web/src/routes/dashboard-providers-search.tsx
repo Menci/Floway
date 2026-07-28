@@ -12,6 +12,7 @@ import bingIconUrl from '../assets/bing.svg';
 import jinaIconUrl from '../assets/icons/jina.svg';
 import tavilyIconUrl from '../assets/icons/tavily.svg';
 import { getSessionToken } from '../auth/session';
+import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, Input, Select } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
@@ -242,20 +243,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           eyebrow={t('dashboard.groups.providers')}
           title={t('dashboard.searchConfig.heading')}
         />
-        <Panel className="!p-[22px_24px]">
-          <div className="grid gap-[10px] max-w-[680px]">
-            <Text
-              size={300}
-              weight="semibold"
-              style={{ color: 'light-dark(#0f6cbd, #75b6f7)' }}
-            >
-              {t('dashboard.pages.adminOnly')}
-            </Text>
-            <Text size={300} className="text-fui-fg3">
-              {t('dashboard.pages.adminOnlyDescription')}
-            </Text>
-          </div>
-        </Panel>
+        <AdminOnlyNotice />
       </section>
     );
   }

@@ -27,6 +27,7 @@ import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { PageLoadingPanel } from '../components/ui/page-loading-panel';
 import { Panel } from '../components/ui/panel';
+import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
@@ -414,13 +415,13 @@ function UpstreamsTable({
               <TableCell>
                 <div className="inline-flex items-center gap-1">
                   <Text size={200} className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
-                  <IconButton
+                  <TooltipIconButton
                     disabled={busy || index === 0}
                     icon={<ArrowUpRegular />}
                     label={t('dashboard.upstreams.actions.moveUp', { name: record.name })}
                     onClick={() => onMove(record, -1)}
                   />
-                  <IconButton
+                  <TooltipIconButton
                     disabled={busy || index === data.upstreams.length - 1}
                     icon={<ArrowDownRegular />}
                     label={t('dashboard.upstreams.actions.moveDown', { name: record.name })}
@@ -457,13 +458,13 @@ function UpstreamsTable({
               </TableCell>
               <TableCell>
                 <div className="inline-flex items-center gap-[2px]">
-                  <IconButton
+                  <TooltipIconButton
                     disabled={busy}
                     icon={<EditRegular />}
                     label={t('dashboard.upstreams.actions.editNamed', { name: record.name })}
                     onClick={() => onEdit(record)}
                   />
-                  <IconButton
+                  <TooltipIconButton
                     disabled={busy}
                     icon={mutation?.kind === 'delete' && mutation.id === record.id ? <Spinner size="tiny" /> : <DeleteRegular />}
                     label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })}
@@ -484,7 +485,7 @@ function ModelStatus({
   modelsAvailable,
   record,
 }: {
-  count: number | null;
+  count: number;
   modelsAvailable: boolean;
   record: UpstreamRecord;
 }) {
@@ -493,7 +494,7 @@ function ModelStatus({
   const cacheStatus = record.modelsCache.lastError
     ? 'failed'
     : record.modelsCache.fetchedAt === null ? 'empty' : 'ready';
-  const healthy = modelsAvailable && count !== null && count > 0 && !record.modelsCache.lastError;
+  const healthy = modelsAvailable && count > 0 && !record.modelsCache.lastError;
   const detail = record.modelsCache.lastError
     ? t('dashboard.upstreams.cache.failedDetail', {
         message: record.modelsCache.lastError.message,
@@ -507,7 +508,7 @@ function ModelStatus({
     <Tooltip content={detail} relationship="description">
       <span className="inline-flex items-center gap-[6px] min-w-0 w-fit max-w-full">
         <Text size={200} weight="semibold" className="whitespace-nowrap">
-          {modelsAvailable && count !== null
+          {modelsAvailable
             ? t('dashboard.upstreams.models.count', { count })
             : t('dashboard.upstreams.models.unavailable')}
         </Text>
@@ -515,24 +516,6 @@ function ModelStatus({
           ? <CheckmarkCircleRegular className={`${s.ready} flex-none`} aria-label={t('dashboard.upstreams.cache.ready')} />
           : <WarningRegular className={`${s.warning} flex-none`} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
       </span>
-    </Tooltip>
-  );
-}
-
-function IconButton({
-  disabled,
-  icon,
-  label,
-  onClick,
-}: {
-  disabled?: boolean;
-  icon: React.ReactElement;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip content={label} relationship="label">
-      <Button appearance="subtle" aria-label={label} disabled={disabled} icon={icon} onClick={onClick} size="small" />
     </Tooltip>
   );
 }

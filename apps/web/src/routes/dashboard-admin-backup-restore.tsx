@@ -12,6 +12,7 @@ import type {
   BackupImportResponse,
 } from '../api/types';
 import { getSessionToken } from '../auth/session';
+import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
@@ -331,16 +332,7 @@ export default function DashboardAdminBackupRestore() {
     return (
       <section className="grid gap-[18px] max-w-[960px] min-w-0">
         <DashboardPageHeader eyebrow={t('dashboard.groups.admin')} title={t('dashboard.backupRestore.heading')} />
-        <Panel className="!p-[22px_24px]">
-          <div className="grid gap-[10px] max-w-[680px]">
-            <Text size={300} weight="semibold" style={{ color: 'light-dark(#0f6cbd, #75b6f7)' }}>
-              {t('dashboard.pages.adminOnly')}
-            </Text>
-            <Text size={300} className="text-fui-fg3">
-              {t('dashboard.pages.adminOnlyDescription')}
-            </Text>
-          </div>
-        </Panel>
+        <AdminOnlyNotice />
       </section>
     );
   }

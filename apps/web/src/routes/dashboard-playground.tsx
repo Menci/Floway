@@ -34,6 +34,7 @@ import { streamPlaygroundText } from '../components/playground/playground-stream
 import { Combobox, Input, Select, SpinButton, Textarea } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { SegmentedControl } from '../components/ui/segmented-control';
+import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { australianDarkTheme, australianLightTheme } from '../theme';
 
@@ -47,7 +48,6 @@ const {
   Spinner,
   Switch,
   Text,
-  Tooltip,
   makeStyles,
   tokens,
 } = fluentComponents;
@@ -352,8 +352,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                       )}
                     </PlaygroundMessageCard>
                     <div className={`playground-message-actions flex justify-end gap-0.5 mt-1 ${s.messageActions}`}>
-                      <IconAction className={s.brandIconAction} label={t('dashboard.playground.actions.edit')} icon={<EditRegular />} onClick={() => beginEdit(message)} />
-                      <IconAction className={s.brandIconAction} label={t('dashboard.playground.actions.delete')} icon={<DeleteRegular />} onClick={() => removeMessage(message.id)} />
+                      <TooltipIconButton className={s.brandIconAction} label={t('dashboard.playground.actions.edit')} icon={<EditRegular />} onClick={() => beginEdit(message)} />
+                      <TooltipIconButton className={s.brandIconAction} label={t('dashboard.playground.actions.delete')} icon={<DeleteRegular />} onClick={() => removeMessage(message.id)} />
                     </div>
                   </div>
                 </div>
@@ -460,10 +460,6 @@ function SettingsSection({ children, title }: { children: React.ReactNode; title
 
 function EmptyState({ text }: { text: string }) {
   return <div className="h-full min-h-[180px] grid place-items-center text-center px-6"><Text className="text-fui-fg2">{text}</Text></div>;
-}
-
-function IconAction({ className, icon, label, onClick }: { className?: string; icon: React.ReactElement; label: string; onClick: () => void }) {
-  return <Tooltip content={label} relationship="label"><Button appearance="subtle" aria-label={label} className={className} icon={icon} size="small" onClick={onClick} /></Tooltip>;
 }
 
 function OptionalNumber({ disabled, initialValue, label, max, min, onChange, step, value }: {

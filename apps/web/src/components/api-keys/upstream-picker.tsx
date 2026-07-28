@@ -6,13 +6,12 @@ import type { UpstreamOption } from './types';
 import type { UpstreamColor, UpstreamProviderKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ProviderBadge, providerLabel } from '../upstreams/provider-badge';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
-const { Button, Checkbox, Switch, Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, Tooltip, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
+const { Checkbox, Switch, Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
 const useStyles = makeStyles({ fieldError: { color: 'var(--colorPaletteRedForeground1)' } });
 interface UpstreamRow { id: string; name: string; kind: UpstreamProviderKind | null; color: UpstreamColor | null; enabled: boolean }
 function HintText({ children }: { children: string }) { return <Text size={200} className="text-fui-fg2 leading-[1.35] !m-0">{children}</Text>; }
-function IconButton({ disabled, icon, label, onClick }: { disabled?: boolean; icon: React.ReactElement; label: string; onClick: () => void }) { return <Tooltip content={label} relationship="label"><Button appearance="subtle" aria-label={label} disabled={disabled} icon={icon} onClick={onClick} size="small" /></Tooltip>; }
-
 function UpstreamPickerTable({
   columns, rows,
 }: {
@@ -119,7 +118,7 @@ function UpstreamOverrideTable({ available, disabled, ids, onChange }: {
   }, [ids, onChange]);
   const columns = useMemo(() => [
     createTableColumn<UpstreamRow>({ columnId: 'enabled', renderHeaderCell: () => t('dashboard.apiKeys.upstreams.enabled'), renderCell: row => <Checkbox checked={row.enabled} disabled={disabled} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /> }),
-    createTableColumn<UpstreamRow>({ columnId: 'order', renderHeaderCell: () => t('dashboard.apiKeys.upstreams.order'), renderCell: row => { const index = ids.indexOf(row.id); return <div className="inline-flex items-center gap-1"><IconButton disabled={disabled || index <= 0} icon={<ArrowUpRegular />} label={t('dashboard.apiKeys.upstreams.moveUp')} onClick={() => moveUpstream(row.id, -1)} /><IconButton disabled={disabled || index === -1 || index >= ids.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.apiKeys.upstreams.moveDown')} onClick={() => moveUpstream(row.id, 1)} /></div>; } }),
+    createTableColumn<UpstreamRow>({ columnId: 'order', renderHeaderCell: () => t('dashboard.apiKeys.upstreams.order'), renderCell: row => { const index = ids.indexOf(row.id); return <div className="inline-flex items-center gap-1"><TooltipIconButton disabled={disabled || index <= 0} icon={<ArrowUpRegular />} label={t('dashboard.apiKeys.upstreams.moveUp')} onClick={() => moveUpstream(row.id, -1)} /><TooltipIconButton disabled={disabled || index === -1 || index >= ids.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.apiKeys.upstreams.moveDown')} onClick={() => moveUpstream(row.id, 1)} /></div>; } }),
     createTableColumn<UpstreamRow>({ columnId: 'name', compare: (a, b) => a.name.localeCompare(b.name), renderHeaderCell: () => t('dashboard.apiKeys.upstreams.name'), renderCell: row => <TableCellLayout><span className="truncate min-w-0">{row.name}</span></TableCellLayout> }),
     createTableColumn<UpstreamRow>({ columnId: 'kind', compare: (a, b) => providerLabel(a.kind).localeCompare(providerLabel(b.kind)), renderHeaderCell: () => t('dashboard.apiKeys.upstreams.kind'), renderCell: row => <ProviderBadge color={row.color} kind={row.kind} /> }),
   ], [disabled, ids, moveUpstream, t, toggleUpstream]);

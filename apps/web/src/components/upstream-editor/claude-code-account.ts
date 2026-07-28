@@ -14,22 +14,13 @@ export type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
 export const HEAVY_USAGE_THRESHOLD_PERCENT = 80;
 
-// The profile wire keeps plan and rate-limit tier separate:
-// https://github.com/Wei-Shaw/claude-relay-service/blob/7dc21cf2820a6784831f289442a38d58fe827f34/src/services/account/claudeAccountService.js#L2241
-const RATE_LIMIT_TIER_SUFFIX: Record<string, string> = {
-  default_claude_max_5x: '5×',
-  default_claude_max_20x: '20×',
-};
-
 export const formatSubscription = (
   subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null | undefined,
   rateLimitTier: string | null | undefined,
 ): string | null => {
   if (!subscriptionType) return null;
   const base = { pro: 'Pro', max: 'Max', team: 'Team', enterprise: 'Enterprise' }[subscriptionType];
-  if (subscriptionType !== 'max') return base;
-  const suffix = rateLimitTier ? RATE_LIMIT_TIER_SUFFIX[rateLimitTier] : undefined;
-  return suffix ? `${base} ${suffix}` : base;
+  return rateLimitTier ? `${base} · ${rateLimitTier}` : base;
 };
 
 export type CredentialLookup =

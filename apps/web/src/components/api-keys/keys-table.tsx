@@ -6,7 +6,8 @@ import type { UpstreamOption } from './types';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
-const { Button, Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, Tooltip, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
+const { Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
 const useStyles = makeStyles({
   interactiveRow: {
     cursor: 'pointer',
@@ -88,12 +89,12 @@ export function KeysTable({
           const copyTag = `key-${key.id}`;
           return (
             <div className="inline-flex items-center gap-[2px]" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-              <IconButton icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
+              <TooltipIconButton icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
                 label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
                 onClick={() => onCopy(key.key, copyTag)} />
-              <IconButton icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
-              <IconButton icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
-              <IconButton icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
+              <TooltipIconButton icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
+              <TooltipIconButton icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
+              <TooltipIconButton icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
             </div>
           );
         },
@@ -155,30 +156,6 @@ export function KeysTable({
         </TableBody>
       </Table>
     </div>
-  );
-}
-function IconButton({
-  disabled,
-  icon,
-  label,
-  onClick,
-}: {
-  disabled?: boolean;
-  icon: React.ReactElement;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip content={label} relationship="label">
-      <Button
-        appearance="subtle"
-        aria-label={label}
-        disabled={disabled}
-        icon={icon}
-        onClick={onClick}
-        size="small"
-      />
-    </Tooltip>
   );
 }
 const truncateKey = (key: string) =>

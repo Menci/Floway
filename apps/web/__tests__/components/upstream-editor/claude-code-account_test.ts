@@ -61,14 +61,14 @@ const record = (state: ClaudeCodeRecord['state']): ClaudeCodeRecord => ({
 
 describe('claude code subscription label', () => {
   it('appends the usage multiplier only for max plans', () => {
-    expect(formatSubscription('max', 'default_claude_max_20x')).toBe('Max 20×');
-    expect(formatSubscription('max', 'default_claude_max_5x')).toBe('Max 5×');
-    expect(formatSubscription('pro', 'default_claude_max_20x')).toBe('Pro');
+    expect(formatSubscription('max', 'default_claude_max_20x')).toBe('Max · default_claude_max_20x');
+    expect(formatSubscription('max', 'default_claude_max_5x')).toBe('Max · default_claude_max_5x');
+    expect(formatSubscription('pro', 'default_claude_max_20x')).toBe('Pro · default_claude_max_20x');
   });
 
   it('keeps the plan name when the tier is unknown or absent', () => {
     expect(formatSubscription('max', null)).toBe('Max');
-    expect(formatSubscription('max', 'tier_anthropic_added_later')).toBe('Max');
+    expect(formatSubscription('max', 'tier_anthropic_added_later')).toBe('Max · tier_anthropic_added_later');
     expect(formatSubscription(null, null)).toBeNull();
   });
 });
