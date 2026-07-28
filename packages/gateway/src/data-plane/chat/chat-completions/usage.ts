@@ -1,26 +1,31 @@
-import { openAICacheTokensFromUsage, tokenUsage } from '../../shared/telemetry/usage.ts';
-import type { ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
-import { billableServiceTier, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING } from '@floway-dev/protocols/common';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { billableServiceTier, splitInclusiveInputTokens, type BillableUsage } from '@floway-dev/protocols/common';
 
-// OpenAI Chat usage reports prompt_tokens inclusive of cached and cache-
-// creation tokens; the shared `openAICacheTokensFromUsage` helper resolves
-// the variant cache field names (OpenAI canonical, DeepSeek hit/miss split,
-// Moonshot flat, OpenRouter cache_write_tokens) onto a single (read, write)
-// pair, which we subtract from prompt_tokens to recover the disjoint bare
-// input. The top-level `service_tier` echoes the actual processing tier;
-// surface it via `billableServiceTier` so service-tier selector entries resolve
-// at recording time.
-// https://developers.openai.com/api/docs/guides/priority-processing
-export const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>, serviceTier: string | null | undefined) => {
-  const { cacheRead, cacheWrite } = openAICacheTokensFromUsage(u);
-  const writes = splitCacheWriteTokens(cacheWrite, u[USAGE_BILLING]);
-  const split = splitInclusiveInputTokens(u.prompt_tokens, cacheRead, cacheWrite);
-  return tokenUsage({
-    input: split.input,
-    input_cache_read: split.cacheRead,
-    input_cache_write: writes.cacheWrite,
-    input_cache_write_1h: writes.cacheWrite1h,
-    output: u.completion_tokens,
-    tier: billableServiceTier(serviceTier),
-  });
+type ChatCompletionsUsage = NonNullable<ChatCompletionsStreamEvent['usage']>;
+
+export const billableUsageFromChatCompletionsUsage = (
+  usage: ChatCompletionsUsage,
+  serviceTier: string | null | undefined,
+): BillableUsage => {
+  const cacheWrite = usage.prompt_tokens_details?.cache_creation_input_tokens
+    ?? usage.prompt_tokens_details?.cache_write_tokens
+    ?? 0;
+  const { input, cacheRead } = splitInclusiveInputTokens(
+    usage.prompt_tokens,
+    usage.prompt_tokens_details?.cached_tokens,
+    cacheWrite,
+  );
+  const tier = billableServiceTier(serviceTier);
+  return {
+    input,
+    cacheRead,
+    cacheWrite,
+    // Chat Completions has no cache-write TTL split.
+    cacheWrite1h: 0,
+    output: usage.completion_tokens,
+    ...(tier !== null ? { tier } : {}),
+  };
 };
+
+export const billableUsageFromChatCompletionsEvent = (event: ChatCompletionsStreamEvent): BillableUsage | null =>
+  event.usage ? billableUsageFromChatCompletionsUsage(event.usage, event.service_tier) : null;

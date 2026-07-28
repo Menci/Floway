@@ -1,8 +1,6 @@
 // Responses API type definitions
 // Used for translating Messages ↔ Responses APIs
 
-import type { USAGE_BILLING, UsageBillingMetadata } from '../common/usage.ts';
-
 // ── Request types ──
 
 // Supported for gpt-5.6+. Slots remain open-string so future modes and
@@ -843,7 +841,6 @@ export interface ResponsesResult {
     // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L7259-L7269
     input_tokens_details?: { cached_tokens: number; cache_write_tokens?: number };
     output_tokens_details?: { reasoning_tokens: number };
-    [USAGE_BILLING]?: UsageBillingMetadata;
   };
 }
 

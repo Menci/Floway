@@ -2,7 +2,7 @@ import { packReasoningSignature } from '../shared/messages-and-responses/reasoni
 import { isContextExceededError } from '../shared/messages-via/context-window-error.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { responsesPartKey } from '../shared/via-responses/responses-stream.ts';
-import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { PROMPT_TOO_LONG_MESSAGE, type MessagesResult, type MessagesStreamEvent, type MessagesUsage } from '@floway-dev/protocols/messages';
 import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -21,7 +21,7 @@ const mapResponsesStopReason = (response: ResponsesResult): MessagesResult['stop
 const responsesUsageToMessagesUsage = (response: ResponsesResult, outputTokens: number): MessagesUsage => {
   const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
   const cacheWriteTokens = response.usage?.input_tokens_details?.cache_write_tokens;
-  const writes = splitCacheWriteTokens(cacheWriteTokens, response.usage?.[USAGE_BILLING]);
+  const writes = splitCacheWriteTokens(cacheWriteTokens, 0);
   const { input: uncachedInputTokens } = splitInclusiveInputTokens(response.usage?.input_tokens ?? 0, cachedTokens, cacheWriteTokens);
 
   return {

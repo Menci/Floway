@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/gemini-via-responses/events.ts';
-import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -375,7 +375,6 @@ test('translateToSourceEvents preserves Responses cache and tier billing facts',
           output_tokens: 8,
           total_tokens: 108,
           input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
-          [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
         },
       }),
     }),
@@ -395,7 +394,6 @@ test('translateToSourceEvents preserves Responses cache and tier billing facts',
         candidatesTokenCount: 8,
         totalTokenCount: 108,
         cachedContentTokenCount: 30,
-        [USAGE_BILLING]: { cacheWriteTokenCount: 20, cacheWrite1hTokenCount: 5, serviceTier: 'priority' },
       },
     }),
   ]);

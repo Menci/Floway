@@ -545,6 +545,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
       modelId: candidate.model.id,
     },
     'responses.reasoning.encrypted_content',
+    { syntheticItem: true },
   );
 
   const sourcePayload = makePayload({
