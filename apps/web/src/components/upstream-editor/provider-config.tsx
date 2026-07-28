@@ -11,6 +11,7 @@ import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { ClaudeCodeAccountCard } from './claude-code-account-card';
+import { CodexAccountCard } from './codex-account-card';
 import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './editor-data';
 import { previewRecord } from './editor-data';
@@ -454,7 +455,7 @@ function OAuthConfig({ record, onPatch }: {
 
   return <div className="grid gap-4">
     {hasAccount && (record.kind === 'codex'
-      ? <AccountSummary kind="codex" title={(config as Extract<UpstreamRecord, { kind: 'codex' }>['config']).accounts[0].email} subtitle={(config as Extract<UpstreamRecord, { kind: 'codex' }>['config']).accounts[0].planType} />
+      ? <CodexAccountCard record={{ ...record, kind: 'codex', config: config as Extract<UpstreamRecord, { kind: 'codex' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'codex' }>['state'] }} />
       : <ClaudeCodeAccountCard
           onRefreshQuota={() => void probeQuota()}
           probing={probing}

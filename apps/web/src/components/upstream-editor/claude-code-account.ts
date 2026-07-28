@@ -178,8 +178,6 @@ export const actionableDisabledReason = (credential: ClaudeCodeAccountCredential
   return reason === null || reason === 'out_of_credits' ? null : reason;
 };
 
-export const clampPercent = (percent: number): number => Math.max(0, Math.min(100, Math.round(percent)));
-
 // JSON-stringify each value so a nested object stays readable in the raw
 // disclosure.
 export const rawEntries = (source: Record<string, unknown> | undefined): [string, string][] =>

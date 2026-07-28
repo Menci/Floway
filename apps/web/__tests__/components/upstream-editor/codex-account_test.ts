@@ -1,0 +1,109 @@
+import { describe, expect, it } from 'vitest';
+
+import type { CodexQuotaSnapshotMap, UpstreamRecord } from '../../../src/api/types';
+import { accountStatus, findCredential, latestCredits, quotaEntries, shortAccountId } from '../../../src/components/upstream-editor/codex-account';
+
+type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
+
+const ACCOUNT_ID = 'acct_0123456789abcdef';
+const NOW = Date.parse('2026-07-28T12:00:00.000Z');
+const PAST = '2026-07-28T11:00:00.000Z';
+const FUTURE = '2026-07-28T13:00:00.000Z';
+
+const record = (state: CodexRecord['state'], codexQuota?: CodexQuotaSnapshotMap): CodexRecord => ({
+  id: 'up_1',
+  kind: 'codex',
+  config: { accounts: [{ email: 'a@example.com', chatgptAccountId: ACCOUNT_ID, chatgptUserId: 'u1', planType: 'plus' }] },
+  state,
+  codex_quota: codexQuota,
+} as unknown as CodexRecord);
+
+describe('codex credential lookup', () => {
+  it('matches the configured account rather than taking the first stored one', () => {
+    const state = {
+      accounts: [
+        { chatgptAccountId: 'other', state: 'refresh_failed' as const, state_updated_at: PAST },
+        { chatgptAccountId: ACCOUNT_ID, state: 'active' as const, state_updated_at: PAST },
+      ],
+    };
+    expect(findCredential(record(state))?.state).toBe('active');
+  });
+
+  it('returns null when the upstream has no stored state', () => {
+    expect(findCredential(record(null))).toBeNull();
+  });
+});
+
+describe('codex quota entries', () => {
+  it('reads both windows and orders limits by name', () => {
+    const entries = quotaEntries({
+      weekly: { observed_at: PAST, active_limit: 'Weekly', primary_used_percent: 20, primary_window_minutes: 10_080 },
+      daily: { observed_at: PAST, active_limit: 'Daily', primary_used_percent: 5, secondary_used_percent: 50, secondary_reset_after_at: FUTURE },
+    }, NOW);
+    expect(entries.map(entry => entry.label)).toEqual(['Daily', 'Weekly']);
+    expect(entries[0].windows.map(window => window.key)).toEqual(['primary', 'secondary']);
+    expect(entries[0].windows[1]).toMatchObject({ percent: 50, resetAt: FUTURE, windowMinutes: null });
+    expect(entries[1].windows).toHaveLength(1);
+  });
+
+  it('falls back to the map key when the snapshot names no active limit', () => {
+    expect(quotaEntries({ primary: { observed_at: PAST } }, NOW)[0].label).toBe('primary');
+  });
+
+  it('treats an elapsed rate limit as spent', () => {
+    expect(quotaEntries({ daily: { observed_at: PAST, ratelimited_until: PAST } }, NOW)[0].rateLimitedUntil).toBeNull();
+    expect(quotaEntries({ daily: { observed_at: PAST, ratelimited_until: FUTURE } }, NOW)[0].rateLimitedUntil).toBe(FUTURE);
+  });
+
+  it('drops a window the snapshot reports no percentage for', () => {
+    expect(quotaEntries({ daily: { observed_at: PAST, primary_reset_after_at: FUTURE } }, NOW)[0].windows).toEqual([]);
+  });
+});
+
+describe('codex credits', () => {
+  it('takes the freshest observation that carries a balance', () => {
+    const credits = latestCredits({
+      stale: { observed_at: '2026-07-01T00:00:00.000Z', credits_balance: 10 },
+      fresh: { observed_at: '2026-07-20T00:00:00.000Z', credits_balance: 3 },
+      silent: { observed_at: '2026-07-27T00:00:00.000Z' },
+    });
+    expect(credits?.credits_balance).toBe(3);
+  });
+
+  it('is null when no snapshot mentions credits at all', () => {
+    expect(latestCredits({ daily: { observed_at: PAST, primary_used_percent: 1 } })).toBeNull();
+    expect(latestCredits(null)).toBeNull();
+  });
+});
+
+describe('codex account status', () => {
+  it('reports the furthest live rate limit', () => {
+    const entries = quotaEntries({
+      daily: { observed_at: PAST, ratelimited_until: FUTURE },
+      weekly: { observed_at: PAST, ratelimited_until: '2026-07-28T18:00:00.000Z' },
+    }, NOW);
+    expect(accountStatus(null, entries)).toEqual({ tone: 'danger', reason: 'rate-limited', until: '2026-07-28T18:00:00.000Z' });
+  });
+
+  it('puts a broken credential ahead of any quota reading', () => {
+    const credential = { chatgptAccountId: ACCOUNT_ID, state: 'session_terminated' as const, state_message: 'revoked', state_updated_at: PAST };
+    const entries = quotaEntries({ daily: { observed_at: PAST, ratelimited_until: FUTURE } }, NOW);
+    expect(accountStatus(credential, entries)).toEqual({ tone: 'danger', reason: 'session-terminated', detail: 'revoked' });
+  });
+
+  it('warns on heavy usage across any window', () => {
+    const entries = quotaEntries({ daily: { observed_at: PAST, primary_used_percent: 12, secondary_used_percent: 84 } }, NOW);
+    expect(accountStatus(null, entries)).toEqual({ tone: 'warning', reason: 'heavy', percent: 84 });
+  });
+
+  it('stays active with no snapshots at all', () => {
+    expect(accountStatus(null, [])).toEqual({ tone: 'success', reason: 'active' });
+  });
+});
+
+describe('codex account id', () => {
+  it('elides only ids long enough to need it', () => {
+    expect(shortAccountId('short-id')).toBe('short-id');
+    expect(shortAccountId(ACCOUNT_ID)).toBe('acct_012…abcdef');
+  });
+});

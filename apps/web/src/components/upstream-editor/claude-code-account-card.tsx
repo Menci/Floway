@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import {
   accountStatus,
   actionableDisabledReason,
-  clampPercent,
   type ClaudeCodeRecord,
   formatSubscription,
   lookUpCredential,
@@ -14,6 +13,7 @@ import {
 } from './claude-code-account';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
+import { clampPercent } from '../../lib/percent';
 import { Panel } from '../ui/panel';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
