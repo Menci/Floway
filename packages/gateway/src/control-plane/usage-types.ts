@@ -14,6 +14,7 @@ export interface UsageUserMetadata {
 }
 
 export interface TokenUsageByKeyResponse {
+  view: 'self-by-key';
   records: Array<DisplayUsageRecord & {
     keyName: string;
     keyCreatedAt: string;
@@ -22,11 +23,13 @@ export interface TokenUsageByKeyResponse {
 }
 
 export interface TokenUsageByUserResponse {
+  view: 'all-by-user';
   records: DisplayUsageByUserRecord[];
   users: UsageUserMetadata[];
 }
 
 export interface SearchUsageByKeyResponse {
+  view: 'self-by-key';
   records: Array<DisplayWebSearchUsageByKeyRecord & {
     keyName: string;
     keyCreatedAt: string;
@@ -36,6 +39,7 @@ export interface SearchUsageByKeyResponse {
 }
 
 export interface SearchUsageByUserResponse {
+  view: 'all-by-user';
   records: DisplayWebSearchUsageByUserRecord[];
   users: UsageUserMetadata[];
   activeProvider: WebSearchConfig['provider'];

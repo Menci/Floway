@@ -38,7 +38,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     const userMetadata = users
       .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
-    return c.json({ records, users: userMetadata } satisfies TokenUsageByUserResponse);
+    return c.json({ view: 'all-by-user', records, users: userMetadata } satisfies TokenUsageByUserResponse);
   }
 
   // Sequential so an invalid key_id short-circuits to 404 before spending the usage.query read.
@@ -66,6 +66,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   return c.json({
+    view: 'self-by-key',
     records: recordsWithKeyMetadata,
     keys: keyMetadata,
   } satisfies TokenUsageByKeyResponse);

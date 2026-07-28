@@ -47,6 +47,7 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
       .sort((a, b) => a.id - b.id);
     const webSearchConfig = await loadWebSearchConfig();
     return c.json({
+      view: 'all-by-user',
       records,
       users: userMetadata,
       activeProvider: webSearchConfig.provider,
@@ -86,6 +87,7 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
   const keyMetadata = keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt })).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 
   return c.json({
+    view: 'self-by-key',
     records: recordsWithKeyMetadata,
     keys: keyMetadata,
     activeProvider: webSearchConfig.provider,
