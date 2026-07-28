@@ -2,6 +2,8 @@ import { test } from 'vitest';
 
 import { resolveServerToolName } from '../../../../../../src/data-plane/chat/responses/interceptors/server-tool-shim.ts';
 import {
+  alphaSearchSettingsFromHosted,
+  buildShimFunctionTool,
   isHostedWebSearchTool,
   prepareToolsForShim,
   SHIM_TOOL_NAME,
@@ -10,9 +12,9 @@ import {
   WEB_SEARCH_HOSTED_TYPES,
   type WebSearchCallPrivatePayload,
 } from '../../../../../../src/data-plane/chat/responses/interceptors/server-tools/web-search.ts';
-import { findMatches, formatMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../../../src/data-plane/tools/web-search/operations.ts';
-import type { ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
-import { assert, assertEquals } from '@floway-dev/test-utils';
+import { assertLocalWebSearchSupport, findMatches, formatMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../../../src/data-plane/tools/web-search/operations.ts';
+import type { ResponsesHostedTool, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
+import { assert, assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 // ── Shim call argument parsing (parseWebSearchOperations) ──
 
@@ -21,6 +23,92 @@ const opsOf = (args: Record<string, unknown> | null): WebSearchOperation[] => {
   assert(parsed.kind === 'ops');
   return parsed.ops;
 };
+
+test('injected web_search function exposes the complete OpenAI alpha-search command shape', () => {
+  const functionTool = buildShimFunctionTool({ type: 'web_search' }, SHIM_TOOL_NAME);
+  const properties = (functionTool.parameters as { properties: Record<string, unknown> }).properties;
+  assertEquals(Object.keys(properties), [
+    'search_query',
+    'image_query',
+    'open',
+    'click',
+    'find',
+    'screenshot',
+    'finance',
+    'weather',
+    'sports',
+    'time',
+    'response_length',
+  ]);
+  const requiredByCommand = Object.fromEntries(
+    Object.entries(properties)
+      .filter(([name]) => name !== 'response_length')
+      .map(([name, schema]) => [name, (schema as { items: { required: string[] } }).items.required]),
+  );
+  assertEquals(requiredByCommand, {
+    search_query: ['q'],
+    image_query: ['q'],
+    open: ['ref_id'],
+    click: ['ref_id', 'id'],
+    find: ['ref_id', 'pattern'],
+    screenshot: ['ref_id', 'pageno'],
+    finance: ['ticker', 'type'],
+    weather: ['location'],
+    sports: ['fn', 'league'],
+    time: ['utc_offset'],
+  });
+  assertEquals(
+    ((properties.search_query as { items: { properties: Record<string, unknown> } }).items.properties),
+    {
+      q: { type: 'string', description: 'The search query.' },
+      recency: { type: 'integer', minimum: 0, description: 'Limit results to this many recent days.' },
+      domains: { type: 'array', items: { type: 'string' }, description: 'Limit results to these domains.' },
+    },
+  );
+  const financeProperties = (properties.finance as { items: { properties: Record<string, { enum?: string[] }> } }).items.properties;
+  assertEquals(financeProperties.type.enum, ['equity', 'fund', 'crypto', 'index']);
+  const sportsProperties = (properties.sports as { items: { properties: Record<string, { enum?: string[] }> } }).items.properties;
+  assertEquals(sportsProperties.fn.enum, ['schedule', 'standings']);
+  assertEquals(sportsProperties.league.enum, ['nba', 'wnba', 'nfl', 'nhl', 'mlb', 'epl', 'ncaamb', 'ncaawb', 'ipl']);
+  assertEquals((properties.response_length as { enum: string[] }).enum, ['short', 'medium', 'long']);
+});
+
+test('alpha-search settings preserve every OpenAI setting supported by passthrough', () => {
+  const hosted: ResponsesHostedTool = {
+    type: 'web_search',
+    user_location: { type: 'approximate', country: 'SG' },
+    search_context_size: 'high',
+    filters: { allowed_domains: ['example.com'] },
+    image_settings: { max_results: 4, caption: true },
+    allowed_callers: ['direct', 'shell'],
+    external_web_access: 'live',
+    search_content_types: ['text', 'image'],
+    return_token_budget: 'unlimited',
+  };
+  assertEquals(alphaSearchSettingsFromHosted(hosted), {
+    user_location: hosted.user_location,
+    search_context_size: 'high',
+    filters: hosted.filters,
+    image_settings: hosted.image_settings,
+    allowed_callers: hosted.allowed_callers,
+    external_web_access: 'live',
+  });
+});
+
+test('local provider support rejects unsupported commands and nested parameters', () => {
+  assertLocalWebSearchSupport({ search_query: [{ q: 'supported' }], open: [], find: [] });
+  for (const [commands, path] of [
+    [{ image_query: [{ q: 'cat' }] }, 'commands.image_query'],
+    [{ search_query: [{ q: 'news', recency: 2 }] }, 'commands.search_query[0].recency'],
+    [{ open: [{ ref_id: 'https://example.com', lineno: 10 }] }, 'commands.open[0].lineno'],
+  ] as const) {
+    assertThrows(
+      () => assertLocalWebSearchSupport(commands),
+      Error,
+      `The configured web search provider does not implement OpenAI search feature \`${path}\`.`,
+    );
+  }
+});
 
 test('parseWebSearchOperations returns ops:[] for empty object', () => {
   assertEquals(parseWebSearchOperations({}), { kind: 'ops', ops: [] });

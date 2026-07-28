@@ -196,6 +196,7 @@ export interface ResponsesFunctionToolCallItem {
   id?: string;
   call_id: string;
   name: string;
+  namespace?: string;
   arguments: string;
   status: 'completed' | 'in_progress' | 'incomplete';
   caller?: ResponsesToolCaller | null;
@@ -657,13 +658,22 @@ export interface ResponsesHostedTool {
     blocked_domains?: string[];
   };
   user_location?: {
+    type?: 'approximate';
     city?: string;
     region?: string;
     country?: string;
     timezone?: string;
   };
   search_context_size?: 'low' | 'medium' | 'high';
-  external_web_access?: boolean;
+  // Settings forwarded when the hosted tool is executed through Codex's
+  // standalone `/alpha/search` API.
+  // https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L215-L295
+  external_web_access?: boolean | 'cached' | 'indexed' | 'live';
+  image_settings?: {
+    max_results?: number;
+    caption?: boolean;
+  };
+  allowed_callers?: Array<'direct' | 'shell' | 'code_interpreter'>;
   search_content_types?: string[];
   return_token_budget?: 'default' | 'unlimited';
   name?: string;
@@ -932,6 +942,7 @@ export interface ResponsesOutputFunctionCall {
   id?: string;
   call_id: string;
   name: string;
+  namespace?: string;
   arguments: string;
   status: string;
   caller?: ResponsesToolCaller | null;

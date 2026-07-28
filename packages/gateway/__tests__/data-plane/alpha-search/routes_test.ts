@@ -5,6 +5,7 @@ import { mountAlphaSearchRoutes } from '../../../src/data-plane/alpha-search/rou
 import { resolveConfiguredWebSearchProvider } from '../../../src/data-plane/tools/web-search/provider.ts';
 import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../src/data-plane/tools/web-search/types.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
+import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
@@ -60,6 +61,7 @@ const makeStubProvider = (overrides: ProviderOverrides = {}): { provider: WebSea
 
 const buildAlphaSearchApp = () => {
   const app = new Hono<{ Variables: AuthVars }>();
+  app.onError(internalErrorResponse);
   app.use('*', authMiddleware);
   mountAlphaSearchRoutes(app);
   return app;
@@ -288,7 +290,7 @@ describe('/alpha/search data plane', () => {
       expect(blocks.length).toBeGreaterThan(1);
     });
 
-    it('renders unimplemented command kinds as deterministic text without hitting the provider', async () => {
+    it('returns unimplemented command kinds as exact model-facing output without hitting the provider', async () => {
       const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
@@ -299,8 +301,7 @@ describe('/alpha/search data plane', () => {
       });
       expect(response.status).toBe(200);
       const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('the `screenshot` sub-property is not supported');
-      expect(body.output).toContain('the `response_length` sub-property is not supported');
+      expect(body.output).toBe('The configured web search provider does not implement OpenAI search feature `commands.screenshot`.');
       expect(stub.calls).toHaveLength(0);
     });
 

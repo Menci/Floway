@@ -6,6 +6,7 @@ import { loadWebSearchConfig } from '../../../../tools/web-search/config.ts';
 import { normalizeDomainEntry } from '../../../../tools/web-search/domain-normalize.ts';
 import {
   actionSearchQueries,
+  assertLocalWebSearchSupport,
   CONTEXT_SIZE_TO_MAX_RESULTS,
   DEFAULT_SEARCH_CONTEXT_SIZE,
   executeOperationToIr,
@@ -16,6 +17,8 @@ import {
   runBackendSearchMulti,
   schemaErrorIr,
   startBatchFetch,
+  UnsupportedLocalWebSearchFeatureError,
+  unsupportedLocalWebSearchFeatureIr,
   type ParsedWebSearchOperations,
   type WebSearchCallIR,
   type WebSearchExecutionSession,
@@ -52,18 +55,18 @@ const formatUserLocation = (loc: NonNullable<WebSearchFilters['userLocation']>):
   return joined.length === 0 ? `(timezone: ${loc.timezone})` : `${joined} (timezone: ${loc.timezone})`;
 };
 
-// `web.run` shim call shape: 13 sub-properties on a single tool. The
-// shim implements 3 (`search_query`, `open`, `find`); the other 10
-// surface as per-entry error IRs at dispatch time. The description
-// deliberately omits the unsupported ones.
-//   https://github.com/openai/harmony/blob/abd677f7ac962629c808197caa1feb9e3e95d2b0/src/chat.rs#L259-L313
-const buildShimFunctionTool = (
+// The injected function mirrors the complete command object accepted by
+// OpenAI's alpha-search endpoint. Alpha passthrough can execute every field;
+// local Tavily, Jina, and Microsoft Grounding execution rejects the fields it
+// cannot implement before dispatch.
+// https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L31-L213
+export const buildShimFunctionTool = (
   canonical: ResponsesHostedTool,
   name: string,
 ): ResponsesFunctionTool => {
   const userLocation = canonical.user_location;
   const baseDescription
-    = 'Accesses the web through three actions: searching, opening a page, and finding text inside a page. '
+    = 'Accesses OpenAI web search through text and image search, page navigation, screenshots, finance, weather, sports, and time operations. '
     + 'Multiple sub-property arrays may be populated in one call to dispatch several operations in parallel.';
   const hasUserLocation = userLocation !== undefined && (
     (userLocation.city !== undefined && userLocation.city.length > 0)
@@ -89,6 +92,22 @@ const buildShimFunctionTool = (
             type: 'object',
             properties: {
               q: { type: 'string', description: 'The search query.' },
+              recency: { type: 'integer', minimum: 0, description: 'Limit results to this many recent days.' },
+              domains: { type: 'array', items: { type: 'string' }, description: 'Limit results to these domains.' },
+            },
+            required: ['q'],
+            additionalProperties: false,
+          },
+        },
+        image_query: {
+          type: 'array',
+          description: 'Run one or more image searches.',
+          items: {
+            type: 'object',
+            properties: {
+              q: { type: 'string', description: 'The image search query.' },
+              recency: { type: 'integer', minimum: 0, description: 'Limit results to this many recent days.' },
+              domains: { type: 'array', items: { type: 'string' }, description: 'Limit results to these domains.' },
             },
             required: ['q'],
             additionalProperties: false,
@@ -100,9 +119,23 @@ const buildShimFunctionTool = (
           items: {
             type: 'object',
             properties: {
-              ref_id: { type: 'string', description: 'An HTTP or HTTPS URL.' },
+              ref_id: { type: 'string', description: 'A result reference id or HTTP(S) URL.' },
+              lineno: { type: 'integer', minimum: 0, description: 'Line number at which to position the page.' },
             },
             required: ['ref_id'],
+            additionalProperties: false,
+          },
+        },
+        click: {
+          type: 'array',
+          description: 'Open numbered links from previously opened pages.',
+          items: {
+            type: 'object',
+            properties: {
+              ref_id: { type: 'string', description: 'Reference id of the page containing the link.' },
+              id: { type: 'integer', minimum: 0, description: 'Numbered link id.' },
+            },
+            required: ['ref_id', 'id'],
             additionalProperties: false,
           },
         },
@@ -118,6 +151,84 @@ const buildShimFunctionTool = (
             required: ['ref_id', 'pattern'],
             additionalProperties: false,
           },
+        },
+        screenshot: {
+          type: 'array',
+          description: 'Take screenshots of PDF pages.',
+          items: {
+            type: 'object',
+            properties: {
+              ref_id: { type: 'string', description: 'Reference id or URL of the PDF.' },
+              pageno: { type: 'integer', minimum: 0, description: 'Zero-indexed PDF page number.' },
+            },
+            required: ['ref_id', 'pageno'],
+            additionalProperties: false,
+          },
+        },
+        finance: {
+          type: 'array',
+          description: 'Look up market prices for financial assets.',
+          items: {
+            type: 'object',
+            properties: {
+              ticker: { type: 'string', description: 'Ticker symbol.' },
+              type: { type: 'string', enum: ['equity', 'fund', 'crypto', 'index'], description: 'Asset type.' },
+              market: { type: 'string', description: 'ISO 3166-1 alpha-3 country code, OTC, or an empty string for cryptocurrency.' },
+            },
+            required: ['ticker', 'type'],
+            additionalProperties: false,
+          },
+        },
+        weather: {
+          type: 'array',
+          description: 'Look up weather forecasts.',
+          items: {
+            type: 'object',
+            properties: {
+              location: { type: 'string', description: 'Location in Country, Area, City format.' },
+              start: { type: 'string', description: 'Start date in YYYY-MM-DD format.' },
+              duration: { type: 'integer', minimum: 0, description: 'Number of forecast days.' },
+            },
+            required: ['location'],
+            additionalProperties: false,
+          },
+        },
+        sports: {
+          type: 'array',
+          description: 'Look up sports schedules and standings.',
+          items: {
+            type: 'object',
+            properties: {
+              tool: { type: 'string', enum: ['sports'] },
+              fn: { type: 'string', enum: ['schedule', 'standings'] },
+              league: { type: 'string', enum: ['nba', 'wnba', 'nfl', 'nhl', 'mlb', 'epl', 'ncaamb', 'ncaawb', 'ipl'] },
+              team: { type: 'string' },
+              opponent: { type: 'string' },
+              date_from: { type: 'string', description: 'Start date in YYYY-MM-DD format.' },
+              date_to: { type: 'string', description: 'End date in YYYY-MM-DD format.' },
+              num_games: { type: 'integer', minimum: 0 },
+              locale: { type: 'string' },
+            },
+            required: ['fn', 'league'],
+            additionalProperties: false,
+          },
+        },
+        time: {
+          type: 'array',
+          description: 'Get the time at one or more UTC offsets.',
+          items: {
+            type: 'object',
+            properties: {
+              utc_offset: { type: 'string', description: 'UTC offset formatted like +03:00.' },
+            },
+            required: ['utc_offset'],
+            additionalProperties: false,
+          },
+        },
+        response_length: {
+          type: 'string',
+          enum: ['short', 'medium', 'long'],
+          description: 'Requested search response length.',
         },
       },
       additionalProperties: false,
@@ -149,14 +260,33 @@ export const isHostedWebSearchTool = (tool: ResponsesTool): tool is ResponsesHos
 export const canonicalizeWebSearchTool = (raw: ResponsesTool): ResponsesHostedTool | undefined => {
   if (!isHostedWebSearchTool(raw)) return undefined;
   const canonical: ResponsesHostedTool = {
+    ...raw,
     type: raw.type,
     search_context_size: raw.search_context_size ?? DEFAULT_SEARCH_CONTEXT_SIZE,
     search_content_types: raw.search_content_types ?? ['text'],
     return_token_budget: raw.return_token_budget ?? 'default',
   };
-  if (raw.filters !== undefined) canonical.filters = raw.filters;
-  if (raw.user_location !== undefined) canonical.user_location = raw.user_location;
   return canonical;
+};
+
+const ALPHA_SEARCH_SETTING_KEYS = [
+  'user_location',
+  'search_context_size',
+  'filters',
+  'image_settings',
+  'allowed_callers',
+  'external_web_access',
+] as const satisfies readonly (keyof ResponsesHostedTool)[];
+
+export const alphaSearchSettingsFromHosted = (
+  hosted: ResponsesHostedTool | undefined,
+): Record<string, unknown> => {
+  if (hosted === undefined) return {};
+  const settings: Record<string, unknown> = {};
+  for (const key of ALPHA_SEARCH_SETTING_KEYS) {
+    if (hosted[key] !== undefined) settings[key] = hosted[key];
+  }
+  return settings;
 };
 
 const extractFilters = (tool: ResponsesHostedTool): WebSearchFilters => {
@@ -457,36 +587,49 @@ interface ShimState extends WebSearchExecutionSession {
 
 const ITERATION_CAP = 30;
 
+const eagerResolver = <T>(promise: Promise<T>): (() => Promise<T>) => {
+  const settled = promise.then(
+    value => ({ ok: true as const, value }),
+    error => ({ ok: false as const, error }),
+  );
+  return async () => {
+    const result = await settled;
+    if (result.ok) return result.value;
+    throw result.error;
+  };
+};
+
 const planShimSlots = (
   parsed: ParsedWebSearchOperations,
   commands: Record<string, unknown>,
   toolName: string,
   state: ShimState,
   loopState: ServerToolLoopState,
-): { id: string; promise: Promise<WebSearchCallIR> } => {
+): { id: string; resolve: () => Promise<WebSearchCallIR> } => {
   if (loopState.iterationCount > ITERATION_CAP) {
     return {
       id: synthesizeWebSearchCallId(),
-      promise: Promise.resolve(schemaErrorIr(
+      resolve: async () => schemaErrorIr(
         'tool budget exhausted',
         'Tool call budget exhausted',
         `Web search iteration limit (${ITERATION_CAP}) reached. Further web_search calls in this response will return this same error. Summarize what you have already learned, and continue the task using other available tools (shell, file inspection, prior knowledge) or directly answer based on what you've gathered.`,
-      )),
+      ),
     };
   }
 
   if (parsed.kind === 'malformed' || parsed.ops.length === 0) {
     return {
       id: synthesizeWebSearchCallId(),
-      promise: Promise.resolve(schemaErrorIr(
+      resolve: async () => schemaErrorIr(
         'malformed shim call arguments',
         'Malformed arguments',
         'Error: arguments must be a JSON object with sub-property arrays (search_query[], open[], find[]).',
-      )),
+      ),
     };
   }
 
-  if (state.executeAlpha !== undefined) {
+  const executeAlpha = state.executeAlpha;
+  if (executeAlpha !== undefined) {
     const first = parsed.ops[0];
     let action: ResponsesWebSearchAction;
     if (first.kind === 'search') {
@@ -501,7 +644,25 @@ const planShimSlots = (
     } else {
       action = { type: 'search', query: Object.keys(commands).join(', ') };
     }
-    return { id: synthesizeWebSearchCallId(), promise: state.executeAlpha(commands, action) };
+    return { id: synthesizeWebSearchCallId(), resolve: eagerResolver(executeAlpha(commands, action)) };
+  }
+
+  try {
+    assertLocalWebSearchSupport(commands);
+  } catch (error) {
+    if (error instanceof UnsupportedLocalWebSearchFeatureError) {
+      return {
+        id: synthesizeWebSearchCallId(),
+        resolve: async () => unsupportedLocalWebSearchFeatureIr(
+          { type: 'search', query: Object.keys(commands).join(', ') },
+          error.message,
+        ),
+      };
+    }
+    return {
+      id: synthesizeWebSearchCallId(),
+      resolve: async () => { throw error; },
+    };
   }
 
   // Multi-`search_query` entries collapse into one wsc with a multi-query
@@ -513,7 +674,7 @@ const planShimSlots = (
     const searchOps = parsed.ops as Array<Extract<WebSearchOperation, { kind: 'search' }>>;
     return {
       id: synthesizeWebSearchCallId(),
-      promise: runBackendSearchMulti(searchOps, state),
+      resolve: eagerResolver(runBackendSearchMulti(searchOps, state)),
     };
   }
 
@@ -524,19 +685,19 @@ const planShimSlots = (
   if (parsed.ops.length > 1) {
     return {
       id: synthesizeWebSearchCallId(),
-      promise: Promise.resolve(schemaErrorIr(
+      resolve: async () => schemaErrorIr(
         'ambiguous shim call',
         'Ambiguous tool call',
         `Error: ambiguous \`${toolName}\` tool call — each function_call maps to one web_search_call. `
         + 'Multiple `search_query` entries are fine (they collapse into one search). '
         + 'For `open`/`find`, or any mix of kinds, split into one call per `open[]` entry, `find[]` entry, or `search_query[]` batch.',
-      )),
+      ),
     };
   }
 
   return {
     id: synthesizeWebSearchCallId(),
-    promise: startBatchFetch(parsed, state).then(batch => executeOperationToIr(parsed.ops[0], state, batch)),
+    resolve: eagerResolver(startBatchFetch(parsed, state).then(async batch => await executeOperationToIr(parsed.ops[0], state, batch))),
   };
 };
 
@@ -563,6 +724,8 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
   const webSearchConfig = await loadWebSearchConfig();
   const includeArray = Array.isArray(invocation.payload.include) ? invocation.payload.include : [];
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
+  const hosted = tools.filter(isHostedWebSearchTool).at(-1);
+  const settings = alphaSearchSettingsFromHosted(hosted);
   const state: ShimState = {
     filters,
     pageCache: new Map(),
@@ -583,12 +746,6 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
       runtimeLocation: gatewayCtx.runtimeLocation,
     });
     const sessionId = crypto.randomUUID();
-    const hosted = tools.filter(isHostedWebSearchTool).at(-1);
-    const settings: Record<string, unknown> = {
-      ...(hosted?.search_context_size === undefined ? {} : { search_context_size: hosted.search_context_size }),
-      ...(hosted?.filters === undefined ? {} : { filters: hosted.filters }),
-      ...(hosted?.user_location === undefined ? {} : { user_location: hosted.user_location }),
-    };
     state.executeAlpha = async (commands, action) => await executeAlphaSearch({
       dispatcher: await dispatcher,
       sessionId,
@@ -632,7 +789,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
                   { type: 'response.web_search_call.searching' },
                 ],
                 run: async function* run() {
-                  const ir = await slot.promise;
+                  const ir = await slot.resolve();
                   // `results` is gated on the client's `include`
                   // opt-in to match native Responses' default wire
                   // shape; the IR keeps them either way for the

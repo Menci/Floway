@@ -3940,7 +3940,7 @@ test('responses target with flag on: function_call_output is plain-text formatte
   assert(text.startsWith('Search results for "q1":'));
 });
 
-test('responses target with OpenAI passthrough uses the selected alpha search dispatcher', async () => {
+test('responses target with OpenAI passthrough forwards the complete alpha-search command and settings shapes', async () => {
   makeStubDeps();
   await getRepo().webSearchConfig.save({
     provider: 'tavily',
@@ -3958,16 +3958,75 @@ test('responses target with OpenAI passthrough uses the selected alpha search di
   const inv = makeInvocation({
     targetApi: 'responses',
     enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
+    payload: {
+      tools: [{
+        type: 'web_search',
+        user_location: { type: 'approximate', country: 'SG' },
+        image_settings: { max_results: 4, caption: true },
+        allowed_callers: ['direct'],
+        external_web_access: 'live',
+      }],
+    },
   });
+  const commands = {
+    image_query: [{ q: 'Floway logo', recency: 7, domains: ['floway.dev'] }],
+    finance: [{ ticker: 'OPENAI', type: 'equity', market: 'USA' }],
+    response_length: 'long',
+  };
   const script = scriptedRun([
-    searchCallTurn(0, 'call_1', 'alpha query'),
+    fcTurn(0, 'call_1', SHIM_TOOL_NAME, JSON.stringify(commands)),
     messageTurn('done', 0),
   ]);
 
   await runShimAndDrain(withResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
 
   assertEquals(lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]), 'alpha output');
-  assertEquals(call.mock.calls[0]?.[0].commands, { search_query: [{ q: 'alpha query' }] });
+  assertEquals(call.mock.calls[0]?.[0].commands, commands);
+  assertEquals(call.mock.calls[0]?.[0].settings, {
+    user_location: { type: 'approximate', country: 'SG' },
+    image_settings: { max_results: 4, caption: true },
+    allowed_callers: ['direct'],
+    external_web_access: 'live',
+  });
+});
+
+test('local and cascaded Floway unsupported commands produce the same agent-visible error', async () => {
+  makeStubDeps();
+  const commands = { image_query: [{ q: 'Floway logo' }] };
+  const expected = 'The configured web search provider does not implement OpenAI search feature `commands.image_query`.';
+  const runUnsupported = async (): Promise<string> => {
+    const inv = makeInvocation({
+      targetApi: 'responses',
+      enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
+    });
+    const script = scriptedRun([
+      fcTurn(0, 'call_unsupported', SHIM_TOOL_NAME, JSON.stringify(commands)),
+      messageTurn('model repeated the tool error', 0),
+    ]);
+    await runShimAndDrain(withResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+    return lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]);
+  };
+
+  const localMessage = await runUnsupported();
+
+  await getRepo().webSearchConfig.save({
+    provider: 'tavily',
+    tavily: { apiKey: 'test-key' },
+    microsoftGrounding: { apiKey: '' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_floway', model: 'gpt-search' },
+  } satisfies WebSearchConfig);
+  mockResolveAlpha.mockResolvedValue(async () => new Response(JSON.stringify({
+    error: {
+      type: 'internal_error',
+      name: 'UnsupportedLocalWebSearchFeatureError',
+      message: 'The configured web search provider does not implement OpenAI search feature `commands.image_query`.',
+    },
+  }), { status: 500, headers: { 'content-type': 'application/json' } }));
+
+  const cascadedMessage = await runUnsupported();
+  assertEquals(localMessage, expected);
+  assertEquals(cascadedMessage, expected);
 });
 
 test('chat-completions target: function_call_output is plain-text formatted search results', async () => {

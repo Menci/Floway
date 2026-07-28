@@ -147,11 +147,19 @@ export const reasoningItem = (id: string, summaryText: string, encryptedContent?
   ...(encryptedContent !== undefined ? { encrypted_content: encryptedContent } : {}),
 });
 
-export const functionCallItem = (id: string, callId: string, name: string, args: string, status: ResponsesOutputFunctionCall['status']): ResponsesOutputFunctionCall => ({
+export const functionCallItem = (
+  id: string,
+  callId: string,
+  name: string,
+  args: string,
+  status: ResponsesOutputFunctionCall['status'],
+  namespace?: string,
+): ResponsesOutputFunctionCall => ({
   type: 'function_call',
   id,
   call_id: callId,
   name,
+  ...(namespace !== undefined ? { namespace } : {}),
   arguments: args,
   status,
 });

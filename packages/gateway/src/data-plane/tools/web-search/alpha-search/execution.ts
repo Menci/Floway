@@ -1,6 +1,29 @@
 import type { AlphaSearchDispatcher } from './upstream.ts';
-import type { WebSearchCallIR } from '../operations.ts';
+import { type WebSearchCallIR, UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME, unsupportedLocalWebSearchFeatureIr } from '../operations.ts';
 import type { ResponsesInputItem, ResponsesWebSearchAction } from '@floway-dev/protocols/responses';
+
+interface UpstreamErrorDetails {
+  message: string;
+  name?: string;
+}
+
+const upstreamErrorDetails = (raw: string): UpstreamErrorDetails | undefined => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (parsed === null || typeof parsed !== 'object') return undefined;
+  const error = (parsed as { error?: unknown }).error;
+  if (error === null || typeof error !== 'object') return undefined;
+  const { message, name } = error as { message?: unknown; name?: unknown };
+  if (typeof message !== 'string') return undefined;
+  return {
+    message,
+    ...(typeof name === 'string' ? { name } : {}),
+  };
+};
 
 export const executeAlphaSearch = async ({
   dispatcher,
@@ -26,7 +49,13 @@ export const executeAlphaSearch = async ({
     settings,
   }, signal, new Headers());
   const raw = await response.text();
-  if (!response.ok) throw new Error(`OpenAI search upstream returned HTTP ${response.status}: ${raw.slice(0, 512)}`);
+  if (!response.ok) {
+    const upstreamError = upstreamErrorDetails(raw);
+    if (upstreamError?.name === UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME) {
+      return unsupportedLocalWebSearchFeatureIr(action, upstreamError.message);
+    }
+    throw new Error(upstreamError?.message ?? `OpenAI search upstream returned HTTP ${response.status}: ${raw}`);
+  }
 
   let parsed: unknown;
   try {
