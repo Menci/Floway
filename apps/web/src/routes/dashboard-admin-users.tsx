@@ -271,7 +271,7 @@ function UsersTable({
           {users.map(user => {
             const protectedUser = user.id === 1 || user.id === actorId;
             return (
-              <TableRow className="h-14" key={user.id}>
+              <TableRow key={user.id}>
                 <TableCell>
                   <TableCellLayout>
                     <span className="truncate">{user.username}</span>
