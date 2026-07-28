@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { buildAgentModelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform';
+import { applyLocalAgentSetupChanges, cloneAgentSetupConfiguration } from './agent-setup-draft';
 import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from './codex-credential-snippets';
 import { agentSetupCommand, defaultAgentSetupConfiguration, useAgentSetup, type AgentSetupConfiguration } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
@@ -28,13 +29,6 @@ const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNu
 // Ref: https://code.claude.com/docs/en/settings#attribution-settings
 const claudeAttributionOptOut = { commit: '', pr: '', sessionUrl: false } as const;
 
-const cloneConfiguration = (configuration: AgentSetupConfiguration): AgentSetupConfiguration => structuredClone(configuration);
-const copyChangedFields = <T extends object>(target: T, current: T, baseline: T) => {
-  for (const key of Object.keys(current) as (keyof T)[]) {
-    if (!Object.is(current[key], baseline[key])) target[key] = current[key];
-  }
-};
-
 export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selectedKey }: {
   copiedTag: string | null;
   copyFailedTag: string | null;
@@ -49,7 +43,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selec
     ? 'unix'
     : detectAgentSetupPlatform(navigator.platform, navigator.userAgent));
   const [localDraft, setLocalDraft] = useState(() => defaultAgentSetupConfiguration());
-  const localDraftBaseline = useRef(cloneConfiguration(localDraft));
+  const localDraftBaseline = useRef(cloneAgentSetupConfiguration(localDraft));
   const appliedLease = useRef<string | null>(null);
   const setup = useAgentSetup(selectedKey?.id ?? null);
   const setupDraft = setup.draft;
@@ -61,20 +55,14 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selec
     const leaseKey = `${selectedKey.id}:${setupLease.token}`;
     if (appliedLease.current === leaseKey) return;
     appliedLease.current = leaseKey;
-    updateSetupDraft(current => {
-      const merged = cloneConfiguration(current);
-      copyChangedFields(merged.claudeCode, localDraft.claudeCode, localDraftBaseline.current.claudeCode);
-      copyChangedFields(merged.codex, localDraft.codex, localDraftBaseline.current.codex);
-      merged.apiKeyId = selectedKey.id;
-      return merged;
-    });
-    localDraftBaseline.current = cloneConfiguration(localDraft);
+    updateSetupDraft(current => applyLocalAgentSetupChanges(current, localDraft, localDraftBaseline.current, selectedKey.id));
+    localDraftBaseline.current = cloneAgentSetupConfiguration(localDraft);
   }, [localDraft, selectedKey, setupDraft, setupLease, updateSetupDraft]);
 
   const activeDraft = selectedKey && setupDraft ? setupDraft : localDraft;
   const updateConfiguration = (update: (current: AgentSetupConfiguration) => AgentSetupConfiguration) => {
     if (selectedKey && setupDraft) updateSetupDraft(update);
-    else setLocalDraft(current => update(cloneConfiguration(current)));
+    else setLocalDraft(current => update(cloneAgentSetupConfiguration(current)));
   };
 
   const scripts = setup.lease?.scripts[agent];

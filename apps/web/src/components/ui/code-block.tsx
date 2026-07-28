@@ -72,7 +72,7 @@ export function CodeBlock({ code, copied, copyFailed, disabled = false, language
 
   return (
     <div className={s.root}>
-      <div className={s.header}>
+      <div aria-live="polite" className={s.header}>
         <span className={s.lang}>{language}</span>
         <Button
           appearance="subtle"

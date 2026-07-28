@@ -52,6 +52,7 @@ describe('Agent Setup', () => {
     expect(snippet).toContain('model = "gpt-5.6"');
     expect(snippet).toContain('model_reasoning_effort = "xhigh"');
     expect(snippet).toContain('base_url = "https://floway.example/azure-api.codex"');
+    expect(snippet).toContain('command = "powershell"');
   });
 
   it('writes each Claude family model to its own environment variable', () => {
