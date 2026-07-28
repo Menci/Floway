@@ -925,6 +925,7 @@ const en = {
       usage: {
         tokenUsage: 'Token Usage',
         empty: 'No usage records in this range.',
+        callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output', hitRate: 'Hit%' },
         view: {
           label: 'Usage view',
           allByUser: 'All by user',

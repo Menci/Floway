@@ -1,5 +1,6 @@
 import { bucketKeyForCallout, formatCount, formatDecimalCount, formatHitRate, formatInputRate, formatUsdCost, summarizeCounters } from './chart-model';
 import type { CalloutPoint, UsageChartModel } from './types';
+import { useTranslation } from 'react-i18next';
 import { fluentComponents } from '../../fluent';
 import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';
@@ -7,6 +8,7 @@ import { ScrollArea } from '../ui/scroll-area';
 const { Text } = fluentComponents;
 
 export function UsageChartCallout({ chart, labelByTime, locale, point, valueFormatter }: { chart: UsageChartModel; labelByTime: Map<number, string>; locale: string; point: CalloutPoint | null; valueFormatter: (value: number) => string }) {
+  const { t } = useTranslation();
   if (!point?.rows.length) return null;
   const bucketKey = bucketKeyForCallout(point.x, chart.buckets);
   const bucketDetails = bucketKey ? chart.details.get(bucketKey) : undefined;
@@ -25,14 +27,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
           <thead>
             <tr>
               <th className="max-w-[180px] min-w-[120px] pl-0 text-left" />
-              <th className="px-1.5 py-px text-right"><Text size={100} weight="semibold" className="text-fui-fg2">Req</Text></th>
-              <th className="px-1.5 py-px text-right"><Text size={100} weight="semibold" className="text-fui-fg2">Cost</Text></th>
-              <th className="px-1.5 py-px text-right"><Text size={100} weight="semibold" className="text-fui-fg2">Total</Text></th>
-              <th className="px-1.5 py-px text-right"><Text size={100} weight="semibold" className="text-fui-fg2">Cached</Text></th>
-              <th className="px-1.5 py-px text-right"><Text size={100} weight="semibold" className="text-fui-fg2">Cached%</Text></th>
-              <th className="px-1.5 py-px text-right"><Text size={100} weight="semibold" className="text-fui-fg2">Prefill</Text></th>
-              <th className="px-1.5 py-px text-right"><Text size={100} weight="semibold" className="text-fui-fg2">Output</Text></th>
-              <th className="px-1.5 py-px text-right"><Text size={100} weight="semibold" className="text-fui-fg2">Hit%</Text></th>
+              {(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output', 'hitRate'] as const).map(label => <th className="px-1.5 py-px text-right" key={label}><Text size={100} weight="semibold" className="text-fui-fg2">{t(`dashboard.usage.callout.${label}`)}</Text></th>)}
             </tr>
           </thead>
           <tbody>
