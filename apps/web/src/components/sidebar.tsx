@@ -1,7 +1,6 @@
 import {
   ArrowRoutingFilled,
   ArrowRoutingRegular,
-  bundleIcon,
   ChatFilled,
   ChatRegular,
   ClipboardTextLtrFilled,
@@ -28,50 +27,30 @@ import {
   SearchFilled,
   SearchRegular,
   SignOutRegular,
+  bundleIcon,
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { NavLink, useLocation } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 
 import type { AuthUser } from '../api/auth';
 import { fluentComponents } from '../fluent';
 import { FlowayLogo } from './logo';
 import { useAuthStore } from '../stores/auth-store';
 import { ConfirmDialog } from './ui/confirm-dialog';
-import { ScrollArea } from './ui/scroll-area';
 
-const { Button, Text, makeStyles, mergeClasses } = fluentComponents;
+const {
+  Button,
+  NavDrawer,
+  NavDrawerBody,
+  NavDrawerFooter,
+  NavDrawerHeader,
+  NavItem,
+  NavSectionHeader,
+} = fluentComponents;
 
-const useSidebarStyles = makeStyles({
-  footer: {
-    borderTopColor: 'light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08))',
-  },
-  navLink: {
-    color: 'light-dark(#3f3f46, #ffffff)',
-    ':hover': {
-      backgroundColor: 'light-dark(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.08))',
-      color: 'light-dark(#242424, #ffffff)',
-    },
-    ':focus-visible': {
-      outline: '2px solid #0f6cbd',
-    },
-  },
-  activeNavLink: {
-    backgroundColor: 'light-dark(#ffffff, rgba(255, 255, 255, 0.06))',
-    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
-    color: 'light-dark(#111827, #ffffff)',
-    ':hover': {
-      backgroundColor: 'light-dark(#ffffff, rgba(255, 255, 255, 0.06))',
-      color: 'light-dark(#111827, #ffffff)',
-    },
-  },
-  activeIndicator: {
-    backgroundColor: '#0f6cbd',
-  },
-});
-
-type NavItem = {
+type NavItemDefinition = {
   to: string;
   labelKey: string;
   icon: FluentIcon;
@@ -81,7 +60,7 @@ type NavItem = {
 type NavGroup = {
   labelKey?: string;
   adminOnly?: boolean;
-  items: NavItem[];
+  items: NavItemDefinition[];
 };
 
 const navGroups: NavGroup[] = [
@@ -118,168 +97,74 @@ const navGroups: NavGroup[] = [
     labelKey: 'dashboard.groups.admin',
     adminOnly: true,
     items: [
-      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: bundleIcon(PeopleFilled, PeopleRegular), adminOnly: true },
-      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: bundleIcon(DatabaseArrowUpFilled, DatabaseArrowUpRegular), adminOnly: true },
+      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: bundleIcon(PeopleFilled, PeopleRegular) },
+      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: bundleIcon(DatabaseArrowUpFilled, DatabaseArrowUpRegular) },
     ],
   },
 ];
 
-const accountIcon = bundleIcon(PersonFilled, PersonRegular);
-const sidebarRowClassName = 'relative grid grid-cols-[4px_20px_minmax(0,1fr)] items-center gap-2 rounded-lg text-fui-base300 font-fui-medium min-h-[38px] px-3 pl-2';
-const sidebarIconClassName = 'absolute inset-0 text-current text-xl h-5 w-5';
+const AccountIcon = bundleIcon(PersonFilled, PersonRegular);
 
 export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: AuthUser }) {
   const { t } = useTranslation();
-  const styles = useSidebarStyles();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const logout = useAuthStore(state => state.logout);
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const selectedValue = navGroups
+    .flatMap(group => group.items)
+    .find(item => pathname === item.to || pathname.startsWith(`${item.to}/`))?.to
+    ?? (pathname.startsWith('/dashboard/settings') ? '/dashboard/settings' : '');
 
-  return (
-    <aside
-      className="grid grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-0 overflow-hidden p-[22px_16px_18px]"
+  return <>
+    <NavDrawer
       aria-label={t('dashboard.nav.label')}
+      className="!h-full !max-w-none !w-full"
+      density="medium"
+      onNavItemSelect={(_, data) => {
+        if (data.value === 'logout') {
+          setLogoutOpen(true);
+          return;
+        }
+        void navigate(data.value);
+        onNavigate?.();
+      }}
+      open
+      selectedValue={selectedValue}
+      type="inline"
     >
-      <div className="flex items-center min-h-[48px] px-[10px] pb-[17px]">
-        <FlowayLogo size="compact" />
-        {onNavigate && <Button
-          appearance="subtle"
-          aria-label={t('dashboard.nav.close')}
-          className="ml-auto"
-          icon={<DismissRegular />}
-          onClick={onNavigate}
-        />}
-      </div>
-      <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="p-[2px_4px_14px]" noTabIndex>
-        <nav>
-          {navGroups.map((group, groupIndex) => {
-            if (group.adminOnly && !user.isAdmin) return null;
-
-            const items = group.items.filter(
-              item => !item.adminOnly || user.isAdmin,
-            );
-            if (!items.length) return null;
-
-            return (
-              <section className="grid gap-[5px] mb-[17px] last:mb-0" key={group.labelKey ?? groupIndex}>
-                {group.labelKey && (
-                  <Text
-                    size={200}
-                    weight="semibold"
-                    className="!text-fui-fg3 !leading-[1.2] block p-[7px_14px_3px]"
-                  >
-                    {t(group.labelKey)}
-                  </Text>
-                )}
-                <div className="grid gap-[2px]">
-                  {items.map(item => (
-                    <SidebarNavLink currentPath={pathname} item={item} key={item.to} onNavigate={onNavigate} />
-                  ))}
-                </div>
-              </section>
-            );
-          })}
-        </nav>
-      </ScrollArea>
-      <footer className={mergeClasses('grid gap-0.5 border-t border-t-solid pt-[12px] px-1', styles.footer)}>
-        <SidebarNavLink
-          currentPath={pathname}
-          item={{
-            to: '/dashboard/settings',
-            labelKey: 'dashboard.nav.settings',
-            icon: accountIcon,
-          }}
-          label={user.username}
-          onNavigate={onNavigate}
-        />
-        <button
-          className={mergeClasses(
-            sidebarRowClassName,
-            'border-0 bg-transparent cursor-pointer text-fui-fg1 w-full',
-            styles.navLink,
-          )}
-          onClick={() => setLogoutOpen(true)}
-          type="button"
-        >
-          <span className="block h-[18px] w-[3px]" aria-hidden="true" />
-          <span className="relative h-5 w-5">
-            <SignOutRegular className={sidebarIconClassName} aria-hidden="true" />
-          </span>
-          <Text className="!text-left" truncate wrap={false}>
-            {t('dashboard.logout.label')}
-          </Text>
-        </button>
-      </footer>
-      <ConfirmDialog
-        actionLabel={t('dashboard.logout.action')}
-        message={t('dashboard.logout.message')}
-        onConfirm={() => void logout()}
-        onOpenChange={setLogoutOpen}
-        open={logoutOpen}
-        title={t('dashboard.logout.title')}
-      />
-    </aside>
-  );
-}
-
-function SidebarNavLink({
-  currentPath,
-  item,
-  label,
-  onNavigate,
-}: {
-  currentPath: string;
-  item: NavItem;
-  label?: string;
-  onNavigate?: () => void;
-}) {
-  const { t } = useTranslation();
-  const styles = useSidebarStyles();
-  const [hovered, setHovered] = useState(false);
-  const Icon = item.icon;
-  const active = currentPath === item.to || currentPath.startsWith(`${item.to}/`);
-  const showFilled = hovered;
-
-  return (
-    <NavLink
-      aria-current={active ? 'page' : undefined}
-      className={({ isPending }) =>
-        mergeClasses(
-          sidebarRowClassName,
-          'no-underline',
-          'focus-visible:outline-offset-2',
-          styles.navLink,
-          active && styles.activeNavLink,
-          isPending && 'opacity-72',
-        )
-      }
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onClick={onNavigate}
-      to={item.to}
-    >
-      <span
-        className={mergeClasses(
-          'block rounded-full h-[18px] w-[3px]',
-          active ? styles.activeIndicator : 'bg-transparent',
-        )}
-        aria-hidden="true"
-      />
-      <span className="relative h-5 w-5">
-        <Icon
-          className={`${sidebarIconClassName} transition-opacity duration-200`}
-          filled={false}
-          style={{ opacity: showFilled ? 0 : 1 }}
-        />
-        <Icon
-          className={`${sidebarIconClassName} transition-opacity duration-200`}
-          filled={true}
-          style={{ opacity: showFilled ? 1 : 0 }}
-        />
-      </span>
-      <Text truncate wrap={false}>
-        {label ?? t(item.labelKey)}
-      </Text>
-    </NavLink>
-  );
+      <NavDrawerHeader className="!px-5 !py-4">
+        <div className="flex items-center min-h-10">
+          <FlowayLogo size="compact" />
+          {onNavigate && <Button appearance="subtle" aria-label={t('dashboard.nav.close')} className="!ml-auto" icon={<DismissRegular />} onClick={onNavigate} />}
+        </div>
+      </NavDrawerHeader>
+      <NavDrawerBody>
+        {navGroups.map((group, groupIndex) => {
+          if (group.adminOnly && !user.isAdmin) return null;
+          const items = group.items.filter(item => !item.adminOnly || user.isAdmin);
+          if (items.length === 0) return null;
+          return <div key={group.labelKey ?? groupIndex}>
+            {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}
+            {items.map(item => {
+              const Icon = item.icon;
+              return <NavItem icon={<Icon />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
+            })}
+          </div>;
+        })}
+      </NavDrawerBody>
+      <NavDrawerFooter className="!border-t !border-t-solid !border-fui-stroke2 !py-3">
+        <NavItem icon={<AccountIcon />} value="/dashboard/settings">{user.username}</NavItem>
+        <NavItem icon={<SignOutRegular />} value="logout">{t('dashboard.logout.label')}</NavItem>
+      </NavDrawerFooter>
+    </NavDrawer>
+    <ConfirmDialog
+      actionLabel={t('dashboard.logout.action')}
+      message={t('dashboard.logout.message')}
+      onConfirm={() => void logout()}
+      onOpenChange={setLogoutOpen}
+      open={logoutOpen}
+      title={t('dashboard.logout.title')}
+    />
+  </>;
 }
