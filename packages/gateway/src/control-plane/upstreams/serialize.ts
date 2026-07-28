@@ -1,24 +1,8 @@
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
+import type { SerializedUpstreamRecord } from './types.ts';
 import type { FlagDefaults, FlagOverrides, ModelPrefixConfig, ProxyFallbackEntry, UpstreamColor, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
-export interface SerializedUpstreamRecord {
-  id: string;
-  kind: UpstreamProviderKind;
-  name: string;
-  enabled: boolean;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-  flag_overrides: FlagOverrides;
-  // Pure per-kind derivation of the record's effective flag baseline.
-  flag_defaults: FlagDefaults;
-  disabled_public_model_ids: string[];
-  proxy_fallback_list: ProxyFallbackEntry[];
-  model_prefix: ModelPrefixConfig | null;
-  color: UpstreamColor | null;
-  config: unknown;
-  state: unknown;
-}
+export type { SerializedUpstreamRecord } from './types.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -192,7 +176,7 @@ const serializeBase = (
   color: upstream.color,
   config,
   state,
-});
+} as SerializedUpstreamRecord);
 
 export const upstreamRecordToJson = (upstream: UpstreamRecord): SerializedUpstreamRecord =>
   serializeBase(upstream, redactedConfig(upstream), redactedState(upstream));

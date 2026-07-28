@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 
-import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
+import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
+import type { ModelsCacheStatus, SerializedUpstreamRecord, UpstreamRecord as UpstreamResponseRecord } from './types.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -30,18 +31,9 @@ import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
 type CodexQuotaProjection = { codex_quota?: CodexQuotaSnapshotMap | null };
 
-type UpstreamResponse = SerializedUpstreamRecord & CodexQuotaProjection;
-
-type UpstreamWithCacheResponse = UpstreamResponse & {
-  modelsCache: {
-    fetchedAt: number | null;
-    lastError: { message: string; at: number } | null;
-  };
-};
-
 const modelsCacheForResponse = (
   cacheRow: Pick<ModelsCacheRow, 'fetchedAt' | 'lastError'> | null,
-): UpstreamWithCacheResponse['modelsCache'] => ({
+): ModelsCacheStatus => ({
   fetchedAt: cacheRow?.fetchedAt ?? null,
   lastError: cacheRow?.lastError ?? null,
 });
@@ -61,7 +53,7 @@ const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuota
 const serializeForResponse = async (
   record: UpstreamRecord,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
-): Promise<UpstreamWithCacheResponse> => {
+): Promise<UpstreamResponseRecord> => {
   const [cacheRow, codexQuota] = await Promise.all([
     getRepo().modelsCache.get(record.id),
     codexQuotaForResponse(record),
@@ -70,7 +62,7 @@ const serializeForResponse = async (
     ...baseSerialize(record),
     modelsCache: modelsCacheForResponse(cacheRow),
     ...codexQuota,
-  };
+  } as UpstreamResponseRecord;
 };
 
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };

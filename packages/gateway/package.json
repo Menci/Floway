@@ -20,6 +20,9 @@
     "./control-plane/usage-types": {
       "types": "./src/control-plane/usage-types.ts"
     },
+    "./control-plane/upstreams/types": {
+      "types": "./src/control-plane/upstreams/types.ts"
+    },
     "./dump-codec": {
       "import": "./src/dump/codec.ts",
       "types": "./src/dump/codec.ts"

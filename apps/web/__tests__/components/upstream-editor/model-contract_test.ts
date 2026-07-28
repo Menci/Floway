@@ -5,10 +5,13 @@ import { modelsAreValid } from '../../../src/components/upstream-editor/model-de
 
 describe('custom discovered model projection', () => {
   it('maps fixed kinds to their own endpoint families', () => {
-    const models = discoveredModelsFromResponse('custom', [
-      { id: 'speech', kind: 'transcription' },
-      { id: 'ranker', kind: 'rerank' },
-    ], { chatCompletions: {} });
+    const models = discoveredModelsFromResponse({
+      kind: 'custom',
+      data: [
+        { id: 'speech', kind: 'transcription' },
+        { id: 'ranker', kind: 'rerank' },
+      ],
+    }, { chatCompletions: {} });
 
     expect(models[0]?.endpoints).toEqual({ audioTranscriptions: {} });
     expect(models[1]?.endpoints).toEqual({});

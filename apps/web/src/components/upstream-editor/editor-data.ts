@@ -3,10 +3,10 @@ import type { InferRequestType } from 'hono/client';
 
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
-import { upstreamRecordsFromWire } from '../../api/types';
 import type {
   BackoffRow,
   CustomRawModel,
+  ListUpstreamModelsResponse,
   ModelEndpoints,
   ProxyRecord,
   UpstreamModelConfig,
@@ -84,7 +84,7 @@ export async function loadEditorAux(): Promise<EditorAuxData> {
     proxies: proxies.data!,
     backoffs: backoffs.data!,
     runtime: runtime.data!,
-    upstreams: upstreamRecordsFromWire(upstreams.data!),
+    upstreams: upstreams.data!,
   };
 }
 
@@ -216,23 +216,11 @@ const discoveredCustomModelEndpoints = (
 };
 
 export function discoveredModelsFromResponse(
-  kind: UpstreamProviderKind,
-  data: readonly unknown[],
+  response: ListUpstreamModelsResponse,
   endpoints: ModelEndpoints,
 ): UpstreamModelConfig[] {
-  if (kind !== 'custom') return data.map(value => {
-    if (!value || typeof value !== 'object') throw new TypeError('Upstream model response must be an object');
-    const model = value as Partial<UpstreamModelConfig>;
-    if (typeof model.upstreamModelId !== 'string' || typeof model.kind !== 'string' || !model.endpoints) {
-      throw new TypeError('Upstream model response is missing its required fields');
-    }
-    return value as UpstreamModelConfig;
-  });
-  return data.map(value => {
-    if (!value || typeof value !== 'object' || typeof (value as { id?: unknown }).id !== 'string') {
-      throw new TypeError('Custom model response is missing its id');
-    }
-    const model = value as CustomRawModel;
+  if (response.kind !== 'custom') return response.data;
+  return response.data.map(model => {
     const modelEndpoints = discoveredCustomModelEndpoints(model.kind, endpoints);
     return {
       upstreamModelId: model.id,

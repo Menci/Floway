@@ -18,7 +18,6 @@ import { modelsAreValid } from './model-detail';
 import { UpstreamWorkspace } from './workspace';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
-import { upstreamRecordFromWire } from '../../api/types';
 import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -106,14 +105,13 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       return;
     }
     const endpoints = currentRecord.kind === 'custom' ? (values.config as typeof currentRecord.config).endpoints : {};
-    setDiscovered(discoveredModelsFromResponse(currentRecord.kind, result.data.data, endpoints));
+    setDiscovered(discoveredModelsFromResponse(result.data, endpoints));
     if (currentRecord.id !== '') {
       const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: currentRecord.id } }));
       if (refreshed.error) {
         setModelsError(refreshed.error.message);
       } else {
-        const refreshedRecord = upstreamRecordFromWire(refreshed.data);
-        setRecord(current => ({ ...current, modelsCache: refreshedRecord.modelsCache } as UpstreamRecord));
+        setRecord(current => ({ ...current, modelsCache: refreshed.data.modelsCache } as UpstreamRecord));
       }
     }
     setModelsLoading(false);
@@ -163,10 +161,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
     setSaving(false);
     if (result.error) { setSaveError(result.error.message); return; }
-    let saved = upstreamRecordFromWire(result.data);
+    let saved = result.data;
     if (data.mode === 'edit') {
       const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
-      if (!full.error) saved = upstreamRecordFromWire(full.data);
+      if (!full.error) saved = full.data;
     }
     setRecord(saved);
     const savedValues = valuesFromRecord(saved);
