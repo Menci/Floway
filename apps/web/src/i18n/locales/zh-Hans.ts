@@ -631,10 +631,10 @@ const zhHansCN = {
         },
         models: {
           details: '模型详情',
-          editAsJson: '编辑 JSON',
+          editAsYaml: '编辑 YAML',
           editWithUi: '使用界面编辑',
-          jsonHint: '仅包含手动模型。自动发现的模型由上游解析，不在此列出。',
-          jsonTitle: '模型 JSON',
+          yamlHint: '仅包含手动模型。自动发现的模型由上游解析，不在此列出。',
+          yamlTitle: '模型 YAML',
           rerankPath: '路径覆盖',
           rerankPathHint: '留空则使用该协议的默认路径。',
           rerankProtocol: 'Rerank 协议',

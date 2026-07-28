@@ -656,10 +656,10 @@ const en = {
         },
         models: {
           details: 'Model details',
-          editAsJson: 'Edit as JSON',
+          editAsYaml: 'Edit as YAML',
           editWithUi: 'Edit with UI',
-          jsonHint: 'Manual models only. Auto-discovered models resolve from the upstream and are not listed here.',
-          jsonTitle: 'Models JSON',
+          yamlHint: 'Manual models only. Auto-discovered models resolve from the upstream and are not listed here.',
+          yamlTitle: 'Models YAML',
           rerankPath: 'Path override',
           rerankPathHint: 'Leave blank to use the protocol default.',
           rerankProtocol: 'Rerank protocol',

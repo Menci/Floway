@@ -17,7 +17,7 @@ import type { UpstreamEditorValues } from './editor-data';
 import { publicModelId } from './editor-data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
-import { parseModels, serializeModels } from './models-json';
+import { parseModels, serializeModels } from './models-yaml';
 import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { formatFullTime, formatRelativeTime } from '../requests/format';
@@ -53,10 +53,10 @@ interface ModelRow {
   hasAuto: boolean;
 }
 
-type ModelView = 'list' | 'detail' | 'json';
+type ModelView = 'list' | 'detail' | 'yaml';
 type ModelDetailTab = 'details' | 'flags';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react'));
+const ModelsYamlEditor = lazy(() => import('./models-yaml-editor'));
 
 export function UpstreamWorkspace({
   discovered,
@@ -127,8 +127,8 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
   const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
-  const [json, setJson] = useState('');
-  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [yaml, setYaml] = useState('');
+  const [yamlError, setYamlError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModelRow | null>(null);
   const [pendingManualId, setPendingManualId] = useState<string | null>(null);
@@ -208,21 +208,21 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     title={t('dashboard.upstreamEditor.models.deleteTitle')}
   />;
 
-  if (view === 'json') {
-    // Leaving JSON mode has to validate first; refusing to leave on a parse
+  if (view === 'yaml') {
+    // Leaving YAML mode has to validate first; refusing to leave on a parse
     // error is what keeps the operator's unsaved text on screen.
     const applyAndLeave = () => {
-      const parsed = parseModels(json, { allowRerank: record.kind === 'custom' });
-      if (!parsed.ok) { setJsonError(parsed.message); return; }
+      const parsed = parseModels(yaml, { allowRerank: record.kind === 'custom' });
+      if (!parsed.ok) { setYamlError(parsed.message); return; }
       replace(parsed.models);
-      setJsonError(null);
+      setYamlError(null);
       onViewChange('list');
     };
     return <div className="grid gap-4 min-w-0">
       <div className="flex flex-wrap items-center gap-3">
         <div className="grid gap-0.5">
-          <Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.jsonTitle')}</Text>
-          <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.jsonHint')}</Text>
+          <Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.yamlTitle')}</Text>
+          <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.yamlHint')}</Text>
         </div>
         <Button appearance="secondary" className="!min-w-[160px] ml-auto" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
           {t('dashboard.upstreamEditor.models.editWithUi')}
@@ -230,27 +230,10 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
       </div>
       <div className="h-[max(480px,calc(100vh-330px))] min-h-[480px] overflow-hidden border border-solid border-fui-stroke1 rounded-md">
         <Suspense fallback={<div className="h-full" />}>
-          <MonacoEditor
-            height="100%"
-            language="json"
-            options={{
-              automaticLayout: true,
-              fontFamily: 'Cascadia Code, monospace',
-              fontSize: 14,
-              formatOnPaste: true,
-              formatOnType: true,
-              minimap: { enabled: false },
-              padding: { top: 12, bottom: 12 },
-              scrollBeyondLastLine: false,
-              tabSize: 2,
-            }}
-            theme={window.matchMedia('(prefers-color-scheme: dark)').matches ? 'vs-dark' : 'light'}
-            value={json}
-            onChange={value => { setJson(value ?? ''); setJsonError(null); }}
-          />
+          <ModelsYamlEditor value={yaml} onChange={value => { setYaml(value); setYamlError(null); }} />
         </Suspense>
       </div>
-      {jsonError && <MessageBar intent="error"><MessageBarBody>{jsonError}</MessageBarBody></MessageBar>}
+      {yamlError && <MessageBar intent="error"><MessageBarBody>{yamlError}</MessageBarBody></MessageBar>}
     </div>;
   }
 
@@ -267,7 +250,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
       <div className="grid gap-0.5"><Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.title')}</Text><Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}</Text></div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
-        {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { setJson(serializeModels(manual)); setJsonError(null); onViewChange('json'); }}>{t('dashboard.upstreamEditor.models.editAsJson')}</Button>}
+        {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { setYaml(serializeModels(manual)); setYamlError(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
           <Button disabled={loading || !autoFetchEnabled} icon={loading ? <Spinner size="tiny" /> : <ArrowSyncRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
