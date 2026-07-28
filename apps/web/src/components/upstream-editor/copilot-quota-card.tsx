@@ -56,8 +56,8 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
       <Text size={200} className="text-fui-fg2">
         {t('dashboard.upstreamEditor.copilot.quota.used', { used, entitlement: premium.entitlement })}
       </Text>
-      {premium.reset_date && <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.copilot.quota.resets', { date: premium.reset_date })}
+      {quota.quota_reset_date && <Text size={200} className="text-fui-fg3">
+        {t('dashboard.upstreamEditor.copilot.quota.resets', { date: quota.quota_reset_date })}
       </Text>}
     </div>}
 

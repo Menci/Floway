@@ -68,7 +68,7 @@ export type BackoffRow = SerializedBackoffRow;
 export type ProxyConflictBody = InferResponseType<typeof api.api.proxies[':id']['$delete'], 409>;
 export type ApiKey = InferResponseType<typeof api.api.keys.$get, 200>[number];
 export type ControlPlaneUser = InferResponseType<typeof api.api.users.$get, 200>[number];
-export type UpstreamOption = InferResponseType<typeof api.api.upstreams.options.$get, 200>[number];
+export type UpstreamOption = InferResponseType<typeof api.api['upstream-options']['$get'], 200>[number];
 
 export type ControlPlaneModel = InferResponseType<typeof api.api.models.$get, 200>['data'][number];
 export type SearchConfig = InferResponseType<typeof api.api['search-config']['$get'], 200>;
