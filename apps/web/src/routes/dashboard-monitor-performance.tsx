@@ -30,11 +30,11 @@ import {
   type PerformanceRange,
   type PerformanceView,
 } from '../components/performance/performance-data';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Select } from '../components/ui/fluent-form-controls';
 import { OutlineCard } from '../components/ui/outline-card';
 import { PageLoadingPanel } from '../components/ui/page-loading-panel';
 import { Panel } from '../components/ui/panel';
-import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';

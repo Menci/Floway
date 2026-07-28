@@ -34,7 +34,7 @@ const chart = (metrics: DisplayUsageRecord['metrics']) => buildTokenChart({
 
 describe('percentage chart series', () => {
   it('keeps a real zero-percent point', () => {
-    expect(chart({ input_tokens: '10', input_cache_read_tokens: '0' }).data.lineChartData[0]?.data)
+    expect(chart({ input_tokens: '10', input_cache_read_tokens: '0' }).data.lineChartData![0]!.data)
       .toEqual([expect.objectContaining({ y: 0 })]);
   });
 

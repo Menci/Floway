@@ -1,8 +1,8 @@
 import { ArrowUpRight16Regular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
-import { Panel } from '../components/ui/panel';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
 const { Link, Text } = fluentComponents;

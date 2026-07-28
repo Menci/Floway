@@ -12,8 +12,8 @@ import bingIconUrl from '../assets/bing.svg';
 import jinaIconUrl from '../assets/icons/jina.svg';
 import tavilyIconUrl from '../assets/icons/tavily.svg';
 import { getSessionToken } from '../auth/session';
-import { Dropdown, Input, Select } from '../components/ui/fluent-form-controls';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { Dropdown, Input, Select } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 

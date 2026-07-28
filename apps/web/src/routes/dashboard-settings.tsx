@@ -7,8 +7,8 @@ import { z } from 'zod';
 
 import type { Route } from './+types/dashboard-settings';
 import { changeOwnPassword } from '../api/auth';
-import { Input } from '../components/ui/fluent-form-controls';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { Input } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
