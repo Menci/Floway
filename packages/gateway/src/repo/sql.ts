@@ -74,6 +74,10 @@ const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
+// D1 and node:sqlite bind SQLite scalars, not JavaScript booleans. SQLite's
+// conditional expressions represent boolean flags as integer 0/1 values.
+const sqliteBoolean = (value: boolean): 0 | 1 => value ? 1 : 0;
+
 // Throws on bad data: silently returning null would broaden the row's
 // upstream access beyond what the admin set.
 const parseUpstreamIds = (raw: string | null, label: string): string[] | null => {
@@ -184,12 +188,12 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   }
 
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
-    const hasName = patch.name !== undefined;
-    const hasKey = patch.key !== undefined;
-    const hasLastUsedAt = patch.lastUsedAt !== undefined;
-    const hasUpstreamIds = patch.upstreamIds !== undefined;
-    const hasDumpRetention = patch.dumpRetentionSeconds !== undefined;
-    const hasResponsesRetention = patch.responsesRetentionSeconds !== undefined;
+    const hasName = sqliteBoolean(patch.name !== undefined);
+    const hasKey = sqliteBoolean(patch.key !== undefined);
+    const hasLastUsedAt = sqliteBoolean(patch.lastUsedAt !== undefined);
+    const hasUpstreamIds = sqliteBoolean(patch.upstreamIds !== undefined);
+    const hasDumpRetention = sqliteBoolean(patch.dumpRetentionSeconds !== undefined);
+    const hasResponsesRetention = sqliteBoolean(patch.responsesRetentionSeconds !== undefined);
     const row = await this.db
       .prepare(
         `UPDATE api_keys
