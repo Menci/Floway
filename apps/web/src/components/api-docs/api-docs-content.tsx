@@ -1,5 +1,5 @@
 import { ArrowUpRight16Regular } from '@fluentui/react-icons';
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
@@ -13,6 +13,12 @@ const {
   Link,
   MessageBar,
   MessageBarBody,
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
   Text,
 } = fluentComponents;
 
@@ -53,21 +59,21 @@ export function ApiDocsContent() {
         return <section className="grid gap-2" key={group}>
           <Text as="h3" size={400} weight="semibold" className="!m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
           <ScrollArea axes="horizontal" className="min-w-0">
-            <div className="grid grid-cols-[70px_minmax(360px,1fr)_minmax(260px,320px)_74px] min-w-[780px]">
-              {endpoints.map((endpoint, index) => {
-                const cellClassName = `min-w-0 px-2 py-2 ${index === endpoints.length - 1 ? '' : 'border-b border-fui-subtle'}`;
-                return <Fragment key={`${endpoint.method} ${endpoint.path}`}>
-                  <div className={`flex items-center ${cellClassName}`}><MethodBadge method={endpoint.method} /></div>
-                  <code className={`${cellClassName} flex items-center font-mono text-fui-base300`} translate="no">{endpoint.path}</code>
-                  <Text className={`${cellClassName} !flex !items-center`} size={300}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text>
-                  <div className={`flex items-center ${cellClassName}`}>
-                    <Link href={endpoint.docs} target="_blank">
-                      {t('dashboard.apiDocs.docsLink')} <ArrowUpRight16Regular aria-hidden="true" />
-                    </Link>
-                  </div>
-                </Fragment>;
-              })}
-            </div>
+            <Table aria-label={t(`dashboard.apiDocs.groups.${group}`)} className="min-w-[780px] table-fixed" size="small">
+              <colgroup><col className="w-[72px]" /><col /><col className="w-[300px]" /><col className="w-[80px]" /></colgroup>
+              <TableHeader><TableRow>
+                <TableHeaderCell>{t('dashboard.apiDocs.columns.method')}</TableHeaderCell>
+                <TableHeaderCell>{t('dashboard.apiDocs.columns.endpoint')}</TableHeaderCell>
+                <TableHeaderCell>{t('dashboard.apiDocs.columns.description')}</TableHeaderCell>
+                <TableHeaderCell className="!text-right">{t('dashboard.apiDocs.columns.docs')}</TableHeaderCell>
+              </TableRow></TableHeader>
+              <TableBody>{endpoints.map(endpoint => <TableRow key={`${endpoint.method} ${endpoint.path}`}>
+                <TableCell><MethodBadge method={endpoint.method} /></TableCell>
+                <TableCell><code className="font-mono text-fui-base300" translate="no">{endpoint.path}</code></TableCell>
+                <TableCell><Text size={300}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text></TableCell>
+                <TableCell className="!text-right"><Link href={endpoint.docs} target="_blank">{t('dashboard.apiDocs.docsLink')} <ArrowUpRight16Regular aria-hidden="true" /></Link></TableCell>
+              </TableRow>)}</TableBody>
+            </Table>
           </ScrollArea>
         </section>;
       })}

@@ -181,6 +181,7 @@ const en = {
         endpointsTitle: 'API Endpoints',
         endpointsDescription: 'Every public data-plane route. Short paths are compatibility aliases of their /v1 counterparts unless a protocol is named explicitly.',
         docsLink: 'Docs',
+        columns: { method: 'Method', endpoint: 'Endpoint', description: 'Description', docs: 'Documentation' },
         authentication: {
           title: 'Base URL and authentication',
           description: 'Use an API key created under Services → API Keys.',

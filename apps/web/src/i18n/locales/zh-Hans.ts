@@ -171,6 +171,7 @@ const zhHansCN = {
         endpointsTitle: 'API 端点',
         endpointsDescription: '全部公开数据面路由。除非明确标注协议，短路径是对应 /v1 路径的兼容别名。',
         docsLink: '文档',
+        columns: { method: '方法', endpoint: '端点', description: '说明', docs: '文档' },
         authentication: {
           title: '基础 URL 与身份验证',
           description: '使用「服务 → API 密钥」中创建的 API 密钥。',
