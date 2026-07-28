@@ -55,7 +55,6 @@ export function ApiDocsContent() {
       <Text className="text-fui-fg2">{t('dashboard.apiDocs.authentication.description')}</Text>
       <div className="grid gap-2 text-sm">
         <Text><strong>{t('dashboard.apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
-        <Text><code>?key=</code> → <code>x-api-key</code> → <code>x-goog-api-key</code> → <code>Authorization: Bearer</code></Text>
       </div>
       <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiDocs.authentication.warning')}</MessageBarBody></MessageBar>
       <CodeBlock code={authExample} copied={copied === 'auth'} copyFailed={copyFailed === 'auth'} language="bash" onCopy={() => void copy('auth', authExample)} />
