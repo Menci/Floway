@@ -276,7 +276,7 @@ function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; ef
           setQuery('');
         }}
         placeholder={t('dashboard.upstreamEditor.models.effortPlaceholder')}
-        selectedOptions={supported}
+        selectedOptions={[...supported]}
         value={open ? query : supported.join(', ')}
       >
         {options.map(level => <Option key={level} text={level} value={level}>{level}</Option>)}
