@@ -18,16 +18,16 @@ const model = (id: string, upstreams: string[], extra: Partial<ControlPlaneModel
 });
 
 describe('playground reachability', () => {
-  it('resolves aliases and filters endpoint support', () => {
+  it('keeps every reachable chat model available across source protocols', () => {
     const real = model('real', ['a'], { endpoints: { responses: {} } });
     const alias = model('alias', [], {
       endpoints: { responses: {} },
       aliasedFrom: { selection: 'first-available', targets: [{ target_model_id: 'real', rules: {} }] },
     });
     const chatOnly = model('chat', ['a'], { endpoints: { chatCompletions: {} } });
-    expect(availableModels([real, alias, chatOnly], ['a'], 'responses').map(m => m.id))
-      .toEqual(['real', 'alias']);
-    expect(availableModels([real, alias], ['b'], 'responses')).toEqual([]);
+    expect(availableModels([real, alias, chatOnly], ['a']).map(m => m.id))
+      .toEqual(['real', 'alias', 'chat']);
+    expect(availableModels([real, alias], ['b'])).toEqual([]);
   });
 });
 

@@ -130,9 +130,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [showImage, setShowImage] = useState(false);
   const [sending, setSending] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
-  const [customDrafts, setCustomDrafts] = useState<Record<PlaygroundApi, string>>({
-    responses: '{}', chatCompletions: '{}', messages: '{}',
-  });
+  const [customDraft, setCustomDraft] = useState('{}');
   const [customError, setCustomError] = useState<string | null>(null);
   const [reasoningEffort, setReasoningEffort] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -147,8 +145,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     [selectedKey, user.upstreamIds],
   );
   const models = useMemo(
-    () => availableModels(loaderData.models, cap, api),
-    [api, cap, loaderData.models],
+    () => availableModels(loaderData.models, cap),
+    [cap, loaderData.models],
   );
   const selectedModel = models.find(model => model.id === modelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
@@ -199,7 +197,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         return;
       }
     }
-    const customResult = parseCustomJson(api, customDrafts[api]);
+    const customResult = parseCustomJson(api, customDraft);
     if (customResult.error) {
       const message = customResult.error === 'reserved'
         ? t('dashboard.playground.errors.customReserved', { fields: customResult.fields.join(', ') })
@@ -311,9 +309,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
           <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
-            <div className="min-w-0">
-              <Text as="h1" size={500} weight="semibold" className="!m-0 block">{t('dashboard.nav.playground')}</Text>
-              <Text size={200} className={`text-fui-fg2 block truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
+            <div className="grid gap-0.5 min-w-0">
+              <Text as="h1" block size={500} weight="semibold" className="!m-0">{t('dashboard.nav.playground')}</Text>
+              <Text block size={200} className={`text-fui-fg2 truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
             </div>
           </div>
           <div className="px-4 py-2 grid gap-2">
@@ -436,17 +434,22 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
             <SettingsSection title={t('dashboard.playground.settings.generation')}>
               <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
-                <Select value={reasoningEffort} disabled={!effortOptions.length} onChange={(_, data) => setReasoningEffort(data.value)}>
-                  <option value="">{t('dashboard.playground.parameters.providerDefault')}</option>
-                  {effortOptions.map(effort => <option key={effort} value={effort}>{effort}</option>)}
-                </Select>
+                <Combobox
+                  freeform
+                  placeholder={t('dashboard.playground.parameters.providerDefault')}
+                  value={reasoningEffort}
+                  onChange={event => setReasoningEffort(event.target.value)}
+                  onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}
+                >
+                  {effortOptions.map(effort => <Option key={effort}>{effort}</Option>)}
+                </Combobox>
               </Field>
             </SettingsSection>
 
             <SettingsSection title={t('dashboard.playground.settings.customJson')}>
               <Field validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
-                <Textarea className={s.code} resize="vertical" rows={9} value={customDrafts[api]} onChange={(_, data) => {
-                  setCustomDrafts(current => ({ ...current, [api]: data.value }));
+                <Textarea className={s.code} resize="vertical" rows={9} value={customDraft} onChange={(_, data) => {
+                  setCustomDraft(data.value);
                   setCustomError(null);
                 }} />
               </Field>

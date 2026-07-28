@@ -17,10 +17,9 @@ export const playgroundApis: PlaygroundApi[] = ['responses', 'chatCompletions', 
 export function availableModels(
   catalog: readonly ControlPlaneModel[],
   cap: readonly string[] | null,
-  api: PlaygroundApi,
 ): ControlPlaneModel[] {
   return catalog.filter(
-    model => model.kind === 'chat' && api in model.endpoints && isModelReachable(model, catalog, cap),
+    model => model.kind === 'chat' && isModelReachable(model, catalog, cap),
   );
 }
 
