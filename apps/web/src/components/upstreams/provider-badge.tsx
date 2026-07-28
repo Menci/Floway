@@ -9,8 +9,9 @@ import codexIconUrl from '../../assets/codex.svg';
 import githubCopilotIconUrl from '../../assets/githubcopilot.svg';
 import ollamaIconUrl from '../../assets/ollama.svg';
 import { fluentComponents } from '../../fluent';
+import { Chip } from '../ui/chip';
 
-const { Tag, makeStyles, mergeClasses, tokens } = fluentComponents;
+const { makeStyles, tokens } = fluentComponents;
 
 type ProviderBadgeKind = UpstreamProviderKind | null;
 type ProviderTone = UpstreamColorPreset | 'zinc';
@@ -86,15 +87,8 @@ const useStyles = makeStyles({
       filter: 'invert(1)',
     },
   },
-  // The tone classes paint the identity color; Fluent's outline appearance
-  // supplies the geometry. Narrow columns get an ellipsis rather than a
-  // pill that outgrows its cell.
-  tag: { maxWidth: '100%' },
-  tagText: {
-    fontWeight: tokens.fontWeightSemibold,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
+  // The tone classes paint the identity color; the chip supplies geometry.
+  tagText: { fontWeight: tokens.fontWeightSemibold },
 });
 
 export const providerLabel = (kind: ProviderBadgeKind) =>
@@ -125,18 +119,15 @@ export function ProviderBadge({ color, kind, label, title }: {
   const visibleLabel = label ?? providerName;
 
   return (
-    <Tag
-      appearance="outline"
-      shape="circular"
-      size="small"
-      className={mergeClasses(styles[tone], styles.tag)}
+    <Chip
+      className={styles[tone]}
       style={isHexColor(color) ? customColorStyle(color) : undefined}
       title={title ?? visibleLabel}
       icon={<ProviderIcon kind={kind} className="h-4 w-4" />}
-      primaryText={{ className: styles.tagText }}
+      textClassName={styles.tagText}
     >
       {visibleLabel}
-    </Tag>
+    </Chip>
   );
 }
 

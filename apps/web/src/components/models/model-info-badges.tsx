@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { effectiveUpstreams, modelBadges, type ModelBadge } from './model-badges';
 import type { ControlPlaneModel } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { Chip } from '../ui/chip';
 import { ProviderBadge } from '../upstreams/provider-badge';
 
-const { Tag, makeStyles, tokens } = fluentComponents;
+const { makeStyles, tokens } = fluentComponents;
 
 const useStyles = makeStyles({
   tag: { color: tokens.colorNeutralForeground2 },
@@ -53,9 +54,7 @@ export function ModelInfoBadges({ cap, catalog, model }: {
         <ProviderBadge key={upstream.id} color={upstream.color} kind={upstream.kind} label={upstream.name} />
       ))}
       {modelBadges(model, catalog, cap).map(badge => (
-        <Tag key={badge.key} appearance="outline" className={styles.tag} shape="circular" size="small">
-          {badgeText(badge, t)}
-        </Tag>
+        <Chip key={badge.key} className={styles.tag}>{badgeText(badge, t)}</Chip>
       ))}
     </div>
   );
