@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildSearchChart, buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/chart-model';
-import type { DisplayUsageRecord, UsageBucket } from '../../../src/components/usage/types';
+import type { ChartPlot, DisplayUsageRecord, UsageBucket } from '../../../src/components/usage/types';
+
+// Narrow a plot to the form the assertion is about, failing loudly rather than
+// silently asserting nothing when a chart switches form.
+const linePlot = (plot: ChartPlot) => {
+  if (plot.form !== 'line') throw new Error(`expected a line plot, got ${plot.form}`);
+  return plot.data;
+};
+const barPlot = (plot: ChartPlot) => {
+  if (plot.form !== 'bars') throw new Error(`expected a bar plot, got ${plot.form}`);
+  return plot.bars;
+};
 
 const bucket: UsageBucket = {
   key: '2026-07-28T12',
@@ -34,12 +45,12 @@ const chart = (metrics: DisplayUsageRecord['metrics']) => buildTokenChart({
 
 describe('percentage chart series', () => {
   it('keeps a real zero-percent point', () => {
-    expect(chart({ input_tokens: '10', input_cache_read_tokens: '0' }).data.lineChartData![0]!.data)
+    expect(linePlot(chart({ input_tokens: '10', input_cache_read_tokens: '0' }).plot).lineChartData![0]!.data)
       .toEqual([expect.objectContaining({ y: 0 })]);
   });
 
   it('omits a percentage whose denominator does not exist', () => {
-    expect(chart({}).data.lineChartData).toEqual([]);
+    expect(linePlot(chart({}).plot).lineChartData).toEqual([]);
   });
 });
 
@@ -58,7 +69,9 @@ describe('cost chart series', () => {
       buckets: [bucket],
     });
 
-    expect(model.data.lineChartData![0]!.data).toEqual([]);
+    // An unpriced bucket contributes no segment at all; a zero-height one would
+    // read as 'nothing was spent' rather than 'no rate is on file'.
+    expect(barPlot(model.plot)[0]!.chartData).toEqual([]);
   });
 });
 
@@ -115,7 +128,7 @@ describe('search chart', () => {
   it('plots recorded traffic from every provider, not just the configured one', () => {
     const chart = searchChart([searchRecord('tavily', 3), searchRecord('microsoft-grounding', 4)]);
     expect(chart.providers).toEqual(['microsoft-grounding', 'tavily']);
-    expect(chart.data.lineChartData![0]!.data).toEqual([expect.objectContaining({ y: 7 })]);
+    expect(barPlot(chart.plot)[0]!.chartData).toEqual([expect.objectContaining({ data: 7 })]);
   });
 
   it('reports no series when the window holds no search traffic', () => {

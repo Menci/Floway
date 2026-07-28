@@ -1,22 +1,22 @@
-import type { CustomizedCalloutData } from '@fluentui/react-charts';
-
 import { bucketKeyForCallout, formatCount, formatDecimalCount, formatHitRate, formatInputRate, formatUsdCost, summarizeCounters } from './chart-model';
-import type { UsageChartModel } from './types';
+import type { CalloutPoint, UsageChartModel } from './types';
 import { fluentComponents } from '../../fluent';
 import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';
 
 const { Text } = fluentComponents;
 
-export function UsageChartCallout({ chart, data, labelByTime, locale, valueFormatter }: { chart: UsageChartModel; data?: CustomizedCalloutData; labelByTime: Map<number, string>; locale: string; valueFormatter: (value: number) => string }) {
-  if (!data?.values.length) return null;
-  const bucketKey = bucketKeyForCallout(data.x, chart.buckets);
+export function UsageChartCallout({ chart, labelByTime, locale, point, valueFormatter }: { chart: UsageChartModel; labelByTime: Map<number, string>; locale: string; point: CalloutPoint | null; valueFormatter: (value: number) => string }) {
+  if (!point?.rows.length) return null;
+  const bucketKey = bucketKeyForCallout(point.x, chart.buckets);
   const bucketDetails = bucketKey ? chart.details.get(bucketKey) : undefined;
-  const rows = data.values.filter(item => item.y > 0).sort((a, b) => b.y - a.y);
+  // Zero segments are carried in every stack so a series keeps its position;
+  // they carry no information in the callout, so they are dropped here.
+  const rows = point.rows.filter(row => row.value > 0).sort((a, b) => b.value - a.value);
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(760px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-[6px] p-1">
       <Text size={200} weight="semibold">
-        {formatCalloutTitle(data.x, labelByTime, chart.range, locale)}
+        {formatCalloutTitle(point.x, labelByTime, chart.range, locale)}
       </Text>
       {chart.kind === 'token' && bucketDetails ? (
         <table className="border-collapse whitespace-nowrap">
@@ -64,7 +64,7 @@ export function UsageChartCallout({ chart, data, labelByTime, locale, valueForma
         rows.map(item => (
           <Text key={item.legend} size={200} className="flex items-center gap-1.5 justify-between font-mono">
             <i className="rounded-full h-[8px] w-[8px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-            {item.legend}: {valueFormatter(item.y)}
+            {item.legend}: {valueFormatter(item.value)}
           </Text>
         ))
       )}

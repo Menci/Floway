@@ -1,4 +1,4 @@
-import type { ChartProps } from '@fluentui/react-charts';
+import type { ChartProps, VerticalStackedChartProps } from '@fluentui/react-charts';
 
 import type { BillingMetric } from '../../api/types';
 import type { DashboardRange } from '../charts/dashboard-time';
@@ -73,15 +73,29 @@ export interface TokenSummary {
   cacheCreation: DecimalString;
 }
 export interface ChartEntry { id: string; label: string; colorSlot: number }
+
+// Token, request and cost figures are sums over a bucket, so they are drawn as
+// stacked bars: a bar states "this much was consumed in this interval" and
+// nothing between two bars. Rates are a different kind of quantity — they hold
+// between samples and have no meaningful sum — so they stay a line, and a
+// bucket with no traffic breaks it rather than reading as a measured zero.
+export type ChartPlot =
+  | { form: 'bars'; bars: VerticalStackedChartProps[] }
+  | { form: 'line'; data: ChartProps };
+
 interface ChartModelBase {
   entries: ChartEntry[];
-  data: ChartProps;
+  plot: ChartPlot;
   details: Map<string, Map<string, TokenCounters>>;
   buckets: UsageBucket[];
   range: UsageRange;
-  stacked: boolean;
 }
 // A search chart names the providers whose records it actually plotted, which
 // is a property of the window's data rather than of the current configuration.
 export type SearchChartModel = ChartModelBase & { kind: 'search'; providers: string[] };
 export type UsageChartModel = ChartModelBase & ({ kind: 'token' } | { kind: 'search'; providers: string[] });
+
+// One hovered bucket, normalized across the two plot forms so the callout does
+// not care which component produced it.
+export interface CalloutRow { legend: string; color: string; value: number }
+export interface CalloutPoint { x: Date | number | string; rows: CalloutRow[] }

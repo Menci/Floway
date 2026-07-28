@@ -1,16 +1,20 @@
-import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
+import { LineChart, VerticalStackedBarChart, type CustomizedCalloutData, type VerticalStackedChartProps } from '@fluentui/react-charts';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { UsageChartModel } from './types';
+import type { CalloutPoint, UsageChartModel } from './types';
 import { UsageChartCallout } from './usage-callout';
 import { fluentComponents } from '../../fluent';
 import { localeForLanguage } from '../../i18n';
 import { useUnclippedChartFrame } from '../charts/chart-frame-styles';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useElementSize } from '../charts/use-element-size';
+
 const { makeStyles } = fluentComponents;
 const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' } });
+
+const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
+
 export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
   const { i18n, t } = useTranslation();
   const chartStateStyles = useChartStateStyles();
@@ -21,52 +25,65 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const tickValues = useMemo(() => chartTickValues(chart.buckets, chart.buckets.length <= 24 ? 6 : 7).map(bucket => bucket.date), [chart.buckets]);
   const dateFormatter = useCallback((date: Date) => formatAxisDate(date, chart.range, locale), [chart.range, locale]);
-  const callout = useCallback((data?: CustomizedCalloutData) => <UsageChartCallout chart={chart} data={data} labelByTime={labelByTime} locale={locale} valueFormatter={valueFormatter} />, [chart, labelByTime, locale, valueFormatter]);
+
+  const renderCallout = useCallback((point: CalloutPoint | null) => (
+    <UsageChartCallout chart={chart} labelByTime={labelByTime} locale={locale} point={point} valueFormatter={valueFormatter} />
+  ), [chart, labelByTime, locale, valueFormatter]);
+
+  const barCallout = useCallback((stack?: VerticalStackedChartProps) => renderCallout(stack ? {
+    x: stack.xAxisPoint,
+    rows: stack.chartData.map(point => ({ legend: point.legend, color: point.color ?? '', value: Number(point.data) })),
+  } : null), [renderCallout]);
+
+  const lineCallout = useCallback((data?: CustomizedCalloutData) => renderCallout(data ? {
+    x: data.x,
+    rows: data.values.map(value => ({ legend: value.legend ?? '', color: value.color ?? '', value: Number(value.y) })),
+  } : null), [renderCallout]);
+
+  const hasData = chart.plot.form === 'bars'
+    ? chart.plot.bars.some(bar => bar.chartData.length > 0)
+    : (chart.plot.data.lineChartData?.length ?? 0) > 0;
+
+  if (size.width < 120) return <div className="h-[320px] min-w-0 w-full" ref={setHost} />;
+
   return (
     <div className="h-[320px] min-w-0 w-full" ref={setHost}>
-      {size.width < 120 ? null : chart.data.lineChartData?.length ? (
-        chart.stacked ? (
-          <AreaChart
-            data={chart.data}
-            styles={chartRootStyles}
+      {!hasData ? <div className={chartStateStyles.root}>{t('dashboard.usage.empty')}</div>
+        : chart.plot.form === 'bars' ? (
+          <VerticalStackedBarChart
+            barCornerRadius={2}
+            barWidth="auto"
+            customDateTimeFormatter={dateFormatter}
+            data={chart.plot.bars}
             height={size.height}
             hideLegend
-            legendProps={{
-              selectedLegends: visibleLegends,
-              canSelectMultipleLegends: true,
-            }}
-            margins={{ top: 16, right: 20, bottom: 42, left: 54 }}
-            mode="tonexty"
-            onRenderCalloutPerStack={callout}
+            isCalloutForStack
+            legendProps={{ selectedLegends: visibleLegends, canSelectMultipleLegends: true }}
+            margins={chartMargins}
+            onRenderCalloutPerStack={barCallout}
+            styles={chartRootStyles}
             tickValues={tickValues}
             width={size.width}
-            customDateTimeFormatter={dateFormatter}
             yAxisTickFormat={valueFormatter}
             yMinValue={0}
           />
         ) : (
           <LineChart
-            data={chart.data}
-            styles={chartRootStyles}
+            customDateTimeFormatter={dateFormatter}
+            data={chart.plot.data}
             height={size.height}
             hideLegend
-            legendProps={{
-              selectedLegends: visibleLegends,
-              canSelectMultipleLegends: true,
-            }}
-            margins={{ top: 16, right: 20, bottom: 42, left: 54 }}
-            onRenderCalloutPerStack={callout}
+            legendProps={{ selectedLegends: visibleLegends, canSelectMultipleLegends: true }}
+            margins={chartMargins}
+            onRenderCalloutPerStack={lineCallout}
+            styles={chartRootStyles}
             tickValues={tickValues}
             width={size.width}
-            customDateTimeFormatter={dateFormatter}
             yAxisTickFormat={valueFormatter}
             yMaxValue={100}
             yMinValue={0}
           />
-        )
-      ) : (
-        <div className={chartStateStyles.root}>{t('dashboard.usage.empty')}</div>
-      )}
+        )}
     </div>
   );
 }
