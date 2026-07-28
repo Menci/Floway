@@ -19,7 +19,6 @@ import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } fr
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type {
-  DeviceFlowPoll,
   DeviceFlowStart,
   UpstreamProviderKind,
   UpstreamRecord,

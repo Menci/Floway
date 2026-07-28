@@ -1,4 +1,3 @@
-import { dashboardRangeQuery } from '../charts/dashboard-time';
 import type {
   DisplayUsageRecord,
   SearchUsageResponse,
@@ -8,6 +7,7 @@ import type {
 } from './types';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
+import { dashboardRangeQuery } from '../charts/dashboard-time';
 
 interface UsageByUserResponse {
   records: Array<{ userId: number; model: string; hour: string; requests: number; metrics: DisplayUsageRecord['metrics']; cost: DisplayUsageRecord['cost'] }>;

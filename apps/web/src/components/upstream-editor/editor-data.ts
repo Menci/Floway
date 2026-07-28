@@ -14,8 +14,8 @@ import type {
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
-import type { Flag } from '@floway-dev/provider/flags';
 import { useAuthStore } from '../../stores/auth-store';
+import type { Flag } from '@floway-dev/provider/flags';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];

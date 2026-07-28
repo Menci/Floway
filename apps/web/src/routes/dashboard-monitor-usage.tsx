@@ -99,7 +99,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
         setLoading(false);
       }
     }
-  }, [range, user, view]);
+  }, [range, view]);
 
   useEffect(() => {
     if (!mountedRef.current) {

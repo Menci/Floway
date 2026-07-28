@@ -19,7 +19,7 @@ import { UpstreamWorkspace } from './workspace';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import { upstreamRecordFromWire } from '../../api/types';
-import type { CustomRawModel, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
+import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Panel } from '../ui/panel';

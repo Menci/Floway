@@ -297,9 +297,9 @@ export default function DashboardAdminBackupRestore() {
 
     const result = await callApi(() => api.api.import.$post({
       json: {
-          version: EXPORT_VERSION,
-          mode: importMode,
-          data: importParsedData.data,
+        version: EXPORT_VERSION,
+        mode: importMode,
+        data: importParsedData.data,
       },
     }));
 
