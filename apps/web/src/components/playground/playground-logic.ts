@@ -12,16 +12,6 @@ export interface PlaygroundMessage {
   imageUrl?: string;
 }
 
-export interface PlaygroundSettings {
-  temperature?: number;
-  maxOutputTokens?: number;
-  topP?: number;
-  frequencyPenalty?: number;
-  presencePenalty?: number;
-  stopSequences?: string[];
-  reasoningEffort?: string;
-}
-
 export const playgroundApis: PlaygroundApi[] = ['responses', 'chatCompletions', 'messages'];
 
 export function availableModels(
@@ -41,12 +31,8 @@ export function supportsImageInput(model: ControlPlaneModel | null): boolean {
   return modalities === undefined || modalities.includes('image');
 }
 
-export function maximumOutputTokens(model: ControlPlaneModel | null): number | undefined {
-  return model?.limits.max_output_tokens;
-}
-
 export function defaultMaxOutputTokens(model: ControlPlaneModel | null): number {
-  const advertised = maximumOutputTokens(model);
+  const advertised = model?.limits.max_output_tokens;
   return advertised === undefined
     ? MESSAGES_FALLBACK_MAX_TOKENS
     : Math.min(advertised, MESSAGES_FALLBACK_MAX_TOKENS);
@@ -158,24 +144,16 @@ export function createWireFetch(custom: Record<string, unknown>, api?: Playgroun
 }
 
 // Wire-native generation options per protocol. Naming them the way each
-// protocol names them keeps reasoning effort, stop handling and token caps
+// protocol names them keeps reasoning effort and the Messages token cap
 // visible on the request instead of behind a client abstraction.
 export function generationOptions(
   api: PlaygroundApi,
-  settings: PlaygroundSettings,
+  reasoningEffort: string | undefined,
   messagesMaxTokens = MESSAGES_FALLBACK_MAX_TOKENS,
 ): Record<string, unknown> {
-  const { temperature, maxOutputTokens, topP, frequencyPenalty, presencePenalty, stopSequences, reasoningEffort } = settings;
-  const shared = {
-    ...(temperature !== undefined && { temperature }),
-    ...(topP !== undefined && { top_p: topP }),
-  };
-
   if (api === 'messages') {
     return {
-      ...shared,
-      max_tokens: maxOutputTokens ?? messagesMaxTokens,
-      ...(stopSequences?.length && { stop_sequences: stopSequences }),
+      max_tokens: messagesMaxTokens,
       ...(reasoningEffort && {
         thinking: { type: 'enabled' },
         output_config: { effort: reasoningEffort },
@@ -184,19 +162,8 @@ export function generationOptions(
   }
 
   if (api === 'responses') {
-    return {
-      ...shared,
-      ...(maxOutputTokens !== undefined && { max_output_tokens: maxOutputTokens }),
-      ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
-    };
+    return { ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }) };
   }
 
-  return {
-    ...shared,
-    ...(maxOutputTokens !== undefined && { max_completion_tokens: maxOutputTokens }),
-    ...(frequencyPenalty !== undefined && { frequency_penalty: frequencyPenalty }),
-    ...(presencePenalty !== undefined && { presence_penalty: presencePenalty }),
-    ...(stopSequences?.length && { stop: stopSequences }),
-    ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-  };
+  return { ...(reasoningEffort && { reasoning_effort: reasoningEffort }) };
 }

@@ -111,15 +111,8 @@ const zhHansCN = {
         settings: { connection: '连接', generation: '生成参数', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
         parameters: {
-          temperature: '温度',
-          maxOutputTokens: '最大输出 Token',
-          topP: 'Top P',
-          frequencyPenalty: '频率惩罚',
-          presencePenalty: '存在惩罚',
-          stopSequences: '停止序列',
           reasoningEffort: '推理强度',
           providerDefault: 'Provider 默认值',
-          unset: '未设置',
         },
         customJsonHint: '协议原生字段会覆盖上方控件的值。',
         errors: {
