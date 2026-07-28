@@ -330,6 +330,7 @@ export function useAgentSetup(apiKeyId: string | null) {
     const current = draftRef.current;
     if (!current || terminatedRef.current) return;
     const next = update(clone(current));
+    if (configurationsEqual(current, next)) return;
     draftRef.current = next;
     const nextGeneration = generationRef.current + 1;
     generationRef.current = nextGeneration;
