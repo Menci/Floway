@@ -357,15 +357,6 @@ export interface ApiKey {
   responses_retention_seconds: number;
 }
 
-export const apiKeyFromWire = (value: unknown): ApiKey => {
-  if (!value || typeof value !== 'object') throw new TypeError('API key response must be an object');
-  const key = value as Partial<ApiKey>;
-  if (typeof key.id !== 'string' || typeof key.name !== 'string' || typeof key.key !== 'string') {
-    throw new TypeError('API key response is missing its identity fields');
-  }
-  return value as ApiKey;
-};
-
 // Raw admin projection returned by GET /api/users.
 export interface ControlPlaneUser {
   id: number;
