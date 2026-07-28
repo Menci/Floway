@@ -14,6 +14,7 @@ import { getCurrentSession } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { FlowayLogo } from '../components/logo';
 import { Sidebar } from '../components/sidebar';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -56,7 +57,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
       >
         {t('dashboard.nav.skip')}
       </a>
-      <div className="grid grid-cols-[290px_minmax(0,1fr)] h-screen min-h-0 max-[900px]:grid-cols-1 max-[900px]:grid-rows-[58px_minmax(0,1fr)]">
+      <div className="grid grid-cols-[290px_minmax(0,1fr)] h-[100dvh] min-h-0 max-[900px]:grid-cols-1 max-[900px]:grid-rows-[58px_minmax(0,1fr)]">
         <div className="max-[900px]:hidden">
           <Sidebar user={user} />
         </div>
@@ -69,11 +70,18 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
           />
           <FlowayLogo size="compact" />
         </header>
-        <main id="dashboard-main" tabIndex={-1} className={upstreamEditor || requestsInspector || playground
-          ? 'min-h-0 overflow-hidden p-[22px_28px_28px] max-[1100px]:overflow-y-auto max-[680px]:p-4'
-          : 'min-h-0 overflow-y-auto p-[22px_28px_28px] [scrollbar-gutter:stable] max-[680px]:p-4'}>
-          <Outlet context={{ user } satisfies DashboardOutletContext} />
-        </main>
+        <ScrollArea
+          axes="vertical"
+          className="min-h-0"
+          contentClassName={upstreamEditor || requestsInspector || playground ? 'h-full' : 'min-h-full'}
+          noTabIndex
+        >
+          <main id="dashboard-main" tabIndex={-1} className={upstreamEditor || requestsInspector || playground
+            ? 'h-full min-h-0 p-[22px_28px_28px] max-[680px]:p-4'
+            : 'min-h-full p-[22px_28px_28px] max-[680px]:p-4'}>
+            <Outlet context={{ user } satisfies DashboardOutletContext} />
+          </main>
+        </ScrollArea>
       </div>
       <OverlayDrawer
         aria-label={t('dashboard.nav.label')}

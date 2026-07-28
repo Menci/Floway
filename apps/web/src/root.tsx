@@ -25,6 +25,7 @@ import {
   appLoadingCriticalCss,
 } from './components/ui/app-loading-screen';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
+import { scrollAreaCss } from './components/ui/scroll-area';
 import { fluentComponents } from './fluent';
 import { flowayDarkTheme, flowayLightTheme } from './theme';
 import './i18n';
@@ -68,13 +69,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Meta />
         <Links />
         <style>{`
-          html, body { min-height: 100%; }
+          html, body { height: 100%; overflow: hidden; }
           @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
           *, *::before, *::after { box-sizing: border-box; }
           html body pre[class*="language-"] { border: 0; }
           ${gradientBackgroundCriticalCss}
           ${appLoadingCriticalCss}
           ${navigationProgressCss}
+          ${scrollAreaCss}
         `}</style>
       </head>
       <body className="text-[14px] font-sans m-0">

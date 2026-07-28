@@ -39,6 +39,7 @@ import { fluentComponents } from '../fluent';
 import { FlowayLogo } from './logo';
 import { useAuthStore } from '../stores/auth-store';
 import { ConfirmDialog } from './ui/confirm-dialog';
+import { ScrollArea } from './ui/scroll-area';
 
 const { Button, Text, makeStyles, mergeClasses } = fluentComponents;
 
@@ -136,7 +137,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
 
   return (
     <aside
-      className="grid grid-rows-[auto_minmax(0,1fr)_auto] h-screen min-h-0 overflow-hidden p-[22px_16px_18px]"
+      className="grid grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-0 overflow-hidden p-[22px_16px_18px]"
       aria-label={t('dashboard.nav.label')}
     >
       <div className="flex items-center min-h-[48px] px-[10px] pb-[17px]">
@@ -149,8 +150,9 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           onClick={onNavigate}
         />}
       </div>
-      <nav className="h-full min-h-0 overflow-x-hidden overflow-y-auto p-[2px_4px_14px] [scrollbar-gutter:stable]">
-        {navGroups.map((group, groupIndex) => {
+      <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="p-[2px_4px_14px]" noTabIndex>
+        <nav>
+          {navGroups.map((group, groupIndex) => {
           if (group.adminOnly && !user.isAdmin) return null;
 
           const items = group.items.filter(
@@ -176,8 +178,9 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
               </div>
             </section>
           );
-        })}
-      </nav>
+          })}
+        </nav>
+      </ScrollArea>
       <footer className={mergeClasses('grid gap-0.5 border-t border-t-solid pt-[12px] px-1', styles.footer)}>
         <SidebarNavLink
           currentPath={pathname}
