@@ -587,6 +587,18 @@ interface ShimState extends WebSearchExecutionSession {
 
 const ITERATION_CAP = 30;
 
+const eagerResolver = <T>(promise: Promise<T>): (() => Promise<T>) => {
+  const settled = promise.then(
+    value => ({ ok: true as const, value }),
+    error => ({ ok: false as const, error }),
+  );
+  return async () => {
+    const result = await settled;
+    if (result.ok) return result.value;
+    throw result.error;
+  };
+};
+
 const planShimSlots = (
   parsed: ParsedWebSearchOperations,
   commands: Record<string, unknown>,
@@ -632,7 +644,7 @@ const planShimSlots = (
     } else {
       action = { type: 'search', query: Object.keys(commands).join(', ') };
     }
-    return { id: synthesizeWebSearchCallId(), resolve: async () => await executeAlpha(commands, action) };
+    return { id: synthesizeWebSearchCallId(), resolve: eagerResolver(executeAlpha(commands, action)) };
   }
 
   try {
@@ -662,7 +674,7 @@ const planShimSlots = (
     const searchOps = parsed.ops as Array<Extract<WebSearchOperation, { kind: 'search' }>>;
     return {
       id: synthesizeWebSearchCallId(),
-      resolve: async () => await runBackendSearchMulti(searchOps, state),
+      resolve: eagerResolver(runBackendSearchMulti(searchOps, state)),
     };
   }
 
@@ -685,7 +697,7 @@ const planShimSlots = (
 
   return {
     id: synthesizeWebSearchCallId(),
-    resolve: async () => await executeOperationToIr(parsed.ops[0], state, await startBatchFetch(parsed, state)),
+    resolve: eagerResolver(startBatchFetch(parsed, state).then(async batch => await executeOperationToIr(parsed.ops[0], state, batch))),
   };
 };
 

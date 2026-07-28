@@ -636,7 +636,13 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   ]);
   assertEquals(result.target.messages[1], {
     role: 'assistant',
-    content: [{ type: 'tool_use', id: 'call_web', name: 'web_run_2', input: { search_query: [] } }],
+    content: [{
+      type: 'tool_use',
+      id: 'call_web',
+      name: 'web_run_2',
+      input: { search_query: [] },
+      cache_control: { type: 'ephemeral' },
+    }],
   });
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
 });
