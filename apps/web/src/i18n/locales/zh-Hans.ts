@@ -992,6 +992,7 @@ const zhHansCN = {
         form: {
           name: '名称',
           namePlaceholder: '我的代理',
+          url: '代理 URL',
           protocol: '协议',
           host: '主机',
           hostPlaceholder: 'server.example.com',
@@ -1021,6 +1022,14 @@ const zhHansCN = {
           timeout: '拨号超时',
           timeoutPlaceholder: '默认（10 秒）',
           timeoutHint: '单位为秒。留空使用默认 10 秒超时。',
+        },
+        validation: {
+          nameRequired: '代理名称不能为空。',
+          urlRequired: '请输入代理 URL，或填写完整的结构化字段。',
+          timeout: {
+            positive: '拨号超时必须是正整数秒数。',
+            maximum: '拨号超时不能超过 600 秒。',
+          },
         },
         actions: {
           save: '保存代理',

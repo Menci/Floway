@@ -1050,6 +1050,7 @@ const en = {
         form: {
           name: 'Name',
           namePlaceholder: 'My proxy',
+          url: 'Proxy URL',
           protocol: 'Protocol',
           host: 'Host',
           hostPlaceholder: 'server.example.com',
@@ -1079,6 +1080,14 @@ const en = {
           timeout: 'Dial timeout',
           timeoutPlaceholder: 'default (10s)',
           timeoutHint: 'Seconds. Leave empty for default 10s timeout.',
+        },
+        validation: {
+          nameRequired: 'Proxy name is required.',
+          urlRequired: 'Enter a proxy URL or complete the structured fields.',
+          timeout: {
+            positive: 'Dial timeout must be a positive whole number of seconds.',
+            maximum: 'Dial timeout must be at most 600 seconds.',
+          },
         },
         actions: {
           save: 'Save Proxy',

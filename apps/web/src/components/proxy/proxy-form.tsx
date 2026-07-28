@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, isValidPort, isValidUuid, orUndef } from './proxy-config';
+import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, isValidPort, isValidUuid, orUndef, proxyUrlPlaceholder } from './proxy-config';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { Panel } from '../ui/panel';
@@ -17,9 +17,61 @@ import type {
   VlessWsTlsProxyConfig,
 } from '@floway-dev/proxy/proxy-config';
 const { Button, Field, MessageBar, MessageBarBody, Option, Spinner, Switch, Text } = fluentComponents;
-export interface ProxyFormProps { canSave: boolean; config: ProxyConfig; dialTimeoutInput: string; editing: boolean; formName: string; onCancel: () => void; onConfigChange: Dispatch<SetStateAction<ProxyConfig>>; onDialTimeoutChange: (value: string) => void; onKindChange: (_: unknown, data: { optionValue?: string }) => void; onNameChange: (value: string) => void; onPortChange: (value: string) => void; onSave: () => void; onTest: () => void; saveError: string | null; saveSuccess: boolean; saving: boolean; testResult: { ok: boolean; egress_ip?: string; error?: string } | null; testing: boolean }
-export function ProxyForm({ canSave, config, dialTimeoutInput, editing, formName, onCancel, onConfigChange: setConfig, onDialTimeoutChange, onKindChange, onNameChange, onPortChange, onSave, onTest, saveError, saveSuccess, saving, testResult, testing }: ProxyFormProps) {
-  const { t } = useTranslation(); const formKind = formKindFromConfig(config); const hostInvalid = !config.host.trim(); const portInvalid = !isValidPort(config.port); const uuidNeeded = config.kind === 'vless-tcp' || config.kind === 'vless-ws' || config.kind === 'reality'; const uuidInvalid = uuidNeeded && !isValidUuid((config as { uuid: string }).uuid);
+export interface ProxyFormProps {
+  canSave: boolean;
+  canTest: boolean;
+  config: ProxyConfig;
+  dialTimeoutInput: string;
+  editing: boolean;
+  formName: string;
+  onCancel: () => void;
+  onConfigChange: Dispatch<SetStateAction<ProxyConfig>>;
+  onDialTimeoutChange: (value: string) => void;
+  onKindChange: (_: unknown, data: { optionValue?: string }) => void;
+  onNameChange: (value: string) => void;
+  onPortChange: (value: string) => void;
+  onSave: () => void;
+  onTest: () => void;
+  onUrlChange: (value: string) => void;
+  saveError: string | null;
+  saveSuccess: boolean;
+  saving: boolean;
+  testResult: { ok: boolean; egress_ip?: string; error?: string } | null;
+  testing: boolean;
+  urlError: string | null;
+  urlInput: string;
+}
+
+export function ProxyForm({
+  canSave,
+  canTest,
+  config,
+  dialTimeoutInput,
+  editing,
+  formName,
+  onCancel,
+  onConfigChange: setConfig,
+  onDialTimeoutChange,
+  onKindChange,
+  onNameChange,
+  onPortChange,
+  onSave,
+  onTest,
+  onUrlChange,
+  saveError,
+  saveSuccess,
+  saving,
+  testResult,
+  testing,
+  urlError,
+  urlInput,
+}: ProxyFormProps) {
+  const { t } = useTranslation();
+  const formKind = formKindFromConfig(config);
+  const hostInvalid = !config.host.trim();
+  const portInvalid = !isValidPort(config.port);
+  const uuidNeeded = config.kind === 'vless-tcp' || config.kind === 'vless-ws' || config.kind === 'reality';
+  const uuidInvalid = uuidNeeded && !isValidUuid((config as { uuid: string }).uuid);
   return (
     <Panel className="!p-[22px_24px] grid gap-[16px] w-full min-w-0">
       <Text size={400} weight="semibold">
@@ -34,6 +86,19 @@ export function ProxyForm({ canSave, config, dialTimeoutInput, editing, formName
           onChange={(_, d) => onNameChange(d.value)}
           placeholder={t('dashboard.proxy.form.namePlaceholder')}
           value={formName}
+        />
+      </Field>
+
+      <Field
+        label={t('dashboard.proxy.form.url')}
+        validationMessage={urlError ?? undefined}
+        validationState={urlError ? 'error' : undefined}
+      >
+        <Input
+          className="font-mono"
+          onChange={(_, data) => onUrlChange(data.value)}
+          placeholder={proxyUrlPlaceholder(config)}
+          value={urlInput}
         />
       </Field>
 
@@ -444,7 +509,7 @@ export function ProxyForm({ canSave, config, dialTimeoutInput, editing, formName
             : t('dashboard.proxy.actions.save')}
         </Button>
         <Button
-          disabled={!config.host.trim() || !isValidPort(config.port) || testing}
+          disabled={!canTest || testing}
           icon={testing ? <Spinner size="tiny" /> : undefined}
           onClick={onTest}
         >

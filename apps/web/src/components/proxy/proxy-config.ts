@@ -84,12 +84,46 @@ export const isValidUuid = (s: string): boolean => {
 
 export const orUndef = (v: string): string | undefined => (v === '' ? undefined : v);
 
-/** Parse a saved proxy URL into config. Returns null on failure (form stays at default). */
-export const parseSavedUrl = (url: string): ProxyConfig | null => {
+export type ProxyUrlParseResult =
+  | { config: ProxyConfig; error: null }
+  | { config: null; error: string };
+
+export const parseProxyInput = (url: string): ProxyUrlParseResult => {
   try {
-    return parseProxyUri(url);
-  } catch {
-    return null;
+    return { config: parseProxyUri(url), error: null };
+  } catch (cause) {
+    return { config: null, error: cause instanceof Error ? cause.message : String(cause) };
+  }
+};
+
+export const parseSavedUrl = (url: string): ProxyConfig | null =>
+  parseProxyInput(url).config;
+
+export type DialTimeoutResult =
+  | { value: number | null; error: null }
+  | { value: null; error: 'positive' | 'maximum' };
+
+export const parseDialTimeoutInput = (raw: string): DialTimeoutResult => {
+  const trimmed = raw.trim();
+  if (trimmed === '') return { value: null, error: null };
+  if (!/^[1-9][0-9]*$/.test(trimmed)) return { value: null, error: 'positive' };
+  const value = Number(trimmed);
+  return value <= 600
+    ? { value, error: null }
+    : { value: null, error: 'maximum' };
+};
+
+export const proxyUrlPlaceholder = (config: ProxyConfig): string => {
+  switch (formKindFromConfig(config)) {
+  case 'http': return 'http://user:pass@host:8080';
+  case 'https': return 'https://user:pass@host:443';
+  case 'socks5': return 'socks5://user:pass@host:1080';
+  case 'ss': return 'ss://method:password@host:8388';
+  case 'ss2022': return 'ss://2022-blake3-aes-128-gcm:base64-key@host:8388';
+  case 'trojan': return 'trojan://password@host:443?sni=server.example.com';
+  case 'vless-tcp': return 'vless://uuid@host:443?type=tcp&security=tls&sni=server.example.com';
+  case 'vless-ws': return 'vless://uuid@host:443?type=ws&security=tls&sni=server.example.com&path=/ws';
+  case 'reality': return 'vless://uuid@host:443?type=tcp&security=reality&pbk=...&sni=...&sid=...';
   }
 };
 
