@@ -24,6 +24,7 @@ encrypted plaintext is exactly:
 {
   version: 1,
   origin?: 'raw' | 'base64' | 'base64url',
+  syntheticItem?: true,
   affinity: {
     upstreamId: string,
     modelId: string,
@@ -33,8 +34,12 @@ encrypted plaintext is exactly:
 ```
 
 Routing strength is not serialized. Ingress derives `prefer` or `force` from
-the blob's current protocol location. Item IDs and persistence metadata are
-not affinity data.
+the blob's current protocol location. `origin` records how to restore original
+opaque bytes; its absence means the blob was created solely for affinity and
+contains no original value. `syntheticItem` is an independent, authenticated
+statement that Floway created the complete protocol item carrying the blob. It
+is valid only without `origin`. Item IDs and persistence metadata are not
+affinity data and are not consulted when interpreting `syntheticItem`.
 
 The carrier has no delimiter or magic prefix:
 
@@ -44,14 +49,15 @@ original bytes || IV[12] || ciphertext+tag || encryptedLength:u16be
 
 The original bytes and the protocol slot are authenticated data. Canonical
 Base64 and unpadded canonical Base64URL values are decoded before appending the
-encrypted trailer; other strings are stored as raw UTF-16 code units. A blob
-created solely for affinity has no `origin` and no original bytes.
+encrypted trailer; other strings are stored as raw UTF-16 code units. An
+originless blob may augment an existing protocol item or reside in a complete
+item synthesized by Floway; only `syntheticItem: true` distinguishes the latter.
 
 Authentication failure, malformed framing, an undeclared plaintext property,
-or another key's carrier makes the complete value foreign. Foreign values pass
-through byte-for-byte and add no routing evidence, allowing nested Floway
-deployments to unwrap their own layer independently. The implementation and
-byte-freeze coverage live in
+an invalid `origin`/`syntheticItem` combination, or another key's carrier makes
+the complete value foreign. Foreign values pass through byte-for-byte and add
+no routing evidence, allowing nested Floway deployments to unwrap their own
+layer independently. The implementation and byte-freeze coverage live in
 [`data-plane/chat/shared/affinity/`](../packages/gateway/src/data-plane/chat/shared/affinity/).
 
 ## Ingress and routing
@@ -63,7 +69,11 @@ candidate attempt receives a fresh source payload:
   alias rules;
 - force-state blobs restore for the required upstream and model regardless of
   alias rules;
-- incompatible owned blobs and originless synthetic blobs are removed;
+- incompatible owned blobs and originless blob slots are removed;
+- a Responses item carrying an owned `syntheticItem: true` blob is removed in
+  full;
+- markerless originless blobs, including blobs written by an older Floway,
+  never cause whole-item removal;
 - foreign blobs remain unchanged.
 
 Every owned carrier also supplies an exact-rules preference. The latest
@@ -127,10 +137,15 @@ and client tradeoffs are recorded beside the
 Natural blobs are top-level `encrypted_content`, program `fingerprint`, and
 `agent_message.content[].encrypted_content`. A carrier-capable first item
 without a natural blob receives an originless blob in its own slot when that
-item closes. If the first item cannot carry a blob, Floway emits a complete
-originless reasoning `output_item.added` + `output_item.done` pair before the
-original item's first event. Original output indexes and sequence numbers are
-shifted by that prefix.
+item closes. The blob has no `syntheticItem` marker because the upstream item
+already existed.
+
+If the first item cannot carry a blob, Floway emits a complete originless
+reasoning `output_item.added` + `output_item.done` pair before the original
+item's first event. Its blob carries `syntheticItem: true`. Original output
+indexes and sequence numbers are shifted by that prefix. On ingress the
+authenticated marker is the sole authority for removing the entire item;
+Floway does not infer ownership from the item ID or payload shape.
 
 Only the first logical item receives synthetic affinity. Later program and
 program-output items inherit force from the latest earlier owned carrier; they
@@ -169,7 +184,7 @@ stored full items and `item_reference`s with their first durable client-facing
 payload, and carries any server-private payload in a request-local scratchpad.
 Item IDs are opaque: hydration performs no prefix validation and no
 candidate-specific rewrite. Affinity never reads, writes, authenticates, or
-validates item IDs.
+validates item IDs, including when it recognizes a fully synthetic item.
 
 On output, affinity wraps the source-shaped events first. When state is
 writable, persistence stores the first `response.output_item.done` value for
@@ -192,9 +207,8 @@ internal storage keys; those internal keys never alter the wire item. HTTP
 WebSocket `store: false` writes new state only to its session-local in-memory
 backing; when durable retention is enabled, reads check session-local state and
 then the durable backing. It never writes the new turn durably. Every backing
-accepts reuse of the
-same item/private payload and rejects a different payload under the same
-API-key-scoped ID. The ordering is owned by the
+accepts reuse of the same item/private payload and rejects a different payload
+under the same API-key-scoped ID. The ordering is owned by the
 [native client-output boundary](../packages/gateway/src/data-plane/chat/responses/client-output.ts)
 and the
 [Stateful Responses output wrapper](../packages/gateway/src/data-plane/chat/responses/items/output.ts).

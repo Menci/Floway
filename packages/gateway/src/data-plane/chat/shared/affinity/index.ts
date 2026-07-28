@@ -21,7 +21,12 @@ export interface AffinityEvidence {
 interface AffinityData {
   version: 1;
   origin?: OpaqueValueOrigin;
+  syntheticItem?: true;
   affinity: AffinityTarget;
+}
+
+export interface AffinityBlobOptions {
+  readonly syntheticItem?: true;
 }
 
 export type DecodedAffinityBlob =
@@ -43,7 +48,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const hasOnlyKeys = (value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean =>
   Object.keys(value).every(key => allowed.has(key));
 
-const AFFINITY_DATA_KEYS = new Set(['version', 'origin', 'affinity']);
+const AFFINITY_DATA_KEYS = new Set(['version', 'origin', 'syntheticItem', 'affinity']);
 const AFFINITY_TARGET_KEYS = new Set(['upstreamId', 'modelId', 'rules']);
 
 const parseAffinityData = (value: unknown): AffinityData | null => {
@@ -56,6 +61,11 @@ const parseAffinityData = (value: unknown): AffinityData | null => {
   ) return null;
   const origin = value.origin;
   if (origin !== undefined && origin !== 'raw' && origin !== 'base64' && origin !== 'base64url') return null;
+  const syntheticItem = value.syntheticItem;
+  if (
+    (syntheticItem !== undefined && syntheticItem !== true)
+    || (syntheticItem === true && origin !== undefined)
+  ) return null;
 
   const affinity = value.affinity;
   if (
@@ -72,6 +82,7 @@ const parseAffinityData = (value: unknown): AffinityData | null => {
   return {
     version: 1,
     ...(origin !== undefined ? { origin } : {}),
+    ...(syntheticItem === true ? { syntheticItem: true } : {}),
     affinity: parsedAffinity,
   };
 };
@@ -113,12 +124,21 @@ export class AffinityCodec {
     this.#key = deriveAffinityKey(serverSecretBytes(serverSecret));
   }
 
-  async wrap(value: string | undefined, affinity: AffinityTarget, domain: string): Promise<string> {
+  async wrap(
+    value: string | undefined,
+    affinity: AffinityTarget,
+    domain: string,
+    options: AffinityBlobOptions = {},
+  ): Promise<string> {
+    if (options.syntheticItem === true && value !== undefined) {
+      throw new TypeError('A synthetic affinity item cannot carry an original value');
+    }
     const original = value === undefined ? undefined : decodeOpaqueValue(value);
     const originalBytes = original?.bytes ?? new Uint8Array();
     const data: AffinityData = {
       version: 1,
       ...(original !== undefined ? { origin: original.origin } : {}),
+      ...(options.syntheticItem === true ? { syntheticItem: true } : {}),
       affinity,
     };
     const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
