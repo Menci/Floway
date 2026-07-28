@@ -768,6 +768,34 @@ test('synthesized function_call item carries a stable id consistent across added
   ]);
 });
 
+test('flattened namespace tool calls recover their source Responses name', () => {
+  const state = createMessagesToResponsesStreamState(
+    'resp_test',
+    'claude-test',
+    new Set(),
+    new Map([['web_run', 'web.run']]),
+  );
+
+  translateMessagesEventToResponsesEvents(
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_web', name: 'web_run', input: {} } } as MessagesStreamEvent,
+    state,
+  );
+  translateMessagesEventToResponsesEvents(
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"search_query":[]}' } } as MessagesStreamEvent,
+    state,
+  );
+  translateMessagesEventToResponsesEvents(
+    { type: 'content_block_stop', index: 0 } as MessagesStreamEvent,
+    state,
+  );
+
+  const [item] = state.completedItems;
+  assertEquals(item.type, 'function_call');
+  if (item.type !== 'function_call') throw new Error('expected function_call');
+  assertEquals(item.name, 'web.run');
+  assertEquals(item.arguments, '{"search_query":[]}');
+});
+
 // ── speed / service_tier pass-through ──
 
 test('Anthropic speed:fast maps to service_tier:fast on the Responses result', () => {

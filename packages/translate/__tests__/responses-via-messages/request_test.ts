@@ -592,6 +592,55 @@ test('buildTargetRequest projects custom_tool_call history into wrapped tool_use
   });
 });
 
+test('buildTargetRequest flattens namespace functions collision-safely and maps replay history', async () => {
+  const namespaceTool: ResponsesTool = {
+    type: 'namespace',
+    name: 'web',
+    tools: [{
+      type: 'function',
+      name: 'run',
+      description: 'Access the web.',
+      parameters: { type: 'object', properties: { search_query: { type: 'array' } } },
+      strict: false,
+    }],
+  };
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [
+      { type: 'message', role: 'user', content: 'search' },
+      { type: 'function_call', call_id: 'call_web', name: 'web.run', arguments: '{"search_query":[]}', status: 'completed' },
+    ],
+    tools: [
+      { type: 'function', name: 'web_run', parameters: { type: 'object' }, strict: false },
+      namespaceTool,
+    ],
+    tool_choice: { type: 'function', name: 'web.run' },
+  });
+
+  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', 'web.run']]));
+  assertEquals(result.target.tools, [
+    {
+      name: 'web_run',
+      description: undefined,
+      input_schema: { type: 'object' },
+      strict: false,
+    },
+    {
+      name: 'web_run_2',
+      description: 'Access the web.',
+      input_schema: { type: 'object', properties: { search_query: { type: 'array' } } },
+      strict: false,
+      cache_control: { type: 'ephemeral' },
+    },
+  ]);
+  assertEquals(result.target.messages[1], {
+    role: 'assistant',
+    content: [{ type: 'tool_use', id: 'call_web', name: 'web_run_2', input: { search_query: [] } }],
+  });
+  assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
+});
+
 test('buildTargetRequest keeps plain-text function_call_output as string content', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',
