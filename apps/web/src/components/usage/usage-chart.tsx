@@ -64,6 +64,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
           <AreaChart
             customDateTimeFormatter={dateFormatter}
             data={chart.plot.data}
+            enablePerfOptimization
             height={size.height}
             hideLegend
             margins={chartMargins}
@@ -79,6 +80,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
           <LineChart
             customDateTimeFormatter={dateFormatter}
             data={chart.plot.data}
+            enablePerfOptimization
             height={size.height}
             hideLegend
             legendProps={{ selectedLegends: visibleLegends, canSelectMultipleLegends: true }}
