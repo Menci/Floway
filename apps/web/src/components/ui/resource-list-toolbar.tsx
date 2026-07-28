@@ -70,7 +70,7 @@ export function ResourceListToolbar(props: ResourceListToolbarProps) {
             onClick={onRefresh}
           />
         </Tooltip>
-        {'createTrigger' in props ? props.createTrigger(createButton) : createButton}
+        {props.createTrigger === undefined ? createButton : props.createTrigger(createButton)}
       </div>
     </div>
   );
