@@ -24,7 +24,7 @@ import { fluentComponents } from '../../fluent';
 import { Input } from '../ui/fluent-form-controls';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
-const { Badge, Button, Field, MessageBar, MessageBarBody, Text, Tooltip } = fluentComponents;
+const { Badge, Button, Divider, Field, MessageBar, MessageBarBody, Tab, TabList, Text, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
 const TIGHT_STACK_CLASS = 'grid gap-1';
 
 // Rates are decimal strings end to end, so the input holds the raw text and
@@ -148,61 +148,51 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
 
   const activeIssues = issues.filter(issue => issueAffectsEntry(issue, selectedIndex));
 
-  return <div className="grid min-w-0 grid-cols-[220px_minmax(0,1fr)] items-stretch gap-5 pl-4 max-[760px]:grid-cols-1">
-    <aside className="grid h-full min-w-0 content-start gap-3 border-0 border-r border-solid border-fui-stroke1 pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
-      <div className="flex items-center justify-between gap-2">
-        <Text weight="semibold">{t('dashboard.upstreamEditor.models.pricingRules')}</Text>
+  return <div className="grid min-w-0 grid-cols-[240px_minmax(0,1fr)] items-stretch gap-5 max-[760px]:grid-cols-1">
+    <aside className="grid h-full min-w-0 content-start gap-2 border-0 border-r border-solid border-fui-stroke1 pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
+      <Toolbar aria-label={t('dashboard.upstreamEditor.models.pricingRules')} className="!min-h-8 !p-0" size="small">
+        <Text as="h4" size={300} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.pricingRules')}</Text>
         <Badge appearance="tint" color="informative" size="small">{drafts.length}</Badge>
-      </div>
-      <div className={`${TIGHT_STACK_CLASS} pl-4`}>
+        {editable && <ToolbarButton className="!ml-auto" icon={<AddRegular />} onClick={addEntry}>
+          {t('dashboard.upstreamEditor.models.addPricingOverride')}
+        </ToolbarButton>}
+      </Toolbar>
+      <TabList
+        aria-label={t('dashboard.upstreamEditor.models.pricingRules')}
+        onTabSelect={(_, data) => setSelectedId(Number(data.value))}
+        selectedValue={selectedId ?? undefined}
+        vertical
+      >
         {drafts.map((draft, index) => {
           const label = pricingEntryCoordinateLabel(draft);
           const displayLabel = index === baseIndex ? t('dashboard.upstreamEditor.models.pricingBase') : label;
-          return <div className="min-w-0" key={draft.id}>
-            <Button
-              appearance={draft.id === selectedId ? 'secondary' : 'subtle'}
-              aria-pressed={draft.id === selectedId}
-              className="!h-auto !justify-start !overflow-hidden !px-0 !py-2 !w-full min-w-0"
-              onClick={() => setSelectedId(draft.id)}
-            >
-              <span className="grid w-full min-w-0 max-w-full overflow-hidden gap-0.5 text-left">
-                <span className="flex w-full min-w-0 items-center gap-2 overflow-hidden">
-                  <span className="block min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-fui-medium" title={displayLabel}>{displayLabel}</span>
-                  {issues.some(issue => issueAffectsEntry(issue, index)) && <Badge appearance="filled" aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} color="danger" size="tiny">!</Badge>}
-                </span>
-                <span className="truncate font-fui-regular text-fui-fg2 text-fui-base200">
-                  {index === baseIndex
-                    ? t('dashboard.upstreamEditor.models.basePricingSummary')
-                    : t('dashboard.upstreamEditor.models.overridePricingSummary')}
-                </span>
+          return <Tab className="!h-auto !items-start !py-2 min-w-0" key={draft.id} value={draft.id}>
+            <span className="grid min-w-0 gap-0.5 text-left">
+              <span className="flex min-w-0 items-center gap-2">
+                <Text truncate size={300} weight="semibold" title={displayLabel}>{displayLabel}</Text>
+                {issues.some(issue => issueAffectsEntry(issue, index)) && <Badge appearance="filled" aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} color="danger" size="tiny">!</Badge>}
               </span>
-            </Button>
-          </div>;
+              <Text truncate size={200} className="text-fui-fg2">
+                {index === baseIndex
+                  ? t('dashboard.upstreamEditor.models.basePricingSummary')
+                  : t('dashboard.upstreamEditor.models.overridePricingSummary')}
+              </Text>
+            </span>
+          </Tab>;
         })}
-      </div>
-      {editable && <Button appearance="subtle" className="!justify-start !px-0" icon={<AddRegular />} onClick={addEntry} size="small">
-        {t('dashboard.upstreamEditor.models.addPricingOverride')}
-      </Button>}
+      </TabList>
     </aside>
 
-    {active && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-5">
-      {editable && <div className="relative h-0 min-w-0">
-        <Tooltip content={t('dashboard.upstreamEditor.models.removePricingEntry')} relationship="label">
-          <Button
-            appearance="subtle"
-            aria-label={t('dashboard.upstreamEditor.models.removePricingEntry')}
-            className="!absolute !right-0 !top-0"
-            icon={<DeleteRegular />}
-            onClick={removeActive}
-            size="small"
-          />
-        </Tooltip>
-      </div>}
-
+    {active && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-4">
       <section className="grid min-w-0 gap-3" aria-labelledby={conditionsHeadingId}>
-        <div className={TIGHT_STACK_CLASS}>
-          <Text id={conditionsHeadingId} weight="semibold">{t('dashboard.upstreamEditor.models.pricingConditions')}</Text>
-          <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingConditionsHint')}</Text>
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className={TIGHT_STACK_CLASS}>
+            <Text as="h4" id={conditionsHeadingId} size={300} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.pricingConditions')}</Text>
+            <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingConditionsHint')}</Text>
+          </div>
+          {editable && selectedIndex !== baseIndex && <Tooltip content={t('dashboard.upstreamEditor.models.removePricingEntry')} relationship="label">
+            <Button appearance="subtle" aria-label={t('dashboard.upstreamEditor.models.removePricingEntry')} icon={<DeleteRegular />} onClick={removeActive} size="small" />
+          </Tooltip>}
         </div>
         <div className="grid gap-3 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[560px]:grid-cols-1">
           {PRICING_AXES.map(axis => {
@@ -251,9 +241,11 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
         </div>
       </section>
 
+      <Divider />
+
       <section className="grid min-w-0 gap-3" aria-labelledby={ratesHeadingId}>
         <div className={TIGHT_STACK_CLASS}>
-          <Text id={ratesHeadingId} weight="semibold">{t('dashboard.upstreamEditor.models.pricingRates')}</Text>
+          <Text as="h4" id={ratesHeadingId} size={300} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.pricingRates')}</Text>
           <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingRatesHint')}</Text>
         </div>
         <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
