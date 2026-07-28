@@ -14,7 +14,6 @@ import type {
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Combobox, Input, Select } from '../ui/fluent-form-controls';
-import { SegmentedControl } from '../ui/segmented-control';
 import { modelsField } from '@floway-dev/provider';
 import type { Flag } from '@floway-dev/provider/flags';
 
@@ -25,6 +24,8 @@ const {
   MessageBar,
   MessageBarBody,
   Option,
+  Radio,
+  RadioGroup,
   Switch,
   Text,
   makeStyles,
@@ -114,15 +115,15 @@ export function ModelDetail({
           {row.config.display_name ?? publicModelId(row.config)}
         </Text>
         <div className="flex-none">
-          <SegmentedControl
-            ariaLabel={t('dashboard.upstreamEditor.models.source')}
-            items={[
-              { value: 'auto', label: t('dashboard.upstreamEditor.models.auto'), disabled: readOnly || !row.hasAuto },
-              { value: 'manual', label: t('dashboard.upstreamEditor.models.manual'), disabled: readOnly },
-            ]}
+          <RadioGroup
+            aria-label={t('dashboard.upstreamEditor.models.source')}
+            layout="horizontal"
             value={row.source}
-            onChange={source => onSourceChange(source as 'auto' | 'manual')}
-          />
+            onChange={(_, data) => onSourceChange(data.value as 'auto' | 'manual')}
+          >
+            <Radio disabled={readOnly || !row.hasAuto} label={t('dashboard.upstreamEditor.models.auto')} value="auto" />
+            <Radio disabled={readOnly} label={t('dashboard.upstreamEditor.models.manual')} value="manual" />
+          </RadioGroup>
         </div>
       </header>
 

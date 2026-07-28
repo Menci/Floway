@@ -21,11 +21,23 @@ import {
   type PricingField,
 } from './pricing-model';
 import { fluentComponents } from '../../fluent';
-import { Input } from '../ui/fluent-form-controls';
+import { Input, Select } from '../ui/fluent-form-controls';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
-const { Badge, Button, Divider, Field, MessageBar, MessageBarBody, Tab, TabList, Text, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
+const { Badge, Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const TIGHT_STACK_CLASS = 'grid gap-1';
+const usePricingStyles = makeStyles({
+  rule: {
+    borderLeft: '3px solid transparent',
+    borderRadius: 'var(--borderRadiusMedium)',
+    minWidth: 0,
+    padding: '8px 10px',
+    '&[aria-selected="true"]': {
+      backgroundColor: 'var(--colorSubtleBackgroundSelected)',
+      borderLeftColor: 'var(--colorCompoundBrandStroke)',
+    },
+  },
+});
 
 // Rates are decimal strings end to end, so the input holds the raw text and
 // only hands it to the model on a well-formed value. Parsing to a number here
@@ -80,6 +92,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
   value: ModelPricing | undefined;
 }) => {
   const { t } = useTranslation();
+  const styles = usePricingStyles();
   const [ownDrafts, setOwnDrafts] = useState<PricingEntryDraft[]>(() => pricingEntryDraftsFor(value));
   const [selectedId, setSelectedId] = useState<number | null>(() => ownDrafts[0]?.id ?? null);
   // Read-only is a view of the record; editable owns its drafts, because
@@ -157,16 +170,16 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
           <ToolbarButton aria-label={t('dashboard.upstreamEditor.models.addPricingOverride')} className="!ml-auto" icon={<AddRegular />} onClick={addEntry} />
         </Tooltip>}
       </Toolbar>
-      <TabList
+      <List
         aria-label={t('dashboard.upstreamEditor.models.pricingRules')}
-        onTabSelect={(_, data) => setSelectedId(Number(data.value))}
-        selectedValue={selectedId ?? undefined}
-        vertical
+        onSelectionChange={(_, data) => setSelectedId(Number(data.selectedItems[0]))}
+        selectedItems={selectedId === null ? [] : [selectedId]}
+        selectionMode="single"
       >
         {drafts.map((draft, index) => {
           const label = pricingEntryCoordinateLabel(draft);
           const displayLabel = index === baseIndex ? t('dashboard.upstreamEditor.models.pricingBase') : label;
-          return <Tab className="!h-auto !items-start !py-2 min-w-0" key={draft.id} value={draft.id}>
+          return <ListItem checkmark={null} className={styles.rule} key={draft.id} value={draft.id}>
             <span className="grid min-w-0 gap-0.5 text-left">
               <span className="flex min-w-0 items-center gap-2">
                 <Text truncate size={300} weight="semibold" title={displayLabel}>{displayLabel}</Text>
@@ -178,9 +191,9 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
                   : t('dashboard.upstreamEditor.models.overridePricingSummary')}
               </Text>
             </span>
-          </Tab>;
+          </ListItem>;
         })}
-      </TabList>
+      </List>
     </aside>
 
     {active && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-4">
@@ -212,17 +225,16 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
             const threshold = thresholdCoordinate(active, axis.id);
             return <Field className="min-w-0" key={axis.id} label={t('dashboard.upstreamEditor.models.inputTokens')} hint={t('dashboard.upstreamEditor.models.inputTokensHint')}>
               <div className="flex min-w-0 items-center gap-2">
-                <Button
-                  appearance="secondary"
+                <Select
                   aria-label={t('dashboard.upstreamEditor.models.operator')}
                   disabled={!editable}
-                  onClick={() => patchActive(draft => withThresholdCoordinate(draft, axis.id, {
-                    operator: thresholdCoordinate(draft, axis.id)?.operator === 'gte' ? 'gt' : 'gte',
-                  }))}
-                  size="medium"
+                  className="!w-[76px] flex-none"
+                  value={threshold?.operator ?? 'gt'}
+                  onChange={(_, data) => patchActive(draft => withThresholdCoordinate(draft, axis.id, { operator: data.value as 'gt' | 'gte' }))}
                 >
-                  {threshold?.operator === 'gte' ? '≥' : '>'}
-                </Button>
+                  <option value="gt">&gt;</option>
+                  <option value="gte">≥</option>
+                </Select>
                 <Input
                   className="!w-full"
                   inputMode="numeric"

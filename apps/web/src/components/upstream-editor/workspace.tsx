@@ -84,16 +84,15 @@ export function UpstreamWorkspace({
     if (next === 'detail') setModelDetailTab('details');
   };
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
-    <div className="border-b border-b-solid border-fui-stroke1 px-5 pt-2">
+    <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
-        ? <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => {
-            if (data.value === 'back') setModelView('list');
-            else setModelDetailTab(data.value as ModelDetailTab);
-          }}>
-            <Tab icon={<ArrowLeftRegular />} value="back">{t('dashboard.upstreamEditor.models.back')}</Tab>
+        ? <>
+          <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => setModelView('list')}>{t('dashboard.upstreamEditor.models.back')}</Button>
+          <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => setModelDetailTab(data.value as ModelDetailTab)}>
             <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
           </TabList>
+        </>
         : <TabList selectedValue={tab} onTabSelect={(_, data) => setTab(data.value as typeof tab)}>
             <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
