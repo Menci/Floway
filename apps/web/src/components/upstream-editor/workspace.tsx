@@ -9,7 +9,7 @@ import {
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -21,7 +21,7 @@ import { parseModels, serializeModels } from './models-json';
 import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { formatFullTime, formatRelativeTime } from '../requests/format';
-import { Input, Textarea } from '../ui/fluent-form-controls';
+import { Input } from '../ui/fluent-form-controls';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -55,6 +55,8 @@ interface ModelRow {
 
 type ModelView = 'list' | 'detail' | 'json';
 type ModelDetailTab = 'details' | 'flags';
+
+const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 
 export function UpstreamWorkspace({
   discovered,
@@ -222,19 +224,32 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
           <Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.jsonTitle')}</Text>
           <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.jsonHint')}</Text>
         </div>
-        <Button appearance="primary" className="ml-auto" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
+        <Button appearance="secondary" className="!min-w-[160px] ml-auto" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
           {t('dashboard.upstreamEditor.models.editWithUi')}
         </Button>
       </div>
-      <Textarea
-        aria-label={t('dashboard.upstreamEditor.models.jsonTitle')}
-        className="!w-full font-mono"
-        resize="vertical"
-        rows={20}
-        spellCheck={false}
-        value={json}
-        onChange={(_, data) => { setJson(data.value); setJsonError(null); }}
-      />
+      <div className="h-[max(480px,calc(100vh-330px))] min-h-[480px] overflow-hidden border border-solid border-fui-stroke1 rounded-md">
+        <Suspense fallback={<div className="h-full" />}>
+          <MonacoEditor
+            height="100%"
+            language="json"
+            options={{
+              automaticLayout: true,
+              fontFamily: 'Cascadia Code, monospace',
+              fontSize: 14,
+              formatOnPaste: true,
+              formatOnType: true,
+              minimap: { enabled: false },
+              padding: { top: 12, bottom: 12 },
+              scrollBeyondLastLine: false,
+              tabSize: 2,
+            }}
+            theme={window.matchMedia('(prefers-color-scheme: dark)').matches ? 'vs-dark' : 'light'}
+            value={json}
+            onChange={value => { setJson(value ?? ''); setJsonError(null); }}
+          />
+        </Suspense>
+      </div>
       {jsonError && <MessageBar intent="error"><MessageBarBody>{jsonError}</MessageBarBody></MessageBar>}
     </div>;
   }
@@ -251,8 +266,8 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     <div className="flex flex-wrap items-center gap-3">
       <div className="grid gap-0.5"><Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.title')}</Text><Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}</Text></div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
-        {!readOnly && <Button icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
-        {!readOnly && <Button icon={<CodeRegular />} onClick={() => { setJson(serializeModels(manual)); setJsonError(null); onViewChange('json'); }}>{t('dashboard.upstreamEditor.models.editAsJson')}</Button>}
+        {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
+        {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { setJson(serializeModels(manual)); setJsonError(null); onViewChange('json'); }}>{t('dashboard.upstreamEditor.models.editAsJson')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
           <Button disabled={loading || !autoFetchEnabled} icon={loading ? <Spinner size="tiny" /> : <ArrowSyncRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
@@ -271,7 +286,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     </MessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table className="w-full min-w-[860px] table-fixed">
+      <Table className="w-full min-w-[640px] table-fixed">
         <TableHeader><TableRow><TableHeaderCell className="!w-[88px]">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[25%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableHeaderCell className="!w-[88px] !text-right">{t('dashboard.upstreamEditor.models.actions')}</TableHeaderCell></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
