@@ -1,5 +1,5 @@
-import { ArrowClockwiseRegular, CheckmarkRegular, CopyRegular, DeleteRegular, DismissRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
-import { useMemo, useState } from 'react';
+import { ArrowClockwiseRegular, CheckmarkRegular, CopyRegular, DeleteRegular, DismissRegular, EditRegular } from '@fluentui/react-icons';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { UpstreamOption } from './types';
@@ -10,9 +10,8 @@ import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {
-  Button, DataGrid, DataGridBody, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow,
-  Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, TableCellActions, TableCellLayout, Text,
-  createTableColumn, makeStyles,
+  DataGrid, DataGridBody, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow,
+  TableCellLayout, Text, createTableColumn, makeStyles,
 } = fluentComponents;
 
 const useStyles = makeStyles({
@@ -70,38 +69,35 @@ export function KeysTable({
         renderHeaderCell: () => t('dashboard.apiKeys.table.created'),
         renderCell: key => <span title={dateTime(key.created_at)}>{shortDate(key.created_at)}</span>,
       }),
-      // The row's actions ride in this last cell instead of a column of their
-      // own: TableCellActions reveals them on hover and on keyboard focus, so a
-      // dedicated column would only reserve width for something usually hidden.
       createTableColumn<ApiKey>({
         columnId: 'lastUsed', compare: (a, b) => (a.last_used_at ?? '').localeCompare(b.last_used_at ?? ''),
         renderHeaderCell: () => t('dashboard.apiKeys.table.lastUsed'),
-        renderCell: key => <>
-          {key.last_used_at
-            ? <span title={dateTime(key.last_used_at)}>
-                {relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })}
-              </span>
-            : <span>{t('dashboard.apiKeys.table.never')}</span>}
-          <RowActions
-            apiKey={key}
-            copiedTag={copiedTag}
-            copyFailedTag={copyFailedTag}
-            onCopy={onCopy}
-            onDelete={onDelete}
-            onEdit={onEdit}
-            onRotate={onRotate}
-          />
-        </>,
+        renderCell: key => key.last_used_at
+          ? <span title={dateTime(key.last_used_at)}>
+              {relativeTime(key.last_used_at) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at) })}
+            </span>
+          : <span>{t('dashboard.apiKeys.table.never')}</span>,
+      }),
+      createTableColumn<ApiKey>({
+        columnId: 'actions', renderHeaderCell: () => t('dashboard.apiKeys.table.actions'),
+        renderCell: key => {
+          const copyTag = `key-${key.id}`;
+          return (
+            <div className="inline-flex items-center gap-[2px]">
+              <TooltipIconButton
+                icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
+                label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
+                onClick={() => onCopy(key.key, copyTag)}
+              />
+              <TooltipIconButton icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
+              <TooltipIconButton icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
+              <TooltipIconButton icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
+            </div>
+          );
+        },
       }),
     ],
     [copiedTag, copyFailedTag, onCopy, onDelete, onEdit, onRotate, s, t, upstreamById],
-  );
-
-  const columnSizingOptions = useMemo(
-    () => ({
-      name: { defaultWidth: 180 }, key: { defaultWidth: 160 },
-      upstreams: { defaultWidth: 240 }, lastUsed: { defaultWidth: 220 },
-    }), [],
   );
 
   if (keys.length === 0) {
@@ -113,7 +109,6 @@ export function KeysTable({
       <DataGrid
         aria-label={t('dashboard.apiKeys.table.title')}
         columns={columns}
-        columnSizingOptions={columnSizingOptions}
         focusMode="composite"
         getRowId={key => key.id}
         items={keys}
@@ -121,11 +116,9 @@ export function KeysTable({
           const [id] = [...data.selectedItems];
           if (typeof id === 'string') onSelect(id);
         }}
-        resizableColumns
         selectedItems={selectedKeyId === '' ? [] : [selectedKeyId]}
         selectionMode="single"
         sortable
-        subtleSelection
       >
         <DataGridHeader>
           <DataGridRow selectionCell={{ 'aria-label': t('dashboard.apiKeys.table.select') }}>
@@ -139,7 +132,7 @@ export function KeysTable({
               selectionCell={{ radioIndicator: { 'aria-label': t('dashboard.apiKeys.table.selectNamed', { name: item.name }) } }}
             >
               {({ renderCell, columnId }) => (
-                <DataGridCell focusMode={columnId === 'lastUsed' ? 'group' : 'cell'}>
+                <DataGridCell focusMode={columnId === 'actions' ? 'group' : 'cell'}>
                   {renderCell(item)}
                 </DataGridCell>
               )}
@@ -153,46 +146,6 @@ export function KeysTable({
 
 const truncateKey = (key: string) =>
   key.length <= 14 ? key : `${key.slice(0, 7)}...${key.slice(-4)}`;
-
-// Row actions ride in TableCellActions, which Fluent keeps at opacity 0 until
-// the row is hovered or holds focus. An open menu portals its popover out of
-// the row, so without pinning the actions visible the trigger fades out from
-// under its own menu as soon as the pointer travels to a menu item.
-function RowActions({ apiKey, copiedTag, copyFailedTag, onCopy, onDelete, onEdit, onRotate }: {
-  apiKey: ApiKey;
-  copiedTag: string | null;
-  copyFailedTag: string | null;
-  onCopy: (text: string, tag: string) => void;
-  onDelete: (key: ApiKey) => void;
-  onEdit: (key: ApiKey) => void;
-  onRotate: (key: ApiKey) => void;
-}) {
-  const { t } = useTranslation();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const copyTag = `key-${apiKey.id}`;
-
-  return (
-    <TableCellActions visible={menuOpen}>
-      <TooltipIconButton
-        icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
-        label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
-        onClick={() => onCopy(apiKey.key, copyTag)}
-      />
-      <Menu onOpenChange={(_, data) => setMenuOpen(data.open)} open={menuOpen}>
-        <MenuTrigger disableButtonEnhancement>
-          <Button appearance="subtle" aria-label={t('dashboard.apiKeys.actions.more', { name: apiKey.name })} icon={<MoreHorizontalRegular />} />
-        </MenuTrigger>
-        <MenuPopover>
-          <MenuList>
-            <MenuItem icon={<EditRegular />} onClick={() => onEdit(apiKey)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
-            <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(apiKey)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
-            <MenuItem icon={<DeleteRegular />} onClick={() => onDelete(apiKey)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
-          </MenuList>
-        </MenuPopover>
-      </Menu>
-    </TableCellActions>
-  );
-}
 
 const upstreamsText = (
   key: ApiKey,
