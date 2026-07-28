@@ -9,7 +9,7 @@ export interface ApiDocsEndpoint {
 const openAi = 'https://platform.openai.com/docs/api-reference';
 const codexSearchDocs = 'https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L8-L29';
 
-export const authCurlExample = (origin: string) => `curl "${origin}/v1/models" \\\n+  -H "Authorization: Bearer $FLOWAY_API_KEY"`;
+export const authCurlExample = (origin: string) => `curl "${origin}/v1/models" \\\n  -H "Authorization: Bearer $FLOWAY_API_KEY"`;
 
 export const apiDocsEndpoints = [
   { group: 'models', method: 'GET', path: '/v1/models', name: 'openAiModels', docs: `${openAi}/models/list` },
