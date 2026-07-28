@@ -6,6 +6,7 @@ import { publicModelId } from './editor-data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { PricingEditor } from './pricing-editor';
 import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
+import { RerankTargetEditor } from './rerank-target-editor';
 import type {
   UpstreamChatConfig,
   UpstreamModelConfig,
@@ -85,7 +86,11 @@ export function ModelDetail({
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
     endpoints: defaultEndpointsForKind(kind, row.config.endpoints),
-    ...(kind === 'image' ? { limits: undefined, chat: undefined } : {}),
+    chat: kind === 'chat' ? row.config.chat : undefined,
+    // A rerank model is invalid without a target, so switching to the kind
+    // seeds the default protocol rather than leaving the config unsavable.
+    rerankTarget: kind === 'rerank' ? row.config.rerankTarget ?? { protocol: 'cohere-v2' } : undefined,
+    ...(kind === 'image' ? { limits: undefined } : {}),
   });
 
   const updateLimit = (key: keyof NonNullable<UpstreamModelConfig['limits']>, raw: string) => {
@@ -138,7 +143,9 @@ export function ModelDetail({
           </Field>
           <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.kind')}>
             <Select key={row.config.kind} disabled={!editable} defaultValue={row.config.kind} onChange={(_, data) => setKind(data.value as UpstreamModelConfig['kind'])}>
-              <option value="chat">Chat</option><option value="embedding">Embedding</option><option value="image">Image</option>
+              <option value="chat">Chat</option><option value="embedding">Embedding</option><option value="image">Image</option><option value="transcription">Transcription</option>
+              {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
+              {record.kind === 'custom' && <option value="rerank">Rerank</option>}
             </Select>
           </Field>
           <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')}>
@@ -150,7 +157,9 @@ export function ModelDetail({
         </div>
       </EditorBlock>
 
-      {row.config.kind !== 'embedding' && <EditorBlock title={t('dashboard.upstreamEditor.models.endpoints')}>
+      {/* Embedding, transcription, and rerank each address exactly one
+          endpoint, so there is nothing for the operator to choose. */}
+      {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorBlock title={t('dashboard.upstreamEditor.models.endpoints')}>
         <div className="grid gap-1">
           {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
             checked={key in row.config.endpoints}
@@ -164,6 +173,10 @@ export function ModelDetail({
             }}
           />)}
         </div>
+      </EditorBlock>}
+
+      {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorBlock title={t('dashboard.upstreamEditor.models.rerankTarget')}>
+        <RerankTargetEditor disabled={!editable} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
       </EditorBlock>}
 
       {row.config.kind !== 'image' && <EditorBlock title={t('dashboard.upstreamEditor.models.capabilities')}>
@@ -274,8 +287,12 @@ const cleanObject = <T extends object>(value: T) => Object.fromEntries(Object.en
 const cleanChat = (chat: UpstreamChatConfig): UpstreamChatConfig | undefined => chat.modalities || chat.reasoning ? chat : undefined;
 const numberRange = (range: { min?: number; max?: number }, key: 'min' | 'max', raw: string) => { const next = { ...range }; const value = optionalNumber(raw); if (value === undefined) delete next[key]; else next[key] = value; return next; };
 
+const ENDPOINT_CHOICE_KINDS = new Set<UpstreamModelConfig['kind']>(['chat', 'image']);
+
 const defaultEndpointsForKind = (kind: UpstreamModelConfig['kind'], current: UpstreamModelConfig['endpoints']) => {
   if (kind === 'embedding') return { embeddings: {} };
+  if (kind === 'transcription') return { audioTranscriptions: {} };
+  if (kind === 'rerank') return { rerank: {} };
   const keys = kind === 'image' ? ['imagesGenerations', 'imagesEdits'] as const : ['completions', 'chatCompletions', 'responses', 'messages'] as const;
   const kept: UpstreamModelConfig['endpoints'] = {};
   for (const key of keys) if (current[key]) kept[key] = current[key];
