@@ -18,6 +18,7 @@ import { modelsAreValid } from './model-detail';
 import { UpstreamWorkspace } from './workspace';
 import { authFetch, callApi, callJson } from '../../api/auth';
 import { api } from '../../api/client';
+import { upstreamRecordFromWire } from '../../api/types';
 import type { CustomRawModel, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -114,7 +115,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       if (refreshed.error) {
         setModelsError(refreshed.error.message);
       } else {
-        setRecord(current => ({ ...current, modelsCache: refreshed.data.modelsCache } as UpstreamRecord));
+        const refreshedRecord = upstreamRecordFromWire(refreshed.data);
+        setRecord(current => ({ ...current, modelsCache: refreshedRecord.modelsCache } as UpstreamRecord));
       }
     }
     setModelsLoading(false);
@@ -164,10 +166,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
     setSaving(false);
     if (result.error) { setSaveError(result.error.message); return; }
-    let saved = result.data;
+    let saved = upstreamRecordFromWire(result.data);
     if (data.mode === 'edit') {
       const full = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
-      if (!full.error) saved = full.data;
+      if (!full.error) saved = upstreamRecordFromWire(full.data);
     }
     setRecord(saved);
     const savedValues = valuesFromRecord(saved);

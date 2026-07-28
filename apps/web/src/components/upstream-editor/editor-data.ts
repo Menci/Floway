@@ -3,6 +3,7 @@ import type { InferRequestType } from 'hono/client';
 
 import { callApi } from '../../api/auth';
 import { api, getCurrentSession } from '../../api/client';
+import { upstreamRecordsFromWire } from '../../api/types';
 import type {
   BackoffRow,
   CustomRawModel,
@@ -79,11 +80,11 @@ export async function loadEditorAux(): Promise<EditorAuxData> {
   const error = flags.error ?? proxies.error ?? backoffs.error ?? runtime.error ?? upstreams.error;
   if (error) throw new Error(error.message);
   return {
-    flags: flags.data!,
+    flags: [...flags.data!],
     proxies: proxies.data!,
     backoffs: backoffs.data!,
     runtime: runtime.data!,
-    upstreams: upstreams.data!,
+    upstreams: upstreamRecordsFromWire(upstreams.data!),
   };
 }
 

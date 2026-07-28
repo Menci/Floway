@@ -7,6 +7,7 @@ import type { Route } from './+types/dashboard-providers-search';
 import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
+import { upstreamRecordsFromWire } from '../api/types';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
 import bingIconUrl from '../assets/bing.svg';
 import jinaIconUrl from '../assets/icons/jina.svg';
@@ -49,7 +50,7 @@ export async function clientLoader(): Promise<SearchPageLoaderData> {
   ]);
   return {
     config: configResult.data ?? DEFAULT_CONFIG,
-    upstreams: upstreamsResult.data ?? [],
+    upstreams: upstreamRecordsFromWire(upstreamsResult.data ?? []),
     models: modelsResult.data?.data ?? [],
     error: configResult.error?.message ?? upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
   };

@@ -303,6 +303,21 @@ export type UpstreamRecord =
   | (UpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
   | (UpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: null });
 
+export const upstreamRecordFromWire = (value: unknown): UpstreamRecord => {
+  if (!value || typeof value !== 'object') throw new TypeError('Upstream response must be an object');
+  const record = value as Record<string, unknown>;
+  if (!['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama'].includes(String(record.kind))) {
+    throw new TypeError(`Unknown upstream provider kind: ${String(record.kind)}`);
+  }
+  if (!record.config || typeof record.config !== 'object') {
+    throw new TypeError(`Upstream ${String(record.id)} has a malformed config`);
+  }
+  return value as UpstreamRecord;
+};
+
+export const upstreamRecordsFromWire = (values: readonly unknown[]): UpstreamRecord[] =>
+  values.map(upstreamRecordFromWire);
+
 // The action-endpoint wire envelope (matches `upstreamRecordEnvelope` in
 // packages/gateway/src/control-plane/schemas.ts): zod's `.passthrough()`
 // widens the inferred request type with a string index signature, which

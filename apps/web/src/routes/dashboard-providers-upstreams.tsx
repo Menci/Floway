@@ -15,8 +15,9 @@ import { Link, Navigate, redirect, useLocation, useNavigate } from 'react-router
 
 import type { Route } from './+types/dashboard-providers-upstreams';
 import { useDashboardOutletContext } from './dashboard';
-import { authFetch, callApi, callJson } from '../api/auth';
+import { callApi } from '../api/auth';
 import { api } from '../api/client';
+import { upstreamRecordsFromWire } from '../api/types';
 import type {
   ControlPlaneModel,
   UpstreamProviderKind,
@@ -499,7 +500,7 @@ async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
   return {
-    upstreams: [...(upstreamsResult.data ?? [])].sort(compareUpstreams),
+    upstreams: upstreamRecordsFromWire(upstreamsResult.data ?? []).sort(compareUpstreams),
     models: modelsResult.data?.data ?? null,
     loadError: upstreamsResult.error?.message ?? null,
     modelsError: modelsResult.error?.message ?? null,
@@ -507,12 +508,7 @@ async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
 }
 
 const patchUpstream = (id: string, body: { enabled?: boolean; sort_order?: number }) =>
-  callJson<UpstreamRecord>(() =>
-    authFetch(`/api/upstreams/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }));
+  callApi(() => api.api.upstreams[':id'].$patch({ param: { id }, json: body }));
 
 const compareUpstreams = (a: UpstreamRecord, b: UpstreamRecord) =>
   a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);

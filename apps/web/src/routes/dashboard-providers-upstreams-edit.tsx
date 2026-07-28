@@ -3,6 +3,7 @@ import { redirect } from 'react-router';
 import type { Route } from './+types/dashboard-providers-upstreams-edit';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
+import { upstreamRecordFromWire } from '../api/types';
 import type { UpstreamRecord } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { loadEditorAux, requireAdmin } from '../components/upstream-editor/editor-data';
@@ -22,7 +23,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   return {
     ...aux,
     mode: 'edit' as const,
-    record: recordResult.data,
+    record: upstreamRecordFromWire(recordResult.data),
     nextSortOrder: recordResult.data.sort_order,
   };
 }

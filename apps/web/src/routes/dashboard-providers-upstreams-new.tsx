@@ -3,6 +3,7 @@ import { redirect } from 'react-router';
 import type { Route } from './+types/dashboard-providers-upstreams-new';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
+import { upstreamRecordFromWire } from '../api/types';
 import type { UpstreamProviderKind, UpstreamRecord } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import {
@@ -28,7 +29,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   ]);
   if (recordResult.error) throw new Error(recordResult.error.message);
   const record = {
-    ...recordResult.data,
+    ...upstreamRecordFromWire(recordResult.data),
     name: providerDefaultName[provider],
     enabled: true,
   };
