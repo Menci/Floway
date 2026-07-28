@@ -32,7 +32,7 @@ import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   CanonicalResponsesPayload,
   ResponsesOutputItem,
@@ -6232,4 +6232,28 @@ test('upstream that does not echo `tools` produces a synthesized envelope withou
   const completed = findResponseCompleted(frames);
   assertEquals(completed.response.tools, undefined);
   assertEquals(completed.response.tool_choice, undefined);
+});
+
+// ── Billable usage ────────────────────────────────────────────────────────
+
+test('the shim carries the upstream turn cost onto the metadata pricing reads', async () => {
+  // The shim publishes its own finalMetadata, and that is what pricing reads.
+  // Failing to carry the cost onto it loses billing for the whole response
+  // silently, because the client-facing usage is no longer consulted.
+  const billableUsage: BillableUsage = { input: 10, cacheRead: 3, cacheWrite: 0, cacheWrite1h: 0, output: 2 };
+  makeStubDeps();
+  const inv = makeInvocation({ enabledFlags: new Set(['responses-web-search-shim'] as const) });
+
+  const result = await withResponsesWebSearchShim(inv, makeGatewayCtx(), async () => ({
+    type: 'events',
+    events: (async function* () {
+      for (const frame of messageTurn('no search needed')) yield frame;
+    })(),
+    modelIdentity: testTelemetryModelIdentity,
+    finalMetadata: Promise.resolve({ modelIdentity: testTelemetryModelIdentity, billableUsage }),
+  }));
+
+  assert(result.type === 'events');
+  await collectFrames(result.events);
+  assertEquals((await result.finalMetadata!).billableUsage, billableUsage);
 });

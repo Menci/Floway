@@ -1,6 +1,4 @@
-import type { TokenUsage } from '../../../repo/types.ts';
 import type { StreamCompletion } from '../../shared/sse.ts';
-import { hasTokenUsage } from '../../shared/telemetry/usage.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { plainResult } from '@floway-dev/provider';
 import type { EventResultMetadata, ExecuteResult, PlainResult } from '@floway-dev/provider';
@@ -27,13 +25,6 @@ export const plainResultFromResponse = async (response: Response, upstream?: str
 export class SourceStreamState {
   failed = false;
   completed = false;
-  usage: TokenUsage | null = null;
-
-  // Only a frame carrying real (non-zero) usage overwrites the running figure,
-  // so an empty trailing frame can't wipe a good count.
-  rememberUsage(usage: TokenUsage | null): void {
-    if (usage && hasTokenUsage(usage)) this.usage = usage;
-  }
 
   failedAfter(completion: StreamCompletion): boolean {
     return completion === 'error' || this.failed || (completion === 'cancel' && !this.completed);

@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 
 import { createMessagesToResponsesStreamState, translateMessagesEventToResponsesEvents } from '../../src/responses-via-messages/events.ts';
-import { USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -842,7 +841,6 @@ test('Messages delta atomically replaces tier and merges late cache accounting i
     output_tokens: 2,
     total_tokens: 22,
     input_tokens_details: { cached_tokens: 0, cache_write_tokens: 9 },
-    [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
   });
 });
 
