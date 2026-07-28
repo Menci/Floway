@@ -310,9 +310,46 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const visibleData = useMemo<ChartProps>(() => ({ ...chart.data, lineChartData: chart.data.lineChartData?.filter(series => visibleLegends.includes(series.legend)) }), [chart.data, visibleLegends]);
   const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
-  const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length ? null : <div className="grid gap-[6px] min-w-[220px] p-1"><Text size={200} weight="semibold">{formatCalloutTitle(props.x, labelByTime, chart.range, locale)}</Text>{props.values.filter(item => item.y > 0).sort((a, b) => b.y - a.y).map(item => <Text key={item.legend} size={200} className="flex gap-3 justify-between font-mono"><span>{item.legend}</span><span>{formatter(item.y)}</span></Text>)}</div>, [chart.range, formatter, labelByTime, locale]);
+  const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length
+    ? null
+    : <PerformanceChartCallout
+        data={props}
+        formatter={formatter}
+        title={formatCalloutTitle(props.x, labelByTime, chart.range, locale)}
+      />, [chart.range, formatter, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
   return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
+}
+
+function PerformanceChartCallout({ data, formatter, title }: {
+  data: CustomizedCalloutData;
+  formatter: (value: number) => string;
+  title: string;
+}) {
+  const rows = data.values
+    .filter(item => item.y > 0)
+    .toSorted((left, right) => right.y - left.y);
+
+  return (
+    <div className="grid gap-2 min-w-[280px] max-w-[min(420px,calc(100vw-48px))] p-1">
+      <Text block size={200} weight="semibold">{title}</Text>
+      <div className="grid gap-1.5">
+        {rows.map(item => (
+          <div className="grid grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 min-w-0" key={item.legend}>
+            <span
+              aria-hidden
+              className="block h-2 w-2 rounded-full"
+              style={{ backgroundColor: item.color }}
+            />
+            <Text block size={200} className="truncate" title={item.legend}>{item.legend}</Text>
+            <Text block size={200} weight="semibold" className="font-mono tabular-nums text-right whitespace-nowrap">
+              {formatter(item.y)}
+            </Text>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; upstreamNames: ReadonlyMap<string, string> }) {
