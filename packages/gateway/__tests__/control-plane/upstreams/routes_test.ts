@@ -2101,7 +2101,7 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
 //
 // GET /api/upstreams/blueprint — the create page's loader consumes this so
 // the same UpstreamEditPage component serves both create and edit; the
-// blueprint is a shape-complete blank UpstreamRecord that never touches
+// blueprint is a shape-complete blank editor response that never touches
 // the DB or an assert. GET /api/upstreams/:id — the unredacted single-record
 // read the edit page depends on. POST /api/upstreams/copilot/quota — pure
 // query that surfaces GitHub Copilot's quota block verbatim.
@@ -2116,6 +2116,7 @@ test('GET /api/upstreams/blueprint round-trips a shape-complete blank for every 
     assertEquals(body.id, '');
     assertEquals(body.kind, kind);
     assertEquals(body.config !== null && typeof body.config === 'object', true);
+    assertEquals(body.modelsCache, { fetchedAt: null, lastError: null });
   }
 });
 

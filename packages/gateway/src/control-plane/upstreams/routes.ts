@@ -5,6 +5,7 @@ import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './sha
 import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import type { ModelsCacheRow } from '../../repo/types.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { shortId } from '../../shared/short-id.ts';
 import type { createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
@@ -38,6 +39,13 @@ type UpstreamWithCacheResponse = UpstreamResponse & {
   };
 };
 
+const modelsCacheForResponse = (
+  cacheRow: Pick<ModelsCacheRow, 'fetchedAt' | 'lastError'> | null,
+): UpstreamWithCacheResponse['modelsCache'] => ({
+  fetchedAt: cacheRow?.fetchedAt ?? null,
+  lastError: cacheRow?.lastError ?? null,
+});
+
 const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuotaProjection> => {
   if (record.kind !== 'codex') return {};
   assertCodexUpstreamRecord(record);
@@ -60,10 +68,7 @@ const serializeForResponse = async (
   ]);
   return {
     ...baseSerialize(record),
-    modelsCache: {
-      fetchedAt: cacheRow?.fetchedAt ?? null,
-      lastError: cacheRow?.lastError ?? null,
-    },
+    modelsCache: modelsCacheForResponse(cacheRow),
     ...codexQuota,
   };
 };
@@ -171,17 +176,18 @@ export const listUpstreamOptions = async (c: Context) => {
 
 export const listOptionalFlags = (c: Context) => c.json(OPTIONAL_FLAGS);
 
-// Serve a shape-complete blank SerializedUpstreamRecord for the requested
-// kind. The create page's loader calls this so it can render the same
-// UpstreamEditPage component edit uses, treating a fresh upstream as an
-// edit of an unpersisted record. The record is never written; the client's
-// draft state is the sole source of truth until Save.
-export const getUpstreamBlueprint = (c: Context): Response => {
+// Serve the same response shape as the edit endpoint for an unpersisted
+// record. The empty cache projection keeps create and edit on one UI contract
+// without querying storage for an id that does not exist yet.
+export const getUpstreamBlueprint = (c: Context) => {
   const kind = c.req.query('kind');
   if (!isValidProviderKind(kind)) {
     return c.json({ error: `kind must be one of: ${ALL_PROVIDER_KINDS.join(', ')}` }, 400);
   }
-  return c.json(upstreamRecordToFullJson(blueprintUpstreamRecord(kind)));
+  return c.json({
+    ...upstreamRecordToFullJson(blueprintUpstreamRecord(kind)),
+    modelsCache: modelsCacheForResponse(null),
+  });
 };
 
 // Single-record read for the edit page. Returns the FULL record — no
