@@ -46,7 +46,6 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
           <AreaChart
             customDateTimeFormatter={dateFormatter}
             data={chart.plot.data}
-            enableGradient
             height={size.height}
             hideLegend
             legendProps={{ selectedLegends: visibleLegends, canSelectMultipleLegends: true }}

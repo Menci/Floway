@@ -17,7 +17,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
   if (rows.length === 0) return null;
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(760px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-[6px] p-1">
-      <Text size={400} weight="semibold">
+      <Text size={300} weight="semibold">
         {formatCalloutTitle(point.x, labelByTime, chart.range, locale)}
       </Text>
       {chart.kind === 'token' && bucketDetails ? (
@@ -25,14 +25,14 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
           <thead>
             <tr>
               <th className="max-w-[180px] min-w-[120px] pl-0 text-left" />
-              <th className="px-2 py-[2px] text-right"><Text size={300} weight="semibold" className="text-fui-fg2">Req</Text></th>
-              <th className="px-2 py-[2px] text-right"><Text size={300} weight="semibold" className="text-fui-fg2">Cost</Text></th>
-              <th className="px-2 py-[2px] text-right"><Text size={300} weight="semibold" className="text-fui-fg2">Total</Text></th>
-              <th className="px-2 py-[2px] text-right"><Text size={300} weight="semibold" className="text-fui-fg2">Cached</Text></th>
-              <th className="px-2 py-[2px] text-right"><Text size={300} weight="semibold" className="text-fui-fg2">Cached%</Text></th>
-              <th className="px-2 py-[2px] text-right"><Text size={300} weight="semibold" className="text-fui-fg2">Prefill</Text></th>
-              <th className="px-2 py-[2px] text-right"><Text size={300} weight="semibold" className="text-fui-fg2">Output</Text></th>
-              <th className="px-2 py-[2px] text-right"><Text size={300} weight="semibold" className="text-fui-fg2">Hit%</Text></th>
+              <th className="px-2 py-[2px] text-right"><Text size={200} weight="semibold" className="text-fui-fg2">Req</Text></th>
+              <th className="px-2 py-[2px] text-right"><Text size={200} weight="semibold" className="text-fui-fg2">Cost</Text></th>
+              <th className="px-2 py-[2px] text-right"><Text size={200} weight="semibold" className="text-fui-fg2">Total</Text></th>
+              <th className="px-2 py-[2px] text-right"><Text size={200} weight="semibold" className="text-fui-fg2">Cached</Text></th>
+              <th className="px-2 py-[2px] text-right"><Text size={200} weight="semibold" className="text-fui-fg2">Cached%</Text></th>
+              <th className="px-2 py-[2px] text-right"><Text size={200} weight="semibold" className="text-fui-fg2">Prefill</Text></th>
+              <th className="px-2 py-[2px] text-right"><Text size={200} weight="semibold" className="text-fui-fg2">Output</Text></th>
+              <th className="px-2 py-[2px] text-right"><Text size={200} weight="semibold" className="text-fui-fg2">Hit%</Text></th>
             </tr>
           </thead>
           <tbody>
@@ -46,17 +46,17 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
                   <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
                     <span className="flex items-center gap-[6px] min-w-0 overflow-hidden text-ellipsis">
                       <i className="rounded-[2px] h-[10px] w-[10px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-                      <Text size={300}>{item.legend}</Text>
+                      <Text size={200}>{item.legend}</Text>
                     </span>
                   </td>
-                  <td className="px-2 py-[2px] text-right"><Text size={300}>{formatCount(summary.requests, locale)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={300}>{formatUsdCost(summary.cost)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={300}>{formatDecimalCount(summary.total)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={300}>{formatDecimalCount(summary.cacheRead)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={300}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={300}>{formatDecimalCount(summary.prefill)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={300}>{formatDecimalCount(summary.output)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={300}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatCount(summary.requests, locale)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatUsdCost(summary.cost)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(summary.total)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(summary.cacheRead)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(summary.prefill)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(summary.output)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
                 </tr>
               );
             })}
@@ -64,7 +64,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
         </table>
       ) : (
         rows.map(item => (
-          <Text key={item.legend} size={300} className="flex items-center gap-1.5 justify-between tabular-nums">
+          <Text key={item.legend} size={200} className="flex items-center gap-1.5 justify-between tabular-nums">
             <i className="rounded-full h-[8px] w-[8px] flex-shrink-0" style={{ backgroundColor: item.color }} />
             {item.legend}: {valueFormatter(item.value)}
           </Text>
