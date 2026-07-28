@@ -95,6 +95,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
   const { control, setValue } = useFormContext<UpstreamEditorValues>();
   const { append, fields, remove } = useFieldArray({ control, name: 'manualModels' });
   const manual = useWatch({ control, name: 'manualModels' });
+  const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
   const [view, setView] = useState<'list' | 'detail' | 'json'>('list');
@@ -105,13 +106,18 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
   const [search, setSearch] = useState('');
   const readOnly = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
+  const autoFetchEnabled = record.kind !== 'custom'
+    || (config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled;
+  const visibleDiscovered = !autoFetchEnabled
+    ? []
+    : discovered;
   const rows = useMemo<ModelRow[]>(() => {
-    const autoById = new Map(discovered.map(item => [item.upstreamModelId, item]));
+    const autoById = new Map(visibleDiscovered.map(item => [item.upstreamModelId, item]));
     const result: ModelRow[] = manual.map((item, index) => ({ key: `manual:${fields[index]?.id ?? index}`, source: 'manual', config: item, manualIndex: index, hasAuto: autoById.has(item.upstreamModelId) }));
     const manualIds = new Set(manual.map(item => item.upstreamModelId));
-    for (const item of discovered) if (!manualIds.has(item.upstreamModelId)) result.push({ key: `auto:${item.upstreamModelId}`, source: 'auto', config: item, manualIndex: null, hasAuto: true });
+    for (const item of visibleDiscovered) if (!manualIds.has(item.upstreamModelId)) result.push({ key: `auto:${item.upstreamModelId}`, source: 'auto', config: item, manualIndex: null, hasAuto: true });
     return result;
-  }, [discovered, fields, manual]);
+  }, [fields, manual, visibleDiscovered]);
   const selectedRow = rows.find(row => row.key === selected) ?? null;
   const pendingManualRow: ModelRow | null = pendingManualConfig === null ? null : {
     key: 'pending-manual',
@@ -140,6 +146,10 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
     if (source === 'manual' && row.source === 'auto') {
       setPendingManualId(row.config.upstreamModelId);
       const manualConfig = structuredClone(row.config);
+      if (manualConfig.kind === 'rerank') {
+        manualConfig.endpoints = { rerank: {} };
+        manualConfig.rerankTarget = { protocol: 'cohere-v2' };
+      }
       setPendingManualConfig(manualConfig);
       append(manualConfig);
       return;
@@ -200,7 +210,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
         {!readOnly && <Button icon={<CodeRegular />} onClick={() => { setJson(serializeModels(manual)); setJsonError(null); setView('json'); }}>{t('dashboard.upstreamEditor.models.editAsJson')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
-          <Button disabled={loading} icon={loading ? <Spinner size="tiny" /> : <ArrowSyncRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
+          <Button disabled={loading || !autoFetchEnabled} icon={loading ? <Spinner size="tiny" /> : <ArrowSyncRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
         </>}
       </div>
     </div>

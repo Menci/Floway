@@ -102,17 +102,32 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ record: previewRecord(record, values) }),
       }));
-    setModelsLoading(false);
-    if (result.error) { setModelsError(result.error.message); return; }
+    if (result.error) {
+      setModelsLoading(false);
+      setModelsError(result.error.message);
+      return;
+    }
     const endpoints = record.kind === 'custom' ? (values.config as typeof record.config).endpoints : {};
     setDiscovered(discoveredModelsFromResponse(record.kind, result.data.data, endpoints));
+    if (record.id !== '') {
+      const refreshed = await callApi<UpstreamRecord>(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
+      if (refreshed.error) {
+        setModelsError(refreshed.error.message);
+      } else {
+        setRecord(current => ({ ...current, modelsCache: refreshed.data.modelsCache } as UpstreamRecord));
+      }
+    }
+    setModelsLoading(false);
   }, [getValues, record]);
 
   useEffect(() => {
     const values = getValues();
-    const canFetch = record.id !== '' && record.kind !== 'azure'
-      || record.kind === 'custom' && Boolean((values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).baseUrl)
-      || record.kind === 'ollama' && Boolean((values.config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl);
+    const canFetch = record.kind === 'custom'
+      ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).baseUrl)
+        && (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled
+      : record.kind === 'ollama'
+        ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl)
+        : record.id !== '' && record.kind !== 'azure';
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Fetching the model catalog on mount; the pending flag begins that work.
     if (canFetch) void refreshModels();
   }, []);

@@ -705,6 +705,7 @@ const en = {
               'Reasoning effort must include at least one supported level, and its default must be one of those levels.',
           invalidBudget:
               'Maximum reasoning budget must be greater than or equal to the minimum.',
+          invalidContract: 'Model ID, kind, endpoints, and rerank target must form a valid model configuration.',
           delete: 'Delete manual model',
         },
         copilot: {
@@ -794,7 +795,7 @@ const en = {
         validation: {
           name: 'Upstream name is required.',
           prefix: 'At least one model prefix form must remain addressable.',
-          models: 'One or more models have invalid reasoning settings.',
+          models: 'One or more models have an invalid configuration.',
           copilot: 'Complete GitHub device authorization before saving.',
           credential: 'Import a credential before saving.',
         },

@@ -668,6 +668,7 @@ const zhHansCN = {
           invalidEffort:
               '推理强度至少需要一个支持值，且默认值必须包含在支持列表中。',
           invalidBudget: '最大推理 Token 预算不能小于最小值。',
+          invalidContract: '模型 ID、类型、端点与 Rerank 目标必须组成有效的模型配置。',
           delete: '删除手动模型',
         },
         copilot: {
@@ -755,7 +756,7 @@ const zhHansCN = {
         validation: {
           name: '上游名称不能为空。',
           prefix: '至少保留一种可路由的模型前缀形式。',
-          models: '一个或多个模型的推理设置无效。',
+          models: '一个或多个模型配置无效。',
           copilot: '请先完成 GitHub 设备授权。',
           credential: '请先导入凭据。',
         },

@@ -50,12 +50,6 @@ export interface UpstreamEditorValues {
   manualModels: UpstreamModelConfig[];
 }
 
-// Compatibility for records written before Floway commit 5289ba35 (2026-06-25).
-// That backend change renamed this flag without a SQL data migration: repository
-// reads still return the old key, while PATCH validation rejects it as unknown.
-// Keep this narrow alias at the editor boundary until deployed gateways migrate
-// their stored upstream- and model-level overrides; do not turn it into a generic
-
 export const providerKinds: readonly UpstreamProviderKind[] = [
   'custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama',
 ];
@@ -209,6 +203,17 @@ export function updateBody(record: UpstreamRecord, values: UpstreamEditorValues)
   } as UpdateUpstreamBody;
 }
 
+const discoveredCustomModelEndpoints = (
+  kind: CustomRawModel['kind'],
+  configured: ModelEndpoints,
+): ModelEndpoints => {
+  if (kind === 'embedding') return { embeddings: {} };
+  if (kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
+  if (kind === 'transcription') return { audioTranscriptions: {} };
+  if (kind === 'rerank') return {};
+  return Object.keys(configured).length ? structuredClone(configured) : { chatCompletions: {} };
+};
+
 export function discoveredModelsFromResponse(
   kind: UpstreamProviderKind,
   data: UpstreamModelConfig[] | CustomRawModel[],
@@ -216,11 +221,7 @@ export function discoveredModelsFromResponse(
 ): UpstreamModelConfig[] {
   if (kind !== 'custom') return data as UpstreamModelConfig[];
   return (data as CustomRawModel[]).map(model => {
-    const modelEndpoints: ModelEndpoints = model.kind === 'embedding'
-      ? { embeddings: {} }
-      : model.kind === 'image'
-        ? { imagesGenerations: {}, imagesEdits: {} }
-        : Object.keys(endpoints).length ? structuredClone(endpoints) : { chatCompletions: {} };
+    const modelEndpoints = discoveredCustomModelEndpoints(model.kind, endpoints);
     return {
       upstreamModelId: model.id,
       publicModelId: model.id,

@@ -15,6 +15,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { Input, Select } from '../ui/fluent-form-controls';
 import { SegmentedControl } from '../ui/segmented-control';
+import { modelsField } from '@floway-dev/provider';
 import type { Flag } from '@floway-dev/provider/flags';
 
 const {
@@ -271,16 +272,30 @@ export function modelValidationError(model: UpstreamModelConfig, t: ReturnType<t
   const budget = model.chat?.reasoning?.budget_tokens;
   if (budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min) return t('dashboard.upstreamEditor.models.invalidBudget');
   if (!pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing)) return t('dashboard.upstreamEditor.models.invalidPricing');
+  try {
+    modelsField([model], 'model');
+  } catch {
+    return t('dashboard.upstreamEditor.models.invalidContract');
+  }
   return null;
 }
 
-export const modelsAreValid = (models: readonly UpstreamModelConfig[]) => models.every(model => {
-  const effort = model.chat?.reasoning?.effort;
-  if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return false;
-  const budget = model.chat?.reasoning?.budget_tokens;
-  return !(budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min)
-    && pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing);
-});
+export const modelsAreValid = (models: readonly UpstreamModelConfig[]) => {
+  const hasInvalidEditorFields = models.some(model => {
+    const effort = model.chat?.reasoning?.effort;
+    if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return true;
+    const budget = model.chat?.reasoning?.budget_tokens;
+    return (budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min)
+      || !pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing);
+  });
+  if (hasInvalidEditorFields) return false;
+  try {
+    modelsField([...models], 'models');
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const optionalNumber = (raw: string): number | undefined => raw === '' ? undefined : Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined;
 const cleanObject = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
