@@ -1,10 +1,6 @@
 import {
-  ArrowDownloadRegular,
-  ArrowUploadRegular,
   CheckmarkRegular,
   CopyRegular,
-  DocumentArrowDownRegular,
-  DocumentArrowUpRegular,
   EyeOffRegular,
   EyeRegular,
 } from '@fluentui/react-icons';
@@ -13,7 +9,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
-import { errorLabel, requestSeverity } from './format';
+import { requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import {
   detectCollectKind,
@@ -23,9 +19,11 @@ import {
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { ScrollArea } from '../ui/scroll-area';
+import { prismTokenStyles } from '../ui/prism-token-styles';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
+import 'prismjs/components/prism-json';
 
-const { Button, MessageBar, MessageBarBody, Tab, TabList, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+const { Badge, Button, MessageBar, MessageBarBody, Tab, TabList, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   sectionHeader: {
@@ -45,7 +43,7 @@ const useStyles = makeStyles({
     backgroundColor: 'var(--colorNeutralBackground1)',
     color: 'var(--colorNeutralForeground1)',
     fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: '12px',
+    fontSize: '14px',
     lineHeight: 1.55,
     margin: 0,
     overflow: 'visible',
@@ -53,6 +51,7 @@ const useStyles = makeStyles({
     tabSize: 2,
     whiteSpace: 'pre',
   },
+  highlightedCode: prismTokenStyles,
   headers: { borderCollapse: 'collapse', fontFamily: 'var(--fontFamilyMonospace)', fontSize: '12px', width: '100%' },
   headerRow: { borderBottom: '1px solid var(--colorNeutralStroke3)' },
   headerName: { color: 'var(--colorNeutralForeground3)', padding: '7px 14px 7px 16px', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'nowrap', width: '190px' },
@@ -100,7 +99,7 @@ function CodeView({ body }: { body: RenderedBody }) {
     const grammar = body.isJson ? Prism.languages.json : Prism.languages.plain;
     return grammar ? Prism.highlight(body.text, grammar, body.isJson ? 'json' : 'plain') : escapeHtml(body.text);
   }, [body]);
-  return <pre className={mergeClasses(s.code, `language-${body.isJson ? 'json' : 'plain'}`)}><code dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>;
+  return <pre className={mergeClasses(s.code, `language-${body.isJson ? 'json' : 'plain'}`)}><code className={s.highlightedCode} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>;
 }
 
 function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
@@ -140,9 +139,9 @@ function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
   );
 }
 
-function SectionHeader({ title, icon, detail, actions, copyText }: { title: string; icon: React.ReactNode; detail?: React.ReactNode; actions?: React.ReactNode; copyText?: string }) {
+function SectionHeader({ title, detail, actions, copyText }: { title: string; detail?: React.ReactNode; actions?: React.ReactNode; copyText?: string }) {
   const s = useStyles();
-  return <header className={s.sectionHeader}><span className="inline-flex text-fui-base400 text-fui-fg3">{icon}</span><Text size={400} weight="semibold">{title}</Text>{detail}{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
+  return <header className={s.sectionHeader}><Text as="h3" size={400} weight="semibold" className="!m-0">{title}</Text>{detail}{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
 }
 
 export function RequestDetailPanel({ collected: loadedCollected, error, record, recordId }: DetailProps) {
@@ -172,7 +171,9 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
   if (!record) return null;
 
   const severity = requestSeverity(record.response.status, record.meta.error);
-  const responseError = errorLabel(record.meta.error, record.response.status);
+  const responseError = record.meta.error?.kind === 'failed'
+    ? record.meta.error.reason
+    : record.meta.error ? `${record.meta.error.kind} error` : null;
   const requestHeadersCopy = record.request.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
   const responseHeadersCopy = record.response.headers.map(([name, value]) => `${name}: ${value}`).join('\n');
   const collectedCopyText = collected?.result === null || collected?.result === undefined
@@ -182,22 +183,21 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
   return (
     <ScrollArea axes="both" className="h-full" contentClassName="min-h-full" noTabIndex>
       <section className={s.section}>
-        <SectionHeader title={t('dashboard.requests.request')} icon={<ArrowUploadRegular />} detail={<><Text size={400} weight="semibold" className="font-mono">{record.request.method}</Text><Text size={400} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
+        <SectionHeader title={t('dashboard.requests.request')} detail={<><Badge appearance="tint" color="brand" size="small">{record.request.method}</Badge><Text size={300} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
         <HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} />
       </section>
       <section className={s.section}>
-        <SectionHeader title={t('dashboard.requests.requestBody')} icon={<DocumentArrowUpRegular />} copyText={requestBody.text ? requestBody.copyText : undefined} />
+        <SectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
         {requestBody.decodeError && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</MessageBarBody></MessageBar>}
         {requestBody.text ? <CodeView body={requestBody} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noRequestBody')}</Text>}
       </section>
       <section className={s.section}>
-        <SectionHeader title={t('dashboard.requests.response')} icon={<ArrowDownloadRegular />} detail={<><Text size={400} weight="semibold" className={s[severity]}>{record.response.status ?? t('dashboard.requests.noStatus')}</Text>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
+        <SectionHeader title={t('dashboard.requests.response')} detail={<><Badge appearance="tint" color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'} size="small">{record.response.status ?? t('dashboard.requests.noStatus')}</Badge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
         {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noResponseHeaders')}</Text>}
       </section>
       <section>
         <SectionHeader
           title={t('dashboard.requests.responseBody')}
-          icon={<DocumentArrowDownRegular />}
           actions={record.response.body.type === 'stream' ? (
             <TabList selectedValue={streamView} onTabSelect={(_, data) => setStreamView(data.value as 'collected' | 'events')} size="small">
               <Tab value="collected">{t('dashboard.requests.collected')}</Tab>

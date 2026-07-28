@@ -112,35 +112,36 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
     >
       <div className="flex items-center gap-2 min-w-0">
         <StatusIcon className={s[severity]} />
-        <Text size={200} weight="semibold" className="truncate min-w-0 font-mono">
+        <Text size={300} className="truncate min-w-0 font-mono">
           {record.model ?? t('dashboard.requests.unknownModel')}
         </Text>
-        <Text size={100} className="ml-auto shrink-0 text-fui-fg3" title={formatFullTime(record.startedAt)}>
+        <Text size={200} className="ml-auto shrink-0 text-fui-fg3" title={formatFullTime(record.startedAt)}>
           {formatRelativeTime(record.startedAt, now)}
         </Text>
       </div>
       <div className="mt-1 flex items-center gap-2 min-w-0">
-        <Text size={100} className="truncate min-w-0 flex-1 text-fui-fg3 font-mono" title={`${record.method} ${record.path}`}>
+        <Text size={200} className="truncate min-w-0 flex-1 text-fui-fg3 font-mono" title={`${record.method} ${record.path}`}>
           {record.path}
         </Text>
         {record.upstream && <ProviderBadge
           color={record.upstream.color}
           kind={record.upstream.kind}
           label={record.upstream.name}
+          size="extra-small"
           title={`${record.upstream.kind} · ${record.upstream.id}`}
         />}
       </div>
       <div className="mt-1 flex items-center gap-3 min-w-0 text-fui-fg3">
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.duration', { value: record.durationMs })}>
-          <TimerRegular /> <Text size={100}>{formatDuration(record.durationMs)}</Text>
+          <TimerRegular /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
         </span>
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.requestBytes', { value: record.requestBytes })}>
-          <ArrowUploadRegular /> <Text size={100}>{formatBytes(record.requestBytes)}</Text>
+          <ArrowUploadRegular /> <Text size={200}>{formatBytes(record.requestBytes)}</Text>
         </span>
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.responseBytes', { value: record.responseBytes })}>
-          <ArrowDownloadRegular /> <Text size={100}>{formatBytes(record.responseBytes)}</Text>
+          <ArrowDownloadRegular /> <Text size={200}>{formatBytes(record.responseBytes)}</Text>
         </span>
-        <Text size={100} className={mergeClasses('ml-auto truncate', rowError ? s.error : 'text-fui-fg3')} title={rowError ?? undefined}>
+        <Text size={200} className={mergeClasses('ml-auto truncate', rowError ? s.error : 'text-fui-fg3')} title={rowError ?? undefined}>
           {rowError ?? (tokens === null ? '-' : `${formatTokens(tokens)} tok`)}
         </Text>
       </div>

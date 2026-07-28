@@ -1,3 +1,4 @@
+import type { TagProps } from '@fluentui/react-components';
 import type { ReactElement, ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
@@ -23,10 +24,11 @@ const useStyles = makeStyles({
 // The dashboard's one chip: a read-only Fluent Tag stating an attribute of
 // the thing it sits next to. Not dismissible, so Tag renders it as a plain
 // span rather than a button.
-export function Chip({ children, className, icon, style, textClassName, title }: {
+export function Chip({ children, className, icon, size = 'small', style, textClassName, title }: {
   children: ReactNode;
   className?: string;
   icon?: ReactElement;
+  size?: TagProps['size'];
   style?: React.CSSProperties;
   textClassName?: string;
   title?: string;
@@ -37,7 +39,7 @@ export function Chip({ children, className, icon, style, textClassName, title }:
     <Tag
       appearance="outline"
       shape="circular"
-      size="small"
+      size={size}
       className={mergeClasses(styles.root, className)}
       icon={icon}
       primaryText={{ className: mergeClasses(styles.text, textClassName) }}

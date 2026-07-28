@@ -10,6 +10,7 @@ import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
 import { Chip } from '../ui/chip';
+import type { TagProps } from '@fluentui/react-components';
 
 const { makeStyles, tokens } = fluentComponents;
 
@@ -99,10 +100,11 @@ const customColorStyle = (color: `#${string}`) => ({
 const isHexColor = (color: UpstreamColor | null): color is `#${string}` =>
   color?.startsWith('#') === true;
 
-export function ProviderBadge({ color, kind, label, title }: {
+export function ProviderBadge({ color, kind, label, size = 'small', title }: {
   color: UpstreamColor | null;
   kind: ProviderBadgeKind;
   label?: string;
+  size?: TagProps['size'];
   title?: string;
 }) {
   const { t } = useTranslation();
@@ -118,7 +120,8 @@ export function ProviderBadge({ color, kind, label, title }: {
       className={styles[tone]}
       style={isHexColor(color) ? customColorStyle(color) : undefined}
       title={title ?? visibleLabel}
-      icon={<ProviderIcon kind={kind} className="h-4 w-4" />}
+      icon={<ProviderIcon kind={kind} className={size === 'extra-small' ? 'h-3 w-3' : 'h-4 w-4'} />}
+      size={size}
       textClassName={styles.tagText}
     >
       {visibleLabel}
