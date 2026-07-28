@@ -239,10 +239,10 @@ export default function DashboardProvidersProxy() {
     }
 
     const result = await callApi<ProxyTestResult>(() => authFetch('/api/proxies/test', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      }));
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }));
     setTestResult(result.error ? { ok: false, error: result.error.message } : result.data);
     setTesting(false);
   }, [dialTimeout, urlInput]);
