@@ -6,6 +6,7 @@ import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '.
 import { fluentComponents } from '../../fluent';
 import { HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../utils/color';
 import { Input } from '../ui/fluent-form-controls';
+import { ProviderBadge } from './provider-badge';
 import { UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider/model';
 
 const {
@@ -40,12 +41,10 @@ export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }:
   value: UpstreamColor | null;
 }) => {
   const { t } = useTranslation();
-  const [hexDraft, setHexDraft] = useState(() => (isHex(value) ? value : DEFAULT_CUSTOM_HEX));
+  const [hexDraft, setHexDraft] = useState<string>(() => (isHex(value) ? value : DEFAULT_CUSTOM_HEX));
   const rgb = hexToRgb(hexDraft) ?? hexToRgb(DEFAULT_CUSTOM_HEX)!;
   const [hue, saturation, brightness] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
   const draftInvalid = !HEX_RE.test(hexDraft);
-  const effectivePreset = value ?? KIND_DEFAULT_TONES[kind];
-  const effectiveColor = isHex(value) ? value : PRESET_HEX[effectivePreset];
   const visibleLabel = value === null
     ? t('dashboard.upstreamEditor.color.inherit')
     : isHex(value)
@@ -69,11 +68,12 @@ export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }:
       <Popover positioning={{ position: 'below', align: 'start' }}>
         <PopoverTrigger disableButtonEnhancement>
           <Button
-            appearance="outline"
+            appearance="transparent"
             aria-label={`${t('dashboard.upstreamEditor.color.label')}: ${visibleLabel}`}
-            className="!min-w-8 !p-1.5"
-            icon={<span aria-hidden className="block h-5 w-5 rounded border border-solid border-fui-stroke1" style={{ backgroundColor: effectiveColor }} />}
-          />
+            className="!min-w-0 !p-0"
+          >
+            <ProviderBadge color={value} kind={kind} />
+          </Button>
         </PopoverTrigger>
         <PopoverSurface className="!p-4 w-[min(360px,calc(100vw-32px))]">
           <div className="grid gap-3">

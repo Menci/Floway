@@ -5,7 +5,6 @@ import { fluentComponents } from '../../fluent';
 import { dateTime } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
 import { useNow } from '../../lib/use-now';
-import { Panel } from '../ui/panel';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
 const { Badge, ProgressBar, Text } = fluentComponents;
@@ -32,7 +31,7 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
       ? t('dashboard.upstreamEditor.codex.status.rateLimited', { time: dateTime(status.until) })
       : t(`dashboard.upstreamEditor.codex.status.${status.reason}`);
 
-  return <Panel className="!p-[18px_20px] grid gap-4">
+  return <section className="grid gap-4">
     <div className="flex items-start gap-3">
       <ProviderIcon kind="codex" className="h-8 w-8 shrink-0" />
       <div className="grid gap-1 min-w-0 flex-1">
@@ -54,7 +53,7 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
 
     {entries.length === 0
       ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.noSnapshot')}</Text>
-      : entries.map(entry => <div className="grid gap-3 rounded-lg border border-solid border-fui-stroke2 p-3" key={entry.key}>
+      : entries.map(entry => <section className="grid gap-3 border-0 border-t border-solid border-fui-stroke2 py-3 first:border-t-0" key={entry.key}>
           <div className="flex items-baseline justify-between gap-3 min-w-0">
             <Text truncate weight="semibold" title={entry.label}>{entry.label}</Text>
             <Text size={200} className="text-fui-fg3 shrink-0 uppercase tracking-wide">{t('dashboard.upstreamEditor.codex.activeLimit')}</Text>
@@ -78,10 +77,10 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
             </Text>}
             <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.observed', { time: dateTime(entry.observedAt) })}</Text>
           </div>
-        </div>)}
+        </section>)}
 
     {credential?.state_updated_at && <Text size={200} className="text-fui-fg3 border-0 border-t border-solid border-fui-stroke2 pt-3">
       {t('dashboard.upstreamEditor.codex.stateUpdated', { time: dateTime(credential.state_updated_at) })}
     </Text>}
-  </Panel>;
+  </section>;
 };

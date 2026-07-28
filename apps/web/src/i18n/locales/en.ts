@@ -572,7 +572,7 @@ const en = {
           direct: 'Direct',
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',
-          empty: 'No fallback entries. Traffic uses direct Fetch by default.',
+          empty: 'Without a fallback entry, traffic uses direct Fetch.',
           add: 'Add fallback entry',
           colo: 'Current Cloudflare colo: {{colo}}',
         },

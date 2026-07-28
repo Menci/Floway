@@ -547,7 +547,7 @@ const zhHansCN = {
           direct: '直连',
           directFetch: '直连（Fetch）',
           directConnect: '直连（TCP connect）',
-          empty: '未配置回退出口，默认使用直连 Fetch。',
+          empty: '未配置回退出口时，流量使用直连 Fetch。',
           add: '添加回退出口',
           colo: '当前 Cloudflare colo：{{colo}}',
         },

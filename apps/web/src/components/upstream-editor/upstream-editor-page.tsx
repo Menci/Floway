@@ -22,7 +22,6 @@ import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Panel } from '../ui/panel';
-import { ProviderBadge } from '../upstreams/provider-badge';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
 const {
@@ -175,7 +174,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     <div className="grid grid-rows-[auto_auto_minmax(0,1fr)] gap-[14px] h-full min-h-0">
       <header className="flex items-center gap-3 min-w-0 px-1">
         <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</Button>
-        <ProviderBadge color={currentValues.color} kind={record.kind} />
         <Text size={500} weight="semibold" truncate className="min-w-0">{name || t('dashboard.upstreamEditor.new')}</Text>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
         <div className="ml-auto flex items-center gap-2">

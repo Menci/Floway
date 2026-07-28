@@ -10,6 +10,7 @@ import type { ProxyRecord, UpstreamModelConfig, UpstreamRecord } from '../../api
 import { fluentComponents } from '../../fluent';
 import { Combobox, Input, Select } from '../ui/fluent-form-controls';
 import { ScrollArea } from '../ui/scroll-area';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
@@ -66,7 +67,7 @@ export function UpstreamConfigSidebar({
       <EditorSection title={t('dashboard.upstreamEditor.sections.connection')}>
         <ProviderConfigSection record={record} onPatch={onPatch} />
       </EditorSection>
-      <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')}>
+      <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.empty')}>
         <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
       </EditorSection>
       {record.kind === 'custom' && (
@@ -105,7 +106,7 @@ function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
 function EditorSection({ children, description, inline = false, required = false, title }: { children: React.ReactNode; description?: string; inline?: boolean; required?: boolean; title: string }) {
   const styles = useEditorSectionStyles();
   return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
-    <div className="grid gap-1"><Text as="h2" size={300} weight="semibold" className="!m-0">{title}{required && <span aria-hidden className={styles.required}> *</span>}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
+    <div className="grid gap-1"><Text as="h2" size={400} weight="semibold" className="!m-0">{title}{required && <span aria-hidden className={styles.required}> *</span>}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
     {children}
   </section>;
 }
@@ -179,13 +180,12 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
     aria-describedby={hint ? `${idPrefix}-hint` : undefined}
     className="grid gap-2"
   >
-    {fields.length === 0 && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.proxy.empty')}</Text>}
     {fields.map((field, index) => <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2" key={field.id}>
       <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Select aria-label={t('dashboard.upstreamEditor.sections.proxy')} key={item.value} defaultValue={item.value} onChange={(_, data) => item.onChange(data.value)}>{available.map(proxy => <option key={proxy.id} value={proxy.id}>{proxy.name}</option>)}</Select>} />
       <div className="inline-flex">
-        <Button appearance="subtle" aria-label={t('dashboard.upstreamEditor.actions.moveUp')} disabled={index === 0} icon={<ArrowUpRegular />} onClick={() => move(index, index - 1)} />
-        <Button appearance="subtle" aria-label={t('dashboard.upstreamEditor.actions.moveDown')} disabled={index === fields.length - 1} icon={<ArrowDownRegular />} onClick={() => move(index, index + 1)} />
-        <Button appearance="subtle" aria-label={t('dashboard.upstreamEditor.actions.remove')} icon={<DeleteRegular />} onClick={() => remove(index)} />
+        <TooltipIconButton disabled={index === 0} icon={<ArrowUpRegular />} label={t('dashboard.upstreamEditor.actions.moveUp')} onClick={() => move(index, index - 1)} />
+        <TooltipIconButton disabled={index === fields.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.upstreamEditor.actions.moveDown')} onClick={() => move(index, index + 1)} />
+        <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.actions.remove')} onClick={() => remove(index)} />
       </div>
     </div>)}
     <Button appearance="secondary" className="!font-fui-regular" onClick={() => append({ id: 'direct_fetch' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>

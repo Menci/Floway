@@ -495,7 +495,7 @@ function OAuthConfig({ record, onPatch }: {
 }
 
 function AccountSummary({ kind, subtitle, title }: { kind: UpstreamProviderKind; subtitle: string; title: string }) {
-  return <div className="flex items-center gap-3 border border-solid border-fui-stroke1 rounded-lg p-3 min-w-0">
+  return <div className="flex items-center gap-3 min-w-0">
     <ProviderIcon kind={kind} className="h-8 w-8" />
     <div className="grid gap-0.5 min-w-0"><Text weight="semibold" truncate>{title}</Text><Text size={200} className="text-fui-fg2" truncate>{subtitle}</Text></div>
   </div>;

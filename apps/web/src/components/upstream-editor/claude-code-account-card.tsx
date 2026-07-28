@@ -14,7 +14,6 @@ import {
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { clampPercent } from '../../lib/percent';
-import { Panel } from '../ui/panel';
 import { ProviderIcon } from '../upstreams/provider-badge';
 
 const {
@@ -51,7 +50,7 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
     ? t('dashboard.upstreamEditor.claudeCode.status.heavy', { percent: status.percent })
     : t(`dashboard.upstreamEditor.claudeCode.status.${status.reason}`);
 
-  return <Panel className="!p-[18px_20px] grid gap-4">
+  return <section className="grid gap-4">
     <div className="flex items-start gap-3">
       <ProviderIcon kind="claude-code" className="h-8 w-8 shrink-0" />
       <div className="grid gap-1 min-w-0 flex-1">
@@ -142,7 +141,7 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
         {t('dashboard.upstreamEditor.claudeCode.probeFetched', { time: dateTime(probe.fetchedAt) })}
       </Text>}
     </div>
-  </Panel>;
+  </section>;
 };
 
 const EntryList = ({ entries }: { entries: [string, string][] }) => <dl className="grid gap-1 m-0">

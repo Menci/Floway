@@ -6,7 +6,6 @@ import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { Panel } from '../ui/panel';
 
 const { Button, MessageBar, MessageBarBody, ProgressBar, Text } = fluentComponents;
 
@@ -39,9 +38,9 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
     ? Math.min(1, used / premium.entitlement)
     : null;
 
-  return <Panel className="!p-[18px_20px] grid gap-3">
+  return <section className="grid gap-3">
     <div className="flex items-center justify-between gap-3">
-      <Text weight="semibold">{t('dashboard.upstreamEditor.copilot.quota.title')}</Text>
+      <Text as="h3" size={200} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.copilot.quota.title')}</Text>
       <Button appearance="subtle" disabled={loading} icon={<ArrowClockwiseRegular />} onClick={() => void load()} size="small">
         {loading
           ? t('dashboard.upstreamEditor.copilot.quota.loading')
@@ -64,5 +63,5 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
     {quota && !premium && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.copilot.quota.unmetered')}</Text>}
 
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-  </Panel>;
+  </section>;
 };
