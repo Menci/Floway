@@ -1,4 +1,5 @@
 import type { InferResponseType } from 'hono/client';
+import { EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
@@ -14,8 +15,9 @@ import tavilyIconUrl from '../assets/icons/tavily.svg';
 import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { Dropdown, Input } from '../components/ui/fluent-form-controls';
+import { Dropdown } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
+import { SecretInput } from '../components/ui/secret-input';
 import { fluentComponents } from '../fluent';
 
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
@@ -32,6 +34,7 @@ const {
   Spinner,
   Switch,
   Text,
+  Tooltip,
 } = fluentComponents;
 
 interface SearchPageLoaderData {
@@ -139,6 +142,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [secretVisible, setSecretVisible] = useState(false);
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<SearchConfigTestResult | null>(
@@ -304,23 +308,19 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
           </div>
         )}
 
-        {draft.provider === 'disabled' ? (
+        {draft.provider === 'disabled'
+          ? <MessageBar intent="info"><MessageBarBody>{t('dashboard.searchConfig.noCredentialNeeded')}</MessageBarBody></MessageBar>
+          : (
           <Field label={t('dashboard.searchConfig.apiKeyLabel')}>
-            <Input
-              disabled
-              value={t('dashboard.searchConfig.noCredentialNeeded')}
-            />
-          </Field>
-        ) : (
-          <Field label={t('dashboard.searchConfig.apiKeyLabel')}>
-            <Input
+            <SecretInput
+              contentAfter={<Tooltip content={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} relationship="label"><Button appearance="subtle" aria-label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} icon={secretVisible ? <EyeOffRegular /> : <EyeRegular />} onClick={() => setSecretVisible(value => !value)} size="small" /></Tooltip>}
               onChange={handleApiKeyChange}
               placeholder={t('dashboard.searchConfig.apiKeyPlaceholder')}
-              type="password"
+              revealed={secretVisible}
               value={activeOption.getApiKey(draft)}
             />
           </Field>
-        )}
+          )}
 
         <section className="grid gap-3 border-t border-t-solid border-fui-stroke1 pt-4">
           <div className="flex items-start justify-between gap-4">
