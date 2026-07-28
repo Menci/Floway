@@ -209,109 +209,109 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       />
 
       {pageError && (
-            <MessageBar intent="error">
-              <MessageBarBody>{pageError}</MessageBarBody>
-            </MessageBar>
+        <MessageBar intent="error">
+          <MessageBarBody>{pageError}</MessageBarBody>
+        </MessageBar>
       )}
 
-          <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
-            <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-              <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">
-                {t('dashboard.apiKeys.table.title')}
+      <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
+        <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
+          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">
+            {t('dashboard.apiKeys.table.title')}
+          </Text>
+        </div>
+        <KeysTable
+          copiedTag={copiedTag}
+          copyFailedTag={copyFailedTag}
+          keys={data.keys}
+          onCopy={(text, tag) => void copyToClipboard(text, tag)}
+          onDelete={key => { setDeleteSnapName(key.name); setDeleteTarget(key); }}
+          onEdit={setEditTarget}
+          onRotate={setRotateTarget}
+          onSelect={setSelectedKeyId}
+          selectedKeyId={selectedKey?.id ?? ''}
+          upstreams={data.upstreams}
+        />
+      </Panel>
+
+      <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
+        <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
+          <div className="grid gap-[5px] min-w-0">
+            <Text size={500} weight="semibold" className="text-fui-fg1 leading-[1.25]">
+              {t('dashboard.apiKeys.configuration.title')}
+            </Text>
+            {selectedKey && (
+              <Text size={200} className="text-fui-fg2">
+                <Trans
+                  components={{ strong: <strong className="font-fui-semibold" /> }}
+                  i18nKey="dashboard.apiKeys.configuration.selected"
+                  values={{ name: selectedKey.name }}
+                />
               </Text>
-            </div>
-            <KeysTable
-              copiedTag={copiedTag}
-              copyFailedTag={copyFailedTag}
-              keys={data.keys}
-              onCopy={(text, tag) => void copyToClipboard(text, tag)}
-              onDelete={key => { setDeleteSnapName(key.name); setDeleteTarget(key); }}
-              onEdit={setEditTarget}
-              onRotate={setRotateTarget}
-              onSelect={setSelectedKeyId}
-              selectedKeyId={selectedKey?.id ?? ''}
-              upstreams={data.upstreams}
-            />
-          </Panel>
+            )}
+          </div>
+        </div>
+        <AgentSetupCard
+          copiedTag={copiedTag}
+          copyFailedTag={copyFailedTag}
+          initialApiKeyId={loaderData.selectedKeyId || null}
+          initialError={loaderData.setupError}
+          initialLease={loaderData.setupLease}
+          models={agentSetupModels}
+          onCopy={(text, tag) => void copyToClipboard(text, tag)}
+          selectedKey={selectedKey}
+        />
+      </Panel>
 
-          <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
-            <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-              <div className="grid gap-[5px] min-w-0">
-                <Text size={500} weight="semibold" className="text-fui-fg1 leading-[1.25]">
-                  {t('dashboard.apiKeys.configuration.title')}
-                </Text>
-                {selectedKey && (
-                  <Text size={200} className="text-fui-fg2">
-                    <Trans
-                      components={{ strong: <strong className="font-fui-semibold" /> }}
-                      i18nKey="dashboard.apiKeys.configuration.selected"
-                      values={{ name: selectedKey.name }}
-                    />
-                  </Text>
-                )}
-              </div>
-            </div>
-            <AgentSetupCard
-              copiedTag={copiedTag}
-              copyFailedTag={copyFailedTag}
-              initialApiKeyId={loaderData.selectedKeyId || null}
-              initialError={loaderData.setupError}
-              initialLease={loaderData.setupLease}
-              models={agentSetupModels}
-              onCopy={(text, tag) => void copyToClipboard(text, tag)}
-              selectedKey={selectedKey}
-            />
-          </Panel>
-
-          <KeyDialog
-            apiKey={null}
-            key={createOpen ? 'create-open' : 'create-closed'}
-            mode="create"
-            onOpenChange={setCreateOpen}
-            onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
-            mutationToasts={mutationToasts}
-            open={createOpen}
-            upstreams={data.upstreams}
-            userUpstreamIds={user.upstreamIds}
-          />
-          <KeyDialog
-            apiKey={editTarget}
-            key={editTarget?.id ?? 'edit-closed'}
-            mode="edit"
-            onOpenChange={open => {
-              if (!open) setEditTarget(null);
-            }}
-            onSaved={async () => { await reload(); }}
-            mutationToasts={mutationToasts}
-            open={editTarget !== null}
-            upstreams={data.upstreams}
-            userUpstreamIds={user.upstreamIds}
-          />
-          <RotateKeyDialog
-            apiKey={rotateTarget}
-            key={rotateTarget?.id ?? 'closed'}
-            onOpenChange={open => {
-              if (!open) setRotateTarget(null);
-            }}
-            onSaved={reload}
-            mutationToasts={mutationToasts}
-            open={rotateTarget !== null}
-          />
-          <ConfirmDialog
-            actionLabel={t('dashboard.apiKeys.actions.delete')}
-            busy={deletingKey}
-            message={t('dashboard.apiKeys.delete.message', {
-              name: deleteSnapName,
-            })}
-            onConfirm={() => {
-              if (deleteTarget && !deletingKey) void deleteKey(deleteTarget);
-            }}
-            onOpenChange={open => {
-              if (!open && !deletingKey) setDeleteTarget(null);
-            }}
-            open={deleteTarget !== null}
-            title={t('dashboard.apiKeys.delete.title')}
-          />
+      <KeyDialog
+        apiKey={null}
+        key={createOpen ? 'create-open' : 'create-closed'}
+        mode="create"
+        onOpenChange={setCreateOpen}
+        onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
+        mutationToasts={mutationToasts}
+        open={createOpen}
+        upstreams={data.upstreams}
+        userUpstreamIds={user.upstreamIds}
+      />
+      <KeyDialog
+        apiKey={editTarget}
+        key={editTarget?.id ?? 'edit-closed'}
+        mode="edit"
+        onOpenChange={open => {
+          if (!open) setEditTarget(null);
+        }}
+        onSaved={async () => { await reload(); }}
+        mutationToasts={mutationToasts}
+        open={editTarget !== null}
+        upstreams={data.upstreams}
+        userUpstreamIds={user.upstreamIds}
+      />
+      <RotateKeyDialog
+        apiKey={rotateTarget}
+        key={rotateTarget?.id ?? 'closed'}
+        onOpenChange={open => {
+          if (!open) setRotateTarget(null);
+        }}
+        onSaved={reload}
+        mutationToasts={mutationToasts}
+        open={rotateTarget !== null}
+      />
+      <ConfirmDialog
+        actionLabel={t('dashboard.apiKeys.actions.delete')}
+        busy={deletingKey}
+        message={t('dashboard.apiKeys.delete.message', {
+          name: deleteSnapName,
+        })}
+        onConfirm={() => {
+          if (deleteTarget && !deletingKey) void deleteKey(deleteTarget);
+        }}
+        onOpenChange={open => {
+          if (!open && !deletingKey) setDeleteTarget(null);
+        }}
+        open={deleteTarget !== null}
+        title={t('dashboard.apiKeys.delete.title')}
+      />
     </div>
   );
 }

@@ -237,93 +237,93 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
       {error && <div className={errorStyles.root}>{error}</div>}
 
-          <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
-            <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-              <div className="flex items-center flex-wrap gap-2.5 min-w-0">
-                <Text size={200} weight="semibold" className="text-fui-fg3 leading-[1.2]">
-                  {t('dashboard.usage.tokenUsage')}
-                </Text>
-                {canSwitchView && (
-                  <SegmentedControl
-                    ariaLabel={t('dashboard.usage.view.label')}
-                    items={[
-                      {
-                        value: 'all-by-user',
-                        label: t('dashboard.usage.view.allByUser'),
-                      },
-                      {
-                        value: 'self-by-key',
-                        label: t('dashboard.usage.view.myKeys'),
-                      },
-                    ]}
-                    onChange={value => setView(value as UsageView)}
-                    value={view}
-                  />
-                )}
-                <Tooltip
-                  content={
-                    view === 'all-by-user'
-                      ? t('dashboard.usage.actions.redactUsers')
-                      : t('dashboard.usage.actions.redactKeys')
-                  }
-                  relationship="label"
-                >
-                  <Button
-                    appearance={redactKeys ? 'primary' : 'subtle'}
-                    icon={redactKeys ? <EyeOffRegular /> : <EyeRegular />}
-                    onClick={() => setRedactKeys(value => !value)}
-                  />
-                </Tooltip>
-              </div>
-
+      <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
+        <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
+          <div className="flex items-center flex-wrap gap-2.5 min-w-0">
+            <Text size={200} weight="semibold" className="text-fui-fg3 leading-[1.2]">
+              {t('dashboard.usage.tokenUsage')}
+            </Text>
+            {canSwitchView && (
               <SegmentedControl
-                ariaLabel={t('dashboard.usage.range.label')}
+                ariaLabel={t('dashboard.usage.view.label')}
                 items={[
-                  { value: 'today', label: t('dashboard.usage.range.today') },
-                  { value: '7d', label: t('dashboard.usage.range.sevenDays') },
-                  { value: '30d', label: t('dashboard.usage.range.thirtyDays') },
+                  {
+                    value: 'all-by-user',
+                    label: t('dashboard.usage.view.allByUser'),
+                  },
+                  {
+                    value: 'self-by-key',
+                    label: t('dashboard.usage.view.myKeys'),
+                  },
                 ]}
-                onChange={value => setRange(value as UsageRange)}
-                value={range}
+                onChange={value => setView(value as UsageView)}
+                value={view}
               />
-            </div>
-
-            <ChartSection
-              chart={byKeyChart}
-              detailsLabel={chartTitle}
-              hidden={hiddenKeys}
-              onHiddenChange={setHiddenKeys}
-              title={chartTitle}
-              valueFormatter={value => formatMetricValue(value, metric, locale)}
-            />
-
-            <ChartSection
-              chart={byModelChart}
-              detailsLabel={t('dashboard.usage.charts.byModel')}
-              hidden={hiddenModels}
-              onHiddenChange={setHiddenModels}
-              title={t('dashboard.usage.charts.byModel')}
-              valueFormatter={value => formatMetricValue(value, metric, locale)}
-            />
-
-            <SummaryMetrics locale={locale} metric={metric} onMetricChange={setMetric} summary={summary} />
-
-          </Panel>
-
-          {showSearch && (
-            <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
-              <ChartSection
-                chart={searchChart}
-                detailsLabel={t('dashboard.usage.charts.search')}
-                hidden={hiddenKeys}
-                onHiddenChange={setHiddenKeys}
-                title={t('dashboard.usage.charts.searchWithProvider', {
-                  provider: formatProvider(activeProvider),
-                })}
-                valueFormatter={value => formatCount(value, locale)}
+            )}
+            <Tooltip
+              content={
+                view === 'all-by-user'
+                  ? t('dashboard.usage.actions.redactUsers')
+                  : t('dashboard.usage.actions.redactKeys')
+              }
+              relationship="label"
+            >
+              <Button
+                appearance={redactKeys ? 'primary' : 'subtle'}
+                icon={redactKeys ? <EyeOffRegular /> : <EyeRegular />}
+                onClick={() => setRedactKeys(value => !value)}
               />
-            </Panel>
-          )}
+            </Tooltip>
+          </div>
+
+          <SegmentedControl
+            ariaLabel={t('dashboard.usage.range.label')}
+            items={[
+              { value: 'today', label: t('dashboard.usage.range.today') },
+              { value: '7d', label: t('dashboard.usage.range.sevenDays') },
+              { value: '30d', label: t('dashboard.usage.range.thirtyDays') },
+            ]}
+            onChange={value => setRange(value as UsageRange)}
+            value={range}
+          />
+        </div>
+
+        <ChartSection
+          chart={byKeyChart}
+          detailsLabel={chartTitle}
+          hidden={hiddenKeys}
+          onHiddenChange={setHiddenKeys}
+          title={chartTitle}
+          valueFormatter={value => formatMetricValue(value, metric, locale)}
+        />
+
+        <ChartSection
+          chart={byModelChart}
+          detailsLabel={t('dashboard.usage.charts.byModel')}
+          hidden={hiddenModels}
+          onHiddenChange={setHiddenModels}
+          title={t('dashboard.usage.charts.byModel')}
+          valueFormatter={value => formatMetricValue(value, metric, locale)}
+        />
+
+        <SummaryMetrics locale={locale} metric={metric} onMetricChange={setMetric} summary={summary} />
+
+      </Panel>
+
+      {showSearch && (
+        <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
+          <ChartSection
+            chart={searchChart}
+            detailsLabel={t('dashboard.usage.charts.search')}
+            hidden={hiddenKeys}
+            onHiddenChange={setHiddenKeys}
+            title={t('dashboard.usage.charts.searchWithProvider', {
+              provider: formatProvider(activeProvider),
+            })}
+            valueFormatter={value => formatCount(value, locale)}
+          />
+        </Panel>
+      )}
     </section>
   );
 }

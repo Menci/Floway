@@ -191,59 +191,59 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       title={t('dashboard.nav.performance')}
     />
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-      <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
-        <div className="flex flex-wrap items-center gap-2 justify-between">
-          <SegmentedControl ariaLabel={t('dashboard.performance.metric.label')} items={[
-            { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
-            { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
-          ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
-          <div className="flex flex-wrap items-center gap-2">
-            <SegmentedControl ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-            <SegmentedControl ariaLabel={t('dashboard.performance.range.label')} items={[
-              { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
-            ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
-          </div>
+    <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <SegmentedControl ariaLabel={t('dashboard.performance.metric.label')} items={[
+          { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
+          { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
+        ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedControl ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+          <SegmentedControl ariaLabel={t('dashboard.performance.range.label')} items={[
+            { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
+          ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
         </div>
-        <div className="flex items-start gap-6 justify-between min-w-0 max-[900px]:flex-col max-[900px]:gap-4">
-          <div className="flex items-center gap-2 flex-none">
-            <Text weight="semibold">{t('dashboard.performance.groupBy.label')}</Text>
-            <Select aria-label={t('dashboard.performance.groupBy.label')} className="min-w-[160px]" value={groupBy} onChange={(_, data) => changeGroupBy(data.value as PerformanceGroupBy)}>
-              {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</option>)}
-            </Select>
-            {groupBy === 'keyId' && (
-              <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
-                <Button
-                  appearance="subtle"
-                  aria-label={t('dashboard.performance.apiKeyScopeLabel')}
-                  className="!min-w-[36px] !text-fui-base500"
-                  icon={<InfoRegular fontSize={22} />}
-                  size="large"
-                />
-              </Tooltip>
-            )}
-          </div>
-          <div className="flex items-center gap-2 justify-end min-w-0 max-[900px]:w-full max-[900px]:justify-start">
-            <Text className="flex-none" weight="semibold">{t('dashboard.performance.filters.label')}</Text>
-            <PerformanceFiltersBar filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />
-          </div>
-        </div>
-        <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
-          {summaryCards.map(([label, value]) => <OutlineCard className="!p-[10px] min-w-0" key={label}>
-            <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">{t(`dashboard.performance.summary.${label}`)}</Text>
-            <Text size={500} weight="semibold" className="font-mono overflow-wrap-anywhere">{value}</Text>
-          </OutlineCard>)}
-        </div>
-      </Panel>
-      <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
-        <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
-      </Panel>
-      <div className="grid grid-cols-2 gap-[18px] min-w-0 max-[920px]:grid-cols-1">
-        {breakdowns.map(({ key, rows }) => (
-          <Panel className="!p-[18px] min-w-0" key={key}>
-            <PerformanceTable groupBy={key} overview={overview} rows={rows} upstreamNames={upstreamNames} />
-          </Panel>
-        ))}
       </div>
+      <div className="flex items-start gap-6 justify-between min-w-0 max-[900px]:flex-col max-[900px]:gap-4">
+        <div className="flex items-center gap-2 flex-none">
+          <Text weight="semibold">{t('dashboard.performance.groupBy.label')}</Text>
+          <Select aria-label={t('dashboard.performance.groupBy.label')} className="min-w-[160px]" value={groupBy} onChange={(_, data) => changeGroupBy(data.value as PerformanceGroupBy)}>
+            {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</option>)}
+          </Select>
+          {groupBy === 'keyId' && (
+            <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
+              <Button
+                appearance="subtle"
+                aria-label={t('dashboard.performance.apiKeyScopeLabel')}
+                className="!min-w-[36px] !text-fui-base500"
+                icon={<InfoRegular fontSize={22} />}
+                size="large"
+              />
+            </Tooltip>
+          )}
+        </div>
+        <div className="flex items-center gap-2 justify-end min-w-0 max-[900px]:w-full max-[900px]:justify-start">
+          <Text className="flex-none" weight="semibold">{t('dashboard.performance.filters.label')}</Text>
+          <PerformanceFiltersBar filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />
+        </div>
+      </div>
+      <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
+        {summaryCards.map(([label, value]) => <OutlineCard className="!p-[10px] min-w-0" key={label}>
+          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">{t(`dashboard.performance.summary.${label}`)}</Text>
+          <Text size={500} weight="semibold" className="font-mono overflow-wrap-anywhere">{value}</Text>
+        </OutlineCard>)}
+      </div>
+    </Panel>
+    <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
+      <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
+    </Panel>
+    <div className="grid grid-cols-2 gap-[18px] min-w-0 max-[920px]:grid-cols-1">
+      {breakdowns.map(({ key, rows }) => (
+        <Panel className="!p-[18px] min-w-0" key={key}>
+          <PerformanceTable groupBy={key} overview={overview} rows={rows} upstreamNames={upstreamNames} />
+        </Panel>
+      ))}
+    </div>
   </section>;
 }
 

@@ -289,53 +289,53 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       />
 
       {pageError && (
-            <MessageBar intent="error">
-              <MessageBarBody>{pageError}</MessageBarBody>
-              <MessageBarActions>
-                <Button appearance="transparent" disabled={busy} onClick={() => void handleReload()}>
-                  {t('dashboard.upstreams.actions.retry')}
-                </Button>
-              </MessageBarActions>
-            </MessageBar>
+        <MessageBar intent="error">
+          <MessageBarBody>{pageError}</MessageBarBody>
+          <MessageBarActions>
+            <Button appearance="transparent" disabled={busy} onClick={() => void handleReload()}>
+              {t('dashboard.upstreams.actions.retry')}
+            </Button>
+          </MessageBarActions>
+        </MessageBar>
       )}
 
-          {data.modelsError && (
-            <MessageBar intent="warning">
-              <MessageBarBody>
-                {t('dashboard.upstreams.errors.models', { message: data.modelsError })}
-              </MessageBarBody>
-            </MessageBar>
-          )}
+      {data.modelsError && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            {t('dashboard.upstreams.errors.models', { message: data.modelsError })}
+          </MessageBarBody>
+        </MessageBar>
+      )}
 
-          <Panel className="grid gap-[14px] min-w-0 !p-[18px] !pt-[10px]">
-            <UpstreamsTable
-              busy={busy}
-              data={data}
-              mutation={mutation}
-              onDelete={setDeleteTarget}
-              onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`)}
-              onMove={(record, direction) => void move(record, direction)}
-              onToggle={(record, enabled) => void setEnabled(record, enabled)}
-            />
-          </Panel>
+      <Panel className="grid gap-[14px] min-w-0 !p-[18px] !pt-[10px]">
+        <UpstreamsTable
+          busy={busy}
+          data={data}
+          mutation={mutation}
+          onDelete={setDeleteTarget}
+          onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`)}
+          onMove={(record, direction) => void move(record, direction)}
+          onToggle={(record, enabled) => void setEnabled(record, enabled)}
+        />
+      </Panel>
 
-          <ConfirmDialog
-            actionLabel={
-              mutation?.kind === 'delete'
-                ? t('dashboard.upstreams.actions.deleting')
-                : t('dashboard.upstreams.actions.delete')
-            }
-            busy={mutation?.kind === 'delete'}
-            message={t('dashboard.upstreams.delete.message', { name: deleteTarget?.name ?? '' })}
-            onConfirm={() => {
-              if (deleteTarget && !busy) void deleteUpstream(deleteTarget);
-            }}
-            onOpenChange={open => {
-              if (!open && mutation?.kind !== 'delete') setDeleteTarget(null);
-            }}
-            open={deleteTarget !== null}
-            title={t('dashboard.upstreams.delete.title')}
-          />
+      <ConfirmDialog
+        actionLabel={
+          mutation?.kind === 'delete'
+            ? t('dashboard.upstreams.actions.deleting')
+            : t('dashboard.upstreams.actions.delete')
+        }
+        busy={mutation?.kind === 'delete'}
+        message={t('dashboard.upstreams.delete.message', { name: deleteTarget?.name ?? '' })}
+        onConfirm={() => {
+          if (deleteTarget && !busy) void deleteUpstream(deleteTarget);
+        }}
+        onOpenChange={open => {
+          if (!open && mutation?.kind !== 'delete') setDeleteTarget(null);
+        }}
+        open={deleteTarget !== null}
+        title={t('dashboard.upstreams.delete.title')}
+      />
     </div>
   );
 }
