@@ -32,7 +32,7 @@ const {
 
 const useStyles = makeStyles({
   endpointLabel: {
-    fontFamily: 'monospace !important',
+    fontFamily: 'var(--fontFamilyMonospace) !important',
   },
 });
 

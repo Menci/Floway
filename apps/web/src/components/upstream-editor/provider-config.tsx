@@ -51,10 +51,10 @@ const useStyles = makeStyles({
     marginLeft: '-8px',
   },
   endpointCheckbox: {
-    fontFamily: 'monospace !important',
+    fontFamily: 'var(--fontFamilyMonospace) !important',
   },
   pathOverrideLabel: {
-    fontFamily: 'monospace !important',
+    fontFamily: 'var(--fontFamilyMonospace) !important',
     fontSize: 'var(--fontSizeBase200) !important',
   },
 });

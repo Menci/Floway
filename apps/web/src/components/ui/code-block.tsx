@@ -30,11 +30,15 @@ const useStyles = makeStyles({
   },
   lang: {
     color: 'var(--colorNeutralForeground2)',
-    fontFamily: 'monospace',
+    fontFamily: 'var(--fontFamilyMonospace)',
     fontSize: '12px',
   },
+  // The Prism themes set the code font through `pre[class*="language-"]`,
+  // which outranks a single-class rule, so the theme's monospace family has to
+  // be overridden outright.
+  // https://github.com/PrismJS/prism-themes/blob/v1.9.0/themes/prism-vs.css#L5-L10
   pre: {
-    fontFamily: 'monospace',
+    fontFamily: 'var(--fontFamilyMonospace) !important',
     fontSize: '12px',
     lineHeight: '1.55',
     margin: 0,
@@ -47,7 +51,7 @@ const useStyles = makeStyles({
     '& .token.table': {
       display: 'inline',
     },
-    fontFamily: 'monospace',
+    fontFamily: 'var(--fontFamilyMonospace) !important',
     whiteSpace: 'pre',
   },
 });

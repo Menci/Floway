@@ -5,6 +5,9 @@ export default defineConfig({
     presetWind3(),
   ],
   theme: {
+    fontFamily: {
+      mono: 'var(--fontFamilyMonospace)',
+    },
     fontSize: {
       'fui-base200': 'var(--fontSizeBase200)',
       'fui-base300': 'var(--fontSizeBase300)',
