@@ -10,6 +10,7 @@ import type { Route } from './+types/dashboard-monitor-performance';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import { getSessionToken } from '../auth/session';
+import { useUnclippedChartFrame } from '../components/charts/chart-frame-styles';
 import { ChartSection } from '../components/charts/chart-section';
 import { chartTickValues, dashboardBucketFrames, formatAxisDate, formatCalloutTitle } from '../components/charts/dashboard-time';
 import { colorForSlot } from '../components/charts/palette';
@@ -288,6 +289,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const { i18n, t } = useTranslation();
   const stateStyles = useChartStateStyles();
   const chartStyles = usePerformanceChartStyles();
+  const chartRootStyles = useUnclippedChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
@@ -298,7 +300,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length ? null : <div className="grid gap-[6px] min-w-[220px] p-1"><Text size={200} weight="semibold">{formatCalloutTitle(props.x, labelByTime, chart.range, locale)}</Text>{props.values.filter(item => item.y > 0).sort((a, b) => b.y - a.y).map(item => <Text key={item.legend} size={200} className="flex gap-3 justify-between font-mono"><span>{item.legend}</span><span>{formatter(item.y)}</span></Text>)}</div>, [chart.range, formatter, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
-  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={formatter} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
+  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={formatter} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
 }
 
 function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; upstreamNames: ReadonlyMap<string, string> }) {

@@ -6,6 +6,7 @@ import type { UsageChartModel } from './types';
 import { UsageChartCallout } from './usage-callout';
 import { fluentComponents } from '../../fluent';
 import { localeForLanguage } from '../../i18n';
+import { useUnclippedChartFrame } from '../charts/chart-frame-styles';
 import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useElementSize } from '../charts/use-element-size';
 const { makeStyles } = fluentComponents;
@@ -13,6 +14,7 @@ const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'v
 export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
   const { i18n, t } = useTranslation();
   const chartStateStyles = useChartStateStyles();
+  const chartRootStyles = useUnclippedChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
@@ -26,6 +28,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
         chart.stacked ? (
           <AreaChart
             data={chart.data}
+            styles={chartRootStyles}
             height={size.height}
             hideLegend
             legendProps={{
@@ -44,6 +47,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
         ) : (
           <LineChart
             data={chart.data}
+            styles={chartRootStyles}
             height={size.height}
             hideLegend
             legendProps={{
