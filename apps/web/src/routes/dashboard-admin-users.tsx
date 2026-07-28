@@ -22,6 +22,7 @@ import { Input } from '../components/ui/fluent-form-controls';
 import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
+import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
@@ -262,9 +263,9 @@ function UsersTable({
             <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.created')}</TableHeaderCell>
-            <TableHeaderCell className="!text-right !w-[116px]">
+            <TableActionsHeader className="!w-[116px]">
               {t('dashboard.users.table.actions')}
-            </TableHeaderCell>
+            </TableActionsHeader>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -293,7 +294,7 @@ function UsersTable({
                   </span>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center justify-end gap-1">
+                  <TableActions>
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<EditRegular />}
@@ -313,7 +314,7 @@ function UsersTable({
                       label={t('dashboard.users.actions.delete')}
                       onClick={() => onDelete(user)}
                     />
-                  </div>
+                  </TableActions>
                 </TableCell>
               </TableRow>
             );

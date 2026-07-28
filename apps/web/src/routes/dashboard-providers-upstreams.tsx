@@ -26,6 +26,7 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
+import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
@@ -364,7 +365,7 @@ function UpstreamsTable({
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
             <TableHeaderCell className="!w-[180px]">{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableHeaderCell className="!w-[110px]">{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[88px] !text-right">{t('dashboard.upstreams.table.actions')}</TableHeaderCell>
+            <TableActionsHeader className="!w-[88px]">{t('dashboard.upstreams.table.actions')}</TableActionsHeader>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -415,7 +416,7 @@ function UpstreamsTable({
                 />
               </TableCell>
               <TableCell>
-                <div className="flex items-center justify-end gap-[2px]">
+                <TableActions>
                   <TooltipIconButton
                     disabled={busy}
                     icon={<EditRegular />}
@@ -429,7 +430,7 @@ function UpstreamsTable({
                     label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })}
                     onClick={() => onDelete(record)}
                   />
-                </div>
+                </TableActions>
               </TableCell>
             </TableRow>
           ))}

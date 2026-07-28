@@ -7,6 +7,7 @@ import { fluentComponents } from '../../fluent';
 import { ScrollArea } from '../ui/scroll-area';
 import { ResourceListEmptyState } from '../ui/resource-list-toolbar';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { TableActions, TableActionsHeader } from '../ui/table-actions';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 
 const {
@@ -43,7 +44,7 @@ export function ProxyList({
           <TableRow>
             <TableHeaderCell>{t('dashboard.proxy.form.name')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.proxy.form.address')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[88px] !text-right">{t('dashboard.proxy.columns.actions')}</TableHeaderCell>
+            <TableActionsHeader className="!w-[88px]">{t('dashboard.proxy.columns.actions')}</TableActionsHeader>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -73,7 +74,7 @@ export function ProxyList({
                   </Text>
                 </TableCell>
                 <TableCell>
-                  <div className="flex justify-end gap-1">
+                  <TableActions>
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<EditRegular />}
@@ -87,7 +88,7 @@ export function ProxyList({
                       label={t('dashboard.proxy.actions.deleteNamed', { name: proxy.name })}
                       onClick={() => onDelete(proxy)}
                     />
-                  </div>
+                  </TableActions>
                 </TableCell>
               </TableRow>
             );

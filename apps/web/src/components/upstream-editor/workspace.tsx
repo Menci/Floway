@@ -23,6 +23,7 @@ import { fluentComponents } from '../../fluent';
 import { formatFullTime, formatRelativeTime } from '../requests/format';
 import { Input } from '../ui/fluent-form-controls';
 import { ScrollArea } from '../ui/scroll-area';
+import { TableActions, TableActionsHeader } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import type { Flag } from '@floway-dev/provider/flags';
@@ -270,7 +271,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table className="w-full min-w-[640px] table-fixed">
-        <TableHeader><TableRow><TableHeaderCell className="!w-[88px]">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[25%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableHeaderCell className="!w-[88px] !text-right">{t('dashboard.upstreamEditor.models.actions')}</TableHeaderCell></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHeaderCell className="!w-[88px]">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[25%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableActionsHeader className="!w-[88px]">{t('dashboard.upstreamEditor.models.actions')}</TableActionsHeader></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
             <TableCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} size="small" /></TableCell>
@@ -287,7 +288,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCell>
             <TableCell className="!overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block text-fui-base300 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCell>
-            <TableCell><div className="flex justify-end gap-1"><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); onViewChange('detail'); }} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => setDeleteTarget(row)} />}</div></TableCell>
+            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); onViewChange('detail'); }} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => setDeleteTarget(row)} />}</TableActions></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>
