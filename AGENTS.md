@@ -146,7 +146,9 @@ proxies, Agent Setup, telemetry views, and data transfer. Its routes live under
 The **data plane** is the client-facing inference and model-discovery surface;
 it resolves public model ids, selects and calls upstreams, translates protocol
 shapes, and returns client-protocol responses. Its routes live under
-`packages/gateway/src/data-plane/`.
+`packages/gateway/src/data-plane/`. The public method/path manifest lives in
+`@floway-dev/protocols/common`; gateway registration and the dashboard API
+reference both consume it, so the documented route inventory cannot drift.
 
 Hono middleware is the HTTP request boundary: logger, CORS, authentication,
 validation, and top-level error shaping live under `packages/gateway/src/middleware/`
