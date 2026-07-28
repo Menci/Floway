@@ -8,7 +8,6 @@ import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import type { ProxyRecord, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Input, Select } from '../ui/fluent-form-controls';
-import { ProviderBadge } from '../upstreams/provider-badge';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
@@ -100,7 +99,6 @@ function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
         else clearErrors('color');
       }}
     />
-    <div className="flex items-center gap-2"><ProviderBadge color={field.value} kind={kind} /></div>
   </div>} />;
 }
 

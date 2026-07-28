@@ -254,6 +254,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
             <AgentSetupCard
               copiedTag={copiedTag}
               copyFailedTag={copyFailedTag}
+              initialApiKeyId={loaderData.selectedKeyId || null}
               initialError={loaderData.setupError}
               initialLease={loaderData.setupLease}
               models={agentSetupModels}

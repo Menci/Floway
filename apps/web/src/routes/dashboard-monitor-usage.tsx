@@ -108,7 +108,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       mountedRef.current = true;
       return;
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- The filters are user-selected, so a change starts a load; marking it pending synchronously is the point.
     void refresh();
     return () => {
       requestIdRef.current += 1;

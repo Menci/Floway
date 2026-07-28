@@ -100,7 +100,7 @@ export function meta({}: Route.MetaArgs) {
 export default function DashboardMonitorPerformance({ loaderData }: Route.ComponentProps) {
   const { i18n, t } = useTranslation();
   const clearAuth = useAuthStore(state => state.clear);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [, setSearchParams] = useSearchParams();
   const initialState = loaderData.state;
   const view: PerformanceView = loaderData.view;
   const [range, setRange] = useState<PerformanceRange>(initialState.range);
@@ -141,7 +141,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       mountedRef.current = true;
       return;
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- The filters are user-selected, so a change starts a load; marking it pending synchronously is the point.
     void refresh();
     return () => { requestIdRef.current += 1; };
   }, [refresh]);

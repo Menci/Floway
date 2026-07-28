@@ -43,7 +43,7 @@ const loadPageData = async (): Promise<LoaderData> => {
 
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
-  return loadPageData();
+  return await loadPageData();
 }
 export function meta({}: Route.MetaArgs) { return [{ title: 'Proxy | Floway' }]; }
 

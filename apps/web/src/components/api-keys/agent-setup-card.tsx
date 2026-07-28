@@ -30,9 +30,10 @@ const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNu
 // Ref: https://code.claude.com/docs/en/settings#attribution-settings
 const claudeAttributionOptOut = { commit: '', pr: '', sessionUrl: false } as const;
 
-export function AgentSetupCard({ copiedTag, copyFailedTag, initialError, initialLease, models, onCopy, selectedKey }: {
+export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, initialError, initialLease, models, onCopy, selectedKey }: {
   copiedTag: string | null;
   copyFailedTag: string | null;
+  initialApiKeyId: string | null;
   initialError: string | null;
   initialLease: AgentSetupLease | null;
   models: ControlPlaneModel[];
@@ -48,7 +49,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialError, initial
   const [localDraft, setLocalDraft] = useState(() => defaultAgentSetupConfiguration());
   const localDraftBaseline = useRef(cloneAgentSetupConfiguration(localDraft));
   const appliedLease = useRef<string | null>(null);
-  const setup = useAgentSetup(selectedKey?.id ?? null, initialLease, initialError);
+  const setup = useAgentSetup(selectedKey?.id ?? null, initialLease, initialError, initialApiKeyId);
   const setupDraft = setup.draft;
   const setupLease = setup.lease;
   const updateSetupDraft = setup.updateDraft;

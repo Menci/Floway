@@ -42,7 +42,7 @@ const loadPageData = async (current: LoaderData['catalog']): Promise<LoaderData>
 
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
-  return loadPageData({ aliases: [], models: null });
+  return await loadPageData({ aliases: [], models: null });
 }
 
 export function meta({}: Route.MetaArgs) {

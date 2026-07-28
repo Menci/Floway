@@ -12,7 +12,7 @@ describe('route resource barriers', () => {
       { path: '/next', loader: () => resource, element: null },
     ], { initialEntries: ['/current'] });
 
-    await router.initialize();
+    router.initialize();
     const navigation = router.navigate('/next');
     await Promise.resolve();
 

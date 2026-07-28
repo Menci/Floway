@@ -13,6 +13,10 @@ import type { Route } from './+types/root';
 import { BrowserLanguageSync } from './components/browser-language-sync';
 import { DocumentTitleSync } from './components/document-title-sync';
 import {
+  GradientBackground,
+  gradientBackgroundCriticalCss,
+} from './components/gradient-background';
+import {
   NavigationProgress,
   navigationProgressCss,
 } from './components/navigation-progress';
@@ -20,10 +24,6 @@ import {
   AppLoadingScreen,
   appLoadingCriticalCss,
 } from './components/ui/app-loading-screen';
-import {
-  GradientBackground,
-  gradientBackgroundCriticalCss,
-} from './components/gradient-background';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { fluentComponents } from './fluent';
 import { flowayDarkTheme, flowayLightTheme } from './theme';

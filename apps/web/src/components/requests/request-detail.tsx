@@ -9,7 +9,7 @@ import {
   EyeRegular,
 } from '@fluentui/react-icons';
 import Prism from 'prismjs';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';

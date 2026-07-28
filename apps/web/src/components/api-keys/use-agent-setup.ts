@@ -48,9 +48,12 @@ export function useAgentSetup(
   apiKeyId: string | null,
   initialLease: AgentSetupLease | null = null,
   initialCreateError: string | null = null,
+  initialApiKeyId: string | null = null,
 ) {
-  const initialResourceRef = useRef({ apiKeyId, error: initialCreateError, lease: initialLease });
-  const initialResource = initialResourceRef.current.apiKeyId === apiKeyId ? initialResourceRef.current : null;
+  const initialResource = initialApiKeyId === apiKeyId
+    ? { apiKeyId: initialApiKeyId, error: initialCreateError, lease: initialLease }
+    : null;
+  const initialResourceRef = useRef(initialResource);
   const initialDraft = initialResource?.lease
     ? cloneAgentSetupConfiguration(initialResource.lease.configuration)
     : null;
@@ -233,7 +236,7 @@ export function useAgentSetup(
     setDraftState(null);
     setGeneration(0);
     setConfirmedGeneration(0);
-    const loaded = createAttempt === 0 && initialResourceRef.current.apiKeyId === apiKeyId
+    const loaded = createAttempt === 0 && initialResourceRef.current?.apiKeyId === apiKeyId
       ? initialResourceRef.current
       : null;
     setCreateError(loaded?.error ?? null);

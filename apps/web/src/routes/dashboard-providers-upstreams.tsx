@@ -92,7 +92,7 @@ const useStyles = makeStyles({
 
 export async function clientLoader(): Promise<UpstreamsPageData> {
   if (!getSessionToken()) throw redirect('/');
-  return loadUpstreamsPageData();
+  return await loadUpstreamsPageData();
 }
 
 export function meta({}: Route.MetaArgs) {
