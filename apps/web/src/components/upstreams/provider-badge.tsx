@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 
 import { KIND_DEFAULT_TONES } from './upstream-paint';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types';
-import azureIconUrl from '../../assets/azure-color.svg';
-import claudeIconUrl from '../../assets/claude-color.svg';
-import codexIconUrl from '../../assets/codex.svg';
-import githubCopilotIconUrl from '../../assets/githubcopilot.svg';
-import ollamaIconUrl from '../../assets/ollama.svg';
+import azureIconUrl from '../../assets/azure-color.svg?no-inline';
+import claudeIconUrl from '../../assets/claude-color.svg?no-inline';
+import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
+import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
+import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
 import { Chip } from '../ui/chip';
 
@@ -82,11 +82,6 @@ const useStyles = makeStyles({
     borderLeftColor: 'light-dark(#a8a8a8, #666666)',
     color: 'light-dark(#616161, #d6d6d6)',
   } as any,
-  monochromeIcon: {
-    '@media (prefers-color-scheme: dark)': {
-      filter: 'invert(1)',
-    },
-  },
   // The tone classes paint the identity color; the chip supplies geometry.
   tagText: { fontWeight: tokens.fontWeightSemibold },
 });
@@ -131,6 +126,41 @@ export function ProviderBadge({ color, kind, label, title }: {
   );
 }
 
+// Imported with `?no-inline` because Vite inlines an asset under 4 KB as a
+// data URI, and an unquoted `url(data:image/svg+xml,<svg …>)` is not a valid
+// CSS value — the whole mask-image declaration is dropped and the mask box
+// paints as a solid block.
+// https://github.com/vitejs/vite/blob/5e7fe129a4dde4f41934083b25e490059985f4e6/docs/guide/assets.md#explicit-url-imports
+//
+// Vendor marks ship in their brand colors, and several carry gradients or a
+// white knockout that only reads on the vendor's own background. The console
+// wants one iconographic voice, so each mark is painted as a silhouette in
+// the surrounding text color: inside a provider chip it picks up the identity
+// tone, in a menu it is plain foreground, and dark mode needs no inversion.
+// Masking keeps the negative space (Copilot's eyes, Ollama's outline) that a
+// flat recolor would fill in.
+const providerIconUrls: Record<UpstreamProviderKind, string | null> = {
+  custom: null,
+  azure: azureIconUrl,
+  copilot: githubCopilotIconUrl,
+  // Codex is the ChatGPT subscription, so it wears OpenAI's mark.
+  codex: openaiIconUrl,
+  'claude-code': claudeIconUrl,
+  ollama: ollamaIconUrl,
+};
+
+const maskedIconStyle = (url: string): React.CSSProperties => ({
+  backgroundColor: 'currentColor',
+  maskImage: `url(${url})`,
+  WebkitMaskImage: `url(${url})`,
+  maskSize: 'contain',
+  WebkitMaskSize: 'contain',
+  maskRepeat: 'no-repeat',
+  WebkitMaskRepeat: 'no-repeat',
+  maskPosition: 'center',
+  WebkitMaskPosition: 'center',
+});
+
 export function ProviderIcon({
   kind,
   className,
@@ -138,13 +168,10 @@ export function ProviderIcon({
   kind: ProviderBadgeKind;
   className: string;
 }) {
-  const styles = useStyles();
   const baseClassName = `block flex-none ${className}`;
+  if (kind === null) return null;
   if (kind === 'custom') return <ServerRegular className={baseClassName} />;
-  if (kind === 'azure') return <img alt="" src={azureIconUrl} className={baseClassName} />;
-  if (kind === 'copilot') return <img alt="" src={githubCopilotIconUrl} className={`${styles.monochromeIcon} ${baseClassName}`} />;
-  if (kind === 'codex') return <img alt="" src={codexIconUrl} className={baseClassName} />;
-  if (kind === 'claude-code') return <img alt="" src={claudeIconUrl} className={baseClassName} />;
-  if (kind === 'ollama') return <img alt="" src={ollamaIconUrl} className={`${styles.monochromeIcon} ${baseClassName}`} />;
-  return null;
+  const iconUrl = providerIconUrls[kind];
+  if (iconUrl === null) return null;
+  return <span aria-hidden className={baseClassName} style={maskedIconStyle(iconUrl)} />;
 }
