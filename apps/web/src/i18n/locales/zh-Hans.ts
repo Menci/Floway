@@ -272,8 +272,11 @@ const zhHansCN = {
       },
       apiKeys: {
         empty: '还没有 API 密钥。创建一个后即可调用 Floway。',
+        count_one: '已配置 {{count}} 个',
+        count_other: '已配置 {{count}} 个',
         actions: {
           create: '创建 API 密钥',
+          refresh: '刷新 API 密钥',
           save: '保存更改',
           saving: '正在保存...',
           copy: '复制',
@@ -401,6 +404,8 @@ const zhHansCN = {
       },
       upstreams: {
         empty: '尚未配置上游。添加上游后即可提供模型服务。',
+        count_one: '已配置 {{count}} 个',
+        count_other: '已配置 {{count}} 个',
         actions: {
           create: '新建上游',
           refresh: '刷新上游',
@@ -1051,7 +1056,9 @@ const zhHansCN = {
         heading: '代理',
         description: '上游回退列表引用的出口代理。',
         listTitle: '代理列表',
-        empty: '暂无代理。请在右侧添加。',
+        count_one: '已配置 {{count}} 个',
+        count_other: '已配置 {{count}} 个',
+        empty: '暂无代理。添加代理后即可路由出口流量。',
         addTitle: '添加代理',
         editTitle: '编辑代理',
         cancelEdit: '取消',

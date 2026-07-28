@@ -1,4 +1,3 @@
-import { AddRegular } from '@fluentui/react-icons';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect, useOutletContext } from 'react-router';
@@ -19,9 +18,10 @@ import type { ApiKeysPageData, MutationToastController } from '../components/api
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
+import { ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { fluentComponents } from '../fluent';
 
-const { Button, MessageBar, MessageBarBody, Spinner, Text, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
+const { MessageBar, MessageBarBody, Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
 const selectedKeyStorageKey = 'floway-agent-setup-selected-key';
 interface LoaderData extends ApiKeysPageData {
   selectedKeyId: string;
@@ -65,6 +65,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const [data, setData] = useState<ApiKeysPageData>(loaderData);
   const [selectedKeyId, setSelectedKeyId] = useState(loaderData.selectedKeyId);
   const [pageError, setPageError] = useState(loaderData.error);
+  const [refreshing, setRefreshing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ApiKey | null>(null);
   const [rotateTarget, setRotateTarget] = useState<ApiKey | null>(null);
@@ -151,6 +152,12 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       next.keys.some(key => key.id === current) ? current : '');
   };
 
+  const refresh = async () => {
+    setRefreshing(true);
+    await reload();
+    setRefreshing(false);
+  };
+
   const copyToClipboard = async (text: string, tag: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -189,15 +196,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       <Toaster toasterId={toasterId} position="top-end" />
 
       <DashboardPageHeader
-        actions={
-          <Button
-            appearance="primary"
-            icon={<AddRegular />}
-            onClick={() => setCreateOpen(true)}
-          >
-            {t('dashboard.apiKeys.actions.create')}
-          </Button>
-        }
         description={t('dashboard.pages.apiKeys')}
         eyebrow={t('dashboard.groups.services')}
         title={t('dashboard.nav.apiKeys')}
@@ -210,11 +208,15 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       )}
 
       <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
-        <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-          <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">
-            {t('dashboard.apiKeys.table.title')}
-          </Text>
-        </div>
+        <ResourceListToolbar
+          createLabel={t('dashboard.apiKeys.actions.create')}
+          detail={t('dashboard.apiKeys.count', { count: data.keys.length })}
+          onCreate={() => setCreateOpen(true)}
+          onRefresh={() => void refresh()}
+          refreshLabel={t('dashboard.apiKeys.actions.refresh')}
+          refreshing={refreshing}
+          title={t('dashboard.apiKeys.table.title')}
+        />
         <KeysTable
           copiedTag={copiedTag}
           copyFailedTag={copyFailedTag}

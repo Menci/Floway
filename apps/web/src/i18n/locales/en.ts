@@ -284,8 +284,11 @@ const en = {
       },
       apiKeys: {
         empty: 'No API keys yet. Create one to call Floway.',
+        count_one: '{{count}} configured',
+        count_other: '{{count}} configured',
         actions: {
           create: 'Create API Key',
+          refresh: 'Refresh API keys',
           save: 'Save changes',
           saving: 'Saving...',
           copy: 'Copy',
@@ -422,6 +425,8 @@ const en = {
       },
       upstreams: {
         empty: 'No upstreams configured. Add an upstream to serve models.',
+        count_one: '{{count}} configured',
+        count_other: '{{count}} configured',
         actions: {
           create: 'New upstream',
           refresh: 'Refresh upstreams',
@@ -1112,7 +1117,9 @@ const en = {
         description:
             'Outbound proxies referenced by per-upstream fallback lists.',
         listTitle: 'Proxies',
-        empty: 'No proxies configured. Add one on the right.',
+        count_one: '{{count}} configured',
+        count_other: '{{count}} configured',
+        empty: 'No proxies configured. Add a proxy to route outbound traffic.',
         addTitle: 'Add Proxy',
         editTitle: 'Edit Proxy',
         cancelEdit: 'Cancel',

@@ -1,6 +1,4 @@
 import {
-  AddRegular,
-  ArrowClockwiseRegular,
   ArrowDownRegular,
   ArrowUpRegular,
   CheckmarkCircleRegular,
@@ -26,6 +24,7 @@ import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
+import { ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
@@ -243,42 +242,6 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       <Toaster toasterId={toasterId} position="top-end" />
 
       <DashboardPageHeader
-        actions={<>
-          <Tooltip content={t('dashboard.upstreams.actions.refresh')} relationship="label">
-            <Button
-              appearance="subtle"
-              aria-label={t('dashboard.upstreams.actions.refresh')}
-              disabled={busy}
-              icon={mutation?.kind === 'reload' ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
-              onClick={() => void handleReload()}
-            />
-          </Tooltip>
-          <Menu positioning={{ autoSize: true }}>
-            <MenuTrigger disableButtonEnhancement>
-              <Button appearance="primary" disabled={busy} icon={<AddRegular />}>
-                {t('dashboard.upstreams.actions.create')}
-                <ChevronDownRegular className="ml-1.5" />
-              </Button>
-            </MenuTrigger>
-            <MenuPopover>
-              <MenuList>
-                {providers.map(kind => (
-                  <MenuItem
-                    icon={{
-                      children: <ProviderIcon kind={kind} className="h-5 w-5" />,
-                      className: '!self-center',
-                    }}
-                    key={kind}
-                    onClick={() => void navigate(`/dashboard/providers/upstreams/new/${kind}`)}
-                    subText={t(`dashboard.upstreams.providers.${kind}`)}
-                  >
-                    {t(`provider.${kind}`)}
-                  </MenuItem>
-                ))}
-              </MenuList>
-            </MenuPopover>
-          </Menu>
-        </>}
         description={t('dashboard.pages.upstreams')}
         eyebrow={t('dashboard.groups.providers')}
         title={t('dashboard.nav.upstreams')}
@@ -303,7 +266,39 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         </MessageBar>
       )}
 
-      <Panel className="grid gap-[14px] min-w-0 !p-[18px] !pt-[10px]">
+      <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
+        <ResourceListToolbar
+          createLabel={t('dashboard.upstreams.actions.create')}
+          createTrailingIcon={<ChevronDownRegular className="ml-1.5" />}
+          createTrigger={button => (
+            <Menu positioning={{ autoSize: true }}>
+              <MenuTrigger disableButtonEnhancement>{button}</MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  {providers.map(kind => (
+                    <MenuItem
+                      icon={{
+                        children: <ProviderIcon kind={kind} className="h-5 w-5" />,
+                        className: '!self-center',
+                      }}
+                      key={kind}
+                      onClick={() => void navigate(`/dashboard/providers/upstreams/new/${kind}`)}
+                      subText={t(`dashboard.upstreams.providers.${kind}`)}
+                    >
+                      {t(`provider.${kind}`)}
+                    </MenuItem>
+                  ))}
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          )}
+          detail={t('dashboard.upstreams.count', { count: data.upstreams.length })}
+          disabled={busy}
+          onRefresh={() => void handleReload()}
+          refreshLabel={t('dashboard.upstreams.actions.refresh')}
+          refreshing={mutation?.kind === 'reload'}
+          title={t('dashboard.upstreams.table.title')}
+        />
         <UpstreamsTable
           busy={busy}
           data={data}
@@ -366,12 +361,11 @@ function UpstreamsTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table size="small" aria-label={t('dashboard.upstreams.table.title')} className="min-w-[930px]">
+      <Table size="small" aria-label={t('dashboard.upstreams.table.title')} className="min-w-[780px]">
         <TableHeader>
           <TableRow>
             <TableHeaderCell className="!w-[130px]">{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[150px]">{t('dashboard.upstreams.table.provider')}</TableHeaderCell>
             <TableHeaderCell className="!w-[180px]">{t('dashboard.upstreams.table.models')}</TableHeaderCell>
             <TableHeaderCell className="!w-[110px]">{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
             <TableHeaderCell className="!w-[68px]">{t('dashboard.upstreams.table.actions')}</TableHeaderCell>
@@ -398,20 +392,22 @@ function UpstreamsTable({
                 </div>
               </TableCell>
               <TableCell>
-                <div className="grid gap-[3px] min-w-0 max-w-[420px]">
-                  <Link
-                    className="text-fui-fg1 font-fui-semibold no-underline hover:underline truncate"
-                    title={record.name}
-                    to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
-                  >
-                    {record.name}
-                  </Link>
-                  <Text size={200} className="text-fui-fg3 truncate" title={upstreamSummary(record, t)}>
-                    {upstreamSummary(record, t)}
-                  </Text>
+                <div className="flex items-center gap-3 min-w-0 max-w-[520px]">
+                  <ProviderBadge color={record.color} kind={record.kind} />
+                  <div className="grid gap-[3px] min-w-0">
+                    <Link
+                      className="text-fui-fg1 font-fui-semibold no-underline hover:underline truncate"
+                      title={record.name}
+                      to={`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`}
+                    >
+                      {record.name}
+                    </Link>
+                    <Text size={200} className="text-fui-fg3 truncate" title={upstreamSummary(record, t)}>
+                      {upstreamSummary(record, t)}
+                    </Text>
+                  </div>
                 </div>
               </TableCell>
-              <TableCell><ProviderBadge color={record.color} kind={record.kind} /></TableCell>
               <TableCell>
                 <ModelStatus count={modelCounts.get(record.id)!} modelsAvailable={data.models !== null} record={record} />
               </TableCell>
