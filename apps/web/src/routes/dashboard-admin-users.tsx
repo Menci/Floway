@@ -13,7 +13,7 @@ import { redirect, useOutletContext } from 'react-router';
 import { z } from 'zod';
 
 import type { DashboardOutletContext } from './dashboard';
-import { authFetch, callApi, callJson } from '../api/auth';
+import { callApi } from '../api/auth';
 import { api, getCurrentSession } from '../api/client';
 import type { ControlPlaneUser, UpstreamOption } from '../api/types';
 import { getSessionToken } from '../auth/session';
@@ -393,12 +393,9 @@ function UserDialog({
           ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
           upstreamIds,
         };
-    const result = await callJson<ControlPlaneUser | { user: ControlPlaneUser }>(() =>
-      authFetch(mode === 'create' ? '/api/users' : `/api/users/${user!.id}`, {
-        method: mode === 'create' ? 'POST' : 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      }));
+    const result = mode === 'create'
+      ? await callApi(() => api.api.users.$post({ json: body }))
+      : await callApi(() => api.api.users[':id'].$patch({ param: { id: String(user!.id) }, json: body }));
     setSaving(false);
     if (result.error) {
       setError(result.error.message);
@@ -599,12 +596,10 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
     if (!user) return;
     setSaving(true);
     setError(null);
-    const result = await callJson<ControlPlaneUser>(() =>
-      authFetch(`/api/users/${user.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ password: values.password }),
-      }));
+    const result = await callApi(() => api.api.users[':id'].$patch({
+      param: { id: String(user.id) },
+      json: { password: values.password },
+    }));
     setSaving(false);
     if (result.error) {
       setError(result.error.message);

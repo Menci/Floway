@@ -1,7 +1,8 @@
 import type { CustomizedCalloutData } from '@fluentui/react-charts';
 
-import { bucketKeyForCallout, formatCalloutTitle, formatCount, formatDecimalCount, formatHitRate, formatInputRate, formatUsdCost } from './chart-model';
+import { bucketKeyForCallout, formatCount, formatDecimalCount, formatHitRate, formatInputRate, formatUsdCost } from './chart-model';
 import type { UsageChartModel } from './types';
+import { formatCalloutTitle } from '../charts/dashboard-time';
 import { fluentComponents } from '../../fluent';
 import { ScrollArea } from '../ui/scroll-area';
 

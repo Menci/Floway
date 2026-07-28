@@ -1,5 +1,7 @@
+import { dashboardRangeQuery, type DashboardRange } from '../charts/dashboard-time';
+
 export type PerformanceView = 'all-by-user' | 'self-by-key';
-export type PerformanceRange = 'today' | '7d' | '30d';
+export type PerformanceRange = DashboardRange;
 export type PerformanceGroupBy = 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 export type PerformanceMetric = 'ttft' | 'tokPerSec';
 export type PerformancePercentile = 'p50' | 'p95' | 'p99';
@@ -61,8 +63,6 @@ export const emptyPerformanceOverview = (): PerformanceOverviewResponse => ({
   keys: [],
 });
 
-export const performanceRangeQuery = dashboardRangeQuery;
-
 export const buildPerformanceQuery = (
   view: PerformanceView,
   range: PerformanceRange,
@@ -70,7 +70,7 @@ export const buildPerformanceQuery = (
   filters: PerformanceFilters,
   nowMs: number,
 ): URLSearchParams => {
-  const window = performanceRangeQuery(range, nowMs);
+  const window = dashboardRangeQuery(range, nowMs);
   const search = new URLSearchParams({
     ...window,
     view,
@@ -148,4 +148,3 @@ export const clearGroupedFilter = (filters: PerformanceFilters, groupBy: Perform
   ...(groupBy === 'runtimeLocation' ? { runtimeLocation: '' } : {}),
   ...(groupBy === 'userId' || groupBy === 'keyId' ? { userId: '', keyId: '' } : {}),
 });
-import { dashboardRangeQuery } from '../charts/dashboard-time';

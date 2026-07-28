@@ -2,9 +2,9 @@ import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/reac
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { chartTickValues, formatAxisDate } from './chart-model';
 import type { UsageChartModel } from './types';
 import { UsageChartCallout } from './usage-callout';
+import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { fluentComponents } from '../../fluent';
 import { localeForLanguage } from '../../i18n';
 import { useElementSize } from '../charts/use-element-size';
@@ -17,7 +17,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
-  const tickValues = useMemo(() => chartTickValues(chart.buckets).map(bucket => bucket.date), [chart.buckets]);
+  const tickValues = useMemo(() => chartTickValues(chart.buckets, chart.buckets.length <= 24 ? 6 : 7).map(bucket => bucket.date), [chart.buckets]);
   const dateFormatter = useCallback((date: Date) => formatAxisDate(date, chart.range, locale), [chart.range, locale]);
   const callout = useCallback((data?: CustomizedCalloutData) => <UsageChartCallout chart={chart} data={data} labelByTime={labelByTime} locale={locale} valueFormatter={valueFormatter} />, [chart, labelByTime, locale, valueFormatter]);
   return (

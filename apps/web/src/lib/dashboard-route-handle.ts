@@ -1,5 +1,5 @@
 export interface DashboardRouteHandle {
-  contentLayout: 'page' | 'workspace';
+  contentLayout: 'workspace';
 }
 
 export const dashboardWorkspaceHandle = {

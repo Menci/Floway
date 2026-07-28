@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cloneAgentSetupConfiguration, type AgentSetupConfiguration, type AgentSetupLease } from './agent-setup-contract';
-import { callJson } from '../../api/auth';
+import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 
 interface ActiveRequest {
@@ -92,7 +92,7 @@ export function useAgentSetup(
     activeRequestsRef.current.clear();
   }, []);
 
-  const request = useCallback(async <T>(send: (signal: AbortSignal) => Promise<Response>) => {
+  const request = useCallback(async <TResponse extends Response>(send: (signal: AbortSignal) => Promise<TResponse>) => {
     const controller = new AbortController();
     const requestState: ActiveRequest = {
       controller,
@@ -100,7 +100,7 @@ export function useAgentSetup(
     };
     activeRequestsRef.current.add(requestState);
     try {
-      return await callJson<T>(() => send(controller.signal));
+      return await callApi(() => send(controller.signal));
     } finally {
       clearTimeout(requestState.timeout);
       activeRequestsRef.current.delete(requestState);
@@ -155,7 +155,7 @@ export function useAgentSetup(
     const sentGeneration = generationRef.current;
     const lifecycle = lifecycleRef.current;
     const sentConfiguration = cloneAgentSetupConfiguration(configuration);
-    const result = await request<AgentSetupLease>(signal => api.api.setup.$put({
+    const result = await request(signal => api.api.setup.$put({
       json: {
         token: currentLease.token,
         configuration: sentConfiguration,
@@ -202,7 +202,7 @@ export function useAgentSetup(
     const currentLease = leaseRef.current;
     if (!currentLease || terminatedRef.current || document.visibilityState === 'hidden') return;
     const lifecycle = lifecycleRef.current;
-    const result = await request<AgentSetupLease>(signal => api.api.setup.heartbeat.$post({
+    const result = await request(signal => api.api.setup.heartbeat.$post({
       json: { token: currentLease.token },
     }, { init: { signal } }));
     if (lifecycle !== lifecycleRef.current) return;
@@ -260,7 +260,7 @@ export function useAgentSetup(
     }
     if (loaded?.error) return cleanup;
     void (async () => {
-      const result = await request<AgentSetupLease>(signal => api.api.setup.$post({
+      const result = await request(signal => api.api.setup.$post({
         json: { apiKeyId },
       }, { init: { signal } }));
       if (lifecycle !== lifecycleRef.current) return;

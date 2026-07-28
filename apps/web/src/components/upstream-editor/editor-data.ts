@@ -2,7 +2,7 @@
 import type { InferRequestType } from 'hono/client';
 
 import { callApi } from '../../api/auth';
-import { api, getCurrentSession } from '../../api/client';
+import { api } from '../../api/client';
 import { upstreamRecordsFromWire } from '../../api/types';
 import type {
   BackoffRow,
@@ -15,6 +15,7 @@ import type {
   UpstreamRecordEnvelope,
 } from '../../api/types';
 import type { Flag } from '@floway-dev/provider/flags';
+import { useAuthStore } from '../../stores/auth-store';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];
@@ -65,8 +66,7 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
 };
 
 export async function requireAdmin() {
-  const session = await getCurrentSession();
-  return !session.error && session.data.user.isAdmin;
+  return (await useAuthStore.getState().initialize())?.isAdmin === true;
 }
 
 export async function loadEditorAux(): Promise<EditorAuxData> {

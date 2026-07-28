@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import { useDashboardOutletContext } from './dashboard';
-import { authFetch, callApi, callJson } from '../api/auth';
+import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ProxyConflictBody, ProxyRecord, BackoffRow } from '../api/types';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
@@ -196,24 +196,16 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       return;
     }
 
-    const body: Record<string, unknown> = {
+    const body = {
       name: trimmedName,
       url: builtUrl,
       dial_timeout_seconds: dialTimeout.value,
     };
 
     const isEdit = editingId !== null;
-    const result = await callJson<ProxyRecord>(() =>
-      authFetch(
-        isEdit
-          ? `/api/proxies/${encodeURIComponent(editingId!)}`
-          : '/api/proxies',
-        {
-          method: isEdit ? 'PATCH' : 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        },
-      ));
+    const result = isEdit
+      ? await callApi(() => api.api.proxies[':id'].$patch({ param: { id: editingId }, json: body }))
+      : await callApi(() => api.api.proxies.$post({ json: body }));
 
     setSaving(false);
     if (result.error) {
@@ -231,17 +223,11 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setTesting(true);
     setTestResult(null);
 
-    const body: Record<string, unknown> = {
-      url: builtUrl,
-    };
-    if (dialTimeout.value !== null) {
-      body.dial_timeout_seconds = dialTimeout.value;
-    }
-
-    const result = await callJson<ProxyTestResult>(() => authFetch('/api/proxies/test', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+    const result = await callApi(() => api.api.proxies.test.$post({
+      json: {
+        url: builtUrl,
+        ...(dialTimeout.value === null ? {} : { dial_timeout_seconds: dialTimeout.value }),
+      },
     }));
     setTestResult(result.error ? { ok: false, error: result.error.message } : result.data);
     setTesting(false);
@@ -252,10 +238,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setDeleting(true);
     setDeleteError(null);
 
-    const result = await callJson<{ ok: true }>(() =>
-      authFetch(`/api/proxies/${encodeURIComponent(deleteTarget.id)}`, {
-        method: 'DELETE',
-      }));
+    const result = await callApi(() => api.api.proxies[':id'].$delete({ param: { id: deleteTarget.id } }));
 
     setDeleting(false);
     if (result.error) {

@@ -4,12 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-admin-backup-restore';
-import { authFetch, callJson } from '../api/auth';
+import { callApi } from '../api/auth';
+import { api } from '../api/client';
 import type {
   BackupExportData,
-  BackupExportResponse,
   BackupImportCounts,
-  BackupImportResponse,
 } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
@@ -200,8 +199,9 @@ export default function DashboardAdminBackupRestore() {
     setExporting(true);
     setExportError(null);
 
-    const qs = includePerformance ? '?include_performance=1' : '';
-    const result = await callJson<BackupExportResponse>(() => authFetch(`/api/export${qs}`));
+    const result = await callApi(() => api.api.export.$get({
+      query: includePerformance ? { include_performance: '1' } : {},
+    }));
 
     if (result.error) {
       setExportError(result.error.message);
@@ -294,16 +294,13 @@ export default function DashboardAdminBackupRestore() {
     setImportError(null);
     setImportSuccess(null);
 
-    const result = await callJson<BackupImportResponse>(() =>
-      authFetch('/api/import', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
+    const result = await callApi(() => api.api.import.$post({
+      json: {
           version: EXPORT_VERSION,
           mode: importMode,
           data: importParsedData.data,
-        }),
-      }));
+      },
+    }));
 
     if (result.error) {
       setImportError(result.error.message);

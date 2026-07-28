@@ -6,7 +6,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { redirect, useOutletContext } from 'react-router';
 
 import type { DashboardOutletContext } from './dashboard';
-import { authFetch, callApi, callJson } from '../api/auth';
+import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ApiKey } from '../api/types';
 import { getSessionToken } from '../auth/session';
@@ -175,8 +175,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     setPageError(null);
     setDeletingKey(true);
     const toastId = mutationToasts.start('delete', key.name);
-    const result = await callJson<{ ok: true }>(() =>
-      authFetch(`/api/keys/${encodeURIComponent(key.id)}`, { method: 'DELETE' }));
+    const result = await callApi(() => api.api.keys[':id'].$delete({ param: { id: key.id } }));
     setDeletingKey(false);
     if (result.error) {
       mutationToasts.fail(toastId, 'delete', key.name, result.error.message);

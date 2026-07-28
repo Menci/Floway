@@ -16,7 +16,7 @@ import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './editor-data';
 import { previewRecord } from './editor-data';
 import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
-import { authFetch, callApi, callJson } from '../../api/auth';
+import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type {
   DeviceFlowPoll,
@@ -320,9 +320,8 @@ function CopilotConfig({ record, onPatch }: {
   useEffect(() => stop, []);
 
   const poll = async (deviceCode: string, interval: number) => {
-    const result = await callJson<DeviceFlowPoll>(() => authFetch('/api/upstreams/copilot/oauth/device-login/poll', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ record: previewRecord(record, values as UpstreamEditorValues), deviceCode }),
+    const result = await callApi(() => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
+      json: { record: previewRecord(record, values as UpstreamEditorValues), deviceCode },
     }));
     if (result.error) { timer.current = window.setTimeout(() => void poll(deviceCode, interval), interval * 1000); return; }
     if (result.data.status === 'complete') { setBusy(false); onPatch(result.data.patch, record.id !== ''); return; }
@@ -371,13 +370,10 @@ function OAuthConfig({ record, onPatch }: {
   const refreshCredential = async () => {
     setRefreshing(true);
     setError(null);
-    const path = record.kind === 'codex'
-      ? '/api/upstreams/codex/oauth/refresh'
-      : '/api/upstreams/claude-code/oauth/refresh';
-    const result = await callJson<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch(path, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ record: previewRecord(record, values) }),
-    }));
+    const body = { record: previewRecord(record, values) };
+    const result = record.kind === 'codex'
+      ? await callApi(() => api.api.upstreams.codex.oauth.refresh.$post({ json: body }))
+      : await callApi(() => api.api.upstreams['claude-code'].oauth.refresh.$post({ json: body }));
     setRefreshing(false);
     if (result.error) { setError(result.error.message); return; }
     onPatch(result.data.patch, record.id !== '');
@@ -390,9 +386,8 @@ function OAuthConfig({ record, onPatch }: {
   const probeQuota = async () => {
     setProbing(true);
     setError(null);
-    const result = await callJson<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch('/api/upstreams/claude-code/probe', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ record: previewRecord(record, values) }),
+    const result = await callApi(() => api.api.upstreams['claude-code'].probe.$post({
+      json: { record: previewRecord(record, values) },
     }));
     setProbing(false);
     if (result.error) { setError(result.error.message); return; }
@@ -410,13 +405,12 @@ function OAuthConfig({ record, onPatch }: {
     setBusy(true); setError(null);
     const pkce = await generatePkce();
     stashPkce(record.kind, flowKind, { verifier: pkce.verifier, state: pkce.state });
-    const path = record.kind === 'codex'
-      ? '/api/upstreams/codex/oauth/authorize-url'
-      : `/api/upstreams/claude-code/${tab === 'setup' ? 'setup-token' : 'oauth'}/authorize-url`;
-    const result = await callJson<{ authorize_url: string }>(() => authFetch(path, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state }),
-    }));
+    const body = { record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state };
+    const result = record.kind === 'codex'
+      ? await callApi(() => api.api.upstreams.codex.oauth['authorize-url'].$post({ json: body }))
+      : tab === 'setup'
+        ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }))
+        : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }));
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     setAuthorizeUrl(result.data.authorize_url);
@@ -426,27 +420,37 @@ function OAuthConfig({ record, onPatch }: {
 
   const submit = async () => {
     setBusy(true); setError(null);
-    const body: Record<string, unknown> = { record: previewRecord(record, values) };
-    let path: string;
+    const editorRecord = previewRecord(record, values);
+    let result;
     try {
       if (tab === 'json') {
         JSON.parse(json);
-        body[record.kind === 'codex' ? 'auth_json' : 'credentials_json'] = json;
+        result = record.kind === 'codex'
+          ? await callApi(() => api.api.upstreams.codex.oauth.exchange.$post({
+              json: { record: editorRecord, auth_json: json },
+            }))
+          : await callApi(() => api.api.upstreams['claude-code'].oauth.exchange.$post({
+              json: { record: editorRecord, credentials_json: json },
+            }));
       } else {
         const parsed = parseCallbackPaste(callback);
         const recalled = recallPkce(record.kind, flowKind, parsed.state);
         if (!recalled) throw new Error(t('dashboard.upstreamEditor.oauth.unrecognized'));
-        body.callback = { code: parsed.code, verifier: recalled.verifier, ...(record.kind === 'claude-code' ? { state: parsed.state } : {}) };
+        result = record.kind === 'codex'
+          ? await callApi(() => api.api.upstreams.codex.oauth.exchange.$post({
+              json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier } },
+            }))
+          : tab === 'setup'
+            ? await callApi(() => api.api.upstreams['claude-code']['setup-token'].exchange.$post({
+                json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } },
+              }))
+            : await callApi(() => api.api.upstreams['claude-code'].oauth.exchange.$post({
+                json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } },
+              }));
       }
-      path = record.kind === 'codex'
-        ? '/api/upstreams/codex/oauth/exchange'
-        : `/api/upstreams/claude-code/${tab === 'setup' ? 'setup-token' : 'oauth'}/exchange`;
     } catch (cause) {
       setBusy(false); setError(cause instanceof Error ? cause.message : String(cause)); return;
     }
-    const result = await callJson<{ patch: { config?: unknown; state?: unknown } }>(() => authFetch(path, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-    }));
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }
     clearPkce(record.kind, flowKind);

@@ -9,15 +9,14 @@ import { KeySourceControl } from './key-source-control';
 import { RetentionField, type RetentionValue } from './retention-field';
 import type { MutationToastController, UpstreamOption } from './types';
 import { UpstreamPicker } from './upstream-picker';
-import { authFetch, callJson } from '../../api/auth';
+import { callApi } from '../../api/auth';
+import { api } from '../../api/client';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Link } = fluentComponents;
 interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: Exclude<RetentionValue, null> }
-interface CreateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; responses_retention_seconds: number; key_source: KeySource; custom_key?: string }
-interface UpdateKeyBody { name: string; upstream_ids: string[] | null; dump_retention_seconds: number | null; responses_retention_seconds: number }
 const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
 
 const DUMP_RETENTION_PRESETS = [
@@ -140,21 +139,13 @@ export function KeyDialog({
     const mutationKind = isCreate ? 'create' : 'edit';
     const toastId = mutationToasts.start(mutationKind, common.name);
     const result = isCreate
-      ? await callJson<ApiKey>(() =>
-          authFetch('/api/keys', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              ...common,
-              ...keyWriteBody(values.keySource, values.customKey),
-            } satisfies CreateKeyBody),
-          }))
-      : await callJson<ApiKey>(() =>
-          authFetch(`/api/keys/${encodeURIComponent(apiKey!.id)}`, {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(common satisfies UpdateKeyBody),
-          }));
+      ? await callApi(() => api.api.keys.$post({
+          json: { ...common, ...keyWriteBody(values.keySource, values.customKey) },
+        }))
+      : await callApi(() => api.api.keys[':id'].$patch({
+          param: { id: apiKey!.id },
+          json: common,
+        }));
     setSaving(false);
 
     if (result.error) {

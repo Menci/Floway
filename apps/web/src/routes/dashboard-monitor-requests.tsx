@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, redirect, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-requests';
-import { authFetch, callApi, callJson } from '../api/auth';
+import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ApiKey } from '../api/types';
 import { getSessionToken } from '../auth/session';
@@ -45,9 +45,9 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     return { collected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
   }
   const [recordsResult, recordResult] = await Promise.all([
-    callJson<{ records: DumpMetadata[] }>(() => authFetch(`/api/dump/keys/${encodeURIComponent(selectedKeyId)}/records?limit=100`)),
+    callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100' } })),
     recordId
-      ? callJson<DumpRecord>(() => authFetch(`/api/dump/keys/${encodeURIComponent(selectedKeyId)}/records/${encodeURIComponent(recordId)}`))
+      ? callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId: selectedKeyId, recordId } }))
       : Promise.resolve(null),
   ]);
   const record = recordResult?.data ?? null;

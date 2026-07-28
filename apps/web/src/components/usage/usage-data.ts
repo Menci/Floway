@@ -1,4 +1,4 @@
-import { dashboardRangeQuery } from './chart-model';
+import { dashboardRangeQuery } from '../charts/dashboard-time';
 import type {
   DisplayUsageRecord,
   SearchUsageResponse,
@@ -6,8 +6,7 @@ import type {
   UsageResponse,
   UsageView,
 } from './types';
-import type { AuthUser } from '../../api/auth';
-import { authFetch, callApi, callJson } from '../../api/auth';
+import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 
 interface UsageByUserResponse {
@@ -24,16 +23,11 @@ export const emptyUsageResponse = (): UsageResponse => ({ records: [], keys: [] 
 export const emptySearchUsageResponse = (): SearchUsageResponse => ({ records: [], keys: [], activeProvider: 'disabled' });
 const userBucketId = (userId: number) => `user-${userId}`;
 
-const requestJson = <T>(path: string, query?: Record<string, string>) => {
-  const search = new URLSearchParams(query);
-  return callJson<T>(() => authFetch(search.size ? `${path}?${search}` : path));
-};
-
 async function fetchUsageForView(view: UsageView, start: string, end: string) {
   if (view === 'all-by-user') {
     const [usageRes, searchRes] = await Promise.all([
-      requestJson<UsageByUserResponse>('/api/token-usage', { start, end, include_user_metadata: '1', view }),
-      requestJson<SearchUsageByUserResponse>('/api/search-usage', { start, end, include_user_metadata: '1', view }),
+      callApi(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
+      callApi(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
     ]);
     return {
       usage: usageRes.data ? {
@@ -49,8 +43,8 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
     };
   }
   const [usageRes, searchRes] = await Promise.all([
-    requestJson<UsageResponse>('/api/token-usage', { start, end, include_key_metadata: '1', view }),
-    requestJson<SearchUsageResponse>('/api/search-usage', { start, end, include_key_metadata: '1', view }),
+    callApi(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view } })),
+    callApi(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view } })),
   ]);
   return {
     usage: usageRes.data ?? emptyUsageResponse(),
@@ -60,7 +54,6 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
 }
 
 export async function loadUsagePageData(
-  _user: AuthUser,
   view: UsageView,
   range: UsageRange,
   loadedAt: number,

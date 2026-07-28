@@ -1,7 +1,7 @@
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/home';
-import { login as loginWithPassword } from '../api/auth';
+import { login as loginWithPassword } from '../api/client';
 import { setSessionToken, getSessionToken } from '../auth/session';
 import { LoginForm, type LoginActionData } from '../components/login-form';
 import { ScrollArea } from '../components/ui/scroll-area';

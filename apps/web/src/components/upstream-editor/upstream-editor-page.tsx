@@ -16,7 +16,7 @@ import {
 } from './editor-data';
 import { modelsAreValid } from './model-detail';
 import { UpstreamWorkspace } from './workspace';
-import { authFetch, callApi, callJson } from '../../api/auth';
+import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import { upstreamRecordFromWire } from '../../api/types';
 import type { CustomRawModel, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
@@ -97,12 +97,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     setModelsLoading(true);
     setModelsError(null);
     const values = getValues();
-    const result = await callJson<{ data: UpstreamModelConfig[] } | { data: CustomRawModel[] }>(() =>
-      authFetch('/api/upstreams/list-models', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ record: previewRecord(currentRecord, values) }),
-      }));
+    const result = await callApi(() => api.api.upstreams['list-models'].$post({
+      json: { record: previewRecord(currentRecord, values) },
+    }));
     if (result.error) {
       setModelsLoading(false);
       setModelsError(result.error.message);

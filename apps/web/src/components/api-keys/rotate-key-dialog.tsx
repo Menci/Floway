@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { keyWriteBody, type KeySource } from './key-source';
 import { KeySourceControl } from './key-source-control';
 import type { MutationToastController } from './types';
-import { authFetch, callJson } from '../../api/auth';
+import { callApi } from '../../api/auth';
+import { api } from '../../api/client';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
@@ -40,12 +41,10 @@ export function RotateKeyDialog({
     setSaving(true);
     setError(null);
     const toastId = mutationToasts.start('rotate', snapName);
-    const result = await callJson<ApiKey>(() =>
-      authFetch(`/api/keys/${encodeURIComponent(apiKey.id)}/rotate`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(keyWriteBody(keySource, trimmed)),
-      }));
+    const result = await callApi(() => api.api.keys[':id'].rotate.$post({
+      param: { id: apiKey.id },
+      json: keyWriteBody(keySource, trimmed),
+    }));
     setSaving(false);
     if (result.error) {
       mutationToasts.fail(toastId, 'rotate', snapName, result.error.message);

@@ -6,7 +6,7 @@ import { useFetcher } from 'react-router';
 import { z } from 'zod';
 
 import type { Route } from './+types/dashboard-settings';
-import { changeOwnPassword } from '../api/auth';
+import { changeOwnPassword } from '../api/client';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Input } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';

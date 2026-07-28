@@ -4,12 +4,8 @@ import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenDetail, 
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
 import {
-  chartTickValues as sharedChartTickValues,
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,
-  dashboardRangeQuery,
-  formatAxisDate,
-  formatCalloutTitle,
 } from '../charts/dashboard-time';
 import { colorForSlot } from '../charts/palette';
 import type { DecimalString } from '@floway-dev/protocols/common';
@@ -69,8 +65,6 @@ export const dashboardBuckets = (
   return dashboardBucketFrames(range, nowMs)
     .map(({ date, key }) => ({ key, label: bucketLabel(date, range, locale), date }));
 };
-
-export { dashboardRangeQuery, formatAxisDate, formatCalloutTitle };
 
 export function buildTokenChart({
   records,
@@ -419,11 +413,6 @@ function hasRequests(details: Map<string, Map<string, TokenDetail>>, id: string)
     if ((bucket.get(id)?.requests ?? 0) > 0) return true;
   }
   return false;
-}
-
-export function chartTickValues(buckets: UsageBucket[]): UsageBucket[] {
-  const desired = buckets.length <= 24 ? 6 : 7;
-  return sharedChartTickValues(buckets, desired);
 }
 
 export function bucketKeyForCallout(

@@ -1,10 +1,11 @@
 import type { ChartProps } from '@fluentui/react-charts';
 
 import type { BillingMetric } from '../../api/types';
+import type { DashboardRange } from '../charts/dashboard-time';
 import type { DecimalString } from '@floway-dev/protocols/common';
 
 export type UsageView = 'all-by-user' | 'self-by-key';
-export type UsageRange = 'today' | '7d' | '30d';
+export type UsageRange = DashboardRange;
 export type UsageMetric =
   | 'requests' | 'cost' | 'total' | 'input' | 'output' | 'prefill'
   | 'cached' | 'cachedRate' | 'cacheCreation' | 'cacheHitRate';

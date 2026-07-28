@@ -106,32 +106,6 @@ export const callApi = <TResponse extends Response>(
 ): Promise<ApiResult<SuccessfulJson<TResponse>>> =>
   callResponse<SuccessfulJson<TResponse>>(fn);
 
-export const callJson = <T>(
-  fn: () => Promise<Response>,
-): Promise<ApiResult<T>> => callResponse<T>(fn);
-
-export const login = (body: {
-  username: string;
-  password: string;
-}): Promise<ApiResult<LoginResponse>> =>
-  callJson<LoginResponse>(() =>
-    fetch('/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }));
-
-export const changeOwnPassword = (body: {
-  currentPassword: string;
-  newPassword: string;
-}): Promise<ApiResult<{ ok: true }>> =>
-  callApi(() =>
-    authFetch('/api/users/me/password', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }));
-
 const errorMessageFromBody = (body: unknown): string | null => {
   if (!body || typeof body !== 'object') return null;
 

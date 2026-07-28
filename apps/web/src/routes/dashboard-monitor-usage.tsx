@@ -35,7 +35,7 @@ export async function clientLoader(): Promise<LoaderData> {
   const view: UsageView = user.isAdmin ? 'all-by-user' : 'self-by-key';
   const range: UsageRange = 'today';
   const loadedAt = Date.now();
-  return { ...await loadUsagePageData(user, view, range, loadedAt), loadedAt, range, view };
+  return { ...await loadUsagePageData(view, range, loadedAt), loadedAt, range, view };
 }
 export function meta({}: Route.MetaArgs) { return [{ title: 'Usage | Floway' }]; }
 
@@ -74,7 +74,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
     try {
       const next = await loadUsagePageData(
-        user,
         requestedView,
         requestedRange,
         requestedAt,

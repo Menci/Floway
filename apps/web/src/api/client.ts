@@ -13,3 +13,9 @@ export const api = client;
 
 export const getCurrentSession = (): Promise<ApiResult<MeResponse>> =>
   callApi(() => api.auth.me.$get());
+
+export const login = (body: { username: string; password: string }) =>
+  callApi(() => api.auth.login.$post({ json: body }));
+
+export const changeOwnPassword = (body: { currentPassword: string; newPassword: string }) =>
+  callApi(() => api.api.users.me.password.$patch({ json: body }));
