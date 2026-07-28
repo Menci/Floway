@@ -1,5 +1,5 @@
 import { AddRegular, ArrowClockwiseRegular, DeleteRegular, EditRegular, WarningRegular } from '@fluentui/react-icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
@@ -21,48 +21,52 @@ import { fluentComponents } from '../fluent';
 const { Button, MessageBar, MessageBarBody, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip } = fluentComponents;
 
 interface ModelsResponse { data: ControlPlaneModel[] }
+interface LoaderData {
+  catalog: { aliases: ModelAlias[]; models: ControlPlaneModel[] | null };
+  error: string | null;
+  modelsError: string | null;
+}
 
-export async function clientLoader() {
+const loadPageData = async (current: LoaderData['catalog']): Promise<LoaderData> => {
+  const [aliasResult, modelResult] = await Promise.all([
+    callApi<ModelAlias[]>(() => api.api.aliases.$get()),
+    callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
+  ]);
+  const catalog = mergeModelAliasesPageData(current, aliasResult, modelResult);
+  return {
+    catalog: { aliases: catalog.aliases, models: catalog.models },
+    error: aliasResult.error?.message ?? null,
+    modelsError: modelResult.error?.message ?? null,
+  };
+};
+
+export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
-  return null;
+  return loadPageData({ aliases: [], models: null });
 }
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Model Aliases | Floway' }];
 }
 
-export default function DashboardProvidersModelAliases() {
+export default function DashboardProvidersModelAliases({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
-  const [catalog, setCatalog] = useState<{
-    aliases: ModelAlias[];
-    models: ControlPlaneModel[] | null;
-  }>({ aliases: [], models: null });
+  const [catalog, setCatalog] = useState(loaderData.catalog);
   const { aliases, models } = catalog;
-  const [error, setError] = useState<string | null>(null);
-  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [error, setError] = useState(loaderData.error);
+  const [modelsError, setModelsError] = useState(loaderData.modelsError);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ModelAlias | null>(null);
   const [deleting, setDeleting] = useState<ModelAlias | null>(null);
   const [mutating, setMutating] = useState(false);
 
   const load = useCallback(async () => {
-    setError(null);
-    setModelsError(null);
-    const [aliasResult, modelResult] = await Promise.all([
-      callApi<ModelAlias[]>(() => api.api.aliases.$get()),
-      callApi<ModelsResponse>(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
-    ]);
-    setCatalog(current => {
-      const next = mergeModelAliasesPageData(current, aliasResult, modelResult);
-      return { aliases: next.aliases, models: next.models };
-    });
-    setError(aliasResult.error?.message ?? null);
-    setModelsError(modelResult.error?.message ?? null);
-  }, []);
-
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- Loading the alias list on mount; the pending flag begins that work.
-  useEffect(() => { if (user.isAdmin) void load(); }, [load, user.isAdmin]);
+    const next = await loadPageData(catalog);
+    setCatalog(next.catalog);
+    setError(next.error);
+    setModelsError(next.modelsError);
+  }, [catalog]);
 
   const header = <DashboardPageHeader description={t('dashboard.modelAliases.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.modelAliases.heading')} />;
   if (!user.isAdmin) return <section className="grid gap-[18px] max-w-[960px]">{header}<AdminOnlyNotice /></section>;

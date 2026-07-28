@@ -16,13 +16,11 @@ import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body
 import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, redactHeaderValue } from './header-redact';
 import {
-  collectStream,
   detectCollectKind,
   renderStreamEvents,
   streamEventsCopyText,
   type CollectedStream,
 } from './stream-render';
-import { authFetch } from '../../api/auth';
 import { fluentComponents } from '../../fluent';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 
@@ -64,7 +62,9 @@ const useStyles = makeStyles({
 });
 
 interface DetailProps {
-  keyId: string;
+  collected: CollectedStream | null;
+  error: string | null;
+  record: DumpRecord | null;
   recordId: string | null;
 }
 
@@ -144,39 +144,18 @@ function SectionHeader({ title, icon, detail, actions, copyText }: { title: stri
   return <header className={s.sectionHeader}><span className="inline-flex text-fui-base400 text-fui-fg3">{icon}</span><Text size={400} weight="semibold">{title}</Text>{detail}{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
 }
 
-export function RequestDetailPanel({ keyId, recordId }: DetailProps) {
+export function RequestDetailPanel({ collected: loadedCollected, error, record, recordId }: DetailProps) {
   const { t } = useTranslation();
   const s = useStyles();
-  const [record, setRecord] = useState<DumpRecord | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [streamView, setStreamView] = useState<'collected' | 'events'>('collected');
-  const [collected, setCollected] = useState<CollectedStream | null>(null);
+  const [collected, setCollected] = useState(loadedCollected);
 
-  // Clearing the previous record during render means the panel never shows
-  // one record's body under another record's header while the fetch is out.
   const [shownRecordId, setShownRecordId] = useState(recordId);
   if (shownRecordId !== recordId) {
     setShownRecordId(recordId);
-    setRecord(null);
-    setError(null);
-    setCollected(null);
+    setCollected(loadedCollected);
     setStreamView('collected');
-    setLoading(recordId !== null);
   }
-
-  useEffect(() => {
-    const controller = new AbortController();
-    if (!recordId) return () => controller.abort();
-    void authFetch(`/api/dump/keys/${encodeURIComponent(keyId)}/records/${encodeURIComponent(recordId)}`, { signal: controller.signal })
-      .then(async response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        setRecord(await response.json() as DumpRecord);
-      })
-      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [keyId, recordId]);
 
   const requestBody = record ? renderBody(record.request.body, contentTypeOf(record.request.headers)) : EMPTY_BODY;
   const responseBody = record?.response.body.type === 'bytes' ? renderBody(record.response.body.body, contentTypeOf(record.response.headers)) : EMPTY_BODY;
@@ -187,15 +166,7 @@ export function RequestDetailPanel({ keyId, recordId }: DetailProps) {
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const renderedEvents = useMemo(() => renderStreamEvents(collectKind, streamEvents), [collectKind, streamEvents]);
 
-  useEffect(() => {
-    let active = true;
-    if (!collectKind || streamEvents.length === 0) return;
-    void collectStream(collectKind, streamEvents).then(value => { if (active) setCollected(value); });
-    return () => { active = false; };
-  }, [collectKind, streamEvents]);
-
   if (!recordId) return <div className="h-full grid place-items-center p-8 text-center"><Text className="text-fui-fg3">{t('dashboard.requests.selectPrompt')}</Text></div>;
-  if (loading) return <div className="h-full" />;
   if (error) return <div className="p-4"><MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar></div>;
   if (!record) return null;
 

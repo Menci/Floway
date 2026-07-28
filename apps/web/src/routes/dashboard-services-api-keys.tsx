@@ -12,6 +12,7 @@ import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import type { Route } from './+types/dashboard-services-api-keys';
 import { AgentSetupCard } from '../components/api-keys/agent-setup-card';
+import type { AgentSetupLease } from '../components/api-keys/agent-setup-contract';
 import { KeyDialog } from '../components/api-keys/key-editor';
 import { KeysTable } from '../components/api-keys/keys-table';
 import { modelsForAgentSetup } from '../components/api-keys/model-reachability';
@@ -25,28 +26,49 @@ import { fluentComponents } from '../fluent';
 const { Button, MessageBar, MessageBarBody, Spinner, Text, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
 interface ModelsResponse { object: string; data: ControlPlaneModel[] }
 const selectedKeyStorageKey = 'floway-agent-setup-selected-key';
+interface LoaderData extends ApiKeysPageData {
+  selectedKeyId: string;
+  setupError: string | null;
+  setupLease: AgentSetupLease | null;
+}
 
-export async function clientLoader() { if (!getSessionToken()) throw redirect('/'); return null; }
+const loadInitialPageData = async (): Promise<ApiKeysPageData> => {
+  const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
+    callApi<ApiKey[]>(() => api.api.keys.$get()),
+    callApi<UpstreamOption[]>(() => api.api['upstream-options'].$get()),
+    callApi<ModelsResponse>(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
+  ]);
+  const error = keysRes.error?.message ?? upstreamsRes.error?.message ?? modelsRes.error?.message ?? null;
+  return {
+    keys: keysRes.data ?? [],
+    upstreams: upstreamsRes.data ?? [],
+    models: modelsRes.data?.data ?? [],
+    error,
+  };
+};
+
+export async function clientLoader(): Promise<LoaderData> {
+  if (!getSessionToken()) throw redirect('/');
+  const data = await loadInitialPageData();
+  const stored = localStorage.getItem(selectedKeyStorageKey) ?? '';
+  const selectedKeyId = data.keys.some(key => key.id === stored) ? stored : '';
+  if (!selectedKeyId) return { ...data, selectedKeyId, setupError: null, setupLease: null };
+  const setup = await callApi<AgentSetupLease>(() => api.api.setup.$post({ json: { apiKeyId: selectedKeyId } }));
+  return { ...data, selectedKeyId, setupError: setup.error?.message ?? null, setupLease: setup.data ?? null };
+}
 export function meta({}: Route.MetaArgs) { return [{ title: 'API Keys | Floway' }]; }
 export function links() { return [{ rel: 'stylesheet', href: prismVsStyles, media: '(prefers-color-scheme: light)' }, { rel: 'stylesheet', href: prismVscDarkPlusStyles, media: '(prefers-color-scheme: dark)' }]; }
 
-export default function DashboardServicesApiKeys() {
+export default function DashboardServicesApiKeys({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useOutletContext<DashboardOutletContext>();
   const toasterId = useId();
   const mutationToastId = useId();
   const mutationToastSequence = useRef(0);
   const { dispatchToast, updateToast } = useToastController(toasterId);
-  const [data, setData] = useState<ApiKeysPageData>({
-    keys: [],
-    upstreams: [],
-    models: [],
-    error: null,
-  });
-  const [selectedKeyId, setSelectedKeyId] = useState(() => typeof localStorage === 'undefined' ? '' : localStorage.getItem(selectedKeyStorageKey) ?? '');
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [pageError, setPageError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<ApiKeysPageData>(loaderData);
+  const [selectedKeyId, setSelectedKeyId] = useState(loaderData.selectedKeyId);
+  const [pageError, setPageError] = useState(loaderData.error);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ApiKey | null>(null);
   const [rotateTarget, setRotateTarget] = useState<ApiKey | null>(null);
@@ -107,14 +129,12 @@ export default function DashboardServicesApiKeys() {
   };
 
   const reload = async () => {
-    setLoading(true);
     setPageError(null);
     const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
       callApi<ApiKey[]>(() => api.api.keys.$get()),
       callApi<UpstreamOption[]>(() => api.api['upstream-options'].$get()),
       callApi<ModelsResponse>(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
     ]);
-    setLoading(false);
 
     const error =
       keysRes.error?.message ??
@@ -134,37 +154,6 @@ export default function DashboardServicesApiKeys() {
     setSelectedKeyId(current =>
       next.keys.some(key => key.id === current) ? current : '');
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
-        callApi<ApiKey[]>(() => api.api.keys.$get()),
-        callApi<UpstreamOption[]>(() => api.api['upstream-options'].$get()),
-        callApi<ModelsResponse>(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
-      ]);
-      if (cancelled) return;
-
-      const error =
-        keysRes.error?.message ??
-        upstreamsRes.error?.message ??
-        modelsRes.error?.message ??
-        null;
-      const next: ApiKeysPageData = {
-        keys: keysRes.data ?? [],
-        upstreams: upstreamsRes.data ?? [],
-        models: modelsRes.data?.data ?? [],
-        error,
-      };
-      setData(next);
-      setSelectedKeyId(current => next.keys.some(key => key.id === current) ? current : '');
-      setPageError(error);
-      setInitialLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const copyToClipboard = async (text: string, tag: string) => {
     try {
@@ -208,7 +197,6 @@ export default function DashboardServicesApiKeys() {
         actions={
           <Button
             appearance="primary"
-            disabled={initialLoading}
             icon={<AddRegular />}
             onClick={() => setCreateOpen(true)}
           >
@@ -231,12 +219,6 @@ export default function DashboardServicesApiKeys() {
               <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">
                 {t('dashboard.apiKeys.table.title')}
               </Text>
-              {loading && (
-                <span className="text-xs text-fui-fg2 inline-flex items-center gap-[6px]">
-                  <Spinner size="tiny" />
-                  {t('dashboard.apiKeys.loading')}
-                </span>
-              )}
             </div>
             <KeysTable
               copiedTag={copiedTag}
@@ -272,6 +254,8 @@ export default function DashboardServicesApiKeys() {
             <AgentSetupCard
               copiedTag={copiedTag}
               copyFailedTag={copyFailedTag}
+              initialError={loaderData.setupError}
+              initialLease={loaderData.setupLease}
               models={agentSetupModels}
               onCopy={(text, tag) => void copyToClipboard(text, tag)}
               selectedKey={selectedKey}

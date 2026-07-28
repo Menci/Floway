@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
@@ -23,18 +23,39 @@ import { formatProxyUri } from '@floway-dev/proxy/url';
 
 const { Button, MessageBar, MessageBarBody, Text } = fluentComponents;
 
-export async function clientLoader() { if (!getSessionToken()) throw redirect('/'); return null; }
+interface LoaderData {
+  proxies: ProxyRecord[];
+  backoffs: BackoffRow[];
+  error: string | null;
+}
+
+const loadPageData = async (): Promise<LoaderData> => {
+  const [proxiesRes, backoffsRes] = await Promise.all([
+    callApi<ProxyRecord[]>(() => api.api.proxies.$get()),
+    callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
+  ]);
+  return {
+    proxies: proxiesRes.data ?? [],
+    backoffs: backoffsRes.data ?? [],
+    error: proxiesRes.error?.message ?? backoffsRes.error?.message ?? null,
+  };
+};
+
+export async function clientLoader(): Promise<LoaderData> {
+  if (!getSessionToken()) throw redirect('/');
+  return loadPageData();
+}
 export function meta({}: Route.MetaArgs) { return [{ title: 'Proxy | Floway' }]; }
 
-export default function DashboardProvidersProxy() {
+export default function DashboardProvidersProxy({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
 
-  const [proxies, setProxies] = useState<ProxyRecord[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [proxies, setProxies] = useState(loaderData.proxies);
+  const [loadError, setLoadError] = useState(loaderData.error);
 
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [backoffs, setBackoffs] = useState<BackoffRow[]>([]);
+  const [backoffs, setBackoffs] = useState(loaderData.backoffs);
   const [formName, setFormName] = useState('');
   const [config, setConfig] = useState<ProxyConfig>(
     defaultsFor('http', { host: '', port: 0, name: '' }),
@@ -80,24 +101,6 @@ export default function DashboardProvidersProxy() {
     if (proxiesRes.data) setProxies(proxiesRes.data);
     if (backoffsRes.data) setBackoffs(backoffsRes.data);
     setLoadError(proxiesRes.error?.message ?? backoffsRes.error?.message ?? null);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const [proxiesRes, backoffsRes] = await Promise.all([
-        callApi<ProxyRecord[]>(() => api.api.proxies.$get()),
-        callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
-      ]);
-      if (cancelled) return;
-      setLoadError(proxiesRes.error?.message ?? backoffsRes.error?.message ?? null);
-      if (proxiesRes.data) setProxies(proxiesRes.data);
-      if (backoffsRes.data) setBackoffs(backoffsRes.data);
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const updateStructuredConfig = useCallback<Dispatch<SetStateAction<ProxyConfig>>>(update => {

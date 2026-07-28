@@ -1,21 +1,19 @@
 import { NavigationRegular } from '@fluentui/react-icons';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Outlet,
   redirect,
   useLocation,
-  useNavigate,
   useOutletContext,
 } from 'react-router';
 
 import type { Route } from './+types/dashboard';
 import type { AuthUser } from '../api/auth';
+import { getCurrentSession } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { FlowayLogo } from '../components/logo';
 import { Sidebar } from '../components/sidebar';
-import { AppLoadingScreen } from '../components/ui/app-loading-screen';
-import { PageShell } from '../components/ui/page-shell';
 import { fluentComponents } from '../fluent';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -26,46 +24,29 @@ export type DashboardOutletContext = {
 };
 
 export async function clientLoader() {
-  if (!getSessionToken()) throw redirect('/');
-  return null;
+  const token = getSessionToken();
+  if (!token) throw redirect('/');
+  const session = await getCurrentSession();
+  if (session.error) {
+    if (session.error.status === 401) throw redirect('/');
+    throw new Error(session.error.message);
+  }
+  useAuthStore.getState().primeFromSession(session.data.user, token);
+  return { user: session.data.user };
 }
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Dashboard | Floway' }];
 }
 
-export default function Dashboard({}: Route.ComponentProps) {
+export default function Dashboard({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const initialize = useAuthStore(state => state.initialize);
-  const status = useAuthStore(state => state.status);
-  const user = useAuthStore(state => state.user);
-  const error = useAuthStore(state => state.error);
+  const user = loaderData.user;
   const [navigationOpen, setNavigationOpen] = useState(false);
   const { pathname } = useLocation();
   const upstreamEditor = /^\/dashboard\/providers\/upstreams\/(?:new\/[^/]+|[^/]+)$/.test(pathname);
   const requestsInspector = pathname === '/dashboard/monitor/requests';
   const playground = pathname === '/dashboard/playground';
-
-  useEffect(() => {
-    void initialize();
-  }, [initialize]);
-
-  useEffect(() => {
-    if (status === 'unauthenticated') void navigate('/', { replace: true });
-  }, [navigate, status]);
-
-  if (status === 'error') {
-    return (
-      <PageShell>
-        <p className="text-fui-fg2">{error}</p>
-      </PageShell>
-    );
-  }
-
-  if (!user) {
-    return <AppLoadingScreen label={t('common.loading')} />;
-  }
 
   return (
     <>

@@ -5,6 +5,7 @@ import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-usage';
 import { useDashboardOutletContext } from './dashboard';
+import { getCurrentSession } from '../api/client';
 import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -14,41 +15,50 @@ import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, forma
 import { ChartSection } from '../components/usage/chart-section';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
-import { emptySearchUsageResponse, emptyUsageResponse, loadUsagePageData } from '../components/usage/usage-data';
+import { loadUsagePageData } from '../components/usage/usage-data';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
-import { useNow } from '../lib/use-now';
 import { useAuthStore } from '../stores/auth-store';
 
-const { Button, makeStyles, Spinner, Text, Tooltip } = fluentComponents;
+const { Button, makeStyles, Text, Tooltip } = fluentComponents;
 const useErrorStyles = makeStyles({ root: { backgroundColor: 'var(--colorPaletteRedBackground2)', border: '1px solid var(--colorPaletteRedBorder1)', borderRadius: '8px', color: 'var(--colorPaletteRedForeground1)', padding: '10px 12px' } });
 
-export async function clientLoader() { if (!getSessionToken()) throw redirect('/'); return null; }
+type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
+  loadedAt: number;
+  range: UsageRange;
+  view: UsageView;
+};
+
+export async function clientLoader(): Promise<LoaderData> {
+  if (!getSessionToken()) throw redirect('/');
+  const session = await getCurrentSession();
+  if (session.error) throw redirect('/');
+  const view: UsageView = session.data.user.isAdmin ? 'all-by-user' : 'self-by-key';
+  const range: UsageRange = 'today';
+  const loadedAt = Date.now();
+  return { ...await loadUsagePageData(session.data.user, view, range, loadedAt), loadedAt, range, view };
+}
 export function meta({}: Route.MetaArgs) { return [{ title: 'Usage | Floway' }]; }
 
-export default function DashboardMonitorUsage() {
+export default function DashboardMonitorUsage({ loaderData }: Route.ComponentProps) {
   const { i18n, t } = useTranslation();
   const { user } = useDashboardOutletContext();
   const clearAuth = useAuthStore(state => state.clear);
-  const initialView: UsageView = user.isAdmin ? 'all-by-user' : 'self-by-key';
-  const [view, setView] = useState<UsageView>(initialView);
-  const [range, setRange] = useState<UsageRange>('today');
-  const [loadedRange, setLoadedRange] = useState<UsageRange>('today');
-  // Stamped by each completed load; the initial value only has to be a
-  // stable reading, which the shared clock provides without an impure render.
-  const mountClock = useNow(60_000);
-  const [loadedAt, setLoadedAt] = useState(mountClock);
-  const [usage, setUsage] = useState(emptyUsageResponse);
-  const [search, setSearch] = useState(emptySearchUsageResponse);
-  const [models, setModels] = useState<ControlPlaneModel[]>([]);
+  const [view, setView] = useState<UsageView>(loaderData.view);
+  const [range, setRange] = useState<UsageRange>(loaderData.range);
+  const [loadedRange, setLoadedRange] = useState<UsageRange>(loaderData.range);
+  const [loadedAt, setLoadedAt] = useState(loaderData.loadedAt);
+  const [usage, setUsage] = useState(loaderData.usage);
+  const [search, setSearch] = useState(loaderData.search);
+  const [models, setModels] = useState<ControlPlaneModel[]>(loaderData.models);
   const [metric, setMetric] = useState<UsageMetric>('total');
   const [redactKeys, setRedactKeys] = useState(false);
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set());
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set());
-  const [loading, setLoading] = useState(true);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(loaderData.error);
   const requestIdRef = useRef(0);
+  const mountedRef = useRef(false);
 
   const errorStyles = useErrorStyles();
 
@@ -89,12 +99,15 @@ export default function DashboardMonitorUsage() {
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
-        setInitialLoading(false);
       }
     }
   }, [range, user, view]);
 
   useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- The filters are user-selected, so a change starts a load; marking it pending synchronously is the point.
     void refresh();
     return () => {
@@ -206,14 +219,13 @@ export default function DashboardMonitorUsage() {
     <section className="grid gap-[18px] min-w-0">
       <DashboardPageHeader
         actions={<>
-          {loading && !initialLoading && <Spinner size="tiny" label={t('dashboard.usage.refreshing')} />}
           <Tooltip
             content={t('dashboard.usage.actions.refresh')}
             relationship="label"
           >
             <Button
               appearance="subtle"
-              disabled={initialLoading}
+              disabled={loading}
               icon={<ArrowClockwiseRegular />}
               onClick={() => void refresh()}
             />

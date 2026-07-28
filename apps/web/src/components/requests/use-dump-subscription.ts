@@ -6,8 +6,8 @@ import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 const PAGE_LIMIT = 100;
 
-export function useDumpSubscription(keyId: string | null) {
-  const [records, setRecords] = useState<DumpMetadata[]>([]);
+export function useDumpSubscription(keyId: string | null, initialRecords: DumpMetadata[]) {
+  const [records, setRecords] = useState(initialRecords);
   const [loading, setLoading] = useState(false);
   const [hasOlder, setHasOlder] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,14 +20,14 @@ export function useDumpSubscription(keyId: string | null) {
   const [subscribedKeyId, setSubscribedKeyId] = useState(keyId);
   if (subscribedKeyId !== keyId) {
     setSubscribedKeyId(keyId);
-    setRecords([]);
+    setRecords(initialRecords);
     setError(null);
     setHasOlder(true);
     setLoading(keyId !== null);
   }
 
   useEffect(() => {
-    seenRef.current.clear();
+    seenRef.current = new Set(initialRecords.map(record => record.id));
     loadingOlderRef.current = false;
     if (!keyId) return;
 
@@ -70,7 +70,7 @@ export function useDumpSubscription(keyId: string | null) {
       }
     });
     return () => source.close();
-  }, [keyId]);
+  }, [initialRecords, keyId]);
 
   const loadOlder = useCallback(async () => {
     const oldest = records.at(-1);

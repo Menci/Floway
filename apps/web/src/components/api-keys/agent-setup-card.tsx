@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { cloneAgentSetupConfiguration, defaultAgentSetupConfiguration, type AgentSetupConfiguration } from './agent-setup-contract';
+import { cloneAgentSetupConfiguration, defaultAgentSetupConfiguration, type AgentSetupConfiguration, type AgentSetupLease } from './agent-setup-contract';
 import { applyLocalAgentSetupChanges } from './agent-setup-draft';
 import { buildAgentModelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform';
@@ -14,7 +14,7 @@ import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Combobox, Select } from '../ui/fluent-form-controls';
 
-const { Button, Field, MessageBar, MessageBarBody, Option, Spinner, Switch, Tab, TabList, Text } = fluentComponents;
+const { Button, Field, MessageBar, MessageBarBody, Option, Switch, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
 type Platform = AgentSetupPlatform;
 const NONE = '__floway_none__';
@@ -30,9 +30,11 @@ const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNu
 // Ref: https://code.claude.com/docs/en/settings#attribution-settings
 const claudeAttributionOptOut = { commit: '', pr: '', sessionUrl: false } as const;
 
-export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selectedKey }: {
+export function AgentSetupCard({ copiedTag, copyFailedTag, initialError, initialLease, models, onCopy, selectedKey }: {
   copiedTag: string | null;
   copyFailedTag: string | null;
+  initialError: string | null;
+  initialLease: AgentSetupLease | null;
   models: ControlPlaneModel[];
   onCopy: (text: string, tag: string) => void;
   selectedKey: ApiKey | null;
@@ -46,7 +48,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selec
   const [localDraft, setLocalDraft] = useState(() => defaultAgentSetupConfiguration());
   const localDraftBaseline = useRef(cloneAgentSetupConfiguration(localDraft));
   const appliedLease = useRef<string | null>(null);
-  const setup = useAgentSetup(selectedKey?.id ?? null);
+  const setup = useAgentSetup(selectedKey?.id ?? null, initialLease, initialError);
   const setupDraft = setup.draft;
   const setupLease = setup.lease;
   const updateSetupDraft = setup.updateDraft;
@@ -70,7 +72,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selec
   const scriptPath = platform === 'unix' ? scripts?.sh : scripts?.ps1;
   const command = scriptPath
     ? agentSetupCommand(typeof window === 'undefined' ? 'http://localhost:5173' : window.location.origin, scriptPath, platform)
-    : t('dashboard.apiKeys.agentSetup.commandPending');
+    : '';
 
   return <div className="grid gap-4 min-w-0">
     <div className="grid gap-3">
@@ -79,7 +81,6 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selec
           <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />
           <AgentTab icon={codexIconUrl} label={t('dashboard.apiKeys.configuration.codex')} value="codex" />
         </TabList>
-        {setup.syncing && <span className="inline-flex h-8 items-center gap-2 text-fui-fg2 text-fui-base200"><Spinner size="tiny" />{t('dashboard.apiKeys.agentSetup.saving')}</span>}
       </div>
       <Field className="w-full max-w-[260px]" label={{ children: t('dashboard.apiKeys.agentSetup.accessMethod'), className: 'font-fui-semibold' }}>
         <Select value={view} onChange={(_, data) => setView(data.value === 'snippets' ? 'snippets' : 'setup')}>
@@ -90,7 +91,6 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, models, onCopy, selec
     </div>
 
     {!selectedKey && <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.selectKey')}</MessageBarBody></MessageBar>}
-    {selectedKey && !setup.lease && !setup.createError && !setup.noSelectableKey && <span className="inline-flex items-center gap-2 text-fui-fg2"><Spinner size="tiny" />{t('dashboard.apiKeys.agentSetup.preparing')}</span>}
     {setup.noSelectableKey && <MessageBar><MessageBarBody>{t('dashboard.apiKeys.agentSetup.noKey')}</MessageBarBody></MessageBar>}
     {setup.terminated && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiKeys.agentSetup.expired')}</MessageBarBody></MessageBar>}
     {setup.createError && !setup.lease

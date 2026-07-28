@@ -44,10 +44,19 @@ export const agentSetupCommand = (origin: string, path: string, platform: 'unix'
   ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash`
   : `$SetupEndpoint = '${origin.replaceAll("'", "''")}'; irm "$SetupEndpoint${path}" | iex`;
 
-export function useAgentSetup(apiKeyId: string | null) {
-  const [lease, setLease] = useState<AgentSetupLease | null>(null);
-  const [draft, setDraftState] = useState<AgentSetupConfiguration | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
+export function useAgentSetup(
+  apiKeyId: string | null,
+  initialLease: AgentSetupLease | null = null,
+  initialCreateError: string | null = null,
+) {
+  const initialResourceRef = useRef({ apiKeyId, error: initialCreateError, lease: initialLease });
+  const initialResource = initialResourceRef.current.apiKeyId === apiKeyId ? initialResourceRef.current : null;
+  const initialDraft = initialResource?.lease
+    ? cloneAgentSetupConfiguration(initialResource.lease.configuration)
+    : null;
+  const [lease, setLease] = useState<AgentSetupLease | null>(initialResource?.lease ?? null);
+  const [draft, setDraftState] = useState<AgentSetupConfiguration | null>(initialDraft);
+  const [createError, setCreateError] = useState<string | null>(initialResource?.error ?? null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [heartbeatError, setHeartbeatError] = useState<string | null>(null);
   const [terminated, setTerminated] = useState(false);
@@ -58,8 +67,8 @@ export function useAgentSetup(apiKeyId: string | null) {
   const [createAttempt, setCreateAttempt] = useState(0);
 
   const lifecycleRef = useRef(0);
-  const leaseRef = useRef<AgentSetupLease | null>(null);
-  const draftRef = useRef<AgentSetupConfiguration | null>(null);
+  const leaseRef = useRef<AgentSetupLease | null>(initialResource?.lease ?? null);
+  const draftRef = useRef<AgentSetupConfiguration | null>(initialDraft);
   const generationRef = useRef(0);
   const confirmedRef = useRef(0);
   const terminatedRef = useRef(false);
@@ -224,13 +233,29 @@ export function useAgentSetup(apiKeyId: string | null) {
     setDraftState(null);
     setGeneration(0);
     setConfirmedGeneration(0);
-    setCreateError(null);
+    const loaded = createAttempt === 0 && initialResourceRef.current.apiKeyId === apiKeyId
+      ? initialResourceRef.current
+      : null;
+    setCreateError(loaded?.error ?? null);
     setSaveError(null);
     setHeartbeatError(null);
     setTerminated(false);
     setExpired(false);
     setNoSelectableKey(false);
-    if (!apiKeyId) return;
+    const cleanup = () => {
+      lifecycleRef.current += 1;
+      abortRequests();
+    };
+    if (!apiKeyId) return cleanup;
+    if (loaded?.lease) {
+      adoptLease(loaded.lease);
+      const configuration = cloneAgentSetupConfiguration(loaded.lease.configuration);
+      draftRef.current = configuration;
+      setDraftState(configuration);
+      scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
+      return cleanup;
+    }
+    if (loaded?.error) return cleanup;
     void (async () => {
       const result = await request<AgentSetupLease>(signal => api.api.setup.$post({
         json: { apiKeyId },
@@ -247,10 +272,7 @@ export function useAgentSetup(apiKeyId: string | null) {
       setDraftState(configuration);
       scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
     })();
-    return () => {
-      lifecycleRef.current += 1;
-      abortRequests();
-    };
+    return cleanup;
   }, [abortRequests, adoptLease, apiKeyId, createAttempt, request, scheduleHeartbeat]);
 
   useEffect(() => {

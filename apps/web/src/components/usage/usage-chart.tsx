@@ -1,6 +1,5 @@
-import type { AreaChartProps, CustomizedCalloutData, LineChartProps } from '@fluentui/react-charts';
-import type { ComponentType } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { chartTickValues, formatAxisDate } from './chart-model';
@@ -10,25 +9,21 @@ import { fluentComponents } from '../../fluent';
 import { localeForLanguage } from '../../i18n';
 const { makeStyles } = fluentComponents;
 const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' } });
-type ChartComponents = { AreaChart: ComponentType<AreaChartProps>; LineChart: ComponentType<LineChartProps> };
-
 export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
   const { i18n, t } = useTranslation();
   const chartStateStyles = useChartStateStyles();
-  const [components, setComponents] = useState<ChartComponents | null>(null);
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const tickValues = useMemo(() => chartTickValues(chart.buckets).map(bucket => bucket.date), [chart.buckets]);
   const dateFormatter = useCallback((date: Date) => formatAxisDate(date, chart.range, locale), [chart.range, locale]);
-  useEffect(() => { let disposed = false; void import('@fluentui/react-charts').then(module => { if (!disposed) setComponents({ AreaChart: module.AreaChart, LineChart: module.LineChart }); }); return () => { disposed = true; }; }, []);
   const callout = useCallback((data?: CustomizedCalloutData) => <UsageChartCallout chart={chart} data={data} labelByTime={labelByTime} locale={locale} valueFormatter={valueFormatter} />, [chart, labelByTime, locale, valueFormatter]);
   return (
     <div className="h-[320px] min-w-0 w-full" ref={setHost}>
-      {!components || size.width < 120 ? null : chart.data.lineChartData?.length ? (
+      {size.width < 120 ? null : chart.data.lineChartData?.length ? (
         chart.stacked ? (
-          <components.AreaChart
+          <AreaChart
             data={chart.data}
             height={size.height}
             hideLegend
@@ -46,7 +41,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
             yMinValue={0}
           />
         ) : (
-          <components.LineChart
+          <LineChart
             data={chart.data}
             height={size.height}
             hideLegend
@@ -74,7 +69,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
 function useElementSize(element: HTMLElement | null) {
   const [size, setSize] = useState({ width: 0, height: 320 });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!element) return;
     const update = () => {
       const rect = element.getBoundingClientRect();

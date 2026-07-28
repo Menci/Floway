@@ -1,15 +1,14 @@
-import type { ChartProps, CustomizedCalloutData, LineChartProps } from '@fluentui/react-charts';
+import { LineChart, type ChartProps, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { ArrowClockwiseRegular, InfoRegular } from '@fluentui/react-icons';
 import { curveMonotoneX } from 'd3-shape';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentType, ReactElement } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-performance';
-import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
-import { api } from '../api/client';
+import { api, getCurrentSession } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { ChartSection } from '../components/charts/chart-section';
 import { colorForSlot } from '../components/charts/palette';
@@ -37,12 +36,11 @@ import { Panel } from '../components/ui/panel';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
-import { useNow } from '../lib/use-now';
 import { useAuthStore } from '../stores/auth-store';
 
 const {
   Button, makeStyles, MessageBar, MessageBarBody,
-  Spinner, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip,
+  Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip,
 } = fluentComponents;
 
 interface Bucket { key: string; label: string; date: Date }
@@ -60,39 +58,65 @@ const usePerformanceChartStyles = makeStyles({
   root: { '& .fui-cart__xAxis line': { pointerEvents: 'none' }, '& circle[id*="staticHighlightCircle"]': { pointerEvents: 'none', visibility: 'hidden' } },
 });
 
-export async function clientLoader() {
-  if (!getSessionToken()) throw redirect('/');
-  return null;
+interface LoaderData {
+  error: string | null;
+  loadedAt: number;
+  overview: PerformanceOverviewResponse;
+  state: ReturnType<typeof parsePerformanceUrlState>;
+  upstreamNames: UpstreamName[];
+  view: PerformanceView;
 }
+
+export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
+  if (!getSessionToken()) throw redirect('/');
+  const session = await getCurrentSession();
+  if (session.error) throw redirect('/');
+  const state = parsePerformanceUrlState(new URL(request.url).searchParams);
+  const view: PerformanceView = session.data.user.isAdmin ? 'all-by-user' : 'self-by-key';
+  const groupBy = state.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : state.groupBy;
+  const loadedAt = Date.now();
+  const query = buildPerformanceQuery(view, state.range, groupBy, state.filters, loadedAt);
+  const [overview, upstreams] = await Promise.all([
+    callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({ query: Object.fromEntries(query) })),
+    callApi<UpstreamName[]>(() => api.api.upstreams.$get()),
+  ]);
+  return {
+    error: overview.error?.message ?? upstreams.error?.message ?? null,
+    loadedAt,
+    overview: overview.data ?? emptyPerformanceOverview,
+    state: { ...state, groupBy },
+    upstreamNames: upstreams.data ?? [],
+    view,
+  };
+}
+
+export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: Route.ShouldRevalidateArgs) =>
+  currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Performance | Floway' }];
 }
 
-export default function DashboardMonitorPerformance() {
+export default function DashboardMonitorPerformance({ loaderData }: Route.ComponentProps) {
   const { i18n, t } = useTranslation();
-  const { user } = useDashboardOutletContext();
   const clearAuth = useAuthStore(state => state.clear);
   const [searchParams, setSearchParams] = useSearchParams();
-  const [initialState] = useState(() => parsePerformanceUrlState(searchParams));
-  const view: PerformanceView = user.isAdmin ? 'all-by-user' : 'self-by-key';
+  const initialState = loaderData.state;
+  const view: PerformanceView = loaderData.view;
   const [range, setRange] = useState<PerformanceRange>(initialState.range);
   const [loadedRange, setLoadedRange] = useState<PerformanceRange>(initialState.range);
-  // Stamped by each completed load; the initial value only has to be a
-  // stable reading, which the shared clock provides without an impure render.
-  const mountClock = useNow(60_000);
-  const [loadedAt, setLoadedAt] = useState(mountClock);
+  const [loadedAt, setLoadedAt] = useState(loaderData.loadedAt);
   const [metric, setMetric] = useState<PerformanceMetric>(initialState.metric);
   const [percentile, setPercentile] = useState<PerformancePercentile>(initialState.percentile);
   const [groupBy, setGroupBy] = useState<PerformanceGroupBy>(initialState.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : initialState.groupBy);
   const [filters, setFilters] = useState<PerformanceFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
-  const [overview, setOverview] = useState<PerformanceOverviewResponse>(emptyPerformanceOverview);
-  const [upstreamNames, setUpstreamNames] = useState<Map<string, string>>(() => new Map());
-  const [loading, setLoading] = useState(true);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [overview, setOverview] = useState<PerformanceOverviewResponse>(loaderData.overview);
+  const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(item => [item.id, item.name])));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(loaderData.error);
   const requestIdRef = useRef(0);
+  const mountedRef = useRef(false);
   const locale = localeForLanguage(i18n.language);
 
   const refresh = useCallback(async () => {
@@ -110,22 +134,17 @@ export default function DashboardMonitorPerformance() {
       setLoadedAt(requestedAt);
     }
     setLoading(false);
-    setInitialLoading(false);
   }, [filters, groupBy, range, view]);
 
   useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- The filters are user-selected, so a change starts a load; marking it pending synchronously is the point.
     void refresh();
     return () => { requestIdRef.current += 1; };
   }, [refresh]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void callApi<UpstreamName[]>(() => api.api.upstreams.$get()).then(result => {
-      if (!cancelled && result.data) setUpstreamNames(new Map(result.data.map(item => [item.id, item.name])));
-    });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     const onVisibility = () => { if (document.visibilityState === 'visible') void refresh(); };
@@ -166,8 +185,7 @@ export default function DashboardMonitorPerformance() {
   return <section className="grid gap-[18px] min-w-0">
     <DashboardPageHeader
       actions={<>
-        {loading && !initialLoading && <Spinner size="tiny" label={t('dashboard.performance.refreshing')} />}
-        <Tooltip content={t('dashboard.performance.actions.refresh')} relationship="label"><Button appearance="subtle" disabled={initialLoading} icon={<ArrowClockwiseRegular />} onClick={() => void refresh()} /></Tooltip>
+        <Tooltip content={t('dashboard.performance.actions.refresh')} relationship="label"><Button appearance="subtle" disabled={loading} icon={<ArrowClockwiseRegular />} onClick={() => void refresh()} /></Tooltip>
       </>}
       description={t('dashboard.pages.performance')}
       eyebrow={t('dashboard.groups.monitor')}
@@ -268,7 +286,6 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const { i18n, t } = useTranslation();
   const stateStyles = useChartStateStyles();
   const chartStyles = usePerformanceChartStyles();
-  const [LineChart, setLineChart] = useState<ComponentType<LineChartProps> | null>(null);
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
@@ -277,10 +294,9 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const visibleData = useMemo<ChartProps>(() => ({ ...chart.data, lineChartData: chart.data.lineChartData?.filter(series => visibleLegends.includes(series.legend)) }), [chart.data, visibleLegends]);
   const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
-  useEffect(() => { let disposed = false; void import('@fluentui/react-charts').then(module => { if (!disposed) setLineChart(() => module.LineChart); }); return () => { disposed = true; }; }, []);
   const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length ? null : <div className="grid gap-[6px] min-w-[220px] p-1"><Text size={200} weight="semibold">{formatCalloutTitle(props.x, labelByTime, chart.range, locale)}</Text>{props.values.filter(item => item.y > 0).sort((a, b) => b.y - a.y).map(item => <Text key={item.legend} size={200} className="flex gap-3 justify-between font-mono"><span>{item.legend}</span><span>{formatter(item.y)}</span></Text>)}</div>, [chart.range, formatter, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
-  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{!LineChart || size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={formatter} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
+  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={formatter} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
 }
 
 function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; upstreamNames: ReadonlyMap<string, string> }) {
@@ -318,7 +334,7 @@ const dashboardBuckets = (range: PerformanceRange, now: number, locale: string):
   if (range === '7d') { const current = local4hStart(new Date(now)); return Array.from({ length: 42 }, (_, i) => { const date = new Date(current.getTime() - (41 - i) * 4 * 3_600_000); return { key: localHourKey(date), date, label: date.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit' }) }; }); }
   return Array.from({ length: 30 }, (_, i) => { const date = new Date(now); date.setDate(date.getDate() - (29 - i)); date.setHours(0, 0, 0, 0); return { key: localDateKey(date), date, label: date.toLocaleDateString(locale, { month: 'short', day: 'numeric' }) }; });
 };
-function useElementSize(element: HTMLElement | null) { const [size, setSize] = useState({ width: 0, height: 320 }); useEffect(() => { if (!element) return; const update = () => { const rect = element.getBoundingClientRect(); setSize({ width: Math.floor(rect.width), height: Math.max(260, Math.floor(rect.height)) }); }; update(); const observer = new ResizeObserver(update); observer.observe(element); return () => observer.disconnect(); }, [element]); return size; }
+function useElementSize(element: HTMLElement | null) { const [size, setSize] = useState({ width: 0, height: 320 }); useLayoutEffect(() => { if (!element) return; const update = () => { const rect = element.getBoundingClientRect(); setSize({ width: Math.floor(rect.width), height: Math.max(260, Math.floor(rect.height)) }); }; update(); const observer = new ResizeObserver(update); observer.observe(element); return () => observer.disconnect(); }, [element]); return size; }
 const chartTickValues = (buckets: Bucket[]) => { if (buckets.length <= 8) return buckets; const step = Math.ceil((buckets.length - 1) / 6); const ticks = buckets.filter((_, index) => index % step === 0); const last = buckets.at(-1); if (last && ticks.at(-1) !== last) ticks.push(last); return ticks; };
 const formatAxisDate = (date: Date, range: PerformanceRange, locale: string) => range === 'today' ? date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString(locale, { month: '2-digit', day: '2-digit', ...(range === '7d' ? { hour: '2-digit' } : {}) });
 const formatCalloutTitle = (value: Date | number | string, labels: Map<number, string>, range: PerformanceRange, locale: string) => value instanceof Date ? labels.get(value.getTime()) ?? formatAxisDate(value, range, locale) : typeof value === 'number' ? value.toLocaleString(locale) : value;

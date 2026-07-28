@@ -90,16 +90,16 @@ const useStyles = makeStyles({
   warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
 });
 
-export async function clientLoader() {
+export async function clientLoader(): Promise<UpstreamsPageData> {
   if (!getSessionToken()) throw redirect('/');
-  return null;
+  return loadUpstreamsPageData();
 }
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Upstreams | Floway' }];
 }
 
-export default function DashboardProvidersUpstreams() {
+export default function DashboardProvidersUpstreams({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
   const navigate = useNavigate();
@@ -107,33 +107,12 @@ export default function DashboardProvidersUpstreams() {
   const toasterId = useId();
   const mutationToastId = useId();
   const { dismissToast, dispatchToast } = useToastController(toasterId);
-  const [data, setData] = useState<UpstreamsPageData>({
-    upstreams: [],
-    models: null,
-    loadError: null,
-    modelsError: null,
-  });
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [pageError, setPageError] = useState<string | null>(null);
+  const [data, setData] = useState(loaderData);
+  const [pageError, setPageError] = useState(loaderData.loadError);
   const [mutation, setMutation] = useState<Mutation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UpstreamRecord | null>(null);
 
   const busy = mutation !== null;
-
-  useEffect(() => {
-    if (!user.isAdmin) return;
-
-    let cancelled = false;
-    void loadUpstreamsPageData().then(next => {
-      if (cancelled) return;
-      setData(next);
-      setPageError(next.loadError);
-      setInitialLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [user.isAdmin]);
 
   useEffect(() => {
     const search = new URLSearchParams(location.search);
@@ -273,14 +252,14 @@ export default function DashboardProvidersUpstreams() {
             <Button
               appearance="subtle"
               aria-label={t('dashboard.upstreams.actions.refresh')}
-              disabled={initialLoading || busy}
+              disabled={busy}
               icon={mutation?.kind === 'reload' ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
               onClick={() => void handleReload()}
             />
           </Tooltip>
           <Menu positioning={{ autoSize: true }}>
             <MenuTrigger disableButtonEnhancement>
-              <Button appearance="primary" disabled={initialLoading || busy} icon={<AddRegular />}>
+              <Button appearance="primary" disabled={busy} icon={<AddRegular />}>
                 {t('dashboard.upstreams.actions.create')}
                 <ChevronDownRegular className="ml-1.5" />
               </Button>
