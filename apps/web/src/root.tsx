@@ -16,10 +16,6 @@ import {
   gradientBackgroundCriticalCss,
 } from './components/gradient-background';
 import {
-  NavigationProgress,
-  navigationProgressCss,
-} from './components/navigation-progress';
-import {
   AppLoadingScreen,
   appLoadingCriticalCss,
 } from './components/ui/app-loading-screen';
@@ -75,7 +71,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           html body pre[class*="language-"] { border: 0; }
           ${gradientBackgroundCriticalCss}
           ${appLoadingCriticalCss}
-          ${navigationProgressCss}
           ${scrollAreaCss}
         `}</style>
       </head>
@@ -93,7 +88,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <>
-      <NavigationProgress />
       <DocumentTitleSync />
       <Outlet />
     </>

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from '../../src/gemini-via-chat-completions/events.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -274,7 +274,6 @@ test('translateToSourceEvents preserves Chat cache and tier billing facts', asyn
     completion_tokens: 8,
     total_tokens: 108,
     prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
-    [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
   };
 
   const frames = await collect([eventFrame({ ...chunk({}, 'stop', usage), service_tier: 'priority' }), doneFrame()]);
@@ -293,7 +292,6 @@ test('translateToSourceEvents preserves Chat cache and tier billing facts', asyn
         candidatesTokenCount: 8,
         totalTokenCount: 108,
         cachedContentTokenCount: 30,
-        [USAGE_BILLING]: { cacheWriteTokenCount: 20, cacheWrite1hTokenCount: 5, serviceTier: 'priority' },
       },
     }),
   ]);

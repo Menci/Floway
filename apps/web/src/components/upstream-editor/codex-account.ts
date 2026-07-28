@@ -29,10 +29,14 @@ export interface QuotaEntry {
   windows: QuotaWindow[];
 }
 
-export const findCredential = (record: CodexRecord): CodexAccountCredentialState | null => {
-  const accounts = record.state?.accounts;
-  if (!Array.isArray(accounts)) return null;
-  return accounts.find(account => account.chatgptAccountId === record.config.accounts[0].chatgptAccountId) ?? null;
+export type CodexCredentialLookup =
+  | { kind: 'present'; credential: CodexAccountCredentialState }
+  | { kind: 'account-id-mismatch'; expectedAccountId: string };
+
+export const findCredential = (record: CodexRecord): CodexCredentialLookup => {
+  const expectedAccountId = record.config.accounts[0].chatgptAccountId;
+  const credential = record.state.accounts.find(account => account.chatgptAccountId === expectedAccountId);
+  return credential ? { kind: 'present', credential } : { kind: 'account-id-mismatch', expectedAccountId };
 };
 
 const window = (
@@ -79,14 +83,17 @@ export const latestCredits = (quota: CodexQuotaSnapshotMap | null | undefined): 
 };
 
 export type AccountStatus =
+  | { tone: 'danger'; reason: 'account-id-mismatch' }
   | { tone: 'danger'; reason: 'session-terminated' | 'refresh-failed'; detail?: string }
   | { tone: 'danger'; reason: 'rate-limited'; until: string }
   | { tone: 'warning'; reason: 'heavy'; percent: number }
   | { tone: 'success'; reason: 'active' };
 
-export const accountStatus = (credential: CodexAccountCredentialState | null, entries: QuotaEntry[]): AccountStatus => {
-  if (credential?.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.state_message };
-  if (credential?.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.state_message };
+export const accountStatus = (lookup: CodexCredentialLookup, entries: QuotaEntry[]): AccountStatus => {
+  if (lookup.kind === 'account-id-mismatch') return { tone: 'danger', reason: 'account-id-mismatch' };
+  const { credential } = lookup;
+  if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.state_message };
+  if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.state_message };
   const until = entries
     .map(entry => entry.rateLimitedUntil)
     .filter((value): value is string => value !== null)

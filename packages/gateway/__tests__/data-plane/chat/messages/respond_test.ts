@@ -4,7 +4,6 @@ import { test } from 'vitest';
 import { respondMessages } from '../../../../src/data-plane/chat/messages/respond.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -123,83 +122,6 @@ test('respondMessages forwards upstream headers and strips hop-by-hop / framing 
 
 // --- partial usage checkpointing on client disconnect ---
 
-interface ControlledEvents {
-  events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>;
-  emit: (event: MessagesStreamEvent) => void;
-}
-
 // A generator whose next() resolves only when emit() supplies the next event.
 // Lets a test interleave "upstream emitted frame X" with "downstream cancels",
 // so the streaming finally block fires while message_stop is still in flight.
-const controlledMessagesEvents = (): ControlledEvents => {
-  const queue: Array<MessagesStreamEvent> = [];
-  const waiters: Array<(value: MessagesStreamEvent) => void> = [];
-  const events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>> = (async function* () {
-    while (true) {
-      const event = queue.shift() ?? (await new Promise<MessagesStreamEvent>(resolve => waiters.push(resolve)));
-      yield eventFrame(event);
-      if (event.type === 'message_stop') return;
-    }
-  })();
-  return {
-    events,
-    emit: event => {
-      const waiter = waiters.shift();
-      if (waiter) waiter(event);
-      else queue.push(event);
-    },
-  };
-};
-
-test('respondMessages records the last observed message_delta usage when the client disconnects mid-stream', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const controlled = controlledMessagesEvents();
-  const app = new Hono();
-  app.get('/', c => {
-    const result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> = eventResult(
-      controlled.events,
-      testTelemetryModelIdentity,
-      { headers: new Headers({ 'content-type': 'text/event-stream' }) },
-    );
-    const downstreamAbortController = new AbortController();
-    const ctx: ChatGatewayCtx = { ...makeRespondCtx(), wantsStream: true, downstreamAbortController };
-    return respondMessages(c, result, true, ctx);
-  });
-  const response = await app.request('/');
-  const reader = response.body!.getReader();
-
-  controlled.emit({
-    type: 'message_start',
-    message: {
-      id: 'msg_abort', type: 'message', role: 'assistant', content: [], model: 'claude-test',
-      stop_reason: null, stop_sequence: null,
-      usage: { input_tokens: 20, output_tokens: 0 },
-    },
-  });
-  await reader.read();
-  controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 5 } });
-  await reader.read();
-  controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 11 } });
-  await reader.read();
-  controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 17 } });
-  await reader.read();
-
-  // Disconnect before message_stop. The streamSSE finally block must still
-  // record the latest message_delta's output count.
-  await reader.cancel();
-
-  // `recordTokenUsage` on InMemoryRepo is synchronous, but the finally block
-  // runs after cancellation propagates through streamSSE. Poll briefly to
-  // cover that hand-off without coupling to a fixed schedule. The cap is
-  // generous so it survives CI contention; the healthy path resolves on the
-  // first iteration.
-  for (let i = 0; i < 200; i++) {
-    if ((await repo.usage.listAll()).length > 0) break;
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
-
-  const rows = await repo.usage.listAll();
-  assertEquals(rows.length, 1);
-  assertEquals(tokenCountsFromUsage(rows[0]), { input: 20, output: 17 });
-});

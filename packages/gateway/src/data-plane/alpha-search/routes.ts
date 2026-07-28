@@ -22,12 +22,14 @@ import { type AuthVars, apiKeyFromContext, effectiveUpstreamIdsFromContext } fro
 import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { mountPublicRoute } from '../public-route.ts';
 import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
 import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { assertLocalWebSearchSupport, executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
+import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
 const domainListSchema = z.array(z.string());
 
@@ -147,17 +149,12 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
   return c.json({ encrypted_output: null, output: blocks.join('\n\n') });
 };
 
-const ALPHA_SEARCH_PATHS = [
-  '/alpha/search',
-  '/v1/alpha/search',
-] as const;
+type AlphaSearchRoute = typeof PUBLIC_DATA_PLANE_ROUTES.alphaSearch | typeof PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch;
 
-export const mountAlphaSearchRoute = (app: Hono<{ Variables: AuthVars }>, path: string) => {
-  app.post(path, zValidator('json', alphaSearchRequestSchema), alphaSearch);
+export const mountAlphaSearchRoute = (app: Hono<{ Variables: AuthVars }>, route: AlphaSearchRoute) => {
+  mountPublicRoute(route, (method, path) => app.on(method, path, zValidator('json', alphaSearchRequestSchema), alphaSearch));
 };
 
 export const mountAlphaSearchRoutes = (app: Hono<{ Variables: AuthVars }>) => {
-  for (const path of ALPHA_SEARCH_PATHS) {
-    mountAlphaSearchRoute(app, path);
-  }
+  mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.alphaSearch);
 };

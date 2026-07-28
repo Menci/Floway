@@ -1,5 +1,5 @@
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const toMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
@@ -35,7 +35,7 @@ export const mapChatCompletionsUsageToMessagesUsage = (usage?: ChatCompletionsUs
   const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
   const cacheCreationTokens = usage?.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage?.prompt_tokens_details?.cache_write_tokens;
-  const writes = splitCacheWriteTokens(cacheCreationTokens, usage?.[USAGE_BILLING]);
+  const writes = splitCacheWriteTokens(cacheCreationTokens, 0);
   const { input, cacheRead, cacheWrite } = splitInclusiveInputTokens(
     usage?.prompt_tokens ?? 0,
     cachedTokens,

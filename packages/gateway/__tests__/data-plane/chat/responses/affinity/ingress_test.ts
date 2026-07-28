@@ -95,8 +95,14 @@ test('rewrites nested agent-message carriers and preserves foreign values', asyn
   });
 });
 
-test('removes an empty originless reasoning prefix but preserves a reasoning item with visible summary', async () => {
-  const carrier = await codec.wrap(
+test('removes only items explicitly marked synthetic and preserves markerless originless items', async () => {
+  const syntheticItem = await codec.wrap(
+    undefined,
+    targetFor(candidateA),
+    carrierDomain('reasoning', 'encrypted_content'),
+    { syntheticItem: true },
+  );
+  const markerless = await codec.wrap(
     undefined,
     targetFor(candidateA),
     carrierDomain('reasoning', 'encrypted_content'),
@@ -104,21 +110,33 @@ test('removes an empty originless reasoning prefix but preserves a reasoning ite
   const prepared = await prepareResponsesAffinity({
     model: 'model',
     input: [
-      { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
+      {
+        type: 'reasoning',
+        summary: [],
+        content: null,
+        status: 'completed',
+        encrypted_content: syntheticItem,
+      } as unknown as CanonicalResponsesPayload['input'][number],
+      { type: 'reasoning', id: 'rs_existing', summary: [], encrypted_content: markerless },
       {
         type: 'reasoning',
         id: 'rs_visible',
         summary: [{ type: 'summary_text', text: 'visible' }],
-        encrypted_content: carrier,
+        encrypted_content: markerless,
       },
     ],
   }, codec);
 
-  expect(prepared.payloadForCandidate(candidateA).input).toEqual([{
-    type: 'reasoning',
-    id: 'rs_visible',
-    summary: [{ type: 'summary_text', text: 'visible' }],
-  }]);
+  const markerlessItems = [
+    { type: 'reasoning', id: 'rs_existing', summary: [] },
+    {
+      type: 'reasoning',
+      id: 'rs_visible',
+      summary: [{ type: 'summary_text', text: 'visible' }],
+    },
+  ];
+  expect(prepared.payloadForCandidate(candidateA).input).toEqual(markerlessItems);
+  expect(prepared.payloadForCandidate(candidateB).input).toEqual(markerlessItems);
 });
 
 test('derives force routing from blob-less program state after the turn carrier', async () => {
@@ -126,6 +144,7 @@ test('derives force routing from blob-less program state after the turn carrier'
     undefined,
     targetFor(candidateA),
     carrierDomain('reasoning', 'encrypted_content'),
+    { syntheticItem: true },
   );
   const prepared = await prepareResponsesAffinity({
     model: 'model',
@@ -149,7 +168,12 @@ test('derives force routing from blob-less program state after the turn carrier'
 });
 
 test('does not inherit force through a foreign program blob', async () => {
-  const carrier = await codec.wrap(undefined, targetFor(candidateA), carrierDomain('reasoning', 'encrypted_content'));
+  const carrier = await codec.wrap(
+    undefined,
+    targetFor(candidateA),
+    carrierDomain('reasoning', 'encrypted_content'),
+    { syntheticItem: true },
+  );
   const prepared = await prepareResponsesAffinity({
     model: 'model',
     input: [

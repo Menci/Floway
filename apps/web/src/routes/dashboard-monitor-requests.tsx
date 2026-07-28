@@ -33,22 +33,6 @@ interface LoaderData {
   selectedKeyId: string | null;
 }
 
-const dumpRecordFromWire = (value: unknown): DumpRecord => {
-  if (!value || typeof value !== 'object') throw new TypeError('Dump record response must be an object');
-  const record = value as Partial<DumpRecord>;
-  if (!record.meta || !record.request || !record.response) {
-    throw new TypeError('Dump record response is missing its required sections');
-  }
-  return value as DumpRecord;
-};
-
-const dumpMetadataFromWire = (value: unknown): DumpMetadata[] => {
-  if (!value || typeof value !== 'object' || !Array.isArray((value as { records?: unknown }).records)) {
-    throw new TypeError('Dump list response is missing records');
-  }
-  return (value as { records: DumpMetadata[] }).records;
-};
-
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
   const keysResult = await callApi(() => api.api.keys.$get());
@@ -66,7 +50,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
       ? callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId: selectedKeyId, recordId } }))
       : Promise.resolve(null),
   ]);
-  const record = recordResult?.data === undefined ? null : dumpRecordFromWire(recordResult.data);
+  const record = recordResult?.data ?? null;
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
   const streamEvents = record?.response.body.type === 'stream' ? record.response.body.events : [];
   const collected = collectKind && streamEvents.length ? await collectStream(collectKind, streamEvents) : null;
@@ -76,7 +60,7 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     keys,
     record,
     recordError: recordResult?.error?.message ?? null,
-    records: recordsResult.data === undefined ? [] : dumpMetadataFromWire(recordsResult.data),
+    records: recordsResult.data?.records ?? [],
     recordsError: recordsResult.error?.message ?? null,
     selectedKeyId,
   };

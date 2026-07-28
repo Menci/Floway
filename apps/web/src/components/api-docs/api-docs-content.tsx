@@ -1,8 +1,8 @@
 import { ArrowUpRight16Regular } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { apiDocsEndpoints, apiDocsExamples, type ApiDocsGroup } from './api-docs-data';
+import { apiDocsEndpoints, apiDocsExamples, apiDocsGroups, authCurlExample, type ApiDocsExampleId } from './api-docs-data';
 import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Panel } from '../ui/panel';
@@ -13,13 +13,13 @@ const {
   AccordionHeader,
   AccordionItem,
   AccordionPanel,
+  Badge,
   Link,
   MessageBar,
   MessageBarBody,
   Text,
 } = fluentComponents;
 
-const groups: ApiDocsGroup[] = ['models', 'generation', 'media', 'rerank', 'search', 'codex'];
 const referenceSections = [
   { id: 'openai', examples: ['completions', 'chat', 'responses'], notes: ['openaiSurface', 'modelSelection'] },
   { id: 'anthropic', examples: ['messages'], notes: ['anthropicHeaders', 'anthropicStreaming'] },
@@ -28,7 +28,11 @@ const referenceSections = [
   { id: 'rerank', examples: ['rerank'], notes: ['rerankDialects'] },
   { id: 'search', examples: ['search'], notes: ['searchCommands'] },
   { id: 'websocket', examples: ['websocket'], notes: ['websocketUpgrade', 'websocketFrames', 'statefulResponses'] },
-] as const;
+] as const satisfies ReadonlyArray<{
+  examples: readonly ApiDocsExampleId[];
+  id: string;
+  notes: readonly string[];
+}>;
 
 export function ApiDocsContent() {
   const { t } = useTranslation();
@@ -44,7 +48,7 @@ export function ApiDocsContent() {
       setCopyFailed(id);
     }
   };
-  const authExample = `curl "${window.location.origin}/v1/models" \\\n+  -H "Authorization: Bearer $FLOWAY_API_KEY"`;
+  const authExample = authCurlExample(window.location.origin);
 
   return <>
     <Panel className="grid gap-4 !p-[22px_24px] max-[680px]:!p-[18px]">
@@ -52,7 +56,6 @@ export function ApiDocsContent() {
       <Text className="text-fui-fg2">{t('dashboard.apiDocs.authentication.description')}</Text>
       <div className="grid gap-2 text-sm">
         <Text><strong>{t('dashboard.apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
-        <Text><code>?key=</code> → <code>x-api-key</code> → <code>x-goog-api-key</code> → <code>Authorization: Bearer</code></Text>
       </div>
       <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiDocs.authentication.warning')}</MessageBarBody></MessageBar>
       <CodeBlock code={authExample} copied={copied === 'auth'} copyFailed={copyFailed === 'auth'} language="bash" onCopy={() => void copy('auth', authExample)} />
@@ -63,23 +66,29 @@ export function ApiDocsContent() {
         <Text as="h2" size={500} weight="semibold" className="!m-0">{t('dashboard.apiDocs.endpointsTitle')}</Text>
         <Text size={300} className="text-fui-fg2">{t('dashboard.apiDocs.endpointsDescription')}</Text>
       </div>
-      {groups.map(group => <section className="grid gap-2" key={group}>
-        <Text as="h3" size={300} weight="semibold" className="!m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
-        <ScrollArea axes="horizontal" className="min-w-0">
-          <div className="grid min-w-[780px]">
-            {apiDocsEndpoints.filter(endpoint => endpoint.group === group).map(endpoint => (
-              <div className="grid grid-cols-[54px_minmax(260px,1fr)_minmax(190px,auto)_74px] items-center gap-3 py-2 px-2 border-b border-fui-subtle last:border-b-0" key={`${endpoint.method} ${endpoint.path}`}>
-                <MethodBadge method={endpoint.method} />
-                <code className="font-mono text-xs">{endpoint.path}</code>
-                <Text size={200}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text>
-                <Link href={endpoint.docs} target="_blank">
-                  {t('dashboard.apiDocs.docsLink')} <ArrowUpRight16Regular aria-hidden="true" />
-                </Link>
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
-      </section>)}
+      {apiDocsGroups.map(group => {
+        const endpoints = apiDocsEndpoints.filter(endpoint => endpoint.group === group);
+        return <section className="grid gap-2" key={group}>
+          <Text as="h3" size={300} weight="semibold" className="!m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
+          <ScrollArea axes="horizontal" className="min-w-0">
+            <div className="grid grid-cols-[70px_minmax(360px,1fr)_minmax(260px,320px)_74px] min-w-[780px]">
+              {endpoints.map((endpoint, index) => {
+                const cellClassName = `min-w-0 px-2 py-2 ${index === endpoints.length - 1 ? '' : 'border-b border-fui-subtle'}`;
+                return <Fragment key={`${endpoint.method} ${endpoint.path}`}>
+                  <div className={`flex items-center ${cellClassName}`}><MethodBadge method={endpoint.method} /></div>
+                  <code className={`${cellClassName} flex items-center font-mono text-xs`} translate="no">{endpoint.path}</code>
+                  <Text className={`${cellClassName} !flex !items-center`} size={200}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text>
+                  <div className={`flex items-center ${cellClassName}`}>
+                    <Link href={endpoint.docs} target="_blank">
+                      {t('dashboard.apiDocs.docsLink')} <ArrowUpRight16Regular aria-hidden="true" />
+                    </Link>
+                  </div>
+                </Fragment>;
+              })}
+            </div>
+          </ScrollArea>
+        </section>;
+      })}
     </Panel>
 
     <Panel className="grid gap-3 !p-[22px_24px] max-[680px]:!p-[18px]">
@@ -93,10 +102,10 @@ export function ApiDocsContent() {
                 {section.notes.map(note => <li key={note}>{t(`dashboard.apiDocs.notes.${note}`)}</li>)}
               </ul>
               {section.examples.map(exampleId => {
-                const example = apiDocsExamples.find(candidate => candidate.id === exampleId)!;
-                return <div className="grid gap-2" key={example.id}>
+                const example = apiDocsExamples[exampleId];
+                return <div className="grid gap-2" key={exampleId}>
                   <Text size={300} weight="semibold">{t(`dashboard.apiDocs.examples.${example.title}`)}</Text>
-                  <CodeBlock code={example.code} copied={copied === example.id} copyFailed={copyFailed === example.id} language={example.language} onCopy={() => void copy(example.id, example.code)} />
+                  <CodeBlock code={example.code} copied={copied === exampleId} copyFailed={copyFailed === exampleId} language={example.language} onCopy={() => void copy(exampleId, example.code)} />
                 </div>;
               })}
             </div>
@@ -108,8 +117,11 @@ export function ApiDocsContent() {
 }
 
 function MethodBadge({ method }: { method: 'GET' | 'POST' }) {
-  return <span className="rounded inline-flex font-mono text-[11px] font-bold justify-center leading-none p-[4px_7px] w-[46px]" style={{
-    color: method === 'GET' ? 'light-dark(#0f6cbd, #75b6f7)' : 'light-dark(#107c41, #7fd99a)',
-    background: method === 'GET' ? 'light-dark(#e6f2fb, rgba(71,158,245,0.18))' : 'light-dark(#e8f5ee, rgba(84,179,111,0.18))',
-  }}>{method}</span>;
+  return <Badge
+    appearance="tint"
+    className="!font-bold !font-mono !justify-center !min-w-[48px]"
+    color={method === 'GET' ? 'brand' : 'success'}
+    size="small"
+    translate="no"
+  >{method}</Badge>;
 }

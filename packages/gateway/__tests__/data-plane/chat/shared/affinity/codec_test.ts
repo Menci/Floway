@@ -11,17 +11,18 @@ const affinity: AffinityTarget = {
   modelId: 'model-a',
 };
 
-// A carrier this codec issued for SECRET and DOMAIN. It is a frozen wire
-// contract, not a fixture: carriers already held by clients are decrypted by
+// Carriers this codec issued for SECRET and DOMAIN. They are frozen wire
+// contracts, not fixtures: carriers already held by clients are decrypted by
 // whatever ships next, so the HKDF salt and info, the AAD layout, the
 // plaintext property names, and the trailer framing all have to survive.
-// Changing any of them fails here, and re-recording the literal is the same
+// Changing any of them fails here, and re-recording a literal is the same
 // act as invalidating every conversation in flight.
-const FROZEN_CARRIER = 'AQIDBAWDP9gwaNMPLCk0oQ+usEVivj9ZICVyL3fu4x8gkOodb/vEU6189ANDLBtP1EXGNZgndPVyP96bDlZSoRj0YjhY8AoD+3/H71+8hcKBW/GSaV0w7FiF2KM8wk70DuHUIi3AW6CvFXHjzpj0+kpy5J1oYWqpTuzqLLydXk0QCTDAvV7rEGaeayaWFfS1mp3j6ScS51X0wCa9niXtm/iMSQCe';
+const FROZEN_NATURAL_CARRIER = 'AQIDBAWDP9gwaNMPLCk0oQ+usEVivj9ZICVyL3fu4x8gkOodb/vEU6189ANDLBtP1EXGNZgndPVyP96bDlZSoRj0YjhY8AoD+3/H71+8hcKBW/GSaV0w7FiF2KM8wk70DuHUIi3AW6CvFXHjzpj0+kpy5J1oYWqpTuzqLLydXk0QCTDAvV7rEGaeayaWFfS1mp3j6ScS51X0wCa9niXtm/iMSQCe';
+const FROZEN_SYNTHETIC_ITEM_CARRIER = 'DkCdKsZdZ+v/8P4ChjnTjAFw2mav5Gb8jlr+byGq7XOnwIOMWD7gFJz/+9aopdkCtWG78NxplcsTxbI5KzWNObjQ27tMBWA5p4GpbV0sHn3n1qv/79HjVbZSy4I+USVCmDkOe8CgS6JvaQRgjWFPJfNMqSfiEpzyTwB5';
 
 describe('AffinityCodec', () => {
   test('unwraps a frozen carrier', async () => {
-    expect(await new AffinityCodec(SECRET).unwrap(FROZEN_CARRIER, DOMAIN)).toEqual({
+    expect(await new AffinityCodec(SECRET).unwrap(FROZEN_NATURAL_CARRIER, DOMAIN)).toEqual({
       kind: 'owned',
       value: 'AQIDBAU=',
       version: 1,
@@ -31,6 +32,15 @@ describe('AffinityCodec', () => {
         modelId: 'model-a',
         rules: { reasoning: { effort: 'high' } },
       },
+    });
+  });
+
+  test('unwraps a frozen synthetic item carrier', async () => {
+    expect(await new AffinityCodec(SECRET).unwrap(FROZEN_SYNTHETIC_ITEM_CARRIER, DOMAIN)).toEqual({
+      kind: 'owned',
+      version: 1,
+      syntheticItem: true,
+      affinity,
     });
   });
 
@@ -62,6 +72,19 @@ describe('AffinityCodec', () => {
       version: 1,
       affinity,
     });
+  });
+
+  test('marks a fully synthetic item independently from an originless slot', async () => {
+    const codec = new AffinityCodec(SECRET);
+    const wrapped = await codec.wrap(undefined, affinity, DOMAIN, { syntheticItem: true });
+
+    expect(await codec.unwrap(wrapped, DOMAIN)).toEqual({
+      kind: 'owned',
+      version: 1,
+      syntheticItem: true,
+      affinity,
+    });
+    await expect(codec.wrap('upstream', affinity, DOMAIN, { syntheticItem: true })).rejects.toThrow(TypeError);
   });
 
   test('rejects affinity metadata outside the declared target shape', async () => {

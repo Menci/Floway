@@ -92,14 +92,15 @@ buckets. Streaming `message_start` and `message_delta` usage is accumulated as
 one snapshot, including late input counts and atomic replacement of the
 `speed` / `service_tier` pair.
 
-Some billing facts have no native field in every OpenAI/Gemini usage shape. A
-symbol-keyed `USAGE_BILLING` sidecar can carry total cache-write tokens, the
-1-hour cache-write subset, and the served tier on Chat Completions, Responses,
-and Gemini usage objects inside Floway's typed event pipeline. Translation,
-affinity cloning, and stream reassembly retain it, while JSON serialization
-omits the symbol from client responses. Messages usage does not carry this
-sidecar: its native cache-creation fields and TTL detail are already disjoint,
-and translation reads or writes those fields directly.
+Some billing facts have no native field in every OpenAI/Gemini usage shape —
+the 1-hour cache-write subset, and on Gemini a cache-write count or served
+tier at all. Translation carries none of them. Pricing does not read the usage
+Floway sends the client, so a fact the target protocol cannot express is not a
+fact anything downstream is missing: `BillableUsage` is read from the
+upstream's own usage in the upstream's own protocol, where every bucket is
+native, and travels on `EventResultMetadata` rather than through translation.
+A translated usage object is therefore a wire projection and nothing else, and
+loses whatever the target shape has no field for.
 
 Response-side blank, `default`, and `standard` tier markers identify base
 service. Every other open-string tier is preserved byte-for-byte. Gemini
