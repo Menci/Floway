@@ -1,19 +1,8 @@
-import { FileSystemIconLoader } from '@iconify/utils/lib/loader/node-loaders';
-import { defineConfig, presetIcons, presetWind3, transformerDirectives, transformerVariantGroup } from 'unocss';
+import { defineConfig, presetWind3, transformerDirectives, transformerVariantGroup } from 'unocss';
 
 export default defineConfig({
   presets: [
     presetWind3(),
-    presetIcons({
-      scale: 1.2,
-      warn: true,
-      collections: {
-        // Vendored from lobe-icons under MIT:
-        // https://github.com/lobehub/lobe-icons/blob/c31a6f365a3f585a03248addae77df4e83694dbc/packages/static-svg/icons/jina.svg#L1
-        // https://github.com/lobehub/lobe-icons/blob/c31a6f365a3f585a03248addae77df4e83694dbc/packages/static-svg/icons/tavily.svg#L1
-        brand: FileSystemIconLoader('./src/assets/icons'),
-      },
-    }),
   ],
   theme: {
     fontSize: {

@@ -103,7 +103,6 @@ const zhHansCN = {
         imagePlaceholder: 'https://example.com/image.png',
         empty: '发送一条消息以开始对话。',
         emptyResponse: '（空响应）',
-        generating: '正在生成',
         noKey: '请先创建 API 密钥，再使用 Playground。',
         noKeyOption: '没有 API 密钥',
         noModel: '未选择模型',
@@ -214,7 +213,6 @@ const zhHansCN = {
         createdDefaultKey: '每个新用户都会自动创建一个 Default API 密钥。',
       },
       apiKeys: {
-        loading: '正在刷新密钥',
         empty: '还没有 API 密钥。创建一个后即可调用 Floway。',
         actions: {
           create: '创建 API 密钥',
@@ -331,7 +329,7 @@ const zhHansCN = {
           codexAuthHint: 'Linux 和 macOS：仅在 CODEX_HOME 下保存 Floway provider token。',
           codexWindowsAuthHint: 'Windows PowerShell：保存相同 token，不修改官方账号登录。',
         },
-        agentSetup: { accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', modelSelection: '模型选择', miscSettings: '杂项设置', saving: '正在保存…', selectKey: '请先在上方选择 API 密钥。', preparing: '正在准备安装配置…', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', commandPending: '# 正在准备安装命令…', expires: '页面可见时链接会自动续期，离开后数分钟过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '推理强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
+        agentSetup: { accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后数分钟过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '推理强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
         rotate: {
           title: '轮换 API 密钥',
           message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',
@@ -817,8 +815,6 @@ const zhHansCN = {
         },
       },
       usage: {
-        loading: '正在加载使用量...',
-        refreshing: '正在刷新使用量',
         tokenUsage: 'Token 使用量',
         empty: '此时间范围内没有使用记录。',
         view: {
@@ -858,8 +854,6 @@ const zhHansCN = {
         },
       },
       performance: {
-        loading: '正在加载性能数据...',
-        refreshing: '正在刷新性能数据',
         empty: '此时间范围内没有性能记录。',
         actions: { refresh: '刷新性能数据' },
         apiKeyScopeInfo: 'API 密钥维度始终只包含当前账号拥有的 API 密钥，即使你拥有全局遥测权限。其他维度仍按全局范围统计。',

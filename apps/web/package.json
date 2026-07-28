@@ -40,9 +40,6 @@
   },
   "devDependencies": {
     "@floway-dev/gateway": "workspace:*",
-    "@iconify-json/lucide": "^1.2.120",
-    "@iconify-json/simple-icons": "^1.2.92",
-    "@iconify/utils": "^3.0.2",
     "@react-router/dev": "8.3.0",
     "@testing-library/react": "^16.3.0",
     "@types/d3-shape": "^3.1.8",
