@@ -1,8 +1,17 @@
-The SVGs in this directory are taken from lobe-icons, which Iconify does not
-carry in any collection. Only microsoft.svg is modified: upstream titles it
-"Azure".
+The following assets are taken from lobe-icons at commit
+a88f09a2892016a74f4c20f096c167c88f6c19c1:
 
-  https://github.com/lobehub/lobe-icons
+- jina.svg
+  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/jina.svg
+- microsoft.svg
+  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/microsoft.svg
+- tavily.svg
+  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/tavily.svg
+- ../openai.svg
+  https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/openai.svg
+
+microsoft.svg changes the upstream title from "Azure" to "Microsoft"; the
+other three files are verbatim.
 
 MIT License
 

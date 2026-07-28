@@ -13,7 +13,7 @@ test('normalizeDomainEntry rejects empty, whitespace-only, single-label, or non-
   assertEquals(normalizeDomainEntry(''), null);
   assertEquals(normalizeDomainEntry('   '), null);
   assertEquals(normalizeDomainEntry('localhost'), null);
-  // Query-operator smuggling (the original Web IQ regression).
+  // Query-operator smuggling through site filters.
   assertEquals(normalizeDomainEntry('example.com OR site:evil.com'), null);
   assertEquals(normalizeDomainEntry('bad.com test'), null);
   assertEquals(normalizeDomainEntry('https://example.com'), null);

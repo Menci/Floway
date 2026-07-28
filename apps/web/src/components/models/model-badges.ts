@@ -1,6 +1,6 @@
 import { reachableTargets } from './reachability';
 import type { ControlPlaneModel } from '../../api/types';
-import { formatAliasRuleBadges, type AliasRuleBadgeField } from '@floway-dev/protocols/common';
+import { formatAliasRuleBadges, type AliasRuleBadgeField, type AliasTarget } from '@floway-dev/protocols/common';
 
 export type ModelBadge =
   | { key: string; kind: 'limit'; limit: 'context' | 'prompt' | 'output'; value: string }
@@ -28,7 +28,9 @@ export const effectiveUpstreams = (
   catalog: readonly ControlPlaneModel[],
   cap: readonly string[] | null,
 ): readonly ControlPlaneModel['upstreams'][number][] => {
-  if (model.aliasedFrom === undefined) return model.upstreams;
+  if (model.aliasedFrom === undefined) return cap === null
+    ? model.upstreams
+    : model.upstreams.filter(binding => cap.includes(binding.id));
   const seen = new Set<string>();
   return reachableTargets(model, catalog, cap).flatMap(target => target.upstreams.filter(binding => {
     if ((cap !== null && !cap.includes(binding.id)) || seen.has(binding.id)) return false;
@@ -41,24 +43,27 @@ export const effectiveUpstreams = (
 // alias collapses any field whose targets disagree into "<field>: varies", so
 // the row states what the resolver will apply rather than one arbitrary target's
 // configuration.
-const ruleBadges = (targets: ControlPlaneModel['aliasedFrom'] & object): ModelBadge[] => {
-  if (targets.targets.length === 1) {
-    return formatAliasRuleBadges(targets.targets[0]!.rules)
+const ruleBadges = (targets: readonly AliasTarget[]): ModelBadge[] => {
+  if (targets.length === 1) {
+    return formatAliasRuleBadges(targets[0]!.rules)
       .map(badge => ({ key: `rule:${badge.field}`, kind: 'rule' as const, label: badge.label }));
   }
-  const byField = new Map<AliasRuleBadgeField, Set<string>>();
-  for (const target of targets.targets) {
-    for (const badge of formatAliasRuleBadges(target.rules)) {
-      const labels = byField.get(badge.field) ?? new Set<string>();
-      labels.add(badge.label);
-      byField.set(badge.field, labels);
-    }
+  const formatted = targets.map(target => new Map(
+    formatAliasRuleBadges(target.rules).map(badge => [badge.field, badge.label]),
+  ));
+  const fields = new Set<AliasRuleBadgeField>();
+  for (const target of targets) {
+    for (const badge of formatAliasRuleBadges(target.rules)) fields.add(badge.field);
   }
-  return [...byField].map(([field, labels]) => ({
-    key: `rule:${field}`,
-    kind: 'rule' as const,
-    label: labels.size === 1 ? [...labels][0]! : `${field}: varies`,
-  }));
+  return [...fields].map(field => {
+    const labels = formatted.map(target => target.get(field) ?? null);
+    const first = labels[0];
+    return {
+      key: `rule:${field}`,
+      kind: 'rule' as const,
+      label: first !== null && labels.every(label => label === first) ? first : `${field}: varies`,
+    };
+  });
 };
 
 export const modelBadges = (
@@ -78,6 +83,8 @@ export const modelBadges = (
   if (alias === undefined) return badges;
 
   const reachable = reachableTargets(model, catalog, cap);
+  const reachableIds = new Set(reachable.map(target => target.id));
+  const reachableAliasTargets = alias.targets.filter(target => reachableIds.has(target.target_model_id));
   const sole = reachable.length === 1 ? reachable[0]! : null;
   badges.push(sole === null
     ? { key: 'aliasOf', kind: 'aliasOfCount', reachable: reachable.length, total: alias.targets.length }
@@ -85,5 +92,5 @@ export const modelBadges = (
   // The selection strategy only decides anything when the resolver has more
   // than one candidate to pick between.
   if (sole === null) badges.push({ key: 'selection', kind: 'selection', selection: alias.selection });
-  return [...badges, ...ruleBadges(alias)];
+  return [...badges, ...ruleBadges(reachableAliasTargets)];
 };

@@ -68,6 +68,20 @@ describe('model badges', () => {
     expect(modelBadges(many, [model('a', ['u']), model('b', ['u']), many], null)).toContainEqual(
       { key: 'rule:reasoning.effort', kind: 'rule', label: 'reasoning.effort: varies' },
     );
+    const partlyUnset = alias([
+      { target_model_id: 'a', rules: { reasoning: { effort: 'high' } } },
+      { target_model_id: 'b', rules: {} },
+    ]);
+    expect(modelBadges(partlyUnset, [model('a', ['u']), model('b', ['u']), partlyUnset], null)).toContainEqual(
+      { key: 'rule:reasoning.effort', kind: 'rule', label: 'reasoning.effort: varies' },
+    );
+    const capped = alias([
+      { target_model_id: 'a', rules: { reasoning: { effort: 'high' } } },
+      { target_model_id: 'b', rules: { reasoning: { effort: 'low' } } },
+    ]);
+    expect(modelBadges(capped, [model('a', ['u-a']), model('b', ['u-b']), capped], ['u-a'])).toContainEqual(
+      { key: 'rule:reasoning.effort', kind: 'rule', label: 'high effort' },
+    );
   });
 
   it('lifts an alias row onto the in-cap bindings of its reachable targets', () => {
@@ -82,6 +96,6 @@ describe('model badges', () => {
     const catalog = [real, other, alias];
     expect(effectiveUpstreams(alias, catalog, null).map(upstream => upstream.id)).toEqual(['a', 'b']);
     expect(effectiveUpstreams(alias, catalog, ['b']).map(upstream => upstream.id)).toEqual(['b']);
-    expect(effectiveUpstreams(real, catalog, ['b']).map(upstream => upstream.id)).toEqual(['a', 'b']);
+    expect(effectiveUpstreams(real, catalog, ['b']).map(upstream => upstream.id)).toEqual(['b']);
   });
 });
