@@ -138,7 +138,7 @@ export function ModelDetail({
 
       {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
 
-      <EditorBlock title={t('dashboard.upstreamEditor.models.identity')}>
+      <ModelEditorSection title={t('dashboard.upstreamEditor.models.identity')}>
         <div className="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
           <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.displayName')}>
             <Input className="!w-full" placeholder={t('dashboard.upstreamEditor.models.displayNamePlaceholder')} readOnly={!editable} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
@@ -157,11 +157,11 @@ export function ModelDetail({
             <Input className="!w-full" placeholder={row.config.upstreamModelId || t('dashboard.upstreamEditor.models.publicIdPlaceholder')} readOnly={!editable} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
           </Field>
         </div>
-      </EditorBlock>
+      </ModelEditorSection>
 
       {/* Embedding, transcription, and rerank each address exactly one
           endpoint, so there is nothing for the operator to choose. */}
-      {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorBlock title={t('dashboard.upstreamEditor.models.endpoints')}>
+      {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <ModelEditorSection title={t('dashboard.upstreamEditor.models.endpoints')}>
         <div className="grid gap-1">
           {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
             checked={key in row.config.endpoints}
@@ -175,13 +175,13 @@ export function ModelDetail({
             }}
           />)}
         </div>
-      </EditorBlock>}
+      </ModelEditorSection>}
 
-      {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorBlock title={t('dashboard.upstreamEditor.models.rerankTarget')}>
+      {row.config.kind === 'rerank' && row.config.rerankTarget && <ModelEditorSection title={t('dashboard.upstreamEditor.models.rerankTarget')}>
         <RerankTargetEditor disabled={!editable} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
-      </EditorBlock>}
+      </ModelEditorSection>}
 
-      {row.config.kind !== 'image' && <EditorBlock title={t('dashboard.upstreamEditor.models.capabilities')}>
+      {row.config.kind !== 'image' && <ModelEditorSection title={t('dashboard.upstreamEditor.models.capabilities')}>
         <div className="grid grid-cols-3 gap-4 max-[760px]:grid-cols-1">
           <NumberField label={t('dashboard.upstreamEditor.models.contextWindow')} placeholder="e.g. 1050000" readOnly={!editable} value={row.config.limits?.max_context_window_tokens} onChange={raw => updateLimit('max_context_window_tokens', raw)} />
           <NumberField label={t('dashboard.upstreamEditor.models.promptTokens')} placeholder="e.g. 922000" readOnly={!editable} value={row.config.limits?.max_prompt_tokens} onChange={raw => updateLimit('max_prompt_tokens', raw)} />
@@ -209,18 +209,18 @@ export function ModelDetail({
             </div>}
           </div>
         </>}
-      </EditorBlock>}
+      </ModelEditorSection>}
 
-      <EditorBlock title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
+      <ModelEditorSection title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
         <PricingEditor
           editable={editable}
           kind={row.config.kind}
           onChange={pricing => patch({ pricing })}
           value={row.config.pricing}
         />
-      </EditorBlock>
+      </ModelEditorSection>
 
-      <EditorBlock title={t('dashboard.upstreamEditor.models.flags')} description={t('dashboard.upstreamEditor.models.flagsHint')}>
+      <ModelEditorSection title={t('dashboard.upstreamEditor.models.flags')} description={t('dashboard.upstreamEditor.models.flagsHint')}>
         {editable && <Switch
           checked={row.config.flagOverrides !== undefined}
           label={t('dashboard.upstreamEditor.models.enableFlagOverrides')}
@@ -237,7 +237,7 @@ export function ModelDetail({
           value={row.config.flagOverrides ?? {}}
           onChange={flagOverrides => { setSavedFlagOverrides(flagOverrides); patch({ flagOverrides }); }}
         />}
-      </EditorBlock>
+      </ModelEditorSection>
 
       {editable && <Button appearance="secondary" icon={<DeleteRegular />} onClick={onDelete}>
         {t('dashboard.upstreamEditor.models.delete')}
@@ -246,8 +246,8 @@ export function ModelDetail({
   );
 }
 
-function EditorBlock({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
-  return <section className="grid gap-4 border border-solid border-fui-stroke1 rounded-lg bg-fui-bg1 p-5">
+function ModelEditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
+  return <section className="grid gap-4 py-2">
     <div className="grid gap-1"><Text as="h2" size={400} weight="semibold" className="!m-0">{title}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
     {children}
   </section>;

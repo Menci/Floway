@@ -21,6 +21,7 @@ import { fluentComponents } from '../../fluent';
 import { formatFullTime, formatRelativeTime } from '../requests/format';
 import { Input, Textarea } from '../ui/fluent-form-controls';
 import { ScrollArea } from '../ui/scroll-area';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import type { Flag } from '@floway-dev/provider/flags';
 
 const {
@@ -227,7 +228,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <div className="min-w-0 overflow-hidden border border-solid border-fui-stroke1 rounded-lg bg-fui-bg1">
       <Table size="small" className="w-full table-fixed">
-        <TableHeader><TableRow><TableHeaderCell className="!w-[64px]">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[27%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[76px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableHeaderCell className="!w-[72px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell className="!w-[56px]">{t('dashboard.upstreamEditor.models.actions')}</TableHeaderCell></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHeaderCell className="!w-[64px]">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[27%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[76px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableHeaderCell className="!w-[72px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell className="!w-[88px] !text-center">{t('dashboard.upstreamEditor.models.actions')}</TableHeaderCell></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-[52px]" key={row.key}>
             <TableCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} size="small" /></TableCell>
@@ -244,7 +245,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
             <TableCell className="!overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block text-xs min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
             <TableCell><Text size={200}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCell>
             <TableCell>{row.config.kind}</TableCell>
-            <TableCell><Button appearance="subtle" icon={<EditRegular />} aria-label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); setView('detail'); }} /></TableCell>
+            <TableCell><div className="flex justify-center"><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); setView('detail'); }} /></div></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>
