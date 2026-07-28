@@ -6,7 +6,7 @@ import type { ApiKey } from '../../repo/types.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '../../shared/api-key-tokens.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
-import { ownedKeyOr404 } from '../shared/owned-key.ts';
+import { ownedKeyForUser } from '../shared/owned-key.ts';
 import { validateUpstreamIdsExist } from '../shared/upstream-ids.ts';
 
 const GENERATED_KEY_RETRIES = 5;
@@ -132,14 +132,14 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
   } satisfies Omit<ApiKey, 'key'>;
 
   const key = await writeKeyForRequest(template, body);
-  if (key instanceof Response) return key;
+  if (key instanceof Response) return c.json(await key.json() as { error: string }, key.status as 400 | 409 | 500);
   return c.json(apiKeyToJson(key), 201);
 };
 
 export const deleteKey = async (c: AuthedContext) => {
   const id = c.req.param('id')!;
-  const owned = await ownedKeyOr404(c, id);
-  if (owned instanceof Response) return owned;
+  const owned = await ownedKeyForUser(c, id);
+  if (!owned) return c.json({ error: 'Key not found' }, 404);
   // Cut any live SSE subscribers so the dashboard sees a clean disconnect.
   // Broker availability shouldn't block the soft-delete — clients reconcile
   // on the next keys refetch regardless.
@@ -150,11 +150,11 @@ export const deleteKey = async (c: AuthedContext) => {
 
 export const rotateKey = async (c: CtxWithJson<typeof rotateKeyBody>) => {
   const id = c.req.param('id')!;
-  const owned = await ownedKeyOr404(c, id);
-  if (owned instanceof Response) return owned;
+  const owned = await ownedKeyForUser(c, id);
+  if (!owned) return c.json({ error: 'Key not found' }, 404);
 
   const updated = await writeKeyForRequest(owned, c.req.valid('json'));
-  if (updated instanceof Response) return updated;
+  if (updated instanceof Response) return c.json(await updated.json() as { error: string }, updated.status as 400 | 409 | 500);
   return c.json(apiKeyToJson(updated));
 };
 
@@ -166,8 +166,8 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     return c.json({ error: 'Provide a new name, upstream selection, dump retention, or Stateful Responses retention to update.' }, 400);
   }
 
-  const owned = await ownedKeyOr404(c, id);
-  if (owned instanceof Response) return owned;
+  const owned = await ownedKeyForUser(c, id);
+  if (!owned) return c.json({ error: 'Key not found' }, 404);
 
   if (body.upstream_ids !== undefined) {
     const err = await validateUpstreamIdsAgainstUserCap(c, body.upstream_ids);

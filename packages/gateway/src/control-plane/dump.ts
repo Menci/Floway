@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 
-import { ownedKeyOr404 } from './shared/owned-key.ts';
+import { ownedKeyForUser } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
 import { dumpRecordToWire } from '../dump/wire.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
@@ -16,22 +16,22 @@ const listQuery = z.object({
   before: z.string().min(1).optional(),
 });
 
-const ownedKey = async (c: Context): Promise<string | Response> => {
+const ownedKey = async (c: Context): Promise<{ id: string; error: null } | { id: null; error: string }> => {
   const keyId = c.req.param('keyId')!;
-  const owned = await ownedKeyOr404(c, keyId);
-  if (owned instanceof Response) return owned;
+  const owned = await ownedKeyForUser(c, keyId);
+  if (!owned) return { id: null, error: 'Key not found' };
   if (owned.dumpRetentionSeconds === null) {
-    return c.json({ error: 'Dump capture is not enabled for this key.' }, 404);
+    return { id: null, error: 'Dump capture is not enabled for this key.' };
   }
-  return owned.id;
+  return { id: owned.id, error: null };
 };
 
 export const dumpRoutes = new Hono()
   .get('/keys/:keyId/records', zValidator('query', listQuery), async c => {
     const owned = await ownedKey(c);
-    if (owned instanceof Response) return owned;
+    if (owned.error) return c.json({ error: owned.error }, 404);
     const { limit, before } = c.req.valid('query');
-    const records = await getDumpStore().list(owned, {
+    const records = await getDumpStore().list(owned.id, {
       limit: limit ?? LIST_LIMIT_DEFAULT,
       ...(before !== undefined ? { before } : {}),
     });
@@ -39,8 +39,8 @@ export const dumpRoutes = new Hono()
   })
   .get('/keys/:keyId/records/:recordId', async c => {
     const owned = await ownedKey(c);
-    if (owned instanceof Response) return owned;
-    const record = await getDumpStore().get(owned, c.req.param('recordId')!);
+    if (owned.error) return c.json({ error: owned.error }, 404);
+    const record = await getDumpStore().get(owned.id, c.req.param('recordId')!);
     if (!record) return c.json({ error: 'Record not found' }, 404);
     return c.json(dumpRecordToWire(record));
   })
@@ -49,15 +49,15 @@ export const dumpRoutes = new Hono()
     // accepts the session token via `?session=` (path-pinned in
     // authMiddleware).
     const owned = await ownedKey(c);
-    if (owned instanceof Response) return owned;
+    if (owned.error) return c.json({ error: owned.error }, 404);
 
     // Subscribe first, then read the snapshot, so the live broker covers
     // anything new while the snapshot supplies history.
     const controller = new AbortController();
-    const subscription = getDumpBroker().subscribe(owned, controller.signal);
+    const subscription = getDumpBroker().subscribe(owned.id, controller.signal);
     let snapshot;
     try {
-      snapshot = await getDumpStore().list(owned, { limit: LIST_LIMIT_DEFAULT });
+      snapshot = await getDumpStore().list(owned.id, { limit: LIST_LIMIT_DEFAULT });
     } catch (err) {
       controller.abort();
       throw err;
