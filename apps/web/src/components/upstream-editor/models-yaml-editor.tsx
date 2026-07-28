@@ -1,6 +1,6 @@
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
+import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 import { configureMonacoYaml } from 'monaco-yaml';
 import YamlWorker from 'monaco-yaml/yaml.worker.js?worker';
 
