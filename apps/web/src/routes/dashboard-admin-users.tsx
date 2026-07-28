@@ -485,7 +485,7 @@ function PermissionToggle({ checked, description, disabled, label, onChange }: {
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border border-solid border-fui-stroke1 rounded-lg p-3 bg-fui-bg2 min-w-0">
+    <div className="flex items-start justify-between gap-3 py-1 min-w-0">
       <div className="grid gap-1 min-w-0">
         <Text weight="semibold">{label}</Text>
         <Text size={200} className="text-fui-fg2 leading-[1.4]">{description}</Text>
@@ -513,7 +513,7 @@ function UpstreamAccessPicker({ disabled, error, ids, onChange, override, upstre
   const styles = useStyles();
   return (
     <div className="grid gap-[10px] min-w-0">
-      <div className="flex items-start justify-between gap-3 border border-solid border-fui-stroke1 rounded-lg p-3 bg-fui-bg2">
+      <div className="flex items-start justify-between gap-3 py-1">
         <div className="grid gap-1 min-w-0">
           <Text weight="semibold">{t('dashboard.users.upstreams.override')}</Text>
           <Text size={200} className="text-fui-fg2 leading-[1.4]">{t('dashboard.users.upstreams.description')}</Text>
@@ -536,7 +536,7 @@ function UpstreamAccessPicker({ disabled, error, ids, onChange, override, upstre
           <Text id={`${idPrefix}-label`} weight="semibold">
             {t('dashboard.users.upstreams.select')}
           </Text>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 border border-solid border-fui-stroke1 rounded-lg p-3 max-[560px]:grid-cols-1">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 max-[560px]:grid-cols-1">
             {upstreams.map((upstream, index) => (
               <Checkbox
                 checked={ids.includes(upstream.id)}

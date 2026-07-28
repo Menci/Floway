@@ -70,7 +70,7 @@ export function UpstreamPicker({
 
   return (
     <div className="grid gap-[10px] min-w-0">
-      <div className="flex items-center gap-3 justify-between rounded-lg border border-fui-stroke1 bg-fui-bg2 p-[10px_12px]">
+      <div className="flex items-center gap-3 justify-between py-1">
         <div>
           <span className="text-fui-fg1 text-fui-base300 font-fui-semibold">
             {t('dashboard.apiKeys.upstreams.title', { count: selectedCount })}

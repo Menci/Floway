@@ -464,26 +464,9 @@ export function ProxyForm({
       </Field>
 
       {testResult && (
-        <div
-          className="rounded-lg border border-solid p-[12px_14px] grid gap-[4px]"
-          style={{
-            borderColor: testResult.ok
-              ? 'light-dark(#0b6a0b, #6fcf6f)'
-              : 'light-dark(#c50f1f, #e37b84)',
-            backgroundColor: testResult.ok
-              ? 'light-dark(#ddf6dd, #1b3a1b)'
-              : 'light-dark(#fde7e9, #3d1517)',
-          }}
-        >
-          <Text
-            size={200}
-            weight="semibold"
-            style={{
-              color: testResult.ok
-                ? 'light-dark(#0b6a0b, #6fcf6f)'
-                : 'light-dark(#c50f1f, #e37b84)',
-            }}
-          >
+        <MessageBar intent={testResult.ok ? 'success' : 'error'}>
+          <MessageBarBody><div className="grid gap-1">
+          <Text size={200} weight="semibold">
             {testResult.ok
               ? t('dashboard.proxy.test.ok')
               : t('dashboard.proxy.test.failed', {
@@ -497,7 +480,8 @@ export function ProxyForm({
               })}
             </Text>
           )}
-        </div>
+          </div></MessageBarBody>
+        </MessageBar>
       )}
 
       {saveError && (

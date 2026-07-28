@@ -6,6 +6,7 @@ import { computeModelWarning, computeRuleWarnings, findCatalogModel } from './wa
 import type { AliasTarget, ControlPlaneModel, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Combobox, Input, Select } from '../ui/fluent-form-controls';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const { Button, Field, MessageBar, MessageBarBody, Option, Tooltip } = fluentComponents;
 
@@ -47,8 +48,8 @@ export function AliasTargetRow({
   const warningFor = (field: string) => ruleWarnings.find(warning => warning.field === field);
 
   return (
-    <div className="rounded-lg border border-solid border-fui-stroke1 overflow-hidden" role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
-      <div className="grid grid-cols-[32px_minmax(180px,1fr)_134px] gap-2 items-center p-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
+    <div className="border-0 border-t border-solid border-fui-stroke1 pt-2" role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
+      <div className="grid grid-cols-[32px_minmax(180px,1fr)_134px] gap-2 items-center py-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
         <Button
           appearance="subtle"
           aria-expanded={expanded}
@@ -73,13 +74,13 @@ export function AliasTargetRow({
           {modelWarning
             ? <Tooltip content={t(`dashboard.modelAliases.warnings.${modelWarning.key}`, modelWarning.values)} relationship="description"><span className="grid h-8 w-8 place-items-center"><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} fontSize={20} /></span></Tooltip>
             : <span aria-hidden className="h-8 w-8" />}
-          <Button appearance="subtle" aria-label={t('dashboard.modelAliases.target.moveUp')} disabled={disabled || isFirst} icon={<ArrowUpRegular fontSize={20} />} onClick={() => onMove(-1)} size="small" />
-          <Button appearance="subtle" aria-label={t('dashboard.modelAliases.target.moveDown')} disabled={disabled || isLast} icon={<ArrowDownRegular fontSize={20} />} onClick={() => onMove(1)} size="small" />
-          <Button appearance="subtle" aria-label={t('dashboard.modelAliases.target.remove')} disabled={disabled || isSole} icon={<DeleteRegular fontSize={20} />} onClick={onRemove} size="small" />
+          <TooltipIconButton disabled={disabled || isFirst} icon={<ArrowUpRegular />} label={t('dashboard.modelAliases.target.moveUp')} onClick={() => onMove(-1)} />
+          <TooltipIconButton disabled={disabled || isLast} icon={<ArrowDownRegular />} label={t('dashboard.modelAliases.target.moveDown')} onClick={() => onMove(1)} />
+          <TooltipIconButton danger disabled={disabled || isSole} icon={<DeleteRegular />} label={t('dashboard.modelAliases.target.remove')} onClick={onRemove} />
         </div>
       </div>
       {expanded && kind === 'chat' && (
-        <div className="grid grid-cols-2 gap-3 m-2 mt-0 p-3 rounded-lg max-[620px]:grid-cols-1">
+        <div className="grid grid-cols-2 gap-3 ml-10 py-3 max-[620px]:grid-cols-1">
           <RuleCombobox label={t('dashboard.modelAliases.rules.effort')} value={target.rules.reasoning?.effort ?? ''} items={suggestions.effort} disabled={disabled} warning={warningFor('reasoning.effort')} onChange={value => patchReasoning({ effort: value || undefined })} />
           <Field label={t('dashboard.modelAliases.rules.budget')} validationMessage={warningFor('reasoning.budget_tokens') ? t(`dashboard.modelAliases.warnings.${warningFor('reasoning.budget_tokens')!.key}`, warningFor('reasoning.budget_tokens')!.values) : undefined} validationState={warningFor('reasoning.budget_tokens') ? 'warning' : undefined}>
             <Input disabled={disabled} inputMode="numeric" min={0} type="number" value={target.rules.reasoning?.budget_tokens?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: data.value === '' ? undefined : Number(data.value) })} />

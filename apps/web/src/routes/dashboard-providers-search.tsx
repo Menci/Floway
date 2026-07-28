@@ -441,11 +441,11 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                 {t('dashboard.searchConfig.testSuccess', { count: 0 })}
               </Text>
             ) : (
-              <div className="grid gap-[10px]">
+              <ul className="m-0 p-0 list-none">
                 {testResult.results.map(r => (
-                  <div
+                  <li
                     key={r.url + r.title}
-                    className="rounded-lg border border-solid border-fui-stroke1 !p-[12px_14px] grid gap-[4px]"
+                    className="grid gap-1 border-0 border-t border-solid border-fui-stroke1 py-3 first:border-t-0"
                   >
                     <div className="flex items-baseline gap-[8px] flex-wrap">
                       <a
@@ -474,9 +474,9 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                     <Text size={200} className="text-fui-fg2">
                       {r.previewText}
                     </Text>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )
           ) : !testResult.ok ? (
             <MessageBar intent="error">

@@ -135,7 +135,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
   };
 
   if (drafts.length === 0) {
-    return <div className="grid justify-items-start gap-3 rounded-lg bg-fui-bg2 px-4 py-5">
+    return <div className="grid justify-items-start gap-3 py-2">
       <div className={TIGHT_STACK_CLASS}>
         <Text weight="semibold">{t('dashboard.upstreamEditor.models.noPricingEntries')}</Text>
         <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingEmptyHint')}</Text>
@@ -149,7 +149,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
   const activeIssues = issues.filter(issue => issueAffectsEntry(issue, selectedIndex));
 
   return <div className="grid min-w-0 grid-cols-[220px_minmax(0,1fr)] items-stretch gap-5 max-[760px]:grid-cols-1">
-    <aside className="grid h-full min-w-0 content-start gap-3 rounded-lg bg-fui-bg2 p-3" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
+    <aside className="grid h-full min-w-0 content-start gap-3 border-0 border-r border-solid border-fui-stroke1 pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
       <div className="flex items-center justify-between gap-2 px-1">
         <Text weight="semibold">{t('dashboard.upstreamEditor.models.pricingRules')}</Text>
         <Badge appearance="tint" color="informative" size="small">{drafts.length}</Badge>
