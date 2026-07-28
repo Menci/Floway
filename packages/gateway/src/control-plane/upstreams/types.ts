@@ -70,8 +70,9 @@ export type OllamaUpstreamConfig = Omit<StoredOllamaUpstreamConfig, 'apiKey'> & 
 
 export type CodexAccountCredentialState = Pick<
   CodexAccountCredential,
-  'accessToken' | 'chatgptAccountId' | 'state' | 'state_message' | 'state_updated_at'
+  'chatgptAccountId' | 'state' | 'state_message' | 'state_updated_at'
 > & {
+  accessToken?: CodexAccountCredential['accessToken'];
   refresh_token?: string;
   refresh_token_set?: boolean;
 };
