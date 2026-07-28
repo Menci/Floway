@@ -181,8 +181,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         </div>
       </header>
       <div>{saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}</div>
-      <div className="grid grid-cols-[380px_minmax(0,1fr)] gap-[18px] min-h-0 max-[1050px]:grid-cols-1">
-        <Panel className="min-h-0 overflow-hidden !p-0">
+      <div className="grid grid-cols-[380px_minmax(0,1fr)] gap-[18px] min-h-0 min-w-0 max-[1050px]:grid-cols-1">
+        <Panel className="min-h-0 min-w-0 overflow-hidden !p-0">
           <UpstreamConfigSidebar
             catalogAvailable={modelsError === null}
             discovered={discovered}
@@ -193,7 +193,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
             runtime={data.runtime}
           />
         </Panel>
-        <Panel className="min-h-0 overflow-hidden !p-0">
+        <Panel className="min-h-0 min-w-0 overflow-hidden !p-0">
           <UpstreamWorkspace record={record} flags={data.flags} discovered={discovered} loadingModels={modelsLoading} modelsError={modelsError} onRefreshModels={() => void refreshModels()} />
         </Panel>
       </div>

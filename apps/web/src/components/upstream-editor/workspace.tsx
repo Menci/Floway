@@ -83,7 +83,7 @@ export function UpstreamWorkspace({
     setModelView(next);
     if (next === 'detail') setModelDetailTab('details');
   };
-  return <section className="grid grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 max-[1050px]:h-auto">
+  return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
         ? <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => {
@@ -219,7 +219,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
       setYamlError(null);
       onViewChange('list');
     };
-    return <div className="grid gap-4 min-w-0">
+    return <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
       <div className="flex flex-wrap items-center gap-3">
         <div className="grid gap-0.5">
           <Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.yamlTitle')}</Text>
@@ -246,7 +246,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     });
   }} record={record} flags={flags} upstreamFlags={upstreamFlags} />{deleteDialog}</>;
 
-  return <div className="grid gap-4 min-w-0">
+  return <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
     <div className="flex flex-wrap items-center gap-3">
       <div className="grid gap-0.5"><Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.title')}</Text><Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}</Text></div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -259,10 +259,11 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
       </div>
     </div>
     {error && <MessageBar
+      className="min-w-0"
       icon={<WarningRegular />}
       intent="warning"
     >
-      <MessageBarBody>
+      <MessageBarBody className="min-w-0 [overflow-wrap:anywhere]">
         {error === 'Upstream model listing failed'
           ? t('dashboard.upstreamEditor.models.listingFailed')
           : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: error })}
