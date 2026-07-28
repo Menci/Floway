@@ -1,6 +1,8 @@
 import type {
   MessagesAssistantContentBlock,
+  MessagesFallbackBlock,
   MessagesRedactedThinkingBlock,
+  MessagesRefusalStopDetails,
   MessagesResult,
   MessagesServerToolUseBlock,
   MessagesStreamEvent,
@@ -10,6 +12,7 @@ import type {
   MessagesUsage,
   MessagesWebSearchToolResultBlock,
 } from './index.ts';
+import { cloneMessagesUsageIterations } from './usage.ts';
 import { isJsonObject } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
@@ -73,12 +76,12 @@ type MessagesToolUseBlockAccumulator = MessagesToolUseBlock & {
   inputJson: string;
 };
 
-type MessagesBlockAccumulator = (MessagesTextBlockAccumulator | MessagesToolUseBlockAccumulator | MessagesServerToolUseBlock | MessagesWebSearchToolResultBlock | MessagesThinkingBlock | MessagesRedactedThinkingBlock) & { extras?: Record<string, unknown> };
+type MessagesBlockAccumulator = (MessagesTextBlockAccumulator | MessagesToolUseBlockAccumulator | MessagesServerToolUseBlock | MessagesWebSearchToolResultBlock | MessagesThinkingBlock | MessagesRedactedThinkingBlock | MessagesFallbackBlock) & { extras?: Record<string, unknown> };
 
 // Field-fidelity contract — see {@link captureExtras}. Anything an upstream
 // emits on `message_start.message`, on a `content_block`, or on the assembled
 // result top-level beyond the typed schema below survives by default.
-const KNOWN_MESSAGE_KEYS = new Set(['id', 'type', 'role', 'content', 'model', 'stop_reason', 'stop_sequence', 'usage']);
+const KNOWN_MESSAGE_KEYS = new Set(['id', 'type', 'role', 'content', 'model', 'stop_reason', 'stop_details', 'stop_sequence', 'usage']);
 const KNOWN_BLOCK_KEYS_BY_TYPE: Record<string, ReadonlySet<string>> = {
   text: new Set(['type', 'text', 'citations']),
   tool_use: new Set(['type', 'id', 'name', 'input']),
@@ -86,6 +89,7 @@ const KNOWN_BLOCK_KEYS_BY_TYPE: Record<string, ReadonlySet<string>> = {
   redacted_thinking: new Set(['type', 'data']),
   server_tool_use: new Set(['type', 'id', 'name', 'input']),
   web_search_tool_result: new Set(['type', 'tool_use_id', 'content']),
+  fallback: new Set(['type', 'from', 'to', 'trigger']),
 };
 const FALLBACK_BLOCK_KNOWN = new Set(['type']);
 
@@ -105,6 +109,9 @@ const applyMessagesUsage = (usage: MessagesUsage, update: Partial<MessagesUsage>
   if (update.speed != null) usage.speed = update.speed;
   if (update.server_tool_use != null) {
     usage.server_tool_use = update.server_tool_use;
+  }
+  if (update.iterations !== undefined) {
+    usage.iterations = cloneMessagesUsageIterations(update.iterations);
   }
 };
 
@@ -149,6 +156,13 @@ const createBlockAccumulator = (event: Extract<MessagesStreamEvent, { type: 'con
     return withExtras({ type: 'thinking', thinking: block.thinking ?? '' });
   case 'redacted_thinking':
     return withExtras({ type: 'redacted_thinking', data: block.data });
+  case 'fallback':
+    return withExtras({
+      type: 'fallback',
+      from: { ...block.from },
+      to: { ...block.to },
+      trigger: { ...block.trigger },
+    });
   }
 };
 
@@ -226,6 +240,7 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
     output_tokens: 0,
   };
   let stopReason: MessagesResult['stop_reason'] = null;
+  let stopDetails: MessagesRefusalStopDetails | null | undefined;
   let stopSequence: string | null = null;
 
   const blocks: Array<MessagesBlockAccumulator | undefined> = [];
@@ -236,6 +251,7 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
     case 'message_start':
       id = event.message.id;
       model = event.message.model;
+      stopDetails = event.message.stop_details;
       applyMessagesUsage(usage, event.message.usage);
       captureExtras(event.message as unknown as Record<string, unknown>, KNOWN_MESSAGE_KEYS, resultExtras);
       break;
@@ -251,6 +267,9 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
     case 'message_delta':
       if (event.delta.stop_reason != null) {
         stopReason = event.delta.stop_reason;
+      }
+      if ('stop_details' in event.delta) {
+        stopDetails = event.delta.stop_details;
       }
       if ('stop_sequence' in event.delta) {
         stopSequence = event.delta.stop_sequence as string | null;
@@ -274,6 +293,7 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
     content,
     model,
     stop_reason: stopReason,
+    ...(stopDetails !== undefined ? { stop_details: stopDetails } : {}),
     stop_sequence: stopSequence,
     usage,
     ...resultExtras,

@@ -48,6 +48,12 @@ interface PendingTextItem {
   text: string;
 }
 
+interface PendingRefusalItem {
+  outputIndex: number;
+  itemId: string;
+  refusal: string;
+}
+
 interface FunctionCallStreamItem {
   outputIndex: number;
   itemId: string;
@@ -71,7 +77,10 @@ type ChatCompletionsStreamDelta = ChatCompletionsStreamEvent['choices'][0]['delt
 type ChatCompletionsStreamToolCalls = NonNullable<ChatCompletionsStreamDelta['tool_calls']>;
 type ChatCompletionsFinishReason = NonNullable<ChatCompletionsStreamEvent['choices'][0]['finish_reason']>;
 
-type DeferredAfterReasoning = { type: 'content'; content: string } | { type: 'tool_calls'; toolCalls: ChatCompletionsStreamToolCalls };
+type DeferredAfterReasoning =
+  | { type: 'content'; content: string }
+  | { type: 'refusal'; refusal: string }
+  | { type: 'tool_calls'; toolCalls: ChatCompletionsStreamToolCalls };
 
 interface ChatCompletionsToResponsesStreamState {
   responseCreated: boolean;
@@ -83,6 +92,7 @@ interface ChatCompletionsToResponsesStreamState {
   completedItems: (ResponsesOutputItem | undefined)[];
   pendingScalarReasoning?: PendingScalarReasoningItem;
   openText?: PendingTextItem;
+  openRefusal?: PendingRefusalItem;
   openFunctionCalls: Map<number, PendingFunctionCallItem>;
   deferredAfterReasoning: DeferredAfterReasoning[];
   reasoningItemsSeen: boolean;
@@ -172,6 +182,18 @@ const closeText = (state: ChatCompletionsToResponsesStreamState): ResponsesStrea
   return responses.textDone(state, textItem.outputIndex, textItem.itemId, textItem.text, item);
 };
 
+const closeRefusal = (state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
+  if (!state.openRefusal) return [];
+
+  const refusalItem = state.openRefusal;
+  state.openRefusal = undefined;
+
+  const item = responses.refusalItem(refusalItem.itemId, refusalItem.refusal);
+  state.completedItems[refusalItem.outputIndex] = item;
+
+  return responses.refusalDone(state, refusalItem.outputIndex, refusalItem.itemId, refusalItem.refusal, item);
+};
+
 const closeFunctionCalls = (state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
   const events: ResponsesStreamEvent[] = [];
 
@@ -218,6 +240,20 @@ const openText = (state: ChatCompletionsToResponsesStreamState): { item: Pending
   };
 };
 
+const openRefusal = (state: ChatCompletionsToResponsesStreamState): { item: PendingRefusalItem; events: ResponsesStreamEvent[] } => {
+  if (state.openRefusal) return { item: state.openRefusal, events: [] };
+
+  const outputIndex = state.outputIndex++;
+  const itemId = createRandomResponsesItemId('message');
+  const item = { outputIndex, itemId, refusal: '' };
+  state.openRefusal = item;
+
+  return {
+    item,
+    events: responses.refusalStart(state, outputIndex, itemId),
+  };
+};
+
 const startFunctionCall = (current: PendingFunctionCallItem, state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
   if (current.streamItem || !current.callId || !current.name) {
     return [];
@@ -248,17 +284,30 @@ const startFunctionCall = (current: PendingFunctionCallItem, state: ChatCompleti
 };
 
 const emitContentDelta = (content: string, state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
-  const { item, events } = openText(state);
-  item.text += content;
+  const events = closeRefusal(state);
+  const opened = openText(state);
+  opened.item.text += content;
   state.outputText += content;
-  events.push(...responses.textDelta(state, item.outputIndex, item.itemId, content));
+  events.push(...opened.events, ...responses.textDelta(state, opened.item.outputIndex, opened.item.itemId, content));
 
+  return events;
+};
+
+const emitRefusalDelta = (refusal: string, state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
+  const events = closeText(state);
+  const opened = openRefusal(state);
+  opened.item.refusal += refusal;
+  events.push(...opened.events);
+  if (refusal.length > 0) {
+    events.push(...responses.refusalDelta(state, opened.item.outputIndex, opened.item.itemId, refusal));
+  }
   return events;
 };
 
 const emitToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
   const events: ResponsesStreamEvent[] = [];
   events.push(...closeText(state));
+  events.push(...closeRefusal(state));
 
   for (const toolCall of toolCalls) {
     const current = state.openFunctionCalls.get(toolCall.index) ?? {
@@ -300,7 +349,17 @@ const commitReasoningAndReplayDeferredDeltas = (state: ChatCompletionsToResponse
   state.deferredAfterReasoning = [];
 
   for (const item of deferred) {
-    events.push(...(item.type === 'content' ? emitContentDelta(item.content, state) : emitToolCallsDelta(item.toolCalls, state)));
+    switch (item.type) {
+    case 'content':
+      events.push(...emitContentDelta(item.content, state));
+      break;
+    case 'refusal':
+      events.push(...emitRefusalDelta(item.refusal, state));
+      break;
+    case 'tool_calls':
+      events.push(...emitToolCallsDelta(item.toolCalls, state));
+      break;
+    }
   }
 
   return events;
@@ -309,7 +368,7 @@ const commitReasoningAndReplayDeferredDeltas = (state: ChatCompletionsToResponse
 const finalize = (state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
   if (state.completed || state.pendingFinishReason === undefined) return [];
 
-  const events = [...commitReasoningAndReplayDeferredDeltas(state), ...closeText(state), ...closeFunctionCalls(state)];
+  const events = [...commitReasoningAndReplayDeferredDeltas(state), ...closeText(state), ...closeRefusal(state), ...closeFunctionCalls(state)];
 
   state.completed = true;
   const incomplete = state.pendingFinishReason === 'length';
@@ -341,6 +400,7 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
       } else {
         events.push(...commitReasoningAndReplayDeferredDeltas(state));
         events.push(...closeText(state));
+        events.push(...closeRefusal(state));
       }
 
       for (const item of readableReasoningItems) {
@@ -353,7 +413,10 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
       }
     } else if (choice.delta.reasoning_text) {
       if (!state.reasoningItemsSeen) {
-        if (!state.pendingScalarReasoning) events.push(...closeText(state));
+        if (!state.pendingScalarReasoning) {
+          events.push(...closeText(state));
+          events.push(...closeRefusal(state));
+        }
         const reasoning = openScalarReasoning(state);
 
         if (choice.delta.reasoning_text) {
@@ -370,6 +433,17 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
         });
       } else {
         events.push(...emitContentDelta(choice.delta.content, state));
+      }
+    }
+
+    if (choice.delta.refusal !== undefined && choice.delta.refusal !== null) {
+      if (state.pendingScalarReasoning) {
+        state.deferredAfterReasoning.push({
+          type: 'refusal',
+          refusal: choice.delta.refusal,
+        });
+      } else {
+        events.push(...emitRefusalDelta(choice.delta.refusal, state));
       }
     }
 

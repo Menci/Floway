@@ -588,3 +588,52 @@ test('reassembleChatCompletionsEvents treats a null tool_calls as carrying no ca
   assertEquals(result.choices[0].message.content, 'hi');
   assertEquals('tool_calls' in result.choices[0].message, false);
 });
+
+test('reassembleChatCompletionsEvents accumulates refusal deltas separately from content', async () => {
+  const result = await reassembleChatCompletionsEvents(makeEvents([
+    {
+      data: {
+        id: 'cmpl_refusal',
+        object: 'chat.completion.chunk',
+        created: 1000,
+        model: 'gpt-test',
+        choices: [{ index: 0, delta: { role: 'assistant', content: null, refusal: '' }, finish_reason: null }],
+      },
+    },
+    {
+      data: {
+        id: 'cmpl_refusal',
+        object: 'chat.completion.chunk',
+        created: 1000,
+        model: 'gpt-test',
+        choices: [{ index: 0, delta: { refusal: 'Cannot help.' }, finish_reason: null }],
+      },
+    },
+    {
+      data: {
+        id: 'cmpl_refusal',
+        object: 'chat.completion.chunk',
+        created: 1000,
+        model: 'gpt-test',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      },
+    },
+  ]));
+
+  assertEquals(result.choices[0].message, { role: 'assistant', content: null, refusal: 'Cannot help.' });
+  assertEquals(result.choices[0].finish_reason, 'stop');
+});
+
+test('reassembleChatCompletionsEvents preserves an observed empty refusal', async () => {
+  const result = await reassembleChatCompletionsEvents(makeEvents([{
+    data: {
+      id: 'cmpl_empty_refusal',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'gpt-test',
+      choices: [{ index: 0, delta: { role: 'assistant', content: null, refusal: '' }, finish_reason: 'stop' }],
+    },
+  }]));
+
+  assertEquals(result.choices[0].message, { role: 'assistant', content: null, refusal: '' });
+});

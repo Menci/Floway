@@ -501,6 +501,59 @@ test('generate falls through translate-out to messages target', async () => {
   assertEquals(callMessages.mock.calls.length, 1);
 });
 
+test('Messages biology refusal becomes a non-retryable Codex Responses policy failure', async () => {
+  installRepo();
+  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: true,
+    events: makeProtocolFrames([
+      {
+        type: 'message_start',
+        message: {
+          id: 'msg_bio_refusal',
+          type: 'message',
+          role: 'assistant',
+          content: [],
+          model: 'claude-fable-5',
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 4, output_tokens: 0 },
+        },
+      },
+      {
+        type: 'message_delta',
+        delta: {
+          stop_reason: 'refusal',
+          stop_details: {
+            type: 'refusal',
+            category: 'bio',
+            explanation: 'This request could enable biological harm.',
+          },
+          stop_sequence: null,
+        },
+        usage: { output_tokens: 0 },
+      },
+      { type: 'message_stop' },
+    ]),
+    modelKey: 'messages-key',
+    headers: new Headers(),
+  }));
+  const candidate = makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages });
+  queueResolution([candidate]);
+
+  const result = await responsesServe.generate({ payload: makePayload(), ctx: makeGatewayCtx(), headers: new Headers() });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  const events = await collectEvents(result.events);
+  const failed = events.find((event): event is Extract<ResponsesStreamEvent, { type: 'response.failed' }> => event.type === 'response.failed');
+
+  assertEquals(failed?.response.status, 'failed');
+  assertEquals(failed?.response.error, {
+    code: 'bio_policy',
+    message: 'This content was flagged for possible biological risk. This request could enable biological harm.',
+  });
+  assertEquals(callMessages.mock.calls.length, 1);
+});
+
 test('generate falls through translate-out to chat-completions target', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({

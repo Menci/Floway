@@ -12,6 +12,7 @@ import type { RemoteImageLoader } from '../types.ts';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
+  type MessagesAssistantInputContentBlock,
   type MessagesAssistantMessage,
   type MessagesMessage,
   type MessagesPayload,
@@ -72,6 +73,10 @@ const translateUserMessage = async (message: ResponsesInputMessage, loadRemoteIm
       throw new TranslatorInputError('Cannot translate input_file message content to Messages.');
     }
 
+    if (block.type === 'refusal') {
+      throw new TranslatorInputError('Cannot translate refusal content in a user message to Messages.');
+    }
+
     if (block.type !== 'input_image') continue;
 
     const imageUrl = (block as ResponsesInputImage).image_url;
@@ -101,6 +106,8 @@ const translateToolOutput = async (output: string | ResponsesInputContent[], loa
       if (image) blocks.push(image);
     } else if (part.type === 'input_file') {
       throw new TranslatorInputError('Cannot translate input_file tool output to Messages.');
+    } else if (part.type === 'refusal') {
+      throw new TranslatorInputError('Cannot translate refusal content in a tool output to Messages.');
     } else {
       blocks.push({ type: 'text', text: part.text });
     }
@@ -114,7 +121,7 @@ const translateAssistantMessage = (message: ResponsesInputMessage): MessagesAssi
     return { role: 'assistant', content: message.content };
   }
 
-  const content: MessagesAssistantContentBlock[] = [];
+  const content: MessagesAssistantInputContentBlock[] = [];
 
   for (const block of message.content) {
     if (block.type === 'input_image') {
@@ -122,6 +129,10 @@ const translateAssistantMessage = (message: ResponsesInputMessage): MessagesAssi
     }
     if (block.type === 'input_file') {
       throw new TranslatorInputError('Cannot translate input_file assistant content to Messages.');
+    }
+    if (block.type === 'refusal') {
+      content.push({ type: 'text', text: block.refusal });
+      continue;
     }
     if (block.type === 'input_text' || block.type === 'output_text') {
       content.push({ type: 'text', text: (block as ResponsesInputText).text });

@@ -52,6 +52,7 @@ test('reassembleGeminiEvents assembles candidate parts and final metadata', asyn
             parts: [{ text: ' signed', thoughtSignature: 'sig-1' }, { text: ' tail' }],
           },
           finishReason: 'STOP',
+          finishMessage: 'Finished normally.',
         },
       ],
       modelVersion: 'gemini-test',
@@ -74,6 +75,7 @@ test('reassembleGeminiEvents assembles candidate parts and final metadata', asyn
           parts: [{ text: 'Hello' }, { text: 'thinking', thought: true }, { text: ' signed', thoughtSignature: 'sig-1' }, { text: ' tail' }],
         },
         finishReason: 'STOP',
+        finishMessage: 'Finished normally.',
       },
       {
         index: 1,
@@ -94,6 +96,19 @@ test('reassembleGeminiEvents assembles candidate parts and final metadata', asyn
   };
 
   assertEquals(await reassembleGeminiEvents(eventsFrom(events)), expected);
+});
+
+test('reassembleGeminiEvents preserves terminal safety explanation', async () => {
+  const result = await reassembleGeminiEvents(eventsFrom([{
+    candidates: [{
+      index: 0,
+      content: { role: 'model', parts: [] },
+      finishReason: 'SAFETY',
+      finishMessage: 'This request could enable biological harm.',
+    }],
+  }]));
+
+  assertEquals(result.candidates?.[0].finishMessage, 'This request could enable biological harm.');
 });
 
 test('Gemini billing metadata survives reassembly without entering JSON', async () => {

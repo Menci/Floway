@@ -25,6 +25,33 @@ const usageChunk = (): ChatCompletionsStreamEvent => ({
   },
 });
 
+test('Chat refusal deltas become Messages refusal stop details', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', content: null, refusal: '' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ refusal: 'I cannot help with that.' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'stop'), state),
+    ...translateChatCompletionsChunkToMessagesEvents(usageChunk(), state),
+  ];
+
+  assertEquals(events.slice(-2), [
+    {
+      type: 'message_delta',
+      delta: {
+        stop_reason: 'refusal',
+        stop_details: {
+          type: 'refusal',
+          category: null,
+          explanation: 'I cannot help with that.',
+        },
+        stop_sequence: null,
+      },
+      usage: { input_tokens: 12, output_tokens: 4 },
+    },
+    { type: 'message_stop' },
+  ]);
+});
+
 test('translateChatCompletionsChunkToMessagesEvents emits opaque-only reasoning as redacted_thinking at finish', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [

@@ -1,4 +1,4 @@
-import type { MessagesUsage, MessagesUsageServerToolUse } from './usage.ts';
+import type { MessagesUsage, MessagesUsageIteration, MessagesUsageServerToolUse } from './usage.ts';
 
 /**
  * Messages requires `max_tokens`, but the Chat Completions, Responses, and
@@ -176,6 +176,48 @@ export interface MessagesRedactedThinkingBlock {
   data: string;
 }
 
+// Anthropic classifier refusal categories. The wire is versioned additively,
+// so retain the open-string arm for categories introduced after this snapshot.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1458-L1491
+export type MessagesRefusalCategory =
+  | 'cyber'
+  | 'bio'
+  | 'frontier_llm'
+  | 'reasoning_extraction'
+  | 'general_harms'
+  | (string & {})
+  | null;
+
+export interface MessagesRefusalStopDetails {
+  type: 'refusal';
+  category: MessagesRefusalCategory;
+  explanation: string | null;
+  fallback_credit_token?: string | null;
+  fallback_has_prefill_claim?: boolean | null;
+  recommended_model?: string | null;
+}
+
+// Server-side refusal fallback boundary. It is a regular content block with
+// no deltas and must survive assistant-history round trips in its original
+// position.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/messages/messages.ts#L1566-L1633
+export interface MessagesFallbackBlock {
+  type: 'fallback';
+  from: { model: string };
+  to: { model: string };
+  trigger: {
+    type: 'refusal';
+    category: MessagesRefusalCategory;
+  };
+}
+
+export interface MessagesFallbackBlockParam {
+  type: 'fallback';
+  from: { model: string };
+  to: { model: string };
+  trigger?: unknown;
+}
+
 export type MessagesUserContentBlock = MessagesTextBlock | MessagesImageBlock | MessagesToolResultBlock;
 
 export type MessagesAssistantContentBlock =
@@ -184,7 +226,12 @@ export type MessagesAssistantContentBlock =
   | MessagesServerToolUseBlock
   | MessagesWebSearchToolResultBlock
   | MessagesThinkingBlock
-  | MessagesRedactedThinkingBlock;
+  | MessagesRedactedThinkingBlock
+  | MessagesFallbackBlock;
+
+export type MessagesAssistantInputContentBlock =
+  | Exclude<MessagesAssistantContentBlock, MessagesFallbackBlock>
+  | MessagesFallbackBlockParam;
 
 export interface MessagesUserMessage {
   role: 'user';
@@ -193,7 +240,7 @@ export interface MessagesUserMessage {
 
 export interface MessagesAssistantMessage {
   role: 'assistant';
-  content: string | MessagesAssistantContentBlock[];
+  content: string | MessagesAssistantInputContentBlock[];
 }
 
 // The Anthropic Messages API role enum is "user" | "assistant" | "system"
@@ -240,6 +287,7 @@ export {
   splitMessagesCacheCreationTokens,
   type MessagesCacheCreationUsage,
   type MessagesUsage,
+  type MessagesUsageIteration,
   type MessagesUsageServerToolUse,
   type MessagesUsageSnapshot,
 } from './usage.ts';
@@ -251,6 +299,7 @@ export interface MessagesResult {
   content: MessagesAssistantContentBlock[];
   model: string;
   stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | 'pause_turn' | 'refusal' | null;
+  stop_details?: MessagesRefusalStopDetails | null;
   stop_sequence: string | null;
   usage: MessagesUsage;
 }
@@ -285,7 +334,8 @@ export interface MessagesContentBlockStartEvent {
     | MessagesServerToolUseBlock
     | MessagesWebSearchToolResultBlock
     | { type: 'thinking'; thinking: string }
-    | { type: 'redacted_thinking'; data: string };
+    | { type: 'redacted_thinking'; data: string }
+    | MessagesFallbackBlock;
 }
 
 export interface MessagesContentBlockDeltaEvent {
@@ -308,6 +358,7 @@ export interface MessagesMessageDeltaEvent {
   type: 'message_delta';
   delta: {
     stop_reason?: MessagesResult['stop_reason'];
+    stop_details?: MessagesRefusalStopDetails | null;
     stop_sequence?: string | null;
   };
   usage?: {
@@ -322,6 +373,7 @@ export interface MessagesMessageDeltaEvent {
     service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
     speed?: 'standard' | 'fast' | (string & {});
     server_tool_use?: MessagesUsageServerToolUse;
+    iterations?: MessagesUsageIteration[] | null;
   };
 }
 

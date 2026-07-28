@@ -44,3 +44,22 @@ test('Messages usage snapshots merge late counters and atomically replace the ti
     service_tier: 'priority',
   });
 });
+
+test('Messages usage snapshots preserve nullable iterations and isolate nested cache data', () => {
+  expect(messagesUsageSnapshot({ output_tokens: 0, iterations: null })).toEqual({ output_tokens: 0, iterations: null });
+
+  const source = [{
+    type: 'compaction',
+    input_tokens: 7,
+    cache_creation: { ephemeral_5m_input_tokens: 3 },
+  }];
+  const snapshot = messagesUsageSnapshot({ output_tokens: 0, iterations: source });
+  source[0].cache_creation.ephemeral_5m_input_tokens = 9;
+
+  expect(snapshot.iterations).toEqual([{
+    type: 'compaction',
+    input_tokens: 7,
+    cache_creation: { ephemeral_5m_input_tokens: 3 },
+  }]);
+  expect(mergeMessagesUsageSnapshot(snapshot, { output_tokens: 1, iterations: null }).iterations).toBeNull();
+});

@@ -230,6 +230,23 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
     return [makeChunk(state, { content: text })];
   }
 
+  case 'response.refusal.delta': {
+    const { delta, output_index, content_index } = event as Extract<ResponsesStreamEvent, { type: 'response.refusal.delta' }>;
+    if (!delta) return [];
+
+    state.emittedTextContentKeys.add(responsesPartKey(output_index, content_index));
+    return [makeChunk(state, { refusal: delta })];
+  }
+
+  case 'response.refusal.done': {
+    const { refusal, output_index, content_index } = event as Extract<ResponsesStreamEvent, { type: 'response.refusal.done' }>;
+    const key = responsesPartKey(output_index, content_index);
+    if (!refusal || state.emittedTextContentKeys.has(key)) return [];
+
+    state.emittedTextContentKeys.add(key);
+    return [makeChunk(state, { refusal })];
+  }
+
   case 'response.content_part.done': {
     const { part, output_index, content_index } = event as Extract<ResponsesStreamEvent, { type: 'response.content_part.done' }>;
     if (part.type !== 'refusal') return [];
@@ -238,7 +255,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
     if (!part.refusal || state.emittedTextContentKeys.has(key)) return [];
 
     state.emittedTextContentKeys.add(key);
-    return [makeChunk(state, { content: part.refusal })];
+    return [makeChunk(state, { refusal: part.refusal })];
   }
 
   case 'response.function_call_arguments.delta': {

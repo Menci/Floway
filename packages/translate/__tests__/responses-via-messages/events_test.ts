@@ -816,3 +816,77 @@ test('Messages delta atomically replaces tier and merges late cache accounting i
     [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
   });
 });
+
+test.each([
+  ['cyber', 'cyber_policy', 'Cyber refusal.'],
+  ['bio', 'bio_policy', 'This content was flagged for possible biological risk. Bio refusal.'],
+  ['frontier_llm', 'invalid_prompt', 'Frontier refusal.'],
+  ['future_policy', 'invalid_prompt', 'Future refusal.'],
+] as const)('Messages %s refusal becomes a failed Codex Responses policy result', (category, code, message) => {
+  const state = createMessagesToResponsesStreamState('resp_refusal', 'claude-opus-5');
+  translateMessagesEventToResponsesEvents({
+    type: 'message_start',
+    message: {
+      id: 'msg_refusal',
+      type: 'message',
+      role: 'assistant',
+      content: [],
+      model: 'claude-opus-5',
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { input_tokens: 10, output_tokens: 0 },
+    },
+  }, state);
+  translateMessagesEventToResponsesEvents({
+    type: 'message_delta',
+    delta: {
+      stop_reason: 'refusal',
+      stop_details: {
+        type: 'refusal',
+        category,
+        explanation: category === 'bio' ? 'Bio refusal.' : `${category === 'cyber' ? 'Cyber' : category === 'frontier_llm' ? 'Frontier' : 'Future'} refusal.`,
+      },
+    },
+    usage: { output_tokens: 0 },
+  }, state);
+
+  const result = translateMessagesEventToResponsesEvents({ type: 'message_stop' }, state);
+  const failed = result.find((event): event is Extract<ResponsesStreamEvent, { type: 'response.failed' }> => event.type === 'response.failed');
+  assertEquals(failed?.response.status, 'failed');
+  assertEquals(failed?.response.error, { code, message });
+  assertEquals(failed?.response.output, []);
+});
+
+test('Messages fallback block changes the Responses serving model without becoming output', () => {
+  const state = createMessagesToResponsesStreamState('resp_fallback', 'claude-opus-5');
+  translateMessagesEventToResponsesEvents({
+    type: 'message_start',
+    message: {
+      id: 'msg_fallback',
+      type: 'message',
+      role: 'assistant',
+      content: [],
+      model: 'claude-opus-5',
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { input_tokens: 1, output_tokens: 0 },
+    },
+  }, state);
+  const boundary = translateMessagesEventToResponsesEvents({
+    type: 'content_block_start',
+    index: 0,
+    content_block: {
+      type: 'fallback',
+      from: { model: 'claude-opus-5' },
+      to: { model: 'claude-opus-4-8' },
+      trigger: { type: 'refusal', category: 'cyber' },
+    },
+  }, state);
+  translateMessagesEventToResponsesEvents({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }, state);
+  const result = translateMessagesEventToResponsesEvents({ type: 'message_stop' }, state);
+  const completed = result.find((event): event is Extract<ResponsesStreamEvent, { type: 'response.completed' }> => event.type === 'response.completed');
+
+  assertEquals(boundary, []);
+  assertEquals(completed?.response.model, 'claude-opus-4-8');
+  assertEquals(completed?.response.output, []);
+});

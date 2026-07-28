@@ -416,17 +416,51 @@ test('message_delta with pause_turn → finish_reason stop', () => {
   assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, 'stop');
 });
 
-test('message_delta with refusal → finish_reason stop', () => {
+test('message_delta with refusal → refusal delta and finish_reason stop', () => {
   const state = createMessagesToChatCompletionsStreamState();
   translateMessagesEventToChatCompletionsChunks(MSG_START, state);
   const result = translateMessagesEventToChatCompletionsChunks(
     {
       type: 'message_delta',
-      delta: { stop_reason: 'refusal' },
+      delta: {
+        stop_reason: 'refusal',
+        stop_details: {
+          type: 'refusal',
+          category: 'cyber',
+          explanation: 'This request could enable cyber harm.',
+        },
+      },
     },
     state,
   );
-  assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, 'stop');
+  assertEquals(result, [
+    {
+      ...(result as ChatCompletionsStreamEvent[])[0],
+      choices: [{ index: 0, delta: { refusal: 'This request could enable cyber harm.' }, finish_reason: null }],
+    },
+    {
+      ...(result as ChatCompletionsStreamEvent[])[1],
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    },
+  ]);
+});
+
+test('fallback block updates subsequent Chat chunks to the serving model', () => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(MSG_START, state);
+  const result = translateMessagesEventToChatCompletionsChunks({
+    type: 'content_block_start',
+    index: 0,
+    content_block: {
+      type: 'fallback',
+      from: { model: 'claude-opus-5' },
+      to: { model: 'claude-opus-4-8' },
+      trigger: { type: 'refusal', category: 'cyber' },
+    },
+  }, state);
+
+  assertEquals(result, []);
+  assertEquals(state.model, 'claude-opus-4-8');
 });
 
 test('message_delta without usage → no usage on chunk', () => {

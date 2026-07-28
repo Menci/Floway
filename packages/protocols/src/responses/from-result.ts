@@ -57,7 +57,10 @@ const responsesMessageEvents = (item: ResponsesOutputMessage, outputIndex: numbe
         type: 'message',
         id: itemId,
         role: 'assistant',
-        content: item.content.map(part => (part.type === 'output_text' ? { type: 'output_text', text: '' } : part)),
+        content: item.content.map(part =>
+          part.type === 'output_text'
+            ? { type: 'output_text', text: '' }
+            : { type: 'refusal', refusal: '' }),
       },
     },
   ];
@@ -104,7 +107,23 @@ const responsesMessageEvents = (item: ResponsesOutputMessage, outputIndex: numbe
       item_id: itemId,
       output_index: outputIndex,
       content_index: contentIndex,
-      part,
+      part: { type: 'refusal', refusal: '' },
+    });
+    if (part.refusal.length > 0) {
+      events.push({
+        type: 'response.refusal.delta',
+        item_id: itemId,
+        output_index: outputIndex,
+        content_index: contentIndex,
+        delta: part.refusal,
+      });
+    }
+    events.push({
+      type: 'response.refusal.done',
+      item_id: itemId,
+      output_index: outputIndex,
+      content_index: contentIndex,
+      refusal: part.refusal,
     });
     events.push({
       type: 'response.content_part.done',

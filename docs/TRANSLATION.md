@@ -106,6 +106,52 @@ service. Every other open-string tier is preserved byte-for-byte. Gemini
 candidate and thought counts remain disjoint in `usageMetadata`; thought tokens
 are billed as reasoning/output exactly once.
 
+## Safety Refusals And Model Fallback
+
+Anthropic Messages classifier refusals are successful Messages transports with
+`stop_reason: "refusal"` and structured `stop_details`. The category is an open
+string: current values are `cyber`, `bio`, `frontier_llm`,
+`reasoning_extraction`, `general_harms`, and `null`, but future values must
+survive native Messages parsing and reassembly unchanged. The human-readable
+`explanation` is display text, not a stable discriminator.
+
+Source protocols expose that terminal condition according to their own wire:
+
+- Responses Via Messages is Codex-first. A `cyber` refusal becomes
+  `response.failed` with `error.code: "cyber_policy"`; `bio` becomes
+  `bio_policy`; every other or future category becomes the non-retryable public
+  `invalid_prompt`. The upstream explanation becomes the error message. The
+  biology message retains Codex's recognized biology prefix so its dedicated
+  Trusted Access surface is selected. A refusal never becomes an empty
+  `response.completed`.
+- Chat Completions Via Messages emits the standard scalar `delta.refusal` and
+  ends with `finish_reason: "stop"`. Non-stream assembly places the text in
+  `message.refusal` with `message.content: null` when there was no partial text.
+- Gemini Via Messages ends the candidate with `finishReason: "SAFETY"` and
+  carries the explanation in standard `finishMessage`. It does not fabricate
+  `safetyRatings`: Anthropic policy categories do not map honestly to Gemini's
+  harm-category probabilities.
+- Native Messages streaming and non-streaming preserve `stop_details`, beta
+  fallback-credit fields, fallback content blocks, and `usage.iterations`.
+
+Public OpenAI refusal output remains supported independently of the Codex
+policy-failure adaptation. Responses refusal parts use the native
+`response.refusal.delta` / `.done` lifecycle; Chat refusal uses
+`delta.refusal`. The reverse translators restore a Messages refusal and
+`stop_details.explanation` rather than turning refusal text into an ordinary
+assistant text block. A Responses `cyber_policy` or `bio_policy` failure maps
+back to the matching Messages category.
+
+Anthropic server-side fallback is distinct from final refusal. A successful
+fallback block updates the effective model used by translated Responses and
+Chat output and is not emitted as user-visible text. Native Messages retains
+the boundary at its original content position. OpenAI `safety_buffering` is a
+Codex-private "still checking" signal, not an automatic-reroute record, so
+Floway does not synthesize it. Floway also does not synthesize Codex's
+`OpenAI-Model` cyber-reroute signal for Anthropic models because the current
+Codex notice is OpenAI-model-specific. Cross-protocol clients therefore see the
+fallback model and its content but not a fabricated OpenAI safety notice.
+
 ## Gemini Source
 
 Request mapping shared by the Gemini source translation pairs:
@@ -156,6 +202,8 @@ Response mapping shared by the Gemini source translation pairs:
   part. Responses targets do not emit opaque Gemini signatures; only readable
   reasoning summaries become thought-summary parts.
 - Target tool/function calls become Gemini `functionCall` parts.
+- Messages classifier refusal becomes `finishReason: "SAFETY"`; its
+  human-readable explanation becomes candidate `finishMessage`.
 - Target usage maps to Gemini `usageMetadata`; cache reads and writes remain
   separate, while reasoning/thinking tokens map to `thoughtsTokenCount` and do
   not overlap `candidatesTokenCount`.
@@ -185,7 +233,8 @@ Known losses:
 - `candidateCount > 1` is not represented by the pairwise chat target paths; the
   gateway returns one candidate.
 - Gemini response safety ratings, grounding metadata, and citation metadata are
-  not synthesized from ordinary target output.
+  not synthesized from ordinary target output. Anthropic refusal categories
+  likewise do not become invented Gemini safety ratings.
 
 ## Messages Via Responses
 
@@ -228,6 +277,10 @@ Response mapping:
   the id round-trips to a downstream Messages client.
 - Responses message output text becomes Messages text blocks, and
   `function_call` output becomes Messages `tool_use`.
+- Responses refusal parts become terminal Messages refusal metadata; their text
+  becomes `stop_details.explanation`, not a visible text block. Responses
+  `cyber_policy` and `bio_policy` failures become the corresponding Messages
+  classifier-refusal categories.
 - Output is emitted in Responses `output_index` order even when later text
   arrives before an earlier reasoning/tool item completes.
 - completed output with a function call maps to Messages `tool_use`; other
@@ -305,7 +358,12 @@ Response mapping:
   Responses URL-citation annotations when they carry enough cited text to
   anchor an output span.
 - Messages `tool_use` stop produces a completed response with function calls;
-  `max_tokens` produces max-output incomplete; other normal stops complete.
+  `max_tokens` produces max-output incomplete. Classifier refusal produces a
+  failed response with the Codex-compatible policy code described in "Safety
+  Refusals And Model Fallback"; other normal stops complete.
+- `message_start.message.model` is authoritative. A fallback boundary switches
+  subsequent and terminal Responses envelopes to its `to.model` without
+  becoming an output item.
 - disjoint Messages cache counts are folded into inclusive Responses input
   usage while the 1-hour subset remains in the billing sidecar. Messages
   `speed: "fast"` returns as Responses `service_tier: "fast"`; otherwise
@@ -361,13 +419,16 @@ Response mapping:
 - Chat content becomes Messages text blocks; tool calls become `tool_use`
   blocks. Text interleaved inside streamed tool arguments is deferred until the
   tool block closes so trailing argument fragments remain valid.
+- Chat `delta.refusal` is accumulated into Messages
+  `stop_details.explanation`; its terminal stop reason is `refusal`, even though
+  native Chat ends a generated refusal with `finish_reason: "stop"`.
 - inclusive Chat prompt usage is split into plain input, cache-read, and
   cache-write Messages fields; 1-hour cache-write detail is retained. Target
   `service_tier: "fast"` maps to Messages `speed: "fast"`; other non-null tiers
   map to Messages `service_tier`.
 - Chat `tool_calls` finish maps to Messages `tool_use`, `length` maps to
-  `max_tokens`, `content_filter` maps to `refusal`, and `stop` maps to
-  `end_turn`.
+  `max_tokens`, and `content_filter` maps to `refusal`. A `stop` carrying prior
+  refusal deltas also maps to `refusal`; an ordinary `stop` maps to `end_turn`.
 
 Known losses:
 
@@ -404,6 +465,9 @@ Response mapping:
 
 - Messages text deltas become Chat assistant `content`; `tool_use` blocks become
   indexed Chat `tool_calls`.
+- Messages classifier refusal becomes Chat `delta.refusal`, followed by the
+  standard terminal `finish_reason: "stop"`. It is not flattened into visible
+  assistant content or mislabeled as `content_filter`.
 - only the first Messages thinking/redacted-thinking block is projected into the
   scalar Chat `reasoning_text` / `reasoning_opaque` fields. Opaque-only state
   remains opaque rather than becoming fake readable reasoning.
@@ -412,8 +476,9 @@ Response mapping:
   `speed: "fast"` returns as Chat `service_tier: "fast"`; otherwise Messages
   `service_tier` passes through.
 - Messages `tool_use` stop maps to Chat `tool_calls`, `max_tokens` maps to
-  `length`, and other terminal reasons map to `stop`. The Messages terminal
-  becomes the Chat `[DONE]` sentinel.
+  `length`, and other terminal reasons map to `stop`. A fallback boundary
+  updates the serving model on subsequent chunks. The Messages terminal becomes
+  the Chat `[DONE]` sentinel.
 
 Known losses:
 
@@ -456,8 +521,9 @@ Response mapping:
 - every readable Responses reasoning output item is preserved in Chat
   `reasoning_items[]`; the first scalar-eligible group also projects to
   `reasoning_text`. No Chat `reasoning_opaque` is synthesized.
-- Responses message output text and refusal text become visible Chat assistant
-  content; function calls become Chat `tool_calls`.
+- Responses message output text becomes Chat assistant content; Responses
+  refusal parts become Chat `delta.refusal`. Function calls become Chat
+  `tool_calls`.
 - Responses output is held in `output_index` order when later visible output
   finishes before earlier reasoning/tool output.
 - max-output incomplete maps to Chat `finish_reason: "length"`; completed with
@@ -511,6 +577,9 @@ Response mapping:
   ignored.
 - Chat assistant content becomes one Responses message output item, and Chat
   tool calls become Responses `function_call` output items.
+- Chat `delta.refusal` becomes a Responses message item with refusal content and
+  the native `response.refusal.delta` / `.done` lifecycle. Refusal text does not
+  enter the Responses `output_text` convenience projection.
 - output items are emitted in source order by `output_index`.
 - Chat `finish_reason: "length"` maps to Responses incomplete; other finish
   reasons produce a completed response.
@@ -575,6 +644,9 @@ history unchanged.
   usage-only chunk only when the caller requested it.
 - Responses-shaped streams use named Responses SSE events with monotonically
   increasing `sequence_number`.
+- Responses refusal content uses the complete output-item/content-part/refusal
+  lifecycle. Codex policy failures instead terminate with `response.failed`;
+  they never emit a contradictory `response.completed`.
 - Chat Completions Via Responses buffers scalar reasoning until it knows whether
   `reasoning_items[]` will be used, avoiding orphan or duplicated Responses
   reasoning items.
