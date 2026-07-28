@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { resources } from '../../src/i18n/resources';
+import { BILLING_METRICS, MODEL_KINDS } from '@floway-dev/protocols/common';
+import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';
 
 const SOURCE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src');
 const LOCALES_DIR = join(SOURCE_ROOT, 'i18n', 'locales');
@@ -53,5 +55,18 @@ describe('translation key usage', () => {
     const files = sourceFiles(SOURCE_ROOT);
     expect(files.length).toBeGreaterThan(50);
     expect(files.some(file => file.startsWith(LOCALES_DIR))).toBe(false);
+  });
+
+  // A template key (`t(`a.b.${x}`)`) is unresolvable from the source in
+  // general, but where `x` ranges over a shared enum the whole family is
+  // knowable — and those enums are exactly what grows when a provider kind,
+  // model kind, or billing metric is added.
+  it.each([
+    ['dashboard.modelAliases.kind', MODEL_KINDS],
+    ['dashboard.upstreamEditor.models.pricingMetrics', BILLING_METRICS],
+    ['dashboard.upstreams.providers', ALL_PROVIDER_KINDS],
+    ['provider', ALL_PROVIDER_KINDS],
+  ])('covers every member of the enum behind %s.*', (prefix, members) => {
+    expect([...members].filter(member => !resolves(`${prefix}.${member}`))).toEqual([]);
   });
 });
