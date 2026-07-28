@@ -14,7 +14,7 @@ import type { Route } from './+types/dashboard-providers-proxy';
 import { getSessionToken } from '../auth/session';
 import { ProxyBackoffPanel } from '../components/proxy/proxy-backoff-panel';
 import { defaultsFor, isValidPort, parseDialTimeoutInput, parseProxyInput, type FormKind } from '../components/proxy/proxy-config';
-import { ProxyForm } from '../components/proxy/proxy-form';
+import { ProxyForm, type ProxyTestResult } from '../components/proxy/proxy-form';
 import { ProxyList } from '../components/proxy/proxy-list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { PageLoadingPanel } from '../components/ui/page-loading-panel';
@@ -50,11 +50,7 @@ export default function DashboardProvidersProxy() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    ok: boolean;
-    egress_ip?: string;
-    error?: string;
-  } | null>(null);
+  const [testResult, setTestResult] = useState<ProxyTestResult | null>(null);
 
   // Save/Test diagnostics describe one exact draft. Once the operator edits
   // any field, remove stale failures (and the saved confirmation) so the form
@@ -242,26 +238,13 @@ export default function DashboardProvidersProxy() {
       body.dial_timeout_seconds = dialTimeout.value;
     }
 
-    try {
-      const response = await authFetch('/api/proxies/test', {
+    const result = await callApi<ProxyTestResult>(() => authFetch('/api/proxies/test', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        egress_ip?: string;
-        error?: string;
-      };
-      setTestResult(data);
-    } catch (e) {
-      setTestResult({
-        ok: false,
-        error: e instanceof Error ? e.message : String(e),
-      });
-    } finally {
-      setTesting(false);
-    }
+      }));
+    setTestResult(result.error ? { ok: false, error: result.error.message } : result.data);
+    setTesting(false);
   }, [dialTimeout, urlInput]);
 
   const handleDeleteConfirm = useCallback(async () => {

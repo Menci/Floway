@@ -268,8 +268,9 @@ checked TypeScript project and are ignored.
 The dashboard imports every Fluent component through `apps/web/src/fluent.ts`
 and every form control through `components/ui/fluent-form-controls.tsx`, which
 adds the shared minimum-width reset. One Fluent `Field` wraps exactly one
-control; a composite editor uses `role="group"` with `aria-labelledby`. Colors
-and type come from the `fui-*` UnoCSS tokens rather than literals. Generic
+control; a composite editor uses `role="group"` with `aria-labelledby`. Shared
+surfaces and type use the `fui-*` UnoCSS tokens; provider identity colors come
+from typed upstream color metadata and the owning Fluent components. Generic
 primitives live in `components/ui/`, and ESLint keeps them from importing a
 Floway domain module — a primitive that knows a domain concept belongs in that
 domain's directory. User-visible strings go through `react-i18next` in `en` and

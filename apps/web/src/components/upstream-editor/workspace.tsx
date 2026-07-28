@@ -93,7 +93,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
 }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<UpstreamEditorValues>();
-  const { append, fields, remove } = useFieldArray({ control, name: 'manualModels' });
+  const { append, fields, remove, replace } = useFieldArray({ control, name: 'manualModels' });
   const manual = useWatch({ control, name: 'manualModels' });
   const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
@@ -106,12 +106,13 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
   const [search, setSearch] = useState('');
   const readOnly = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
+  if (fields.length !== manual.length) throw new Error('Manual model fields are out of sync with form values');
   const autoFetchEnabled = record.kind !== 'custom'
     || (config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled;
   const rows = useMemo<ModelRow[]>(() => {
     const visibleDiscovered = autoFetchEnabled ? discovered : [];
     const autoById = new Map(visibleDiscovered.map(item => [item.upstreamModelId, item]));
-    const result: ModelRow[] = manual.map((item, index) => ({ key: `manual:${fields[index]?.id ?? index}`, source: 'manual', config: item, manualIndex: index, hasAuto: autoById.has(item.upstreamModelId) }));
+    const result: ModelRow[] = manual.map((item, index) => ({ key: `manual:${fields[index]!.id}`, source: 'manual', config: item, manualIndex: index, hasAuto: autoById.has(item.upstreamModelId) }));
     const manualIds = new Set(manual.map(item => item.upstreamModelId));
     for (const item of visibleDiscovered) if (!manualIds.has(item.upstreamModelId)) result.push({ key: `auto:${item.upstreamModelId}`, source: 'auto', config: item, manualIndex: null, hasAuto: true });
     return result;
@@ -165,7 +166,7 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
     const applyAndLeave = () => {
       const parsed = parseModels(json, { allowRerank: record.kind === 'custom' });
       if (!parsed.ok) { setJsonError(parsed.message); return; }
-      setValue('manualModels', parsed.models, { shouldDirty: true, shouldTouch: true });
+      replace(parsed.models);
       setJsonError(null);
       setView('list');
     };

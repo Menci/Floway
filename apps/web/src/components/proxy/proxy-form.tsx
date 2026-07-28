@@ -17,6 +17,10 @@ import type {
   VlessWsTlsProxyConfig,
 } from '@floway-dev/proxy/proxy-config';
 const { Button, Field, MessageBar, MessageBarBody, Option, Spinner, Switch, Text } = fluentComponents;
+export type ProxyTestResult =
+  | { ok: true; egress_ip: string }
+  | { ok: false; error: string };
+
 export interface ProxyFormProps {
   canSave: boolean;
   canTest: boolean;
@@ -36,7 +40,7 @@ export interface ProxyFormProps {
   saveError: string | null;
   saveSuccess: boolean;
   saving: boolean;
-  testResult: { ok: boolean; egress_ip?: string; error?: string } | null;
+  testResult: ProxyTestResult | null;
   testing: boolean;
   urlError: string | null;
   urlInput: string;
@@ -539,10 +543,10 @@ export function ProxyForm({
             {testResult.ok
               ? t('dashboard.proxy.test.ok')
               : t('dashboard.proxy.test.failed', {
-                  error: testResult.error ?? '',
+                  error: testResult.error,
                 })}
           </Text>
-          {testResult.ok && testResult.egress_ip && (
+          {testResult.ok && (
             <Text size={200} className="text-fui-fg3">
               {t('dashboard.proxy.test.egressIp', {
                 ip: testResult.egress_ip,

@@ -290,6 +290,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   };
 
   const canSend = Boolean(selectedKey && selectedModel && (draft.trim() || imageUrl.trim()));
+  const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
 
   return (
     <FluentProvider theme={australianTheme} className="h-full min-h-0 !bg-transparent">
@@ -346,7 +347,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                         <>
                           {message.imageUrl && <a className={`block text-fui-base200 break-all mb-2 ${message.role === 'user' ? 'text-inherit' : 'text-fui-fg2'}`} href={message.imageUrl} target="_blank" rel="noreferrer">{message.imageUrl}</a>}
                           {message.role === 'assistant'
-                            ? <PlaygroundMarkdown content={message.text} streaming={sending && message.id === messages.at(-1)?.id} />
+                            ? <PlaygroundMarkdown content={message.text} streaming={sending && message.id === lastMessageId} />
                             : <span className="whitespace-pre-wrap break-words">{message.text}</span>}
                         </>
                       )}

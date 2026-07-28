@@ -37,18 +37,18 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
     kind: z.enum(MODEL_KINDS),
     selection: z.enum(['first-available', 'random']),
     visible: z.boolean(),
-    targets: z.array(z.object({ target_model_id: z.string().trim().min(1, 'dashboard.modelAliases.validation.targetRequired'), rules: z.any() })).min(1),
+    targets: z.array(z.object({ target_model_id: z.string().trim().min(1, 'dashboard.modelAliases.validation.targetRequired'), rules: z.any().refine(value => value !== undefined) })).min(1),
     manualMetadata: z.boolean(),
-    announcedMetadata: z.any(),
+    announcedMetadata: z.any().refine(value => value !== undefined),
   }).superRefine((values, ctx) => {
     if (aliases.some(alias => alias.name === values.name.trim() && alias.name !== record?.name)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.duplicate', path: ['name'] });
     values.targets.forEach((target, index) => {
-      const reasoning = target.rules?.reasoning;
+      const reasoning = target.rules.reasoning;
       if (reasoning?.budget_tokens !== undefined && (!Number.isInteger(reasoning.budget_tokens) || reasoning.budget_tokens < 0)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.budget', path: ['targets', index, 'target_model_id'] });
       if (reasoning?.adaptive === true && reasoning?.budget_tokens !== undefined) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.adaptiveBudget', path: ['targets', index, 'target_model_id'] });
     });
-    for (const value of Object.values(values.announcedMetadata?.limits ?? {})) if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataNumber', path: ['announcedMetadata'] });
-    const budget = values.announcedMetadata?.chat?.reasoning?.budget_tokens;
+    for (const value of Object.values(values.announcedMetadata.limits ?? {})) if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataNumber', path: ['announcedMetadata'] });
+    const budget = values.announcedMetadata.chat?.reasoning?.budget_tokens;
     for (const value of [budget?.min, budget?.max]) if (value !== undefined && (!Number.isInteger(value) || value < 0)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataNumber', path: ['announcedMetadata'] });
     if (values.manualMetadata && budget?.min !== undefined && budget?.max !== undefined && budget.max < budget.min) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataRange', path: ['announcedMetadata'] });
   }), [aliases, record?.name]);

@@ -31,8 +31,8 @@ ADMIN_KEY='replace-with-a-secret' docker compose -f docker/docker-compose.yml up
 Open <http://localhost:18088>, leave the username blank, and use `ADMIN_KEY` as
 the password. Then:
 
-1. Add at least one provider under **Settings → Upstreams**.
-2. Create a key under **API Keys**.
+1. Add at least one provider under **Providers → Upstreams**.
+2. Create a key under **Services → API Keys**.
 3. Give that key to a client as a bearer token or `x-api-key`, or use **Agent
    Setup** to configure Claude Code or Codex.
 

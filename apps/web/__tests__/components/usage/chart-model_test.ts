@@ -42,3 +42,22 @@ describe('percentage chart series', () => {
     expect(chart({}).data.lineChartData).toEqual([]);
   });
 });
+
+describe('cost chart series', () => {
+  it('does not turn unavailable pricing into measured zero cost', () => {
+    const model = buildTokenChart({
+      records: [record({ input_tokens: '10' })],
+      metadata: [{ id: 'key-1', name: 'Key 1' }],
+      models: [],
+      groupKey: 'keyId',
+      hiddenOwn: new Set(),
+      hiddenOther: new Set(),
+      redactKeys: false,
+      metric: 'cost',
+      range: 'today',
+      buckets: [bucket],
+    });
+
+    expect(model.data.lineChartData![0]!.data).toEqual([]);
+  });
+});

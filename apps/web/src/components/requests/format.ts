@@ -11,7 +11,7 @@ export function requestSeverity(status: number | null, error: DumpErrorMeta | nu
 export function errorLabel(error: DumpErrorMeta | null, status: number | null): string | null {
   if (!error) return null;
   if (error.kind === 'failed') return error.reason;
-  return `${error.kind} error ${status === undefined || status === 0 ? '???' : status}`;
+  return `${error.kind} error ${status === null || status === 0 ? '???' : status}`;
 }
 
 export function totalTokens(meta: DumpMetadata): number | null {

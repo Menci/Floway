@@ -166,7 +166,10 @@ export function buildTokenChart({
   const series = visibleEntries
     .map(entry => ({
       entry,
-      data: buckets.map(bucket => values.get(bucket.key)?.get(entry.id) ?? (isPercent ? null : 0)),
+      data: buckets.map(bucket => {
+        const bucketValues = values.get(bucket.key)!;
+        return bucketValues.has(entry.id) ? bucketValues.get(entry.id)! : (isPercent ? null : 0);
+      }),
     }))
     .filter(({ data, entry }) =>
       isPercent
@@ -297,7 +300,12 @@ function aggregateTokenRecords(
     if (metricConfig[metric].kind !== 'percent') {
       const bucketValues = values.get(bucket);
       if (bucketValues === undefined) throw new RangeError(`Bucket is missing from the chart series: ${bucket}`);
-      bucketValues.set(group, (bucketValues.get(group) ?? 0) + plottableMetricValue(record, metric));
+      const value = plottableMetricValue(record, metric);
+      if (value !== null) {
+        bucketValues.set(group, (bucketValues.get(group) ?? 0) + value);
+      } else if (!bucketValues.has(group)) {
+        bucketValues.set(group, null);
+      }
     }
   }
 
@@ -443,9 +451,9 @@ function metricValue(record: DisplayUsageRecord, metric: UsageMetric): DecimalSt
 }
 
 // Plot values cross into floating point exactly here, at the axis boundary.
-function plottableMetricValue(record: DisplayUsageRecord, metric: UsageMetric): number {
+function plottableMetricValue(record: DisplayUsageRecord, metric: UsageMetric): number | null {
   const value = metricValue(record, metric);
-  if (value === null) return 0;
+  if (value === null) return null;
   return typeof value === 'number' ? value : decimalStringToPlottableNumber(value);
 }
 
