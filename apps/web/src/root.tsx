@@ -29,7 +29,7 @@ import { fluentComponents } from './fluent';
 import { flowayDarkTheme, flowayLightTheme } from './theme';
 import './i18n';
 import '@fontsource-variable/cascadia-code';
-import 'virtual:uno.css';
+import './uno.css';
 
 const { FluentProvider } = fluentComponents;
 

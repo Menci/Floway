@@ -18,6 +18,7 @@
     "react-router.config.ts",
     "vite.config.ts",
     "vitest.config.ts",
+    "postcss.config.ts",
     "uno.config.ts"
   ]
 }

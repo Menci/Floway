@@ -1,5 +1,4 @@
 import { reactRouter } from '@react-router/dev/vite';
-import UnoCSS from 'unocss/vite';
 import { defineConfig, type Plugin } from 'vite';
 
 // Prism ships its language components as scripts that mutate a global `Prism`
@@ -53,7 +52,7 @@ const wranglerProxiedPaths = [
 ];
 
 export default defineConfig({
-  plugins: [prismComponentsEsm(), UnoCSS({ mode: 'per-module' }), reactRouter()],
+  plugins: [prismComponentsEsm(), reactRouter()],
   server: {
     port: 5174,
     proxy: Object.fromEntries(wranglerProxiedPaths.map(p => [p, { target: wranglerOrigin, changeOrigin: true }])),
