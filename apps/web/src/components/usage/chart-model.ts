@@ -1,5 +1,5 @@
 import type { ChartProps } from '@fluentui/react-charts';
-import { curveLinear } from 'd3-shape';
+import { curveMonotoneX } from 'd3-shape';
 
 import type { ChartEntry, DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenCounters, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
@@ -128,7 +128,7 @@ export function buildTokenChart({
             lineChartData: series.map(({ entry, data }) => ({
               legend: entry.label,
               color: usageColorForSlot(entry.colorSlot),
-              lineOptions: { strokeWidth: 2, curve: curveLinear },
+              lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
               data: data.flatMap((value, index) => value === null ? [] : [{
                 x: buckets[index]!.date,
                 y: value,
@@ -151,7 +151,7 @@ function areaChartData(
     lineChartData: series.map(({ entry, data }) => ({
       legend: entry.label,
       color: usageColorForSlot(entry.colorSlot),
-      lineOptions: { strokeWidth: 2, curve: curveLinear },
+      lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
       data: data.flatMap((value, index) => value === null ? [] : [{
         x: buckets[index]!.date,
         y: value,

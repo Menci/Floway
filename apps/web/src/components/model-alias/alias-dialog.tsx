@@ -1,6 +1,6 @@
 import { AddRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -53,14 +53,21 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
     for (const value of [budget?.min, budget?.max]) if (value !== undefined && (!Number.isInteger(value) || value < 0)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataNumber', path: ['announcedMetadata'] });
     if (values.manualMetadata && budget?.min !== undefined && budget?.max !== undefined && budget.max < budget.min) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataRange', path: ['announcedMetadata'] });
   }), [aliases, record?.name]);
-  const { control, formState: { errors }, handleSubmit, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: aliasDefaults(record) });
+  const { control, formState: { errors }, handleSubmit, reset, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: aliasDefaults(record) });
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      reset(aliasDefaults(record));
+      setServerError(null);
+    }
+    wasOpen.current = open;
+  }, [open, record, reset]);
   // Every field has a default and useFieldArray preserves complete target rows;
   // RHF still exposes useWatch as DeepPartial, so narrow at this form boundary.
   const values = useWatch({ control }) as AliasFormValues;
   const targets = values.targets;
   const kind = values.kind;
   const { append, fields, move, remove, replace } = useFieldArray({ control, name: 'targets' });
-  if (fields.length !== targets.length) throw new Error('Alias target fields are out of sync with form values');
   const automaticMetadata = useMemo(() => computeAnnouncedMetadata(targets, kind, models), [kind, models, targets]);
   const targetIds = useMemo(() => realModelIdsOfKind(models, kind), [kind, models]);
   const aliasWarnings = computeAliasWarnings({ name: values.name.trim(), targets }, models);
@@ -106,7 +113,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
     </div>
     <section className="grid gap-2" role="group" aria-labelledby="alias-targets-heading">
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><Text id="alias-targets-heading" size={400} weight="semibold">{t('dashboard.modelAliases.target.heading')}</Text><Text block size={200} className="text-fui-fg2">{t('dashboard.modelAliases.target.description')}</Text></div><Button className="!whitespace-nowrap flex-none" icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button></div>
-      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} kind={kind} models={models} target={targets[index]!} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
+      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} kind={kind} models={models} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
       {errors.targets?.message && <Text role="alert" className="text-fui-fg2">{t(errors.targets.message)}</Text>}
     </section>
     {kind !== 'image' && <Accordion collapsible><AccordionItem value="metadata"><AccordionHeader as="h3"><div><Text weight="semibold">{t('dashboard.modelAliases.metadata.heading')}</Text><Text block size={200} className="text-fui-fg2">{t('dashboard.modelAliases.metadata.description')}</Text></div></AccordionHeader><AccordionPanel><div className="grid gap-4 pt-2"><Switch checked={values.manualMetadata} disabled={saving} label={t('dashboard.modelAliases.metadata.manual')} onChange={(_, data) => setManual(data.checked)} /><MetadataEditor disabled={saving || !values.manualMetadata} kind={kind} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} /></div></AccordionPanel></AccordionItem></Accordion>}
