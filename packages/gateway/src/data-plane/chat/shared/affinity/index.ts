@@ -25,10 +25,6 @@ interface AffinityData {
   affinity: AffinityTarget;
 }
 
-export interface AffinityBlobOptions {
-  readonly syntheticItem?: true;
-}
-
 export type DecodedAffinityBlob =
   | { kind: 'foreign'; value: string }
   | ({ kind: 'owned'; value?: string } & AffinityData);
@@ -128,7 +124,7 @@ export class AffinityCodec {
     value: string | undefined,
     affinity: AffinityTarget,
     domain: string,
-    options: AffinityBlobOptions = {},
+    options: { readonly syntheticItem?: true } = {},
   ): Promise<string> {
     if (options.syntheticItem === true && value !== undefined) {
       throw new TypeError('A synthetic affinity item cannot carry an original value');
