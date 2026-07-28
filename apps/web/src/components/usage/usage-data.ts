@@ -16,7 +16,7 @@ export const emptyUsageResponse = (): UsageResponse => ({ records: [], keys: [] 
 export const emptySearchUsageResponse = (): SearchUsageResponse => ({ records: [], keys: [], activeProvider: 'disabled' });
 const userBucketId = (userId: number) => `user-${userId}`;
 
-const metricsFromWire = (
+export const metricsFromWire = (
   metrics: TokenUsageByKeyResponse['records'][number]['metrics'],
 ): DisplayUsageRecord['metrics'] => Object.fromEntries(
   metrics.map(({ metric, quantity }) => [metric, quantity]),
