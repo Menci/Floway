@@ -153,31 +153,31 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="p-[2px_4px_14px]" noTabIndex>
         <nav>
           {navGroups.map((group, groupIndex) => {
-          if (group.adminOnly && !user.isAdmin) return null;
+            if (group.adminOnly && !user.isAdmin) return null;
 
-          const items = group.items.filter(
-            item => !item.adminOnly || user.isAdmin,
-          );
-          if (!items.length) return null;
+            const items = group.items.filter(
+              item => !item.adminOnly || user.isAdmin,
+            );
+            if (!items.length) return null;
 
-          return (
-            <section className="grid gap-[5px] mb-[17px] last:mb-0" key={group.labelKey ?? groupIndex}>
-              {group.labelKey && (
-                <Text
-                  size={200}
-                  weight="semibold"
-                  className="!text-fui-fg3 !leading-[1.2] block p-[7px_14px_3px]"
-                >
-                  {t(group.labelKey)}
-                </Text>
-              )}
-              <div className="grid gap-[2px]">
-                {items.map(item => (
-                  <SidebarNavLink currentPath={pathname} item={item} key={item.to} onNavigate={onNavigate} />
-                ))}
-              </div>
-            </section>
-          );
+            return (
+              <section className="grid gap-[5px] mb-[17px] last:mb-0" key={group.labelKey ?? groupIndex}>
+                {group.labelKey && (
+                  <Text
+                    size={200}
+                    weight="semibold"
+                    className="!text-fui-fg3 !leading-[1.2] block p-[7px_14px_3px]"
+                  >
+                    {t(group.labelKey)}
+                  </Text>
+                )}
+                <div className="grid gap-[2px]">
+                  {items.map(item => (
+                    <SidebarNavLink currentPath={pathname} item={item} key={item.to} onNavigate={onNavigate} />
+                  ))}
+                </div>
+              </section>
+            );
           })}
         </nav>
       </ScrollArea>

@@ -1,8 +1,8 @@
 import { useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 
-import { fluentComponents } from '../../fluent';
 import { ScrollArea } from './scroll-area';
+import { fluentComponents } from '../../fluent';
 
 const { makeStyles } = fluentComponents;
 
@@ -75,22 +75,22 @@ export function SegmentedControl({
       >
         {items.map((item, index) => (
           <button
-          aria-selected={value === item.value}
-          disabled={item.disabled}
-          className={
-            value === item.value
-              ? `bg-transparent border-0 rounded-md cursor-pointer flex-none font-fui-semibold text-fui-base200 min-h-[28px] px-2.5 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${s.active}`
-              : `bg-transparent border-0 rounded-md cursor-pointer flex-none font-fui-semibold text-fui-base200 min-h-[28px] px-2.5 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${s.button} hover:${s.buttonHover}`
-          }
-          key={item.value}
-          onClick={() => !item.disabled && onChange(item.value)}
-          onKeyDown={event => move(event, index)}
-          ref={element => { buttonRefs.current[index] = element; }}
-          role="tab"
-          tabIndex={tabStop === item.value ? 0 : -1}
-          type="button"
-        >
-          {item.label}
+            aria-selected={value === item.value}
+            disabled={item.disabled}
+            className={
+              value === item.value
+                ? `bg-transparent border-0 rounded-md cursor-pointer flex-none font-fui-semibold text-fui-base200 min-h-[28px] px-2.5 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${s.active}`
+                : `bg-transparent border-0 rounded-md cursor-pointer flex-none font-fui-semibold text-fui-base200 min-h-[28px] px-2.5 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${s.button} hover:${s.buttonHover}`
+            }
+            key={item.value}
+            onClick={() => !item.disabled && onChange(item.value)}
+            onKeyDown={event => move(event, index)}
+            ref={element => { buttonRefs.current[index] = element; }}
+            role="tab"
+            tabIndex={tabStop === item.value ? 0 : -1}
+            type="button"
+          >
+            {item.label}
           </button>
         ))}
       </div>

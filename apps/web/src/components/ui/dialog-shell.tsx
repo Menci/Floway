@@ -1,8 +1,8 @@
 import type { DialogProps } from '@fluentui/react-components';
 import type { ReactNode } from 'react';
 
-import { fluentComponents } from '../../fluent';
 import { ScrollArea } from './scroll-area';
+import { fluentComponents } from '../../fluent';
 
 const { Dialog, DialogBody, DialogContent, DialogSurface } = fluentComponents;
 

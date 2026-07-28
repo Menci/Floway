@@ -5,8 +5,8 @@ import { useTranslation } from 'react-i18next';
 import type { UpstreamOption } from './types';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { ScrollArea } from '../ui/scroll-area';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
+import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 const { Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
 const useStyles = makeStyles({

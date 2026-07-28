@@ -33,8 +33,8 @@ import { PlaygroundMessageCard } from '../components/playground/playground-messa
 import { streamPlaygroundText } from '../components/playground/playground-stream';
 import { Combobox, Input, Select, SpinButton, Textarea } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
-import { SegmentedControl } from '../components/ui/segmented-control';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { SegmentedControl } from '../components/ui/segmented-control';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { australianDarkTheme, australianLightTheme } from '../theme';
@@ -393,60 +393,60 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
         <Panel className="min-h-0 overflow-hidden !p-0">
           <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="!p-4 grid content-start gap-5" noTabIndex>
-          <SettingsSection title={t('dashboard.playground.settings.connection')}>
-            <Field label={t('dashboard.playground.key')}>
-              <Select value={keyId} disabled={!loaderData.keys.length} onChange={(_, data) => changeContext(() => setKeyId(data.value))}>
-                {!loaderData.keys.length && <option value="">{t('dashboard.playground.noKeyOption')}</option>}
-                {loaderData.keys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
-              </Select>
-            </Field>
-            <div className="grid gap-0.5">
-              <Text weight="semibold">{t('dashboard.playground.api')}</Text>
-              <SegmentedControl ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
-            </div>
-            <Field label={t('dashboard.playground.model')}>
-              <Combobox value={modelQuery || selectedModel?.display_name || ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
-                if (!data.optionValue) return;
-                changeContext(() => {
-                  setModelId(data.optionValue!);
-                  setModelQuery('');
-                  setMessages([]);
-                  setEditingId(null);
-                });
-              }} onOpenChange={(_, data) => { if (!data.open) setModelQuery(''); }}>
-                {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0"><div className="truncate">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate ${s.code}`}>{model.id}</div></div></Option>)}
-              </Combobox>
-            </Field>
-          </SettingsSection>
+            <SettingsSection title={t('dashboard.playground.settings.connection')}>
+              <Field label={t('dashboard.playground.key')}>
+                <Select value={keyId} disabled={!loaderData.keys.length} onChange={(_, data) => changeContext(() => setKeyId(data.value))}>
+                  {!loaderData.keys.length && <option value="">{t('dashboard.playground.noKeyOption')}</option>}
+                  {loaderData.keys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
+                </Select>
+              </Field>
+              <div className="grid gap-0.5">
+                <Text weight="semibold">{t('dashboard.playground.api')}</Text>
+                <SegmentedControl ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
+              </div>
+              <Field label={t('dashboard.playground.model')}>
+                <Combobox value={modelQuery || selectedModel?.display_name || ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
+                  if (!data.optionValue) return;
+                  changeContext(() => {
+                    setModelId(data.optionValue!);
+                    setModelQuery('');
+                    setMessages([]);
+                    setEditingId(null);
+                  });
+                }} onOpenChange={(_, data) => { if (!data.open) setModelQuery(''); }}>
+                  {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0"><div className="truncate">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate ${s.code}`}>{model.id}</div></div></Option>)}
+                </Combobox>
+              </Field>
+            </SettingsSection>
 
-          <SettingsSection title={t('dashboard.playground.settings.generation')}>
-            <OptionalNumber initialValue={1} label={t('dashboard.playground.parameters.temperature')} value={settings.temperature} min={0} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, temperature: value }))} />
-            <OptionalNumber initialValue={defaultMaxOutputTokens(selectedModel)} label={t('dashboard.playground.parameters.maxOutputTokens')} value={settings.maxOutputTokens} min={1} max={outputLimit} step={1} onChange={value => setSettings(current => ({ ...current, maxOutputTokens: value }))} />
-            <OptionalNumber initialValue={1} label={t('dashboard.playground.parameters.topP')} value={settings.topP} min={0} max={1} step={0.05} onChange={value => setSettings(current => ({ ...current, topP: value }))} />
-            <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.frequencyPenalty')} value={settings.frequencyPenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, frequencyPenalty: value }))} />
-            <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.presencePenalty')} value={settings.presencePenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, presencePenalty: value }))} />
-            <Field label={t('dashboard.playground.parameters.stopSequences')}>
-              <Input disabled={api === 'responses'} value={settings.stopSequences?.join(', ') ?? ''} placeholder={t('dashboard.playground.parameters.unset')} onChange={(_, data) => {
-                const stopSequences = data.value.split(',').map(value => value.trim()).filter(Boolean);
-                setSettings(current => ({ ...current, stopSequences: stopSequences.length ? stopSequences : undefined }));
-              }} />
-            </Field>
-            <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
-              <Select value={settings.reasoningEffort ?? ''} disabled={!effortOptions.length} onChange={(_, data) => setSettings(current => ({ ...current, reasoningEffort: data.value || undefined }))}>
-                <option value="">{t('dashboard.playground.parameters.providerDefault')}</option>
-                {effortOptions.map(effort => <option key={effort} value={effort}>{effort}</option>)}
-              </Select>
-            </Field>
-          </SettingsSection>
+            <SettingsSection title={t('dashboard.playground.settings.generation')}>
+              <OptionalNumber initialValue={1} label={t('dashboard.playground.parameters.temperature')} value={settings.temperature} min={0} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, temperature: value }))} />
+              <OptionalNumber initialValue={defaultMaxOutputTokens(selectedModel)} label={t('dashboard.playground.parameters.maxOutputTokens')} value={settings.maxOutputTokens} min={1} max={outputLimit} step={1} onChange={value => setSettings(current => ({ ...current, maxOutputTokens: value }))} />
+              <OptionalNumber initialValue={1} label={t('dashboard.playground.parameters.topP')} value={settings.topP} min={0} max={1} step={0.05} onChange={value => setSettings(current => ({ ...current, topP: value }))} />
+              <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.frequencyPenalty')} value={settings.frequencyPenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, frequencyPenalty: value }))} />
+              <OptionalNumber initialValue={0} label={t('dashboard.playground.parameters.presencePenalty')} value={settings.presencePenalty} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, presencePenalty: value }))} />
+              <Field label={t('dashboard.playground.parameters.stopSequences')}>
+                <Input disabled={api === 'responses'} value={settings.stopSequences?.join(', ') ?? ''} placeholder={t('dashboard.playground.parameters.unset')} onChange={(_, data) => {
+                  const stopSequences = data.value.split(',').map(value => value.trim()).filter(Boolean);
+                  setSettings(current => ({ ...current, stopSequences: stopSequences.length ? stopSequences : undefined }));
+                }} />
+              </Field>
+              <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
+                <Select value={settings.reasoningEffort ?? ''} disabled={!effortOptions.length} onChange={(_, data) => setSettings(current => ({ ...current, reasoningEffort: data.value || undefined }))}>
+                  <option value="">{t('dashboard.playground.parameters.providerDefault')}</option>
+                  {effortOptions.map(effort => <option key={effort} value={effort}>{effort}</option>)}
+                </Select>
+              </Field>
+            </SettingsSection>
 
-          <SettingsSection title={t('dashboard.playground.settings.customJson')}>
-            <Field validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
-              <Textarea className={s.code} resize="vertical" rows={9} value={customDrafts[api]} onChange={(_, data) => {
-                setCustomDrafts(current => ({ ...current, [api]: data.value }));
-                setCustomError(null);
-              }} />
-            </Field>
-          </SettingsSection>
+            <SettingsSection title={t('dashboard.playground.settings.customJson')}>
+              <Field validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
+                <Textarea className={s.code} resize="vertical" rows={9} value={customDrafts[api]} onChange={(_, data) => {
+                  setCustomDrafts(current => ({ ...current, [api]: data.value }));
+                  setCustomError(null);
+                }} />
+              </Field>
+            </SettingsSection>
           </ScrollArea>
         </Panel>
       </section>
