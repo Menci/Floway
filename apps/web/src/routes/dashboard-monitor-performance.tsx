@@ -72,6 +72,9 @@ const useChartStateStyles = makeStyles({
 const usePerformanceChartStyles = makeStyles({
   root: { '& .fui-cart__xAxis line': { pointerEvents: 'none' }, '& circle[id*="staticHighlightCircle"]': { pointerEvents: 'none', visibility: 'hidden' } },
 });
+const usePerformanceTableStyles = makeStyles({
+  numericHeader: { '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' } },
+});
 
 interface LoaderData {
   error: string | null;
@@ -354,6 +357,20 @@ function PerformanceChartCallout({ data, formatter, title }: {
 function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; upstreamNames: ReadonlyMap<string, string> }) {
   const { i18n, t } = useTranslation();
   const locale = localeForLanguage(i18n.language);
+  const styles = usePerformanceTableStyles();
+  const [sort, setSort] = useState<{ direction: 'ascending' | 'descending'; key: PerformanceTableSortKey }>({ direction: 'descending', key: 'requests' });
+  const sortBy = (key: PerformanceTableSortKey) => setSort(current => current.key === key
+    ? { key, direction: current.direction === 'ascending' ? 'descending' : 'ascending' }
+    : { key, direction: key === 'group' ? 'ascending' : 'descending' });
+  const sortedRows = useMemo(() => rows.toSorted((left, right) => {
+    const leftValue = performanceTableSortValue(left, sort.key, groupBy, overview, upstreamNames);
+    const rightValue = performanceTableSortValue(right, sort.key, groupBy, overview, upstreamNames);
+    const order = typeof leftValue === 'string' && typeof rightValue === 'string'
+      ? leftValue.localeCompare(rightValue)
+      : Number(leftValue) - Number(rightValue);
+    return sort.direction === 'ascending' ? order : -order;
+  }), [groupBy, overview, rows, sort, upstreamNames]);
+  const sortDirection = (key: PerformanceTableSortKey) => sort.key === key ? sort.direction : undefined;
   return <section className="grid gap-2.5 min-w-0">
     <Text size={300} weight="semibold">{t(`dashboard.performance.groupBy.${groupBy}`)}</Text>
     <ScrollArea axes="horizontal" className="border border-fui-stroke1 rounded-lg min-w-0"><Table aria-label={t(`dashboard.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
@@ -363,11 +380,20 @@ function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy:
           `claude-opus-...`, hiding which of 4.6/4.7/4.8 a row described. Sizing
           the four measure columns to their widest label leaves the rest to the
           name, which is the only column whose content has no bound. */}
-      <TableHeader><TableRow><TableHeaderCell>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell className="!text-right whitespace-nowrap w-[80px]">{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell className="!text-right whitespace-nowrap w-[68px]">{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell className="!text-right whitespace-nowrap w-[84px]">{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell className="!text-right whitespace-nowrap w-[116px]">{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
-      <TableBody>{rows.length ? [...rows].sort((a, b) => b.requests - a.requests).map(row => <TableRow key={row.group}><TableCell><span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames)}</span></TableCell><TableCell className="!text-right font-mono">{formatCount(row.requests, locale)}</TableCell><TableCell className="!text-right font-mono">{formatCount(row.errors, locale)}</TableCell><TableCell className="!text-right font-mono">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="!text-right font-mono">{formatTokensPerSecond(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><Text size={200} className="text-fui-fg2">{t('dashboard.performance.empty')}</Text></TableCell></TableRow>}</TableBody>
+      <TableHeader><TableRow><TableHeaderCell sortable sortDirection={sortDirection('group')} onClick={() => sortBy('group')}>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('requests')} onClick={() => sortBy('requests')} className={`${styles.numericHeader} !text-right whitespace-nowrap w-[80px]`}>{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('errors')} onClick={() => sortBy('errors')} className={`${styles.numericHeader} !text-right whitespace-nowrap w-[68px]`}>{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('ttft')} onClick={() => sortBy('ttft')} className={`${styles.numericHeader} !text-right whitespace-nowrap w-[84px]`}>{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell sortable sortDirection={sortDirection('speed')} onClick={() => sortBy('speed')} className={`${styles.numericHeader} !text-right whitespace-nowrap w-[116px]`}>{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
+      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames)}</span></TableCell><TableCell className="!text-right tabular-nums">{formatCount(row.requests, locale)}</TableCell><TableCell className="!text-right tabular-nums">{formatCount(row.errors, locale)}</TableCell><TableCell className="!text-right tabular-nums">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="!text-right tabular-nums">{formatTokensPerSecond(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><Text size={200} className="text-fui-fg2">{t('dashboard.performance.empty')}</Text></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;
 }
+
+type PerformanceTableSortKey = 'group' | 'requests' | 'errors' | 'ttft' | 'speed';
+
+const performanceTableSortValue = (row: PerformanceDisplayRecord, key: PerformanceTableSortKey, groupBy: PerformanceGroupBy, overview: PerformanceOverviewResponse, upstreamNames: ReadonlyMap<string, string>): string | number => {
+  if (key === 'group') return resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames);
+  if (key === 'requests' || key === 'errors') return row[key];
+  if (key === 'ttft') return row.ttftMsP95 ?? Number.NEGATIVE_INFINITY;
+  return row.tpotUsP95 !== null && row.tpotUsP95 > 0 ? 1_000_000 / row.tpotUsP95 : Number.NEGATIVE_INFINITY;
+};
 
 function buildPerformanceChart(records: PerformanceDisplayRecord[], metric: PerformanceMetric, percentile: PerformancePercentile, groupBy: PerformanceGroupBy, overview: PerformanceOverviewResponse, upstreamNames: ReadonlyMap<string, string>, buckets: Bucket[], range: PerformanceRange): PerformanceChartModel {
   const groups = [...new Set(records.map(record => record.group))].sort();
