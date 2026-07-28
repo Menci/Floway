@@ -134,6 +134,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       : currentRecord.kind === 'ollama'
         ? Boolean((values.config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl)
         : currentRecord.id !== '' && currentRecord.kind !== 'azure';
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Mounting the editor starts a catalog request; the pending state belongs to that external work.
     if (canFetch) void refreshModelsFor(currentRecord);
   }, [data.record, getValues, refreshModelsFor]);
 
