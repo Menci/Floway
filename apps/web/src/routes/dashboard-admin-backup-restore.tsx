@@ -2,15 +2,12 @@ import { ArrowDownloadRegular, ArrowUploadRegular } from '@fluentui/react-icons'
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
+import { z } from 'zod';
 
 import type { Route } from './+types/dashboard-admin-backup-restore';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
-import type {
-  BackupExportData,
-  BackupExportResponse,
-  BackupImportCounts,
-} from '../api/types';
+import type { BackupImportCounts } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -130,16 +127,35 @@ const PREVIEW_LABEL_KEYS = [
 ] as const;
 const EXPORT_VERSION = 17;
 
+const backupFileSchema = z.object({
+  version: z.literal(EXPORT_VERSION),
+  exportedAt: z.string(),
+  data: z.object({
+    users: z.array(z.unknown()),
+    apiKeys: z.array(z.unknown()),
+    upstreams: z.array(z.unknown()),
+    proxies: z.array(z.unknown()),
+    usage: z.array(z.unknown()),
+    searchUsage: z.array(z.unknown()),
+    performance: z.array(z.unknown()).optional(),
+    performanceIncluded: z.boolean(),
+    searchConfig: z.unknown(),
+  }),
+});
+
+type BackupFile = z.infer<typeof backupFileSchema>;
+type BackupFileData = BackupFile['data'];
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function countRecords(data: BackupExportData): Record<string, number> {
+function countRecords(data: BackupFileData): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const key of PREVIEW_LABEL_KEYS) {
-    const value = data[key as keyof BackupExportData];
+    const value = data[key];
     counts[key] = Array.isArray(value) ? value.length : 0;
   }
   return counts;
@@ -147,7 +163,7 @@ function countRecords(data: BackupExportData): Record<string, number> {
 
 function parseBackupFile(
   raw: string,
-): { ok: true; payload: BackupExportResponse } | { ok: false; error: string } {
+): { ok: true; payload: BackupFile } | { ok: false; error: string } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -155,22 +171,11 @@ function parseBackupFile(
     return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
   }
 
-  if (
-    !parsed ||
-    typeof parsed !== 'object' ||
-    !('version' in parsed) ||
-    !('data' in parsed) ||
-    !('exportedAt' in parsed)
-  ) {
+  const result = backupFileSchema.safeParse(parsed);
+  if (!result.success) {
     return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
   }
-
-  const record = parsed as Record<string, unknown>;
-  if (record.version !== EXPORT_VERSION) {
-    return { ok: false, error: 'dashboard.backupRestore.import.errorInvalidFile' };
-  }
-
-  return { ok: true, payload: parsed as BackupExportResponse };
+  return { ok: true, payload: result.data };
 }
 
 export default function DashboardAdminBackupRestore() {
@@ -182,7 +187,7 @@ export default function DashboardAdminBackupRestore() {
   const [exportError, setExportError] = useState<string | null>(null);
 
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importParsedData, setImportParsedData] = useState<BackupExportResponse | null>(null);
+  const [importParsedData, setImportParsedData] = useState<BackupFile | null>(null);
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);

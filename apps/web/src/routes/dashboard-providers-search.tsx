@@ -19,7 +19,6 @@ import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
-type SearchConfigTestFailure = Extract<SearchConfigTestResult, { ok: false }>;
 
 const {
   Button,
@@ -474,10 +473,10 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
                 weight="semibold"
                 style={{ color: 'light-dark(#c50f1f, #e37b84)' }}
               >
-                {(testResult as SearchConfigTestFailure).error.code}
+                {testResult.error.code}
               </Text>
               <Text size={200} className="text-fui-fg1">
-                {(testResult as SearchConfigTestFailure).error.message}
+                {testResult.error.message}
               </Text>
             </div>
           ) : null}
