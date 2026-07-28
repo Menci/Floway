@@ -744,8 +744,6 @@ const zhHansCN = {
           tierIncomplete:
               '请同时填写 Tier 名称和至少一项价格；不完整的 Tier 不会保存。',
           flags: '模型特性开关',
-          flagsHint: '模型覆盖默认采用上游的最终设置。',
-          enableFlagOverrides: '为此模型覆盖特性开关',
           invalidEffort:
               '思考强度至少需要一个支持值，且默认值必须包含在支持列表中。',
           invalidBudget: '最大思考 Token 预算不能小于最小值。',

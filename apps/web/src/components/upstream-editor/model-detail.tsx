@@ -78,13 +78,6 @@ export function ModelDetail({
     }
     onUpdate(updated);
   };
-  const [savedFlagOverrides, setSavedFlagOverrides] = useState(row.config.flagOverrides ?? {});
-  const [snapshotRowKey, setSnapshotRowKey] = useState(row.key);
-  if (snapshotRowKey !== row.key) {
-    setSnapshotRowKey(row.key);
-    setSavedFlagOverrides(row.config.flagOverrides ?? {});
-  }
-
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
     endpoints: defaultEndpointsForKind(kind, row.config.endpoints),
@@ -133,24 +126,14 @@ export function ModelDetail({
         </div>
       </header>
 
-      {section === 'flags' ? <ModelEditorSection title={t('dashboard.upstreamEditor.models.flags')} description={t('dashboard.upstreamEditor.models.flagsHint')}>
-        {editable && <Switch
-          checked={row.config.flagOverrides !== undefined}
-          label={t('dashboard.upstreamEditor.models.enableFlagOverrides')}
-          onChange={(_, data) => {
-            if (data.checked) patch({ flagOverrides: savedFlagOverrides });
-            else { setSavedFlagOverrides(row.config.flagOverrides ?? {}); patch({ flagOverrides: undefined }); }
-          }}
-        />}
-        {(!editable || row.config.flagOverrides !== undefined) && <FeatureFlagsEditor
+      {section === 'flags' ? <FeatureFlagsEditor
           defaults={record.flag_defaults}
           inherited={upstreamFlags}
           flags={flags}
           readOnly={!editable}
           value={row.config.flagOverrides ?? {}}
-          onChange={flagOverrides => { setSavedFlagOverrides(flagOverrides); patch({ flagOverrides }); }}
-        />}
-      </ModelEditorSection> : <>
+          onChange={flagOverrides => patch({ flagOverrides: Object.keys(flagOverrides).length === 0 ? undefined : flagOverrides })}
+        /> : <>
       {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
 
       <ModelEditorSection title={t('dashboard.upstreamEditor.models.identity')}>

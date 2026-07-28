@@ -82,7 +82,7 @@ export function FeatureFlagsEditor({
     const labelKey = `dashboard.upstreamEditor.flags.entries.${flag.id}.label`;
     const descKey = `dashboard.upstreamEditor.flags.entries.${flag.id}.description`;
     const desc = i18n.exists(descKey) ? t(descKey) : flag.description;
-    return <section className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-t-solid border-fui-stroke1 px-4 py-3 first:border-t-0" key={flag.id}>
+    return <section className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-t-solid border-fui-stroke1 py-3 first:border-t-0" key={flag.id}>
       <div className="grid gap-1 min-w-0">
         <Text weight="semibold">
           <InlineMarkdown>{i18n.exists(labelKey) ? t(labelKey) : flag.label}</InlineMarkdown>
@@ -119,7 +119,7 @@ export function FeatureFlagsEditor({
   return <div className="grid gap-5 min-w-0">
     {groupedFlags.filter(group => group.flags.length > 0).map(group => (
       <section className="grid gap-2" key={group.id}>
-        <Text as="h2" size={300} weight="semibold" className="!m-0 px-1">
+        <Text as="h2" size={300} weight="semibold" className="!m-0">
           {t(`dashboard.upstreamEditor.flags.groups.${group.id}`)}
         </Text>
         <div>
@@ -129,7 +129,7 @@ export function FeatureFlagsEditor({
     ))}
     {otherFlags.length > 0 && (
       <section className="grid gap-2">
-        <Text as="h2" size={300} weight="semibold" className="!m-0 px-1">
+        <Text as="h2" size={300} weight="semibold" className="!m-0">
           {t('dashboard.upstreamEditor.flags.groups.other')}
         </Text>
         <div>

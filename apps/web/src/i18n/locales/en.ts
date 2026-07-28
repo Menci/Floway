@@ -781,9 +781,6 @@ const en = {
           tierIncomplete:
               'Enter both a tier name and at least one rate; incomplete tiers are not saved.',
           flags: 'Model feature flags',
-          flagsHint:
-              'Model overrides use the effective upstream setting by default.',
-          enableFlagOverrides: 'Override flags for this model',
           invalidEffort:
               'Reasoning effort must include at least one supported level, and its default must be one of those levels.',
           invalidBudget:
