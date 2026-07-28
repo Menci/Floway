@@ -1,9 +1,7 @@
 import {
-  ArrowClockwiseRegular,
   DeleteRegular,
   EditRegular,
   KeyRegular,
-  PersonAddRegular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useId, useMemo, useState } from 'react';
@@ -21,7 +19,7 @@ import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
 import { Input } from '../components/ui/fluent-form-controls';
-import { Panel } from '../components/ui/panel';
+import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
@@ -39,7 +37,6 @@ const {
   MessageBar,
   MessageBarActions,
   MessageBarBody,
-  Spinner,
   Switch,
   Table,
   TableBody,
@@ -49,7 +46,6 @@ const {
   TableHeaderCell,
   TableRow,
   Text,
-  Tooltip,
   makeStyles,
 } = fluentComponents;
 
@@ -148,24 +144,6 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   return (
     <div className="dashboard-page">
       <DashboardPageHeader
-        actions={<>
-          <Tooltip content={t('dashboard.users.actions.refresh')} relationship="label">
-            <Button
-              appearance="subtle"
-              aria-label={t('dashboard.users.actions.refresh')}
-              disabled={loading || deleting}
-              icon={loading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
-              onClick={() => void reload()}
-            />
-          </Tooltip>
-          <Button
-            appearance="primary"
-            icon={<PersonAddRegular />}
-            onClick={() => setCreateOpen(true)}
-          >
-            {t('dashboard.users.actions.create')}
-          </Button>
-        </>}
         description={t('dashboard.pages.users')}
         eyebrow={t('dashboard.groups.admin')}
         title={t('dashboard.nav.users')}
@@ -182,15 +160,26 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         </MessageBar>
       )}
 
-      <Panel className="min-w-0 !p-[10px_18px_18px]">
+      <ResourceListPanel>
+        <ResourceListToolbar
+          createLabel={t('dashboard.users.actions.create')}
+          detail={t('dashboard.users.count', { count: data.users.length })}
+          disabled={deleting}
+          onCreate={() => setCreateOpen(true)}
+          onRefresh={() => void reload()}
+          refreshLabel={t('dashboard.users.actions.refresh')}
+          refreshing={loading}
+          title={t('dashboard.users.table.label')}
+        />
         <UsersTable
           actorId={actor.id}
+          disabled={loading || deleting}
           onDelete={setDeleteTarget}
           onEdit={setEditTarget}
           onResetPassword={setPasswordTarget}
           users={data.users}
         />
-      </Panel>
+      </ResourceListPanel>
 
       <UserDialog
         key={'create'}
@@ -239,12 +228,14 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
 
 function UsersTable({
   actorId,
+  disabled,
   onDelete,
   onEdit,
   onResetPassword,
   users,
 }: {
   actorId: number;
+  disabled: boolean;
   onDelete: (user: ControlPlaneUser) => void;
   onEdit: (user: ControlPlaneUser) => void;
   onResetPassword: (user: ControlPlaneUser) => void;
@@ -259,7 +250,7 @@ function UsersTable({
   );
 
   if (users.length === 0) {
-    return <p className="text-fui-fg2 text-center py-8 m-0">{t('dashboard.users.empty')}</p>;
+    return <ResourceListEmptyState>{t('dashboard.users.empty')}</ResourceListEmptyState>;
   }
 
   return (
@@ -271,7 +262,7 @@ function UsersTable({
             <TableHeaderCell>{t('dashboard.users.table.role')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.users.table.created')}</TableHeaderCell>
-            <TableHeaderCell className="!text-right">
+            <TableHeaderCell className="!text-right !w-[116px]">
               {t('dashboard.users.table.actions')}
             </TableHeaderCell>
           </TableRow>
@@ -280,7 +271,7 @@ function UsersTable({
           {users.map(user => {
             const protectedUser = user.id === 1 || user.id === actorId;
             return (
-              <TableRow key={user.id}>
+              <TableRow className="h-14" key={user.id}>
                 <TableCell>
                   <TableCellLayout>
                     <span className="font-fui-semibold truncate">{user.username}</span>
@@ -304,18 +295,20 @@ function UsersTable({
                 <TableCell>
                   <div className="flex items-center justify-end gap-1">
                     <TooltipIconButton
+                      disabled={disabled}
                       icon={<EditRegular />}
                       label={t('dashboard.users.actions.edit')}
                       onClick={() => onEdit(user)}
                     />
                     <TooltipIconButton
+                      disabled={disabled}
                       icon={<KeyRegular />}
                       label={t('dashboard.users.actions.resetPassword')}
                       onClick={() => onResetPassword(user)}
                     />
                     <TooltipIconButton
                       danger
-                      disabled={protectedUser}
+                      disabled={disabled || protectedUser}
                       icon={<DeleteRegular />}
                       label={t('dashboard.users.actions.delete')}
                       onClick={() => onDelete(user)}

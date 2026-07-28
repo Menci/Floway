@@ -20,10 +20,12 @@ const {
 } = fluentComponents;
 
 export function ProxyList({
+  disabled,
   onDelete,
   onEdit,
   proxies,
 }: {
+  disabled: boolean;
   onDelete: (proxy: ProxyRecord) => void;
   onEdit: (proxy: ProxyRecord) => void;
   proxies: ProxyRecord[];
@@ -53,7 +55,7 @@ export function ProxyList({
             };
 
             return (
-              <TableRow key={proxy.id}>
+              <TableRow className="h-14" key={proxy.id}>
                 <TableCell className="!overflow-hidden">
                   <div className="flex items-center gap-2 min-w-0">
                     <span
@@ -73,12 +75,14 @@ export function ProxyList({
                 <TableCell>
                   <div className="flex gap-1">
                     <TooltipIconButton
+                      disabled={disabled}
                       icon={<EditRegular />}
                       label={t('dashboard.proxy.actions.editNamed', { name: proxy.name })}
                       onClick={() => onEdit(proxy)}
                     />
                     <TooltipIconButton
                       danger
+                      disabled={disabled}
                       icon={<DeleteRegular />}
                       label={t('dashboard.proxy.actions.deleteNamed', { name: proxy.name })}
                       onClick={() => onDelete(proxy)}

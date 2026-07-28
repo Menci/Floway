@@ -7,11 +7,12 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { ScrollArea } from '../ui/scroll-area';
+import { ResourceListEmptyState } from '../ui/resource-list-toolbar';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {
   DataGrid, DataGridBody, DataGridCell, DataGridHeader, DataGridHeaderCell, DataGridRow,
-  TableCellLayout, Text, createTableColumn, makeStyles,
+  TableCellLayout, createTableColumn, makeStyles,
 } = fluentComponents;
 
 const useStyles = makeStyles({
@@ -29,9 +30,10 @@ const useStyles = makeStyles({
 });
 
 export function KeysTable({
-  copiedTag, copyFailedTag, keys, onCopy, onDelete, onEdit, onRotate, onSelect, selectedKeyId, upstreams,
+  copiedTag, copyFailedTag, disabled, keys, onCopy, onDelete, onEdit, onRotate, onSelect, selectedKeyId, upstreams,
 }: {
   copiedTag: string | null; copyFailedTag: string | null; keys: ApiKey[];
+  disabled: boolean;
   onCopy: (text: string, tag: string) => void; onDelete: (key: ApiKey) => void;
   onEdit: (key: ApiKey) => void; onRotate: (key: ApiKey) => void;
   onSelect: (id: string) => void; selectedKeyId: string; upstreams: UpstreamOption[];
@@ -94,23 +96,24 @@ export function KeysTable({
           return (
             <div className="inline-flex items-center gap-[2px]">
               <TooltipIconButton
+                disabled={disabled}
                 icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
                 label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
                 onClick={() => onCopy(key.key, copyTag)}
               />
-              <TooltipIconButton icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
-              <TooltipIconButton icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
-              <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
+              <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
+              <TooltipIconButton disabled={disabled} icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
+              <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
             </div>
           );
         },
       }),
     ],
-    [copiedTag, copyFailedTag, onCopy, onDelete, onEdit, onRotate, s, t, upstreamById],
+    [copiedTag, copyFailedTag, disabled, onCopy, onDelete, onEdit, onRotate, s, t, upstreamById],
   );
 
   if (keys.length === 0) {
-    return <Text size={300} className="text-fui-fg3 !m-0 text-center p-[18px_0]">{t('dashboard.apiKeys.empty')}</Text>;
+    return <ResourceListEmptyState>{t('dashboard.apiKeys.empty')}</ResourceListEmptyState>;
   }
 
   return (
@@ -122,6 +125,7 @@ export function KeysTable({
         getRowId={key => key.id}
         items={keys}
         onSelectionChange={(_, data) => {
+          if (disabled) return;
           const [id] = [...data.selectedItems];
           if (typeof id === 'string') onSelect(id);
         }}
@@ -141,6 +145,7 @@ export function KeysTable({
         <DataGridBody<ApiKey>>
           {({ item, rowId }) => (
             <DataGridRow<ApiKey>
+              className="h-14"
               key={rowId}
               selectionCell={{ radioIndicator: { 'aria-label': t('dashboard.apiKeys.table.selectNamed', { name: item.name }) } }}
             >

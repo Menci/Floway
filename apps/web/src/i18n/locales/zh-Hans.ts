@@ -212,6 +212,8 @@ const zhHansCN = {
       users: {
         loading: '正在刷新用户',
         empty: '没有用户。',
+        count_one: '已配置 {{count}} 个',
+        count_other: '已配置 {{count}} 个',
         actions: {
           create: '新建用户',
           edit: '编辑用户',

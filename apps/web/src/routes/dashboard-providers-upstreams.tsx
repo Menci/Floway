@@ -23,8 +23,7 @@ import type {
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { Panel } from '../components/ui/panel';
-import { ResourceListEmptyState, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
@@ -266,7 +265,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         </MessageBar>
       )}
 
-      <Panel className="grid gap-[14px] min-w-0 !p-[18px] overflow-hidden">
+      <ResourceListPanel>
         <ResourceListToolbar
           createLabel={t('dashboard.upstreams.actions.create')}
           createTrailingIcon={<ChevronDownRegular className="ml-1.5" />}
@@ -308,7 +307,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           onMove={(record, direction) => void move(record, direction)}
           onToggle={(record, enabled) => void setEnabled(record, enabled)}
         />
-      </Panel>
+      </ResourceListPanel>
 
       <ConfirmDialog
         actionLabel={
@@ -357,7 +356,7 @@ function UpstreamsTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table size="small" aria-label={t('dashboard.upstreams.table.title')} className="min-w-[780px]">
+      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[780px]">
         <TableHeader>
           <TableRow>
             <TableHeaderCell className="!w-[130px]">{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
@@ -369,7 +368,7 @@ function UpstreamsTable({
         </TableHeader>
         <TableBody>
           {data.upstreams.map((record, index) => (
-            <TableRow className="h-[58px]" key={record.id}>
+            <TableRow className="h-14" key={record.id}>
               <TableCell>
                 <div className="inline-flex items-center gap-1">
                   <Text size={200} className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>

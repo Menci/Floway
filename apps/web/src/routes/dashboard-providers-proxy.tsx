@@ -18,8 +18,7 @@ import { ProxyForm, type ProxyTestResult } from '../components/proxy/proxy-form'
 import { ProxyList } from '../components/proxy/proxy-list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DialogShell } from '../components/ui/dialog-shell';
-import { Panel } from '../components/ui/panel';
-import { ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
 
@@ -303,7 +302,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         </MessageBar>
       )}
 
-      <Panel className="grid gap-[14px] min-w-0 !p-[18px] overflow-hidden">
+      <ResourceListPanel>
         <ResourceListToolbar
           createLabel={t('dashboard.proxy.actions.create')}
           detail={t('dashboard.proxy.count', { count: proxies.length })}
@@ -313,8 +312,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           refreshing={refreshing}
           title={t('dashboard.proxy.listTitle')}
         />
-        <ProxyList proxies={proxies} onDelete={setDeleteTarget} onEdit={handleEdit} />
-      </Panel>
+        <ProxyList disabled={refreshing || deleting} proxies={proxies} onDelete={setDeleteTarget} onEdit={handleEdit} />
+      </ResourceListPanel>
 
       <DialogShell
         actions={<DialogActions>

@@ -222,6 +222,8 @@ const en = {
       users: {
         loading: 'Refreshing users',
         empty: 'No users found.',
+        count_one: '{{count}} configured',
+        count_other: '{{count}} configured',
         actions: {
           create: 'New user',
           edit: 'Edit user',

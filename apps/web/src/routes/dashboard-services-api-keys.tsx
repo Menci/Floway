@@ -18,7 +18,7 @@ import type { ApiKeysPageData, MutationToastController } from '../components/api
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
-import { ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { fluentComponents } from '../fluent';
 
 const { MessageBar, MessageBarBody, Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
@@ -207,10 +207,11 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         </MessageBar>
       )}
 
-      <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
+      <ResourceListPanel>
         <ResourceListToolbar
           createLabel={t('dashboard.apiKeys.actions.create')}
           detail={t('dashboard.apiKeys.count', { count: data.keys.length })}
+          disabled={deletingKey}
           onCreate={() => setCreateOpen(true)}
           onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.apiKeys.actions.refresh')}
@@ -220,6 +221,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         <KeysTable
           copiedTag={copiedTag}
           copyFailedTag={copyFailedTag}
+          disabled={refreshing || deletingKey}
           keys={data.keys}
           onCopy={(text, tag) => void copyToClipboard(text, tag)}
           onDelete={key => { setDeleteSnapName(key.name); setDeleteTarget(key); }}
@@ -229,7 +231,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           selectedKeyId={selectedKey?.id ?? ''}
           upstreams={data.upstreams}
         />
-      </Panel>
+      </ResourceListPanel>
 
       <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
         <AgentSetupCard
