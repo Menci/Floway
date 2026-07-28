@@ -11,7 +11,7 @@ import { RequestDetailPanel } from '../components/requests/request-detail';
 import { RequestListPanel } from '../components/requests/request-list';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
@@ -108,7 +108,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </div>
         </div>
       ) : (
-        <PageLoadingPanel label={t('common.loading')} />
+        <PageLoading label={t('common.loading')} />
       )}
     </section>
   );

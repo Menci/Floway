@@ -12,14 +12,18 @@ import {
 import type { Route } from './+types/root';
 import { BrowserLanguageSync } from './components/browser-language-sync';
 import { DocumentTitleSync } from './components/document-title-sync';
-import { GradientBackground } from './components/gradient-background';
+import {
+  GradientBackground,
+  gradientBackgroundCriticalCss,
+} from './components/gradient-background';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
+import { PageLoading, pageLoadingCriticalCss } from './components/ui/page-loading';
 import { fluentComponents } from './fluent';
 import { flowayDarkTheme, flowayLightTheme } from './theme';
 import './i18n';
 import 'virtual:uno.css';
 
-const { FluentProvider, Spinner } = fluentComponents;
+const { FluentProvider } = fluentComponents;
 
 export const links: Route.LinksFunction = () => [];
 
@@ -61,6 +65,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
           *, *::before, *::after { box-sizing: border-box; }
           html body pre[class*="language-"] { border: 0; }
+          ${gradientBackgroundCriticalCss}
+          ${pageLoadingCriticalCss}
         `}</style>
       </head>
       <body className="text-[14px] font-sans m-0">
@@ -86,9 +92,7 @@ export default function App() {
 
 export function HydrateFallback() {
   const { t } = useTranslation();
-  return <main className="min-h-screen grid place-items-center">
-    <Spinner label={t('common.loading')} />
-  </main>;
+  return <PageLoading label={t('common.loading')} viewport />;
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

@@ -14,11 +14,12 @@ import type { AuthUser } from '../api/auth';
 import { getSessionToken } from '../auth/session';
 import { FlowayLogo } from '../components/logo';
 import { Sidebar } from '../components/sidebar';
+import { PageLoading } from '../components/ui/page-loading';
 import { PageShell } from '../components/ui/page-shell';
 import { fluentComponents } from '../fluent';
 import { useAuthStore } from '../stores/auth-store';
 
-const { Button, DrawerBody, OverlayDrawer, Spinner } = fluentComponents;
+const { Button, DrawerBody, OverlayDrawer } = fluentComponents;
 
 export type DashboardOutletContext = {
   user: AuthUser;
@@ -63,11 +64,7 @@ export default function Dashboard({}: Route.ComponentProps) {
   }
 
   if (!user) {
-    return (
-      <PageShell>
-        <Spinner label={t('common.loading')} />
-      </PageShell>
-    );
+    return <PageLoading label={t('common.loading')} viewport />;
   }
 
   return (

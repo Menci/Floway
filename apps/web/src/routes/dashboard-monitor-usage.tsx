@@ -8,7 +8,7 @@ import { useDashboardOutletContext } from './dashboard';
 import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
@@ -226,7 +226,7 @@ export default function DashboardMonitorUsage() {
       />
 
       {initialLoading ? (
-        <PageLoadingPanel label={t('common.loading')} />
+        <PageLoading label={t('common.loading')} />
       ) : (
         <>
           {error && <div className={errorStyles.root}>{error}</div>}

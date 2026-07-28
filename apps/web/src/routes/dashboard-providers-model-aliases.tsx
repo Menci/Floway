@@ -15,7 +15,7 @@ import { mergeModelAliasesPageData } from '../components/model-alias/load-data';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
@@ -92,7 +92,7 @@ export default function DashboardProvidersModelAliases() {
     {header}
     {error && <MessageBar intent="error"><MessageBarBody>{t('dashboard.modelAliases.errors.message', { message: error })}</MessageBarBody></MessageBar>}
     {modelsError && <MessageBar intent="warning"><MessageBarBody>{t('dashboard.modelAliases.errors.models', { message: modelsError })}</MessageBarBody></MessageBar>}
-    {loading ? <PageLoadingPanel label={t('common.loading')} /> : <Panel className="overflow-hidden">
+    {loading ? <PageLoading label={t('common.loading')} /> : <Panel className="overflow-hidden">
       <div className="flex items-center justify-between gap-3 max-[560px]:items-start">
         <div><Text size={400} weight="semibold">{t('dashboard.modelAliases.listTitle')}</Text><Text block size={200} className="text-fui-fg2 mt-1">{t('dashboard.modelAliases.count', { count: aliases.length })}</Text></div>
         <div className="flex gap-2"><Tooltip content={t('dashboard.modelAliases.actions.refresh')} relationship="label"><Button aria-label={t('dashboard.modelAliases.actions.refresh')} icon={<ArrowClockwiseRegular />} onClick={() => { setLoading(true); void load(); }} /></Tooltip><Button appearance="primary" icon={<AddRegular />} onClick={openCreate}>{t('dashboard.modelAliases.actions.create')}</Button></div>

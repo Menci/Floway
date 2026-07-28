@@ -25,7 +25,7 @@ import type {
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
@@ -311,7 +311,7 @@ export default function DashboardProvidersUpstreams() {
       />
 
       {initialLoading ? (
-        <PageLoadingPanel label={t('common.loading')} />
+        <PageLoading label={t('common.loading')} />
       ) : (
         <>
           {pageError && (

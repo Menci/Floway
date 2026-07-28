@@ -19,7 +19,7 @@ import { RotateKeyDialog } from '../components/api-keys/rotate-key-dialog';
 import type { ApiKeysPageData, MutationToastController, UpstreamOption } from '../components/api-keys/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
@@ -222,7 +222,7 @@ export default function DashboardServicesApiKeys() {
       />
 
       {initialLoading ? (
-        <PageLoadingPanel label={t('common.loading')} />
+        <PageLoading label={t('common.loading')} />
       ) : (
         <>
           {pageError && (

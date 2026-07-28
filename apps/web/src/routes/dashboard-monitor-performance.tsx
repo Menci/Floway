@@ -33,7 +33,7 @@ import {
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Select } from '../components/ui/fluent-form-controls';
 import { OutlineCard } from '../components/ui/outline-card';
-import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { fluentComponents } from '../fluent';
@@ -174,7 +174,7 @@ export default function DashboardMonitorPerformance() {
       eyebrow={t('dashboard.groups.monitor')}
       title={t('dashboard.nav.performance')}
     />
-    {initialLoading ? <PageLoadingPanel label={t('common.loading')} /> : <>
+    {initialLoading ? <PageLoading label={t('common.loading')} /> : <>
       {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
       <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
         <div className="flex flex-wrap items-center gap-2 justify-between">

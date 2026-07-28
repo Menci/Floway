@@ -17,7 +17,7 @@ import { defaultsFor, isValidPort, parseDialTimeoutInput, parseProxyInput, type 
 import { ProxyForm, type ProxyTestResult } from '../components/proxy/proxy-form';
 import { ProxyList } from '../components/proxy/proxy-list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
-import { PageLoadingPanel } from '../components/ui/page-loading-panel';
+import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
@@ -294,7 +294,7 @@ export default function DashboardProvidersProxy() {
     return (
       <section className="grid gap-[18px] min-w-0">
         <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
-        <PageLoadingPanel label={t('common.loading')} />
+        <PageLoading label={t('common.loading')} />
       </section>
     );
   }
