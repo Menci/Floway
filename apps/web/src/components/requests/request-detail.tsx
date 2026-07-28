@@ -33,7 +33,7 @@ const useStyles = makeStyles({
     display: 'flex',
     gap: '8px',
     minHeight: '42px',
-    padding: '5px 0',
+    padding: '5px 16px',
     position: 'sticky',
     top: 0,
     zIndex: 2,
@@ -43,7 +43,7 @@ const useStyles = makeStyles({
     backgroundColor: 'var(--colorNeutralBackground1)',
     color: 'var(--colorNeutralForeground1)',
     fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: '14px',
+    fontSize: '12px',
     lineHeight: 1.55,
     margin: 0,
     overflow: 'visible',
@@ -141,7 +141,7 @@ function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
 
 function SectionHeader({ title, detail, actions, copyText }: { title: string; detail?: React.ReactNode; actions?: React.ReactNode; copyText?: string }) {
   const s = useStyles();
-  return <header className={s.sectionHeader}><Text as="h3" size={400} weight="semibold" className="!m-0">{title}</Text>{detail}{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
+  return <header className={s.sectionHeader}><div className="flex items-center gap-2 min-w-0"><Text as="h3" size={400} weight="semibold" className="!m-0">{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
 }
 
 export function RequestDetailPanel({ collected: loadedCollected, error, record, recordId }: DetailProps) {

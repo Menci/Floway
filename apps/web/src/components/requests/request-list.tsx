@@ -30,7 +30,7 @@ import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 const { MessageBar, MessageBarBody, Text, makeStyles, mergeClasses } = fluentComponents;
-const ROW_HEIGHT = 82;
+const ROW_HEIGHT = 100;
 
 const useStyles = makeStyles({
   list: { outlineStyle: 'none' },
@@ -44,8 +44,7 @@ const useStyles = makeStyles({
   },
   selected: {
     backgroundColor: 'var(--colorBrandBackgroundInvertedHover)',
-    border: '1px solid var(--colorBrandStroke1)',
-    borderRadius: '8px',
+    boxShadow: 'inset 3px 0 0 var(--colorBrandStroke1)',
     '@media (prefers-color-scheme: dark)': {
       backgroundColor: 'var(--colorBrandBackground2)',
     },
@@ -119,8 +118,8 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
           {formatRelativeTime(record.startedAt, now)}
         </Text>
       </div>
-      <div className="mt-1 flex items-center gap-2 min-w-0">
-        <Text size={200} className="truncate min-w-0 flex-1 text-fui-fg3 font-mono" title={`${record.method} ${record.path}`}>
+      <div className="mt-1 flex min-h-[36px] items-start gap-2 min-w-0">
+        <Text size={200} className="line-clamp-2 break-words min-w-0 flex-1 text-fui-fg3 font-mono" title={`${record.method} ${record.path}`}>
           {record.path}
         </Text>
         {record.upstream && <ProviderBadge
