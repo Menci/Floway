@@ -12,7 +12,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
   const bucketDetails = bucketKey ? chart.details.get(bucketKey) : undefined;
   // Zero-height bar segments only preserve stack position. A line point at 0%
   // is a measured value and remains visible in its callout.
-  const rows = (chart.plot.form === 'bars' ? point.rows.filter(row => row.value > 0) : point.rows)
+  const rows = (chart.plot.form === 'area' ? point.rows.filter(row => row.value > 0) : point.rows)
     .sort((a, b) => b.value - a.value);
   if (rows.length === 0) return null;
   return (

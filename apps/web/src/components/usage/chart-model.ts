@@ -1,4 +1,4 @@
-import type { VerticalStackedChartProps } from '@fluentui/react-charts';
+import type { ChartProps } from '@fluentui/react-charts';
 import { curveLinear } from 'd3-shape';
 
 import type { ChartEntry, DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenCounters, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
@@ -138,31 +138,27 @@ export function buildTokenChart({
             })),
           },
         }
-      : { form: 'bars', bars: stackedBars(buckets, series) },
+      : { form: 'area', data: areaChartData(buckets, series) },
   };
 }
 
-// One entry per bucket, each carrying every visible series as a segment. A
-// measured zero keeps its segment so a series holds the same position in every
-// stack and in the callout; an absent measurement — cost with no rate on file —
-// is omitted instead, because a zero-height bar would assert that nothing was
-// spent rather than that nothing is known.
-function stackedBars(
+function areaChartData(
   buckets: UsageBucket[],
   series: Array<{ entry: ChartEntry; data: Array<number | null> }>,
-): VerticalStackedChartProps[] {
-  return buckets.map((bucket, index) => ({
-    xAxisPoint: bucket.date,
-    xAxisCalloutData: bucket.label,
-    chartData: series.flatMap(({ entry, data }) => {
-      const value = data[index];
-      return value === null || value === undefined ? [] : [{
-        legend: entry.label,
-        color: colorForSlot(entry.colorSlot),
-        data: value,
-      }];
-    }),
-  }));
+): ChartProps {
+  return {
+    chartTitle: '',
+    lineChartData: series.map(({ entry, data }) => ({
+      legend: entry.label,
+      color: colorForSlot(entry.colorSlot),
+      data: data.flatMap((value, index) => value === null ? [] : [{
+        x: buckets[index]!.date,
+        y: value,
+        xAxisCalloutData: buckets[index]!.label,
+        yAxisCalloutData: String(value),
+      }]),
+    })),
+  };
 }
 
 export function buildSearchChart({
@@ -231,8 +227,8 @@ export function buildSearchChart({
     providers: [...providers].sort(),
     range,
     plot: {
-      form: 'bars',
-      bars: stackedBars(buckets, visibleEntries.map(entry => ({
+      form: 'area',
+      data: areaChartData(buckets, visibleEntries.map(entry => ({
         entry,
         data: buckets.map(bucket => groups.get(entry.id)?.get(bucket.key) ?? 0),
       }))),

@@ -1,4 +1,4 @@
-import { LineChart, VerticalStackedBarChart, type CustomizedCalloutData, type VerticalStackedChartProps } from '@fluentui/react-charts';
+import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -30,37 +30,29 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
     <UsageChartCallout chart={chart} labelByTime={labelByTime} locale={locale} point={point} valueFormatter={valueFormatter} />
   ), [chart, labelByTime, locale, valueFormatter]);
 
-  const barCallout = useCallback((stack?: VerticalStackedChartProps) => renderCallout(stack ? {
-    x: stack.xAxisPoint,
-    rows: stack.chartData.map(point => ({ legend: point.legend, color: point.color ?? '', value: Number(point.data) })),
-  } : null), [renderCallout]);
-
   const lineCallout = useCallback((data?: CustomizedCalloutData) => renderCallout(data ? {
     x: data.x,
     rows: data.values.map(value => ({ legend: value.legend ?? '', color: value.color ?? '', value: Number(value.y) })),
   } : null), [renderCallout]);
 
-  const hasData = chart.plot.form === 'bars'
-    ? chart.plot.bars.some(bar => bar.chartData.length > 0)
-    : (chart.plot.data.lineChartData?.length ?? 0) > 0;
+  const hasData = chart.plot.data.lineChartData?.some(series => series.data.length > 0) ?? false;
 
   if (size.width < 120) return <div className="h-[320px] min-w-0 w-full" ref={setHost} />;
 
   return (
     <div className="h-[320px] min-w-0 w-full" ref={setHost}>
       {!hasData ? <div className={chartStateStyles.root}>{t('dashboard.usage.empty')}</div>
-        : chart.plot.form === 'bars' ? (
-          <VerticalStackedBarChart
-            barCornerRadius={2}
-            barWidth="auto"
+        : chart.plot.form === 'area' ? (
+          <AreaChart
             customDateTimeFormatter={dateFormatter}
-            data={chart.plot.bars}
+            data={chart.plot.data}
+            enableGradient
             height={size.height}
             hideLegend
-            isCalloutForStack
             legendProps={{ selectedLegends: visibleLegends, canSelectMultipleLegends: true }}
             margins={chartMargins}
-            onRenderCalloutPerStack={barCallout}
+            mode="tonexty"
+            onRenderCalloutPerStack={lineCallout}
             styles={chartRootStyles}
             tickValues={tickValues}
             width={size.width}

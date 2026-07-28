@@ -1,4 +1,4 @@
-import type { ChartProps, VerticalStackedChartProps } from '@fluentui/react-charts';
+import type { ChartProps } from '@fluentui/react-charts';
 
 import type { BillingMetric } from '../../api/types';
 import type { DashboardRange } from '../charts/dashboard-time';
@@ -74,13 +74,10 @@ export interface TokenSummary {
 }
 export interface ChartEntry { id: string; label: string; colorSlot: number }
 
-// Token, request and cost figures are sums over a bucket, so they are drawn as
-// stacked bars: a bar states "this much was consumed in this interval" and
-// nothing between two bars. Rates are a different kind of quantity — they hold
-// between samples and have no meaningful sum — so they stay a line, and a
-// bucket with no traffic breaks it rather than reading as a measured zero.
+// Token, request and cost figures use stacked areas; percentage rates stay
+// lines so their shared 0–100 scale remains readable.
 export type ChartPlot =
-  | { form: 'bars'; bars: VerticalStackedChartProps[] }
+  | { form: 'area'; data: ChartProps }
   | { form: 'line'; data: ChartProps };
 
 interface ChartModelBase {

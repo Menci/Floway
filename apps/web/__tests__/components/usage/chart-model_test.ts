@@ -9,9 +9,9 @@ const linePlot = (plot: ChartPlot) => {
   if (plot.form !== 'line') throw new Error(`expected a line plot, got ${plot.form}`);
   return plot.data;
 };
-const barPlot = (plot: ChartPlot) => {
-  if (plot.form !== 'bars') throw new Error(`expected a bar plot, got ${plot.form}`);
-  return plot.bars;
+const areaPlot = (plot: ChartPlot) => {
+  if (plot.form !== 'area') throw new Error(`expected an area plot, got ${plot.form}`);
+  return plot.data;
 };
 
 const bucket: UsageBucket = {
@@ -71,7 +71,7 @@ describe('cost chart series', () => {
 
     // An unpriced bucket contributes no segment at all; a zero-height one would
     // read as 'nothing was spent' rather than 'no rate is on file'.
-    expect(barPlot(model.plot)[0]!.chartData).toEqual([]);
+    expect(areaPlot(model.plot).lineChartData![0]!.data).toEqual([]);
   });
 });
 
@@ -128,7 +128,7 @@ describe('search chart', () => {
   it('plots recorded traffic from every provider, not just the configured one', () => {
     const chart = searchChart([searchRecord('tavily', 3), searchRecord('microsoft-grounding', 4)]);
     expect(chart.providers).toEqual(['microsoft-grounding', 'tavily']);
-    expect(barPlot(chart.plot)[0]!.chartData).toEqual([expect.objectContaining({ data: 7 })]);
+    expect(areaPlot(chart.plot).lineChartData![0]!.data).toEqual([expect.objectContaining({ y: 7 })]);
   });
 
   it('reports no series when the window holds no search traffic', () => {
