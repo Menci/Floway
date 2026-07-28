@@ -163,7 +163,7 @@ const en = {
         docsLink: 'Docs',
         authentication: {
           title: 'Base URL and authentication',
-          description: 'Use an API key created under Services → API Keys. Credential sources are checked in the order shown below.',
+          description: 'Use an API key created under Services → API Keys.',
           baseUrl: 'Base URL',
           warning: 'Dashboard session tokens and ADMIN_KEY are not data-plane credentials. Browser WebSocket clients may use ?key= because the handshake cannot set arbitrary headers.',
         },

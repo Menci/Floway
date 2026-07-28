@@ -154,7 +154,7 @@ const zhHansCN = {
         docsLink: '文档',
         authentication: {
           title: '基础 URL 与身份验证',
-          description: '使用「服务 → API 密钥」中创建的 API 密钥。凭据来源按下方顺序检查。',
+          description: '使用「服务 → API 密钥」中创建的 API 密钥。',
           baseUrl: '基础 URL',
           warning: '控制台 Session Token 和 ADMIN_KEY 不是数据平面凭据。浏览器 WebSocket 握手无法设置任意 Header，可以使用 ?key=。',
         },
