@@ -674,6 +674,7 @@ const zhHansCN = {
           id: '模型代码',
           source: '配置方式',
           kind: '类型',
+          kindValue: { chat: '对话', embedding: '嵌入', image: '图像', transcription: '转录', rerank: '重排' },
           actions: '操作',
           copy: '复制模型 ID',
           edit: '编辑模型',
@@ -750,6 +751,9 @@ const zhHansCN = {
           invalidBudget: '最大思考 Token 预算不能小于最小值。',
           invalidContract: '模型 ID、类型、端点与 Rerank 目标必须组成有效的模型配置。',
           delete: '删除手动模型',
+          deleteTitle: '删除模型',
+          deleteMessage: '删除 {{name}}？此操作无法撤销。',
+          deleteConfirm: '删除模型',
         },
         copilot: {
           'quota': {

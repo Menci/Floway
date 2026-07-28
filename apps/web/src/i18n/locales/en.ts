@@ -700,6 +700,7 @@ const en = {
           id: 'Model ID',
           source: 'Config',
           kind: 'Kind',
+          kindValue: { chat: 'Chat', embedding: 'Embedding', image: 'Image', transcription: 'Transcription', rerank: 'Rerank' },
           actions: 'Actions',
           copy: 'Copy model ID',
           edit: 'Edit model',
@@ -789,6 +790,9 @@ const en = {
               'Maximum reasoning budget must be greater than or equal to the minimum.',
           invalidContract: 'Model ID, kind, endpoints, and rerank target must form a valid model configuration.',
           delete: 'Delete manual model',
+          deleteTitle: 'Delete model',
+          deleteMessage: 'Delete {{name}}? This cannot be undone.',
+          deleteConfirm: 'Delete model',
         },
         copilot: {
           quota: {
