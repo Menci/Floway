@@ -1,4 +1,4 @@
-import { bucketKeyForCallout, formatCount, formatDecimalCount, formatHitRate, formatInputRate, formatUsdCost, summarizeCounters } from './chart-model';
+import { bucketKeyForCallout, formatCompactDecimalCount, formatCount, formatHitRate, formatInputRate, formatUsdCost, summarizeCounters } from './chart-model';
 import type { CalloutPoint, UsageChartModel } from './types';
 import { useTranslation } from 'react-i18next';
 import { fluentComponents } from '../../fluent';
@@ -46,11 +46,11 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
                   </td>
                   <td className="px-1.5 py-px text-right"><Text size={100}>{formatCount(summary.requests, locale)}</Text></td>
                   <td className="px-1.5 py-px text-right"><Text size={100}>{formatUsdCost(summary.cost)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatDecimalCount(summary.total)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatDecimalCount(summary.cacheRead)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCompactDecimalCount(summary.total, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCompactDecimalCount(summary.cacheRead, locale)}</Text></td>
                   <td className="px-1.5 py-px text-right"><Text size={100}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatDecimalCount(summary.prefill)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatDecimalCount(summary.output)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCompactDecimalCount(summary.prefill, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCompactDecimalCount(summary.output, locale)}</Text></td>
                   <td className="px-1.5 py-px text-right"><Text size={100}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
                 </tr>
               );

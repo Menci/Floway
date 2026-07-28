@@ -481,6 +481,10 @@ export function formatDecimalCount(value: DecimalString): string {
   return formatDecimalQuantity(value);
 }
 
+export function formatCompactDecimalCount(value: DecimalString, locale: string): string {
+  return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(decimalStringToPlottableNumber(value));
+}
+
 export function formatInputRate(cached: DecimalString, input: DecimalString): string {
   const denominator = decimalStringToPlottableNumber(input);
   if (denominator <= 0) return '-';

@@ -403,7 +403,7 @@ function buildPerformanceChart(records: PerformanceDisplayRecord[], metric: Perf
     entries, buckets, range, metric, data: {
       chartTitle: '', lineChartData: entries.flatMap(entry => {
         const data = buckets.flatMap(bucket => { const value = values.get(`${bucket.key}\0${entry.id}`); const y = value ? performanceValue(value, metric, percentile) : null; return y === null || y <= 0 ? [] : [{ x: bucket.date, y }]; });
-        return data.length ? [{ legend: entry.label, color: colorForSlot(entry.colorSlot), lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' }, data: data.map(point => ({ ...point, markerSize: 4 })) }] : [];
+        return data.length ? [{ legend: entry.label, color: colorForSlot(entry.colorSlot), lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' }, data: data.map(point => ({ ...point, markerSize: 3 })) }] : [];
       }),
     },
   };
