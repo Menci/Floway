@@ -822,6 +822,14 @@ const en = {
         unlabeled: 'unlabeled',
         jsonParseFailed: 'JSON parse failed',
       },
+      charts: {
+        series: {
+          all: 'Show all series',
+          invert: 'Invert series selection',
+          none: 'Hide all series',
+          toggleHint: 'Click to toggle. Shift-click or double-click to isolate.',
+        },
+      },
       usage: {
         loading: 'Loading usage...',
         refreshing: 'Refreshing usage',
@@ -842,13 +850,6 @@ const en = {
           refresh: 'Refresh usage',
           redactUsers: 'Redact usernames',
           redactKeys: 'Redact key names',
-        },
-        series: {
-          all: 'Show all series',
-          invert: 'Invert series selection',
-          none: 'Hide all series',
-          toggleHint:
-              'Click to toggle. Shift-click or double-click to isolate.',
         },
         charts: {
           byUser: 'By User',
@@ -897,10 +898,6 @@ const en = {
         chartTitle: '{{metric}} {{percentile}} · {{group}}',
         series: {
           label: 'Performance series selection',
-          all: 'Show all series',
-          invert: 'Invert series selection',
-          none: 'Hide all series',
-          toggleHint: 'Click to toggle. Shift-click or double-click to isolate.',
         },
         tables: {
           requests: 'Requests',

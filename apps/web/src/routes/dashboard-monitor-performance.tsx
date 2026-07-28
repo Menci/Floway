@@ -1,5 +1,5 @@
 import type { ChartProps, CustomizedCalloutData, LineChartProps } from '@fluentui/react-charts';
-import { ArrowClockwiseRegular, ArrowRepeatAllRegular, InfoRegular, SelectAllOffRegular, SelectAllOnRegular } from '@fluentui/react-icons';
+import { ArrowClockwiseRegular, InfoRegular } from '@fluentui/react-icons';
 import { curveMonotoneX } from 'd3-shape';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, ReactElement } from 'react';
@@ -11,6 +11,8 @@ import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import { getSessionToken } from '../auth/session';
+import { ChartSection } from '../components/charts/chart-section';
+import { colorForSlot } from '../components/charts/palette';
 import {
   buildPerformanceQuery,
   clearGroupedFilter,
@@ -39,7 +41,7 @@ import { useNow } from '../lib/use-now';
 import { useAuthStore } from '../stores/auth-store';
 
 const {
-  Button, InteractionTag, InteractionTagPrimary, makeStyles, MessageBar, MessageBarBody,
+  Button, makeStyles, MessageBar, MessageBarBody,
   Spinner, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip,
 } = fluentComponents;
 
@@ -49,7 +51,6 @@ interface PerformanceChartModel { data: ChartProps; entries: ChartEntry[]; bucke
 interface UpstreamName { id: string; name: string }
 
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 64 } as const;
-const chartColors = ['#0f6cbd', '#13a10e', '#c50f1f', '#ca5010', '#8764b8', '#038387', '#8e562e', '#0078d4', '#498205', '#881798'];
 const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
 
 const useChartStateStyles = makeStyles({
@@ -262,19 +263,9 @@ function PerformanceFiltersBar({ filters, groupBy, onChange, overview, upstreamN
 
 function PerformanceChartSection({ chart, hidden, onHiddenChange, title }: { chart: PerformanceChartModel; hidden: Set<string>; onHiddenChange: (next: Set<string>) => void; title: string }) {
   const { t } = useTranslation();
-  const ids = chart.entries.map(entry => entry.id);
-  return <section className="grid gap-3 min-w-0">
-    <div className="flex items-center gap-3 justify-between min-w-0 max-[700px]:flex-col max-[700px]:items-stretch">
-      <Text size={400} weight="semibold">{title}</Text>
-      <div className="flex items-center flex-none gap-1" aria-label={t('dashboard.performance.series.label')}>
-        <Tooltip content={t('dashboard.performance.series.all')} relationship="label"><Button appearance="subtle" icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} /></Tooltip>
-        <Tooltip content={t('dashboard.performance.series.invert')} relationship="label"><Button appearance="subtle" icon={<ArrowRepeatAllRegular />} onClick={() => onHiddenChange(new Set(ids.filter(id => !hidden.has(id))))} /></Tooltip>
-        <Tooltip content={t('dashboard.performance.series.none')} relationship="label"><Button appearance="subtle" icon={<SelectAllOffRegular />} onClick={() => onHiddenChange(new Set(ids))} /></Tooltip>
-      </div>
-    </div>
-    <div className="flex flex-wrap gap-[6px] min-w-0">{chart.entries.length ? chart.entries.map(entry => <InteractionTag appearance="outline" shape="circular" size="small" key={entry.id}><InteractionTagPrimary className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''} icon={<span aria-hidden="true" className="inline-block rounded-full h-[8px] w-[8px] mx-[4px] flex-shrink-0" style={{ backgroundColor: colorForSlot(entry.colorSlot) }} />} onClick={event => { if (event.shiftKey) { onHiddenChange(new Set(ids.filter(id => id !== entry.id))); return; } const next = new Set(hidden); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); onHiddenChange(next); }}>{entry.label}</InteractionTagPrimary></InteractionTag>) : <Text size={200} className="text-fui-fg2">{t('dashboard.performance.empty')}</Text>}</div>
-    <OutlineCard className="min-h-[320px] min-w-0 overflow-hidden"><PerformanceChart chart={chart} hidden={hidden} /></OutlineCard>
-  </section>;
+  return <ChartSection controlsLabel={t('dashboard.performance.series.label')} emptyText={t('dashboard.performance.empty')} entries={chart.entries} hidden={hidden} onHiddenChange={onHiddenChange} title={title}>
+    <PerformanceChart chart={chart} hidden={hidden} />
+  </ChartSection>;
 }
 
 function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hidden: Set<string> }) {
@@ -339,4 +330,3 @@ function formatDuration(ms: number | null) { if (ms === null || !Number.isFinite
 function formatRate(value: number | null) { if (value === null || !Number.isFinite(value) || value <= 0) return '-'; return value >= 100 ? `${Math.round(value)} tok/s` : value >= 10 ? `${value.toFixed(1)} tok/s` : `${value.toFixed(2)} tok/s`; }
 const formatTokensPerSecond = (us: number | null) => us === null || us <= 0 ? '-' : formatRate(1_000_000 / us);
 const formatCount = (value: number, locale: string) => Math.max(0, Math.round(value)).toLocaleString(locale);
-const colorForSlot = (slot: number) => chartColors[slot % chartColors.length]!;

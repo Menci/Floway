@@ -783,6 +783,14 @@ const zhHansCN = {
         unlabeled: '未命名',
         jsonParseFailed: 'JSON 解析失败',
       },
+      charts: {
+        series: {
+          all: '显示全部序列',
+          invert: '反选序列',
+          none: '隐藏全部序列',
+          toggleHint: '点击切换。Shift 点击或双击可单独显示。',
+        },
+      },
       usage: {
         loading: '正在加载使用量...',
         refreshing: '正在刷新使用量',
@@ -803,12 +811,6 @@ const zhHansCN = {
           refresh: '刷新使用量',
           redactUsers: '隐藏用户名',
           redactKeys: '隐藏 API 密钥名称',
-        },
-        series: {
-          all: '显示全部序列',
-          invert: '反选序列',
-          none: '隐藏全部序列',
-          toggleHint: '点击切换。Shift 点击或双击可单独显示。',
         },
         charts: {
           byUser: '按用户',
@@ -857,10 +859,6 @@ const zhHansCN = {
         chartTitle: '{{metric}} {{percentile}} · {{group}}',
         series: {
           label: '性能序列选择',
-          all: '显示全部序列',
-          invert: '反选序列',
-          none: '隐藏全部序列',
-          toggleHint: '点击切换。Shift 点击或双击可单独显示。',
         },
         tables: {
           requests: '请求数',

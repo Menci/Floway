@@ -3,20 +3,8 @@ import { curveMonotoneX } from 'd3-shape';
 import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenDetail, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
+import { colorForSlot } from '../charts/palette';
 import type { DecimalString } from '@floway-dev/protocols/common';
-
-const palette = [
-  '#0f6cbd',
-  '#13a10e',
-  '#c50f1f',
-  '#ca5010',
-  '#8764b8',
-  '#038387',
-  '#8e562e',
-  '#0078d4',
-  '#498205',
-  '#881798',
-];
 
 export const metricConfig: Record<
   UsageMetric,
@@ -480,10 +468,6 @@ function hasRequests(details: Map<string, Map<string, TokenDetail>>, id: string)
     if ((bucket.get(id)?.requests ?? 0) > 0) return true;
   }
   return false;
-}
-
-export function colorForSlot(slot: number): string {
-  return palette[slot % palette.length]!;
 }
 
 export function chartTickValues(buckets: UsageBucket[]): UsageBucket[] {
