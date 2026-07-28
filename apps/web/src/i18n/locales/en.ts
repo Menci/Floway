@@ -124,9 +124,9 @@ const en = {
           providerDefault: 'Provider default',
         },
         badges: {
-          context: 'Context {{value}}',
-          prompt: 'Prompt {{value}}',
-          output: 'Output {{value}}',
+          context: 'Context <strong>{{value}}</strong>',
+          prompt: 'Prompt <strong>{{value}}</strong>',
+          output: 'Output <strong>{{value}}</strong>',
           aliasOfModel: 'Alias of {{target}}',
           aliasOfCount_one: 'Alias of {{count}} model',
           aliasOfCount_other: 'Alias of {{count}} models',

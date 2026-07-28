@@ -1,4 +1,4 @@
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { effectiveUpstreams, modelBadges, type ModelBadge } from './model-badges';
 import type { ControlPlaneModel } from '../../api/types';
@@ -36,10 +36,8 @@ const ruleBadgeText = (badge: Extract<ModelBadge, { kind: 'rule' }>, t: ReturnTy
   }
 };
 
-const badgeText = (badge: ModelBadge, t: ReturnType<typeof useTranslation>['t']): string => {
+const badgeText = (badge: Exclude<ModelBadge, { kind: 'limit' }>, t: ReturnType<typeof useTranslation>['t']): string => {
   switch (badge.kind) {
-  case 'limit':
-    return t(`dashboard.playground.badges.${badge.limit}`, { value: badge.value });
   case 'aliasOfModel':
     return t('dashboard.playground.badges.aliasOfModel', { target: badge.target });
   case 'aliasOfCount':
@@ -82,7 +80,15 @@ export function ModelInfoBadges({ cap, catalog, model }: {
         <ProviderBadge key={upstream.id} color={upstream.color} kind={upstream.kind} label={upstream.name} />
       ))}
       {modelBadges(model, catalog, cap).map(badge => (
-        <Chip key={badge.key} className={styles.tag}>{badgeText(badge, t)}</Chip>
+        <Chip key={badge.key} className={styles.tag}>
+          {badge.kind === 'limit'
+            ? <Trans
+                components={{ strong: <strong className="font-fui-semibold" /> }}
+                i18nKey={`dashboard.playground.badges.${badge.limit}`}
+                values={{ value: badge.value }}
+              />
+            : badgeText(badge, t)}
+        </Chip>
       ))}
     </div>
   );
