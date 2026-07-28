@@ -334,7 +334,7 @@ function PerformanceChartCallout({ data, formatter, title }: {
 
   return (
     <div className="grid gap-2 w-[min(280px,calc(100vw-48px))] min-w-0 max-w-[420px] p-1">
-      <Text block size={200} weight="semibold">{title}</Text>
+      <Text block size={300} weight="semibold">{title}</Text>
       <div className="grid gap-1.5">
         {rows.map(item => (
           <div className="grid grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 min-w-0" key={item.legend}>

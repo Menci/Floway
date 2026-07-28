@@ -40,7 +40,7 @@ export function ChartSection({
   return (
     <section className="grid gap-3 min-w-0">
       <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-        <Text size={400} weight="semibold" className="text-fui-fg1 leading-[1.25]">{title}</Text>
+        <Text as="h2" size={500} weight="semibold" className="!m-0 text-fui-fg1 leading-[1.25]">{title}</Text>
         <div className="flex items-center flex-none gap-1" aria-label={controlsLabel}>
           <Tooltip content={t('dashboard.charts.series.all')} relationship="label">
             <Button appearance="subtle" icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />

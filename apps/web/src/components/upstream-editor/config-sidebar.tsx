@@ -113,7 +113,7 @@ function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {
 function EditorSection({ children, description, inline = false, required = false, title }: { children: React.ReactNode; description?: string; inline?: boolean; required?: boolean; title: string }) {
   const styles = useEditorSectionStyles();
   return <section className={inline ? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4' : 'grid gap-4'}>
-    <div className="grid gap-1"><Text as="h2" size={400} weight="semibold" className="!m-0">{title}{required && <span aria-hidden className={styles.required}> *</span>}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
+    <div className="grid gap-1"><Text as="h2" size={500} weight="semibold" className="!m-0">{title}{required && <span aria-hidden className={styles.required}> *</span>}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
     {children}
   </section>;
 }

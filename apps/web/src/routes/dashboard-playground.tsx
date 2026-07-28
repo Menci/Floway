@@ -310,7 +310,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
           <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
             <div className="grid gap-0.5 min-w-0">
-              <Text as="h1" block size={500} weight="semibold" className="!m-0">{t('dashboard.nav.playground')}</Text>
+              <Text as="h1" block size={700} weight="semibold" className="!m-0">{t('dashboard.nav.playground')}</Text>
               <Text block size={200} className={`text-fui-fg2 truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
             </div>
           </div>
@@ -462,7 +462,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 }
 
 function SettingsSection({ children, title }: { children: React.ReactNode; title: string }) {
-  return <section className="grid gap-3 min-w-0"><Text as="h2" size={300} weight="semibold" className="!m-0">{title}</Text>{children}</section>;
+  return <section className="grid gap-3 min-w-0"><Text as="h2" size={500} weight="semibold" className="!m-0">{title}</Text>{children}</section>;
 }
 
 function EmptyState({ text }: { text: string }) {

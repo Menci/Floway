@@ -51,15 +51,15 @@ export function ApiDocsContent() {
       {apiDocsGroups.map(group => {
         const endpoints = apiDocsEndpoints.filter(endpoint => endpoint.group === group);
         return <section className="grid gap-2" key={group}>
-          <Text as="h3" size={300} weight="semibold" className="!m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
+          <Text as="h3" size={400} weight="semibold" className="!m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
           <ScrollArea axes="horizontal" className="min-w-0">
             <div className="grid grid-cols-[70px_minmax(360px,1fr)_minmax(260px,320px)_74px] min-w-[780px]">
               {endpoints.map((endpoint, index) => {
                 const cellClassName = `min-w-0 px-2 py-2 ${index === endpoints.length - 1 ? '' : 'border-b border-fui-subtle'}`;
                 return <Fragment key={`${endpoint.method} ${endpoint.path}`}>
                   <div className={`flex items-center ${cellClassName}`}><MethodBadge method={endpoint.method} /></div>
-                  <code className={`${cellClassName} flex items-center font-mono text-xs`} translate="no">{endpoint.path}</code>
-                  <Text className={`${cellClassName} !flex !items-center`} size={200}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text>
+                  <code className={`${cellClassName} flex items-center font-mono text-fui-base300`} translate="no">{endpoint.path}</code>
+                  <Text className={`${cellClassName} !flex !items-center`} size={300}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text>
                   <div className={`flex items-center ${cellClassName}`}>
                     <Link href={endpoint.docs} target="_blank">
                       {t('dashboard.apiDocs.docsLink')} <ArrowUpRight16Regular aria-hidden="true" />
@@ -80,7 +80,7 @@ function MethodBadge({ method }: { method: 'GET' | 'POST' }) {
     appearance="tint"
     className="!font-bold !font-mono !justify-center !min-w-[48px]"
     color={method === 'GET' ? 'brand' : 'success'}
-    size="small"
+    size="medium"
     translate="no"
   >{method}</Badge>;
 }

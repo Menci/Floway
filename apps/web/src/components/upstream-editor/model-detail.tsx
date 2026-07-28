@@ -110,7 +110,7 @@ export function ModelDetail({
   return (
     <div className="grid gap-4 min-w-0">
       <header className="flex items-start justify-between gap-4 min-w-0">
-        <Text as="h1" size={600} weight="semibold" truncate className="!m-0 min-w-0">
+        <Text as="h2" size={500} weight="semibold" truncate className="!m-0 min-w-0">
           {row.config.display_name ?? publicModelId(row.config)}
         </Text>
         <div className="flex-none">
@@ -228,7 +228,7 @@ export function ModelDetail({
 
 function ModelEditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
   return <section className="grid gap-3">
-    <div className="grid gap-1"><Text as="h2" size={400} weight="semibold" className="!m-0">{title}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
+    <div className="grid gap-1"><Text as="h2" size={500} weight="semibold" className="!m-0">{title}</Text>{description && <Text size={200} className="text-fui-fg2">{description}</Text>}</div>
     {children}
   </section>;
 }

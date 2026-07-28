@@ -119,7 +119,7 @@ export function FeatureFlagsEditor({
   return <div className="grid gap-5 min-w-0">
     {groupedFlags.filter(group => group.flags.length > 0).map(group => (
       <section className="grid gap-2" key={group.id}>
-        <Text as="h2" size={300} weight="semibold" className="!m-0">
+        <Text as="h3" size={400} weight="semibold" className="!m-0">
           {t(`dashboard.upstreamEditor.flags.groups.${group.id}`)}
         </Text>
         <div>
@@ -129,7 +129,7 @@ export function FeatureFlagsEditor({
     ))}
     {otherFlags.length > 0 && (
       <section className="grid gap-2">
-        <Text as="h2" size={300} weight="semibold" className="!m-0">
+        <Text as="h3" size={400} weight="semibold" className="!m-0">
           {t('dashboard.upstreamEditor.flags.groups.other')}
         </Text>
         <div>
