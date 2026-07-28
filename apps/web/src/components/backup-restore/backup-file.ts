@@ -1,6 +1,12 @@
+import type { InferResponseType } from 'hono/client';
 import { z } from 'zod';
 
-export const BACKUP_FILE_VERSION = 17;
+import type { api } from '../../api/client';
+
+// Annotated with the gateway's own literal so a bump there fails this
+// assignment rather than silently leaving the dashboard rejecting every backup
+// file the current deployment writes.
+export const BACKUP_FILE_VERSION: InferResponseType<typeof api.api.export.$get, 200>['version'] = 18;
 
 const backupFileSchema = z.object({
   version: z.literal(BACKUP_FILE_VERSION),

@@ -133,6 +133,19 @@ export const extractWebSearchProviderErrorMessage = async (response: Response): 
     if (typeof parsed.message === 'string') {
       return parsed.message;
     }
+    // Web IQ writes the human-readable half of its envelope to `userMessage`
+    // and the diagnostic half to `technicalDetails`, alongside `errorCode`,
+    // `errorCategory`, `requestId`, and `traceId`. Without this rung the whole
+    // envelope reaches the operator as raw JSON. Observed on
+    // POST https://api.microsoft.ai/v3/search/web with an invalid key:
+    // {"errorCode":"AuthInvalidApiKey","errorCategory":"UserError",
+    //  "userMessage":"Invalid API key provided.","technicalDetails":"Invalid API key",…}
+    if (typeof parsed.userMessage === 'string') {
+      return parsed.userMessage;
+    }
+    if (typeof parsed.technicalDetails === 'string') {
+      return parsed.technicalDetails;
+    }
   } catch {
     return text;
   }

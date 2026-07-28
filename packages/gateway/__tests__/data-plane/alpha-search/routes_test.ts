@@ -20,7 +20,7 @@ const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
 const TAVILY_CONFIG: WebSearchConfig = {
   provider: 'tavily',
   tavily: { apiKey: 'test-key' },
-  microsoftGrounding: { apiKey: '' },
+  webIq: { apiKey: '' },
   jina: { apiKey: '' },
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };

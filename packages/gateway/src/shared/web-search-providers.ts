@@ -1,11 +1,11 @@
-export const WEB_SEARCH_PROVIDER_NAMES = ['tavily', 'microsoft-grounding', 'jina'] as const;
+export const WEB_SEARCH_PROVIDER_NAMES = ['tavily', 'web-iq', 'jina'] as const;
 
 export type WebSearchProviderName = (typeof WEB_SEARCH_PROVIDER_NAMES)[number];
 
 export interface WebSearchConfig {
   provider: 'disabled' | WebSearchProviderName;
   tavily: { apiKey: string };
-  microsoftGrounding: { apiKey: string };
+  webIq: { apiKey: string };
   jina: { apiKey: string };
   passthroughOpenAiSearch: {
     enabled: boolean;

@@ -8,7 +8,7 @@ import { aggregateWebSearchUsageByKey, aggregateWebSearchUsageByUser } from './a
 import { loadWebSearchConfig } from '../../data-plane/tools/web-search/config.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
+import { isWebSearchProviderName, WEB_SEARCH_PROVIDER_NAMES } from '../../shared/web-search-providers.ts';
 import type { webSearchUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
 import { resolveUsageView } from '../shared/usage-view.ts';
@@ -23,7 +23,7 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
 
   const { provider } = query;
   if (provider !== undefined && !isWebSearchProviderName(provider)) {
-    return c.json({ error: "provider must be 'tavily' or 'microsoft-grounding'" }, 400);
+    return c.json({ error: `provider must be one of ${WEB_SEARCH_PROVIDER_NAMES.map(name => `'${name}'`).join(', ')}` }, 400);
   }
 
   const resolved = resolveUsageView(c, query.view, query.key_id);

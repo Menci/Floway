@@ -558,9 +558,9 @@ export const resetBackoffBody = z.object({
 // --- search config ---
 
 export const webSearchConfigSchema = z.object({
-  provider: z.enum(['disabled', 'tavily', 'microsoft-grounding', 'jina']),
+  provider: z.enum(['disabled', 'tavily', 'web-iq', 'jina']),
   tavily: z.object({ apiKey: z.string() }),
-  microsoftGrounding: z.object({ apiKey: z.string() }),
+  webIq: z.object({ apiKey: z.string() }),
   jina: z.object({ apiKey: z.string() }),
   passthroughOpenAiSearch: z.object({
     enabled: z.boolean(),
@@ -699,7 +699,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(17, { error: 'version must be 17 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(18, { error: 'version must be 18 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });
