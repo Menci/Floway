@@ -30,8 +30,8 @@ import { serveModels } from '../models/http.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
 export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
-  // Codex appends `alpha/search` to this special provider base. Keep the path
-  // owned by this namespace while reusing the general data-plane handler.
+  // Register the manifest's Codex-specific search path with the general
+  // alpha-search handler.
   // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
   mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch.paths[0]);
   app.post(PUBLIC_DATA_PLANE_ROUTES.codexResponses.paths[0], responsesHttp.generate);
