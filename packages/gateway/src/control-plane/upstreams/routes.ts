@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
-import type { FullUpstreamResponse, ModelsCacheStatus, RedactedUpstreamResponse } from './types.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
+import type { FullUpstreamResponse, ModelsCacheStatus, RedactedUpstreamResponse } from './types.ts';
 import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -175,9 +175,9 @@ export const listUpstreamOptions = async (c: Context) => {
 
 export const listOptionalFlags = (c: Context) => c.json(OPTIONAL_FLAGS);
 
-// Serve the same response shape as the edit endpoint for an unpersisted
-// record. The empty cache projection keeps create and edit on one UI contract
-// without querying storage for an id that does not exist yet.
+// Supply every shared editor field for an unpersisted record. The empty cache
+// projection avoids querying storage, while persisted-only projections remain
+// exclusive to full edit responses.
 export const getUpstreamBlueprint = (c: Context) => {
   const kind = c.req.query('kind');
   if (!isValidProviderKind(kind)) {

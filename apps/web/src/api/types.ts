@@ -1,8 +1,9 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
-import type { SerializedBackoffRow, SerializedProxyRecord } from '@floway-dev/gateway/control-plane/proxies/serialize';
 import type { InferRequestType, InferResponseType } from 'hono/client';
+
 import type { api } from './client';
+import type { SerializedBackoffRow, SerializedProxyRecord } from '@floway-dev/gateway/control-plane/proxies/serialize';
 import type {
   AliasRules,
   AliasSelection,
@@ -74,6 +75,4 @@ export type ControlPlaneModel = InferResponseType<typeof api.api.models.$get, 20
 export type SearchConfig = InferResponseType<typeof api.api['search-config']['$get'], 200>;
 export type CopilotQuotaSnapshot = InferResponseType<typeof api.api.upstreams.copilot.quota.$post, 200>;
 export type DeviceFlowStart = InferResponseType<typeof api.api.upstreams.copilot.oauth['device-login']['start']['$post'], 200>;
-export type BackupExportResponse = InferResponseType<typeof api.api.export.$get, 200>;
-export type BackupExportData = BackupExportResponse['data'];
 export type BackupImportCounts = InferResponseType<typeof api.api.import.$post, 200>['imported'];

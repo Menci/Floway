@@ -282,7 +282,7 @@ initial route resource resolve before the target location and component tree
 are committed. An in-flight navigation leaves the current URL and route fully
 mounted without introducing another loading surface. `callApi` preserves the Hono client's inferred success
 payload for typed JSON control-plane calls. Direct request handling is limited
-to playground data-plane streaming and dump streaming/pagination. The document never scrolls. Every scrollable region
+to playground data-plane streaming and dump SSE subscriptions. The document never scrolls. Every scrollable region
 declares its axes through `ScrollArea`; it enables OverlayScrollbars only where
 native scrollbars consume layout space, and otherwise retains native overlay
 scrolling inside the same explicit viewport.
