@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildDisabledModelOptions } from '../../../src/components/upstream-editor/config-sidebar';
 import type { UpstreamModelConfig } from '../../../src/api/types';
+import { buildDisabledModelOptions } from '../../../src/components/upstream-editor/config-sidebar';
 
 const model = (upstreamModelId: string, publicModelId?: string): UpstreamModelConfig => ({
   upstreamModelId,
