@@ -153,6 +153,9 @@ importers:
       '@fluentui/react-icons':
         specifier: ^2.0.334
         version: 2.0.334(react@19.2.8)
+      '@fontsource-variable/cascadia-code':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@hookform/resolvers':
         specifier: ^5.5.7
         version: 5.5.7(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.83.0(react@19.2.8))(valibot@1.4.2(typescript@5.9.3))(zod@4.4.3)
@@ -232,12 +235,15 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.17)
+      '@unocss/postcss':
+        specifier: ^66.7.5
+        version: 66.7.5(postcss@8.5.23)
       happy-dom:
         specifier: ^20.11.1
         version: 20.11.1
       unocss:
         specifier: ^66.7.5
-        version: 66.7.5(vite@8.1.5(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0))
+        version: 66.7.5(@unocss/postcss@66.7.5(postcss@8.5.23))(vite@8.1.5(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0))
       vite:
         specifier: ^8.1.5
         version: 8.1.5(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0)
@@ -1606,6 +1612,9 @@ packages:
   '@fluentui/tokens@1.0.0-alpha.23':
     resolution: {integrity: sha512-uxrzF9Z+J10naP0pGS7zPmzSkspSS+3OJDmYIK3o1nkntQrgBXq3dBob4xSlTDm5aOQ0kw6EvB9wQgtlyy4eKQ==}
 
+  '@fontsource-variable/cascadia-code@5.3.0':
+    resolution: {integrity: sha512-6I6M029Lum62MGmP0o+rXRrIBiIiptNDC4slPKLPUJiSB7NHZTLb+Ihk9G7jLvUfWziGXHJLjJPJLBzlEPjS1g==}
+
   '@griffel/core@1.21.3':
     resolution: {integrity: sha512-FMnlwhtmCRWvXEg2j/6W90wzvW+PFqdrsWFslfmxwS6l9X73gO0dnndKphht9ZOsJODvmLdqlnU1Lh8igg2mKw==}
 
@@ -2608,6 +2617,11 @@ packages:
 
   '@unocss/inspector@66.7.5':
     resolution: {integrity: sha512-WmTJMnj8bmRxvw/wGeShmL2eEHr2/L0BdGTXSxhfzwcO8y5XZEbBmVciLcM7pqaTXQ6JY4+KnITrDUf1urjZxQ==}
+
+  '@unocss/postcss@66.7.5':
+    resolution: {integrity: sha512-j9rWTZwXHioPQgZ7YhX5DC3lG6FyvBluf20LI7VgsDk3bsqG5Yz0KrHHwXcvIJqcs6R+IsHTZxRiCgOn9fvZZg==}
+    peerDependencies:
+      postcss: ^8.4.21
 
   '@unocss/preset-attributify@66.7.5':
     resolution: {integrity: sha512-1Oi1Cp81pqYJwG3h4+OlP5A0FKyaa07MFBXaXc4Yr3faiTbsI8SKj2TqnZCb+NQvBsEqslEd+jKXGZ3lKzCVOQ==}
@@ -6641,6 +6655,8 @@ snapshots:
     dependencies:
       '@swc/helpers': 0.5.21
 
+  '@fontsource-variable/cascadia-code@5.3.0': {}
+
   '@griffel/core@1.21.3':
     dependencies:
       '@emotion/hash': 0.9.2
@@ -7464,7 +7480,7 @@ snapshots:
       debug: 4.4.3
       minimatch: 9.0.9
       semver: 7.7.4
-      tinyglobby: 0.2.16
+      tinyglobby: 0.2.17
       ts-api-utils: 2.5.0(typescript@5.9.3)
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -7526,6 +7542,15 @@ snapshots:
       colorette: 2.0.20
       gzip-size: 6.0.0
       sirv: 3.0.2
+
+  '@unocss/postcss@66.7.5(postcss@8.5.23)':
+    dependencies:
+      '@unocss/config': 66.7.5
+      '@unocss/core': 66.7.5
+      '@unocss/rule-utils': 66.7.5
+      css-tree: 3.2.1
+      postcss: 8.5.23
+      tinyglobby: 0.2.17
 
   '@unocss/preset-attributify@66.7.5':
     dependencies:
@@ -10149,7 +10174,7 @@ snapshots:
       unist-util-is: 6.0.1
       unist-util-visit-parents: 6.0.2
 
-  unocss@66.7.5(vite@8.1.5(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0)):
+  unocss@66.7.5(@unocss/postcss@66.7.5(postcss@8.5.23))(vite@8.1.5(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0)):
     dependencies:
       '@unocss/cli': 66.7.5
       '@unocss/core': 66.7.5
@@ -10168,6 +10193,8 @@ snapshots:
       '@unocss/transformer-directives': 66.7.5
       '@unocss/transformer-variant-group': 66.7.5
       '@unocss/vite': 66.7.5(vite@8.1.5(@types/node@22.19.19)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.22.4)(yaml@2.9.0))
+    optionalDependencies:
+      '@unocss/postcss': 66.7.5(postcss@8.5.23)
     transitivePeerDependencies:
       - vite
 

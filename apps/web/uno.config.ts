@@ -1,10 +1,13 @@
-import { defineConfig, presetWind3, transformerDirectives, transformerVariantGroup } from 'unocss';
+import { defineConfig, presetWind3 } from 'unocss';
 
 export default defineConfig({
   presets: [
     presetWind3(),
   ],
   theme: {
+    fontFamily: {
+      mono: 'var(--fontFamilyMonospace)',
+    },
     fontSize: {
       'fui-base200': 'var(--fontSizeBase200)',
       'fui-base300': 'var(--fontSizeBase300)',
@@ -32,7 +35,10 @@ export default defineConfig({
     ['font-fui-medium', { 'font-weight': 'var(--fontWeightMedium)' }],
     ['font-fui-semibold', { 'font-weight': 'var(--fontWeightSemibold)' }],
   ],
-  transformers: [transformerDirectives(), transformerVariantGroup()],
+  // The PostCSS integration reads these globs itself and never sees the module
+  // graph, so a class only ships if a file here spells it out. It also applies
+  // no source-level transformers: utilities must appear verbatim in the source,
+  // not as variant groups.
   content: {
     filesystem: ['src/**/*.{ts,tsx}'],
   },

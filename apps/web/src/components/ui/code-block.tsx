@@ -33,11 +33,11 @@ const useStyles = makeStyles({
   },
   lang: {
     color: 'var(--colorNeutralForeground2)',
-    fontFamily: 'monospace',
+    fontFamily: 'var(--fontFamilyMonospace)',
     fontSize: '12px',
   },
   pre: {
-    fontFamily: 'monospace',
+    fontFamily: 'var(--fontFamilyMonospace)',
     fontSize: '12px',
     lineHeight: '1.55',
     margin: 0,
@@ -51,7 +51,7 @@ const useStyles = makeStyles({
       display: 'inline',
     },
     color: 'var(--colorNeutralForeground1)',
-    fontFamily: 'monospace',
+    fontFamily: 'var(--fontFamilyMonospace)',
     whiteSpace: 'pre',
   },
 });
