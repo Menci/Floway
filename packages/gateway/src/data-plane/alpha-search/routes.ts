@@ -28,6 +28,7 @@ import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { assertLocalWebSearchSupport, executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
+import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
 const domainListSchema = z.array(z.string());
 
@@ -147,17 +148,12 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
   return c.json({ encrypted_output: null, output: blocks.join('\n\n') });
 };
 
-const ALPHA_SEARCH_PATHS = [
-  '/alpha/search',
-  '/v1/alpha/search',
-] as const;
-
 export const mountAlphaSearchRoute = (app: Hono<{ Variables: AuthVars }>, path: string) => {
   app.post(path, zValidator('json', alphaSearchRequestSchema), alphaSearch);
 };
 
 export const mountAlphaSearchRoutes = (app: Hono<{ Variables: AuthVars }>) => {
-  for (const path of ALPHA_SEARCH_PATHS) {
+  for (const path of PUBLIC_DATA_PLANE_ROUTES.alphaSearch.paths) {
     mountAlphaSearchRoute(app, path);
   }
 };
