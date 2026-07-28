@@ -13,11 +13,18 @@ import type { Route } from './+types/root';
 import { BrowserLanguageSync } from './components/browser-language-sync';
 import { DocumentTitleSync } from './components/document-title-sync';
 import {
+  NavigationProgress,
+  navigationProgressCss,
+} from './components/navigation-progress';
+import {
+  AppLoadingScreen,
+  appLoadingCriticalCss,
+} from './components/ui/app-loading-screen';
+import {
   GradientBackground,
   gradientBackgroundCriticalCss,
 } from './components/gradient-background';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
-import { PageLoading, pageLoadingCriticalCss } from './components/ui/page-loading';
 import { fluentComponents } from './fluent';
 import { flowayDarkTheme, flowayLightTheme } from './theme';
 import './i18n';
@@ -66,7 +73,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           *, *::before, *::after { box-sizing: border-box; }
           html body pre[class*="language-"] { border: 0; }
           ${gradientBackgroundCriticalCss}
-          ${pageLoadingCriticalCss}
+          ${appLoadingCriticalCss}
+          ${navigationProgressCss}
         `}</style>
       </head>
       <body className="text-[14px] font-sans m-0">
@@ -84,6 +92,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <>
+      <NavigationProgress />
       <DocumentTitleSync />
       <Outlet />
     </>
@@ -92,7 +101,7 @@ export default function App() {
 
 export function HydrateFallback() {
   const { t } = useTranslation();
-  return <PageLoading label={t('common.loading')} viewport />;
+  return <AppLoadingScreen label={t('common.loading')} />;
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

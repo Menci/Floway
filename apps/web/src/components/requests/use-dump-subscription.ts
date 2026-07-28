@@ -9,7 +9,6 @@ const PAGE_LIMIT = 100;
 export function useDumpSubscription(keyId: string | null) {
   const [records, setRecords] = useState<DumpMetadata[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasOlder, setHasOlder] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const seenRef = useRef(new Set<string>());
@@ -77,7 +76,6 @@ export function useDumpSubscription(keyId: string | null) {
     const oldest = records.at(-1);
     if (!keyId || !oldest || loadingOlderRef.current || !hasOlder) return;
     loadingOlderRef.current = true;
-    setLoadingOlder(true);
     try {
       const response = await authFetch(
         `/api/dump/keys/${encodeURIComponent(keyId)}/records?before=${encodeURIComponent(oldest.id)}&limit=${PAGE_LIMIT}`,
@@ -92,9 +90,8 @@ export function useDumpSubscription(keyId: string | null) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       loadingOlderRef.current = false;
-      setLoadingOlder(false);
     }
   }, [hasOlder, keyId, records]);
 
-  return { records, loading, loadingOlder, hasOlder, error, loadOlder };
+  return { records, loading, hasOlder, error, loadOlder };
 }

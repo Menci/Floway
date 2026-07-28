@@ -8,7 +8,6 @@ import { useDashboardOutletContext } from './dashboard';
 import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
@@ -225,11 +224,7 @@ export default function DashboardMonitorUsage() {
         title={t('dashboard.nav.usage')}
       />
 
-      {initialLoading ? (
-        <PageLoading label={t('common.loading')} />
-      ) : (
-        <>
-          {error && <div className={errorStyles.root}>{error}</div>}
+      {error && <div className={errorStyles.root}>{error}</div>}
 
           <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
             <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
@@ -318,8 +313,6 @@ export default function DashboardMonitorUsage() {
               />
             </Panel>
           )}
-        </>
-      )}
     </section>
   );
 }

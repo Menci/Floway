@@ -11,7 +11,6 @@ import { RequestDetailPanel } from '../components/requests/request-detail';
 import { RequestListPanel } from '../components/requests/request-list';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
@@ -96,7 +95,6 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
                 error={subscription.error ?? keysError}
                 hasOlder={subscription.hasOlder}
                 loading={subscription.loading}
-                loadingOlder={subscription.loadingOlder}
                 onKeyChange={keyId => updateSelection(keyId)}
                 onLoadOlder={() => void subscription.loadOlder()}
                 onRecordChange={recordId => updateSelection(selectedKeyId, recordId)}
@@ -107,9 +105,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
             </Panel>
           </div>
         </div>
-      ) : (
-        <PageLoading label={t('common.loading')} />
-      )}
+      ) : null}
     </section>
   );
 }

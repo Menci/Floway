@@ -17,7 +17,6 @@ import { defaultsFor, isValidPort, parseDialTimeoutInput, parseProxyInput, type 
 import { ProxyForm, type ProxyTestResult } from '../components/proxy/proxy-form';
 import { ProxyList } from '../components/proxy/proxy-list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
-import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
@@ -32,7 +31,6 @@ export default function DashboardProvidersProxy() {
   const { user } = useDashboardOutletContext();
 
   const [proxies, setProxies] = useState<ProxyRecord[]>([]);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -95,7 +93,6 @@ export default function DashboardProvidersProxy() {
       setLoadError(proxiesRes.error?.message ?? backoffsRes.error?.message ?? null);
       if (proxiesRes.data) setProxies(proxiesRes.data);
       if (backoffsRes.data) setBackoffs(backoffsRes.data);
-      setLoading(false);
     }
     void load();
     return () => {
@@ -286,15 +283,6 @@ export default function DashboardProvidersProxy() {
       <section className="grid gap-[18px] min-w-0">
         <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
         <AdminOnlyNotice />
-      </section>
-    );
-  }
-
-  if (loading) {
-    return (
-      <section className="grid gap-[18px] min-w-0">
-        <DashboardPageHeader description={t('dashboard.proxy.description')} eyebrow={t('dashboard.groups.providers')} title={t('dashboard.proxy.heading')} />
-        <PageLoading label={t('common.loading')} />
       </section>
     );
   }

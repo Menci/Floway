@@ -26,7 +26,7 @@ import { authFetch } from '../../api/auth';
 import { fluentComponents } from '../../fluent';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 
-const { Button, MessageBar, MessageBarBody, Spinner, Tab, TabList, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+const { Button, MessageBar, MessageBarBody, Tab, TabList, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   sectionHeader: {
@@ -195,7 +195,7 @@ export function RequestDetailPanel({ keyId, recordId }: DetailProps) {
   }, [collectKind, streamEvents]);
 
   if (!recordId) return <div className="h-full grid place-items-center p-8 text-center"><Text className="text-fui-fg3">{t('dashboard.requests.selectPrompt')}</Text></div>;
-  if (loading) return <div className="h-full grid place-items-center"><Spinner size="tiny" label={t('common.loading')} /></div>;
+  if (loading) return <div className="h-full" />;
   if (error) return <div className="p-4"><MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar></div>;
   if (!record) return null;
 
@@ -244,7 +244,7 @@ export function RequestDetailPanel({ keyId, recordId }: DetailProps) {
         {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.emptyBody')}</Text>)}
         {record.response.body.type === 'stream' && streamView === 'collected' && (
           collectKind === null ? <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.noCollector')}</MessageBarBody></MessageBar>
-            : collected === null ? <div className="p-5"><Spinner size="tiny" /></div>
+            : collected === null ? null
               : <>
                   {collected.error && <MessageBar intent="error" className="!m-3"><MessageBarBody>{collected.error}</MessageBarBody></MessageBar>}
                   {!collected.error && collected.truncated && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.truncatedStream')}</MessageBarBody></MessageBar>}

@@ -25,7 +25,6 @@ import type {
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
@@ -310,11 +309,7 @@ export default function DashboardProvidersUpstreams() {
         title={t('dashboard.nav.upstreams')}
       />
 
-      {initialLoading ? (
-        <PageLoading label={t('common.loading')} />
-      ) : (
-        <>
-          {pageError && (
+      {pageError && (
             <MessageBar intent="error">
               <MessageBarBody>{pageError}</MessageBarBody>
               <MessageBarActions>
@@ -323,7 +318,7 @@ export default function DashboardProvidersUpstreams() {
                 </Button>
               </MessageBarActions>
             </MessageBar>
-          )}
+      )}
 
           {data.modelsError && (
             <MessageBar intent="warning">
@@ -362,8 +357,6 @@ export default function DashboardProvidersUpstreams() {
             open={deleteTarget !== null}
             title={t('dashboard.upstreams.delete.title')}
           />
-        </>
-      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ import type { AuthUser } from '../api/auth';
 import { getSessionToken } from '../auth/session';
 import { FlowayLogo } from '../components/logo';
 import { Sidebar } from '../components/sidebar';
-import { PageLoading } from '../components/ui/page-loading';
+import { AppLoadingScreen } from '../components/ui/app-loading-screen';
 import { PageShell } from '../components/ui/page-shell';
 import { fluentComponents } from '../fluent';
 import { useAuthStore } from '../stores/auth-store';
@@ -64,7 +64,7 @@ export default function Dashboard({}: Route.ComponentProps) {
   }
 
   if (!user) {
-    return <PageLoading label={t('common.loading')} viewport />;
+    return <AppLoadingScreen label={t('common.loading')} />;
   }
 
   return (

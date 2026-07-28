@@ -9,12 +9,12 @@ import { UsageChartCallout } from './usage-callout';
 import { fluentComponents } from '../../fluent';
 import { localeForLanguage } from '../../i18n';
 const { makeStyles } = fluentComponents;
-const useChartLoadingStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' } });
+const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' } });
 type ChartComponents = { AreaChart: ComponentType<AreaChartProps>; LineChart: ComponentType<LineChartProps> };
 
 export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
   const { i18n, t } = useTranslation();
-  const chartLoadingStyles = useChartLoadingStyles();
+  const chartStateStyles = useChartStateStyles();
   const [components, setComponents] = useState<ChartComponents | null>(null);
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
@@ -26,9 +26,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   const callout = useCallback((data?: CustomizedCalloutData) => <UsageChartCallout chart={chart} data={data} labelByTime={labelByTime} locale={locale} valueFormatter={valueFormatter} />, [chart, labelByTime, locale, valueFormatter]);
   return (
     <div className="h-[320px] min-w-0 w-full" ref={setHost}>
-      {!components || size.width < 120 ? (
-        <div className={chartLoadingStyles.root}>{t('dashboard.usage.loading')}</div>
-      ) : chart.data.lineChartData?.length ? (
+      {!components || size.width < 120 ? null : chart.data.lineChartData?.length ? (
         chart.stacked ? (
           <components.AreaChart
             data={chart.data}
@@ -67,7 +65,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
           />
         )
       ) : (
-        <div className={chartLoadingStyles.root}>{t('dashboard.usage.empty')}</div>
+        <div className={chartStateStyles.root}>{t('dashboard.usage.empty')}</div>
       )}
     </div>
   );

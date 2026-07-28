@@ -28,7 +28,7 @@ import { Select } from '../ui/fluent-form-controls';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
-const { MessageBar, MessageBarBody, Spinner, Text, makeStyles, mergeClasses } = fluentComponents;
+const { MessageBar, MessageBarBody, Text, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 82;
 
 const useStyles = makeStyles({
@@ -62,7 +62,6 @@ interface RequestListProps {
   selectedRecordId: string | null;
   onRecordChange: (recordId: string) => void;
   loading: boolean;
-  loadingOlder: boolean;
   hasOlder: boolean;
   error: string | null;
   onLoadOlder: () => void;
@@ -180,10 +179,10 @@ export function RequestListPanel(props: RequestListProps) {
         </Select>
       </div>
       {props.error && <MessageBar intent="error" className="!m-2"><MessageBarBody>{props.error}</MessageBarBody></MessageBar>}
-      {props.loading && props.records.length === 0 ? (
-        <div className="flex-1 grid place-items-center"><Spinner size="tiny" label={t('common.loading')} /></div>
-      ) : props.records.length === 0 ? (
-        <div className="flex-1 grid place-items-center text-center p-6"><Text size={200} className="text-fui-fg3">{t('dashboard.requests.empty')}</Text></div>
+      {props.records.length === 0 ? (
+        <div className="flex-1 grid place-items-center text-center p-6">
+          {!props.loading && <Text size={200} className="text-fui-fg3">{t('dashboard.requests.empty')}</Text>}
+        </div>
       ) : (
         <div className="flex-1 min-h-0 relative">
           <List
@@ -202,7 +201,6 @@ export function RequestListPanel(props: RequestListProps) {
             rowProps={rowProps}
             style={{ height: '100%' }}
           />
-          {props.loadingOlder && <div className="absolute bottom-2 left-0 right-0 grid place-items-center pointer-events-none"><Spinner size="extra-tiny" /></div>}
         </div>
       )}
     </div>

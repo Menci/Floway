@@ -33,7 +33,6 @@ import {
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Select } from '../components/ui/fluent-form-controls';
 import { OutlineCard } from '../components/ui/outline-card';
-import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { SegmentedControl } from '../components/ui/segmented-control';
 import { fluentComponents } from '../fluent';
@@ -174,8 +173,7 @@ export default function DashboardMonitorPerformance() {
       eyebrow={t('dashboard.groups.monitor')}
       title={t('dashboard.nav.performance')}
     />
-    {initialLoading ? <PageLoading label={t('common.loading')} /> : <>
-      {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+    {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
       <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
         <div className="flex flex-wrap items-center gap-2 justify-between">
           <SegmentedControl ariaLabel={t('dashboard.performance.metric.label')} items={[
@@ -229,7 +227,6 @@ export default function DashboardMonitorPerformance() {
           </Panel>
         ))}
       </div>
-    </>}
   </section>;
 }
 
@@ -283,7 +280,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   useEffect(() => { let disposed = false; void import('@fluentui/react-charts').then(module => { if (!disposed) setLineChart(() => module.LineChart); }); return () => { disposed = true; }; }, []);
   const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length ? null : <div className="grid gap-[6px] min-w-[220px] p-1"><Text size={200} weight="semibold">{formatCalloutTitle(props.x, labelByTime, chart.range, locale)}</Text>{props.values.filter(item => item.y > 0).sort((a, b) => b.y - a.y).map(item => <Text key={item.legend} size={200} className="flex gap-3 justify-between font-mono"><span>{item.legend}</span><span>{formatter(item.y)}</span></Text>)}</div>, [chart.range, formatter, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
-  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{!LineChart || size.width < 120 ? <div className={stateStyles.root}>{t('dashboard.performance.loading')}</div> : visibleData.lineChartData?.length ? <LineChart customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={formatter} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
+  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{!LineChart || size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={formatter} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
 }
 
 function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; upstreamNames: ReadonlyMap<string, string> }) {

@@ -19,7 +19,6 @@ import { RotateKeyDialog } from '../components/api-keys/rotate-key-dialog';
 import type { ApiKeysPageData, MutationToastController, UpstreamOption } from '../components/api-keys/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { PageLoading } from '../components/ui/page-loading';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
@@ -221,15 +220,11 @@ export default function DashboardServicesApiKeys() {
         title={t('dashboard.nav.apiKeys')}
       />
 
-      {initialLoading ? (
-        <PageLoading label={t('common.loading')} />
-      ) : (
-        <>
-          {pageError && (
+      {pageError && (
             <MessageBar intent="error">
               <MessageBarBody>{pageError}</MessageBarBody>
             </MessageBar>
-          )}
+      )}
 
           <Panel className="grid gap-[14px] min-w-0 !p-[18px]">
             <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
@@ -332,8 +327,6 @@ export default function DashboardServicesApiKeys() {
             open={deleteTarget !== null}
             title={t('dashboard.apiKeys.delete.title')}
           />
-        </>
-      )}
     </div>
   );
 }
