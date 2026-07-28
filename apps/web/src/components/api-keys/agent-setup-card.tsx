@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { applyLocalAgentSetupChanges, cloneAgentSetupConfiguration } from './agent-setup-draft';
 import { buildAgentModelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform';
-import { applyLocalAgentSetupChanges, cloneAgentSetupConfiguration } from './agent-setup-draft';
 import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from './codex-credential-snippets';
 import { agentSetupCommand, defaultAgentSetupConfiguration, useAgentSetup, type AgentSetupConfiguration } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
