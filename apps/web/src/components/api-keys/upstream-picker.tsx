@@ -5,8 +5,8 @@ import { useTranslation } from 'react-i18next';
 import type { UpstreamOption } from './types';
 import type { UpstreamColor, UpstreamProviderKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { ProviderBadge, providerLabel } from '../upstreams/provider-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { ProviderBadge, providerLabel } from '../upstreams/provider-badge';
 
 const { Checkbox, Switch, Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
 const useStyles = makeStyles({ fieldError: { color: 'var(--colorPaletteRedForeground1)' } });
