@@ -25,14 +25,11 @@ export const formatSubscription = (
 
 export type CredentialLookup =
   | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }
-  | { kind: 'missing-state' }
   | { kind: 'uuid-mismatch'; expectedAccountUuid: string };
 
 export const lookUpCredential = (record: ClaudeCodeRecord): CredentialLookup => {
-  const state = record.state;
-  if (state === null) return { kind: 'missing-state' };
   const expectedAccountUuid = record.config.accounts[0].accountUuid;
-  const match = state.accounts.find(account => account.accountUuid === expectedAccountUuid);
+  const match = record.state.accounts.find(account => account.accountUuid === expectedAccountUuid);
   return match ? { kind: 'present', credential: match } : { kind: 'uuid-mismatch', expectedAccountUuid };
 };
 

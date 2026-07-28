@@ -9,6 +9,8 @@ const ACCOUNT_ID = 'acct_0123456789abcdef';
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
 const PAST = '2026-07-28T11:00:00.000Z';
 const FUTURE = '2026-07-28T13:00:00.000Z';
+const activeCredential = { chatgptAccountId: ACCOUNT_ID, state: 'active' as const, state_updated_at: PAST };
+const activeLookup = { kind: 'present' as const, credential: activeCredential };
 
 const record = (state: CodexRecord['state'], codexQuota?: CodexQuotaSnapshotMap): CodexRecord => ({
   id: 'up_1',
@@ -26,11 +28,15 @@ describe('codex credential lookup', () => {
         { chatgptAccountId: ACCOUNT_ID, state: 'active' as const, state_updated_at: PAST },
       ],
     };
-    expect(findCredential(record(state))?.state).toBe('active');
+    const lookup = findCredential(record(state));
+    expect(lookup.kind).toBe('present');
+    if (lookup.kind === 'present') expect(lookup.credential.state).toBe('active');
   });
 
-  it('returns null when the upstream has no stored state', () => {
-    expect(findCredential(record(null))).toBeNull();
+  it('returns null when the configured account is absent from state', () => {
+    expect(findCredential(record({
+      accounts: [{ chatgptAccountId: 'other', state: 'active', state_updated_at: PAST }],
+    }))).toEqual({ kind: 'account-id-mismatch', expectedAccountId: ACCOUNT_ID });
   });
 });
 
@@ -82,22 +88,27 @@ describe('codex account status', () => {
       daily: { observed_at: PAST, ratelimited_until: FUTURE },
       weekly: { observed_at: PAST, ratelimited_until: '2026-07-28T18:00:00.000Z' },
     }, NOW);
-    expect(accountStatus(null, entries)).toEqual({ tone: 'danger', reason: 'rate-limited', until: '2026-07-28T18:00:00.000Z' });
+    expect(accountStatus(activeLookup, entries)).toEqual({ tone: 'danger', reason: 'rate-limited', until: '2026-07-28T18:00:00.000Z' });
   });
 
   it('puts a broken credential ahead of any quota reading', () => {
     const credential = { chatgptAccountId: ACCOUNT_ID, state: 'session_terminated' as const, state_message: 'revoked', state_updated_at: PAST };
     const entries = quotaEntries({ daily: { observed_at: PAST, ratelimited_until: FUTURE } }, NOW);
-    expect(accountStatus(credential, entries)).toEqual({ tone: 'danger', reason: 'session-terminated', detail: 'revoked' });
+    expect(accountStatus({ kind: 'present', credential }, entries)).toEqual({ tone: 'danger', reason: 'session-terminated', detail: 'revoked' });
   });
 
   it('warns on heavy usage across any window', () => {
     const entries = quotaEntries({ daily: { observed_at: PAST, primary_used_percent: 12, secondary_used_percent: 84 } }, NOW);
-    expect(accountStatus(null, entries)).toEqual({ tone: 'warning', reason: 'heavy', percent: 84 });
+    expect(accountStatus(activeLookup, entries)).toEqual({ tone: 'warning', reason: 'heavy', percent: 84 });
   });
 
   it('stays active with no snapshots at all', () => {
-    expect(accountStatus(null, [])).toEqual({ tone: 'success', reason: 'active' });
+    expect(accountStatus(activeLookup, [])).toEqual({ tone: 'success', reason: 'active' });
+  });
+
+  it('marks a config/state account mismatch as dangerous', () => {
+    expect(accountStatus({ kind: 'account-id-mismatch', expectedAccountId: ACCOUNT_ID }, []))
+      .toEqual({ tone: 'danger', reason: 'account-id-mismatch' });
   });
 });
 

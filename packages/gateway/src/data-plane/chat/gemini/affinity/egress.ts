@@ -1,5 +1,5 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
-import { captureExtras, eventFrame, type ProtocolFrame, USAGE_BILLING } from '@floway-dev/protocols/common';
+import { captureExtras, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiPart, GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { GEMINI_CANDIDATE_KEYS, GEMINI_RESULT_KEYS } from '@floway-dev/protocols/gemini';
 
@@ -123,16 +123,7 @@ export const wrapGeminiAffinityEgress = async function* (
   }
 };
 
-const cloneGeminiEvent = (event: GeminiResult): GeminiResult => {
-  const cloned = structuredClone(event);
-  const billing = event.usageMetadata?.[USAGE_BILLING];
-  if (billing === undefined) return cloned;
-  if (cloned.usageMetadata === undefined) {
-    throw new Error('Gemini usage billing metadata lost its usage container during affinity cloning');
-  }
-  cloned.usageMetadata[USAGE_BILLING] = structuredClone(billing);
-  return cloned;
-};
+const cloneGeminiEvent = (event: GeminiResult): GeminiResult => structuredClone(event);
 
 const wrapGeminiEventAffinity = async (
   current: GeminiResult,

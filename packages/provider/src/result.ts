@@ -1,5 +1,6 @@
 import type { InternalDebugError } from './error.ts';
 import type { PerformanceTelemetryContext, TelemetryModelIdentity } from './telemetry.ts';
+import type { BillableUsage } from '@floway-dev/protocols/common';
 
 export interface EventResult<T> {
   type: 'events';
@@ -16,6 +17,9 @@ export interface EventResult<T> {
 export interface EventResultMetadata {
   modelIdentity: TelemetryModelIdentity;
   performance?: PerformanceTelemetryContext;
+  // What the upstream turn cost, read from the upstream's own usage. Absent
+  // until the stream that reports it has been consumed.
+  billableUsage?: BillableUsage;
 }
 
 // HTTP-shaped error envelope the respond layer forwards to the client

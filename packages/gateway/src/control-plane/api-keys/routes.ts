@@ -6,10 +6,20 @@ import type { ApiKey } from '../../repo/types.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '../../shared/api-key-tokens.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
-import { ownedKeyOr404 } from '../shared/owned-key.ts';
+import { ownedKeyForUser } from '../shared/owned-key.ts';
 import { validateUpstreamIdsExist } from '../shared/upstream-ids.ts';
 
 const GENERATED_KEY_RETRIES = 5;
+
+type KeyWriteError = {
+  ok: false;
+  status: 400 | 409 | 500;
+  error: string;
+};
+
+type KeyWriteResult = { ok: true; key: ApiKey } | KeyWriteError;
+
+const keyWriteError = (status: KeyWriteError['status'], error: string): KeyWriteError => ({ ok: false, status, error });
 
 const apiKeyToJson = (key: ApiKey) => ({
   id: key.id,
@@ -22,20 +32,19 @@ const apiKeyToJson = (key: ApiKey) => ({
   responses_retention_seconds: key.responsesRetentionSeconds,
 });
 
-const normalizeCustomKey = (value: unknown): string | Response => {
+const normalizeCustomKey = (value: unknown): { ok: true; key: string } | KeyWriteError => {
   if (typeof value !== 'string') {
-    return Response.json({ error: 'custom_key is required when key_source is custom' }, { status: 400 });
+    return keyWriteError(400, 'custom_key is required when key_source is custom');
   }
   const trimmed = value.trim();
-  if (!trimmed) return Response.json({ error: 'custom_key is required when key_source is custom' }, { status: 400 });
+  if (!trimmed) return keyWriteError(400, 'custom_key is required when key_source is custom');
   if (trimmed.length > CUSTOM_API_KEY_MAX_LENGTH) {
-    return Response.json({ error: `custom_key must be at most ${CUSTOM_API_KEY_MAX_LENGTH} characters` }, { status: 400 });
+    return keyWriteError(400, `custom_key must be at most ${CUSTOM_API_KEY_MAX_LENGTH} characters`);
   }
-  return trimmed;
+  return { ok: true, key: trimmed };
 };
 
-const duplicateKeyResponse = () =>
-  Response.json({ error: 'An API key with that raw key already exists.' }, { status: 409 });
+const duplicateKeyError = (): KeyWriteError => keyWriteError(409, 'An API key with that raw key already exists.');
 
 const isRawKeyUniqueConstraint = (error: unknown): boolean =>
   /UNIQUE constraint failed: api_keys\.key(?:\b|$)/i.test(error instanceof Error ? error.message : String(error));
@@ -43,30 +52,30 @@ const isRawKeyUniqueConstraint = (error: unknown): boolean =>
 const findAnyByRawKey = async (rawKey: string): Promise<ApiKey | null> =>
   (await getRepo().apiKeys.listIncludingDeleted()).find(key => key.key === rawKey) ?? null;
 
-const saveGeneratedKey = async (template: Omit<ApiKey, 'key'>): Promise<ApiKey | Response> => {
+const saveGeneratedKey = async (template: Omit<ApiKey, 'key'>): Promise<KeyWriteResult> => {
   for (let i = 0; i < GENERATED_KEY_RETRIES; i++) {
     const key: ApiKey = { ...template, key: generateApiKeyToken() };
     if (await findAnyByRawKey(key.key)) continue;
     try {
       await getRepo().apiKeys.save(key);
-      return key;
+      return { ok: true, key };
     } catch (error) {
       if (isRawKeyUniqueConstraint(error)) continue;
       throw error;
     }
   }
-  return Response.json({ error: 'Could not allocate a unique API key; retry the request.' }, { status: 500 });
+  return keyWriteError(500, 'Could not allocate a unique API key; retry the request.');
 };
 
-const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Promise<ApiKey | Response> => {
+const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Promise<KeyWriteResult> => {
   const existing = await findAnyByRawKey(rawKey);
-  if (existing && existing.id !== template.id) return duplicateKeyResponse();
+  if (existing && existing.id !== template.id) return duplicateKeyError();
   const key: ApiKey = { ...template, key: rawKey };
   try {
     await getRepo().apiKeys.save(key);
-    return key;
+    return { ok: true, key };
   } catch (error) {
-    if (isRawKeyUniqueConstraint(error)) return duplicateKeyResponse();
+    if (isRawKeyUniqueConstraint(error)) return duplicateKeyError();
     throw error;
   }
 };
@@ -76,15 +85,15 @@ const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Pro
 const writeKeyForRequest = async (
   template: Omit<ApiKey, 'key'>,
   body: { key_source?: KeySource; custom_key?: string },
-): Promise<ApiKey | Response> => {
+): Promise<KeyWriteResult> => {
   const source = body.key_source ?? 'generate';
   if (source !== 'custom' && body.custom_key !== undefined) {
-    return Response.json({ error: 'custom_key is only valid when key_source is custom' }, { status: 400 });
+    return keyWriteError(400, 'custom_key is only valid when key_source is custom');
   }
   if (source === 'custom') {
     const customKey = normalizeCustomKey(body.custom_key);
-    if (customKey instanceof Response) return customKey;
-    return await saveCustomKey(template, customKey);
+    if (!customKey.ok) return customKey;
+    return await saveCustomKey(template, customKey.key);
   }
   return await saveGeneratedKey(template);
 };
@@ -131,15 +140,15 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     responsesRetentionSeconds: body.responses_retention_seconds ?? 0,
   } satisfies Omit<ApiKey, 'key'>;
 
-  const key = await writeKeyForRequest(template, body);
-  if (key instanceof Response) return key;
-  return c.json(apiKeyToJson(key), 201);
+  const result = await writeKeyForRequest(template, body);
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  return c.json(apiKeyToJson(result.key), 201);
 };
 
 export const deleteKey = async (c: AuthedContext) => {
   const id = c.req.param('id')!;
-  const owned = await ownedKeyOr404(c, id);
-  if (owned instanceof Response) return owned;
+  const owned = await ownedKeyForUser(c, id);
+  if (!owned) return c.json({ error: 'Key not found' }, 404);
   // Cut any live SSE subscribers so the dashboard sees a clean disconnect.
   // Broker availability shouldn't block the soft-delete — clients reconcile
   // on the next keys refetch regardless.
@@ -150,12 +159,12 @@ export const deleteKey = async (c: AuthedContext) => {
 
 export const rotateKey = async (c: CtxWithJson<typeof rotateKeyBody>) => {
   const id = c.req.param('id')!;
-  const owned = await ownedKeyOr404(c, id);
-  if (owned instanceof Response) return owned;
+  const owned = await ownedKeyForUser(c, id);
+  if (!owned) return c.json({ error: 'Key not found' }, 404);
 
-  const updated = await writeKeyForRequest(owned, c.req.valid('json'));
-  if (updated instanceof Response) return updated;
-  return c.json(apiKeyToJson(updated));
+  const result = await writeKeyForRequest(owned, c.req.valid('json'));
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  return c.json(apiKeyToJson(result.key));
 };
 
 export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
@@ -166,8 +175,8 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     return c.json({ error: 'Provide a new name, upstream selection, dump retention, or Stateful Responses retention to update.' }, 400);
   }
 
-  const owned = await ownedKeyOr404(c, id);
-  if (owned instanceof Response) return owned;
+  const owned = await ownedKeyForUser(c, id);
+  if (!owned) return c.json({ error: 'Key not found' }, 404);
 
   if (body.upstream_ids !== undefined) {
     const err = await validateUpstreamIdsAgainstUserCap(c, body.upstream_ids);

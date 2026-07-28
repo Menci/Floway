@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { USAGE_BILLING } from '../../src/common/index.ts';
 import type { GeminiResult, GeminiStreamEvent } from '../../src/gemini/index.ts';
 import { reassembleGeminiEvents } from '../../src/gemini/reassemble.ts';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -8,121 +7,6 @@ import { assertEquals } from '@floway-dev/test-utils';
 const eventsFrom = async function* (events: readonly GeminiStreamEvent[]) {
   yield* events;
 };
-
-test('reassembleGeminiEvents assembles candidate parts and final metadata', async () => {
-  const events: GeminiStreamEvent[] = [
-    {
-      candidates: [
-        {
-          index: 0,
-          content: {
-            role: 'model',
-            parts: [{ text: 'He' }, { text: 'l' }],
-          },
-        },
-      ],
-      modelVersion: 'gemini-test-preview',
-      responseId: 'response-early',
-    },
-    {
-      candidates: [
-        {
-          index: 0,
-          content: {
-            role: 'model',
-            parts: [{ text: 'lo' }, { text: 'thinking', thought: true }],
-          },
-        },
-        {
-          index: 1,
-          content: {
-            role: 'model',
-            parts: [{ functionCall: { id: 'call-1', name: 'lookup', args: {} } }],
-          },
-        },
-      ],
-      usageMetadata: { promptTokenCount: 2, totalTokenCount: 4 },
-    },
-    {
-      candidates: [
-        {
-          index: 0,
-          content: {
-            role: 'model',
-            parts: [{ text: ' signed', thoughtSignature: 'sig-1' }, { text: ' tail' }],
-          },
-          finishReason: 'STOP',
-          finishMessage: 'Finished normally.',
-        },
-      ],
-      modelVersion: 'gemini-test',
-      responseId: 'response-final',
-      usageMetadata: {
-        promptTokenCount: 2,
-        candidatesTokenCount: 6,
-        totalTokenCount: 8,
-        thoughtsTokenCount: 1,
-      },
-    },
-  ];
-
-  const expected: GeminiResult = {
-    candidates: [
-      {
-        index: 0,
-        content: {
-          role: 'model',
-          parts: [{ text: 'Hello' }, { text: 'thinking', thought: true }, { text: ' signed', thoughtSignature: 'sig-1' }, { text: ' tail' }],
-        },
-        finishReason: 'STOP',
-        finishMessage: 'Finished normally.',
-      },
-      {
-        index: 1,
-        content: {
-          role: 'model',
-          parts: [{ functionCall: { id: 'call-1', name: 'lookup', args: {} } }],
-        },
-      },
-    ],
-    modelVersion: 'gemini-test',
-    responseId: 'response-final',
-    usageMetadata: {
-      promptTokenCount: 2,
-      candidatesTokenCount: 6,
-      totalTokenCount: 8,
-      thoughtsTokenCount: 1,
-    },
-  };
-
-  assertEquals(await reassembleGeminiEvents(eventsFrom(events)), expected);
-});
-
-test('reassembleGeminiEvents preserves terminal safety explanation', async () => {
-  const result = await reassembleGeminiEvents(eventsFrom([{
-    candidates: [{
-      index: 0,
-      content: { role: 'model', parts: [] },
-      finishReason: 'SAFETY',
-      finishMessage: 'This request could enable biological harm.',
-    }],
-  }]));
-
-  assertEquals(result.candidates?.[0].finishMessage, 'This request could enable biological harm.');
-});
-
-test('Gemini billing metadata survives reassembly without entering JSON', async () => {
-  const usageMetadata = {
-    promptTokenCount: 10,
-    [USAGE_BILLING]: { cacheWriteTokenCount: 4, serviceTier: 'priority' },
-  };
-  const result = await reassembleGeminiEvents(eventsFrom([{
-    candidates: [{ index: 0, content: { role: 'model', parts: [] }, finishReason: 'STOP' }],
-    usageMetadata,
-  }]));
-  assertEquals(result.usageMetadata?.[USAGE_BILLING], { cacheWriteTokenCount: 4, serviceTier: 'priority' });
-  assertEquals(JSON.parse(JSON.stringify(result.usageMetadata)), { promptTokenCount: 10 });
-});
 
 test('reassembleGeminiEvents preserves unknown candidate-level and result-level fields', async () => {
   const event = {

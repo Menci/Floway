@@ -3,17 +3,17 @@ import { streamSSE } from 'hono/streaming';
 
 import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
 import { geminiStatusForHttpStatus } from './errors.ts';
-import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
+import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
-import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { GeminiErrorResponse, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
 // Renders an upstream Gemini result into the client HTTP/SSE response, in the
@@ -46,14 +46,14 @@ export const respondGemini = async (
   }
 
   const state = new SourceStreamState();
-  const observed = observeGeminiFrames(result.events, state, wantsStream, ctx);
+  const observed = observeGeminiFrames(result.events, state, ctx);
   const frames = wrapGeminiAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {
       const response = await collectGeminiProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      const usage = tokenUsageFromGeminiResponse(response);
+      const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
       return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
@@ -78,14 +78,12 @@ export const respondGemini = async (
       if (failed) {
         ctx.dump?.failed(`gemini stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        ctx.dump?.success(metadata.modelIdentity, state.usage);
+        ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
       }
-      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
     }
   });
 };
-
-const tokenUsageFromGeminiResponse = (r: GeminiResult) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
 
 // --- error rendering: Google-RPC envelope ---
 
@@ -187,14 +185,11 @@ const geminiStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(caugh
 
 const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
 
-const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
+const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && isGeminiErrorEvent(frame.event);
     if (failed) state.failed = true;
-    if (observeUsage) {
-      state.rememberUsage(frame.type === 'event' && !('error' in frame.event) ? tokenUsageFromGeminiResponse(frame.event) : null);
-    }
     if (isGeminiTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
     if (isGeminiTerminalFrame(frame)) return;

@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { wrapGeminiAffinityEgress } from '../../../../../src/data-plane/chat/gemini/affinity/egress.ts';
 import type { AffinityCodec, AffinityTarget } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { eventFrame, type ProtocolFrame, USAGE_BILLING } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const affinity: AffinityTarget = {
@@ -516,19 +516,6 @@ describe('Gemini affinity egress', () => {
       event: { candidates: [{ content: { parts: [{ text: 'answer', thoughtSignature: 'wrapped:synthetic' }] } }] },
     });
     expect(output[1]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
-  });
-
-  test('preserves usage billing metadata through the event clone', async () => {
-    const billing = { cacheWriteTokenCount: 3, serviceTier: 'priority' };
-    const output: ProtocolFrame<GeminiStreamEvent>[] = [];
-    for await (const frame of wrapGeminiAffinityEgress(frames([eventFrame({
-      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'answer' }] }, finishReason: 'STOP' }],
-      usageMetadata: { totalTokenCount: 4, [USAGE_BILLING]: billing },
-    })]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    const event = output[0].type === 'event' && !('error' in output[0].event) ? output[0].event : undefined;
-    expect(event?.usageMetadata?.[USAGE_BILLING]).toEqual(billing);
-    expect(event?.usageMetadata?.[USAGE_BILLING]).not.toBe(billing);
   });
 
   test('flushes pending visible content before propagating an iterator failure', async () => {

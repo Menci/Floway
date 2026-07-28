@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 import type { DashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
-import { api, getCurrentSession } from '../api/client';
+import { api } from '../api/client';
 import type { ControlPlaneUser, UpstreamOption } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -81,8 +81,8 @@ const useStyles = makeStyles({
 export async function clientLoader(): Promise<UsersPageData> {
   if (!getSessionToken()) throw redirect('/');
 
-  const session = await getCurrentSession();
-  if (session.error || !session.data.user.isAdmin) {
+  const user = await useAuthStore.getState().initialize();
+  if (!user?.isAdmin) {
     throw redirect('/dashboard/services/api-keys');
   }
 
@@ -96,7 +96,7 @@ export function meta({}: Route.MetaArgs) {
 export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user: actor } = useOutletContext<DashboardOutletContext>();
-  const setAuthUser = useAuthStore(state => state.setUser);
+  const refreshAuth = useAuthStore(state => state.refresh);
   const [data, setData] = useState<UsersPageData>(loaderData);
   const [pageError, setPageError] = useState<string | null>(loaderData.error);
   const [loading, setLoading] = useState(false);
@@ -124,9 +124,11 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     await reload();
     if (savedId !== actor.id) return;
 
-    const session = await getCurrentSession();
-    if (session.data) setAuthUser(session.data.user);
-    else if (session.error) setPageError(session.error.message);
+    const refreshed = await refreshAuth();
+    if (!refreshed) {
+      const error = useAuthStore.getState().error;
+      if (error) setPageError(error);
+    }
   };
 
   const deleteUser = async (target: ControlPlaneUser) => {

@@ -3,12 +3,11 @@ import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
 
 // Resolve an API key path-param and confirm the authenticated user owns it.
-// Returns the key record on success, or a 404 Response on miss / foreign
-// ownership. Routing 403 to 404 avoids leaking the existence of another
-// user's key id to the actor.
-export const ownedKeyOr404 = async (c: AuthedContext, id: string): Promise<ApiKey | Response> => {
+// A miss and foreign ownership both return null so callers expose the same
+// 404 without leaking another user's key id.
+export const ownedKeyForUser = async (c: AuthedContext, id: string): Promise<ApiKey | null> => {
   const userId = userFromContext(c).id;
   const key = await getRepo().apiKeys.getById(id);
-  if (key?.userId !== userId) return c.json({ error: 'Key not found' }, 404);
+  if (key?.userId !== userId) return null;
   return key;
 };

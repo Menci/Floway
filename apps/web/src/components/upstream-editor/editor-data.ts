@@ -3,10 +3,10 @@ import type { InferRequestType } from 'hono/client';
 
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
-import { upstreamRecordsFromWire } from '../../api/types';
 import type {
   BackoffRow,
   CustomRawModel,
+  ListUpstreamModelsResponse,
   ModelEndpoints,
   ProxyRecord,
   UpstreamModelConfig,
@@ -37,6 +37,8 @@ export interface UpstreamEditorLoaderData extends EditorAuxData {
   mode: 'create' | 'edit';
   record: UpstreamRecord;
   nextSortOrder: number;
+  discovered: UpstreamModelConfig[];
+  modelsError: string | null;
 }
 
 export interface UpstreamEditorValues {
@@ -84,8 +86,30 @@ export async function loadEditorAux(): Promise<EditorAuxData> {
     proxies: proxies.data!,
     backoffs: backoffs.data!,
     runtime: runtime.data!,
-    upstreams: upstreamRecordsFromWire(upstreams.data!),
+    upstreams: upstreams.data!,
   };
+}
+
+export async function loadInitialModelCatalog(record: UpstreamRecord) {
+  const values = valuesFromRecord(record);
+  const canFetch = record.kind === 'custom'
+    ? Boolean(record.config.baseUrl) && record.config.modelsFetch.enabled
+    : record.kind === 'ollama'
+      ? Boolean(record.config.baseUrl)
+      : record.id !== '' && record.kind !== 'azure';
+  if (!canFetch) return { discovered: [], modelsError: null, record };
+
+  const result = await callApi(() => api.api.upstreams['list-models'].$post({
+    json: { record: previewRecord(record, values) },
+  }));
+  if (result.error) return { discovered: [], modelsError: result.error.message, record };
+
+  const endpoints = record.kind === 'custom' ? record.config.endpoints : {};
+  const discovered = discoveredModelsFromResponse(result.data, endpoints);
+  const refreshed = await callApi(() => api.api.upstreams[':id'].$get({ param: { id: record.id } }));
+  return refreshed.error
+    ? { discovered, modelsError: refreshed.error.message, record }
+    : { discovered, modelsError: null, record: refreshed.data };
 }
 
 export function valuesFromRecord(record: UpstreamRecord): UpstreamEditorValues {
@@ -216,23 +240,11 @@ const discoveredCustomModelEndpoints = (
 };
 
 export function discoveredModelsFromResponse(
-  kind: UpstreamProviderKind,
-  data: readonly unknown[],
+  response: ListUpstreamModelsResponse,
   endpoints: ModelEndpoints,
 ): UpstreamModelConfig[] {
-  if (kind !== 'custom') return data.map(value => {
-    if (!value || typeof value !== 'object') throw new TypeError('Upstream model response must be an object');
-    const model = value as Partial<UpstreamModelConfig>;
-    if (typeof model.upstreamModelId !== 'string' || typeof model.kind !== 'string' || !model.endpoints) {
-      throw new TypeError('Upstream model response is missing its required fields');
-    }
-    return value as UpstreamModelConfig;
-  });
-  return data.map(value => {
-    if (!value || typeof value !== 'object' || typeof (value as { id?: unknown }).id !== 'string') {
-      throw new TypeError('Custom model response is missing its id');
-    }
-    const model = value as CustomRawModel;
+  if (response.kind !== 'custom') return response.data;
+  return response.data.map(model => {
     const modelEndpoints = discoveredCustomModelEndpoints(model.kind, endpoints);
     return {
       upstreamModelId: model.id,

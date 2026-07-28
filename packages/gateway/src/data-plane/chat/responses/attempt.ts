@@ -2,8 +2,9 @@ import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
-import { tokenUsageFromResponsesResult } from './usage.ts';
+import { billableUsageFromResponsesEvent } from './usage.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
+import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
@@ -109,7 +110,7 @@ export const responsesAttempt = {
         type: 'result',
         result: upstreamCompacted,
         modelIdentity: chainResult.modelIdentity,
-        usage: tokenUsageFromResponsesResult(upstreamCompacted),
+        usage: tokenUsageFromBillableUsage((await chainResult.finalMetadata)?.billableUsage),
         performance: chainResult.performance,
       };
     }
@@ -219,6 +220,7 @@ const providerResponsesResultToExecuteResult = async (
       candidate,
       targetApi,
       ctx,
+      billableUsageFromResponsesEvent,
     );
   }
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');

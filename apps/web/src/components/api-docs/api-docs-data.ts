@@ -1,4 +1,6 @@
-export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'search' | 'codex';
+import { PUBLIC_DATA_PLANE_ROUTES, type PublicDataPlaneRouteId } from '@floway-dev/protocols/common';
+
+export type ApiDocsGroup = 'models' | 'generation' | 'media' | 'rerank' | 'search';
 
 export interface ApiDocsEndpoint {
   docs: string;
@@ -6,78 +8,76 @@ export interface ApiDocsEndpoint {
   method: 'GET' | 'POST';
   name: string;
   path: string;
+  route: PublicDataPlaneRouteId;
 }
 
 const openAi = 'https://platform.openai.com/docs/api-reference';
 const codexSearchDocs = 'https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L8-L29';
 
-export const apiDocsEndpoints: ApiDocsEndpoint[] = [
-  { group: 'models', method: 'GET', path: '/v1/models', name: 'openAiModels', docs: `${openAi}/models/list` },
-  { group: 'models', method: 'GET', path: '/models', name: 'openAiModelsAlias', docs: `${openAi}/models/list` },
-  { group: 'models', method: 'GET', path: '/v1beta/models', name: 'geminiModels', docs: 'https://ai.google.dev/api/models' },
-  { group: 'models', method: 'GET', path: '/v1beta/models/{model}', name: 'geminiModel', docs: 'https://ai.google.dev/api/models' },
+const endpoint = (
+  route: PublicDataPlaneRouteId,
+  metadata: Pick<ApiDocsEndpoint, 'docs' | 'group' | 'name'> & { path?: string },
+): ApiDocsEndpoint => {
+  const manifest = PUBLIC_DATA_PLANE_ROUTES[route];
+  return { route, method: manifest.method, path: metadata.path ?? manifest.paths.join(', '), ...metadata };
+};
 
-  { group: 'generation', method: 'POST', path: '/v1/completions', name: 'openAiCompletions', docs: `${openAi}/completions/create` },
-  { group: 'generation', method: 'POST', path: '/completions', name: 'openAiCompletionsAlias', docs: `${openAi}/completions/create` },
-  { group: 'generation', method: 'POST', path: '/v1/chat/completions', name: 'openAiChat', docs: `${openAi}/chat/create` },
-  { group: 'generation', method: 'POST', path: '/chat/completions', name: 'openAiChatAlias', docs: `${openAi}/chat/create` },
-  { group: 'generation', method: 'POST', path: '/v1/responses', name: 'openAiResponses', docs: `${openAi}/responses/create` },
-  { group: 'generation', method: 'POST', path: '/responses', name: 'openAiResponsesAlias', docs: `${openAi}/responses/create` },
-  { group: 'generation', method: 'POST', path: '/v1/responses/compact', name: 'openAiCompact', docs: `${openAi}/responses/compact` },
-  { group: 'generation', method: 'POST', path: '/responses/compact', name: 'openAiCompactAlias', docs: `${openAi}/responses/compact` },
-  { group: 'generation', method: 'GET', path: '/v1/responses', name: 'openAiResponsesWs', docs: 'https://developers.openai.com/api/docs/guides/websocket-mode' },
-  { group: 'generation', method: 'GET', path: '/responses', name: 'openAiResponsesWsAlias', docs: 'https://developers.openai.com/api/docs/guides/websocket-mode' },
-  { group: 'generation', method: 'POST', path: '/v1/messages', name: 'anthropicMessages', docs: 'https://docs.anthropic.com/en/api/messages' },
-  { group: 'generation', method: 'POST', path: '/messages', name: 'anthropicMessagesAlias', docs: 'https://docs.anthropic.com/en/api/messages' },
-  { group: 'generation', method: 'POST', path: '/v1/messages/count_tokens', name: 'anthropicCount', docs: 'https://docs.anthropic.com/en/api/messages-count-tokens' },
-  { group: 'generation', method: 'POST', path: '/messages/count_tokens', name: 'anthropicCountAlias', docs: 'https://docs.anthropic.com/en/api/messages-count-tokens' },
-  { group: 'generation', method: 'POST', path: '/v1beta/models/{model}:generateContent', name: 'geminiGenerate', docs: 'https://ai.google.dev/api/generate-content' },
-  { group: 'generation', method: 'POST', path: '/v1beta/models/{model}:streamGenerateContent', name: 'geminiStream', docs: 'https://ai.google.dev/api/generate-content' },
-  { group: 'generation', method: 'POST', path: '/v1beta/models/{model}:countTokens', name: 'geminiCount', docs: 'https://ai.google.dev/api/tokens' },
+const geminiActionPath = (action: string) =>
+  PUBLIC_DATA_PLANE_ROUTES.geminiAction.paths[0].replace(':modelAction{.+}', `{model}:${action}`);
 
-  { group: 'media', method: 'POST', path: '/v1/embeddings', name: 'openAiEmbeddings', docs: `${openAi}/embeddings/create` },
-  { group: 'media', method: 'POST', path: '/embeddings', name: 'openAiEmbeddingsAlias', docs: `${openAi}/embeddings/create` },
-  { group: 'media', method: 'POST', path: '/v1/images/generations', name: 'openAiImageGeneration', docs: `${openAi}/images/create` },
-  { group: 'media', method: 'POST', path: '/images/generations', name: 'openAiImageGenerationAlias', docs: `${openAi}/images/create` },
-  { group: 'media', method: 'POST', path: '/v1/images/edits', name: 'openAiImageEdit', docs: `${openAi}/images/createEdit` },
-  { group: 'media', method: 'POST', path: '/images/edits', name: 'openAiImageEditAlias', docs: `${openAi}/images/createEdit` },
-  { group: 'media', method: 'POST', path: '/v1/audio/transcriptions', name: 'openAiTranscription', docs: `${openAi}/audio/createTranscription` },
+export const authCurlExample = (origin: string) => `curl "${origin}/v1/models" \\
+  -H "Authorization: Bearer $FLOWAY_API_KEY"`;
 
-  { group: 'rerank', method: 'POST', path: '/v1/rerank', name: 'cohereV1Rerank', docs: 'https://docs.cohere.com/reference/rerank' },
-  { group: 'rerank', method: 'POST', path: '/v2/rerank', name: 'cohereV2Rerank', docs: 'https://docs.cohere.com/v2/reference/rerank' },
-  { group: 'rerank', method: 'POST', path: '/jina/v1/rerank', name: 'jinaRerank', docs: 'https://jina.ai/reranker' },
-  { group: 'rerank', method: 'POST', path: '/voyage/v1/rerank', name: 'voyageRerank', docs: 'https://docs.voyageai.com/reference/reranker-api' },
+export const apiDocsEndpoints: readonly ApiDocsEndpoint[] = [
+  endpoint('models', { group: 'models', name: 'openAiModels', docs: `${openAi}/models/list` }),
+  endpoint('geminiModels', { group: 'models', name: 'geminiModels', docs: 'https://ai.google.dev/api/models' }),
+  endpoint('geminiModel', { group: 'models', name: 'geminiModel', docs: 'https://ai.google.dev/api/models', path: PUBLIC_DATA_PLANE_ROUTES.geminiModel.paths[0].replace(':modelId{.+}', '{model}') }),
 
-  { group: 'search', method: 'POST', path: '/alpha/search', name: 'codexSearch', docs: codexSearchDocs },
-  { group: 'search', method: 'POST', path: '/v1/alpha/search', name: 'codexSearchV1', docs: codexSearchDocs },
+  endpoint('completions', { group: 'generation', name: 'openAiCompletions', docs: `${openAi}/completions/create` }),
+  endpoint('chatCompletions', { group: 'generation', name: 'openAiChat', docs: `${openAi}/chat/create` }),
+  endpoint('responses', { group: 'generation', name: 'openAiResponses', docs: `${openAi}/responses/create` }),
+  endpoint('responsesCompact', { group: 'generation', name: 'openAiCompact', docs: `${openAi}/responses/compact` }),
+  endpoint('responsesWebSocket', { group: 'generation', name: 'openAiResponsesWs', docs: 'https://developers.openai.com/api/docs/guides/websocket-mode' }),
+  endpoint('messages', { group: 'generation', name: 'anthropicMessages', docs: 'https://docs.anthropic.com/en/api/messages' }),
+  endpoint('messagesCountTokens', { group: 'generation', name: 'anthropicCount', docs: 'https://docs.anthropic.com/en/api/messages-count-tokens' }),
+  endpoint('geminiAction', { group: 'generation', name: 'geminiGenerate', docs: 'https://ai.google.dev/api/generate-content', path: geminiActionPath('generateContent') }),
+  endpoint('geminiAction', { group: 'generation', name: 'geminiStream', docs: 'https://ai.google.dev/api/generate-content', path: geminiActionPath('streamGenerateContent') }),
+  endpoint('geminiAction', { group: 'generation', name: 'geminiCount', docs: 'https://ai.google.dev/api/tokens', path: geminiActionPath('countTokens') }),
 
-  { group: 'codex', method: 'POST', path: '/azure-api.codex/alpha/search', name: 'codexNamespaceSearch', docs: codexSearchDocs },
-  { group: 'codex', method: 'POST', path: '/azure-api.codex/responses', name: 'codexNamespaceResponses', docs: `${openAi}/responses/create` },
-  { group: 'codex', method: 'POST', path: '/azure-api.codex/responses/compact', name: 'codexNamespaceCompact', docs: `${openAi}/responses/compact` },
-  { group: 'codex', method: 'GET', path: '/azure-api.codex/responses', name: 'codexNamespaceWs', docs: 'https://developers.openai.com/api/docs/guides/websocket-mode' },
-  { group: 'codex', method: 'POST', path: '/azure-api.codex/images/generations', name: 'codexNamespaceImageGeneration', docs: `${openAi}/images/create` },
-  { group: 'codex', method: 'POST', path: '/azure-api.codex/images/edits', name: 'codexNamespaceImageEdit', docs: `${openAi}/images/createEdit` },
-  { group: 'codex', method: 'GET', path: '/azure-api.codex/models', name: 'codexNamespaceModels', docs: `${openAi}/models/list` },
+  endpoint('embeddings', { group: 'media', name: 'openAiEmbeddings', docs: `${openAi}/embeddings/create` }),
+  endpoint('imagesGenerations', { group: 'media', name: 'openAiImageGeneration', docs: `${openAi}/images/create` }),
+  endpoint('imagesEdits', { group: 'media', name: 'openAiImageEdit', docs: `${openAi}/images/createEdit` }),
+  endpoint('audioTranscriptions', { group: 'media', name: 'openAiTranscription', docs: `${openAi}/audio/createTranscription` }),
+
+  endpoint('cohereV1Rerank', { group: 'rerank', name: 'cohereV1Rerank', docs: 'https://docs.cohere.com/reference/rerank' }),
+  endpoint('cohereV2Rerank', { group: 'rerank', name: 'cohereV2Rerank', docs: 'https://docs.cohere.com/v2/reference/rerank' }),
+  endpoint('jinaV1Rerank', { group: 'rerank', name: 'jinaRerank', docs: 'https://jina.ai/reranker' }),
+  endpoint('voyageV1Rerank', { group: 'rerank', name: 'voyageRerank', docs: 'https://docs.voyageai.com/reference/reranker-api' }),
+
+  endpoint('alphaSearch', { group: 'search', name: 'codexSearch', docs: codexSearchDocs }),
 ];
+
+export const apiDocsGroups = [...new Set(apiDocsEndpoints.map(item => item.group))];
 
 export interface ApiDocsExample {
   code: string;
-  id: string;
   language: 'bash' | 'json';
   title: string;
 }
 
-export const apiDocsExamples: ApiDocsExample[] = [
-  { id: 'completions', title: 'completions', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Hello"\n}' },
-  { id: 'chat', title: 'chat', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
-  { id: 'responses', title: 'responses', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": "Hello",\n  "stream": true\n}' },
-  { id: 'messages', title: 'messages', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "max_tokens": 1024,\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
-  { id: 'gemini', title: 'gemini', language: 'json', code: '{\n  "contents": [{ "role": "user", "parts": [{ "text": "Hello" }] }]\n}' },
-  { id: 'embeddings', title: 'embeddings', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": ["First document", "Second document"]\n}' },
-  { id: 'imageGeneration', title: 'imageGeneration', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "A glass city at sunrise"\n}' },
-  { id: 'imageEdit', title: 'imageEdit', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Add a rainbow",\n  "images": [{ "image_url": "https://example.com/input.png" }]\n}' },
-  { id: 'audio', title: 'audio', language: 'bash', code: 'curl "$FLOWAY_BASE_URL/v1/audio/transcriptions" \\\n  -H "Authorization: Bearer $FLOWAY_API_KEY" \\\n  -F "model=MODEL_ID" \\\n  -F "file=@speech.mp3"' },
-  { id: 'rerank', title: 'rerank', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "query": "What is Floway?",\n  "documents": ["Document one", "Document two"]\n}' },
-  { id: 'search', title: 'search', language: 'json', code: '{\n  "commands": {\n    "search_query": [{ "q": "latest LLM gateway news" }]\n  }\n}' },
-  { id: 'websocket', title: 'websocket', language: 'json', code: '{\n  "type": "response.create",\n  "response": { "model": "MODEL_ID", "input": "Hello" }\n}' },
-];
+export const apiDocsExamples = {
+  completions: { title: 'completions', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Hello"\n}' },
+  chat: { title: 'chat', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
+  responses: { title: 'responses', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": "Hello",\n  "stream": true\n}' },
+  messages: { title: 'messages', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "max_tokens": 1024,\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
+  gemini: { title: 'gemini', language: 'json', code: '{\n  "contents": [{ "role": "user", "parts": [{ "text": "Hello" }] }]\n}' },
+  embeddings: { title: 'embeddings', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": ["First document", "Second document"]\n}' },
+  imageGeneration: { title: 'imageGeneration', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "A glass city at sunrise"\n}' },
+  imageEdit: { title: 'imageEdit', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Add a rainbow",\n  "images": [{ "image_url": "https://example.com/input.png" }]\n}' },
+  audio: { title: 'audio', language: 'bash', code: 'curl "$FLOWAY_BASE_URL/v1/audio/transcriptions" \\\n  -H "Authorization: Bearer $FLOWAY_API_KEY" \\\n  -F "model=MODEL_ID" \\\n  -F "file=@speech.mp3"' },
+  rerank: { title: 'rerank', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "query": "What is Floway?",\n  "documents": ["Document one", "Document two"]\n}' },
+  search: { title: 'search', language: 'json', code: '{\n  "commands": {\n    "search_query": [{ "q": "latest LLM gateway news" }]\n  }\n}' },
+  websocket: { title: 'websocket', language: 'json', code: '{\n  "type": "response.create",\n  "response": { "model": "MODEL_ID", "input": "Hello" }\n}' },
+} as const satisfies Record<string, ApiDocsExample>;
+
+export type ApiDocsExampleId = keyof typeof apiDocsExamples;

@@ -2,11 +2,11 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { wrapChatCompletionsAffinityEgress } from './affinity/egress.ts';
-import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
+import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
@@ -43,14 +43,14 @@ export const respondChatCompletions = async (
   }
 
   const state = new SourceStreamState();
-  const observed = observeChatCompletionsFrames(result.events, state, wantsStream, ctx);
+  const observed = observeChatCompletionsFrames(result.events, state, ctx);
   const frames = wrapChatCompletionsAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {
       const response = await collectChatCompletionsProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
+      const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
       return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
@@ -75,9 +75,9 @@ export const respondChatCompletions = async (
       if (failed) {
         ctx.dump?.failed(`chat-completions stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        ctx.dump?.success(metadata.modelIdentity, state.usage);
+        ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
       }
-      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
     }
   });
 };
@@ -103,14 +103,11 @@ const isChatCompletionsFailureFrame = (frame: ProtocolFrame<ChatCompletionsStrea
 
 const isChatCompletionsTerminalFrame = (frame: ProtocolFrame<ChatCompletionsStreamEvent>) => frame.type === 'done' || isChatCompletionsFailureFrame(frame);
 
-const observeChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
+const observeChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     const failed = isChatCompletionsFailureFrame(frame);
     if (failed) state.failed = true;
-    if (observeUsage) {
-      state.rememberUsage(frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage ? tokenUsageFromChatCompletionsUsage(frame.event.usage, frame.event.service_tier) : null);
-    }
     if (isChatCompletionsTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
     if (isChatCompletionsTerminalFrame(frame)) return;
