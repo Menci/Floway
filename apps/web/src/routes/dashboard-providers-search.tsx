@@ -245,9 +245,8 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
     setTestResult(null);
     try {
       const response = await api.api['search-config'].test.$post({ json: draft });
-      // A completed probe answers 200 whether or not the provider accepted it;
-      // any other status is a control-plane failure, not a probe result.
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // Probe failures are structured SearchTestResult bodies at HTTP 400;
+      // preserving that body keeps the upstream error code and query visible.
       setTestResult(await response.json());
     } catch (e) {
       setTestResult({

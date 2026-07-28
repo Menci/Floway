@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
 import { computeAnnouncedMetadata } from './announced-metadata';
-import { aliasBody, aliasDefaults, blankTarget, type AliasFormValues } from './form-data';
+import { aliasBody, aliasDefaults, blankTarget, metadataForKind, type AliasFormValues } from './form-data';
 import { MetadataEditor } from './metadata-editor';
 import { AliasTargetRow } from './target-row';
 import { computeAliasWarnings, realModelIdsOfKind } from './warnings';
@@ -66,7 +66,12 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
   const changeKind = (next: ModelKind) => {
     setValue('kind', next, { shouldValidate: true });
     replace(targets.map(target => ({ ...target, rules: {} })));
-    if (next === 'image') { setValue('manualMetadata', false); setValue('announcedMetadata', {}); } else if (next === 'embedding') setValue('announcedMetadata', { limits: values.announcedMetadata?.limits });
+    if (next === 'image') {
+      setValue('manualMetadata', false);
+      setValue('announcedMetadata', {});
+    } else {
+      setValue('announcedMetadata', metadataForKind(next, values.announcedMetadata ?? {}));
+    }
   };
   const setManual = (enabled: boolean) => {
     setValue('manualMetadata', enabled);

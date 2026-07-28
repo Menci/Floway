@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { AliasTarget, ControlPlaneModel, ModelAlias } from '../../../src/api/types';
 import { computeAnnouncedMetadata } from '../../../src/components/model-alias/announced-metadata';
-import { aliasBody, aliasDefaults } from '../../../src/components/model-alias/form-data';
+import { aliasBody, aliasDefaults, metadataForKind } from '../../../src/components/model-alias/form-data';
 import { mergeModelAliasesPageData } from '../../../src/components/model-alias/load-data';
 import { computeAliasWarnings, computeModelWarning, computeRuleWarnings, findCatalogModel } from '../../../src/components/model-alias/warnings';
 
@@ -93,6 +93,13 @@ describe('alias wire body', () => {
     visible_in_models_list: true, targets: [target('a')], announced_metadata: null,
     sort_order: 7, created_at: '2026-01-01', updated_at: '2026-01-01',
   };
+
+  it('drops chat-only metadata when the alias changes to a non-chat kind', () => {
+    expect(metadataForKind('rerank', {
+      limits: { max_context_window_tokens: 4096 },
+      chat: { modalities: { input: ['text'], output: ['text'] } },
+    })).toEqual({ limits: { max_context_window_tokens: 4096 } });
+  });
 
   it('trims identifiers and preserves sort order while normalizing empty fields', () => {
     const values = aliasDefaults(existing);

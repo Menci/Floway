@@ -13,6 +13,13 @@ export interface AliasFormValues {
 
 export const blankTarget = (): AliasTarget => ({ target_model_id: '', rules: {} });
 
+export const metadataForKind = (
+  kind: ModelKind,
+  metadata: AnnouncedMetadata,
+): AnnouncedMetadata => kind === 'chat'
+  ? metadata
+  : metadata.limits ? { limits: structuredClone(metadata.limits) } : {};
+
 export function aliasDefaults(alias: ModelAlias | null): AliasFormValues {
   return alias ? {
     name: alias.name,
