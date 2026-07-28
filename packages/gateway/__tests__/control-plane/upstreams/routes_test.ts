@@ -15,7 +15,7 @@ type JsonObject = Record<string, any>;
 const envelopeFromRecord = (record: UpstreamRecord): Record<string, unknown> => upstreamRecordToFullJson(record) as unknown as Record<string, unknown>;
 
 const blueprintEnvelope = (kind: UpstreamProviderKind, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  ...envelopeFromRecord(blueprintUpstreamRecord(kind)),
+  ...blueprintUpstreamRecord(kind),
   ...overrides,
 });
 

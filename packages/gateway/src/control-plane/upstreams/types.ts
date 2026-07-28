@@ -14,8 +14,10 @@ import type {
   ClaudeCodeAccountCredential,
   ClaudeCodeAccountIdentity,
   ClaudeCodeQuotaSnapshot,
+  ClaudeCodeQuotaSnapshotEntry as StoredClaudeCodeQuotaSnapshotEntry,
   ClaudeCodeQuotaWindow,
   ClaudeCodeUpstreamConfig as StoredClaudeCodeUpstreamConfig,
+  ClaudeCodeUpstreamState as StoredClaudeCodeUpstreamState,
   ClaudeCodeUsageProbeSnapshotEntry,
 } from '@floway-dev/provider-claude-code';
 import type {
@@ -24,8 +26,12 @@ import type {
   CodexQuotaSnapshot,
   CodexQuotaSnapshotMap,
   CodexUpstreamConfig as StoredCodexUpstreamConfig,
+  CodexUpstreamState as StoredCodexUpstreamState,
 } from '@floway-dev/provider-codex';
-import type { CopilotUpstreamConfig as StoredCopilotUpstreamConfig } from '@floway-dev/provider-copilot';
+import type {
+  CopilotUpstreamConfig as StoredCopilotUpstreamConfig,
+  CopilotUpstreamState as StoredCopilotUpstreamState,
+} from '@floway-dev/provider-copilot';
 import type {
   CustomModelsFetch,
   CustomRawModel,
@@ -35,10 +41,12 @@ import type { OllamaUpstreamConfig as StoredOllamaUpstreamConfig } from '@floway
 
 export type { ClaudeCodeQuotaWindow, CodexQuotaSnapshot, CodexQuotaSnapshotMap, CustomModelsFetch, CustomRawModel, ProxyFallbackEntry };
 
-export type CustomUpstreamConfig = Pick<
+type CustomConfigFields = Pick<
   StoredCustomUpstreamConfig,
   'authStyle' | 'baseUrl' | 'endpoints' | 'models' | 'modelsFetch' | 'pathOverrides'
-> & {
+>;
+
+export type CustomUpstreamConfig = CustomConfigFields & {
   apiKey?: string;
   apiKeySet?: boolean;
 };
@@ -90,11 +98,7 @@ export type ClaudeCodeAccessTokenSummary = Omit<ClaudeCodeAccessTokenEntry, 'tok
 };
 
 export type ClaudeCodeQuotaSnapshotData = ClaudeCodeQuotaSnapshot;
-
-export interface ClaudeCodeQuotaSnapshotEntry {
-  fetchedAt: number;
-  data: ClaudeCodeQuotaSnapshotData;
-}
+export type ClaudeCodeQuotaSnapshotEntry = StoredClaudeCodeQuotaSnapshotEntry;
 
 export type ClaudeCodeAccountCredentialSummary = Pick<
   ClaudeCodeAccountCredential,
@@ -126,24 +130,76 @@ interface SerializedUpstreamRecordBase {
   color: UpstreamColor | null;
 }
 
-export type SerializedUpstreamRecord =
-  | (SerializedUpstreamRecordBase & { kind: 'custom'; config: CustomUpstreamConfig; state: null })
-  | (SerializedUpstreamRecordBase & { kind: 'azure'; config: AzureUpstreamConfig; state: null })
-  | (SerializedUpstreamRecordBase & { kind: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | null })
-  | (SerializedUpstreamRecordBase & { kind: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null })
-  | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
-  | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: null });
+type RedactedCustomConfig = CustomConfigFields & { apiKeySet: boolean };
+type RedactedAzureConfig = Omit<StoredAzureUpstreamConfig, 'apiKey'> & { apiKeySet: boolean };
+type RedactedCopilotConfig = Omit<StoredCopilotUpstreamConfig, 'githubToken'> & { githubTokenSet: boolean };
+type RedactedOllamaConfig = Omit<StoredOllamaUpstreamConfig, 'apiKey'> & { apiKeySet: boolean };
+
+type RedactedCodexCredential = Pick<
+  CodexAccountCredential,
+  'chatgptAccountId' | 'state' | 'state_message' | 'state_updated_at'
+> & { refresh_token_set: boolean };
+
+type RedactedClaudeCodeCredential = Pick<
+  ClaudeCodeAccountCredential,
+  'accountUuid' | 'state' | 'stateMessage' | 'stateUpdatedAt' | 'tokenKind'
+> & {
+  refreshTokenSet: boolean;
+  accessToken: ClaudeCodeAccessTokenSummary | null;
+  quotaSnapshot: ClaudeCodeQuotaSnapshotEntry | null;
+  usageProbeSnapshot: ClaudeCodeUsageProbeSnapshotEntry | null;
+};
+
+export type RedactedSerializedUpstreamRecord =
+  | (SerializedUpstreamRecordBase & { kind: 'custom'; config: RedactedCustomConfig; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'azure'; config: RedactedAzureConfig; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'copilot'; config: RedactedCopilotConfig; state: CopilotUpstreamState | null })
+  | (SerializedUpstreamRecordBase & { kind: 'codex'; config: StoredCodexUpstreamConfig; state: { accounts: RedactedCodexCredential[] } | null })
+  | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: StoredClaudeCodeUpstreamConfig; state: { accounts: RedactedClaudeCodeCredential[] } | null })
+  | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: RedactedOllamaConfig; state: null });
+
+export type FullSerializedUpstreamRecord =
+  | (SerializedUpstreamRecordBase & { kind: 'custom'; config: StoredCustomUpstreamConfig; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'azure'; config: StoredAzureUpstreamConfig; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'copilot'; config: StoredCopilotUpstreamConfig; state: StoredCopilotUpstreamState | null })
+  | (SerializedUpstreamRecordBase & { kind: 'codex'; config: StoredCodexUpstreamConfig; state: StoredCodexUpstreamState | null })
+  | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: StoredClaudeCodeUpstreamConfig; state: StoredClaudeCodeUpstreamState | null })
+  | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: StoredOllamaUpstreamConfig; state: null });
+
+export type SerializedUpstreamRecord = FullSerializedUpstreamRecord;
+
+export type BlueprintSerializedUpstreamRecord =
+  | (SerializedUpstreamRecordBase & { kind: 'custom'; config: StoredCustomUpstreamConfig; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'azure'; config: StoredAzureUpstreamConfig; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'copilot'; config: StoredCopilotUpstreamConfig; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'codex'; config: { accounts: CodexAccountIdentity[] }; state: { accounts: CodexAccountCredential[] } })
+  | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: { accounts: ClaudeCodeAccountIdentity[] }; state: { accounts: ClaudeCodeAccountCredential[] } })
+  | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: StoredOllamaUpstreamConfig; state: null });
 
 export interface ModelsCacheStatus {
   fetchedAt: number | null;
   lastError: { message: string; at: number } | null;
 }
 
-type WithResponseProjections<T extends SerializedUpstreamRecord> = T extends { kind: 'codex' }
-  ? T & { modelsCache: ModelsCacheStatus; codex_quota?: CodexQuotaSnapshotMap | null }
+type WithResponseProjections<T> = T extends { kind: 'codex' }
+  ? T & { modelsCache: ModelsCacheStatus; codex_quota: CodexQuotaSnapshotMap | null }
   : T & { modelsCache: ModelsCacheStatus };
 
-export type UpstreamRecord = WithResponseProjections<SerializedUpstreamRecord>;
+export type RedactedUpstreamResponse = WithResponseProjections<RedactedSerializedUpstreamRecord>;
+export type FullUpstreamResponse = WithResponseProjections<FullSerializedUpstreamRecord>;
+export type BlueprintUpstreamResponse = BlueprintSerializedUpstreamRecord & { modelsCache: ModelsCacheStatus };
+
+interface DashboardUpstreamRecordBase extends SerializedUpstreamRecordBase {
+  modelsCache: ModelsCacheStatus;
+}
+
+export type UpstreamRecord =
+  | (DashboardUpstreamRecordBase & { kind: 'custom'; config: CustomUpstreamConfig; state: null })
+  | (DashboardUpstreamRecordBase & { kind: 'azure'; config: AzureUpstreamConfig; state: null })
+  | (DashboardUpstreamRecordBase & { kind: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | StoredCopilotUpstreamState | null })
+  | (DashboardUpstreamRecordBase & { kind: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshotMap | null })
+  | (DashboardUpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
+  | (DashboardUpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: null });
 
 export interface ListedUpstreamModel extends UpstreamModelConfig {
   upstreamModelId: string;
