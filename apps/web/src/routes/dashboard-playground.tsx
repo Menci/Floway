@@ -428,7 +428,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                     setEditingId(null);
                   });
                 }} onOpenChange={(_, data) => setModelQuery(data.open ? '' : null)}>
-                  {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0"><div className="truncate">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate ${s.code}`}>{model.id}</div></div></Option>)}
+                  {matchingModels.map(model => <Option key={model.id} value={model.id} text={model.display_name}><div className="min-w-0 grid gap-1"><div className="truncate leading-[var(--lineHeightBase300)]">{model.display_name}</div><div className={`text-fui-fg2 text-fui-base200 truncate leading-[var(--lineHeightBase200)] ${s.code}`}>{model.id}</div></div></Option>)}
                 </Combobox>
               </Field>
               {selectedModel && <ModelInfoBadges cap={cap} catalog={loaderData.models} model={selectedModel} />}
