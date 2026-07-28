@@ -9,9 +9,12 @@ const { Badge, makeStyles, tokens } = fluentComponents;
 
 const useStyles = makeStyles({
   badge: {
-    fontFamily: tokens.fontFamilyMonospace,
+    // Fluent sizes Badge text for a count, not a phrase; the metadata these
+    // carry reads as body text, and matching the provider badge's height
+    // keeps one row out of two weights.
     fontWeight: tokens.fontWeightRegular,
-    color: tokens.colorNeutralForeground2,
+    minHeight: '22px',
+    paddingInline: tokens.spacingHorizontalSNudge,
   },
 });
 
@@ -49,7 +52,7 @@ export function ModelInfoBadges({ cap, catalog, model }: {
         <ProviderBadge key={upstream.id} color={upstream.color} kind={upstream.kind} label={upstream.name} />
       ))}
       {modelBadges(model, catalog, cap).map(badge => (
-        <Badge key={badge.key} appearance="outline" className={styles.badge} shape="rounded" size="medium">
+        <Badge key={badge.key} appearance="tint" className={styles.badge} color="informative" shape="rounded" size="medium">
           {badgeText(badge, t)}
         </Badge>
       ))}
