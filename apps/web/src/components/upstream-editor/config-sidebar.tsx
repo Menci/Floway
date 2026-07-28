@@ -8,6 +8,7 @@ import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import type { ProxyRecord, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Input, Select } from '../ui/fluent-form-controls';
+import { ScrollArea } from '../ui/scroll-area';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
@@ -29,8 +30,8 @@ export function UpstreamConfigSidebar({
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<UpstreamEditorValues>();
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
-  return <aside className="h-full min-h-0 overflow-y-auto [scrollbar-gutter:stable] max-[1050px]:h-auto max-[1050px]:overflow-visible">
-    <div className="grid gap-7 p-[18px_20px_28px]">
+  return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName="grid gap-7 p-[18px_20px_28px]" noTabIndex>
+    <aside>
       <div>
         <Field label={t('dashboard.upstreamEditor.fields.name')} required>
           <Controller
@@ -83,8 +84,8 @@ export function UpstreamConfigSidebar({
           </Field>
         </EditorSection>
       </div>
-    </div>
-  </aside>;
+    </aside>
+  </ScrollArea>;
 }
 
 function UpstreamColorEditor({ kind }: { kind: UpstreamRecord['kind'] }) {

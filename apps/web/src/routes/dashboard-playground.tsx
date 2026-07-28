@@ -34,6 +34,7 @@ import { streamPlaygroundText } from '../components/playground/playground-stream
 import { Combobox, Input, Select, SpinButton, Textarea } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { SegmentedControl } from '../components/ui/segmented-control';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { australianDarkTheme, australianLightTheme } from '../theme';
@@ -45,7 +46,6 @@ const {
   MessageBar,
   MessageBarBody,
   Option,
-  Spinner,
   Switch,
   Text,
   makeStyles,
@@ -323,7 +323,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               />
             )}
           </div>
-          <div ref={scrollRef} className="min-h-0 overflow-y-auto overflow-x-hidden px-4 py-3 flex flex-col [scrollbar-gutter:stable]">
+          <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0" contentClassName="px-4 py-3 flex min-h-full flex-col" noTabIndex>
             {loaderData.error && <MessageBar intent="error" className="!mb-3"><MessageBarBody>{loaderData.error}</MessageBarBody></MessageBar>}
             {requestError && <MessageBar intent="error" className="!mb-3"><MessageBarBody>{requestError}</MessageBarBody></MessageBar>}
             {!selectedKey ? <EmptyState text={t('dashboard.playground.noKey')} />
@@ -359,9 +359,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                   </div>
                 </div>
               ))}
-              {sending && (!messages.length || messages[messages.length - 1]?.role === 'user') && <Spinner size="tiny" label={t('dashboard.playground.generating')} />}
             </div>
-          </div>
+          </ScrollArea>
           <div className="p-3">
             <PlaygroundComposer
               canSend={canSend}
@@ -392,9 +391,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           </div>
         </div>
 
-        <Panel
-          className="min-h-0 overflow-y-auto overflow-x-hidden !p-4 grid content-start gap-5 [scrollbar-gutter:stable]"
-        >
+        <Panel className="min-h-0 overflow-hidden !p-0">
+          <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="!p-4 grid content-start gap-5" noTabIndex>
           <SettingsSection title={t('dashboard.playground.settings.connection')}>
             <Field label={t('dashboard.playground.key')}>
               <Select value={keyId} disabled={!loaderData.keys.length} onChange={(_, data) => changeContext(() => setKeyId(data.value))}>
@@ -449,6 +447,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               }} />
             </Field>
           </SettingsSection>
+          </ScrollArea>
         </Panel>
       </section>
     </FluentProvider>

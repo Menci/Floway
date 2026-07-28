@@ -13,6 +13,7 @@ import { collectStream, detectCollectKind, type CollectedStream } from '../compo
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
 
@@ -112,7 +113,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </div>
         </Panel>
       ) : selectedKeyId ? (
-        <div className="min-h-0 overflow-x-auto [scrollbar-gutter:stable] p-1 -m-1">
+        <ScrollArea axes="horizontal" className="min-h-0 p-1 -m-1">
           <div className="h-full min-w-[1080px] grid grid-cols-[minmax(700px,1fr)_360px] gap-3">
             <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
               <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
@@ -131,7 +132,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
               />
             </Panel>
           </div>
-        </div>
+        </ScrollArea>
       ) : null}
     </section>
   );

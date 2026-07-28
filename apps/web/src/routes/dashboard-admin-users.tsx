@@ -22,6 +22,7 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
 import { Input } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
@@ -262,7 +263,7 @@ function UsersTable({
   }
 
   return (
-    <div className="min-w-0 overflow-x-auto">
+    <ScrollArea axes="horizontal" className="min-w-0">
       <Table aria-label={t('dashboard.users.table.label')} className="min-w-[720px]">
         <TableHeader>
           <TableRow>
@@ -326,7 +327,7 @@ function UsersTable({
           })}
         </TableBody>
       </Table>
-    </div>
+    </ScrollArea>
   );
 }
 

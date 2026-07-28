@@ -4,11 +4,12 @@ import {
   SendRegular,
   StopRegular,
 } from '@fluentui/react-icons';
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 
 import broomUrl from '../../assets/broom.svg';
 import { fluentComponents } from '../../fluent';
 import { Input } from '../ui/fluent-form-controls';
+import { ScrollArea } from '../ui/scroll-area';
 
 const { Button, Tooltip, makeStyles, tokens } = fluentComponents;
 
@@ -120,11 +121,11 @@ export function PlaygroundComposer({
   const s = useStyles();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = '0px';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 144)}px`;
+    textarea.style.height = `${textarea.scrollHeight}px`;
   }, [draft]);
 
   return (
@@ -164,22 +165,24 @@ export function PlaygroundComposer({
           <span>{newTopicLabel}</span>
         </button>
         <div className={`min-w-0 flex-1 min-h-[44px] rounded-full pl-5 pr-1 py-1 flex items-center gap-2 ${s.inputShell}`}>
-          <textarea
-            ref={textareaRef}
-            aria-label={placeholder}
-            className={`min-w-0 flex-1 max-h-[144px] overflow-y-auto py-[3px] ${s.textarea}`}
-            disabled={sending}
-            placeholder={placeholder}
-            rows={1}
-            value={draft}
-            onChange={event => onDraftChange(event.target.value)}
-            onKeyDown={event => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                if (canSend) onSend();
-              }
-            }}
-          />
+          <ScrollArea axes="vertical" className="min-w-0 flex-1 max-h-[144px]" noTabIndex>
+            <textarea
+              ref={textareaRef}
+              aria-label={placeholder}
+              className={`block min-w-0 w-full overflow-hidden py-[3px] ${s.textarea}`}
+              disabled={sending}
+              placeholder={placeholder}
+              rows={1}
+              value={draft}
+              onChange={event => onDraftChange(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  if (canSend) onSend();
+                }
+              }}
+            />
+          </ScrollArea>
           <div className="shrink-0 flex items-center gap-0">
             <Tooltip content={imageEnabled ? imageLabel : imageUnsupportedLabel} relationship="label">
               <button

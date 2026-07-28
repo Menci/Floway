@@ -26,6 +26,7 @@ import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
@@ -369,7 +370,7 @@ function UpstreamsTable({
   }
 
   return (
-    <div className="min-w-0 overflow-x-auto">
+    <ScrollArea axes="horizontal" className="min-w-0">
       <Table size="small" aria-label={t('dashboard.upstreams.table.title')} className="min-w-[930px]">
         <TableHeader>
           <TableRow>
@@ -448,7 +449,7 @@ function UpstreamsTable({
           ))}
         </TableBody>
       </Table>
-    </div>
+    </ScrollArea>
   );
 }
 

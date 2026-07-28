@@ -22,6 +22,7 @@ import {
   type CollectedStream,
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
+import { ScrollArea } from '../ui/scroll-area';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 
 const { Button, MessageBar, MessageBarBody, Tab, TabList, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
@@ -179,7 +180,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
     : JSON.stringify(collected.result, null, 2);
 
   return (
-    <div className="h-full overflow-auto">
+    <ScrollArea className="h-full" contentClassName="min-h-full" noTabIndex>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.request')} icon={<ArrowUploadRegular />} detail={<><Text size={400} weight="semibold" className="font-mono">{record.request.method}</Text><Text size={400} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
         <HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} />
@@ -229,7 +230,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
           </div>
         ))}
       </section>
-    </div>
+    </ScrollArea>
   );
 }
 

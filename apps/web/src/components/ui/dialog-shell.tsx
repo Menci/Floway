@@ -2,6 +2,7 @@ import type { DialogProps } from '@fluentui/react-components';
 import type { ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
+import { ScrollArea } from './scroll-area';
 
 const { Dialog, DialogBody, DialogContent, DialogSurface } = fluentComponents;
 
@@ -26,8 +27,10 @@ export function DialogShell({ open, onOpenChange, title, actions, onSubmit, chil
         >
           <DialogBody>
             {title}
-            <DialogContent className="grid gap-4 max-h-[calc(100vh-190px)] overflow-y-auto pr-[2px]">
-              {children}
+            <DialogContent className="max-h-[calc(100vh-190px)] overflow-hidden !p-0">
+              <ScrollArea axes="vertical" className="max-h-[calc(100vh-190px)]" contentClassName="grid gap-4 pr-[2px]">
+                {children}
+              </ScrollArea>
             </DialogContent>
             {actions}
           </DialogBody>

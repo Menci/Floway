@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { UpstreamOption } from './types';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { ScrollArea } from '../ui/scroll-area';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 const { Table, TableBody, TableCell, TableCellLayout, TableHeader, TableHeaderCell, TableRow, Text, createTableColumn, makeStyles, useTableColumnSizing_unstable, useTableFeatures, useTableSort } = fluentComponents;
@@ -121,7 +122,7 @@ export function KeysTable({
   }
 
   return (
-    <div className="min-w-0 overflow-x-auto">
+    <ScrollArea axes="horizontal" className="min-w-0">
       <Table ref={tableRef} {...columnSizing_unstable.getTableProps()} aria-label={t('dashboard.apiKeys.table.title')} sortable>
         <TableHeader>
           <TableRow>
@@ -155,7 +156,7 @@ export function KeysTable({
           ))}
         </TableBody>
       </Table>
-    </div>
+    </ScrollArea>
   );
 }
 const truncateKey = (key: string) =>

@@ -20,6 +20,7 @@ import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { formatFullTime, formatRelativeTime } from '../requests/format';
 import { Input, Textarea } from '../ui/fluent-form-controls';
+import { ScrollArea } from '../ui/scroll-area';
 import type { Flag } from '@floway-dev/provider/flags';
 
 const {
@@ -72,14 +73,14 @@ export function UpstreamWorkspace({
         <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
       </TabList>
     </div>
-    <div className="min-h-0 overflow-y-auto [scrollbar-gutter:stable] p-5 max-[1050px]:overflow-visible">
+    <ScrollArea axes="vertical" className="min-h-0 max-[1050px]:h-auto" contentClassName="p-5" noTabIndex>
       {tab === 'models' ? <ModelsWorkspace discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} record={record} /> : <div className="grid gap-5">
         <Text size={300} className="text-fui-fg2 leading-[1.45]">
           {t('dashboard.upstreamEditor.flags.intro')}
         </Text>
         <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} flags={flags} value={field.value} onChange={field.onChange} />} />
       </div>}
-    </div>
+    </ScrollArea>
   </section>;
 }
 

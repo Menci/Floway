@@ -34,6 +34,7 @@ import { Select } from '../components/ui/fluent-form-controls';
 import { OutlineCard } from '../components/ui/outline-card';
 import { Panel } from '../components/ui/panel';
 import { SegmentedControl } from '../components/ui/segmented-control';
+import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
@@ -303,10 +304,10 @@ function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy:
   const locale = localeForLanguage(i18n.language);
   return <section className="grid gap-2.5 min-w-0">
     <Text size={300} weight="semibold">{t(`dashboard.performance.groupBy.${groupBy}`)}</Text>
-    <div className="border border-fui-stroke1 rounded-lg overflow-x-auto min-w-0"><Table aria-label={t(`dashboard.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
+    <ScrollArea axes="horizontal" className="border border-fui-stroke1 rounded-lg min-w-0"><Table aria-label={t(`dashboard.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
       <TableHeader><TableRow><TableHeaderCell>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell className="!text-right">{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell className="!text-right">{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell className="!text-right">{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell className="!text-right">{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
       <TableBody>{rows.length ? [...rows].sort((a, b) => b.requests - a.requests).map(row => <TableRow key={row.group}><TableCell><span className="block max-w-[250px] overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames)}</span></TableCell><TableCell className="!text-right font-mono">{formatCount(row.requests, locale)}</TableCell><TableCell className="!text-right font-mono">{formatCount(row.errors, locale)}</TableCell><TableCell className="!text-right font-mono">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="!text-right font-mono">{formatTokensPerSecond(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><Text size={200} className="text-fui-fg2">{t('dashboard.performance.empty')}</Text></TableCell></TableRow>}</TableBody>
-    </Table></div>
+    </Table></ScrollArea>
   </section>;
 }
 

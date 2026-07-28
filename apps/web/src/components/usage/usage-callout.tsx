@@ -3,6 +3,7 @@ import type { CustomizedCalloutData } from '@fluentui/react-charts';
 import { bucketKeyForCallout, formatCalloutTitle, formatCount, formatDecimalCount, formatHitRate, formatInputRate, formatUsdCost } from './chart-model';
 import type { UsageChartModel } from './types';
 import { fluentComponents } from '../../fluent';
+import { ScrollArea } from '../ui/scroll-area';
 
 const { Text } = fluentComponents;
 
@@ -12,7 +13,7 @@ export function UsageChartCallout({ chart, data, labelByTime, locale, valueForma
   const bucketDetails = bucketKey ? chart.details.get(bucketKey) : undefined;
   const rows = data.values.filter(item => item.y > 0).sort((a, b) => b.y - a.y);
   return (
-    <div className="grid gap-[6px] max-w-[min(760px,calc(100vw-48px))] min-w-[220px] overflow-x-auto p-1">
+    <ScrollArea axes="horizontal" className="max-w-[min(760px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-[6px] p-1">
       <Text size={200} weight="semibold">
         {formatCalloutTitle(data.x, labelByTime, chart.range, locale)}
       </Text>
@@ -73,6 +74,6 @@ export function UsageChartCallout({ chart, data, labelByTime, locale, valueForma
           </Text>
         ))
       )}
-    </div>
+    </ScrollArea>
   );
 }

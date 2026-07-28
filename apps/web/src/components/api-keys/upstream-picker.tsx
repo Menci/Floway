@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { UpstreamOption } from './types';
 import type { UpstreamColor, UpstreamProviderKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { ProviderBadge, providerLabel } from '../upstreams/provider-badge';
 
@@ -33,7 +34,7 @@ function UpstreamPickerTable({
   );
   const upstreamRows = getUpstreamRows();
   return (
-    <div className="min-w-0 overflow-x-auto">
+    <ScrollArea axes="horizontal" className="min-w-0">
       <Table ref={ref} {...cs.getTableProps()} aria-label="Upstreams" sortable>
         <TableHeader><TableRow>{columns.map(col => (
           <TableHeaderCell key={col.columnId} {...cs.getTableHeaderCellProps(col.columnId)}>{col.renderHeaderCell()}</TableHeaderCell>
@@ -44,7 +45,7 @@ function UpstreamPickerTable({
           ))}</TableRow>
         ))}</TableBody>
       </Table>
-    </div>
+    </ScrollArea>
   );
 }
 

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 
 import { fluentComponents } from '../../fluent';
+import { ScrollArea } from './scroll-area';
 
 const { makeStyles } = fluentComponents;
 
@@ -65,14 +66,15 @@ export function SegmentedControl({
   };
 
   return (
-    <div
-      aria-label={ariaLabel}
-      className={`inline-flex gap-0.5 rounded-lg max-w-full min-h-[34px] overflow-x-auto p-0.5 ${s.segmented}`}
-      aria-orientation="horizontal"
-      role="tablist"
-    >
-      {items.map((item, index) => (
-        <button
+    <ScrollArea axes="horizontal" className="inline-block max-w-full rounded-lg">
+      <div
+        aria-label={ariaLabel}
+        className={`inline-flex gap-0.5 min-h-[34px] p-0.5 w-max ${s.segmented}`}
+        aria-orientation="horizontal"
+        role="tablist"
+      >
+        {items.map((item, index) => (
+          <button
           aria-selected={value === item.value}
           disabled={item.disabled}
           className={
@@ -89,8 +91,9 @@ export function SegmentedControl({
           type="button"
         >
           {item.label}
-        </button>
-      ))}
-    </div>
+          </button>
+        ))}
+      </div>
+    </ScrollArea>
   );
 }
