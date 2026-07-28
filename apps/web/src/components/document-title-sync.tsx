@@ -7,6 +7,7 @@ const dashboardTitleKeys = new Map<string, string>([
   ['/dashboard/providers/upstreams', 'dashboard.nav.upstreams'],
   ['/dashboard/providers/search', 'dashboard.nav.search'],
   ['/dashboard/providers/proxy', 'dashboard.nav.proxy'],
+  ['/dashboard/providers/model-aliases', 'dashboard.nav.modelAliases'],
   ['/dashboard/services/api-keys', 'dashboard.nav.apiKeys'],
   ['/dashboard/services/api-docs', 'dashboard.nav.apiDocs'],
   ['/dashboard/monitor/requests', 'dashboard.nav.requests'],
