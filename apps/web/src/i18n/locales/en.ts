@@ -321,7 +321,6 @@ const en = {
         source: {
           generate: 'Randomly generate',
           custom: 'Custom',
-          preset: 'Retention period',
         },
         dialog: {
           createTitle: 'Create API Key',
@@ -364,6 +363,7 @@ const en = {
           inheritsTitle: 'Inherits the global upstream order',
         },
         retention: {
+          preset: 'Retention period',
           presets: { oneHour: '1 hour', sixHours: '6 hours', oneDay: '1 day', sevenDays: '7 days', thirtyDays: '30 days' },
           offCapture: 'Off (do not capture)',
           offPersist: 'Off (do not persist)',

@@ -309,7 +309,6 @@ const zhHansCN = {
         source: {
           generate: '随机生成',
           custom: '自定义',
-          preset: '保留时间',
         },
         dialog: {
           createTitle: '创建 API 密钥',
@@ -349,6 +348,7 @@ const zhHansCN = {
           inheritsTitle: '继承全局上游顺序',
         },
         retention: {
+          preset: '保留时间',
           presets: { oneHour: '1 小时', sixHours: '6 小时', oneDay: '1 天', sevenDays: '7 天', thirtyDays: '30 天' },
           offCapture: '关闭（不记录）',
           offPersist: '关闭（不持久化）',
