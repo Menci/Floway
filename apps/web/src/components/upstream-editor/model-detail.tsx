@@ -260,10 +260,13 @@ function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; ef
   const supported = effort.supported;
   const options = [...new Set([...reasoningPresets, ...supported])]
     .filter(level => level.toLowerCase().includes(query.trim().toLowerCase()));
-  const setSupported = (next: string[]) => onChange({
-    supported: next,
-    default: next.includes(effort.default) ? effort.default : next[0] ?? '',
-  });
+  const setSupported = (next: readonly string[]) => {
+    const values = [...next];
+    onChange({
+      supported: values,
+      default: values.includes(effort.default) ? effort.default : values[0] ?? '',
+    });
+  };
   const add = (raw: string) => {
     const level = raw.trim();
     if (level && !supported.includes(level)) setSupported([...supported, level]);
