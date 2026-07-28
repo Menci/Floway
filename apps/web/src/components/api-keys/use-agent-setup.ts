@@ -1,34 +1,11 @@
+import type { InferResponseType } from 'hono/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { authFetch, callApi } from '../../api/auth';
+import { callApi } from '../../api/auth';
+import { api } from '../../api/client';
 
-export interface AgentSetupConfiguration {
-  apiKeyId: string;
-  claudeCode: {
-    model: string | null;
-    defaultFableModel: string | null;
-    defaultOpusModel: string | null;
-    defaultSonnetModel: string | null;
-    defaultHaikuModel: string | null;
-    effortLevel: 'low' | 'medium' | 'high' | 'xhigh' | null;
-    cleanupPeriodDays: 180 | 365 | 99999 | null;
-    optOutAiAttribution: boolean;
-    modelDiscovery: boolean;
-  };
-  codex: { model: string | null; reasoningEffort: string | null };
-}
-
-interface AgentSetupLease {
-  status: 'ok';
-  token: string;
-  configuration: AgentSetupConfiguration;
-  configurationRevision: number;
-  expiresAt: number;
-  scripts: {
-    claude: { sh: string; ps1: string };
-    codex: { sh: string; ps1: string };
-  };
-}
+type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
+export type AgentSetupConfiguration = AgentSetupLease['configuration'];
 
 interface ActiveRequest {
   controller: AbortController;
@@ -123,7 +100,7 @@ export function useAgentSetup(apiKeyId: string | null) {
     activeRequestsRef.current.clear();
   }, []);
 
-  const request = useCallback(async <T>(path: string, method: string, body: unknown) => {
+  const request = useCallback(async <T>(send: (signal: AbortSignal) => Promise<Response>) => {
     const controller = new AbortController();
     const requestState: ActiveRequest = {
       controller,
@@ -131,12 +108,7 @@ export function useAgentSetup(apiKeyId: string | null) {
     };
     activeRequestsRef.current.add(requestState);
     try {
-      return await callApi<T>(() => authFetch(path, {
-        method,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      }));
+      return await callApi<T>(() => send(controller.signal));
     } finally {
       clearTimeout(requestState.timeout);
       activeRequestsRef.current.delete(requestState);
@@ -191,11 +163,13 @@ export function useAgentSetup(apiKeyId: string | null) {
     const sentGeneration = generationRef.current;
     const lifecycle = lifecycleRef.current;
     const sentConfiguration = clone(configuration);
-    const result = await request<AgentSetupLease>('/api/setup', 'PUT', {
-      token: currentLease.token,
-      configuration: sentConfiguration,
-      expectedRevision: currentLease.configurationRevision,
-    });
+    const result = await request<AgentSetupLease>(signal => api.api.setup.$put({
+      json: {
+        token: currentLease.token,
+        configuration: sentConfiguration,
+        expectedRevision: currentLease.configurationRevision,
+      },
+    }, { init: { signal } }));
     if (lifecycle !== lifecycleRef.current || leaseRef.current?.token !== currentLease.token) return;
     if (result.error) {
       const status = rawStatus(result.error.raw);
@@ -236,7 +210,9 @@ export function useAgentSetup(apiKeyId: string | null) {
     const currentLease = leaseRef.current;
     if (!currentLease || terminatedRef.current || document.visibilityState === 'hidden') return;
     const lifecycle = lifecycleRef.current;
-    const result = await request<AgentSetupLease>('/api/setup/heartbeat', 'POST', { token: currentLease.token });
+    const result = await request<AgentSetupLease>(signal => api.api.setup.heartbeat.$post({
+      json: { token: currentLease.token },
+    }, { init: { signal } }));
     if (lifecycle !== lifecycleRef.current || leaseRef.current?.token !== currentLease.token) return;
     if (result.error) {
       if (rawStatus(result.error.raw) === 'missing') { markTerminated(); return; }
@@ -276,7 +252,9 @@ export function useAgentSetup(apiKeyId: string | null) {
     setNoSelectableKey(false);
     if (!apiKeyId) return;
     void (async () => {
-      const result = await request<AgentSetupLease>('/api/setup', 'POST', { apiKeyId });
+      const result = await request<AgentSetupLease>(signal => api.api.setup.$post({
+        json: { apiKeyId },
+      }, { init: { signal } }));
       if (lifecycle !== lifecycleRef.current) return;
       if (result.error) {
         if (rawStatus(result.error.raw) === 'no-selectable-key') setNoSelectableKey(true);
