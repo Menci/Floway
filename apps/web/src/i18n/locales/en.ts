@@ -180,7 +180,6 @@ const en = {
       apiDocs: {
         endpointsTitle: 'API Endpoints',
         endpointsDescription: 'Every public data-plane route. Short paths are compatibility aliases of their /v1 counterparts unless a protocol is named explicitly.',
-        examplesTitle: 'Protocol examples and behavior',
         docsLink: 'Docs',
         authentication: {
           title: 'Base URL and authentication',
@@ -198,25 +197,6 @@ const en = {
           openAiEmbeddings: 'OpenAI Embeddings', openAiImageGeneration: 'OpenAI Image Generations', openAiImageEdit: 'OpenAI Image Edits', openAiTranscription: 'OpenAI Audio Transcriptions',
           cohereV1Rerank: 'Cohere Rerank v1', cohereV2Rerank: 'Cohere Rerank v2', jinaRerank: 'Jina Rerank', voyageRerank: 'Voyage Rerank',
           codexSearch: 'Codex alpha search',
-        },
-        reference: {
-          openai: { title: 'OpenAI text APIs' }, anthropic: { title: 'Anthropic Messages' }, gemini: { title: 'Google Gemini' }, media: { title: 'Embeddings, images, and audio' }, rerank: { title: 'Rerank dialects' }, search: { title: 'Codex alpha search' }, websocket: { title: 'Responses WebSocket and state' },
-        },
-        examples: { completions: 'Completions request', chat: 'Chat Completions request', responses: 'Responses request', messages: 'Messages request', gemini: 'Gemini request body', embeddings: 'Embeddings request', imageGeneration: 'Image generation request', imageEdit: 'Image edit JSON request', audio: 'Audio transcription multipart request', rerank: 'Rerank request', search: 'Alpha search request', websocket: 'WebSocket response.create frame' },
-        notes: {
-          openaiSurface: 'Floway implements create/generate surfaces; OpenAI retrieve, delete, and input-items routes are not registered.',
-          modelSelection: 'The model id resolves through aliases, upstream caps, and candidate failover. /v1/models may project a client-specific catalog for Codex or Claude Code user agents.',
-          anthropicHeaders: 'Messages clients normally send x-api-key and anthropic-version: 2023-06-01.',
-          anthropicStreaming: 'Streaming Messages responses use Anthropic SSE event shapes.',
-          geminiActions: 'The only accepted actions are generateContent, streamGenerateContent, and countTokens. streamGenerateContent returns SSE.',
-          geminiDiscovery: 'Gemini discovery lists chat-capable models and advertises those three methods.',
-          imageInputs: 'Image edits accept OpenAI multipart image/image[] plus optional mask, or Floway JSON images containing image_url or file_id.',
-          audioResponses: 'Audio transcription requires multipart model and file fields and preserves upstream JSON, text, subtitle, or SSE response shapes.',
-          rerankDialects: 'The four rerank paths are distinct Cohere v1, Cohere v2, Jina, and Voyage wire dialects; Floway translates when the target differs.',
-          searchCommands: 'Local alpha search implements search_query, open, and find commands. Passthrough mode can preserve additional Codex fields.',
-          websocketUpgrade: 'GET /v1/responses requires Upgrade: websocket; an ordinary HTTP GET returns 426.',
-          websocketFrames: 'Send response.create JSON frames. Floway emits ping, response events, response.done, and structured error frames.',
-          statefulResponses: 'Durable Responses state is scoped to the API key and requires positive retention; store:false disables durable writes. WebSocket session-local state remains available for that connection.',
         },
       },
       users: {
@@ -688,6 +668,7 @@ const en = {
           add: 'Add',
           refresh: 'Refresh models',
           cacheNever: 'Never fetched',
+          cacheFetchedNow: 'Fetched just now',
           cacheFetched: 'Fetched {{time}} ago',
           cacheFailed: 'Last fetch failed',
           cacheErrorDetail: '{{time}} — {{message}}',

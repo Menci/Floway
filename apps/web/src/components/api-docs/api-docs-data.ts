@@ -58,26 +58,3 @@ export const apiDocsEndpoints: readonly ApiDocsEndpoint[] = [
 ];
 
 export const apiDocsGroups = [...new Set(apiDocsEndpoints.map(item => item.group))];
-
-export interface ApiDocsExample {
-  code: string;
-  language: 'bash' | 'json';
-  title: string;
-}
-
-export const apiDocsExamples = {
-  completions: { title: 'completions', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Hello"\n}' },
-  chat: { title: 'chat', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
-  responses: { title: 'responses', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": "Hello",\n  "stream": true\n}' },
-  messages: { title: 'messages', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "max_tokens": 1024,\n  "messages": [{ "role": "user", "content": "Hello" }]\n}' },
-  gemini: { title: 'gemini', language: 'json', code: '{\n  "contents": [{ "role": "user", "parts": [{ "text": "Hello" }] }]\n}' },
-  embeddings: { title: 'embeddings', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "input": ["First document", "Second document"]\n}' },
-  imageGeneration: { title: 'imageGeneration', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "A glass city at sunrise"\n}' },
-  imageEdit: { title: 'imageEdit', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "prompt": "Add a rainbow",\n  "images": [{ "image_url": "https://example.com/input.png" }]\n}' },
-  audio: { title: 'audio', language: 'bash', code: 'curl "$FLOWAY_BASE_URL/v1/audio/transcriptions" \\\n  -H "Authorization: Bearer $FLOWAY_API_KEY" \\\n  -F "model=MODEL_ID" \\\n  -F "file=@speech.mp3"' },
-  rerank: { title: 'rerank', language: 'json', code: '{\n  "model": "MODEL_ID",\n  "query": "What is Floway?",\n  "documents": ["Document one", "Document two"]\n}' },
-  search: { title: 'search', language: 'json', code: '{\n  "commands": {\n    "search_query": [{ "q": "latest LLM gateway news" }]\n  }\n}' },
-  websocket: { title: 'websocket', language: 'json', code: '{\n  "type": "response.create",\n  "response": { "model": "MODEL_ID", "input": "Hello" }\n}' },
-} as const satisfies Record<string, ApiDocsExample>;
-
-export type ApiDocsExampleId = keyof typeof apiDocsExamples;

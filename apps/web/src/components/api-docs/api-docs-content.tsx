@@ -2,37 +2,19 @@ import { ArrowUpRight16Regular } from '@fluentui/react-icons';
 import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { apiDocsEndpoints, apiDocsExamples, apiDocsGroups, authCurlExample, type ApiDocsExampleId } from './api-docs-data';
+import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
 import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Panel } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
 
 const {
-  Accordion,
-  AccordionHeader,
-  AccordionItem,
-  AccordionPanel,
   Badge,
   Link,
   MessageBar,
   MessageBarBody,
   Text,
 } = fluentComponents;
-
-const referenceSections = [
-  { id: 'openai', examples: ['completions', 'chat', 'responses'], notes: ['openaiSurface', 'modelSelection'] },
-  { id: 'anthropic', examples: ['messages'], notes: ['anthropicHeaders', 'anthropicStreaming'] },
-  { id: 'gemini', examples: ['gemini'], notes: ['geminiActions', 'geminiDiscovery'] },
-  { id: 'media', examples: ['embeddings', 'imageGeneration', 'imageEdit', 'audio'], notes: ['imageInputs', 'audioResponses'] },
-  { id: 'rerank', examples: ['rerank'], notes: ['rerankDialects'] },
-  { id: 'search', examples: ['search'], notes: ['searchCommands'] },
-  { id: 'websocket', examples: ['websocket'], notes: ['websocketUpgrade', 'websocketFrames', 'statefulResponses'] },
-] as const satisfies ReadonlyArray<{
-  examples: readonly ApiDocsExampleId[];
-  id: string;
-  notes: readonly string[];
-}>;
 
 export function ApiDocsContent() {
   const { t } = useTranslation();
@@ -89,29 +71,6 @@ export function ApiDocsContent() {
           </ScrollArea>
         </section>;
       })}
-    </Panel>
-
-    <Panel className="grid gap-3 !p-[22px_24px] max-[680px]:!p-[18px]">
-      <Text as="h2" size={500} weight="semibold" className="!m-0">{t('dashboard.apiDocs.examplesTitle')}</Text>
-      <Accordion collapsible multiple>
-        {referenceSections.map(section => <AccordionItem key={section.id} value={section.id}>
-          <AccordionHeader>{t(`dashboard.apiDocs.reference.${section.id}.title`)}</AccordionHeader>
-          <AccordionPanel>
-            <div className="grid gap-4 pb-2">
-              <ul className="m-0 grid gap-1 pl-5 text-sm text-fui-fg2">
-                {section.notes.map(note => <li key={note}>{t(`dashboard.apiDocs.notes.${note}`)}</li>)}
-              </ul>
-              {section.examples.map(exampleId => {
-                const example = apiDocsExamples[exampleId];
-                return <div className="grid gap-2" key={exampleId}>
-                  <Text size={300} weight="semibold">{t(`dashboard.apiDocs.examples.${example.title}`)}</Text>
-                  <CodeBlock code={example.code} copied={copied === exampleId} copyFailed={copyFailed === exampleId} language={example.language} onCopy={() => void copy(exampleId, example.code)} />
-                </div>;
-              })}
-            </div>
-          </AccordionPanel>
-        </AccordionItem>)}
-      </Accordion>
     </Panel>
   </>;
 }
