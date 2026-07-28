@@ -243,7 +243,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
 
   if (!user.isAdmin) {
     return (
-      <section className="grid gap-[18px] max-w-[960px] min-w-0">
+      <section className="dashboard-page max-w-[960px]">
         <DashboardPageHeader
           description={t('dashboard.searchConfig.description')}
           eyebrow={t('dashboard.groups.providers')}
@@ -255,7 +255,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   }
 
   return (
-    <section className="grid gap-[18px] max-w-[960px] min-w-0">
+    <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader
         description={t('dashboard.searchConfig.description')}
         eyebrow={t('dashboard.groups.providers')}

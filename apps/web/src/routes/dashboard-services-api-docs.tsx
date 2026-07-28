@@ -10,7 +10,7 @@ export function meta() {
 export default function DashboardServicesApiDocs() {
   const { t } = useTranslation();
   return (
-    <section className="grid gap-[18px] max-w-[1200px] min-w-0">
+    <section className="dashboard-page max-w-[1200px]">
       <DashboardPageHeader description={t('dashboard.pages.apiDocs')} eyebrow={t('dashboard.groups.services')} title={t('dashboard.nav.apiDocs')} />
       <ApiDocsContent />
     </section>

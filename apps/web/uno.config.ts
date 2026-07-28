@@ -17,6 +17,11 @@ export default defineConfig({
     },
   },
   shortcuts: {
+    // A route's own content region. `min-w-0` alone lets the region shrink but
+    // leaves its single column at `auto`, which grows to the widest child's
+    // min-content — one long message bar then pushes the whole page past the
+    // viewport. The explicit track floors that column at zero.
+    'dashboard-page': 'grid gap-[18px] min-w-0 grid-cols-[minmax(0,1fr)]',
     'text-fui-fg1': 'text-[var(--colorNeutralForeground1)]',
     'text-fui-fg2': 'text-[var(--colorNeutralForeground2)]',
     'text-fui-fg3': 'text-[var(--colorNeutralForeground3)]',

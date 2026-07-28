@@ -184,7 +184,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     .filter(key => key !== 'userId' || view === 'all-by-user')
     .map(key => ({ key, rows: overview.axes[key] }));
 
-  return <section className="grid gap-[18px] min-w-0">
+  return <section className="dashboard-page">
     <DashboardPageHeader
       actions={<>
         <Tooltip content={t('dashboard.performance.actions.refresh')} relationship="label"><Button appearance="subtle" disabled={loading} icon={<ArrowClockwiseRegular />} onClick={() => void refresh()} /></Tooltip>
