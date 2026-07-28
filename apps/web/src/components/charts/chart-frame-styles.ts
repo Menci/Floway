@@ -11,5 +11,10 @@ const { makeStyles } = fluentComponents;
 export const useUnclippedChartFrame = makeStyles({
   root: {
     overflow: 'visible',
+    '& .fui-PopoverSurface': {
+      backdropFilter: 'blur(8px)',
+      backgroundColor: 'color-mix(in srgb, var(--colorNeutralBackground1) 86%, transparent)',
+      padding: '6px 8px',
+    },
   },
 });

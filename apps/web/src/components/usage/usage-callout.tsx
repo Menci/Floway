@@ -16,7 +16,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
     .sort((a, b) => b.value - a.value);
   if (rows.length === 0) return null;
   return (
-    <ScrollArea axes="horizontal" className="max-w-[min(760px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">
+    <ScrollArea axes="horizontal" className="max-w-[min(650px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">
       <Text size={200} weight="semibold">
         {formatCalloutTitle(point.x, labelByTime, chart.range, locale)}
       </Text>
@@ -46,17 +46,17 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
                   <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
                     <span className="flex items-center gap-[6px] min-w-0 overflow-hidden text-ellipsis">
                       <i className="rounded-[2px] h-[10px] w-[10px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-                      <Text size={200}>{item.legend}</Text>
+                      <Text size={100}>{item.legend}</Text>
                     </span>
                   </td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCount(summary.requests, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatUsdCost(summary.cost)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatDecimalCount(summary.total)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatDecimalCount(summary.cacheRead)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatDecimalCount(summary.prefill)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatDecimalCount(summary.output)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCount(summary.requests, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatUsdCost(summary.cost)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatDecimalCount(summary.total)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatDecimalCount(summary.cacheRead)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatDecimalCount(summary.prefill)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatDecimalCount(summary.output)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
                 </tr>
               );
             })}
@@ -64,7 +64,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
         </table>
       ) : (
         rows.map(item => (
-          <Text key={item.legend} size={200} className="flex items-center gap-1.5 justify-between tabular-nums">
+          <Text key={item.legend} size={100} className="flex items-center gap-1.5 justify-between tabular-nums">
             <i className="rounded-full h-[8px] w-[8px] flex-shrink-0" style={{ backgroundColor: item.color }} />
             {item.legend}: {valueFormatter(item.value)}
           </Text>

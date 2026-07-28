@@ -336,18 +336,18 @@ function PerformanceChartCallout({ data, formatter, title }: {
     .toSorted((left, right) => right.y - left.y);
 
   return (
-    <div className="grid gap-2 w-[min(280px,calc(100vw-48px))] min-w-0 max-w-[420px] p-1">
-      <Text block size={300} weight="semibold">{title}</Text>
-      <div className="grid gap-1.5">
+    <div className="grid gap-1 w-[min(230px,calc(100vw-48px))] min-w-0 max-w-[360px]">
+      <Text block size={200} weight="semibold">{title}</Text>
+      <div className="grid gap-1">
         {rows.map(item => (
-          <div className="grid grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 min-w-0" key={item.legend}>
+          <div className="grid grid-cols-[6px_minmax(0,1fr)_auto] items-center gap-1.5 min-w-0" key={item.legend}>
             <span
               aria-hidden
-              className="block h-2 w-2 rounded-full"
+              className="block h-1.5 w-1.5 rounded-full"
               style={{ backgroundColor: item.color }}
             />
-            <Text block size={200} className="truncate" title={item.legend}>{item.legend}</Text>
-            <Text block size={200} weight="semibold" className="font-mono tabular-nums text-right whitespace-nowrap">
+            <Text block size={100} className="truncate" title={item.legend}>{item.legend}</Text>
+            <Text block size={100} weight="semibold" className="tabular-nums text-right whitespace-nowrap">
               {formatter(item.y)}
             </Text>
           </div>
@@ -406,7 +406,7 @@ function buildPerformanceChart(records: PerformanceDisplayRecord[], metric: Perf
     entries, buckets, range, metric, data: {
       chartTitle: '', lineChartData: entries.flatMap(entry => {
         const data = buckets.flatMap(bucket => { const value = values.get(`${bucket.key}\0${entry.id}`); const y = value ? performanceValue(value, metric, percentile) : null; return y === null || y <= 0 ? [] : [{ x: bucket.date, y }]; });
-        return data.length ? [{ legend: entry.label, color: colorForSlot(entry.colorSlot), lineOptions: { strokeWidth: 2, curve: curveMonotoneX }, data }] : [];
+        return data.length ? [{ legend: entry.label, color: colorForSlot(entry.colorSlot), lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' }, data: data.map(point => ({ ...point, markerSize: 4 })) }] : [];
       }),
     },
   };

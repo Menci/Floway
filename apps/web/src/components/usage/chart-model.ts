@@ -8,7 +8,7 @@ import {
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,
 } from '../charts/dashboard-time';
-import { usageColorForSlot } from '../charts/palette';
+import { colorForSlot } from '../charts/palette';
 import type { DecimalString } from '@floway-dev/protocols/common';
 
 export const metricConfig: Record<
@@ -127,9 +127,10 @@ export function buildTokenChart({
             chartTitle: '',
             lineChartData: series.map(({ entry, data }) => ({
               legend: entry.label,
-              color: usageColorForSlot(entry.colorSlot),
-              lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
+              color: colorForSlot(entry.colorSlot),
+              lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' },
               data: data.flatMap((value, index) => value === null ? [] : [{
+                markerSize: 4,
                 x: buckets[index]!.date,
                 y: value,
                 xAxisCalloutData: buckets[index]!.label,
@@ -148,9 +149,10 @@ function areaChartData(
 ): ChartProps {
   return {
     chartTitle: '',
+    pointOptions: { r: 2, strokeWidth: 1.25 },
     lineChartData: series.map(({ entry, data }) => ({
       legend: entry.label,
-      color: usageColorForSlot(entry.colorSlot),
+      color: colorForSlot(entry.colorSlot),
       lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
       data: data.flatMap((value, index) => value === null ? [] : [{
         x: buckets[index]!.date,

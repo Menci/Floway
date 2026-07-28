@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import type { UsageChartModel } from './types';
 import { UsageChart } from './usage-chart';
 import { ChartSection as SharedChartSection } from '../charts/chart-section';
-import { usageColorForSlot } from '../charts/palette';
 
 export function ChartSection({
   chart,
@@ -28,7 +27,6 @@ export function ChartSection({
   return (
     <SharedChartSection
       controlsLabel={detailsLabel}
-      colorForEntry={usageColorForSlot}
       emptyText={t('dashboard.usage.empty')}
       entries={chart.entries}
       hidden={hidden}

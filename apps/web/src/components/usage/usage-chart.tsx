@@ -1,5 +1,5 @@
 import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { CalloutPoint, UsageChartModel } from './types';
@@ -44,6 +44,15 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   } : null), [renderCallout]);
 
   const hasData = chart.plot.data.lineChartData?.some(series => series.data.length > 0) ?? false;
+
+  useLayoutEffect(() => {
+    if (!host || chart.plot.form !== 'area') return;
+    const frame = window.requestAnimationFrame(() => {
+      const lines = [...host.querySelectorAll<SVGPathElement>('path[id*="-line-"]')];
+      for (const line of lines.toReversed()) line.parentNode?.append(line);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [chart.plot.data, chart.plot.form, host, size.height, size.width]);
 
   if (size.width < 120) return <div className="h-[320px] min-w-0 w-full" ref={setHost} />;
 
