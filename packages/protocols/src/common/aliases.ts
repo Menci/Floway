@@ -114,9 +114,8 @@ export interface ModelAlias {
 }
 
 // One badge per configured rule field, in the canonical order. `field`
-// names the specific rule slot the badge describes so consumers (the
-// dashboard's `ModelInfoBar`, alias-of multi-target collapse) can group
-// by field without parsing the human-readable label. `value` is reserved
+// names the specific rule slot so consumers can group badges without parsing
+// the human-readable label. `value` is reserved
 // for callers that want to render a separate value pill alongside the
 // label; today every part already self-describes through `label`, so
 // `value` stays undefined.

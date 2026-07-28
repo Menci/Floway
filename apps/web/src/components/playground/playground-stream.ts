@@ -101,6 +101,7 @@ export const streamPlaygroundText = async function* (request: PlaygroundRequest)
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      // https://docs.anthropic.com/en/api/versioning
       ...(api === 'messages' ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : { authorization: `Bearer ${apiKey}` }),
     },
     body: JSON.stringify(bodyFor(request)),

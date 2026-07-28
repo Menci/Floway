@@ -20,7 +20,7 @@ export const parseModels = (text: string, { allowRerank }: { allowRerank: boolea
   let models: UpstreamModelConfig[];
   try {
     // The same validator the gateway applies, so text that parses here is
-    // text the upstream will accept.
+    // text the gateway will accept.
     models = modelsField(raw, 'dashboard');
   } catch (cause) {
     return { ok: false, message: cause instanceof Error ? cause.message : String(cause) };

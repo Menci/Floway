@@ -23,6 +23,8 @@ const NONE = '__floway_none__';
 const MODEL_DEFAULT = '\u0000default';
 const NO_MODEL_MATCHES = '\u0000no-matches';
 const SINGLE_FIELD_CLASS = 'w-full max-w-[420px]';
+// cleanupPeriodDays is a numeric top-level Claude Code setting.
+// https://code.claude.com/docs/en/settings#available-settings
 const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['cleanupPeriodDays']>[];
 
 // Claude uses empty strings to suppress commit/PR attribution and false to
@@ -189,6 +191,15 @@ export const buildAgentClaudeSnippet = (
   ...(settings.optOutAiAttribution ? { attribution: claudeAttributionOptOut } : {}),
 }, null, 2);
 
+// JSON string literals are valid TOML basic strings, so JSON.stringify keeps
+// opaque model values lossless. https://toml.io/en/v1.0.0#string
+// The provider marker and command auth enable Codex-owned tools and live model refresh:
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
+// Apps is ChatGPT-only; standalone web search requires explicit warning suppression:
+// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L382-L384
+// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L901-L905
+// https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L1393-L1439
 export const buildAgentCodexSnippet = (origin: string, config: AgentSetupConfiguration['codex']) => [
   ...(config.model ? [`model = ${JSON.stringify(config.model)}`] : []),
   ...(config.reasoningEffort ? [`model_reasoning_effort = ${JSON.stringify(config.reasoningEffort)}`] : []),

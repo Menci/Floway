@@ -789,7 +789,7 @@ const codexAuthJsonImport = (overrides: Record<string, unknown> = {}) => ({
 
 // Two-step create flow: (1) exchange endpoint yields a codex config+state
 // patch from the fake auth.json blob, (2) POST /api/upstreams persists the
-// merged draft. Mirrors the SPA's UpstreamEditPage.save() path so tests
+// merged draft. Mirrors the SPA editor's exchange-then-save flow so tests
 // touching subsequent codex actions see the same row a real user would
 // have.
 const createCodexUpstreamViaExchange = async (adminSession: string, overrides: Record<string, unknown> = {}): Promise<{ id: string }> => {
@@ -2100,7 +2100,7 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
 // --- Group B: endpoint tests for surfaces with zero coverage ---
 //
 // GET /api/upstreams/blueprint — the create page's loader consumes this so
-// the same UpstreamEditPage component serves both create and edit; the
+// the shared upstream editor serves both create and edit; the
 // blueprint is a shape-complete blank editor response that never touches
 // the DB or an assert. GET /api/upstreams/:id — the unredacted single-record
 // read the edit page depends on. POST /api/upstreams/copilot/quota — pure
