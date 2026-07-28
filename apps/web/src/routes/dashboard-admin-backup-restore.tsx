@@ -19,9 +19,12 @@ import { useDashboardOutletContext } from './dashboard';
 const {
   Button,
   Checkbox,
+  Field,
   makeStyles,
   MessageBar,
   MessageBarBody,
+  Radio,
+  RadioGroup,
   shorthands,
   Spinner,
   Text,
@@ -85,37 +88,6 @@ const usePreviewGridStyles = makeStyles({
   },
 });
 
-const useModeCardStyles = makeStyles({
-  wrapper: {
-    display: 'grid',
-    gap: '12px',
-    gridTemplateColumns: '1fr 1fr',
-  },
-  card: {
-    backgroundColor: 'var(--colorNeutralBackground2)',
-    ...shorthands.border('0'),
-    ...shorthands.borderRadius('8px'),
-    cursor: 'pointer',
-    display: 'grid',
-    color: 'inherit',
-    fontFamily: 'inherit',
-    fontSize: 'inherit',
-    gap: '4px',
-    padding: '14px 16px',
-    textAlign: 'left',
-    transition: 'box-shadow .15s',
-    ':hover': {
-      boxShadow: '0 0 0 1px var(--colorNeutralStroke1)',
-    },
-  },
-  cardSelected: {
-    boxShadow: '0 0 0 2px var(--colorBrandForeground1)',
-    ':hover': {
-      boxShadow: '0 0 0 2px var(--colorBrandForeground1)',
-    },
-  },
-});
-
 const PREVIEW_LABEL_KEYS = [
   'users',
   'apiKeys',
@@ -161,7 +133,6 @@ export default function DashboardAdminBackupRestore() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const dz = useDropzoneStyles();
   const pg = usePreviewGridStyles();
-  const mc = useModeCardStyles();
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -307,7 +278,7 @@ export default function DashboardAdminBackupRestore() {
       <DashboardPageHeader eyebrow={t('dashboard.groups.admin')} title={t('dashboard.backupRestore.heading')} />
 
       <Panel className="!p-[22px_24px] grid gap-[16px]">
-        <Text size={400} weight="semibold">
+        <Text as="h2" size={400} weight="semibold" className="!m-0">
           {t('dashboard.backupRestore.export.heading')}
         </Text>
         <Text size={300} className="text-fui-fg3">
@@ -344,13 +315,20 @@ export default function DashboardAdminBackupRestore() {
       </Panel>
 
       <Panel className="!p-[22px_24px] grid gap-[16px]">
-        <Text size={400} weight="semibold">
+        <Text as="h2" size={400} weight="semibold" className="!m-0">
           {t('dashboard.backupRestore.import.heading')}
         </Text>
         <Text size={300} className="text-fui-fg3">
           {t('dashboard.backupRestore.import.description')}
         </Text>
 
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
         <button
           className={`${dz.root} ${dragOver ? dz.active : ''} ${importing ? dz.disabled : ''}`}
           disabled={importing}
@@ -361,13 +339,6 @@ export default function DashboardAdminBackupRestore() {
           aria-label={t('dashboard.backupRestore.import.dropzone')}
           type="button"
         >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            className="hidden"
-            onChange={handleFileSelect}
-          />
           <ArrowUploadRegular
             className="text-fui-fg3"
             style={{ fontSize: '28px' }}
@@ -416,39 +387,12 @@ export default function DashboardAdminBackupRestore() {
               </div>
             </div>
 
-            <div>
-              <Text size={300} weight="semibold">
-                {t('dashboard.backupRestore.import.mode')}
-              </Text>
-              <div className={`${mc.wrapper} mt-[8px]`}>
-                <button
-                  className={`${mc.card} ${importMode === 'merge' ? mc.cardSelected : ''}`}
-                  disabled={importing}
-                  onClick={() => setImportMode('merge')}
-                  type="button"
-                >
-                  <Text size={300} weight="semibold">
-                    {t('dashboard.backupRestore.import.modeMerge')}
-                  </Text>
-                  <Text size={200} className="text-fui-fg3">
-                    {t('dashboard.backupRestore.import.modeMergeDesc')}
-                  </Text>
-                </button>
-                <button
-                  className={`${mc.card} ${importMode === 'replace' ? mc.cardSelected : ''}`}
-                  disabled={importing}
-                  onClick={() => setImportMode('replace')}
-                  type="button"
-                >
-                  <Text size={300} weight="semibold">
-                    {t('dashboard.backupRestore.import.modeReplace')}
-                  </Text>
-                  <Text size={200} className="text-fui-fg3">
-                    {t('dashboard.backupRestore.import.modeReplaceDesc')}
-                  </Text>
-                </button>
-              </div>
-            </div>
+            <Field label={t('dashboard.backupRestore.import.mode')}>
+              <RadioGroup disabled={importing} layout="horizontal" value={importMode} onChange={(_, data) => setImportMode(data.value as 'merge' | 'replace')}>
+                <Radio label={<span className="grid gap-0.5"><Text weight="semibold">{t('dashboard.backupRestore.import.modeMerge')}</Text><Text size={200} className="text-fui-fg3">{t('dashboard.backupRestore.import.modeMergeDesc')}</Text></span>} value="merge" />
+                <Radio label={<span className="grid gap-0.5"><Text weight="semibold">{t('dashboard.backupRestore.import.modeReplace')}</Text><Text size={200} className="text-fui-fg3">{t('dashboard.backupRestore.import.modeReplaceDesc')}</Text></span>} value="replace" />
+              </RadioGroup>
+            </Field>
 
             {importMode === 'replace' && (
               <MessageBar intent="warning">
