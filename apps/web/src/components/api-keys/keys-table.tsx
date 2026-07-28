@@ -25,13 +25,6 @@ const useStyles = makeStyles({
     '& .fui-TableHeaderCell__button': { justifyContent: 'flex-end' },
   },
   accentText: { color: 'var(--colorBrandForeground1)' },
-  // Delete reads as destructive only while the pointer or focus is on it, so
-  // the row keeps one neutral rhythm until the operator reaches for it.
-  dangerButton: {
-    ':hover': { color: 'var(--colorPaletteRedForeground1)' },
-    ':hover:active': { color: 'var(--colorPaletteRedForeground2)' },
-    ':focus-visible': { color: 'var(--colorPaletteRedForeground1)' },
-  },
   dangerText: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
@@ -107,7 +100,7 @@ export function KeysTable({
               />
               <TooltipIconButton icon={<EditRegular />} label={t('dashboard.apiKeys.actions.edit')} onClick={() => onEdit(key)} />
               <TooltipIconButton icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotate')} onClick={() => onRotate(key)} />
-              <TooltipIconButton className={s.dangerButton} icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
+              <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.delete')} onClick={() => onDelete(key)} />
             </div>
           );
         },

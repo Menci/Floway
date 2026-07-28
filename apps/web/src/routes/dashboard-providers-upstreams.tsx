@@ -434,6 +434,7 @@ function UpstreamsTable({
                     onClick={() => onEdit(record)}
                   />
                   <TooltipIconButton
+                    danger
                     disabled={busy}
                     icon={mutation?.kind === 'delete' && mutation.id === record.id ? <Spinner size="tiny" /> : <DeleteRegular />}
                     label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })}

@@ -75,7 +75,6 @@ interface PasswordFormValues {
 }
 
 const useStyles = makeStyles({
-  dangerButton: { color: 'var(--colorPaletteRedForeground1)' },
   validationMessage: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
@@ -250,7 +249,6 @@ function UsersTable({
   users: ControlPlaneUser[];
 }) {
   const { i18n, t } = useTranslation();
-  const s = useStyles();
   const dateFormatter = useMemo(
     () => new Intl.DateTimeFormat(localeForLanguage(i18n.resolvedLanguage), {
       dateStyle: 'medium',
@@ -314,7 +312,7 @@ function UsersTable({
                       onClick={() => onResetPassword(user)}
                     />
                     <TooltipIconButton
-                      className={s.dangerButton}
+                      danger
                       disabled={protectedUser}
                       icon={<DeleteRegular />}
                       label={t('dashboard.users.actions.delete')}
