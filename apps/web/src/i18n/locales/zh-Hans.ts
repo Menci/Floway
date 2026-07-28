@@ -358,8 +358,8 @@ const zhHansCN = {
           warningShrink: '保存后会立即删除超过新窗口的已捕获请求。',
         },
         configuration: {
-          title: '接入 Coding Agent',
-          selected: '下方代码段将使用 <strong>{{name}}</strong> API 密钥。',
+          title: '配置你的 Agent',
+          usingKey: '此处使用 <strong>{{name}}</strong> API 密钥。',
           claudeCode: 'Claude Code',
           codex: 'Codex',
           claudeHint: '将 env 块合并到 ~/.claude/settings.json 或 .claude/settings.json。',
@@ -367,7 +367,7 @@ const zhHansCN = {
           codexAuthHint: 'Linux 和 macOS：仅在 CODEX_HOME 下保存 Floway provider token。',
           codexWindowsAuthHint: 'Windows PowerShell：保存相同 token，不修改官方账号登录。',
         },
-        agentSetup: { accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后数分钟过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '推理强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
+        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后数分钟过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '推理强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
         rotate: {
           title: '轮换 API 密钥',
           message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',

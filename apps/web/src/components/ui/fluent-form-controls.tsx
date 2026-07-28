@@ -13,7 +13,12 @@ const {
   mergeClasses,
 } = fluentComponents;
 
-const MIN_WIDTH_CLASS = '!min-w-[0px]';
+// Fluent sizes these controls with a minimum width, and the native `input` and
+// `select` they wrap contribute their own `min-width: auto`. That intrinsic
+// floor propagates up through every auto-sized grid track above the control, so
+// a field in a fluid column can push its whole layout wider than the container.
+// Zeroing both the wrapper and the native element lets the column decide.
+const MIN_WIDTH_CLASS = '!min-w-[0px] [&_input]:!min-w-[0px] [&_select]:!min-w-[0px]';
 
 export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentInput>>(
   ({ className, ...props }, ref) => (
