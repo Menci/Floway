@@ -42,7 +42,7 @@ import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
 
 const {
-  Button, makeStyles, MessageBar, MessageBarBody,
+  Button, Field, Tab, TabList, makeStyles, MessageBar, MessageBarBody,
   Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip,
 } = fluentComponents;
 
@@ -130,6 +130,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [metric, setMetric] = useState<PerformanceMetric>(initialState.metric);
   const [percentile, setPercentile] = useState<PerformancePercentile>(initialState.percentile);
   const [groupBy, setGroupBy] = useState<PerformanceGroupBy>(initialState.groupBy === 'userId' && view !== 'all-by-user' ? 'model' : initialState.groupBy);
+  const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>('model');
   const [filters, setFilters] = useState<PerformanceFilters>(initialState.filters);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewResponse>(loaderData.overview);
@@ -201,6 +202,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const breakdowns = groupByValues
     .filter(key => key !== 'userId' || view === 'all-by-user')
     .map(key => ({ key, rows: overview.axes[key] }));
+  const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0]!;
 
   return <section className="dashboard-page">
     <DashboardPageHeader
@@ -213,21 +215,19 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     />
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] items-start gap-4">
+        <Field label={t('dashboard.performance.metric.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
           { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
           { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
-        ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
-        <div className="flex flex-wrap items-center gap-2">
-          <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-          <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
+        ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} /></Field>
+        <Field label={t('dashboard.performance.percentile.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} /></Field>
+        <Field label={t('dashboard.performance.range.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
             { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
-          ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
-        </div>
+          ]} onChange={value => setRange(value as PerformanceRange)} value={range} /></Field>
       </div>
-      <div className="flex items-start gap-6 justify-between min-w-0 max-[900px]:flex-col max-[900px]:gap-4">
-        <div className="flex items-center gap-2 flex-none">
-          <Text weight="semibold">{t('dashboard.performance.groupBy.label')}</Text>
+      <div className="grid grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)] items-end gap-4 min-w-0 max-[900px]:grid-cols-1">
+        <Field label={t('dashboard.performance.groupBy.label')}>
+          <div className="flex items-center gap-2">
           <Select aria-label={t('dashboard.performance.groupBy.label')} className="min-w-[160px]" value={groupBy} onChange={(_, data) => changeGroupBy(data.value as PerformanceGroupBy)}>
             {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</option>)}
           </Select>
@@ -242,29 +242,26 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               />
             </Tooltip>
           )}
-        </div>
-        <div className="flex items-center gap-2 justify-end min-w-0 max-[900px]:w-full max-[900px]:justify-start">
-          <Text className="flex-none" weight="semibold">{t('dashboard.performance.filters.label')}</Text>
-          <PerformanceFiltersBar filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />
-        </div>
+          </div>
+        </Field>
+        <PerformanceFiltersBar filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />
       </div>
       <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
         {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
           <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">{t(`dashboard.performance.summary.${label}`)}</Text>
-          <Text size={500} weight="semibold" className="font-mono overflow-wrap-anywhere">{value}</Text>
+          <Text size={500} weight="semibold" className="tabular-nums overflow-wrap-anywhere">{value}</Text>
         </div>)}
       </div>
     </Panel>
     <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
       <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: t(`dashboard.performance.metric.${metric === 'ttft' ? 'ttft' : 'outputSpeed'}`), group: t(`dashboard.performance.groupBy.${groupBy}`), percentile })} />
     </Panel>
-    <div className="grid grid-cols-2 gap-[18px] min-w-0 max-[920px]:grid-cols-1">
-      {breakdowns.map(({ key, rows }) => (
-        <Panel className="!p-[18px] min-w-0" key={key}>
-          <PerformanceTable groupBy={key} overview={overview} rows={rows} upstreamNames={upstreamNames} />
-        </Panel>
-      ))}
-    </div>
+    <Panel className="!grid gap-3 !p-[18px] min-w-0">
+      <ScrollArea axes="horizontal" className="min-w-0"><TabList selectedValue={activeBreakdown.key} onTabSelect={(_, data) => setBreakdownGroup(data.value as PerformanceGroupBy)}>
+        {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
+      </TabList></ScrollArea>
+      <PerformanceTable groupBy={activeBreakdown.key} overview={overview} rows={activeBreakdown.rows} showTitle={false} upstreamNames={upstreamNames} />
+    </Panel>
   </section>;
 }
 
@@ -281,17 +278,17 @@ function PerformanceFiltersBar({ filters, groupBy, onChange, overview, upstreamN
     { key: 'userId', values: overview.dimensionValues.userIds.map(value => ({ value: String(value), label: overview.users.find(user => user.id === value)?.username ?? `user ${value}` })) },
     { key: 'keyId', values: overview.dimensionValues.keyIds.map(value => ({ value, label: overview.keys.find(key => key.id === value)?.name ?? value })) },
   ];
-  return <div className="flex flex-wrap items-center gap-2 justify-end min-w-0 max-[900px]:justify-start">
+  return <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 min-w-0">
     {entries.filter(({ key }) => {
       if (key === 'userId' && view !== 'all-by-user') return false;
       if ((key === 'userId' || key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId')) return false;
       return key !== groupBy;
-    }).map(({ key, values }) => <div className="min-w-[130px] max-w-[220px]" key={key}>
+    }).map(({ key, values }) => <Field key={key} label={t(`dashboard.performance.filters.${key}`)}>
       <Select aria-label={t(`dashboard.performance.filters.${key}`)} value={filters[key]} onChange={(_, data) => onChange(key, data.value)}>
         <option value="">{t(`dashboard.performance.filters.all.${key}`)}</option>
         {values.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
       </Select>
-    </div>)}
+    </Field>)}
   </div>;
 }
 
@@ -357,7 +354,7 @@ function PerformanceChartCallout({ data, formatter, title }: {
   );
 }
 
-function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; upstreamNames: ReadonlyMap<string, string> }) {
+function PerformanceTable({ groupBy, overview, rows, showTitle = true, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; showTitle?: boolean; upstreamNames: ReadonlyMap<string, string> }) {
   const { i18n, t } = useTranslation();
   const locale = localeForLanguage(i18n.language);
   const styles = usePerformanceTableStyles();
@@ -375,7 +372,7 @@ function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy:
   }), [groupBy, overview, rows, sort, upstreamNames]);
   const sortDirection = (key: PerformanceTableSortKey) => sort.key === key ? sort.direction : undefined;
   return <section className="grid gap-2.5 min-w-0">
-    <Text size={300} weight="semibold">{t(`dashboard.performance.groupBy.${groupBy}`)}</Text>
+    {showTitle && <Text size={300} weight="semibold">{t(`dashboard.performance.groupBy.${groupBy}`)}</Text>}
     <ScrollArea axes="horizontal" className="border border-fui-stroke1 rounded-lg min-w-0"><Table aria-label={t(`dashboard.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
       {/* Fluent's Table lays out `fixed`, so columns split evenly unless the
           first row states a width: every column landed on the same 116px, which
