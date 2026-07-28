@@ -247,7 +247,9 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       const response = await api.api['search-config'].test.$post({ json: draft });
       // Probe failures are structured SearchTestResult bodies at HTTP 400;
       // preserving that body keeps the upstream error code and query visible.
-      setTestResult(await response.json());
+      const result = await response.json();
+      if (!('ok' in result)) throw new Error(result.error);
+      setTestResult(result);
     } catch (e) {
       setTestResult({
         ok: false,
