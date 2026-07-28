@@ -92,13 +92,12 @@ test('upstreamRecordToJson redacts Copilot GitHub token inside config and expose
       copilotToken: { token: 'tok-secret', expiresAt: 4102444800, baseUrl: 'https://api.enterprise.githubcopilot.com' },
     },
   });
-  const config = result.config as Record<string, unknown>;
-  const state = result.state as Record<string, unknown>;
-
   assertEquals(result.kind, 'copilot');
+  if (result.kind !== 'copilot' || result.state === null) throw new Error('Expected a Copilot response with state');
+  const { config, state } = result;
   assertEquals(config.githubToken, undefined);
   assertEquals(config.githubTokenSet, true);
-  assertEquals(config.accountType, undefined);
+  assertEquals('accountType' in config, false);
   assertEquals(config.user, {
     id: 100,
     login: 'octo',
@@ -139,7 +138,8 @@ test('upstreamRecordToJson serializes a Copilot row whose state lacks copilotTok
     },
     state: { knownModels: null, copilotToken: null },
   });
-  const state = result.state as Record<string, unknown>;
+  if (result.kind !== 'copilot' || result.state === null) throw new Error('Expected a Copilot response with state');
+  const { state } = result;
   assertEquals(state.copilotToken, null);
 });
 

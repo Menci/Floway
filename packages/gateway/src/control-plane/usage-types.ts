@@ -1,6 +1,6 @@
 import type { DisplayWebSearchUsageByKeyRecord, DisplayWebSearchUsageByUserRecord } from './search-usage/aggregate.ts';
 import type { DisplayUsageByUserRecord, DisplayUsageRecord } from './token-usage/aggregate.ts';
-import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
+import type { WebSearchConfig } from '../shared/web-search-providers.ts';
 
 export interface UsageKeyMetadata {
   id: string;
@@ -32,11 +32,11 @@ export interface SearchUsageByKeyResponse {
     keyCreatedAt: string;
   }>;
   keys: UsageKeyMetadata[];
-  activeProvider: WebSearchProviderName;
+  activeProvider: WebSearchConfig['provider'];
 }
 
 export interface SearchUsageByUserResponse {
   records: DisplayWebSearchUsageByUserRecord[];
   users: UsageUserMetadata[];
-  activeProvider: WebSearchProviderName;
+  activeProvider: WebSearchConfig['provider'];
 }
