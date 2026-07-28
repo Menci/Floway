@@ -10,6 +10,7 @@ import type { Route } from './+types/dashboard-monitor-performance';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import { getSessionToken } from '../auth/session';
+import { useUnclippedChartFrame } from '../components/charts/chart-frame-styles';
 import { ChartSection } from '../components/charts/chart-section';
 import { chartTickValues, dashboardBucketFrames, formatAxisDate, formatCalloutTitle } from '../components/charts/dashboard-time';
 import { colorForSlot } from '../components/charts/palette';
@@ -52,6 +53,18 @@ interface PerformanceChartModel { data: ChartProps; entries: ChartEntry[]; bucke
 interface UpstreamName { id: string; name: string }
 
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 64 } as const;
+// A log axis emits a tick per significant digit, so the sub-second decade alone
+// printed 400ms/500ms/600ms/700ms/800ms/900ms/1.0s into the height of two
+// labels — measured at 6px apart. `yAxisTickCount` is ignored on a log scale,
+// so the ticks stay (they are the minor gridlines a log axis is read against)
+// and only the labels thin out, to the 1/2/5 mantissas that are the convention
+// for a labelled decade.
+const LABELLED_LOG_MANTISSAS = [1, 2, 5];
+const labelledOnLogAxis = (value: number): boolean => {
+  if (!(value > 0)) return false;
+  const mantissa = value / 10 ** Math.floor(Math.log10(value));
+  return LABELLED_LOG_MANTISSAS.some(candidate => Math.abs(mantissa - candidate) < 0.01);
+};
 const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
 
 const useChartStateStyles = makeStyles({
@@ -288,6 +301,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const { i18n, t } = useTranslation();
   const stateStyles = useChartStateStyles();
   const chartStyles = usePerformanceChartStyles();
+  const chartRootStyles = useUnclippedChartFrame();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
@@ -298,7 +312,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length ? null : <div className="grid gap-[6px] min-w-[220px] p-1"><Text size={200} weight="semibold">{formatCalloutTitle(props.x, labelByTime, chart.range, locale)}</Text>{props.values.filter(item => item.y > 0).sort((a, b) => b.y - a.y).map(item => <Text key={item.legend} size={200} className="flex gap-3 justify-between font-mono"><span>{item.legend}</span><span>{formatter(item.y)}</span></Text>)}</div>, [chart.range, formatter, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
-  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={formatter} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
+  return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
 }
 
 function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy: PerformanceGroupBy; overview: PerformanceOverviewResponse; rows: PerformanceDisplayRecord[]; upstreamNames: ReadonlyMap<string, string> }) {
@@ -307,8 +321,14 @@ function PerformanceTable({ groupBy, overview, rows, upstreamNames }: { groupBy:
   return <section className="grid gap-2.5 min-w-0">
     <Text size={300} weight="semibold">{t(`dashboard.performance.groupBy.${groupBy}`)}</Text>
     <ScrollArea axes="horizontal" className="border border-fui-stroke1 rounded-lg min-w-0"><Table aria-label={t(`dashboard.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
-      <TableHeader><TableRow><TableHeaderCell>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell className="!text-right">{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell className="!text-right">{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell className="!text-right">{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell className="!text-right">{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
-      <TableBody>{rows.length ? [...rows].sort((a, b) => b.requests - a.requests).map(row => <TableRow key={row.group}><TableCell><span className="block max-w-[250px] overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames)}</span></TableCell><TableCell className="!text-right font-mono">{formatCount(row.requests, locale)}</TableCell><TableCell className="!text-right font-mono">{formatCount(row.errors, locale)}</TableCell><TableCell className="!text-right font-mono">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="!text-right font-mono">{formatTokensPerSecond(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><Text size={200} className="text-fui-fg2">{t('dashboard.performance.empty')}</Text></TableCell></TableRow>}</TableBody>
+      {/* Fluent's Table lays out `fixed`, so columns split evenly unless the
+          first row states a width: every column landed on the same 116px, which
+          wrapped the longest header onto two lines and clipped model ids to
+          `claude-opus-...`, hiding which of 4.6/4.7/4.8 a row described. Sizing
+          the four measure columns to their widest label leaves the rest to the
+          name, which is the only column whose content has no bound. */}
+      <TableHeader><TableRow><TableHeaderCell>{t(`dashboard.performance.filters.${groupBy}`)}</TableHeaderCell><TableHeaderCell className="!text-right whitespace-nowrap w-[80px]">{t('dashboard.performance.tables.requests')}</TableHeaderCell><TableHeaderCell className="!text-right whitespace-nowrap w-[68px]">{t('dashboard.performance.tables.errors')}</TableHeaderCell><TableHeaderCell className="!text-right whitespace-nowrap w-[84px]">{t('dashboard.performance.tables.ttftP95')}</TableHeaderCell><TableHeaderCell className="!text-right whitespace-nowrap w-[116px]">{t('dashboard.performance.tables.speedP95')}</TableHeaderCell></TableRow></TableHeader>
+      <TableBody>{rows.length ? [...rows].sort((a, b) => b.requests - a.requests).map(row => <TableRow key={row.group}><TableCell><span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={row.group}>{resolvePerformanceGroup(row.group, groupBy, overview, upstreamNames)}</span></TableCell><TableCell className="!text-right font-mono">{formatCount(row.requests, locale)}</TableCell><TableCell className="!text-right font-mono">{formatCount(row.errors, locale)}</TableCell><TableCell className="!text-right font-mono">{formatDuration(row.ttftMsP95)}</TableCell><TableCell className="!text-right font-mono">{formatTokensPerSecond(row.tpotUsP95)}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5}><Text size={200} className="text-fui-fg2">{t('dashboard.performance.empty')}</Text></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;
 }

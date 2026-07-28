@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTokenChart } from '../../../src/components/usage/chart-model';
-import type { DisplayUsageRecord, UsageBucket } from '../../../src/components/usage/types';
+import { buildSearchChart, buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/chart-model';
+import type { ChartPlot, DisplayUsageRecord, UsageBucket } from '../../../src/components/usage/types';
+
+// Narrow a plot to the form the assertion is about, failing loudly rather than
+// silently asserting nothing when a chart switches form.
+const linePlot = (plot: ChartPlot) => {
+  if (plot.form !== 'line') throw new Error(`expected a line plot, got ${plot.form}`);
+  return plot.data;
+};
+const barPlot = (plot: ChartPlot) => {
+  if (plot.form !== 'bars') throw new Error(`expected a bar plot, got ${plot.form}`);
+  return plot.bars;
+};
 
 const bucket: UsageBucket = {
   key: '2026-07-28T12',
@@ -34,12 +45,12 @@ const chart = (metrics: DisplayUsageRecord['metrics']) => buildTokenChart({
 
 describe('percentage chart series', () => {
   it('keeps a real zero-percent point', () => {
-    expect(chart({ input_tokens: '10', input_cache_read_tokens: '0' }).data.lineChartData![0]!.data)
+    expect(linePlot(chart({ input_tokens: '10', input_cache_read_tokens: '0' }).plot).lineChartData![0]!.data)
       .toEqual([expect.objectContaining({ y: 0 })]);
   });
 
   it('omits a percentage whose denominator does not exist', () => {
-    expect(chart({}).data.lineChartData).toEqual([]);
+    expect(linePlot(chart({}).plot).lineChartData).toEqual([]);
   });
 });
 
@@ -58,6 +69,75 @@ describe('cost chart series', () => {
       buckets: [bucket],
     });
 
-    expect(model.data.lineChartData![0]!.data).toEqual([]);
+    // An unpriced bucket contributes no segment at all; a zero-height one would
+    // read as 'nothing was spent' rather than 'no rate is on file'.
+    expect(barPlot(model.plot)[0]!.chartData).toEqual([]);
+  });
+});
+
+describe('bucket callout figures', () => {
+  // Token counts are decimal strings, so a `+` between two of them concatenates
+  // digits instead of failing to compile. Pin the arithmetic on values whose
+  // concatenation is visibly distinct from their sum.
+  const counters = chart({
+    input_tokens: '20',
+    input_cache_read_tokens: '300',
+    input_cache_write_tokens: '4000',
+    input_image_tokens: '50000',
+    output_tokens: '600000',
+    output_image_tokens: '7000000',
+  }).details.get(bucket.key)!.get('key-1')!;
+
+  it('adds the disjoint counters instead of joining them', () => {
+    expect(summarizeCounters(counters)).toMatchObject({
+      prompt: '54320',
+      prefill: '54020',
+      output: '7600000',
+      total: '7654320',
+    });
+  });
+
+  it('reports the same totals the summary tiles do', () => {
+    expect(summarizeCounters(counters)).toEqual(summarizeUsage([record({
+      input_tokens: '20',
+      input_cache_read_tokens: '300',
+      input_cache_write_tokens: '4000',
+      input_image_tokens: '50000',
+      output_tokens: '600000',
+      output_image_tokens: '7000000',
+    })]));
+  });
+});
+
+describe('search chart', () => {
+  const searchRecord = (provider: string, requests: number) => ({
+    provider,
+    keyId: 'key-1',
+    keyName: 'Key 1',
+    hour: '2026-07-28T04',
+    requests,
+  });
+  const searchChart = (records: ReturnType<typeof searchRecord>[]) => buildSearchChart({
+    search: { records, keys: [{ id: 'key-1', name: 'Key 1' }] },
+    hiddenKeys: new Set(),
+    redactKeys: false,
+    range: 'today',
+    buckets: [bucket],
+  });
+
+  it('plots recorded traffic from every provider, not just the configured one', () => {
+    const chart = searchChart([searchRecord('tavily', 3), searchRecord('microsoft-grounding', 4)]);
+    expect(chart.providers).toEqual(['microsoft-grounding', 'tavily']);
+    expect(barPlot(chart.plot)[0]!.chartData).toEqual([expect.objectContaining({ data: 7 })]);
+  });
+
+  it('reports no series when the window holds no search traffic', () => {
+    expect(searchChart([]).entries).toEqual([]);
+  });
+
+  it('ignores records that fall outside the plotted window', () => {
+    const chart = searchChart([{ ...searchRecord('tavily', 5), hour: '2026-07-20T04' }]);
+    expect(chart.entries).toEqual([]);
+    expect(chart.providers).toEqual([]);
   });
 });

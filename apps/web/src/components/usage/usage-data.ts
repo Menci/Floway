@@ -13,7 +13,7 @@ import type {
 } from '@floway-dev/gateway/control-plane/usage-types';
 
 export const emptyUsageResponse = (): UsageResponse => ({ records: [], keys: [] });
-export const emptySearchUsageResponse = (): SearchUsageResponse => ({ records: [], keys: [], activeProvider: 'disabled' });
+export const emptySearchUsageResponse = (): SearchUsageResponse => ({ records: [], keys: [] });
 const userBucketId = (userId: number) => `user-${userId}`;
 
 export const metricsFromWire = (
@@ -48,7 +48,6 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
       search: searchData ? {
         records: searchData.records.map(({ userId, ...record }) => ({ ...record, keyId: userBucketId(userId) })),
         keys: searchData.users.map(user => ({ id: userBucketId(user.id), name: user.username })),
-        activeProvider: searchData.activeProvider,
       } : emptySearchUsageResponse(),
       error: usageRes.error?.message ?? searchRes.error?.message ?? null,
     };
@@ -70,7 +69,7 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
       records: usageData.records.map(record => ({ ...record, metrics: metricsFromWire(record.metrics) })),
       keys: usageData.keys,
     } : emptyUsageResponse(),
-    search: searchData ?? emptySearchUsageResponse(),
+    search: searchData ? { records: searchData.records, keys: searchData.keys } : emptySearchUsageResponse(),
     error: usageRes.error?.message ?? searchRes.error?.message ?? null,
   };
 }

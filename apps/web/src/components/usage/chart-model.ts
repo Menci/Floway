@@ -1,6 +1,7 @@
-import { curveMonotoneX } from 'd3-shape';
+import type { VerticalStackedChartProps } from '@fluentui/react-charts';
+import { curveLinear } from 'd3-shape';
 
-import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenDetail, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
+import type { ChartEntry, DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenCounters, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
 import {
@@ -119,22 +120,49 @@ export function buildTokenChart({
     details,
     kind: 'token',
     range,
-    stacked: !isPercent,
-    data: {
-      chartTitle: '',
-      lineChartData: series.map(({ entry, data }) => ({
+    plot: isPercent
+      ? {
+          form: 'line',
+          data: {
+            chartTitle: '',
+            lineChartData: series.map(({ entry, data }) => ({
+              legend: entry.label,
+              color: colorForSlot(entry.colorSlot),
+              lineOptions: { strokeWidth: 2, curve: curveLinear },
+              data: data.flatMap((value, index) => value === null ? [] : [{
+                x: buckets[index]!.date,
+                y: value,
+                xAxisCalloutData: buckets[index]!.label,
+                yAxisCalloutData: String(value),
+              }]),
+            })),
+          },
+        }
+      : { form: 'bars', bars: stackedBars(buckets, series) },
+  };
+}
+
+// One entry per bucket, each carrying every visible series as a segment. A
+// measured zero keeps its segment so a series holds the same position in every
+// stack and in the callout; an absent measurement — cost with no rate on file —
+// is omitted instead, because a zero-height bar would assert that nothing was
+// spent rather than that nothing is known.
+function stackedBars(
+  buckets: UsageBucket[],
+  series: Array<{ entry: ChartEntry; data: Array<number | null> }>,
+): VerticalStackedChartProps[] {
+  return buckets.map((bucket, index) => ({
+    xAxisPoint: bucket.date,
+    xAxisCalloutData: bucket.label,
+    chartData: series.flatMap(({ entry, data }) => {
+      const value = data[index];
+      return value === null || value === undefined ? [] : [{
         legend: entry.label,
         color: colorForSlot(entry.colorSlot),
-        lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
-        data: data.flatMap((value, index) => value === null ? [] : [{
-          x: buckets[index]!.date,
-          y: value,
-          xAxisCalloutData: buckets[index]!.label,
-          yAxisCalloutData: String(value),
-        }]),
-      })),
-    },
-  };
+        data: value,
+      }];
+    }),
+  }));
 }
 
 export function buildSearchChart({
@@ -149,20 +177,28 @@ export function buildSearchChart({
   redactKeys: boolean;
   range: UsageRange;
   buckets: UsageBucket[];
-}): UsageChartModel {
+}): SearchChartModel {
   const groups = new Map<string, Map<string, number>>();
   const presentGroups = new Set<string>();
+  const providers = new Set<string>();
+  const bucketKeys = new Set(buckets.map(bucket => bucket.key));
   const meta = new Map<string, { name?: string; createdAt?: string }>();
   for (const key of search.keys) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
 
+  // Whichever provider recorded a search, the record is real usage and belongs
+  // on the chart. Gating on the currently configured provider would erase the
+  // history of every provider the operator has since switched away from — and
+  // hide the panel entirely once search is turned off, even though the window
+  // still holds the traffic that happened while it was on.
   for (const record of search.records) {
-    if (record.provider !== search.activeProvider) continue;
+    const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
+    if (!bucketKeys.has(bucket)) continue;
+    providers.add(record.provider);
     presentGroups.add(record.keyId);
     meta.set(record.keyId, {
       name: record.keyName ?? meta.get(record.keyId)?.name,
       createdAt: record.keyCreatedAt ?? meta.get(record.keyId)?.createdAt,
     });
-    const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
     const bucketValues = groups.get(record.keyId) ?? new Map<string, number>();
     bucketValues.set(bucket, (bucketValues.get(bucket) ?? 0) + record.requests);
     groups.set(record.keyId, bucketValues);
@@ -184,7 +220,7 @@ export function buildSearchChart({
     redactKeys,
   );
   const visibleEntries = entries.filter(entry => !hiddenKeys.has(entry.id));
-  const details = new Map<string, Map<string, TokenDetail>>();
+  const details = new Map<string, Map<string, TokenCounters>>();
   for (const bucket of buckets) details.set(bucket.key, new Map());
 
   return {
@@ -192,20 +228,14 @@ export function buildSearchChart({
     buckets,
     details,
     kind: 'search',
+    providers: [...providers].sort(),
     range,
-    stacked: true,
-    data: {
-      chartTitle: '',
-      lineChartData: visibleEntries.map(entry => ({
-        legend: entry.label,
-        color: colorForSlot(entry.colorSlot),
-        lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
-        data: buckets.map(bucket => ({
-          x: bucket.date,
-          y: groups.get(entry.id)?.get(bucket.key) ?? 0,
-          xAxisCalloutData: bucket.label,
-        })),
-      })),
+    plot: {
+      form: 'bars',
+      bars: stackedBars(buckets, visibleEntries.map(entry => ({
+        entry,
+        data: buckets.map(bucket => groups.get(entry.id)?.get(bucket.key) ?? 0),
+      }))),
     },
   };
 }
@@ -218,7 +248,7 @@ function aggregateTokenRecords(
   buckets: UsageBucket[],
 ) {
   const values = new Map<string, Map<string, number | null>>();
-  const details = new Map<string, Map<string, TokenDetail>>();
+  const details = new Map<string, Map<string, TokenCounters>>();
   for (const bucket of buckets) {
     values.set(bucket.key, new Map());
     details.set(bucket.key, new Map());
@@ -230,8 +260,8 @@ function aggregateTokenRecords(
 
     const group = record[groupKey];
     const bucketDetails = details.get(bucket)!;
-    const detail = bucketDetails.get(group) ?? emptyDetail();
-    addRecordToDetail(detail, record);
+    const detail = bucketDetails.get(group) ?? emptyCounters();
+    addRecordToCounters(detail, record);
     bucketDetails.set(group, detail);
 
     if (metricConfig[metric].kind !== 'percent') {
@@ -250,7 +280,7 @@ function aggregateTokenRecords(
     for (const [bucket, bucketDetails] of details) {
       const bucketValues = values.get(bucket)!;
       for (const [group, detail] of bucketDetails) {
-        bucketValues.set(group, tokenDetailMetricValue(detail, metric));
+        bucketValues.set(group, tokenCountersMetricValue(detail, metric));
       }
     }
   }
@@ -302,39 +332,44 @@ function modelChartEntries(
 }
 
 export function summarizeUsage(records: DisplayUsageRecord[]): TokenSummary {
-  const summary = emptyDetail();
-  for (const record of records) addRecordToDetail(summary, record);
+  const counters = emptyCounters();
+  for (const record of records) addRecordToCounters(counters, record);
+  return summarizeCounters(counters);
+}
+
+// The single derivation from disjoint counters to displayed figures. The
+// summary tiles and the chart callout both read it, so a bucket row and the
+// page total can never disagree about what "total" or "prefill" means.
+export function summarizeCounters(counters: TokenCounters): TokenSummary {
   return {
-    requests: summary.requests,
-    cost: summary.cost,
-    cacheRead: summary.cacheRead,
-    cacheCreation: summary.cacheCreation,
-    input: sumDecimalStrings(summary.input, summary.cacheRead, summary.cacheCreation, summary.inputImage),
-    output: sumDecimalStrings(summary.output, summary.outputImage),
-    total: sumDecimalStrings(summary.input, summary.output, summary.cacheRead, summary.cacheCreation, summary.inputImage, summary.outputImage),
-    prefill: sumDecimalStrings(summary.input, summary.cacheCreation, summary.inputImage),
+    requests: counters.requests,
+    cost: counters.cost,
+    cacheRead: counters.cacheRead,
+    cacheCreation: counters.cacheCreation,
+    prompt: sumDecimalStrings(counters.input, counters.cacheRead, counters.cacheCreation, counters.inputImage),
+    output: sumDecimalStrings(counters.output, counters.outputImage),
+    total: sumDecimalStrings(counters.input, counters.output, counters.cacheRead, counters.cacheCreation, counters.inputImage, counters.outputImage),
+    prefill: sumDecimalStrings(counters.input, counters.cacheCreation, counters.inputImage),
   };
 }
 
-function addRecordToDetail(detail: TokenDetail, record: DisplayUsageRecord) {
-  detail.requests += record.requests;
-  if (record.cost !== null) detail.cost = sumDecimalStrings(detail.cost ?? '0', record.cost);
-  detail.input = sumDecimalStrings(detail.input, dim(record, 'input_tokens'));
-  detail.output = sumDecimalStrings(detail.output, dim(record, 'output_tokens'));
-  detail.cacheRead = sumDecimalStrings(detail.cacheRead, dim(record, 'input_cache_read_tokens'));
-  detail.cacheCreation = sumDecimalStrings(detail.cacheCreation, dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'));
-  detail.inputImage = sumDecimalStrings(detail.inputImage, dim(record, 'input_image_tokens'));
-  detail.outputImage = sumDecimalStrings(detail.outputImage, dim(record, 'output_image_tokens'));
+function addRecordToCounters(counters: TokenCounters, record: DisplayUsageRecord) {
+  counters.requests += record.requests;
+  if (record.cost !== null) counters.cost = sumDecimalStrings(counters.cost ?? '0', record.cost);
+  counters.input = sumDecimalStrings(counters.input, dim(record, 'input_tokens'));
+  counters.output = sumDecimalStrings(counters.output, dim(record, 'output_tokens'));
+  counters.cacheRead = sumDecimalStrings(counters.cacheRead, dim(record, 'input_cache_read_tokens'));
+  counters.cacheCreation = sumDecimalStrings(counters.cacheCreation, dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'));
+  counters.inputImage = sumDecimalStrings(counters.inputImage, dim(record, 'input_image_tokens'));
+  counters.outputImage = sumDecimalStrings(counters.outputImage, dim(record, 'output_image_tokens'));
 }
 
-function emptyDetail(): TokenDetail {
+function emptyCounters(): TokenCounters {
   return {
     requests: 0,
     cost: null,
     input: '0',
     output: '0',
-    total: '0',
-    prefill: '0',
     cacheRead: '0',
     cacheCreation: '0',
     inputImage: '0',
@@ -396,19 +431,17 @@ function plottableMetricValue(record: DisplayUsageRecord, metric: UsageMetric): 
 
 // Ratios are percentages of one aggregate over another, so both sides convert
 // to plottable numbers first; the division itself has no precision to protect.
-function tokenDetailMetricValue(detail: TokenDetail, metric: UsageMetric): number | null {
+function tokenCountersMetricValue(counters: TokenCounters, metric: UsageMetric): number | null {
   const ratio = (numerator: DecimalString, denominator: DecimalString): number | null => {
     const bottom = decimalStringToPlottableNumber(denominator);
     return bottom > 0 ? (decimalStringToPlottableNumber(numerator) / bottom) * 100 : null;
   };
-  if (metric === 'cacheHitRate') return ratio(detail.cacheRead, sumDecimalStrings(detail.cacheRead, detail.cacheCreation));
-  if (metric === 'cachedRate') {
-    return ratio(detail.cacheRead, sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage));
-  }
+  if (metric === 'cacheHitRate') return ratio(counters.cacheRead, sumDecimalStrings(counters.cacheRead, counters.cacheCreation));
+  if (metric === 'cachedRate') return ratio(counters.cacheRead, summarizeCounters(counters).prompt);
   return null;
 }
 
-function hasRequests(details: Map<string, Map<string, TokenDetail>>, id: string): boolean {
+function hasRequests(details: Map<string, Map<string, TokenCounters>>, id: string): boolean {
   for (const bucket of details.values()) {
     if ((bucket.get(id)?.requests ?? 0) > 0) return true;
   }
@@ -471,7 +504,7 @@ export function formatSummaryMetric(
   case 'total':
     return formatDecimalCount(summary.total);
   case 'input':
-    return formatDecimalCount(summary.input);
+    return formatDecimalCount(summary.prompt);
   case 'output':
     return formatDecimalCount(summary.output);
   case 'prefill':
@@ -481,7 +514,7 @@ export function formatSummaryMetric(
   case 'cacheCreation':
     return formatDecimalCount(summary.cacheCreation);
   case 'cachedRate':
-    return formatInputRate(summary.cacheRead, summary.input);
+    return formatInputRate(summary.cacheRead, summary.prompt);
   case 'cacheHitRate':
     return formatHitRate(summary.cacheRead, summary.cacheCreation);
   }
