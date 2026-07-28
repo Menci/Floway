@@ -4,7 +4,7 @@ import type { Route } from './+types/dashboard-providers-upstreams-new';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import { upstreamRecordFromWire } from '../api/types';
-import type { UpstreamProviderKind, UpstreamRecord } from '../api/types';
+import type { UpstreamProviderKind } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import {
   loadEditorAux,

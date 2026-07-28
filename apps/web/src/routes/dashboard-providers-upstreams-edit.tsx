@@ -4,7 +4,6 @@ import type { Route } from './+types/dashboard-providers-upstreams-edit';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import { upstreamRecordFromWire } from '../api/types';
-import type { UpstreamRecord } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { loadEditorAux, requireAdmin } from '../components/upstream-editor/editor-data';
 import { UpstreamEditorPage } from '../components/upstream-editor/upstream-editor-page';

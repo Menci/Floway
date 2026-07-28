@@ -5,9 +5,9 @@ import { useTranslation } from 'react-i18next';
 import { chartTickValues, formatAxisDate } from './chart-model';
 import type { UsageChartModel } from './types';
 import { UsageChartCallout } from './usage-callout';
-import { useElementSize } from '../charts/use-element-size';
 import { fluentComponents } from '../../fluent';
 import { localeForLanguage } from '../../i18n';
+import { useElementSize } from '../charts/use-element-size';
 const { makeStyles } = fluentComponents;
 const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' } });
 export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {

@@ -3,7 +3,6 @@ import { curveMonotoneX } from 'd3-shape';
 import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenDetail, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
-import { colorForSlot } from '../charts/palette';
 import {
   chartTickValues as sharedChartTickValues,
   dashboardBucketFrames,
@@ -12,6 +11,7 @@ import {
   formatAxisDate,
   formatCalloutTitle,
 } from '../charts/dashboard-time';
+import { colorForSlot } from '../charts/palette';
 import type { DecimalString } from '@floway-dev/protocols/common';
 
 export const metricConfig: Record<

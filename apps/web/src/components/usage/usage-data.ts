@@ -9,7 +9,6 @@ import type {
 import type { AuthUser } from '../../api/auth';
 import { authFetch, callApi, callJson } from '../../api/auth';
 import { api } from '../../api/client';
-import type { ControlPlaneModel } from '../../api/types';
 
 interface UsageByUserResponse {
   records: Array<{ userId: number; model: string; hour: string; requests: number; metrics: DisplayUsageRecord['metrics']; cost: DisplayUsageRecord['cost'] }>;

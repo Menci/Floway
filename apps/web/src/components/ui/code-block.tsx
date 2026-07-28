@@ -7,8 +7,8 @@ import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-powershell';
 import 'prismjs/components/prism-toml';
 
-import { fluentComponents } from '../../fluent';
 import { ScrollArea } from './scroll-area';
+import { fluentComponents } from '../../fluent';
 
 const { Button, makeStyles } = fluentComponents;
 
