@@ -29,8 +29,10 @@ describe('codex credential lookup', () => {
     expect(findCredential(record(state))?.state).toBe('active');
   });
 
-  it('returns null when the upstream has no stored state', () => {
-    expect(findCredential(record(null))).toBeNull();
+  it('returns null when the configured account is absent from state', () => {
+    expect(findCredential(record({
+      accounts: [{ chatgptAccountId: 'other', state: 'active', state_updated_at: PAST }],
+    }))).toBeNull();
   });
 });
 

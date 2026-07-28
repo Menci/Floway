@@ -33,11 +33,11 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   // Register the manifest's Codex-specific search path with the general
   // alpha-search handler.
   // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
-  mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch.paths[0]);
-  app.post(PUBLIC_DATA_PLANE_ROUTES.codexResponses.paths[0], responsesHttp.generate);
-  app.post(PUBLIC_DATA_PLANE_ROUTES.codexResponsesCompact.paths[0], responsesHttp.compact);
-  app.get(PUBLIC_DATA_PLANE_ROUTES.codexResponsesWebSocket.paths[0], responsesWebSocket);
-  app.post(PUBLIC_DATA_PLANE_ROUTES.codexImagesGenerations.paths[0], imagesGenerations);
-  app.post(PUBLIC_DATA_PLANE_ROUTES.codexImagesEdits.paths[0], imagesEdits);
-  app.get(PUBLIC_DATA_PLANE_ROUTES.codexModels.paths[0], serveModels);
+  mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch);
+  app.on(PUBLIC_DATA_PLANE_ROUTES.codexResponses.method, PUBLIC_DATA_PLANE_ROUTES.codexResponses.paths[0], responsesHttp.generate);
+  app.on(PUBLIC_DATA_PLANE_ROUTES.codexResponsesCompact.method, PUBLIC_DATA_PLANE_ROUTES.codexResponsesCompact.paths[0], responsesHttp.compact);
+  app.on(PUBLIC_DATA_PLANE_ROUTES.codexResponsesWebSocket.method, PUBLIC_DATA_PLANE_ROUTES.codexResponsesWebSocket.paths[0], responsesWebSocket);
+  app.on(PUBLIC_DATA_PLANE_ROUTES.codexImagesGenerations.method, PUBLIC_DATA_PLANE_ROUTES.codexImagesGenerations.paths[0], imagesGenerations);
+  app.on(PUBLIC_DATA_PLANE_ROUTES.codexImagesEdits.method, PUBLIC_DATA_PLANE_ROUTES.codexImagesEdits.paths[0], imagesEdits);
+  app.on(PUBLIC_DATA_PLANE_ROUTES.codexModels.method, PUBLIC_DATA_PLANE_ROUTES.codexModels.paths[0], serveModels);
 };

@@ -30,9 +30,7 @@ export interface QuotaEntry {
 }
 
 export const findCredential = (record: CodexRecord): CodexAccountCredentialState | null => {
-  const accounts = record.state?.accounts;
-  if (!Array.isArray(accounts)) return null;
-  return accounts.find(account => account.chatgptAccountId === record.config.accounts[0].chatgptAccountId) ?? null;
+  return record.state.accounts.find(account => account.chatgptAccountId === record.config.accounts[0].chatgptAccountId) ?? null;
 };
 
 const window = (

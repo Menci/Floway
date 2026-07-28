@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
-import type { FullUpstreamResponse, ModelsCacheStatus, RedactedUpstreamResponse } from './types.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
+import type { FullUpstreamResponse, ModelsCacheStatus, RedactedUpstreamResponse } from './types.ts';
 import { type AuthedContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';

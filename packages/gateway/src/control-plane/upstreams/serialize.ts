@@ -2,7 +2,6 @@ import type {
   BlueprintSerializedUpstreamRecord,
   FullSerializedUpstreamRecord,
   RedactedSerializedUpstreamRecord,
-  SerializedUpstreamRecord,
 } from './types.ts';
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
 import type { FlagOverrides, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -13,7 +12,7 @@ import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
-export type { SerializedUpstreamRecord } from './types.ts';
+export type { FullSerializedUpstreamRecord } from './types.ts';
 
 const clone = <T>(value: T): T => structuredClone(value);
 const hasSecret = (value: string | undefined | null): boolean => typeof value === 'string' && value.length > 0;
@@ -87,42 +86,36 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
   }
   case 'codex': {
     assertCodexUpstreamRecord(upstream);
-    let state: Extract<RedactedSerializedUpstreamRecord, { kind: 'codex' }>['state'] = null;
-    if (upstream.state !== null) {
-      assertCodexUpstreamState(upstream.state);
-      state = {
-        accounts: upstream.state.accounts.map(account => ({
-          chatgptAccountId: account.chatgptAccountId,
-          state: account.state,
-          ...(account.state_message !== undefined ? { state_message: account.state_message } : {}),
-          state_updated_at: account.state_updated_at,
-          refresh_token_set: hasSecret(account.refresh_token),
-        })),
-      };
-    }
+    assertCodexUpstreamState(upstream.state);
+    const state = {
+      accounts: upstream.state.accounts.map(account => ({
+        chatgptAccountId: account.chatgptAccountId,
+        state: account.state,
+        ...(account.state_message !== undefined ? { state_message: account.state_message } : {}),
+        state_updated_at: account.state_updated_at,
+        refresh_token_set: hasSecret(account.refresh_token),
+      })),
+    };
     return { ...base, kind: 'codex', config: clone(upstream.config), state };
   }
   case 'claude-code': {
     assertClaudeCodeUpstreamRecord(upstream);
-    let state: Extract<RedactedSerializedUpstreamRecord, { kind: 'claude-code' }>['state'] = null;
-    if (upstream.state !== null) {
-      assertClaudeCodeUpstreamState(upstream.state);
-      state = {
-        accounts: upstream.state.accounts.map(account => ({
-          accountUuid: account.accountUuid,
-          tokenKind: account.tokenKind,
-          state: account.state,
-          ...(account.stateMessage !== undefined ? { stateMessage: account.stateMessage } : {}),
-          stateUpdatedAt: account.stateUpdatedAt,
-          refreshTokenSet: hasSecret(account.refreshToken),
-          accessToken: account.accessToken === null
-            ? null
-            : { expiresAt: account.accessToken.expiresAt, refreshedAt: account.accessToken.refreshedAt },
-          quotaSnapshot: clone(account.quotaSnapshot),
-          usageProbeSnapshot: clone(account.usageProbeSnapshot),
-        })),
-      };
-    }
+    assertClaudeCodeUpstreamState(upstream.state);
+    const state = {
+      accounts: upstream.state.accounts.map(account => ({
+        accountUuid: account.accountUuid,
+        tokenKind: account.tokenKind,
+        state: account.state,
+        ...(account.stateMessage !== undefined ? { stateMessage: account.stateMessage } : {}),
+        stateUpdatedAt: account.stateUpdatedAt,
+        refreshTokenSet: hasSecret(account.refreshToken),
+        accessToken: account.accessToken === null
+          ? null
+          : { expiresAt: account.accessToken.expiresAt, refreshedAt: account.accessToken.refreshedAt },
+        quotaSnapshot: clone(account.quotaSnapshot),
+        usageProbeSnapshot: clone(account.usageProbeSnapshot),
+      })),
+    };
     return { ...base, kind: 'claude-code', config: clone(upstream.config), state };
   }
   case 'ollama': {
@@ -155,12 +148,12 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializ
   }
   case 'codex': {
     assertCodexUpstreamRecord(upstream);
-    if (upstream.state !== null) assertCodexUpstreamState(upstream.state);
+    assertCodexUpstreamState(upstream.state);
     return { ...base, kind: 'codex', config: clone(upstream.config), state: clone(upstream.state) };
   }
   case 'claude-code': {
     assertClaudeCodeUpstreamRecord(upstream);
-    if (upstream.state !== null) assertClaudeCodeUpstreamState(upstream.state);
+    assertClaudeCodeUpstreamState(upstream.state);
     return { ...base, kind: 'claude-code', config: clone(upstream.config), state: clone(upstream.state) };
   }
   case 'ollama': {
