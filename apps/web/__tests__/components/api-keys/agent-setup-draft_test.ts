@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { applyLocalAgentSetupChanges } from '../../../src/components/api-keys/agent-setup-draft';
-import { defaultAgentSetupConfiguration } from '../../../src/components/api-keys/use-agent-setup';
+import { defaultAgentSetupConfiguration } from '../../../src/components/api-keys/agent-setup-contract';
 
 describe('pre-lease Agent Setup edits', () => {
   it('applies only fields changed from the local baseline', () => {

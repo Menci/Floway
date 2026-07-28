@@ -1,11 +1,8 @@
-import type { InferResponseType } from 'hono/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { cloneAgentSetupConfiguration, type AgentSetupConfiguration, type AgentSetupLease } from './agent-setup-contract';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
-
-type AgentSetupLease = Extract<InferResponseType<typeof api.api.setup.$put>, { status: 'ok' }>;
-export type AgentSetupConfiguration = AgentSetupLease['configuration'];
 
 interface ActiveRequest {
   controller: AbortController;
@@ -22,7 +19,6 @@ const clearTimer = (timer: { current: ReturnType<typeof setTimeout> | null }) =>
   timer.current = null;
 };
 
-const clone = <T>(value: T): T => structuredClone(value);
 const rawStatus = (raw: unknown) => raw && typeof raw === 'object' && typeof (raw as { status?: unknown }).status === 'string'
   ? (raw as { status: string }).status : null;
 const leaseFromRaw = (raw: unknown): AgentSetupLease | null => {
@@ -43,22 +39,6 @@ const configurationsEqual = (left: unknown, right: unknown): boolean => {
   return keys.length === Object.keys(rightRecord).length
     && keys.every(key => configurationsEqual(leftRecord[key], rightRecord[key]));
 };
-
-export const defaultAgentSetupConfiguration = (apiKeyId = ''): AgentSetupConfiguration => ({
-  apiKeyId,
-  claudeCode: {
-    model: null,
-    defaultFableModel: null,
-    defaultOpusModel: null,
-    defaultSonnetModel: null,
-    defaultHaikuModel: null,
-    effortLevel: null,
-    cleanupPeriodDays: null,
-    optOutAiAttribution: false,
-    modelDiscovery: true,
-  },
-  codex: { model: null, reasoningEffort: null },
-});
 
 export const agentSetupCommand = (origin: string, path: string, platform: 'unix' | 'windows') => platform === 'unix'
   ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash`
@@ -162,7 +142,7 @@ export function useAgentSetup(apiKeyId: string | null) {
       || generationRef.current === confirmedRef.current) return;
     const sentGeneration = generationRef.current;
     const lifecycle = lifecycleRef.current;
-    const sentConfiguration = clone(configuration);
+    const sentConfiguration = cloneAgentSetupConfiguration(configuration);
     const result = await request<AgentSetupLease>(signal => api.api.setup.$put({
       json: {
         token: currentLease.token,
@@ -170,7 +150,7 @@ export function useAgentSetup(apiKeyId: string | null) {
         expectedRevision: currentLease.configurationRevision,
       },
     }, { init: { signal } }));
-    if (lifecycle !== lifecycleRef.current || leaseRef.current?.token !== currentLease.token) return;
+    if (lifecycle !== lifecycleRef.current) return;
     if (result.error) {
       const status = rawStatus(result.error.raw);
       if (status === 'missing') { markTerminated(); return; }
@@ -213,7 +193,7 @@ export function useAgentSetup(apiKeyId: string | null) {
     const result = await request<AgentSetupLease>(signal => api.api.setup.heartbeat.$post({
       json: { token: currentLease.token },
     }, { init: { signal } }));
-    if (lifecycle !== lifecycleRef.current || leaseRef.current?.token !== currentLease.token) return;
+    if (lifecycle !== lifecycleRef.current) return;
     if (result.error) {
       if (rawStatus(result.error.raw) === 'missing') { markTerminated(); return; }
       setHeartbeatError(result.error.message);
@@ -262,7 +242,7 @@ export function useAgentSetup(apiKeyId: string | null) {
         return;
       }
       adoptLease(result.data);
-      const configuration = clone(result.data.configuration);
+      const configuration = cloneAgentSetupConfiguration(result.data.configuration);
       draftRef.current = configuration;
       setDraftState(configuration);
       scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
@@ -309,7 +289,7 @@ export function useAgentSetup(apiKeyId: string | null) {
   const updateDraft = useCallback((update: (current: AgentSetupConfiguration) => AgentSetupConfiguration) => {
     const current = draftRef.current;
     if (!current || terminatedRef.current) return;
-    const next = update(clone(current));
+    const next = update(cloneAgentSetupConfiguration(current));
     if (configurationsEqual(current, next)) return;
     draftRef.current = next;
     const nextGeneration = generationRef.current + 1;

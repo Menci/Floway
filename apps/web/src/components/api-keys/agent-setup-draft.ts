@@ -1,8 +1,4 @@
-import type { AgentSetupConfiguration } from './use-agent-setup';
-
-export const cloneAgentSetupConfiguration = (
-  configuration: AgentSetupConfiguration,
-): AgentSetupConfiguration => structuredClone(configuration);
+import { cloneAgentSetupConfiguration, type AgentSetupConfiguration } from './agent-setup-contract';
 
 const copyChangedFields = <T extends object>(target: T, current: T, baseline: T) => {
   for (const key of Object.keys(current) as (keyof T)[]) {

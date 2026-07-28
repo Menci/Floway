@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { applyLocalAgentSetupChanges, cloneAgentSetupConfiguration } from './agent-setup-draft';
+import { cloneAgentSetupConfiguration, defaultAgentSetupConfiguration, type AgentSetupConfiguration } from './agent-setup-contract';
+import { applyLocalAgentSetupChanges } from './agent-setup-draft';
 import { buildAgentModelOptions, rankAgentSetupModels, type ClaudePicker } from './agent-setup-models';
 import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform';
 import { codexUnixCredentialSnippet, codexWindowsCredentialSnippet } from './codex-credential-snippets';
-import { agentSetupCommand, defaultAgentSetupConfiguration, useAgentSetup, type AgentSetupConfiguration } from './use-agent-setup';
+import { agentSetupCommand, useAgentSetup } from './use-agent-setup';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
