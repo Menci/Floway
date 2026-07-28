@@ -1,6 +1,6 @@
 import type { CustomizedCalloutData } from '@fluentui/react-charts';
 
-import { bucketKeyForCallout, formatCount, formatDecimalCount, formatHitRate, formatInputRate, formatUsdCost } from './chart-model';
+import { bucketKeyForCallout, formatCount, formatDecimalCount, formatHitRate, formatInputRate, formatUsdCost, summarizeCounters } from './chart-model';
 import type { UsageChartModel } from './types';
 import { fluentComponents } from '../../fluent';
 import { formatCalloutTitle } from '../charts/dashboard-time';
@@ -36,16 +36,9 @@ export function UsageChartCallout({ chart, data, labelByTime, locale, valueForma
           <tbody>
             {rows.map(item => {
               const entry = chart.entries.find(candidate => candidate.label === item.legend);
-              const detail = entry ? bucketDetails.get(entry.id) : undefined;
-              if (!detail) return null;
-              const prompt =
-                detail.input +
-                    detail.cacheRead +
-                    detail.cacheCreation +
-                    detail.inputImage;
-              const output = detail.output + detail.outputImage;
-              const total = prompt + output;
-              const prefill = detail.input + detail.cacheCreation + detail.inputImage;
+              const counters = entry ? bucketDetails.get(entry.id) : undefined;
+              if (!counters) return null;
+              const summary = summarizeCounters(counters);
               return (
                 <tr key={item.legend}>
                   <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
@@ -54,14 +47,14 @@ export function UsageChartCallout({ chart, data, labelByTime, locale, valueForma
                       <Text size={200}>{item.legend}</Text>
                     </span>
                   </td>
-                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatCount(detail.requests, locale)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatUsdCost(detail.cost)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(total)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(detail.cacheRead)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatInputRate(detail.cacheRead, prompt)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(prefill)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(output)}</Text></td>
-                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatHitRate(detail.cacheRead, detail.cacheCreation)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatCount(summary.requests, locale)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatUsdCost(summary.cost)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(summary.total)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(summary.cacheRead)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(summary.prefill)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatDecimalCount(summary.output)}</Text></td>
+                  <td className="px-2 py-[2px] text-right"><Text size={200}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
                 </tr>
               );
             })}

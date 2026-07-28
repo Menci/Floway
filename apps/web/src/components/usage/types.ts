@@ -45,22 +45,39 @@ export interface UsageBucket { key: string; label: string; date: Date }
 // Requests are a plain count; everything else is a decimal string, because
 // aggregate token totals exceed the safe integer range and cost is billed to
 // sub-cent precision.
-export interface TokenSummary {
+//
+// Disjoint per-metric counters, exactly as recorded. Nothing derived is stored
+// beside them: a sum kept next to its own addends invites a consumer to
+// recompute it, and decimal strings make that recomputation silently produce a
+// concatenation rather than a type error.
+export interface TokenCounters {
   requests: number;
   cost: DecimalString | null;
   input: DecimalString;
+  output: DecimalString;
+  cacheRead: DecimalString;
+  cacheCreation: DecimalString;
+  inputImage: DecimalString;
+  outputImage: DecimalString;
+}
+// Every figure the dashboard displays for one counter set. `prompt` is the
+// whole billed prompt side and `output` folds the separately metered image
+// counter in, so no consumer re-derives either.
+export interface TokenSummary {
+  requests: number;
+  cost: DecimalString | null;
+  prompt: DecimalString;
   output: DecimalString;
   total: DecimalString;
   prefill: DecimalString;
   cacheRead: DecimalString;
   cacheCreation: DecimalString;
 }
-export interface TokenDetail extends TokenSummary { inputImage: DecimalString; outputImage: DecimalString }
 export interface ChartEntry { id: string; label: string; colorSlot: number }
 export interface UsageChartModel {
   entries: ChartEntry[];
   data: ChartProps;
-  details: Map<string, Map<string, TokenDetail>>;
+  details: Map<string, Map<string, TokenCounters>>;
   buckets: UsageBucket[];
   kind: 'token' | 'search';
   range: UsageRange;

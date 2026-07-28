@@ -1,6 +1,6 @@
 import { curveMonotoneX } from 'd3-shape';
 
-import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenDetail, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
+import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenCounters, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
 import {
@@ -184,7 +184,7 @@ export function buildSearchChart({
     redactKeys,
   );
   const visibleEntries = entries.filter(entry => !hiddenKeys.has(entry.id));
-  const details = new Map<string, Map<string, TokenDetail>>();
+  const details = new Map<string, Map<string, TokenCounters>>();
   for (const bucket of buckets) details.set(bucket.key, new Map());
 
   return {
@@ -218,7 +218,7 @@ function aggregateTokenRecords(
   buckets: UsageBucket[],
 ) {
   const values = new Map<string, Map<string, number | null>>();
-  const details = new Map<string, Map<string, TokenDetail>>();
+  const details = new Map<string, Map<string, TokenCounters>>();
   for (const bucket of buckets) {
     values.set(bucket.key, new Map());
     details.set(bucket.key, new Map());
@@ -230,8 +230,8 @@ function aggregateTokenRecords(
 
     const group = record[groupKey];
     const bucketDetails = details.get(bucket)!;
-    const detail = bucketDetails.get(group) ?? emptyDetail();
-    addRecordToDetail(detail, record);
+    const detail = bucketDetails.get(group) ?? emptyCounters();
+    addRecordToCounters(detail, record);
     bucketDetails.set(group, detail);
 
     if (metricConfig[metric].kind !== 'percent') {
@@ -250,7 +250,7 @@ function aggregateTokenRecords(
     for (const [bucket, bucketDetails] of details) {
       const bucketValues = values.get(bucket)!;
       for (const [group, detail] of bucketDetails) {
-        bucketValues.set(group, tokenDetailMetricValue(detail, metric));
+        bucketValues.set(group, tokenCountersMetricValue(detail, metric));
       }
     }
   }
@@ -302,39 +302,44 @@ function modelChartEntries(
 }
 
 export function summarizeUsage(records: DisplayUsageRecord[]): TokenSummary {
-  const summary = emptyDetail();
-  for (const record of records) addRecordToDetail(summary, record);
+  const counters = emptyCounters();
+  for (const record of records) addRecordToCounters(counters, record);
+  return summarizeCounters(counters);
+}
+
+// The single derivation from disjoint counters to displayed figures. The
+// summary tiles and the chart callout both read it, so a bucket row and the
+// page total can never disagree about what "total" or "prefill" means.
+export function summarizeCounters(counters: TokenCounters): TokenSummary {
   return {
-    requests: summary.requests,
-    cost: summary.cost,
-    cacheRead: summary.cacheRead,
-    cacheCreation: summary.cacheCreation,
-    input: sumDecimalStrings(summary.input, summary.cacheRead, summary.cacheCreation, summary.inputImage),
-    output: sumDecimalStrings(summary.output, summary.outputImage),
-    total: sumDecimalStrings(summary.input, summary.output, summary.cacheRead, summary.cacheCreation, summary.inputImage, summary.outputImage),
-    prefill: sumDecimalStrings(summary.input, summary.cacheCreation, summary.inputImage),
+    requests: counters.requests,
+    cost: counters.cost,
+    cacheRead: counters.cacheRead,
+    cacheCreation: counters.cacheCreation,
+    prompt: sumDecimalStrings(counters.input, counters.cacheRead, counters.cacheCreation, counters.inputImage),
+    output: sumDecimalStrings(counters.output, counters.outputImage),
+    total: sumDecimalStrings(counters.input, counters.output, counters.cacheRead, counters.cacheCreation, counters.inputImage, counters.outputImage),
+    prefill: sumDecimalStrings(counters.input, counters.cacheCreation, counters.inputImage),
   };
 }
 
-function addRecordToDetail(detail: TokenDetail, record: DisplayUsageRecord) {
-  detail.requests += record.requests;
-  if (record.cost !== null) detail.cost = sumDecimalStrings(detail.cost ?? '0', record.cost);
-  detail.input = sumDecimalStrings(detail.input, dim(record, 'input_tokens'));
-  detail.output = sumDecimalStrings(detail.output, dim(record, 'output_tokens'));
-  detail.cacheRead = sumDecimalStrings(detail.cacheRead, dim(record, 'input_cache_read_tokens'));
-  detail.cacheCreation = sumDecimalStrings(detail.cacheCreation, dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'));
-  detail.inputImage = sumDecimalStrings(detail.inputImage, dim(record, 'input_image_tokens'));
-  detail.outputImage = sumDecimalStrings(detail.outputImage, dim(record, 'output_image_tokens'));
+function addRecordToCounters(counters: TokenCounters, record: DisplayUsageRecord) {
+  counters.requests += record.requests;
+  if (record.cost !== null) counters.cost = sumDecimalStrings(counters.cost ?? '0', record.cost);
+  counters.input = sumDecimalStrings(counters.input, dim(record, 'input_tokens'));
+  counters.output = sumDecimalStrings(counters.output, dim(record, 'output_tokens'));
+  counters.cacheRead = sumDecimalStrings(counters.cacheRead, dim(record, 'input_cache_read_tokens'));
+  counters.cacheCreation = sumDecimalStrings(counters.cacheCreation, dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'));
+  counters.inputImage = sumDecimalStrings(counters.inputImage, dim(record, 'input_image_tokens'));
+  counters.outputImage = sumDecimalStrings(counters.outputImage, dim(record, 'output_image_tokens'));
 }
 
-function emptyDetail(): TokenDetail {
+function emptyCounters(): TokenCounters {
   return {
     requests: 0,
     cost: null,
     input: '0',
     output: '0',
-    total: '0',
-    prefill: '0',
     cacheRead: '0',
     cacheCreation: '0',
     inputImage: '0',
@@ -396,19 +401,17 @@ function plottableMetricValue(record: DisplayUsageRecord, metric: UsageMetric): 
 
 // Ratios are percentages of one aggregate over another, so both sides convert
 // to plottable numbers first; the division itself has no precision to protect.
-function tokenDetailMetricValue(detail: TokenDetail, metric: UsageMetric): number | null {
+function tokenCountersMetricValue(counters: TokenCounters, metric: UsageMetric): number | null {
   const ratio = (numerator: DecimalString, denominator: DecimalString): number | null => {
     const bottom = decimalStringToPlottableNumber(denominator);
     return bottom > 0 ? (decimalStringToPlottableNumber(numerator) / bottom) * 100 : null;
   };
-  if (metric === 'cacheHitRate') return ratio(detail.cacheRead, sumDecimalStrings(detail.cacheRead, detail.cacheCreation));
-  if (metric === 'cachedRate') {
-    return ratio(detail.cacheRead, sumDecimalStrings(detail.input, detail.cacheRead, detail.cacheCreation, detail.inputImage));
-  }
+  if (metric === 'cacheHitRate') return ratio(counters.cacheRead, sumDecimalStrings(counters.cacheRead, counters.cacheCreation));
+  if (metric === 'cachedRate') return ratio(counters.cacheRead, summarizeCounters(counters).prompt);
   return null;
 }
 
-function hasRequests(details: Map<string, Map<string, TokenDetail>>, id: string): boolean {
+function hasRequests(details: Map<string, Map<string, TokenCounters>>, id: string): boolean {
   for (const bucket of details.values()) {
     if ((bucket.get(id)?.requests ?? 0) > 0) return true;
   }
@@ -471,7 +474,7 @@ export function formatSummaryMetric(
   case 'total':
     return formatDecimalCount(summary.total);
   case 'input':
-    return formatDecimalCount(summary.input);
+    return formatDecimalCount(summary.prompt);
   case 'output':
     return formatDecimalCount(summary.output);
   case 'prefill':
@@ -481,7 +484,7 @@ export function formatSummaryMetric(
   case 'cacheCreation':
     return formatDecimalCount(summary.cacheCreation);
   case 'cachedRate':
-    return formatInputRate(summary.cacheRead, summary.input);
+    return formatInputRate(summary.cacheRead, summary.prompt);
   case 'cacheHitRate':
     return formatHitRate(summary.cacheRead, summary.cacheCreation);
   }

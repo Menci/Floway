@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTokenChart } from '../../../src/components/usage/chart-model';
+import { buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/chart-model';
 import type { DisplayUsageRecord, UsageBucket } from '../../../src/components/usage/types';
 
 const bucket: UsageBucket = {
@@ -59,5 +59,39 @@ describe('cost chart series', () => {
     });
 
     expect(model.data.lineChartData![0]!.data).toEqual([]);
+  });
+});
+
+describe('bucket callout figures', () => {
+  // Token counts are decimal strings, so a `+` between two of them concatenates
+  // digits instead of failing to compile. Pin the arithmetic on values whose
+  // concatenation is visibly distinct from their sum.
+  const counters = chart({
+    input_tokens: '20',
+    input_cache_read_tokens: '300',
+    input_cache_write_tokens: '4000',
+    input_image_tokens: '50000',
+    output_tokens: '600000',
+    output_image_tokens: '7000000',
+  }).details.get(bucket.key)!.get('key-1')!;
+
+  it('adds the disjoint counters instead of joining them', () => {
+    expect(summarizeCounters(counters)).toMatchObject({
+      prompt: '54320',
+      prefill: '54020',
+      output: '7600000',
+      total: '7654320',
+    });
+  });
+
+  it('reports the same totals the summary tiles do', () => {
+    expect(summarizeCounters(counters)).toEqual(summarizeUsage([record({
+      input_tokens: '20',
+      input_cache_read_tokens: '300',
+      input_cache_write_tokens: '4000',
+      input_image_tokens: '50000',
+      output_tokens: '600000',
+      output_image_tokens: '7000000',
+    })]));
   });
 });
