@@ -12,8 +12,8 @@ import {
 import type { Route } from './+types/dashboard';
 import type { AuthUser } from '../api/auth';
 import { getSessionToken } from '../auth/session';
-import { Sidebar } from '../components/sidebar';
 import { FlowayLogo } from '../components/logo';
+import { Sidebar } from '../components/sidebar';
 import { PageShell } from '../components/ui/page-shell';
 import { fluentComponents } from '../fluent';
 import { useAuthStore } from '../stores/auth-store';

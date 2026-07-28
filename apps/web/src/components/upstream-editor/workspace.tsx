@@ -108,16 +108,14 @@ function ModelsWorkspace({ discovered, error, flags, loading, onRefresh, record 
   const readOnly = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
   const autoFetchEnabled = record.kind !== 'custom'
     || (config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled;
-  const visibleDiscovered = !autoFetchEnabled
-    ? []
-    : discovered;
   const rows = useMemo<ModelRow[]>(() => {
+    const visibleDiscovered = autoFetchEnabled ? discovered : [];
     const autoById = new Map(visibleDiscovered.map(item => [item.upstreamModelId, item]));
     const result: ModelRow[] = manual.map((item, index) => ({ key: `manual:${fields[index]?.id ?? index}`, source: 'manual', config: item, manualIndex: index, hasAuto: autoById.has(item.upstreamModelId) }));
     const manualIds = new Set(manual.map(item => item.upstreamModelId));
     for (const item of visibleDiscovered) if (!manualIds.has(item.upstreamModelId)) result.push({ key: `auto:${item.upstreamModelId}`, source: 'auto', config: item, manualIndex: null, hasAuto: true });
     return result;
-  }, [fields, manual, visibleDiscovered]);
+  }, [autoFetchEnabled, discovered, fields, manual]);
   const selectedRow = rows.find(row => row.key === selected) ?? null;
   const pendingManualRow: ModelRow | null = pendingManualConfig === null ? null : {
     key: 'pending-manual',
