@@ -1,10 +1,11 @@
 import { AreaChart, LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
-import { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { chartTickValues, formatAxisDate } from './chart-model';
 import type { UsageChartModel } from './types';
 import { UsageChartCallout } from './usage-callout';
+import { useElementSize } from '../charts/use-element-size';
 import { fluentComponents } from '../../fluent';
 import { localeForLanguage } from '../../i18n';
 const { makeStyles } = fluentComponents;
@@ -64,25 +65,4 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
       )}
     </div>
   );
-}
-
-function useElementSize(element: HTMLElement | null) {
-  const [size, setSize] = useState({ width: 0, height: 320 });
-
-  useLayoutEffect(() => {
-    if (!element) return;
-    const update = () => {
-      const rect = element.getBoundingClientRect();
-      setSize({
-        width: Math.max(0, Math.floor(rect.width)),
-        height: Math.max(260, Math.floor(rect.height)),
-      });
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [element]);
-
-  return size;
 }

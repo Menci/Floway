@@ -1,5 +1,6 @@
 
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
+import { effectiveUpstreamCap, isModelReachable } from '../models/reachability';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 export type PlaygroundApi = 'responses' | 'chatCompletions' | 'messages';
@@ -23,35 +24,6 @@ export interface PlaygroundSettings {
 
 export const playgroundApis: PlaygroundApi[] = ['responses', 'chatCompletions', 'messages'];
 
-export function effectiveUpstreamCap(
-  keyUpstreamIds: readonly string[] | null,
-  userUpstreamIds: readonly string[] | null,
-): readonly string[] | null {
-  if (keyUpstreamIds === null && userUpstreamIds === null) return null;
-  if (keyUpstreamIds === null) return userUpstreamIds;
-  if (userUpstreamIds === null) return keyUpstreamIds;
-  const userSet = new Set(userUpstreamIds);
-  return keyUpstreamIds.filter(id => userSet.has(id));
-}
-
-function realModelReachable(model: ControlPlaneModel, cap: readonly string[] | null): boolean {
-  return cap === null || model.upstreams.some(binding => cap.includes(binding.id));
-}
-
-export function isReachableUnderCap(
-  model: ControlPlaneModel,
-  catalog: readonly ControlPlaneModel[],
-  cap: readonly string[] | null,
-): boolean {
-  if (!model.aliasedFrom) return realModelReachable(model, cap);
-  return model.aliasedFrom.targets.some(target => {
-    const resolved = catalog.find(
-      candidate => candidate.id === target.target_model_id && !candidate.aliasedFrom,
-    );
-    return resolved ? realModelReachable(resolved, cap) : false;
-  });
-}
-
 export function availableModels(
   catalog: readonly ControlPlaneModel[],
   key: ApiKey | null,
@@ -60,7 +32,7 @@ export function availableModels(
 ): ControlPlaneModel[] {
   const cap = effectiveUpstreamCap(key?.upstream_ids ?? null, userUpstreamIds);
   return catalog.filter(
-    model => model.kind === 'chat' && api in model.endpoints && isReachableUnderCap(model, catalog, cap),
+    model => model.kind === 'chat' && api in model.endpoints && isModelReachable(model, catalog, cap),
   );
 }
 

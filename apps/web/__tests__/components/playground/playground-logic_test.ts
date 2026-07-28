@@ -4,7 +4,6 @@ import type { ApiKey, ControlPlaneModel } from '../../../src/api/types';
 import {
   availableModels,
   defaultMaxOutputTokens,
-  effectiveUpstreamCap,
   generationOptions,
   maximumOutputTokens,
   mergeWireBody,
@@ -24,12 +23,6 @@ const key = (upstream_ids: string[] | null): ApiKey => ({
 });
 
 describe('playground reachability', () => {
-  it('intersects key and user caps', () => {
-    expect(effectiveUpstreamCap(null, null)).toBeNull();
-    expect(effectiveUpstreamCap(['a', 'b'], ['b', 'c'])).toEqual(['b']);
-    expect(effectiveUpstreamCap(null, ['a'])).toEqual(['a']);
-  });
-
   it('resolves aliases and filters endpoint support', () => {
     const real = model('real', ['a'], { endpoints: { responses: {} } });
     const alias = model('alias', [], {

@@ -1,7 +1,7 @@
 import { LineChart, type ChartProps, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { ArrowClockwiseRegular, InfoRegular } from '@fluentui/react-icons';
 import { curveMonotoneX } from 'd3-shape';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router';
@@ -11,7 +11,9 @@ import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { ChartSection } from '../components/charts/chart-section';
+import { chartTickValues, dashboardBucketFrames, formatAxisDate, formatCalloutTitle } from '../components/charts/dashboard-time';
 import { colorForSlot } from '../components/charts/palette';
+import { useElementSize } from '../components/charts/use-element-size';
 import {
   buildPerformanceQuery,
   clearGroupedFilter,
@@ -165,7 +167,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setHiddenSeries(new Set());
   };
   const setFilter = (key: keyof PerformanceFilters, value: string) => setFilters(current => ({ ...current, [key]: value }));
-  const buckets = useMemo(() => dashboardBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
+  const buckets = useMemo(() => performanceBuckets(loadedRange, loadedAt, locale), [loadedAt, loadedRange, locale]);
   const chart = useMemo(() => buildPerformanceChart(overview.series, metric, percentile, groupBy, overview, upstreamNames, buckets, loadedRange), [buckets, groupBy, loadedRange, metric, overview, percentile, upstreamNames]);
   const summary = overview.axes.none[0];
   const summaryCards = [
@@ -325,19 +327,16 @@ function buildPerformanceChart(records: PerformanceDisplayRecord[], metric: Perf
   };
 }
 
-const pad2 = (value: number) => String(value).padStart(2, '0');
-const localHourKey = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}`;
-const localDateKey = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-const local4hStart = (date: Date) => { const next = new Date(date); next.setMinutes(0, 0, 0); next.setHours(next.getHours() - next.getHours() % 4); return next; };
-const dashboardBuckets = (range: PerformanceRange, now: number, locale: string): Bucket[] => {
-  if (range === 'today') { const current = new Date(now); current.setMinutes(0, 0, 0); return Array.from({ length: 24 }, (_, i) => { const date = new Date(current.getTime() - (23 - i) * 3_600_000); return { key: localHourKey(date), date, label: date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) }; }); }
-  if (range === '7d') { const current = local4hStart(new Date(now)); return Array.from({ length: 42 }, (_, i) => { const date = new Date(current.getTime() - (41 - i) * 4 * 3_600_000); return { key: localHourKey(date), date, label: date.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit' }) }; }); }
-  return Array.from({ length: 30 }, (_, i) => { const date = new Date(now); date.setDate(date.getDate() - (29 - i)); date.setHours(0, 0, 0, 0); return { key: localDateKey(date), date, label: date.toLocaleDateString(locale, { month: 'short', day: 'numeric' }) }; });
-};
-function useElementSize(element: HTMLElement | null) { const [size, setSize] = useState({ width: 0, height: 320 }); useLayoutEffect(() => { if (!element) return; const update = () => { const rect = element.getBoundingClientRect(); setSize({ width: Math.floor(rect.width), height: Math.max(260, Math.floor(rect.height)) }); }; update(); const observer = new ResizeObserver(update); observer.observe(element); return () => observer.disconnect(); }, [element]); return size; }
-const chartTickValues = (buckets: Bucket[]) => { if (buckets.length <= 8) return buckets; const step = Math.ceil((buckets.length - 1) / 6); const ticks = buckets.filter((_, index) => index % step === 0); const last = buckets.at(-1); if (last && ticks.at(-1) !== last) ticks.push(last); return ticks; };
-const formatAxisDate = (date: Date, range: PerformanceRange, locale: string) => range === 'today' ? date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString(locale, { month: '2-digit', day: '2-digit', ...(range === '7d' ? { hour: '2-digit' } : {}) });
-const formatCalloutTitle = (value: Date | number | string, labels: Map<number, string>, range: PerformanceRange, locale: string) => value instanceof Date ? labels.get(value.getTime()) ?? formatAxisDate(value, range, locale) : typeof value === 'number' ? value.toLocaleString(locale) : value;
+const performanceBuckets = (range: PerformanceRange, now: number, locale: string): Bucket[] =>
+  dashboardBucketFrames(range, now).map(({ date, key }) => ({
+    key,
+    date,
+    label: range === 'today'
+      ? date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+      : range === '7d'
+        ? date.toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit' })
+        : date.toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
+  }));
 function formatDuration(ms: number | null) { if (ms === null || !Number.isFinite(ms)) return '-'; if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`; if (ms >= 1_000) return `${(ms / 1_000).toFixed(1)}s`; return `${Math.round(ms)}ms`; }
 function formatRate(value: number | null) { if (value === null || !Number.isFinite(value) || value <= 0) return '-'; return value >= 100 ? `${Math.round(value)} tok/s` : value >= 10 ? `${value.toFixed(1)} tok/s` : `${value.toFixed(2)} tok/s`; }
 const formatTokensPerSecond = (us: number | null) => us === null || us <= 0 ? '-' : formatRate(1_000_000 / us);

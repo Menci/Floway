@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ControlPlaneModel } from '../../../src/api/types';
-import { effectiveUpstreamCap, modelsForAgentSetup } from '../../../src/components/api-keys/model-reachability';
+import { modelsForAgentSetup } from '../../../src/components/api-keys/model-reachability';
 
 const model = (id: string, upstreamId: string): ControlPlaneModel => ({
   id,
@@ -30,12 +30,6 @@ const alias = (id: string, targets: string[]): ControlPlaneModel => ({
 });
 
 describe('Agent Setup model reachability', () => {
-  it('intersects API key and owner upstream caps', () => {
-    expect(effectiveUpstreamCap(['u1', 'u2'], ['u2', 'u3'])).toEqual(['u2']);
-    expect(effectiveUpstreamCap(null, ['u1'])).toEqual(['u1']);
-    expect(effectiveUpstreamCap(null, null)).toBeNull();
-  });
-
   it('keeps only real and alias models reachable by the effective cap', () => {
     const catalog = [
       model('allowed', 'u1'),

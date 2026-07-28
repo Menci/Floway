@@ -61,31 +61,7 @@ export const emptyPerformanceOverview = (): PerformanceOverviewResponse => ({
   keys: [],
 });
 
-const local4hBucketStart = (date: Date): Date => {
-  const aligned = new Date(date);
-  aligned.setMinutes(0, 0, 0);
-  aligned.setHours(aligned.getHours() - (aligned.getHours() % 4));
-  return aligned;
-};
-
-export const performanceRangeQuery = (range: PerformanceRange, nowMs: number) => {
-  const now = new Date(nowMs);
-  const start = new Date(now);
-  if (range === 'today') {
-    start.setTime(now.getTime() - 23 * 3_600_000);
-    start.setMinutes(0, 0, 0);
-  } else if (range === '7d') {
-    start.setTime(local4hBucketStart(now).getTime() - 41 * 4 * 3_600_000);
-  } else {
-    start.setDate(start.getDate() - 29);
-    start.setHours(0, 0, 0, 0);
-  }
-  return {
-    start: start.toISOString().slice(0, 13),
-    end: new Date(now.getTime() + 3_600_000).toISOString().slice(0, 13),
-    bucket: range === 'today' ? 'hour' : range === '7d' ? '4h' : 'day',
-  } as const;
-};
+export const performanceRangeQuery = dashboardRangeQuery;
 
 export const buildPerformanceQuery = (
   view: PerformanceView,
@@ -172,3 +148,4 @@ export const clearGroupedFilter = (filters: PerformanceFilters, groupBy: Perform
   ...(groupBy === 'runtimeLocation' ? { runtimeLocation: '' } : {}),
   ...(groupBy === 'userId' || groupBy === 'keyId' ? { userId: '', keyId: '' } : {}),
 });
+import { dashboardRangeQuery } from '../charts/dashboard-time';

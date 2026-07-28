@@ -4,6 +4,14 @@ import type { ChartEntry, DisplayUsageRecord, SearchUsageResponse, TokenDetail, 
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
 import { colorForSlot } from '../charts/palette';
+import {
+  chartTickValues as sharedChartTickValues,
+  dashboardBucketFrames,
+  dashboardBucketKeyForUtcHour,
+  dashboardRangeQuery,
+  formatAxisDate,
+  formatCalloutTitle,
+} from '../charts/dashboard-time';
 import type { DecimalString } from '@floway-dev/protocols/common';
 
 export const metricConfig: Record<
@@ -41,21 +49,6 @@ export const summaryMetrics: UsageMetric[][] = [
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
-const localHourKey = (date: Date): string =>
-  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}`;
-
-const localDateKey = (date: Date): string =>
-  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-
-const local4hBucketStart = (date: Date): Date => {
-  const aligned = new Date(date);
-  aligned.setMinutes(0, 0, 0);
-  aligned.setHours(aligned.getHours() - (aligned.getHours() % 4));
-  return aligned;
-};
-
-const toUtcHourParam = (date: Date): string => date.toISOString().slice(0, 13);
-
 const shortMonthDay = (date: Date, locale: string): string =>
   date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 
@@ -73,61 +66,11 @@ export const dashboardBuckets = (
   nowMs: number,
   locale: string,
 ): UsageBucket[] => {
-  if (range === 'today') {
-    const current = new Date(nowMs);
-    current.setMinutes(0, 0, 0);
-    return Array.from({ length: 24 }, (_, index) => {
-      const date = new Date(current.getTime() - (23 - index) * 3_600_000);
-      return { key: localHourKey(date), label: bucketLabel(date, range, locale), date };
-    });
-  }
-
-  if (range === '7d') {
-    const start = local4hBucketStart(new Date(nowMs));
-    return Array.from({ length: 42 }, (_, index) => {
-      const date = new Date(start.getTime() - (41 - index) * 4 * 3_600_000);
-      return { key: localHourKey(date), label: bucketLabel(date, range, locale), date };
-    });
-  }
-
-  return Array.from({ length: 30 }, (_, index) => {
-    const date = new Date(nowMs);
-    date.setDate(date.getDate() - (29 - index));
-    date.setHours(0, 0, 0, 0);
-    return { key: localDateKey(date), label: bucketLabel(date, range, locale), date };
-  });
+  return dashboardBucketFrames(range, nowMs)
+    .map(({ date, key }) => ({ key, label: bucketLabel(date, range, locale), date }));
 };
 
-export const dashboardRangeQuery = (
-  range: UsageRange,
-  nowMs: number,
-): { start: string; end: string; bucket: 'hour' | '4h' | 'day' } => {
-  const now = new Date(nowMs);
-  const start = new Date(now);
-  if (range === 'today') {
-    start.setTime(now.getTime() - 23 * 3_600_000);
-    start.setMinutes(0, 0, 0);
-  } else if (range === '7d') {
-    start.setTime(local4hBucketStart(now).getTime() - 41 * 4 * 3_600_000);
-  } else {
-    start.setDate(start.getDate() - 29);
-    start.setHours(0, 0, 0, 0);
-  }
-  return {
-    start: toUtcHourParam(start),
-    end: toUtcHourParam(new Date(now.getTime() + 3_600_000)),
-    bucket: range === 'today' ? 'hour' : range === '7d' ? '4h' : 'day',
-  };
-};
-
-const parseUtcHour = (hour: string): Date => new Date(`${hour}:00:00Z`);
-
-const bucketKeyForUtcHour = (range: UsageRange, hour: string): string => {
-  const date = parseUtcHour(hour);
-  if (range === 'today') return localHourKey(date);
-  if (range === '7d') return localHourKey(local4hBucketStart(date));
-  return localDateKey(date);
-};
+export { dashboardRangeQuery, formatAxisDate, formatCalloutTitle };
 
 export function buildTokenChart({
   records,
@@ -225,7 +168,7 @@ export function buildSearchChart({
       name: record.keyName ?? meta.get(record.keyId)?.name,
       createdAt: record.keyCreatedAt ?? meta.get(record.keyId)?.createdAt,
     });
-    const bucket = bucketKeyForUtcHour(range, record.hour);
+    const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
     const bucketValues = groups.get(record.keyId) ?? new Map<string, number>();
     bucketValues.set(bucket, (bucketValues.get(bucket) ?? 0) + record.requests);
     groups.set(record.keyId, bucketValues);
@@ -288,7 +231,7 @@ function aggregateTokenRecords(
   }
 
   for (const record of records) {
-    const bucket = bucketKeyForUtcHour(range, record.hour);
+    const bucket = dashboardBucketKeyForUtcHour(range, record.hour);
     if (!values.has(bucket)) continue;
 
     const group = record[groupKey];
@@ -479,46 +422,8 @@ function hasRequests(details: Map<string, Map<string, TokenDetail>>, id: string)
 }
 
 export function chartTickValues(buckets: UsageBucket[]): UsageBucket[] {
-  if (buckets.length <= 8) return buckets;
   const desired = buckets.length <= 24 ? 6 : 7;
-  const step = Math.ceil((buckets.length - 1) / (desired - 1));
-  const ticks = buckets.filter((_, index) => index % step === 0);
-  const last = buckets[buckets.length - 1];
-  if (last && ticks[ticks.length - 1] !== last) ticks.push(last);
-  return ticks;
-}
-
-export function formatAxisDate(date: Date, range: UsageRange, locale: string): string {
-  if (range === 'today') {
-    return date.toLocaleTimeString(locale, {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-  if (range === '7d') {
-    return date.toLocaleDateString(locale, {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-    });
-  }
-  return date.toLocaleDateString(locale, {
-    month: '2-digit',
-    day: '2-digit',
-  });
-}
-
-export function formatCalloutTitle(
-  value: Date | number | string,
-  labelByTime: Map<number, string>,
-  range: UsageRange,
-  locale: string,
-): string {
-  if (value instanceof Date) {
-    return labelByTime.get(value.getTime()) ?? formatAxisDate(value, range, locale);
-  }
-  if (typeof value === 'number') return value.toLocaleString(locale);
-  return value;
+  return sharedChartTickValues(buckets, desired);
 }
 
 export function bucketKeyForCallout(
