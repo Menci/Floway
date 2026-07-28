@@ -1,9 +1,10 @@
+import type { InferResponseType } from 'hono/client';
+
 import type { ApiResult } from '../../api/auth';
+import type { api } from '../../api/client';
 import type { ControlPlaneModel, ModelAlias } from '../../api/types';
 
-interface ModelsResponse {
-  data: ControlPlaneModel[];
-}
+type ModelsResponse = InferResponseType<typeof api.api.models.$get, 200>;
 
 export interface ModelAliasesPageData {
   aliases: ModelAlias[];

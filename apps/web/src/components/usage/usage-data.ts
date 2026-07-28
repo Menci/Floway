@@ -7,7 +7,8 @@ import type {
   UsageView,
 } from './types';
 import type { AuthUser } from '../../api/auth';
-import { authFetch, callJson } from '../../api/auth';
+import { authFetch, callApi, callJson } from '../../api/auth';
+import { api } from '../../api/client';
 import type { ControlPlaneModel } from '../../api/types';
 
 interface UsageByUserResponse {
@@ -19,7 +20,6 @@ interface SearchUsageByUserResponse {
   users: Array<{ id: number; username: string }>;
   activeProvider: string;
 }
-interface ModelsResponse { object: string; data: ControlPlaneModel[] }
 
 export const emptyUsageResponse = (): UsageResponse => ({ records: [], keys: [] });
 export const emptySearchUsageResponse = (): SearchUsageResponse => ({ records: [], keys: [], activeProvider: 'disabled' });
@@ -69,7 +69,7 @@ export async function loadUsagePageData(
   const { start, end } = dashboardRangeQuery(range, loadedAt);
   const [usageData, modelsResult] = await Promise.all([
     fetchUsageForView(view, start, end),
-    requestJson<ModelsResponse>('/api/models'),
+    callApi(() => api.api.models.$get({ query: {} })),
   ]);
   return { ...usageData, models: modelsResult.data?.data ?? [] };
 }

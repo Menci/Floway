@@ -21,7 +21,6 @@ import { fluentComponents } from '../fluent';
 
 const { Button, MessageBar, MessageBarBody, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip } = fluentComponents;
 
-interface ModelsResponse { data: ControlPlaneModel[] }
 interface LoaderData {
   catalog: { aliases: ModelAlias[]; models: ControlPlaneModel[] | null };
   error: string | null;

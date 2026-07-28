@@ -68,7 +68,6 @@ const DEFAULT_CONFIG: SearchConfig = {
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
 
-interface ModelsResponse { object: string; data: ControlPlaneModel[] }
 
 export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], models: readonly ControlPlaneModel[]) =>
   upstreams.filter(upstream => upstream.enabled

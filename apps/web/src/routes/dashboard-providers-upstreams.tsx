@@ -60,11 +60,6 @@ const {
   useToastController,
 } = fluentComponents;
 
-interface ModelsResponse {
-  object: string;
-  data: ControlPlaneModel[];
-}
-
 interface UpstreamsPageData {
   upstreams: UpstreamRecord[];
   models: ControlPlaneModel[] | null;

@@ -24,7 +24,6 @@ import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
 const { Button, MessageBar, MessageBarBody, Spinner, Text, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
-interface ModelsResponse { object: string; data: ControlPlaneModel[] }
 const selectedKeyStorageKey = 'floway-agent-setup-selected-key';
 interface LoaderData extends ApiKeysPageData {
   selectedKeyId: string;

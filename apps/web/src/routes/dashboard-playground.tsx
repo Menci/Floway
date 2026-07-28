@@ -67,7 +67,6 @@ function useAustralianTheme() {
   return dark ? australianDarkTheme : australianLightTheme;
 }
 
-interface ModelsResponse { data: ControlPlaneModel[] }
 interface LoaderData { keys: ApiKey[]; models: ControlPlaneModel[]; error: string | null }
 
 export async function clientLoader(): Promise<LoaderData> {
