@@ -238,7 +238,7 @@ the root, `/flags`, `/model`, and `/model-prefix`; its proxy imports are
 restricted to `/url`, `/url-kind`, `/proxy-config`, and `/constants` so the SPA
 does not pull in dialers, userspace TLS, or Node `crypto`. It type-imports
 gateway contracts through `/app-type`, `/dump-types`,
-`/control-plane/performance/aggregate`, and
+`/control-plane/performance/aggregate`, `/control-plane/usage-types`, and
 `/control-plane/proxies/serialize`; `@floway-dev/gateway` stays a
 devDependency, because every one of those imports is type-only. It does not
 depend on

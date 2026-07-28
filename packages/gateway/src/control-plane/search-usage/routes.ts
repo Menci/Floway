@@ -5,6 +5,7 @@
 // aggregate, administrators only).
 
 import { aggregateWebSearchUsageByKey, aggregateWebSearchUsageByUser } from './aggregate.ts';
+import type { SearchUsageByKeyResponse, SearchUsageByUserResponse } from '../usage-types.ts';
 import { loadWebSearchConfig } from '../../data-plane/tools/web-search/config.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -49,7 +50,7 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
       records,
       users: userMetadata,
       activeProvider: webSearchConfig.provider,
-    });
+    } satisfies SearchUsageByUserResponse);
   }
 
   // self-by-key: scope rows to the actor's keys (active + soft-deleted).
@@ -88,5 +89,5 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
     records: recordsWithKeyMetadata,
     keys: keyMetadata,
     activeProvider: webSearchConfig.provider,
-  });
+  } satisfies SearchUsageByKeyResponse);
 };
