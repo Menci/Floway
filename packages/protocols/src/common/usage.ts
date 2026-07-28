@@ -14,9 +14,6 @@ export const sumBillableUsage = (a: BillableUsage | undefined, b: BillableUsage 
     cacheWrite: a.cacheWrite + b.cacheWrite,
     cacheWrite1h: a.cacheWrite1h + b.cacheWrite1h,
     output: a.output + b.output,
-    ...(a.reasoning !== undefined || b.reasoning !== undefined
-      ? { reasoning: (a.reasoning ?? 0) + (b.reasoning ?? 0) }
-      : {}),
     // A tier cannot be summed; the latest turn's is the one served.
     ...(b.tier ?? a.tier ? { tier: b.tier ?? a.tier } : {}),
   };
@@ -44,7 +41,6 @@ export interface BillableUsage {
   cacheWrite: number;
   cacheWrite1h: number;
   output: number;
-  reasoning?: number;
   tier?: string;
 }
 

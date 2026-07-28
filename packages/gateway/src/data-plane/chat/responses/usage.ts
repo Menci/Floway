@@ -21,9 +21,6 @@ export const billableUsageFromResponsesResult = (response: ResponsesResult): Bil
     // Responses has no cache-write TTL split; every write bills at one rate.
     cacheWrite1h: 0,
     output: usage.output_tokens,
-    ...(usage.output_tokens_details?.reasoning_tokens !== undefined
-      ? { reasoning: usage.output_tokens_details.reasoning_tokens }
-      : {}),
     ...(tier !== null ? { tier } : {}),
   };
 };

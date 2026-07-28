@@ -23,9 +23,6 @@ export const billableUsageFromChatCompletionsUsage = (
     // Chat Completions has no cache-write TTL split.
     cacheWrite1h: 0,
     output: usage.completion_tokens,
-    ...(usage.completion_tokens_details?.reasoning_tokens !== undefined
-      ? { reasoning: usage.completion_tokens_details.reasoning_tokens }
-      : {}),
     ...(tier !== null ? { tier } : {}),
   };
 };

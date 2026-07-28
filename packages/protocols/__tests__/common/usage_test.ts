@@ -45,11 +45,11 @@ test('cache-write usage splits the 1-hour subset from the wire total', () => {
 });
 
 test('billable usage adds across the turns one response spans', () => {
-  const a = { input: 10, cacheRead: 1, cacheWrite: 2, cacheWrite1h: 3, output: 4, reasoning: 5, tier: 'flex' };
+  const a = { input: 10, cacheRead: 1, cacheWrite: 2, cacheWrite1h: 3, output: 4, tier: 'flex' };
   const b = { input: 1, cacheRead: 1, cacheWrite: 1, cacheWrite1h: 1, output: 1, tier: 'priority' };
 
   expect(sumBillableUsage(a, b)).toEqual({
-    input: 11, cacheRead: 2, cacheWrite: 3, cacheWrite1h: 4, output: 5, reasoning: 5,
+    input: 11, cacheRead: 2, cacheWrite: 3, cacheWrite1h: 4, output: 5,
     // A tier cannot be summed; the latest turn's is the one served.
     tier: 'priority',
   });
