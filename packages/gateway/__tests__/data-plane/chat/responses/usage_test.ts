@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { billableUsageFromResponsesResult } from '../../../../src/data-plane/chat/responses/usage-billable.ts';
+import { billableUsageFromResponsesResult } from '../../../../src/data-plane/chat/responses/usage.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { assertEquals } from '@floway-dev/test-utils';
 

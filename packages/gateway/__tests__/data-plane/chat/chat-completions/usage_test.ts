@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { billableUsageFromChatCompletionsUsage } from '../../../../src/data-plane/chat/chat-completions/usage-billable.ts';
+import { billableUsageFromChatCompletionsUsage } from '../../../../src/data-plane/chat/chat-completions/usage.ts';
 
 test('Chat billable usage splits the inclusive prompt total into disjoint buckets', () => {
   expect(billableUsageFromChatCompletionsUsage({

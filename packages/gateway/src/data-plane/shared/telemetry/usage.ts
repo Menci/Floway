@@ -2,7 +2,7 @@ import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage, UsageQuantities } from '../../../repo/types.ts';
 import { tokenUsageQuantities, usageMetrics } from '../../../repo/usage-metrics.ts';
-import { priceRequest, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
+import { priceRequest, type BillableUsage, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 const TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
@@ -184,3 +184,16 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
   const measurement = tokenUsageMeasurement(usage);
   await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.pricingFacts);
 };
+
+// `BillableUsage` is already the canonical exclusive/split shape, so pricing is
+// a rename rather than a computation. It is the sole input: the usage Floway
+// sends the client is a wire projection and is never read here.
+export const tokenUsageFromBillableUsage = (billable: BillableUsage | undefined): TokenUsage | null =>
+  billable === undefined ? null : tokenUsage({
+    input: billable.input,
+    input_cache_read: billable.cacheRead,
+    input_cache_write: billable.cacheWrite,
+    input_cache_write_1h: billable.cacheWrite1h,
+    output: billable.output,
+    ...(billable.tier !== undefined ? { tier: billable.tier } : {}),
+  });

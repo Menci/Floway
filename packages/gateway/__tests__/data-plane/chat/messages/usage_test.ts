@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { createMessagesBillableUsageReader } from '../../../../src/data-plane/chat/messages/usage-billable-event.ts';
+import { createMessagesBillableUsageReader } from '../../../../src/data-plane/chat/messages/usage.ts';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const read = (events: MessagesStreamEvent[]) => {

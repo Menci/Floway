@@ -1,15 +1,34 @@
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
-import type { BillableUsage } from '@floway-dev/protocols/common';
+import { billableServiceTier, splitInclusiveInputTokens, type BillableUsage } from '@floway-dev/protocols/common';
+import { responsesResultFromStreamEvent, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// `BillableUsage` is already the canonical exclusive/split shape, so pricing is
-// a rename rather than a computation. It is the sole input: the usage Floway
-// sends the client is a wire projection and is never read here.
-export const tokenUsageFromBillableUsage = (billable: BillableUsage | undefined) =>
-  billable === undefined ? null : tokenUsage({
-    input: billable.input,
-    input_cache_read: billable.cacheRead,
-    input_cache_write: billable.cacheWrite,
-    input_cache_write_1h: billable.cacheWrite1h,
-    output: billable.output,
-    ...(billable.tier !== undefined ? { tier: billable.tier } : {}),
-  });
+// service_tier reports the tier actually served and therefore selects the
+// matching pricing entry rather than the tier originally requested.
+// https://developers.openai.com/api/docs/guides/priority-processing
+export const billableUsageFromResponsesResult = (response: ResponsesResult): BillableUsage | null => {
+  const usage = response.usage;
+  if (!usage) return null;
+  const cacheWrite = usage.input_tokens_details?.cache_write_tokens ?? 0;
+  const { input, cacheRead } = splitInclusiveInputTokens(
+    usage.input_tokens,
+    usage.input_tokens_details?.cached_tokens,
+    cacheWrite,
+  );
+  const tier = billableServiceTier(response.service_tier);
+  return {
+    input,
+    cacheRead,
+    cacheWrite,
+    // Responses has no cache-write TTL split; every write bills at one rate.
+    cacheWrite1h: 0,
+    output: usage.output_tokens,
+    ...(usage.output_tokens_details?.reasoning_tokens !== undefined
+      ? { reasoning: usage.output_tokens_details.reasoning_tokens }
+      : {}),
+    ...(tier !== null ? { tier } : {}),
+  };
+};
+
+export const billableUsageFromResponsesEvent = (event: ResponsesStreamEvent): BillableUsage | null => {
+  const response = responsesResultFromStreamEvent(event);
+  return response === null ? null : billableUsageFromResponsesResult(response);
+};

@@ -1,15 +1,34 @@
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
-import type { BillableUsage } from '@floway-dev/protocols/common';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { billableServiceTier, splitInclusiveInputTokens, type BillableUsage } from '@floway-dev/protocols/common';
 
-// `BillableUsage` is already the canonical exclusive/split shape, so pricing is
-// a rename rather than a computation. It is the sole input: the usage Floway
-// sends the client is a wire projection and is never read here.
-export const tokenUsageFromBillableUsage = (billable: BillableUsage | undefined) =>
-  billable === undefined ? null : tokenUsage({
-    input: billable.input,
-    input_cache_read: billable.cacheRead,
-    input_cache_write: billable.cacheWrite,
-    input_cache_write_1h: billable.cacheWrite1h,
-    output: billable.output,
-    ...(billable.tier !== undefined ? { tier: billable.tier } : {}),
-  });
+type ChatCompletionsUsage = NonNullable<ChatCompletionsStreamEvent['usage']>;
+
+export const billableUsageFromChatCompletionsUsage = (
+  usage: ChatCompletionsUsage,
+  serviceTier: string | null | undefined,
+): BillableUsage => {
+  const cacheWrite = usage.prompt_tokens_details?.cache_creation_input_tokens
+    ?? usage.prompt_tokens_details?.cache_write_tokens
+    ?? 0;
+  const { input, cacheRead } = splitInclusiveInputTokens(
+    usage.prompt_tokens,
+    usage.prompt_tokens_details?.cached_tokens,
+    cacheWrite,
+  );
+  const tier = billableServiceTier(serviceTier);
+  return {
+    input,
+    cacheRead,
+    cacheWrite,
+    // Chat Completions has no cache-write TTL split.
+    cacheWrite1h: 0,
+    output: usage.completion_tokens,
+    ...(usage.completion_tokens_details?.reasoning_tokens !== undefined
+      ? { reasoning: usage.completion_tokens_details.reasoning_tokens }
+      : {}),
+    ...(tier !== null ? { tier } : {}),
+  };
+};
+
+export const billableUsageFromChatCompletionsEvent = (event: ChatCompletionsStreamEvent): BillableUsage | null =>
+  event.usage ? billableUsageFromChatCompletionsUsage(event.usage, event.service_tier) : null;

@@ -1,15 +1,32 @@
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
-import type { BillableUsage } from '@floway-dev/protocols/common';
+import { billableServiceTier, type BillableUsage } from '@floway-dev/protocols/common';
+import { splitMessagesCacheCreationTokens, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
 
-// `BillableUsage` is already the canonical exclusive/split shape, so pricing is
-// a rename rather than a computation. It is the sole input: the usage Floway
-// sends the client is a wire projection and is never read here.
-export const tokenUsageFromBillableUsage = (billable: BillableUsage | undefined) =>
-  billable === undefined ? null : tokenUsage({
-    input: billable.input,
-    input_cache_read: billable.cacheRead,
-    input_cache_write: billable.cacheWrite,
-    input_cache_write_1h: billable.cacheWrite1h,
-    output: billable.output,
-    ...(billable.tier !== undefined ? { tier: billable.tier } : {}),
-  });
+// Anthropic reports `input_tokens` exclusive of both cache buckets already,
+// and splits cache creation by TTL — the two rates we are billed at.
+export const billableUsageFromMessagesUsage = (usage: MessagesUsageSnapshot): BillableUsage | null => {
+  if (usage.input_tokens === undefined && usage.output_tokens === undefined) return null;
+  const { cacheWrite, cacheWrite1h } = splitMessagesCacheCreationTokens(usage);
+  const tier = billableServiceTier(usage.speed) ?? billableServiceTier(usage.service_tier);
+  return {
+    input: usage.input_tokens ?? 0,
+    cacheRead: usage.cache_read_input_tokens ?? 0,
+    cacheWrite,
+    cacheWrite1h,
+    output: usage.output_tokens ?? 0,
+    ...(tier !== null ? { tier } : {}),
+  };
+};
+
+// Anthropic reports input accounting on `message_start` and output accounting
+// on `message_delta`, so the running figure is merged across both.
+export const createMessagesBillableUsageReader = (): (event: MessagesStreamEvent) => BillableUsage | null => {
+  let merged: Partial<MessagesUsageSnapshot> = {};
+  return event => {
+    const usage = event.type === 'message_start' ? event.message.usage
+      : event.type === 'message_delta' ? event.usage
+        : undefined;
+    if (!usage) return null;
+    merged = { ...merged, ...usage };
+    return billableUsageFromMessagesUsage(merged as MessagesUsageSnapshot);
+  };
+};
