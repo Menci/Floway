@@ -591,30 +591,31 @@ const planShimSlots = (
   toolName: string,
   state: ShimState,
   loopState: ServerToolLoopState,
-): { id: string; promise: Promise<WebSearchCallIR> } => {
+): { id: string; resolve: () => Promise<WebSearchCallIR> } => {
   if (loopState.iterationCount > ITERATION_CAP) {
     return {
       id: synthesizeWebSearchCallId(),
-      promise: Promise.resolve(schemaErrorIr(
+      resolve: async () => schemaErrorIr(
         'tool budget exhausted',
         'Tool call budget exhausted',
         `Web search iteration limit (${ITERATION_CAP}) reached. Further web_search calls in this response will return this same error. Summarize what you have already learned, and continue the task using other available tools (shell, file inspection, prior knowledge) or directly answer based on what you've gathered.`,
-      )),
+      ),
     };
   }
 
   if (parsed.kind === 'malformed' || parsed.ops.length === 0) {
     return {
       id: synthesizeWebSearchCallId(),
-      promise: Promise.resolve(schemaErrorIr(
+      resolve: async () => schemaErrorIr(
         'malformed shim call arguments',
         'Malformed arguments',
         'Error: arguments must be a JSON object with sub-property arrays (search_query[], open[], find[]).',
-      )),
+      ),
     };
   }
 
-  if (state.executeAlpha !== undefined) {
+  const executeAlpha = state.executeAlpha;
+  if (executeAlpha !== undefined) {
     const first = parsed.ops[0];
     let action: ResponsesWebSearchAction;
     if (first.kind === 'search') {
@@ -629,13 +630,16 @@ const planShimSlots = (
     } else {
       action = { type: 'search', query: Object.keys(commands).join(', ') };
     }
-    return { id: synthesizeWebSearchCallId(), promise: state.executeAlpha(commands, action) };
+    return { id: synthesizeWebSearchCallId(), resolve: async () => await executeAlpha(commands, action) };
   }
 
   try {
     assertLocalWebSearchSupport(commands);
   } catch (error) {
-    return { id: synthesizeWebSearchCallId(), promise: Promise.reject(error) };
+    return {
+      id: synthesizeWebSearchCallId(),
+      resolve: async () => { throw error; },
+    };
   }
 
   // Multi-`search_query` entries collapse into one wsc with a multi-query
@@ -647,7 +651,7 @@ const planShimSlots = (
     const searchOps = parsed.ops as Array<Extract<WebSearchOperation, { kind: 'search' }>>;
     return {
       id: synthesizeWebSearchCallId(),
-      promise: runBackendSearchMulti(searchOps, state),
+      resolve: async () => await runBackendSearchMulti(searchOps, state),
     };
   }
 
@@ -658,19 +662,19 @@ const planShimSlots = (
   if (parsed.ops.length > 1) {
     return {
       id: synthesizeWebSearchCallId(),
-      promise: Promise.resolve(schemaErrorIr(
+      resolve: async () => schemaErrorIr(
         'ambiguous shim call',
         'Ambiguous tool call',
         `Error: ambiguous \`${toolName}\` tool call — each function_call maps to one web_search_call. `
         + 'Multiple `search_query` entries are fine (they collapse into one search). '
         + 'For `open`/`find`, or any mix of kinds, split into one call per `open[]` entry, `find[]` entry, or `search_query[]` batch.',
-      )),
+      ),
     };
   }
 
   return {
     id: synthesizeWebSearchCallId(),
-    promise: startBatchFetch(parsed, state).then(batch => executeOperationToIr(parsed.ops[0], state, batch)),
+    resolve: async () => await executeOperationToIr(parsed.ops[0], state, await startBatchFetch(parsed, state)),
   };
 };
 
@@ -762,7 +766,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
                   { type: 'response.web_search_call.searching' },
                 ],
                 run: async function* run() {
-                  const ir = await slot.promise;
+                  const ir = await slot.resolve();
                   // `results` is gated on the client's `include`
                   // opt-in to match native Responses' default wire
                   // shape; the IR keeps them either way for the
