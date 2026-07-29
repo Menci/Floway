@@ -244,6 +244,54 @@ index 5204125c8498f697d3673b3017ec7e6cbbbe960e..2cd00a86ba8480e8b7f591a94458c0a2
              }
          });
      }
+diff --git a/lib/utilities/utilities.js b/lib/utilities/utilities.js
+--- a/lib/utilities/utilities.js
++++ b/lib/utilities/utilities.js
+@@ -320,7 +320,10 @@ export function createDateXAxis(xAxisParams, tickParams, culture, options, timeF
+     xAxisScale.domain([
+         domainNRangeValues.dStartValue,
+         domainNRangeValues.dEndValue
+     ]).range([
+         domainNRangeValues.rStartValue,
+         domainNRangeValues.rEndValue
+-    ]).nice();
++    ]);
++    if (!tickParams.tickValues) {
++        xAxisScale.nice();
++    }
+@@ -1115,7 +1118,7 @@ export function domainRangeOfDateForAreaLineScatterVerticalBarCharts(points, mar
+             ...tickValues,
+             lDate
+         ]);
+-        if (hasMarkersMode || chartType === 7) {
++        if ((hasMarkersMode || chartType === 7) && tickValues.length === 0) {
+             const xPadding = getDomainPaddingForMarkers(sDate.getTime(), lDate.getTime());
+             sDate = new Date(sDate.getTime() - xPadding.start);
+             lDate = new Date(lDate.getTime() + xPadding.end);
+diff --git a/lib-commonjs/utilities/utilities.js b/lib-commonjs/utilities/utilities.js
+--- a/lib-commonjs/utilities/utilities.js
++++ b/lib-commonjs/utilities/utilities.js
+@@ -564,7 +564,10 @@ function createDateXAxis(xAxisParams, tickParams, culture, options, timeFormatLo
+     xAxisScale.domain([
+         domainNRangeValues.dStartValue,
+         domainNRangeValues.dEndValue
+     ]).range([
+         domainNRangeValues.rStartValue,
+         domainNRangeValues.rEndValue
+-    ]).nice();
++    ]);
++    if (!tickParams.tickValues) {
++        xAxisScale.nice();
++    }
+@@ -1240,7 +1243,7 @@ function domainRangeOfDateForAreaLineScatterVerticalBarCharts(points, margins, w
+             ...tickValues,
+             lDate
+         ]);
+-        if (hasMarkersMode || chartType === 7) {
++        if ((hasMarkersMode || chartType === 7) && tickValues.length === 0) {
+             const xPadding = getDomainPaddingForMarkers(sDate.getTime(), lDate.getTime());
+             sDate = new Date(sDate.getTime() - xPadding.start);
+             lDate = new Date(lDate.getTime() + xPadding.end);
 diff --git a/lib-commonjs/components/CommonComponents/CartesianChart.js b/lib-commonjs/components/CommonComponents/CartesianChart.js
 index bcf76c184cfe345e19d58fb199b478c4005539b1..cc75e74609f9bd24c7836a7410f2f049e1ef0b1f 100644
 --- a/lib-commonjs/components/CommonComponents/CartesianChart.js
