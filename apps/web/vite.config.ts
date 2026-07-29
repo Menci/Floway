@@ -107,6 +107,11 @@ export default defineConfig({
             codeSplitting: {
               groups: [
                 {
+                  name: 'monaco-editor',
+                  test: /(?:node_modules[\\/](?:\.pnpm[\\/])?monaco-|[\\/]src[\\/]components[\\/]upstream-editor[\\/]models-yaml(?:-editor|\.worker))/,
+                  priority: 40,
+                },
+                {
                   name: 'fluent',
                   test: /node_modules[\\/](?:\.pnpm[\\/])?(?:@fluentui\+|@griffel\+|tabster@|@fluentui[\\/]|@griffel[\\/]|tabster[\\/])/,
                   priority: 30,
