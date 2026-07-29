@@ -23,16 +23,18 @@ const INDICATOR_HEIGHT = 16;
 const INDICATOR_WIDTH = 3;
 const INDICATOR_RADIUS = 2;
 
-type Geometry = { top: number; left: number };
+type Geometry = { top: number; left: number; height: number };
 
 const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
   const containerBox = container.getBoundingClientRect();
   const itemBox = item.getBoundingClientRect();
   return {
-    // WinUI centres the indicator on the item rather than pinning it to a
-    // fixed inset, so an item of any height keeps the pill in its middle.
-    top: itemBox.top - containerBox.top + container.scrollTop + (itemBox.height - INDICATOR_HEIGHT) / 2,
+    // The clip box is the item, so the pill can stretch without ever painting
+    // outside the fill the item already occupies. WinUI centres the pill in the
+    // item rather than pinning it to a fixed inset.
+    top: itemBox.top - containerBox.top + container.scrollTop,
     left: itemBox.left - containerBox.left + container.scrollLeft,
+    height: itemBox.height,
   };
 };
 
@@ -115,8 +117,11 @@ export function NavSelectionIndicator({
     aria-hidden
     ref={trackRef}
     style={{
-      height: INDICATOR_HEIGHT,
+      alignItems: 'center',
+      display: 'flex',
+      height: geometry.height,
       left: geometry.left + inset,
+      overflow: 'hidden',
       pointerEvents: 'none',
       position: 'absolute',
       top: geometry.top,
@@ -128,7 +133,7 @@ export function NavSelectionIndicator({
       style={{
         backgroundColor: 'var(--winui-accent-fill-default)',
         borderRadius: INDICATOR_RADIUS,
-        height: '100%',
+        height: INDICATOR_HEIGHT,
         width: '100%',
       }}
     />

@@ -63,11 +63,12 @@ const useStyles = makeStyles({
   },
 });
 
-// WinUI seats the selection pill against the item's leading edge rather than
-// inside its content padding, so it reads as an edge marker on the item and not
-// as a bullet before the icon.
+// Fluent seats its own indicator at the item's content-box start less 16px,
+// which lands 4px outside the border box; the WinUI layer clears that one and
+// this puts ours where it was. WinUI reads the pill as a marker on the item's
+// leading edge rather than as a bullet before the icon.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
-const NAV_INDICATOR_INSET = 4;
+const NAV_INDICATOR_INSET = -4;
 
 type NavItemDefinition = {
   to: string;

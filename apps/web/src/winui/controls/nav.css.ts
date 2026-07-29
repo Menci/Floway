@@ -56,6 +56,16 @@ export const navCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
+/* Fluent draws its own selection indicator as an ::after on the selected item,
+   4px wide and 20px tall in the compound brand foreground. WinUI's is 3px by
+   16px in the accent fill, and it animates between the item losing selection
+   and the one taking it, which a per-item pseudo-element cannot do. The
+   sidebar draws that one; this clears Fluent's so the two do not both show.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222 */
+.fui-NavItem.fui-NavItem::after {
+  content: none;
+}
+
 .fui-NavItem.fui-NavItem:active,
 .fui-NavItem.fui-NavItem[data-nav-pending],
 .fui-NavItem.fui-NavItem[aria-current='page']:hover {
