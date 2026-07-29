@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import type { ApiKey } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { RequestDetailPanel } from '../components/requests/request-detail';
+import { refreshRequestKeys } from '../components/requests/request-key-refresh';
 import { RequestListPanel } from '../components/requests/request-list';
 import { collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
@@ -94,26 +95,25 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   }, [setSearchParams]);
 
   useEffect(() => {
-    const refresh = async () => {
-      const result = await callApi(() => api.api.keys.$get());
-      if (result.error) setKeyRefresh({ source: loaderData, keys, error: result.error.message });
-      else {
-        const nextKeys = result.data.filter(key => key.dump_retention_seconds !== null);
-        const nextSelectedKeyId = nextKeys.some(key => key.id === loaderData.selectedKeyId)
-          ? loaderData.selectedKeyId
-          : nextKeys[0]?.id ?? null;
-        if (nextSelectedKeyId !== loaderData.selectedKeyId) {
+    const controller = new AbortController();
+    const refresh = () => refreshRequestKeys({
+      currentKeys: keys,
+      load: signal => callApi(() => api.api.keys.$get(undefined, { init: { signal } })),
+      onNavigate: nextSelectedKeyId => {
           const next = new URLSearchParams();
           if (nextSelectedKeyId) next.set('key', nextSelectedKeyId);
           void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, { replace: true });
-          return;
-        }
-        setKeyRefresh({ source: loaderData, keys: nextKeys, error: null });
-      }
-    };
+      },
+      onUpdate: (nextKeys, error) => setKeyRefresh({ source: loaderData, keys: nextKeys, error }),
+      selectedKeyId: loaderData.selectedKeyId,
+      signal: controller.signal,
+    });
     const onFocus = () => { void refresh(); };
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    return () => {
+      controller.abort();
+      window.removeEventListener('focus', onFocus);
+    };
   }, [keys, loaderData, navigate]);
 
   return (
