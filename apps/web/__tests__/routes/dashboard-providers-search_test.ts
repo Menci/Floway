@@ -1,13 +1,29 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ControlPlaneModel, UpstreamRecord } from '../../src/api/types';
 import { setSessionToken } from '../../src/auth/session';
 import { clientLoader, eligibleSearchUpstreams } from '../../src/routes/dashboard-providers-search';
 import { useAuthStore } from '../../src/stores/auth-store';
 
+const originalLocalStorage = Object.getOwnPropertyDescriptor(window, 'localStorage');
+
+beforeEach(() => {
+  const values = new Map<string, string>();
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      removeItem: (key: string) => { values.delete(key); },
+      setItem: (key: string, value: string) => { values.set(key, value); },
+    },
+  });
+});
+
 afterEach(() => {
   useAuthStore.getState().clear();
   vi.unstubAllGlobals();
+  if (originalLocalStorage) Object.defineProperty(window, 'localStorage', originalLocalStorage);
+  else Reflect.deleteProperty(window, 'localStorage');
 });
 
 describe('OpenAI search passthrough eligibility', () => {
