@@ -100,9 +100,10 @@ const darkForegrounds = {
 
 // WinUI states its type ramp as named TextBlock styles rather than as a
 // numbered scale: Caption 12, Body 14, Body Large 18, Subtitle 20, Title 28,
-// Title Large 40, Display 68. Three of Fluent's steps already sit on one of
-// those -- 10, 12 and 14 -- and the fourth, 16, falls between Body and Body
-// Large with nothing to move it onto.
+// Title Large 40, Display 68. Floway promotes Fluent's Base200 text to Body
+// 14/20 so secondary labels remain readable; Base300 already occupies the same
+// Body step. The 16px step falls between Body and Body Large with nothing to
+// move it onto.
 //
 // The fifth is the one that matters here. Fluent sizes DialogTitle from
 // fontSizeBase500, which is the Subtitle slot, and pairs it with a 28px line

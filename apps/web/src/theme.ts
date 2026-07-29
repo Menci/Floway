@@ -13,11 +13,12 @@ const fontOverrides = {
   fontFamilyBase: baseFontStack,
   fontFamilyMonospace: monospaceStack,
   fontSizeBase100: '10px',
-  fontSizeBase200: '12px',
+  fontSizeBase200: '14px',
   fontSizeBase300: '14px',
   fontSizeBase400: '16px',
   fontSizeBase500: '18px',
   fontSizeBase600: '22px',
+  lineHeightBase200: '20px',
 } as const;
 
 export const flowayLightTheme = { ...webLightTheme, ...fontOverrides };

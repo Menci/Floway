@@ -134,13 +134,13 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
       </div>
       <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.duration', { value: record.durationMs })}>
-          <TimerRegular aria-hidden="true" /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
+          <TimerRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
         </span>
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.requestBytes', { value: record.requestBytes })}>
-          <ArrowUploadRegular aria-hidden="true" /> <Text size={200}>{formatBytes(record.requestBytes)}</Text>
+          <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.requestBytes)}</Text>
         </span>
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.responseBytes', { value: record.responseBytes })}>
-          <ArrowDownloadRegular aria-hidden="true" /> <Text size={200}>{formatBytes(record.responseBytes)}</Text>
+          <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={18} /> <Text size={200}>{formatBytes(record.responseBytes)}</Text>
         </span>
         <Text size={200} className={mergeClasses('ml-auto truncate', rowError ? s.error : 'text-fui-fg3')} title={rowError ?? undefined}>
           {rowError ?? (tokens === null ? '-' : `${formatTokens(tokens)} tok`)}
