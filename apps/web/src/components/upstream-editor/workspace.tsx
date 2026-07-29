@@ -9,7 +9,7 @@ import {
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -81,11 +81,15 @@ export function UpstreamWorkspace({
   const [modelDetailTab, setModelDetailTab] = useState<ModelDetailTab>('details');
   const [yaml, setYaml] = useState('');
   const [yamlError, setYamlError] = useState<string | null>(null);
+  const workspaceScrollRef = useRef<HTMLDivElement>(null);
   const showModelDetail = modelView === 'detail';
   const changeModelView = (next: ModelView) => {
     setModelView(next);
     if (next === 'detail') setModelDetailTab('details');
   };
+  useLayoutEffect(() => {
+    workspaceScrollRef.current?.scrollTo({ left: 0, top: 0 });
+  }, [modelDetailTab, modelView, tab]);
   const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
@@ -102,7 +106,7 @@ export function UpstreamWorkspace({
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
           </TabList>}
     </div>
-    <ScrollArea key={`${tab}:${modelView}:${modelDetailTab}`} axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName={tab === 'models' && modelView === 'yaml' ? 'h-full min-w-0' : ''} noTabIndex>
+    <ScrollArea ref={workspaceScrollRef} axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName={tab === 'models' && modelView === 'yaml' ? 'h-full min-w-0' : ''} noTabIndex>
       {tab === 'models' && modelView === 'yaml'
         ? modelsWorkspace
         : <div className="px-5 py-4">
