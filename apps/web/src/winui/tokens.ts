@@ -130,6 +130,8 @@ export const winuiTokenCss = `
   --winui-control-stroke-secondary: #00000029;
   --winui-control-stroke-on-accent-default: #ffffff14;
   --winui-control-stroke-on-accent-secondary: #00000066;
+  --winui-control-strong-fill-default: #72000000;
+  --winui-control-strong-fill-disabled: #51000000;
   --winui-control-strong-stroke-default: #00000072;
   --winui-control-strong-stroke-disabled: #00000037;
 }
@@ -141,6 +143,8 @@ export const winuiTokenCss = `
     --winui-control-stroke-secondary: #ffffff18;
     --winui-control-stroke-on-accent-default: #ffffff14;
     --winui-control-stroke-on-accent-secondary: #00000023;
+    --winui-control-strong-fill-default: #ffffff8b;
+    --winui-control-strong-fill-disabled: #ffffff3f;
     --winui-control-strong-stroke-default: #ffffff8b;
     --winui-control-strong-stroke-disabled: #ffffff28;
   }

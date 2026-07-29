@@ -21,7 +21,6 @@ import {
   appLoadingCriticalCss,
 } from './components/ui/app-loading-screen';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
-import { scrollAreaCss } from './components/ui/scroll-area';
 import { fluentComponents } from './fluent';
 import { baseFontStack } from './theme';
 import { segoeWebFontCss, segoeWebFontOrigin, segoeWebFonts } from './web-fonts';
@@ -84,7 +83,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ${gradientBackgroundCriticalCss}
           ${appLoadingCriticalCss}
           ${navigationProgressCss}
-          ${scrollAreaCss}
         `}</style>
         <style>{winuiCss}</style>
       </head>

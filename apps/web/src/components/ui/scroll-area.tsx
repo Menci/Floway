@@ -133,17 +133,3 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
   );
 });
 
-export const scrollAreaCss = `
-  .floway-scroll-area[data-overlayscrollbars='host'] .os-scrollbar {
-    --os-handle-bg: rgba(100, 116, 139, 0.32);
-    --os-handle-bg-hover: rgba(100, 116, 139, 0.5);
-    --os-handle-bg-active: rgba(100, 116, 139, 0.7);
-    --os-size: 12px;
-  }
-  .floway-scroll-area[data-overlayscrollbars='host'] .os-scrollbar-horizontal:not(:hover) .os-scrollbar-handle {
-    height: 4px;
-  }
-  .floway-scroll-area[data-overlayscrollbars='host'] .os-scrollbar-vertical:not(:hover) .os-scrollbar-handle {
-    width: 4px;
-  }
-`;

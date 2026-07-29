@@ -13,6 +13,7 @@ import { messageBarCss } from './controls/message-bar.css';
 import { navCss } from './controls/nav.css';
 import { popoverCss } from './controls/popover.css';
 import { progressCss } from './controls/progress.css';
+import { scrollbarCss } from './controls/scrollbar.css';
 import { selectCss } from './controls/select.css';
 import { switchCss } from './controls/switch.css';
 import { tableCss } from './controls/table.css';
@@ -48,6 +49,7 @@ export const winuiCss = [
   navCss,
   popoverCss,
   progressCss,
+  scrollbarCss,
   selectCss,
   switchCss,
   tableCss,
