@@ -55,9 +55,9 @@ const loadKnownProxyIds = async (): Promise<ReadonlySet<string>> =>
 // re-submit into a write path that rejects the whole list. Dial time already
 // skips an unresolvable entry and advances the chain.
 const pruneDeletedProxyEntries = (
-  entries: readonly { id: string; colos?: string[] }[],
+  entries: readonly ProxyFallbackEntry[],
   knownProxyIds: ReadonlySet<string>,
-) => entries.filter(entry => isDirectFallbackId(entry.id) || knownProxyIds.has(entry.id));
+): ProxyFallbackEntry[] => entries.filter(entry => isDirectFallbackId(entry.id) || knownProxyIds.has(entry.id));
 
 // These projections need repository/provider I/O, which serialize.ts excludes
 // so it stays a pure persisted-record transform. The optional baseSerialize
@@ -209,9 +209,9 @@ export const getUpstreamBlueprint = (c: Context): Response => {
 // render the "last fetched / last error" panel on mount.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
-  const record = await getRepo().upstreams.getById(id);
+  const [record, knownProxyIds] = await Promise.all([getRepo().upstreams.getById(id), loadKnownProxyIds()]);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  return c.json(await serializeForResponse(record, await loadKnownProxyIds(), upstreamRecordToFullJson));
+  return c.json(await serializeForResponse(record, knownProxyIds, upstreamRecordToFullJson));
 };
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {

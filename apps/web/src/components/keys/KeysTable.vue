@@ -45,10 +45,9 @@ interface UpstreamsCell {
 const classifyUpstreams = (k: ApiKey): UpstreamsCell => {
   if (!k.upstream_ids) return { text: 'All', title: 'Inherits the global upstream order', class: 'text-gray-500' };
   if (k.upstream_ids.length === 0) return { text: 'None', title: 'No upstreams', class: 'text-accent-rose' };
-  const names = k.upstream_ids.map(id => upstreamById.value.get(id)?.name).filter((n): n is string => !!n);
+  const names = k.upstream_ids.map(id => upstreamById.value.get(id)?.name ?? id);
   const text = names.length <= 2 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
-  const title = k.upstream_ids.map(id => upstreamById.value.get(id)?.name ?? id).join('\n');
-  return { text, title, class: 'text-accent-cyan' };
+  return { text, title: names.join('\n'), class: 'text-accent-cyan' };
 };
 
 const rows = computed(() => props.keys.map(key => ({ key, upstreams: classifyUpstreams(key) })));

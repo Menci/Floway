@@ -24,11 +24,11 @@ export const listUsers = async (c: AuthedContext) => {
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   const body = c.req.valid('json');
   const repo = getRepo();
-  const knownUpstreamIds = await loadKnownUpstreamIds();
 
   if (await repo.users.findByUsername(body.username)) {
     return c.json({ error: 'That username is already taken (usernames are case-insensitive).' }, 400);
   }
+  const knownUpstreamIds = await loadKnownUpstreamIds();
   if (body.upstreamIds !== undefined) {
     const upstreamErr = unknownUpstreamIdsError(body.upstreamIds, knownUpstreamIds);
     if (upstreamErr) return c.json({ error: upstreamErr }, 400);
@@ -66,7 +66,6 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   const body = c.req.valid('json');
   const actorId = userFromContext(c).id;
   const repo = getRepo();
-  const knownUpstreamIds = await loadKnownUpstreamIds();
 
   const existing = await repo.users.getById(id);
   if (!existing) return c.json({ error: 'user not found' }, 404);
@@ -79,6 +78,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     const dup = await repo.users.findByUsername(body.username);
     if (dup && dup.id !== id) return c.json({ error: 'username taken' }, 400);
   }
+  const knownUpstreamIds = await loadKnownUpstreamIds();
   if (body.upstreamIds !== undefined) {
     const err = unknownUpstreamIdsError(body.upstreamIds, knownUpstreamIds);
     if (err) return c.json({ error: err }, 400);

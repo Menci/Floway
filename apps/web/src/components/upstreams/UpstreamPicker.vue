@@ -30,9 +30,10 @@ const value = defineModel<UpstreamPickerValue>({ required: true });
 
 const rows = ref<RowState[]>([]);
 
-// Selected ids are resolved against the options rather than rendered on their
-// own: the read path already drops ids whose upstream is gone, so anything
-// left unresolved here is an option list that has not loaded yet.
+// Rows are built from the offered options: a selected id the caller does not
+// offer has no renderable row. reset() leaves it in the model, but the first
+// row edit rewrites the ids from the rows and drops it. Seeding a displayable
+// selection is the caller's job.
 const reset = () => {
   const optionById = new Map(props.available.map(option => [option.id, option]));
   const selected = value.value.ids.map(id => optionById.get(id)).filter(option => option !== undefined);
