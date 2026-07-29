@@ -145,7 +145,7 @@ function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
         />
       )} />
       <Field label={t('dashboard.upstreamEditor.fields.modelsPath')}>
-        <Controller control={control} name={'config.modelsFetch.endpoint' as never} render={({ field }) => <Input className="font-mono" onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
+        <Controller control={control} name={'config.modelsFetch.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
       </Field>
       <div
         aria-describedby={`${idPrefix}-hint`}
@@ -189,7 +189,7 @@ function AzureConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'azur
   const { control } = useFormContext<UpstreamEditorValues>();
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.endpoint')} required>
-      <Controller control={control} name={'config.endpoint' as never} render={({ field }) => <Input className="font-mono" onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
+      <Controller control={control} name={'config.endpoint' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
     </Field>
     <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} />
   </div>;
@@ -200,7 +200,7 @@ function OllamaConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'oll
   const { control } = useFormContext<UpstreamEditorValues>();
   return <div className="grid gap-4">
     <Field label={t('dashboard.upstreamEditor.fields.baseUrl')} required>
-      <Controller control={control} name={'config.baseUrl' as never} render={({ field }) => <Input className="font-mono" onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
+      <Controller control={control} name={'config.baseUrl' as never} render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" ref={field.ref} value={typeof field.value === 'string' ? field.value : ''} />} />
     </Field>
     <SecretField name="config.apiKey" secretSet={record.config.apiKeySet === true || Boolean(record.config.apiKey)} optional />
   </div>;
