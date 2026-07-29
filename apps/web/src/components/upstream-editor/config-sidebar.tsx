@@ -49,49 +49,49 @@ export function UpstreamConfigSidebar({
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex>
     <div className="p-[18px_20px_28px]">
       <aside className="grid gap-7">
-      <EditorSection required title={t('dashboard.upstreamEditor.fields.name')}>
-        <Controller
-          control={control}
-          name="name"
-          rules={{ required: true }}
-          render={({ field }) => (
-            <Input
-              aria-label={t('dashboard.upstreamEditor.fields.name')}
-              required
-              value={field.value}
-              onBlur={field.onBlur}
-              onChange={(_, data) => field.onChange(data.value)}
-            />
-          )}
-        />
-      </EditorSection>
-      <EditorSection
-        inline
-        title={t('dashboard.upstreamEditor.sections.color')}
-        description={t('dashboard.upstreamEditor.color.description')}
-      >
-        <UpstreamColorEditor kind={record.kind} />
-      </EditorSection>
-      <EditorSection title={t('dashboard.upstreamEditor.sections.connection')}>
-        <ProviderConfigSection record={record} onPatch={onPatch} />
-      </EditorSection>
-      <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.empty')}>
-        <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
-      </EditorSection>
-      {record.kind === 'custom' && (
-        <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
-          <ApiPathsSection record={record} onRefreshModels={onRefreshModels} />
+        <EditorSection required title={t('dashboard.upstreamEditor.fields.name')}>
+          <Controller
+            control={control}
+            name="name"
+            rules={{ required: true }}
+            render={({ field }) => (
+              <Input
+                aria-label={t('dashboard.upstreamEditor.fields.name')}
+                required
+                value={field.value}
+                onBlur={field.onBlur}
+                onChange={(_, data) => field.onChange(data.value)}
+              />
+            )}
+          />
         </EditorSection>
-      )}
-      <EditorSection
-        title={t('dashboard.upstreamEditor.sections.prefix')}
-        description={t('dashboard.upstreamEditor.prefixDescription')}
-      >
-        <ModelPrefixEditor />
-      </EditorSection>
-      <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
-        <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} />
-      </EditorSection>
+        <EditorSection
+          inline
+          title={t('dashboard.upstreamEditor.sections.color')}
+          description={t('dashboard.upstreamEditor.color.description')}
+        >
+          <UpstreamColorEditor kind={record.kind} />
+        </EditorSection>
+        <EditorSection title={t('dashboard.upstreamEditor.sections.connection')}>
+          <ProviderConfigSection record={record} onPatch={onPatch} />
+        </EditorSection>
+        <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.empty')}>
+          <ProxyFallbackEditor proxies={proxies} runtime={runtime} />
+        </EditorSection>
+        {record.kind === 'custom' && (
+          <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
+            <ApiPathsSection record={record} onRefreshModels={onRefreshModels} />
+          </EditorSection>
+        )}
+        <EditorSection
+          title={t('dashboard.upstreamEditor.sections.prefix')}
+          description={t('dashboard.upstreamEditor.prefixDescription')}
+        >
+          <ModelPrefixEditor />
+        </EditorSection>
+        <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
+          <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} />
+        </EditorSection>
       </aside>
     </div>
   </ScrollArea>;
