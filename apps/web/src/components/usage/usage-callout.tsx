@@ -23,17 +23,17 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
         <ChartCalloutTable
           columns={(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output', 'hitRate'] as const).map(key => ({ key, label: t(`dashboard.usage.callout.${key}`) }))}
           rows={rows.flatMap(item => {
-              const entry = chart.entries.find(candidate => candidate.id === item.id);
-              const counters = entry ? bucketDetails.get(entry.id) : undefined;
-              if (!counters) return [];
-              const summary = summarizeCounters(counters);
-              return [{
-                color: item.color,
-                key: item.id,
-                label: item.label,
-                values: [formatCount(summary.requests, locale), formatUsdCost(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatInputRate(summary.cacheRead, summary.prompt), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale), formatHitRate(summary.cacheRead, summary.cacheCreation)],
-              }];
-            })}
+            const entry = chart.entries.find(candidate => candidate.id === item.id);
+            const counters = entry ? bucketDetails.get(entry.id) : undefined;
+            if (!counters) return [];
+            const summary = summarizeCounters(counters);
+            return [{
+              color: item.color,
+              key: item.id,
+              label: item.label,
+              values: [formatCount(summary.requests, locale), formatUsdCost(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatInputRate(summary.cacheRead, summary.prompt), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale), formatHitRate(summary.cacheRead, summary.cacheCreation)],
+            }];
+          })}
           title={title}
         />
       ) : (

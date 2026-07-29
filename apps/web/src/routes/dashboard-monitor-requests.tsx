@@ -15,7 +15,6 @@ import { collectStream, detectCollectKind, type CollectedStream } from '../compo
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
-import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { useMediaQuery } from '../lib/use-media-query';
@@ -154,22 +153,22 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
         </OverlayDrawer>
       </> : (
         <div className="h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] gap-3">
-            <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
-              <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
-            </Panel>
-            <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
-              <RequestListPanel
-                apiKeys={keys}
-                error={subscription.error ?? loaderData.recordsError ?? keysError}
-                hasOlder={subscription.hasOlder}
-                onKeyChange={keyId => updateSelection(keyId)}
-                onLoadOlder={() => void subscription.loadOlder()}
-                onRecordChange={recordId => updateSelection(selectedKeyId, recordId)}
-                records={subscription.records}
-                selectedKeyId={selectedKeyId}
-                selectedRecordId={selectedRecordId}
-              />
-            </Panel>
+          <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
+            <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
+          </Panel>
+          <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
+            <RequestListPanel
+              apiKeys={keys}
+              error={subscription.error ?? loaderData.recordsError ?? keysError}
+              hasOlder={subscription.hasOlder}
+              onKeyChange={keyId => updateSelection(keyId)}
+              onLoadOlder={() => void subscription.loadOlder()}
+              onRecordChange={recordId => updateSelection(selectedKeyId, recordId)}
+              records={subscription.records}
+              selectedKeyId={selectedKeyId}
+              selectedRecordId={selectedRecordId}
+            />
+          </Panel>
         </div>
       ) : null}
     </section>
