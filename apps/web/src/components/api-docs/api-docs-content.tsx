@@ -7,6 +7,7 @@ import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Panel } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
+import { TableActionsHeader } from '../ui/table-actions';
 
 const {
   Badge,
@@ -65,7 +66,7 @@ export function ApiDocsContent() {
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.method')}</TableHeaderCell>
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.endpoint')}</TableHeaderCell>
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.description')}</TableHeaderCell>
-                <TableHeaderCell className="!text-right">{t('dashboard.apiDocs.columns.docs')}</TableHeaderCell>
+                <TableActionsHeader>{t('dashboard.apiDocs.columns.docs')}</TableActionsHeader>
               </TableRow></TableHeader>
               <TableBody>{endpoints.map(endpoint => <TableRow key={`${endpoint.method} ${endpoint.path}`}>
                 <TableCell><MethodBadge method={endpoint.method} /></TableCell>
