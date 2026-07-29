@@ -13,6 +13,7 @@ onlyBuiltDependencies:
   - workerd
 
 patchedDependencies:
+  '@fluentui/react-charts@9.3.22': patches/@fluentui__react-charts@9.3.22.patch
   '@reclaimprotocol/tls@0.1.2': patches/@reclaimprotocol__tls@0.1.2.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
 
