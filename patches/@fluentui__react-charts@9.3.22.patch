@@ -128,10 +128,43 @@ index 1ac969766a34f8da2957812edd55b935d9de8985..86baf193dcb8609104ddbfe5e3ce5818
      }, callout));
  });
 diff --git a/lib/components/LineChart/LineChart.js b/lib/components/LineChart/LineChart.js
-index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..2560bcca985da067caaef9f4eaef22dafd804b3f 100644
+index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..10d39cf46a0de9a10cb982aaa446f270998857ab 100644
 --- a/lib/components/LineChart/LineChart.js
 +++ b/lib/components/LineChart/LineChart.js
-@@ -883,7 +883,11 @@ const PATH_MULTIPLY_SIZE = 2.5;
+@@ -441,7 +441,9 @@ const PATH_MULTIPLY_SIZE = 2.5;
+                     const text = _points[i].data[0].text;
+                     const targetElement = document.getElementById(circleId);
+                     var _points_i_data__text;
+-                    pointsForLine.push(/*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement(React.Fragment, {
++                    pointsForLine.push(/*#__PURE__*/ React.createElement(React.Fragment, {
++                        key: `${circleId}_single`
++                    }, /*#__PURE__*/ React.createElement(React.Fragment, {
+                         key: `${circleId}_fragment`
+                     }, /*#__PURE__*/ React.createElement("circle", {
+                         id: circleId,
+@@ -636,7 +638,9 @@ const PATH_MULTIPLY_SIZE = 2.5;
+                         const path = _getPath(xPoint1, yPoint1, circleId, j, false, _points[i].index);
+                         const targetElement = document.getElementById(circleId);
+                         var _points_i_data__text1;
+-                        pointsForLine.push(((_points_i_lineOptions15 = _points[i].lineOptions) === null || _points_i_lineOptions15 === void 0 ? void 0 : (_points_i_lineOptions_mode3 = _points_i_lineOptions15.mode) === null || _points_i_lineOptions_mode3 === void 0 ? void 0 : _points_i_lineOptions_mode3.includes('markers')) || supportsTextMode ? /*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement("circle", {
++                        pointsForLine.push(((_points_i_lineOptions15 = _points[i].lineOptions) === null || _points_i_lineOptions15 === void 0 ? void 0 : (_points_i_lineOptions_mode3 = _points_i_lineOptions15.mode) === null || _points_i_lineOptions_mode3 === void 0 ? void 0 : _points_i_lineOptions_mode3.includes('markers')) || supportsTextMode ? /*#__PURE__*/ React.createElement(React.Fragment, {
++                            key: `${circleId}_marker`
++                        }, /*#__PURE__*/ React.createElement("circle", {
+                             id: circleId,
+                             key: circleId,
+                             r: calculateMarkerRadius({
+@@ -710,7 +714,9 @@ const PATH_MULTIPLY_SIZE = 2.5;
+                             var _points_i_data_j_text;
+                             pointsForLine.push(/*#__PURE__*/ React.createElement(React.Fragment, {
+                                 key: `${lastCircleId}_container`
+-                            }, ((_points_i_lineOptions17 = _points[i].lineOptions) === null || _points_i_lineOptions17 === void 0 ? void 0 : (_points_i_lineOptions_mode5 = _points_i_lineOptions17.mode) === null || _points_i_lineOptions_mode5 === void 0 ? void 0 : _points_i_lineOptions_mode5.includes('markers')) || lastSupportsTextMode ? /*#__PURE__*/ React.createElement(React.Fragment, null, /*#__PURE__*/ React.createElement("circle", {
++                            }, ((_points_i_lineOptions17 = _points[i].lineOptions) === null || _points_i_lineOptions17 === void 0 ? void 0 : (_points_i_lineOptions_mode5 = _points_i_lineOptions17.mode) === null || _points_i_lineOptions_mode5 === void 0 ? void 0 : _points_i_lineOptions_mode5.includes('markers')) || lastSupportsTextMode ? /*#__PURE__*/ React.createElement(React.Fragment, {
++                                key: `${lastCircleId}_marker`
++                            }, /*#__PURE__*/ React.createElement("circle", {
+                                 id: lastCircleId,
+                                 key: lastCircleId,
+                                 r: calculateMarkerRadius({
+@@ -883,7 +889,11 @@ const PATH_MULTIPLY_SIZE = 2.5;
                  key: `line_${i}`,
                  role: "region",
                  "aria-label": `${legendVal}, line ${i + 1} of ${_points.length} with ${_points[i].data.length} data points.`
@@ -144,7 +177,7 @@ index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..2560bcca985da067caaef9f4eaef22da
          }
          return lines;
      }
-@@ -1299,7 +1303,12 @@ const PATH_MULTIPLY_SIZE = 2.5;
+@@ -1299,7 +1309,12 @@ const PATH_MULTIPLY_SIZE = 2.5;
              _xAxisScale = props.xScale;
              _yScalePrimary = props.yScalePrimary;
              _yScaleSecondary = props.yScaleSecondary;
@@ -158,7 +191,7 @@ index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..2560bcca985da067caaef9f4eaef22da
                  x1: 0,
                  y1: 0,
                  x2: 0,
-@@ -1309,11 +1318,20 @@ const PATH_MULTIPLY_SIZE = 2.5;
+@@ -1309,11 +1324,20 @@ const PATH_MULTIPLY_SIZE = 2.5;
                  visibility: 'hidden',
                  strokeDasharray: '5,5'
              }), props.optimizeLargeData ? /*#__PURE__*/ React.createElement("rect", {
@@ -310,10 +343,43 @@ index bcf76c184cfe345e19d58fb199b478c4005539b1..cc75e74609f9bd24c7836a7410f2f049
      }, callout));
  });
 diff --git a/lib-commonjs/components/LineChart/LineChart.js b/lib-commonjs/components/LineChart/LineChart.js
-index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..8b4a988c3f3c14212120f7afbdf77b9d9c0fde5e 100644
+index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..e150f6e6fd49341c6cfb0bbcaf7d24bb685f94a9 100644
 --- a/lib-commonjs/components/LineChart/LineChart.js
 +++ b/lib-commonjs/components/LineChart/LineChart.js
-@@ -888,7 +888,11 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+@@ -446,7 +446,9 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+                     const text = _points[i].data[0].text;
+                     const targetElement = document.getElementById(circleId);
+                     var _points_i_data__text;
+-                    pointsForLine.push(/*#__PURE__*/ _react.createElement(_react.Fragment, null, /*#__PURE__*/ _react.createElement(_react.Fragment, {
++                    pointsForLine.push(/*#__PURE__*/ _react.createElement(_react.Fragment, {
++                        key: `${circleId}_single`
++                    }, /*#__PURE__*/ _react.createElement(_react.Fragment, {
+                         key: `${circleId}_fragment`
+                     }, /*#__PURE__*/ _react.createElement("circle", {
+                         id: circleId,
+@@ -641,7 +643,9 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+                         const path = _getPath(xPoint1, yPoint1, circleId, j, false, _points[i].index);
+                         const targetElement = document.getElementById(circleId);
+                         var _points_i_data__text1;
+-                        pointsForLine.push(((_points_i_lineOptions15 = _points[i].lineOptions) === null || _points_i_lineOptions15 === void 0 ? void 0 : (_points_i_lineOptions_mode3 = _points_i_lineOptions15.mode) === null || _points_i_lineOptions_mode3 === void 0 ? void 0 : _points_i_lineOptions_mode3.includes('markers')) || supportsTextMode ? /*#__PURE__*/ _react.createElement(_react.Fragment, null, /*#__PURE__*/ _react.createElement("circle", {
++                        pointsForLine.push(((_points_i_lineOptions15 = _points[i].lineOptions) === null || _points_i_lineOptions15 === void 0 ? void 0 : (_points_i_lineOptions_mode3 = _points_i_lineOptions15.mode) === null || _points_i_lineOptions_mode3 === void 0 ? void 0 : _points_i_lineOptions_mode3.includes('markers')) || supportsTextMode ? /*#__PURE__*/ _react.createElement(_react.Fragment, {
++                            key: `${circleId}_marker`
++                        }, /*#__PURE__*/ _react.createElement("circle", {
+                             id: circleId,
+                             key: circleId,
+                             r: (0, _index1.calculateMarkerRadius)({
+@@ -715,7 +719,9 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+                             var _points_i_data_j_text;
+                             pointsForLine.push(/*#__PURE__*/ _react.createElement(_react.Fragment, {
+                                 key: `${lastCircleId}_container`
+-                            }, ((_points_i_lineOptions17 = _points[i].lineOptions) === null || _points_i_lineOptions17 === void 0 ? void 0 : (_points_i_lineOptions_mode5 = _points_i_lineOptions17.mode) === null || _points_i_lineOptions_mode5 === void 0 ? void 0 : _points_i_lineOptions_mode5.includes('markers')) || lastSupportsTextMode ? /*#__PURE__*/ _react.createElement(_react.Fragment, null, /*#__PURE__*/ _react.createElement("circle", {
++                            }, ((_points_i_lineOptions17 = _points[i].lineOptions) === null || _points_i_lineOptions17 === void 0 ? void 0 : (_points_i_lineOptions_mode5 = _points_i_lineOptions17.mode) === null || _points_i_lineOptions_mode5 === void 0 ? void 0 : _points_i_lineOptions_mode5.includes('markers')) || lastSupportsTextMode ? /*#__PURE__*/ _react.createElement(_react.Fragment, {
++                                key: `${lastCircleId}_marker`
++                            }, /*#__PURE__*/ _react.createElement("circle", {
+                                 id: lastCircleId,
+                                 key: lastCircleId,
+                                 r: (0, _index1.calculateMarkerRadius)({
+@@ -888,7 +894,11 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
                  key: `line_${i}`,
                  role: "region",
                  "aria-label": `${legendVal}, line ${i + 1} of ${_points.length} with ${_points[i].data.length} data points.`
@@ -326,7 +392,7 @@ index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..8b4a988c3f3c14212120f7afbdf77b9d
          }
          return lines;
      }
-@@ -1304,7 +1308,12 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+@@ -1304,7 +1314,12 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
              _xAxisScale = props.xScale;
              _yScalePrimary = props.yScalePrimary;
              _yScaleSecondary = props.yScaleSecondary;
@@ -340,7 +406,7 @@ index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..8b4a988c3f3c14212120f7afbdf77b9d
                  x1: 0,
                  y1: 0,
                  x2: 0,
-@@ -1314,11 +1323,20 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+@@ -1314,11 +1329,20 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
                  visibility: 'hidden',
                  strokeDasharray: '5,5'
              }), props.optimizeLargeData ? /*#__PURE__*/ _react.createElement("rect", {
