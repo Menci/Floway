@@ -33,6 +33,7 @@ export function RotateKeyDialog({
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
+      setSaving(false);
       setKeySource('generate');
       setCustomKey('');
       setError(null);
@@ -54,8 +55,8 @@ export function RotateKeyDialog({
       param: { id: apiKey.id },
       json: keyWriteBody(keySource, trimmed),
     }));
-    setSaving(false);
     if (result.error) {
+      setSaving(false);
       mutationToasts.fail(toastId, 'rotate', snapName, result.error.message);
       setError(result.error.message);
       return;

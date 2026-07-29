@@ -113,6 +113,7 @@ export function KeyDialog({
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
+      setSaving(false);
       reset(keyFormDefaults(apiKey));
       setError(null);
     }
@@ -155,9 +156,8 @@ export function KeyDialog({
           param: { id: apiKey!.id },
           json: common,
         }));
-    setSaving(false);
-
     if (result.error) {
+      setSaving(false);
       mutationToasts.fail(toastId, mutationKind, common.name, result.error.message);
       setError(result.error.message);
       return;

@@ -370,6 +370,7 @@ function UserDialog({
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
+      setSaving(false);
       reset(userFormDefaults(user));
       setError(null);
     }
@@ -399,8 +400,8 @@ function UserDialog({
             upstreamIds,
           },
         }));
-    setSaving(false);
     if (result.error) {
+      setSaving(false);
       setError(result.error.message);
       return;
     }
@@ -597,6 +598,7 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
+      setSaving(false);
       reset({ password: '', confirmation: '' });
       setError(null);
     }
@@ -611,8 +613,8 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
       param: { id: String(user.id) },
       json: { password: values.password },
     }));
-    setSaving(false);
     if (result.error) {
+      setSaving(false);
       setError(result.error.message);
       return;
     }
