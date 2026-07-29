@@ -102,6 +102,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const [editTarget, setEditTarget] = useState<ControlPlaneUser | null>(null);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordTarget, setPasswordTarget] = useState<ControlPlaneUser | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ControlPlaneUser | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -140,7 +141,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       setPageError(result.error.message);
       return;
     }
-    setDeleteTarget(null);
+    setDeleteOpen(false);
     await reload();
   };
 
@@ -177,7 +178,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         <UsersTable
           actorId={actor.id}
           disabled={loading || deleting}
-          onDelete={setDeleteTarget}
+          onDelete={target => { setDeleteTarget(target); setDeleteOpen(true); }}
           onEdit={target => { setEditTarget(target); setEditOpen(true); }}
           onResetPassword={target => { setPasswordTarget(target); setPasswordOpen(true); }}
           users={data.users}
@@ -191,9 +192,8 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         onSaved={() => afterSaved()}
         open={createOpen}
         upstreams={data.upstreams}
-        user={null}
       />
-      <UserDialog
+      {editTarget && <UserDialog
         actorId={actor.id}
         mode="edit"
         onOpenChange={setEditOpen}
@@ -201,28 +201,28 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         open={editOpen}
         upstreams={data.upstreams}
         user={editTarget}
-      />
-      <PasswordDialog
+      />}
+      {passwordTarget && <PasswordDialog
         onOpenChange={setPasswordOpen}
         onSaved={reload}
         open={passwordOpen}
         user={passwordTarget}
-      />
-      <ConfirmDialog
+      />}
+      {deleteTarget && <ConfirmDialog
         actionLabel={deleting
           ? t('dashboard.users.actions.deleting')
           : t('dashboard.users.actions.delete')}
         busy={deleting}
         message={t('dashboard.users.delete.message', {
-          username: deleteTarget?.username ?? '',
+          username: deleteTarget.username,
         })}
         onConfirm={() => {
-          if (deleteTarget && !deleting) void deleteUser(deleteTarget);
+          if (!deleting) void deleteUser(deleteTarget);
         }}
-        onOpenChange={open => { if (!open && !deleting) setDeleteTarget(null); }}
-        open={deleteTarget !== null}
+        onOpenChange={open => { if (!deleting) setDeleteOpen(open); }}
+        open={deleteOpen}
         title={t('dashboard.users.delete.title')}
-      />
+      />}
     </div>
   );
 }
@@ -325,6 +325,19 @@ function UsersTable({
   );
 }
 
+interface UserDialogCommonProps {
+  actorId: number;
+  onOpenChange: (open: boolean) => void;
+  onSaved: (userId?: number) => Promise<void>;
+  open: boolean;
+  upstreams: UpstreamOption[];
+}
+
+type UserDialogProps = UserDialogCommonProps & (
+  | { mode: 'create'; user?: never }
+  | { mode: 'edit'; user: ControlPlaneUser }
+);
+
 function UserDialog({
   actorId,
   mode,
@@ -332,17 +345,10 @@ function UserDialog({
   onSaved,
   open,
   upstreams,
-  user,
-}: {
-  actorId: number;
-  mode: 'create' | 'edit';
-  onOpenChange: (open: boolean) => void;
-  onSaved: (userId?: number) => Promise<void>;
-  open: boolean;
-  upstreams: UpstreamOption[];
-  user: ControlPlaneUser | null;
-}) {
+  ...targetProps
+}: UserDialogProps) {
   const { t } = useTranslation();
+  const user = mode === 'edit' ? targetProps.user : null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const schema = useMemo(
@@ -378,7 +384,7 @@ function UserDialog({
   }, [open, reset, user]);
 
   const values = useWatch({ control }) as UserFormValues;
-  const adminLocked = mode === 'edit' && !!user && (user.id === 1 || user.id === actorId);
+  const adminLocked = mode === 'edit' && (user.id === 1 || user.id === actorId);
 
   const save = async (form: UserFormValues) => {
     setSaving(true);
@@ -394,7 +400,7 @@ function UserDialog({
           },
         }))
       : await callApi(() => api.api.users[':id'].$patch({
-          param: { id: String(user!.id) }, json: {
+          param: { id: String(user.id) }, json: {
             username: form.username.trim(),
             ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
             upstreamIds,
@@ -406,7 +412,7 @@ function UserDialog({
       return;
     }
     onOpenChange(false);
-    await onSaved(user?.id);
+    await onSaved(mode === 'edit' ? user.id : undefined);
   };
 
   return (
@@ -426,7 +432,7 @@ function UserDialog({
       open={open}
       title={<DialogTitle>{mode === 'create'
         ? t('dashboard.users.dialog.createTitle')
-        : t('dashboard.users.dialog.editTitle', { username: user?.username ?? '' })}</DialogTitle>}
+        : t('dashboard.users.dialog.editTitle', { username: user.username })}</DialogTitle>}
     >
       <Controller
         control={control}
@@ -461,7 +467,7 @@ function UserDialog({
         <PermissionToggle
           checked={values.isAdmin}
           description={adminLocked
-            ? t(user?.id === 1 ? 'dashboard.users.form.userOneLocked' : 'dashboard.users.form.selfLocked')
+            ? t(mode === 'edit' && user.id === 1 ? 'dashboard.users.form.userOneLocked' : 'dashboard.users.form.selfLocked')
             : t('dashboard.users.form.administratorDescription')}
           disabled={saving || adminLocked}
           label={t('dashboard.users.form.administrator')}
@@ -579,7 +585,7 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
   open: boolean;
-  user: ControlPlaneUser | null;
+  user: ControlPlaneUser;
 }) {
   const { t } = useTranslation();
   const [saving, setSaving] = useState(false);
@@ -606,7 +612,6 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
   }, [open, reset]);
 
   const save = async (values: PasswordFormValues) => {
-    if (!user) return;
     setSaving(true);
     setError(null);
     const result = await callApi(() => api.api.users[':id'].$patch({
@@ -633,7 +638,7 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
       open={open}
-      title={<DialogTitle>{t('dashboard.users.dialog.passwordTitle', { username: user?.username ?? '' })}</DialogTitle>}
+      title={<DialogTitle>{t('dashboard.users.dialog.passwordTitle', { username: user.username })}</DialogTitle>}
     >
       <Controller control={control} name="password" render={({ field }) => (
         <Field

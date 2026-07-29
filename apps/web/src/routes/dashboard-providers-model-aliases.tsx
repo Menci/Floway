@@ -82,11 +82,10 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
 
   const openCreate = () => { setEditing(null); setDialogOpen(true); };
   const openEdit = (alias: ModelAlias) => { setEditing(alias); setDialogOpen(true); };
-  const deleteAlias = async () => {
-    if (!deleting) return;
+  const deleteAlias = async (target: ModelAlias) => {
     setMutating(true); setError(null);
     try {
-      const response = await api.api.aliases[':name'].$delete({ param: { name: deleting.name } });
+      const response = await api.api.aliases[':name'].$delete({ param: { name: target.name } });
       if (!response.ok) {
         let message = `HTTP ${response.status}`;
         try { const body = await response.json() as { error?: string }; message = body.error ?? message; } catch { /* status fallback */ }
@@ -118,6 +117,6 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
       })}</TableBody></Table></ScrollArea>}
     </ResourceListPanel>
     <AliasDialog aliases={aliases} models={models} onOpenChange={setDialogOpen} onSaved={load} open={dialogOpen} record={editing} />
-    <ConfirmDialog busy={mutating} open={deleting !== null} onOpenChange={open => !open && !mutating && setDeleting(null)} title={t('dashboard.modelAliases.delete.title')} message={t('dashboard.modelAliases.delete.message', { name: deleting?.name ?? '' })} actionLabel={mutating ? t('dashboard.modelAliases.actions.deleting') : t('dashboard.modelAliases.actions.delete')} onConfirm={() => void deleteAlias()} />
+    {deleting && <ConfirmDialog busy={mutating} open onOpenChange={open => !open && !mutating && setDeleting(null)} title={t('dashboard.modelAliases.delete.title')} message={t('dashboard.modelAliases.delete.message', { name: deleting.name })} actionLabel={mutating ? t('dashboard.modelAliases.actions.deleting') : t('dashboard.modelAliases.actions.delete')} onConfirm={() => void deleteAlias(deleting)} />}
   </section>;
 }

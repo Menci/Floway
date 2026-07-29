@@ -31,8 +31,21 @@ const RESPONSES_RETENTION_PRESETS = [
   { seconds: 7 * 86400, labelKey: 'sevenDays' },
   { seconds: 30 * 86400, labelKey: 'thirtyDays' },
 ] as const;
+interface KeyDialogCommonProps {
+  mutationToasts: MutationToastController;
+  onOpenChange: (open: boolean) => void;
+  onSaved: (key: ApiKey) => Promise<void>;
+  open: boolean;
+  upstreams: UpstreamOption[];
+  userUpstreamIds: string[] | null;
+}
+
+type KeyDialogProps = KeyDialogCommonProps & (
+  | { mode: 'create'; apiKey?: never }
+  | { mode: 'edit'; apiKey: ApiKey }
+);
+
 export function KeyDialog({
-  apiKey,
   mode,
   mutationToasts,
   onOpenChange,
@@ -40,18 +53,11 @@ export function KeyDialog({
   open,
   upstreams,
   userUpstreamIds,
-}: {
-  apiKey: ApiKey | null;
-  mode: 'create' | 'edit';
-  mutationToasts: MutationToastController;
-  onOpenChange: (open: boolean) => void;
-  onSaved: (key: ApiKey) => Promise<void>;
-  open: boolean;
-  upstreams: UpstreamOption[];
-  userUpstreamIds: string[] | null;
-}) {
+  ...targetProps
+}: KeyDialogProps) {
   const { t } = useTranslation();
   const isCreate = mode === 'create';
+  const apiKey = mode === 'edit' ? targetProps.apiKey : null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -154,7 +160,7 @@ export function KeyDialog({
           json: { ...common, ...keyWriteBody(values.keySource, values.customKey) },
         }))
       : await callApi(() => api.api.keys[':id'].$patch({
-          param: { id: apiKey!.id },
+          param: { id: apiKey.id },
           json: common,
         }));
     if (result.error) {

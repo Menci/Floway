@@ -18,7 +18,7 @@ export function RotateKeyDialog({
   onSaved,
   open,
 }: {
-  apiKey: ApiKey | null;
+  apiKey: ApiKey;
   mutationToasts: MutationToastController;
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
@@ -29,7 +29,7 @@ export function RotateKeyDialog({
   const [customKey, setCustomKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const snapName = apiKey?.name ?? '';
+  const snapName = apiKey.name;
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
@@ -42,7 +42,6 @@ export function RotateKeyDialog({
   }, [open]);
 
   const rotate = async () => {
-    if (!apiKey) return;
     const trimmed = customKey.trim();
     if (keySource === 'custom' && !trimmed) {
       setError(t('dashboard.apiKeys.validation.customKeyRequired'));

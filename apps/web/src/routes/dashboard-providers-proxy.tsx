@@ -259,12 +259,11 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setTesting(false);
   }, [dialTimeout, urlInput]);
 
-  const handleDeleteConfirm = useCallback(async () => {
-    if (!deleteTarget) return;
+  const handleDeleteConfirm = useCallback(async (target: ProxyRecord) => {
     setDeleting(true);
     setDeleteError(null);
 
-    const result = await callApi(() => api.api.proxies[':id'].$delete({ param: { id: deleteTarget.id } }));
+    const result = await callApi(() => api.api.proxies[':id'].$delete({ param: { id: target.id } }));
 
     setDeleting(false);
     if (result.error) {
@@ -285,7 +284,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
     setDeleteTarget(null);
     await refreshProxies();
-  }, [deleteTarget, refreshProxies, t]);
+  }, [refreshProxies, t]);
 
   const canTest = urlInput.trim() !== '' && urlError === null && dialTimeout.error === null && config.host.trim() !== '' && isValidPort(config.port);
   if (!user.isAdmin) {
@@ -394,7 +393,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           message={t('dashboard.proxy.delete.message', {
             name: deleteTarget.name,
           })}
-          onConfirm={() => void handleDeleteConfirm()}
+          onConfirm={() => void handleDeleteConfirm(deleteTarget)}
           onOpenChange={open => {
             if (!open && !deleting) setDeleteTarget(null);
           }}

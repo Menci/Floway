@@ -310,23 +310,23 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         />
       </ResourceListPanel>
 
-      <ConfirmDialog
+      {deleteTarget && <ConfirmDialog
         actionLabel={
           mutation?.kind === 'delete'
             ? t('dashboard.upstreams.actions.deleting')
             : t('dashboard.upstreams.actions.delete')
         }
         busy={mutation?.kind === 'delete'}
-        message={t('dashboard.upstreams.delete.message', { name: deleteTarget?.name ?? '' })}
+        message={t('dashboard.upstreams.delete.message', { name: deleteTarget.name })}
         onConfirm={() => {
-          if (deleteTarget && !busy) void deleteUpstream(deleteTarget);
+          if (!busy) void deleteUpstream(deleteTarget);
         }}
         onOpenChange={open => {
           if (!open && mutation?.kind !== 'delete') setDeleteTarget(null);
         }}
-        open={deleteTarget !== null}
+        open
         title={t('dashboard.upstreams.delete.title')}
-      />
+      />}
     </div>
   );
 }
