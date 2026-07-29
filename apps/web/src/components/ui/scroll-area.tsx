@@ -53,12 +53,20 @@ const subscribeToScrollbarSize = (listener: () => void) => {
 
 const getNativeScrollbarSize = () => nativeScrollbarSize;
 const getServerScrollbarSize = () => 0;
+const nativeViewportQuery = '(max-width: 1200px)';
+const subscribeToNativeViewport = (listener: () => void) => {
+  const media = window.matchMedia(nativeViewportQuery);
+  media.addEventListener('change', listener);
+  return () => media.removeEventListener('change', listener);
+};
+const getNativeViewport = () => window.matchMedia(nativeViewportQuery).matches;
+const getServerNativeViewport = () => true;
 
-export const useOverlayScrollbarsEnabled = () => useSyncExternalStore(
-  subscribeToScrollbarSize,
-  getNativeScrollbarSize,
-  getServerScrollbarSize,
-) > 0;
+export const useOverlayScrollbarsEnabled = () => {
+  const scrollbarSize = useSyncExternalStore(subscribeToScrollbarSize, getNativeScrollbarSize, getServerScrollbarSize);
+  const nativeViewport = useSyncExternalStore(subscribeToNativeViewport, getNativeViewport, getServerNativeViewport);
+  return scrollbarSize > 0 && !nativeViewport;
+};
 
 const overflowFor = (axes: ScrollAxes) => ({
   x: axes === 'vertical' ? 'hidden' as const : 'scroll' as const,
