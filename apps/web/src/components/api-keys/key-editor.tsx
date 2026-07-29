@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 import { z } from 'zod';
 
 import { keyWriteBody, type KeySource } from './key-source';
@@ -15,7 +16,7 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
-const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Link } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody } = fluentComponents;
 interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: Exclude<RetentionValue, null> }
 const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
 
@@ -248,7 +249,7 @@ export function KeyDialog({
               <MessageBar intent="warning"><MessageBarBody>{retentionWarning}</MessageBarBody></MessageBar>
             )}
             {apiKey !== null && field.value !== null && field.value !== 'invalid' && (
-              <Link href={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
+              <Link className="text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
                 {t('dashboard.apiKeys.form.viewCapturedRequests')}
               </Link>
             )}
