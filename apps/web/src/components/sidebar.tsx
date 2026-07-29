@@ -55,6 +55,7 @@ const useStyles = makeStyles({
   item: {
     backgroundColor: 'transparent !important',
     borderRadius: '6px !important',
+    paddingLeft: '20px !important',
     position: 'relative',
     '&:hover': { backgroundColor: 'light-dark(rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.05)) !important' },
     '&[aria-current="page"]': {
@@ -70,7 +71,7 @@ const useStyles = makeStyles({
       content: '"" !important',
       display: 'block !important',
       height: '20px !important',
-      left: '4px !important',
+      left: '8px !important',
       position: 'absolute',
       right: 'auto !important',
       top: '10px !important',
