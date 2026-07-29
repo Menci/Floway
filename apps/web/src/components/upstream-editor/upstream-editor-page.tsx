@@ -199,12 +199,11 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       </div>
     </div>
     <ConfirmDialog
-      actionLabel={t('dashboard.upstreamEditor.leave.stay')}
-      actionIntent="primary"
-      cancelLabel={t('dashboard.upstreamEditor.leave.leave')}
+      actionLabel={t('dashboard.upstreamEditor.leave.leave')}
+      cancelLabel={t('dashboard.upstreamEditor.leave.stay')}
       message={t('dashboard.upstreamEditor.leave.message')}
-      onCancel={() => blocker.state === 'blocked' && blocker.proceed()}
-      onConfirm={() => blocker.state === 'blocked' && blocker.reset()}
+      onCancel={() => blocker.state === 'blocked' && blocker.reset()}
+      onConfirm={() => blocker.state === 'blocked' && blocker.proceed()}
       onOpenChange={open => { if (!open && blocker.state === 'blocked') blocker.reset(); }}
       open={blocker.state === 'blocked'}
       title={t('dashboard.upstreamEditor.leave.title')}

@@ -47,6 +47,7 @@ export function ConfirmDialog({
           <DialogContent>{message}</DialogContent>
           <DialogActions>
           <Button
+            className="!whitespace-nowrap"
             disabled={busy}
             onClick={() => {
               if (onCancel) onCancel();
@@ -57,7 +58,7 @@ export function ConfirmDialog({
           </Button>
           <Button
             appearance="primary"
-            className={actionIntent === 'danger' ? s.danger : undefined}
+            className={actionIntent === 'danger' ? `${s.danger} !whitespace-nowrap` : '!whitespace-nowrap'}
             disabled={busy}
             icon={busy ? <Spinner size="tiny" /> : undefined}
             onClick={onConfirm}
