@@ -328,7 +328,7 @@ test('import validates generic pricing selectors', async () => {
   assertEquals(String(fractional.body.error).includes('positive safe integer'), true);
 });
 
-test('export emits the v17 envelope with users and upstreams', async () => {
+test('export emits the v18 envelope with users and upstreams', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
 
@@ -737,7 +737,7 @@ test('import rejects negative historical unit prices with a metric-specific erro
   assertEquals(result.body.error, 'invalid usage at index 0: metric unitPrice must be non-negative: "-0.01"');
 });
 
-test('v17 import validates usage metric rows', async () => {
+test('v18 import validates usage metric rows', async () => {
   const { app } = setup();
   const missingMetrics = await doImport(app, 'replace', latestImportData({
     usage: [{ ...USAGE_2, metrics: undefined }],
@@ -901,7 +901,7 @@ test('import preserves a positive dumpRetentionSeconds on api keys', async () =>
   assertEquals(restored?.dumpRetentionSeconds, 3600);
 });
 
-test('v17 import preserves and validates Responses retention', async () => {
+test('v18 import preserves and validates Responses retention', async () => {
   const { app, repo } = setup();
   const retained = await doImport(app, 'replace', latestImportData({
     apiKeys: [{ ...KEY_A, responsesRetentionSeconds: 7 * 24 * 60 * 60 }],
@@ -1172,7 +1172,7 @@ test('import replace wipes proxy_upstream_backoffs alongside the proxies it cool
   assertEquals(await repo.proxyBackoffs.listAll(), []);
 });
 
-test('v17 export/import round-trips users and per-key user_id', async () => {
+test('v18 export/import round-trips users and per-key user_id', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
@@ -1194,7 +1194,7 @@ test('v17 export/import round-trips users and per-key user_id', async () => {
   assertEquals(restoredKey?.userId, USER_BOB.id);
 });
 
-test('v17 import rejects api_keys whose user_id does not appear in the payload', async () => {
+test('v18 import rejects api_keys whose user_id does not appear in the payload', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
 
@@ -1212,7 +1212,7 @@ test('v17 import rejects api_keys whose user_id does not appear in the payload',
   assertEquals(result.body.error, 'invalid apiKeys at index 0: user_id 99 does not match any user in the payload');
 });
 
-test('v17 import rejects malformed users (bad username, bad password_hash)', async () => {
+test('v18 import rejects malformed users (bad username, bad password_hash)', async () => {
   const { app } = setup();
 
   const badUsername = await doImport(app, 'replace', {
@@ -1287,7 +1287,7 @@ test('replace-mode import clears sessions before writing users', async () => {
   assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
 });
 
-test('v17 import rejects users[i].upstreamIds === undefined', async () => {
+test('v18 import rejects users[i].upstreamIds === undefined', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     users: [SEED_ADMIN, { ...USER_BOB, upstreamIds: undefined }],
@@ -1302,7 +1302,7 @@ test('v17 import rejects users[i].upstreamIds === undefined', async () => {
   expect(result.body.error).toMatch(/upstreamIds/);
 });
 
-test('v17 import rejects users[i].deletedAt of non-string non-null type', async () => {
+test('v18 import rejects users[i].deletedAt of non-string non-null type', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     users: [SEED_ADMIN, { ...USER_BOB, deletedAt: 42 }],
@@ -1317,7 +1317,7 @@ test('v17 import rejects users[i].deletedAt of non-string non-null type', async 
   expect(result.body.error).toMatch(/deletedAt/);
 });
 
-test('v17 replace import refuses payload missing user 1', async () => {
+test('v18 replace import refuses payload missing user 1', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     users: [USER_BOB],
@@ -1332,7 +1332,7 @@ test('v17 replace import refuses payload missing user 1', async () => {
   expect(result.body.error).toMatch(/user 1/);
 });
 
-test('a full v17 export re-imports verbatim — the export→import round trip is closed', async () => {
+test('a full v18 export re-imports verbatim — the export→import round trip is closed', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
