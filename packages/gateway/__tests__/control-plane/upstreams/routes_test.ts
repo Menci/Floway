@@ -1372,6 +1372,30 @@ test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown pr
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
 
+test('GET /api/upstreams drops a fallback entry whose proxy is gone, keeping direct transports', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_live', name: 'Live', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_live' }, { id: 'direct_fetch' }] })));
+  const created = (await create.json()) as { id: string };
+  // A proxy delete is refused while an upstream still names it, so reach past
+  // the route to reproduce a raced delete or a hand-edited row.
+  const stored = await repo.upstreams.getById(created.id);
+  await repo.upstreams.save({ ...stored!, proxyFallbackList: [{ id: 'p_gone' }, { id: 'p_live' }, { id: 'direct_fetch' }] });
+
+  const single = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
+  assertEquals(single.status, 200);
+  assertEquals(((await single.json()) as JsonObject).proxy_fallback_list, [{ id: 'p_live' }, { id: 'direct_fetch' }]);
+
+  const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
+  const rows = (await list.json()) as JsonObject[];
+  assertEquals(rows.find(row => row.id === created.id)?.proxy_fallback_list, [{ id: 'p_live' }, { id: 'direct_fetch' }]);
+
+  // The stored row keeps the entry: only a write that targets the list rewrites it.
+  assertEquals((await repo.upstreams.getById(created.id))?.proxyFallbackList.map(entry => entry.id), ['p_gone', 'p_live', 'direct_fetch']);
+});
+
 test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();

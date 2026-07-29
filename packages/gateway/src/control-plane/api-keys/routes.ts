@@ -6,8 +6,8 @@ import type { ApiKey } from '../../repo/types.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '../../shared/api-key-tokens.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
-import { ownedKeyForUser } from '../shared/owned-key.ts';
-import { validateUpstreamIdsExist } from '../shared/upstream-ids.ts';
+import { ownedKeyOr404 } from '../shared/owned-key.ts';
+import { loadKnownUpstreamIds, pruneDeletedUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const GENERATED_KEY_RETRIES = 5;
 
@@ -21,13 +21,13 @@ type KeyWriteResult = { ok: true; key: ApiKey } | KeyWriteError;
 
 const keyWriteError = (status: KeyWriteError['status'], error: string): KeyWriteError => ({ ok: false, status, error });
 
-const apiKeyToJson = (key: ApiKey) => ({
+const apiKeyToJson = (key: ApiKey, knownUpstreamIds: ReadonlySet<string>) => ({
   id: key.id,
   name: key.name,
   key: key.key,
   created_at: key.createdAt,
   last_used_at: key.lastUsedAt ?? null,
-  upstream_ids: key.upstreamIds,
+  upstream_ids: pruneDeletedUpstreamIds(key.upstreamIds, knownUpstreamIds),
   dump_retention_seconds: key.dumpRetentionSeconds,
   responses_retention_seconds: key.responsesRetentionSeconds,
 });
@@ -98,11 +98,12 @@ const writeKeyForRequest = async (
   return await saveGeneratedKey(template);
 };
 
-const validateUpstreamIdsAgainstUserCap = async (
+const validateUpstreamIdsAgainstUserCap = (
   c: AuthedContext,
   proposed: readonly string[] | null,
-): Promise<string | null> => {
-  const unknownUpstreamError = await validateUpstreamIdsExist(proposed);
+  knownUpstreamIds: ReadonlySet<string>,
+): string | null => {
+  const unknownUpstreamError = unknownUpstreamIdsError(proposed, knownUpstreamIds);
   if (unknownUpstreamError !== null) return unknownUpstreamError;
   if (proposed === null) return null;
 
@@ -117,15 +118,16 @@ const validateUpstreamIdsAgainstUserCap = async (
 
 export const listKeys = async (c: AuthedContext) => {
   const userId = userFromContext(c).id;
-  const keys = await getRepo().apiKeys.listByUserId(userId);
-  return c.json(keys.map(apiKeyToJson));
+  const [keys, knownUpstreamIds] = await Promise.all([getRepo().apiKeys.listByUserId(userId), loadKnownUpstreamIds()]);
+  return c.json(keys.map(key => apiKeyToJson(key, knownUpstreamIds)));
 };
 
 export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
   const userId = userFromContext(c).id;
   const body = c.req.valid('json');
 
-  const upstreamErr = await validateUpstreamIdsAgainstUserCap(c, body.upstream_ids ?? null);
+  const knownUpstreamIds = await loadKnownUpstreamIds();
+  const upstreamErr = validateUpstreamIdsAgainstUserCap(c, body.upstream_ids ?? null, knownUpstreamIds);
   if (upstreamErr) return c.json({ error: upstreamErr }, 400);
 
   const template = {
@@ -142,13 +144,13 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
 
   const result = await writeKeyForRequest(template, body);
   if (!result.ok) return c.json({ error: result.error }, result.status);
-  return c.json(apiKeyToJson(result.key), 201);
+  return c.json(apiKeyToJson(result.key, knownUpstreamIds), 201);
 };
 
 export const deleteKey = async (c: AuthedContext) => {
   const id = c.req.param('id')!;
-  const owned = await ownedKeyForUser(c, id);
-  if (!owned) return c.json({ error: 'Key not found' }, 404);
+  const owned = await ownedKeyOr404(c, id);
+  if (owned instanceof Response) return owned;
   // Cut any live SSE subscribers so the dashboard sees a clean disconnect.
   // Broker availability shouldn't block the soft-delete — clients reconcile
   // on the next keys refetch regardless.
@@ -159,12 +161,12 @@ export const deleteKey = async (c: AuthedContext) => {
 
 export const rotateKey = async (c: CtxWithJson<typeof rotateKeyBody>) => {
   const id = c.req.param('id')!;
-  const owned = await ownedKeyForUser(c, id);
-  if (!owned) return c.json({ error: 'Key not found' }, 404);
+  const owned = await ownedKeyOr404(c, id);
+  if (owned instanceof Response) return owned;
 
   const result = await writeKeyForRequest(owned, c.req.valid('json'));
   if (!result.ok) return c.json({ error: result.error }, result.status);
-  return c.json(apiKeyToJson(result.key));
+  return c.json(apiKeyToJson(result.key, await loadKnownUpstreamIds()));
 };
 
 export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
@@ -175,11 +177,12 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     return c.json({ error: 'Provide a new name, upstream selection, dump retention, or Stateful Responses retention to update.' }, 400);
   }
 
-  const owned = await ownedKeyForUser(c, id);
-  if (!owned) return c.json({ error: 'Key not found' }, 404);
+  const owned = await ownedKeyOr404(c, id);
+  if (owned instanceof Response) return owned;
 
+  const knownUpstreamIds = await loadKnownUpstreamIds();
   if (body.upstream_ids !== undefined) {
-    const err = await validateUpstreamIdsAgainstUserCap(c, body.upstream_ids);
+    const err = validateUpstreamIdsAgainstUserCap(c, body.upstream_ids, knownUpstreamIds);
     if (err) return c.json({ error: err }, 400);
   }
 
@@ -197,5 +200,5 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     if (next === null && previous !== null) await notifyDisabledBestEffort(id, 'updateKey retention disable');
   }
 
-  return c.json(apiKeyToJson(updated));
+  return c.json(apiKeyToJson(updated, knownUpstreamIds));
 };

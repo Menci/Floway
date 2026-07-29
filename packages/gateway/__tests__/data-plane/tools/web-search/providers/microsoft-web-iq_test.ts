@@ -233,7 +233,6 @@ test('createMicrosoftWebIqWebSearchProvider surfaces the envelope userMessage ra
     },
   );
 });
-
 test('createMicrosoftWebIqWebSearchProvider surfaces malformed payload as an error', async () => {
   await withMockedFetch(
     () => jsonResponse({ message: 'unexpected' }),
