@@ -19,5 +19,6 @@ export default [
     route('admin/users', 'routes/dashboard-admin-users.tsx'),
     route('admin/backup-restore', 'routes/dashboard-admin-backup-restore.tsx'),
     route('settings', 'routes/dashboard-settings.tsx'),
+    route('winui-gallery', 'routes/dashboard-winui-gallery.tsx'),
   ]),
 ] satisfies RouteConfig;
