@@ -16,13 +16,14 @@ import {
   TextEditStyle20Color,
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation, useNavigate } from 'react-router';
+import { useLocation, useNavigate, useNavigation } from 'react-router';
 
 import type { AuthUser } from '../api/auth';
 import { fluentComponents } from '../fluent';
 import { FlowayLogo } from './logo';
+import { NavSelectionIndicator } from './nav-selection-indicator';
 import { useAuthStore } from '../stores/auth-store';
 import { ConfirmDialog } from './ui/confirm-dialog';
 import { ScrollArea } from './ui/scroll-area';
@@ -43,6 +44,9 @@ const useStyles = makeStyles({
   // item on the transparent subtle fill and steps it toward the material on
   // pointer; a local fill here would have to win with `!important` and would
   // then be the one thing in the dashboard that does not follow that ramp.
+  // Selection is drawn by NavSelectionIndicator rather than by a pseudo-element
+  // per item, because WinUI animates the pill between the item leaving
+  // selection and the one taking it, which needs one element that outlives both.
   item: {
     borderRadius: '6px !important',
     gap: '12px !important',
@@ -51,21 +55,6 @@ const useStyles = makeStyles({
     paddingBottom: '8px !important',
     paddingLeft: '12px !important',
     paddingTop: '8px !important',
-    position: 'relative',
-    '&[aria-current="page"]::after': {
-      backgroundColor: 'var(--colorBrandStroke1) !important',
-      borderRadius: '2px',
-      bottom: 'auto !important',
-      content: '"" !important',
-      display: 'block !important',
-      height: '20px !important',
-      left: '16px !important',
-      position: 'absolute',
-      right: 'auto !important',
-      top: '8px !important',
-      width: '3px !important',
-      zIndex: 1,
-    },
   },
   // ShareIos draws its tray opening upward. Turned a quarter clockwise the
   // arrow leaves to the right, which is the direction a sign-out reads in.
@@ -73,6 +62,12 @@ const useStyles = makeStyles({
     transform: 'rotate(90deg)',
   },
 });
+
+// WinUI seats the selection pill against the item's leading edge rather than
+// inside its content padding, so it reads as an edge marker on the item and not
+// as a bullet before the icon.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
+const NAV_INDICATOR_INSET = 4;
 
 type NavItemDefinition = {
   to: string;
@@ -131,17 +126,27 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const navigation = useNavigation();
   const logout = useAuthStore(state => state.logout);
   const styles = useStyles();
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
   // Color icons carry hardcoded gradient ids, so two mounted drawers would
   // collide on them. idPrefix namespaces the ids per Sidebar instance, and the
   // separators React puts around useId() are illegal inside url(#…).
   const iconIdPrefix = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const selectedValue = navGroups
+  const valueForPath = (path: string) => navGroups
     .flatMap(group => group.items)
-    .find(item => pathname === item.to || pathname.startsWith(`${item.to}/`))?.to
-    ?? (pathname.startsWith('/dashboard/settings') ? '/dashboard/settings' : '');
+    .find(item => path === item.to || path.startsWith(`${item.to}/`))?.to
+    ?? (path.startsWith('/dashboard/settings') ? '/dashboard/settings' : '');
+  const selectedValue = valueForPath(pathname);
+  // A route resolves its loaders before it is committed, so between the click
+  // and the new page the item the pointer left carries no state at all. Holding
+  // it pressed for that window says the click landed. React Router drops the
+  // pending location the moment the navigation settles either way, so a
+  // navigation that fails and stays put releases it on its own.
+  const pendingValue = navigation.location ? valueForPath(navigation.location.pathname) : '';
 
   return <>
     <NavDrawer
@@ -169,25 +174,44 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       </NavDrawerHeader>
       <NavDrawerBody className="!bg-transparent !overflow-hidden !p-0">
         <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="px-[10px]" noTabIndex>
-          {navGroups.map((group, groupIndex) => {
-            if (group.adminOnly && !user.isAdmin) return null;
-            const items = group.items.filter(item => !item.adminOnly || user.isAdmin);
-            if (items.length === 0) return null;
-            return <div key={group.labelKey ?? groupIndex}>
-              {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}
-              <div className="grid gap-1">
-                {items.map(item => {
-                  const Icon = item.icon;
-                  return <NavItem className={styles.item} icon={<Icon idPrefix={iconIdPrefix} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
-                })}
-              </div>
-            </div>;
-          })}
+          <div className="relative" ref={bodyRef}>
+            <NavSelectionIndicator containerRef={bodyRef} inset={NAV_INDICATOR_INSET} selectedValue={selectedValue} />
+            {navGroups.map((group, groupIndex) => {
+              if (group.adminOnly && !user.isAdmin) return null;
+              const items = group.items.filter(item => !item.adminOnly || user.isAdmin);
+              if (items.length === 0) return null;
+              return <div key={group.labelKey ?? groupIndex}>
+                {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}
+                <div className="grid gap-1">
+                  {items.map(item => {
+                    const Icon = item.icon;
+                    return <NavItem
+                      className={styles.item}
+                      data-nav-pending={pendingValue === item.to || undefined}
+                      data-nav-value={item.to}
+                      icon={<Icon idPrefix={iconIdPrefix} />}
+                      key={item.to}
+                      value={item.to}
+                    >{t(item.labelKey)}</NavItem>;
+                  })}
+                </div>
+              </div>;
+            })}
+          </div>
         </ScrollArea>
       </NavDrawerBody>
       <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
-        <NavItem className={styles.item} icon={<Person20Color idPrefix={iconIdPrefix} />} value="/dashboard/settings">{user.username}</NavItem>
-        <NavItem className={styles.item} icon={<ShareIos20Color className={styles.signOutIcon} idPrefix={iconIdPrefix} />} value="logout">{t('dashboard.logout.label')}</NavItem>
+        <div className="grid gap-y-1 relative" ref={footerRef}>
+          <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} selectedValue={selectedValue} />
+          <NavItem
+            className={styles.item}
+            data-nav-pending={pendingValue === '/dashboard/settings' || undefined}
+            data-nav-value="/dashboard/settings"
+            icon={<Person20Color idPrefix={iconIdPrefix} />}
+            value="/dashboard/settings"
+          >{user.username}</NavItem>
+          <NavItem className={styles.item} icon={<ShareIos20Color className={styles.signOutIcon} idPrefix={iconIdPrefix} />} value="logout">{t('dashboard.logout.label')}</NavItem>
+        </div>
       </NavDrawerFooter>
     </NavDrawer>
     <ConfirmDialog

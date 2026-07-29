@@ -172,6 +172,7 @@ export const winuiTokenCss = `
   --winui-card-background-fill-secondary: #f6f6f680;
   --winui-card-stroke-default: #0000000f;
   --winui-layer-fill-default: #ffffff80;
+  --winui-layer-fill-alt: #ffffff;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46-L60 */
@@ -181,6 +182,7 @@ export const winuiTokenCss = `
     --winui-card-background-fill-secondary: #ffffff08;
     --winui-card-stroke-default: #00000019;
     --winui-layer-fill-default: #3a3a3a4c;
+    --winui-layer-fill-alt: #ffffff0d;
   }
 }
 

@@ -15,10 +15,12 @@
 // here.
 //
 // WinUI fills the content band with ContentDialogTopOverlay, which resolves to
-// LayerFillColorAltBrush. The token layer carries no variable for it, so the
-// band keeps the surface fill and the CommandSpace beneath it, which WinUI
-// paints in the dialog's own background, needs no fill of its own; the
-// separator alone divides them.
+// LayerFillColorAltBrush -- opaque white in light, a five percent white wash in
+// dark. That is what makes a Windows dialog read as a light sheet over a grey
+// frame rather than as one flat grey box: the band carries the layer fill, the
+// CommandSpace beneath it shows the dialog's own background, and the separator
+// divides them.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L8
 export const dialogCss = `
 /* The surface is WinUI's BackgroundElement: the solid base fill rather than
    Fluent's raised Background1, the surface stroke rather than a transparent
@@ -89,6 +91,7 @@ export const dialogCss = `
 .fui-DialogBody.fui-DialogBody {
   padding: 24px;
   gap: 0;
+  background-color: var(--winui-layer-fill-alt);
   max-height: calc(min(756px, 100dvh) - 2px);
 }
 
@@ -121,6 +124,7 @@ export const dialogCss = `
   grid-auto-columns: 1fr;
   margin: 24px -24px -24px;
   padding: 24px;
+  background-color: var(--winui-solid-background-fill-base);
   border-top: 1px solid var(--winui-card-stroke-default);
 }
 

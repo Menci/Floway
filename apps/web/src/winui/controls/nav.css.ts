@@ -57,6 +57,7 @@ export const navCss = `
 }
 
 .fui-NavItem.fui-NavItem:active,
+.fui-NavItem.fui-NavItem[data-nav-pending],
 .fui-NavItem.fui-NavItem[aria-current='page']:hover {
   background-color: var(--winui-subtle-fill-tertiary);
 }

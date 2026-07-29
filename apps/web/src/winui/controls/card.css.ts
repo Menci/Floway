@@ -53,6 +53,20 @@ export const cardCss = `
   --winui-card-corner-radius: initial;
   --winui-card-selected-fill: initial;
   --winui-card-focus-stroke: initial;
+  /* The theme layer drops Fluent's ambient elevations, because WinUI carries
+     depth on inline surfaces with a stroke instead of a shadow. The chat
+     composer was designed against those elevations and reads as a raised bar
+     because of them, so the subtree that opts out of the card restyle gets
+     them back at Fluent's own values. */
+  --shadow4: 0 0 2px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.14);
+  --shadow8: 0 0 2px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-winui-card-restyle='off'] {
+    --shadow4: 0 0 2px rgba(0, 0, 0, 0.24), 0 2px 4px rgba(0, 0, 0, 0.28);
+    --shadow8: 0 0 2px rgba(0, 0, 0, 0.24), 0 4px 8px rgba(0, 0, 0, 0.28);
+  }
 }
 
 /* WinUI gives every card-shaped surface the same OverlayCornerRadius, where
