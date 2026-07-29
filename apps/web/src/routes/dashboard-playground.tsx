@@ -4,6 +4,8 @@ import {
   DeleteRegular,
   DismissRegular,
   EditRegular,
+  InfoRegular,
+  OptionsRegular,
   SettingsRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,6 +31,7 @@ import {
   supportsImageInput,
   type PlaygroundApi,
   type PlaygroundMessage,
+  type PlaygroundSettings,
 } from '../components/playground/playground-logic';
 import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
@@ -54,6 +57,10 @@ const {
   MessageBarBody,
   Option,
   OverlayDrawer,
+  Popover,
+  PopoverSurface,
+  PopoverTrigger,
+  Slider,
   Text,
   makeStyles,
   tokens,
@@ -102,6 +109,16 @@ const useStyles = makeStyles({
   },
   messageRow: { '&:hover .playground-message-actions, &:focus-within .playground-message-actions': { opacity: 1 } },
   code: { fontFamily: tokens.fontFamilyMonospace },
+  parametersSurface: {
+    backgroundColor: tokens.colorNeutralBackground2,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: '8px',
+  },
+  parameterValue: {
+    backgroundColor: tokens.colorNeutralBackground3,
+    borderColor: 'transparent',
+    '& input': { textAlign: 'left' },
+  },
 });
 
 const randomId = () => crypto.randomUUID();
@@ -127,7 +144,13 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [requestError, setRequestError] = useState<string | null>(null);
   const [customDraft, setCustomDraft] = useState('{}');
   const [customError, setCustomError] = useState<string | null>(null);
-  const [reasoningEffort, setReasoningEffort] = useState('');
+  const [settings, setSettings] = useState<PlaygroundSettings>({
+    temperature: 1,
+    topP: 1,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
+  });
+  const [parametersOpen, setParametersOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editImage, setEditImage] = useState('');
@@ -147,6 +170,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   );
   const selectedModel = models.find(model => model.id === modelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
+  const outputLimit = selectedModel?.limits?.max_output_tokens;
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];
   const matchingModels = models.filter(model => {
     const query = (modelQuery ?? '').trim().toLowerCase();
@@ -239,7 +263,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         model: selectedModel.id,
         system: system.trim(),
         messages: context,
-        options: generationOptions(api, reasoningEffort || undefined, defaultMaxOutputTokens(selectedModel)),
+        options: generationOptions(api, {
+          ...settings,
+          maxOutputTokens: settings.maxOutputTokens ?? defaultMaxOutputTokens(selectedModel),
+        }, defaultMaxOutputTokens(selectedModel)),
         signal: controller.signal,
         fetchImpl: wireFetch,
       })) {
@@ -297,6 +324,15 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const canSend = Boolean(selectedKey && selectedModel && (draft.trim() || imageUrl.trim()));
   const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
 
+  const parametersContent = <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="!p-4 grid content-start gap-4" noTabIndex>
+    <div className="flex items-center gap-2"><OptionsRegular /><Text weight="semibold">{t('dashboard.playground.parameters.title')}</Text></div>
+    <ParameterSlider label={t('dashboard.playground.parameters.maxOutputTokens')} value={settings.maxOutputTokens ?? defaultMaxOutputTokens(selectedModel)} min={1} max={outputLimit ?? 1_000_000} step={1} onChange={value => setSettings(current => ({ ...current, maxOutputTokens: value }))} />
+    <ParameterSlider label={t('dashboard.playground.parameters.temperature')} value={settings.temperature ?? 1} min={0} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, temperature: value }))} />
+    <ParameterSlider label={t('dashboard.playground.parameters.topP')} value={settings.topP ?? 1} min={0} max={1} step={0.05} onChange={value => setSettings(current => ({ ...current, topP: value }))} />
+    <ParameterSlider label={t('dashboard.playground.parameters.presencePenalty')} value={settings.presencePenalty ?? 0} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, presencePenalty: value }))} />
+    <ParameterSlider label={t('dashboard.playground.parameters.frequencyPenalty')} value={settings.frequencyPenalty ?? 0} disabled={api !== 'chatCompletions'} min={-2} max={2} step={0.1} onChange={value => setSettings(current => ({ ...current, frequencyPenalty: value }))} />
+  </ScrollArea>;
+
   const settingsContent = <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="!p-4 grid content-start gap-5" noTabIndex>
     <SettingsSection title={t('dashboard.playground.settings.connection')}>
       <Field label={t('dashboard.playground.key')}>
@@ -306,7 +342,17 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         </Select>
       </Field>
       <Field label={t('dashboard.playground.api')}>
-        <ChoiceGroup ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
+        <div className="flex items-center gap-2 min-w-0">
+          <ChoiceGroup ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
+          <Popover open={parametersOpen} onOpenChange={(_, data) => setParametersOpen(data.open)} positioning={{ position: 'after', align: 'start' }}>
+            <PopoverTrigger disableButtonEnhancement>
+              <Button appearance="subtle" aria-expanded={parametersOpen} aria-label={t('dashboard.playground.parameters.title')} className="!flex-none" icon={<OptionsRegular />} />
+            </PopoverTrigger>
+            <PopoverSurface className={`${s.parametersSurface} !p-0 !w-[300px] max-w-[calc(100vw-24px)] !h-[min(474px,calc(100vh-48px))] overflow-hidden`}>
+              {parametersContent}
+            </PopoverSurface>
+          </Popover>
+        </div>
       </Field>
       <Field label={t('dashboard.playground.model')}>
         <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
@@ -325,7 +371,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     </SettingsSection>
     <SettingsSection title={t('dashboard.playground.settings.generation')}>
       <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
-        <Combobox freeform placeholder={t('dashboard.playground.parameters.providerDefault')} value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value)} onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}>
+        <Combobox freeform placeholder={t('dashboard.playground.parameters.providerDefault')} value={settings.reasoningEffort ?? ''} onChange={event => setSettings(current => ({ ...current, reasoningEffort: event.target.value || undefined }))} onOptionSelect={(_, data) => setSettings(current => ({ ...current, reasoningEffort: data.optionText || undefined }))}>
           {effortOptions.map(effort => <Option key={effort}>{effort}</Option>)}
         </Combobox>
       </Field>
@@ -342,7 +388,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
   return (
     <>
-      <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
+      <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_420px] gap-[18px] max-[1160px]:h-auto max-[1160px]:grid-cols-1">
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
           <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
             <div className="grid gap-0.5 min-w-0">
@@ -447,6 +493,29 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       </section>
     </>
   );
+}
+
+function ParameterSlider({ disabled, label, max, min, onChange, step, value }: {
+  disabled?: boolean;
+  label: string;
+  max: number;
+  min: number;
+  onChange: (value: number) => void;
+  step: number;
+  value: number;
+}) {
+  const s = useStyles();
+  const updateText = (raw: string) => {
+    const next = Number(raw);
+    if (Number.isFinite(next) && next >= min && next <= max) onChange(next);
+  };
+  return <div className="grid gap-2 min-w-0">
+    <div className="grid grid-cols-[minmax(0,1fr)_80px] items-center gap-3">
+      <span className="inline-flex items-center gap-1 min-w-0"><Text size={200}>{label}</Text><TooltipIconButton icon={<InfoRegular />} label={label} /></span>
+      <Input aria-label={label} className={s.parameterValue} disabled={disabled} inputMode="decimal" value={String(value)} onChange={(_, data) => updateText(data.value)} />
+    </div>
+    <Slider aria-label={label} disabled={disabled} max={max} min={min} step={step} value={value} onChange={(_, data) => onChange(data.value)} />
+  </div>;
 }
 
 function SettingsSection({ children, title }: { children: React.ReactNode; title: string }) {

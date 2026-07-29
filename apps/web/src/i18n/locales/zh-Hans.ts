@@ -111,8 +111,16 @@ const zhHansCN = {
         settings: { title: 'Playground 设置', close: '关闭 Playground 设置', connection: '连接', generation: '生成参数', customJson: '自定义 JSON' },
         actions: { newTopic: '新话题', edit: '编辑', delete: '删除', save: '保存', image: '添加图片 URL', send: '发送', stop: '停止' },
         parameters: {
+          title: '参数',
+          temperature: 'Temperature',
+          maxOutputTokens: '最大输出 token',
+          topP: 'Top P',
+          frequencyPenalty: 'Frequency penalty',
+          presencePenalty: 'Presence penalty',
+          stopSequences: '停止序列',
           reasoningEffort: '思考强度',
           providerDefault: 'Provider 默认值',
+          unset: '未设置',
         },
         badges: {
           context: '上下文 <strong>{{value}}</strong>',

@@ -12,6 +12,16 @@ export interface PlaygroundMessage {
   imageUrl?: string;
 }
 
+export interface PlaygroundSettings {
+  temperature?: number;
+  maxOutputTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  stopSequences?: string[];
+  reasoningEffort?: string;
+}
+
 export const playgroundApis: PlaygroundApi[] = ['responses', 'chatCompletions', 'messages'];
 
 export function availableModels(
@@ -145,12 +155,20 @@ export function createWireFetch(custom: Record<string, unknown>, api?: Playgroun
 // visible on the request instead of behind a client abstraction.
 export function generationOptions(
   api: PlaygroundApi,
-  reasoningEffort: string | undefined,
+  settings: PlaygroundSettings,
   messagesMaxTokens = MESSAGES_FALLBACK_MAX_TOKENS,
 ): Record<string, unknown> {
+  const { temperature, maxOutputTokens, topP, frequencyPenalty, presencePenalty, stopSequences, reasoningEffort } = settings;
+  const shared = {
+    ...(temperature !== undefined && { temperature }),
+    ...(topP !== undefined && { top_p: topP }),
+  };
+
   if (api === 'messages') {
     return {
-      max_tokens: messagesMaxTokens,
+      ...shared,
+      max_tokens: maxOutputTokens ?? messagesMaxTokens,
+      ...(stopSequences?.length && { stop_sequences: stopSequences }),
       ...(reasoningEffort && {
         thinking: { type: 'enabled' },
         output_config: { effort: reasoningEffort },
@@ -159,8 +177,19 @@ export function generationOptions(
   }
 
   if (api === 'responses') {
-    return { ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }) };
+    return {
+      ...shared,
+      ...(maxOutputTokens !== undefined && { max_output_tokens: maxOutputTokens }),
+      ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }),
+    };
   }
 
-  return { ...(reasoningEffort && { reasoning_effort: reasoningEffort }) };
+  return {
+    ...shared,
+    ...(maxOutputTokens !== undefined && { max_completion_tokens: maxOutputTokens }),
+    ...(frequencyPenalty !== undefined && { frequency_penalty: frequencyPenalty }),
+    ...(presencePenalty !== undefined && { presence_penalty: presencePenalty }),
+    ...(stopSequences?.length && { stop: stopSequences }),
+    ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+  };
 }

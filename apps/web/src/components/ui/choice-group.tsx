@@ -8,9 +8,9 @@ const useStyles = makeStyles({
   root: {
     alignItems: 'center',
     backgroundColor: tokens.colorNeutralBackground3,
-    borderRadius: tokens.borderRadiusMedium,
+    borderRadius: '6px',
     display: 'flex',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: '2px',
     maxWidth: '100%',
     padding: '2px',
@@ -18,7 +18,7 @@ const useStyles = makeStyles({
   },
   item: {
     alignItems: 'center',
-    borderRadius: tokens.borderRadiusSmall,
+    borderRadius: '4px',
     color: tokens.colorNeutralForeground2,
     cursor: 'pointer',
     display: 'inline-flex',
@@ -29,16 +29,16 @@ const useStyles = makeStyles({
     position: 'relative',
     whiteSpace: 'nowrap',
     '&:has(input:checked)': {
-      backgroundColor: tokens.colorNeutralBackground1,
+      backgroundColor: tokens.colorNeutralBackground2,
       color: tokens.colorNeutralForeground1,
       fontWeight: tokens.fontWeightSemibold,
     },
     '&:has(input:not(:checked):not(:disabled)):hover': {
-      backgroundColor: tokens.colorNeutralBackground1Hover,
+      backgroundColor: tokens.colorNeutralBackground2Hover,
       color: tokens.colorNeutralForeground1,
     },
     '&:has(input:not(:checked):not(:disabled)):active': {
-      backgroundColor: tokens.colorNeutralBackground1Pressed,
+      backgroundColor: tokens.colorNeutralBackground2Pressed,
       color: tokens.colorNeutralForeground1,
     },
     '&:has(input:focus-visible)': {
