@@ -1,7 +1,7 @@
 import { DismissRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, redirect, useSearchParams } from 'react-router';
+import { Link, redirect, useNavigate, useSearchParams } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-requests';
 import { callApi } from '../api/auth';
@@ -74,15 +74,14 @@ export function meta({}: Route.MetaArgs) {
 
 export default function DashboardMonitorRequests({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [keys, setKeys] = useState(loaderData.keys);
   const [keysError, setKeysError] = useState(loaderData.error);
   const [detailOpen, setDetailOpen] = useState(false);
   const narrow = useMediaQuery('(max-width: 900px)');
   const selectedRecordId = searchParams.get('record');
-  const selectedKeyId = keys.some(key => key.id === loaderData.selectedKeyId)
-    ? loaderData.selectedKeyId
-    : keys[0]?.id ?? null;
+  const selectedKeyId = loaderData.selectedKeyId;
   const subscription = useDumpSubscription(selectedKeyId, loaderData.records);
 
   const updateSelection = useCallback((keyId: string, recordId?: string | null) => {
@@ -93,18 +92,33 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   }, [setSearchParams]);
 
   useEffect(() => {
+    setKeys(loaderData.keys);
+    setKeysError(loaderData.error);
+  }, [loaderData.error, loaderData.keys]);
+
+  useEffect(() => {
     const refresh = async () => {
       const result = await callApi(() => api.api.keys.$get());
       if (result.error) setKeysError(result.error.message);
       else {
-        setKeys(result.data.filter(key => key.dump_retention_seconds !== null));
+        const nextKeys = result.data.filter(key => key.dump_retention_seconds !== null);
+        const nextSelectedKeyId = nextKeys.some(key => key.id === loaderData.selectedKeyId)
+          ? loaderData.selectedKeyId
+          : nextKeys[0]?.id ?? null;
+        if (nextSelectedKeyId !== loaderData.selectedKeyId) {
+          const next = new URLSearchParams();
+          if (nextSelectedKeyId) next.set('key', nextSelectedKeyId);
+          void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, { replace: true });
+          return;
+        }
+        setKeys(nextKeys);
         setKeysError(null);
       }
     };
     const onFocus = () => { void refresh(); };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, []);
+  }, [loaderData.selectedKeyId, navigate]);
 
   return (
     <section className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)] gap-[18px] min-w-0">
