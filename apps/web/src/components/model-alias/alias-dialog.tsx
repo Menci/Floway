@@ -57,6 +57,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
+      setSaving(false);
       reset(aliasDefaults(record));
       setServerError(null);
     }
@@ -92,8 +93,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
     const result = record
       ? await callApi(() => api.api.aliases[':name'].$put({ param: { name: record.name }, json: body }))
       : await callApi(() => api.api.aliases.$post({ json: body }));
-    setSaving(false);
-    if (result.error) { setServerError(result.error.message); return; }
+    if (result.error) { setSaving(false); setServerError(result.error.message); return; }
     onOpenChange(false); await onSaved();
   };
 

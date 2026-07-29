@@ -149,12 +149,14 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
   const openCreate = useCallback(() => {
     clearForm();
+    setSaving(false);
     const blank = defaultsFor('http', { host: '', port: 0, name: '' });
     setInitialDraft(proxyDraftSignature('', blank, null, ''));
     setDialogOpen(true);
   }, [clearForm]);
 
   const handleEdit = useCallback((proxy: ProxyRecord) => {
+    setSaving(false);
     setEditingId(proxy.id);
     setFormName(proxy.name);
     setDialTimeoutInput(
@@ -237,14 +239,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     }
 
     setDialogOpen(false);
-    setInitialDraft('');
-    clearForm();
-    try {
-      await refreshProxies();
-    } finally {
-      setSaving(false);
-    }
-  }, [clearForm, config.host, config.port, dialTimeout, editingId, formName, refreshProxies, t, urlError, urlInput]);
+    await refreshProxies();
+  }, [config.host, config.port, dialTimeout, editingId, formName, refreshProxies, t, urlError, urlInput]);
 
   const handleTest = useCallback(async () => {
     const builtUrl = urlInput.trim();
