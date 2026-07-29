@@ -98,6 +98,25 @@ const darkForegrounds = {
   colorNeutralForegroundOnBrand: '#000000',
 } as const satisfies Partial<Theme>;
 
+// WinUI states its type ramp as named TextBlock styles rather than as a
+// numbered scale: Caption 12, Body 14, Body Large 18, Subtitle 20, Title 28,
+// Title Large 40, Display 68. Three of Fluent's steps already sit on one of
+// those -- 10, 12 and 14 -- and the fourth, 16, falls between Body and Body
+// Large with nothing to move it onto.
+//
+// The fifth is the one that matters here. Fluent sizes DialogTitle from
+// fontSizeBase500, which is the Subtitle slot, and pairs it with a 28px line
+// height that only reads right at 20px. Restoring it puts every dialog title,
+// and everything else drawn at that step, back on Windows' Subtitle.
+//
+// The 600 step is left alone deliberately: WinUI's next size up is Title at
+// 28, and promoting the step that far would resize headings this dashboard
+// tuned for its own density rather than for a Windows shell.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBlock_themeresources.xaml
+const typeRamp = {
+  fontSizeBase500: '20px',
+} as const satisfies Partial<Theme>;
+
 // WinUI has exactly two radii where Fluent has four: ControlCornerRadius for
 // anything inline and OverlayCornerRadius for anything that floats.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L13-L15
@@ -131,6 +150,7 @@ export const winuiLightTheme: Theme = {
   ...lightBackgrounds,
   ...lightStrokes,
   ...lightForegrounds,
+  ...typeRamp,
   ...radii,
   ...shadows,
 };
@@ -140,6 +160,7 @@ export const winuiDarkTheme: Theme = {
   ...darkBackgrounds,
   ...darkStrokes,
   ...darkForegrounds,
+  ...typeRamp,
   ...radii,
   ...shadows,
 };

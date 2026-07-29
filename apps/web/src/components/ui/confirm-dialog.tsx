@@ -5,9 +5,14 @@ import { fluentComponents } from '../../fluent';
 const { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Spinner, makeStyles } = fluentComponents;
 
 const useStyles = makeStyles({
+  // colorStatusDangerForegroundInverted is the danger hue for use ON an
+  // inverted surface, not the label to place on a danger fill; over
+  // DangerBackground3 it reads at roughly 1.9:1. The label that belongs on a
+  // filled accent-grade surface is the on-brand foreground, which is white in
+  // both themes -- as this fill is in both themes.
   danger: {
     backgroundColor: 'var(--colorStatusDangerBackground3) !important',
-    color: 'var(--colorStatusDangerForegroundInverted) !important',
+    color: 'var(--colorNeutralForegroundOnBrand) !important',
     '&:hover': { backgroundColor: 'var(--colorStatusDangerBackground3Hover) !important' },
     '&:active': { backgroundColor: 'var(--colorStatusDangerBackground3Pressed) !important' },
     '&:hover:active': { backgroundColor: 'var(--colorStatusDangerBackground3Pressed) !important' },
