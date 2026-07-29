@@ -18,8 +18,8 @@ import { selectCss } from './controls/select.css';
 import { switchCss } from './controls/switch.css';
 import { tableCss } from './controls/table.css';
 import { tabsCss } from './controls/tabs.css';
-import { textCss } from './controls/text.css';
 import { textInputCss } from './controls/text-input.css';
+import { textCss } from './controls/text.css';
 import { toastCss } from './controls/toast.css';
 import { toolbarCss } from './controls/toolbar.css';
 import { tooltipCss } from './controls/tooltip.css';
@@ -54,8 +54,8 @@ export const winuiCss = [
   switchCss,
   tableCss,
   tabsCss,
-  textCss,
   textInputCss,
+  textCss,
   toastCss,
   toolbarCss,
   tooltipCss,
