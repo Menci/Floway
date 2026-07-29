@@ -52,10 +52,11 @@ const useStyles = makeStyles({
   },
   endpointCheckbox: {
     fontFamily: 'var(--fontFamilyMonospace) !important',
+    fontSize: 'var(--floway-font-size-mono) !important',
   },
   pathOverrideLabel: {
     fontFamily: 'var(--fontFamilyMonospace) !important',
-    fontSize: 'var(--fontSizeBase200) !important',
+    fontSize: 'var(--floway-font-size-mono) !important',
   },
 });
 

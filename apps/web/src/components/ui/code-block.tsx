@@ -34,11 +34,11 @@ const useStyles = makeStyles({
   lang: {
     color: 'var(--colorNeutralForeground2)',
     fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: '12px',
+    fontSize: 'var(--floway-font-size-mono)',
   },
   pre: {
     fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: '12px',
+    fontSize: 'var(--floway-font-size-mono)',
     lineHeight: '1.55',
     margin: 0,
     minWidth: 0,

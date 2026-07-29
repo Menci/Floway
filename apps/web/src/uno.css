@@ -1,5 +1,9 @@
 @unocss;
 
+:root {
+  --floway-font-size-mono: 13px;
+}
+
 button,
 input,
 select,
@@ -16,7 +20,7 @@ samp {
 
 :where(code, kbd, pre, samp, .font-mono),
 :where(.font-mono button, .font-mono input, .font-mono select, .font-mono textarea) {
-  font-size: 13px !important;
+  font-size: var(--floway-font-size-mono) !important;
 }
 
 .mono-display {

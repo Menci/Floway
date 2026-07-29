@@ -43,7 +43,7 @@ export default function ModelsYamlEditor({ onChange, value }: { onChange: (value
     const editor = monaco.editor.create(container, {
       automaticLayout: true,
       fontFamily: monospaceStack,
-      fontSize: 14,
+      fontSize: 13,
       formatOnPaste: true,
       formatOnType: true,
       minimap: { enabled: false },

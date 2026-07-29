@@ -32,6 +32,7 @@ const {
 const useStyles = makeStyles({
   endpointLabel: {
     fontFamily: 'var(--fontFamilyMonospace) !important',
+    fontSize: 'var(--floway-font-size-mono) !important',
   },
 });
 
