@@ -14,6 +14,10 @@ samp {
   font-family: var(--fontFamilyMonospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 }
 
+.font-mono {
+  font-family: var(--fontFamilyMonospace) !important;
+}
+
 .fui-TableHeaderCell,
 .fui-TableHeaderCell__button {
   font-weight: var(--fontWeightSemibold) !important;
