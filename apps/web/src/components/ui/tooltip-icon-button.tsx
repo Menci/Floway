@@ -7,7 +7,6 @@ const useStyles = makeStyles({
     transitionDuration: '0s',
     ':enabled:active': {
       backgroundColor: 'var(--colorSubtleBackgroundPressed) !important',
-      borderColor: 'transparent !important',
     },
   },
   // A destructive action reads as destructive when the operator reaches for
