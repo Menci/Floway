@@ -9,7 +9,7 @@ type MonacoEnvironment = {
 };
 
 (globalThis as typeof globalThis & { MonacoEnvironment: MonacoEnvironment }).MonacoEnvironment = {
-  getWorker: (_moduleId, label) => label === 'yaml' ? new YamlWorker() : new EditorWorker(),
+  getWorker: (moduleId, label) => label === 'yaml' || moduleId.includes('monaco-yaml') ? new YamlWorker() : new EditorWorker(),
 };
 
 loader.config({ monaco });
