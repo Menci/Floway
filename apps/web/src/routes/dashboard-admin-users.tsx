@@ -338,17 +338,10 @@ type UserDialogProps = UserDialogCommonProps & (
   | { mode: 'edit'; user: ControlPlaneUser }
 );
 
-function UserDialog({
-  actorId,
-  mode,
-  onOpenChange,
-  onSaved,
-  open,
-  upstreams,
-  ...targetProps
-}: UserDialogProps) {
+function UserDialog(props: UserDialogProps) {
+  const { actorId, mode, onOpenChange, onSaved, open, upstreams } = props;
   const { t } = useTranslation();
-  const user = mode === 'edit' ? targetProps.user : null;
+  const user = props.mode === 'edit' ? props.user : null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const schema = useMemo(
@@ -384,13 +377,13 @@ function UserDialog({
   }, [open, reset, user]);
 
   const values = useWatch({ control }) as UserFormValues;
-  const adminLocked = mode === 'edit' && (user.id === 1 || user.id === actorId);
+  const adminLocked = props.mode === 'edit' && (props.user.id === 1 || props.user.id === actorId);
 
   const save = async (form: UserFormValues) => {
     setSaving(true);
     setError(null);
     const upstreamIds = form.upstreamOverride ? form.upstreamIds : null;
-    const result = mode === 'create'
+    const result = props.mode === 'create'
       ? await callApi(() => api.api.users.$post({
           json: {
             username: form.username.trim(),
@@ -400,7 +393,7 @@ function UserDialog({
           },
         }))
       : await callApi(() => api.api.users[':id'].$patch({
-          param: { id: String(user.id) }, json: {
+          param: { id: String(props.user.id) }, json: {
             username: form.username.trim(),
             ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
             upstreamIds,
@@ -412,7 +405,7 @@ function UserDialog({
       return;
     }
     onOpenChange(false);
-    await onSaved(mode === 'edit' ? user.id : undefined);
+    await onSaved(props.mode === 'edit' ? props.user.id : undefined);
   };
 
   return (
@@ -430,9 +423,9 @@ function UserDialog({
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
       open={open}
-      title={<DialogTitle>{mode === 'create'
+      title={<DialogTitle>{props.mode === 'create'
         ? t('dashboard.users.dialog.createTitle')
-        : t('dashboard.users.dialog.editTitle', { username: user.username })}</DialogTitle>}
+        : t('dashboard.users.dialog.editTitle', { username: props.user.username })}</DialogTitle>}
     >
       <Controller
         control={control}
@@ -467,7 +460,7 @@ function UserDialog({
         <PermissionToggle
           checked={values.isAdmin}
           description={adminLocked
-            ? t(mode === 'edit' && user.id === 1 ? 'dashboard.users.form.userOneLocked' : 'dashboard.users.form.selfLocked')
+            ? t(props.mode === 'edit' && props.user.id === 1 ? 'dashboard.users.form.userOneLocked' : 'dashboard.users.form.selfLocked')
             : t('dashboard.users.form.administratorDescription')}
           disabled={saving || adminLocked}
           label={t('dashboard.users.form.administrator')}

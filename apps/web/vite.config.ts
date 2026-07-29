@@ -87,6 +87,14 @@ export default defineConfig({
     ],
   },
   plugins: [prismComponentsEsm(), reactRouter()],
+  // Fluent's ESM facade imports named exports from its provider packages,
+  // whose `node` export condition points at CommonJS. Dev SSR must transform
+  // the whole family together; externalizing the nested provider lets Node
+  // select CommonJS and reject those named imports.
+  // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-provider/package.json#L24-L30
+  ssr: {
+    noExternal: [/^@fluentui\//, /^@griffel\//, /^tabster(?:$|\/)/],
+  },
   server: {
     port: 5174,
     proxy: Object.fromEntries(wranglerProxiedPaths.map(p => [p, { target: wranglerOrigin, changeOrigin: true }])),

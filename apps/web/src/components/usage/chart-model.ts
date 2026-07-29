@@ -1,7 +1,7 @@
 import type { ChartProps } from '@fluentui/react-charts';
 import { curveMonotoneX } from 'd3-shape';
 
-import type { ChartEntry, DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenCounters, TokenSummary, UsageBucket, UsageChartModel, UsageMetric, UsageRange, UsageResponse } from './types';
+import type { ChartEntry, DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageBucket, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../utils/decimal-display';
 import {
@@ -90,7 +90,7 @@ export function buildTokenChart({
   metric: UsageMetric;
   range: UsageRange;
   buckets: UsageBucket[];
-}): UsageChartModel {
+}): TokenChartModel {
   const otherKey = groupKey === 'keyId' ? 'model' : 'keyId';
   const valueRecords = records.filter(record => !hiddenOther.has(record[otherKey]));
   const { values, details } = aggregateTokenRecords(valueRecords, groupKey, metric, range, buckets);

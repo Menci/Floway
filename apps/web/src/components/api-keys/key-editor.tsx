@@ -45,19 +45,11 @@ type KeyDialogProps = KeyDialogCommonProps & (
   | { mode: 'edit'; apiKey: ApiKey }
 );
 
-export function KeyDialog({
-  mode,
-  mutationToasts,
-  onOpenChange,
-  onSaved,
-  open,
-  upstreams,
-  userUpstreamIds,
-  ...targetProps
-}: KeyDialogProps) {
+export function KeyDialog(props: KeyDialogProps) {
+  const { mode, mutationToasts, onOpenChange, onSaved, open, upstreams, userUpstreamIds } = props;
   const { t } = useTranslation();
   const isCreate = mode === 'create';
-  const apiKey = mode === 'edit' ? targetProps.apiKey : null;
+  const apiKey = props.mode === 'edit' ? props.apiKey : null;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,12 +147,12 @@ export function KeyDialog({
     };
     const mutationKind = isCreate ? 'create' : 'edit';
     const toastId = mutationToasts.start(mutationKind, common.name);
-    const result = isCreate
+    const result = props.mode === 'create'
       ? await callApi(() => api.api.keys.$post({
           json: { ...common, ...keyWriteBody(values.keySource, values.customKey) },
         }))
       : await callApi(() => api.api.keys[':id'].$patch({
-          param: { id: apiKey.id },
+          param: { id: props.apiKey.id },
           json: common,
         }));
     if (result.error) {

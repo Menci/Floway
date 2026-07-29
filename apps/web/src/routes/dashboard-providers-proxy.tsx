@@ -165,7 +165,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         : '',
     );
     const parsed = parseProxyInput(proxy.url);
-    if (parsed.error) throw new Error(parsed.error);
+    if (parsed.config === null) throw new Error(parsed.error);
     const nextConfig = parsed.config;
     setConfig(nextConfig);
     setUrlDraft(proxy.url);
