@@ -39,6 +39,31 @@ const useStyles = makeStyles({
       cursor: 'not-allowed',
     },
   },
+  imageButton: {
+    color: 'light-dark(#2770ea, #244b8f)',
+    backgroundColor: 'transparent',
+    border: 0,
+    cursor: 'pointer',
+    '&:hover': {
+      color: 'light-dark(#1b4aef, #203581)',
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+    },
+    '&:disabled': {
+      color: tokens.colorNeutralForegroundDisabled,
+      cursor: 'not-allowed',
+    },
+  },
+  newTopicButton: {
+    color: tokens.colorNeutralForegroundOnBrand,
+    backgroundImage: 'linear-gradient(to right, light-dark(#2770ea, #244b8f), light-dark(#1b4aef, #203581))',
+    border: 0,
+    boxShadow: tokens.shadow4,
+    cursor: 'pointer',
+    transitionProperty: 'filter, transform',
+    transitionDuration: tokens.durationFaster,
+    '&:hover': { filter: 'brightness(1.06)' },
+    '&:active': { transform: 'translateY(1px)' },
+  },
   broomIcon: {
     display: 'block',
     filter: 'brightness(0) invert(1)',
@@ -55,7 +80,6 @@ type PlaygroundComposerProps = {
   imagePlaceholder: string;
   imageUnsupportedLabel: string;
   imageUrl: string;
-  newTopicDisabled: boolean;
   newTopicLabel: string;
   onNewTopic: () => void;
   onDraftChange: (value: string) => void;
@@ -80,7 +104,6 @@ export function PlaygroundComposer({
   imagePlaceholder,
   imageUnsupportedLabel,
   imageUrl,
-  newTopicDisabled,
   newTopicLabel,
   onNewTopic,
   onDraftChange,
@@ -101,7 +124,7 @@ export function PlaygroundComposer({
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = '0px';
-    textarea.style.height = `${textarea.scrollHeight}px`;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 144)}px`;
   }, [draft]);
 
   return (
@@ -127,17 +150,14 @@ export function PlaygroundComposer({
         </div>
       )}
       <div className="flex items-stretch gap-2 min-w-0">
-        <Button
-          appearance="primary"
-          className="!min-h-[44px] shrink-0"
-          disabled={newTopicDisabled}
-          icon={<img alt="" aria-hidden="true" className={s.broomIcon} src={broomUrl} />}
+        <button
+          type="button"
+          className={`min-h-[44px] shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 font-fui-regular text-fui-base400 ${s.newTopicButton}`}
           onClick={onNewTopic}
-          shape="circular"
-          size="large"
         >
-          {newTopicLabel}
-        </Button>
+          <img alt="" aria-hidden="true" className={s.broomIcon} src={broomUrl} />
+          <span>{newTopicLabel}</span>
+        </button>
         <div className={`min-w-0 flex-1 min-h-[44px] rounded-full pl-5 pr-1 py-1 flex items-center gap-2 ${s.inputShell}`}>
           <ScrollArea axes="vertical" className="min-w-0 flex-1 max-h-[144px]" noTabIndex>
             <textarea
@@ -159,24 +179,26 @@ export function PlaygroundComposer({
           </ScrollArea>
           <div className="shrink-0 flex items-center gap-0">
             <Tooltip content={imageEnabled ? imageLabel : imageUnsupportedLabel} relationship="label">
-              <Button
-                appearance="subtle"
+              <button
+                type="button"
                 aria-label={imageLabel}
+                className={`w-[34px] h-[34px] shrink-0 rounded-full grid place-items-center text-fui-base600 ${s.imageButton}`}
                 disabled={!imageEnabled || sending}
-                icon={<ImageRegular />}
                 onClick={onToggleImage}
-                shape="circular"
-              />
+              >
+                <ImageRegular />
+              </button>
             </Tooltip>
             <Tooltip content={sending ? stopLabel : sendLabel} relationship="label">
-              <Button
-                appearance="primary"
+              <button
+                type="button"
                 aria-label={sending ? stopLabel : sendLabel}
+                className={`w-[34px] h-[34px] shrink-0 rounded-full grid place-items-center text-fui-base500 ${s.imageButton}`}
                 disabled={!sending && !canSend}
-                icon={sending ? <StopRegular /> : <SendRegular />}
                 onClick={sending ? onStop : onSend}
-                shape="circular"
-              />
+              >
+                {sending ? <StopRegular /> : <SendRegular />}
+              </button>
             </Tooltip>
           </div>
         </div>

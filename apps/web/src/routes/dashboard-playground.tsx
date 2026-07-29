@@ -421,7 +421,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               imagePlaceholder={t('dashboard.playground.imagePlaceholder')}
               imageUnsupportedLabel={t('dashboard.playground.errors.imageUnsupported')}
               imageUrl={imageUrl}
-              newTopicDisabled={!messages.length && !sending}
               newTopicLabel={t('dashboard.playground.actions.newTopic')}
               placeholder={t('dashboard.playground.messagePlaceholder')}
               sendLabel={t('dashboard.playground.actions.send')}
