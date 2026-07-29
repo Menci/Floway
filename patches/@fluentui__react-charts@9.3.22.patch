@@ -29,6 +29,104 @@ index 1000ec66f9f2447b572ced78f9b106da400a6edc..e357bd63ab058cb245612e73481be022
              }
          });
      }
+diff --git a/lib/components/CommonComponents/CartesianChart.js b/lib/components/CommonComponents/CartesianChart.js
+index 1ac969766a34f8da2957812edd55b935d9de8985..86baf193dcb8609104ddbfe5e3ce58180b44e041 100644
+--- a/lib/components/CommonComponents/CartesianChart.js
++++ b/lib/components/CommonComponents/CartesianChart.js
+@@ -544,6 +544,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+         ...focusAttributes,
+         ...arrowAttributes
+     }, _isFirstRender.current, /*#__PURE__*/ React.createElement("svg", {
++        key: "cartesian-chart-svg",
+         width: svgDimensions.width,
+         height: svgDimensions.height,
+         role: "region",
+@@ -554,6 +555,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+         className: classes.chart,
+         ...getSecureProps(svgProps)
+     }, /*#__PURE__*/ React.createElement("g", {
++        key: "cartesian-x-axis",
+         ref: (e)=>{
+             xAxisElement.current = e;
+         },
+@@ -562,6 +564,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+         transform: `translate(0, ${svgDimensions.height - margins.bottom - _removalValueForTextTuncate})`,
+         className: classes.xAxis
+     }), props.xAxisTitle !== undefined && props.xAxisTitle !== '' && /*#__PURE__*/ React.createElement(SVGTooltipText, {
++        key: "cartesian-x-axis-title",
+         ...commonSvgToolTipProps,
+         content: props.xAxisTitle,
+         textProps: {
+@@ -588,6 +591,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+         const textAnchor = titleXAnchor === 'left' ? 'start' : titleXAnchor === 'right' ? 'end' : 'middle';
+         const dominantBaseline = titleYAnchor === 'top' ? 'hanging' : titleYAnchor === 'bottom' ? 'alphabetic' : titleYAnchor === 'middle' ? 'central' : 'auto';
+         return /*#__PURE__*/ React.createElement(SVGTooltipText, {
++            key: "cartesian-x-axis-annotation",
+             ...commonSvgToolTipProps,
+             content: props.xAxisAnnotation,
+             textProps: {
+@@ -602,13 +606,17 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+             maxWidth: xAxisTitleMaxWidth
+         });
+     })(), /*#__PURE__*/ React.createElement("g", {
++        key: "cartesian-y-axis",
+         ref: (e)=>{
+             yAxisElement.current = e;
+         },
+         id: `yAxisGElement${idForGraph}`,
+         transform: `translate(${_useRtl ? svgDimensions.width - margins.right : margins.left}, 0)`,
+         className: classes.yAxis
+-    }), props.secondaryYScaleOptions && /*#__PURE__*/ React.createElement("g", null, /*#__PURE__*/ React.createElement("g", {
++    }), props.secondaryYScaleOptions && /*#__PURE__*/ React.createElement("g", {
++        key: "cartesian-secondary-y-axis-layer"
++    }, /*#__PURE__*/ React.createElement("g", {
++        key: "cartesian-secondary-y-axis",
+         ref: (e)=>{
+             yAxisElementSecondary.current = e;
+         },
+@@ -616,6 +624,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+         transform: `translate(${_useRtl ? margins.left : svgDimensions.width - margins.right}, 0)`,
+         className: classes.yAxis
+     }), props.secondaryYAxistitle !== undefined && props.secondaryYAxistitle !== '' && /*#__PURE__*/ React.createElement(SVGTooltipText, {
++        key: "cartesian-secondary-y-axis-title",
+         ...commonSvgToolTipProps,
+         content: props.secondaryYAxistitle,
+         textProps: {
+@@ -627,6 +636,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+         },
+         maxWidth: yAxisTitleMaxHeight
+     })), children, props.yAxisTitle !== undefined && props.yAxisTitle !== '' && /*#__PURE__*/ React.createElement(SVGTooltipText, {
++        key: "cartesian-y-axis-title",
+         ...commonSvgToolTipProps,
+         content: props.yAxisTitle,
+         textProps: {
+@@ -638,6 +648,7 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+         },
+         maxWidth: yAxisTitleMaxHeight
+     }), props.yAxisAnnotation !== undefined && props.yAxisAnnotation !== '' && (props.secondaryYAxistitle === undefined || props.secondaryYAxistitle === '') && /*#__PURE__*/ React.createElement(SVGTooltipText, {
++        key: "cartesian-y-axis-annotation",
+         ...commonSvgToolTipProps,
+         content: props.yAxisAnnotation,
+         textProps: {
+@@ -650,15 +661,18 @@ const DEFAULT_MARGIN_NO_TICKS = 20;
+         },
+         maxWidth: yAxisTitleMaxHeight
+     })), hasAnnotations && annotationContext && /*#__PURE__*/ React.createElement(ChartAnnotationLayer, {
++        key: "cartesian-annotations",
+         annotations: annotations,
+         context: annotationContext,
+         className: classes.annotationLayer
+     })), !props.hideLegend && /*#__PURE__*/ React.createElement("div", {
++        key: "cartesian-legend",
+         ref: (e)=>{
+             legendContainer = e;
+         },
+         className: classes.legendContainer
+     }, props.legendBars), callout && /*#__PURE__*/ React.createElement(React.Suspense, {
++        key: "cartesian-callout",
+         fallback: /*#__PURE__*/ React.createElement("div", null, "Loading...")
+     }, callout));
+ });
 diff --git a/lib/components/LineChart/LineChart.js b/lib/components/LineChart/LineChart.js
 index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..2560bcca985da067caaef9f4eaef22dafd804b3f 100644
 --- a/lib/components/LineChart/LineChart.js
@@ -113,6 +211,104 @@ index 5204125c8498f697d3673b3017ec7e6cbbbe960e..2cd00a86ba8480e8b7f591a94458c0a2
              }
          });
      }
+diff --git a/lib-commonjs/components/CommonComponents/CartesianChart.js b/lib-commonjs/components/CommonComponents/CartesianChart.js
+index bcf76c184cfe345e19d58fb199b478c4005539b1..cc75e74609f9bd24c7836a7410f2f049e1ef0b1f 100644
+--- a/lib-commonjs/components/CommonComponents/CartesianChart.js
++++ b/lib-commonjs/components/CommonComponents/CartesianChart.js
+@@ -552,6 +552,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+         ...focusAttributes,
+         ...arrowAttributes
+     }, _isFirstRender.current, /*#__PURE__*/ _react.createElement("svg", {
++        key: "cartesian-chart-svg",
+         width: svgDimensions.width,
+         height: svgDimensions.height,
+         role: "region",
+@@ -562,6 +563,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+         className: classes.chart,
+         ...(0, _index.getSecureProps)(svgProps)
+     }, /*#__PURE__*/ _react.createElement("g", {
++        key: "cartesian-x-axis",
+         ref: (e)=>{
+             xAxisElement.current = e;
+         },
+@@ -570,6 +572,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+         transform: `translate(0, ${svgDimensions.height - margins.bottom - _removalValueForTextTuncate})`,
+         className: classes.xAxis
+     }), props.xAxisTitle !== undefined && props.xAxisTitle !== '' && /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
++        key: "cartesian-x-axis-title",
+         ...commonSvgToolTipProps,
+         content: props.xAxisTitle,
+         textProps: {
+@@ -596,6 +599,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+         const textAnchor = titleXAnchor === 'left' ? 'start' : titleXAnchor === 'right' ? 'end' : 'middle';
+         const dominantBaseline = titleYAnchor === 'top' ? 'hanging' : titleYAnchor === 'bottom' ? 'alphabetic' : titleYAnchor === 'middle' ? 'central' : 'auto';
+         return /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
++            key: "cartesian-x-axis-annotation",
+             ...commonSvgToolTipProps,
+             content: props.xAxisAnnotation,
+             textProps: {
+@@ -610,13 +614,17 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+             maxWidth: xAxisTitleMaxWidth
+         });
+     })(), /*#__PURE__*/ _react.createElement("g", {
++        key: "cartesian-y-axis",
+         ref: (e)=>{
+             yAxisElement.current = e;
+         },
+         id: `yAxisGElement${idForGraph}`,
+         transform: `translate(${_useRtl ? svgDimensions.width - margins.right : margins.left}, 0)`,
+         className: classes.yAxis
+-    }), props.secondaryYScaleOptions && /*#__PURE__*/ _react.createElement("g", null, /*#__PURE__*/ _react.createElement("g", {
++    }), props.secondaryYScaleOptions && /*#__PURE__*/ _react.createElement("g", {
++        key: "cartesian-secondary-y-axis-layer"
++    }, /*#__PURE__*/ _react.createElement("g", {
++        key: "cartesian-secondary-y-axis",
+         ref: (e)=>{
+             yAxisElementSecondary.current = e;
+         },
+@@ -624,6 +632,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+         transform: `translate(${_useRtl ? margins.left : svgDimensions.width - margins.right}, 0)`,
+         className: classes.yAxis
+     }), props.secondaryYAxistitle !== undefined && props.secondaryYAxistitle !== '' && /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
++        key: "cartesian-secondary-y-axis-title",
+         ...commonSvgToolTipProps,
+         content: props.secondaryYAxistitle,
+         textProps: {
+@@ -635,6 +644,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+         },
+         maxWidth: yAxisTitleMaxHeight
+     })), children, props.yAxisTitle !== undefined && props.yAxisTitle !== '' && /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
++        key: "cartesian-y-axis-title",
+         ...commonSvgToolTipProps,
+         content: props.yAxisTitle,
+         textProps: {
+@@ -646,6 +656,7 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+         },
+         maxWidth: yAxisTitleMaxHeight
+     }), props.yAxisAnnotation !== undefined && props.yAxisAnnotation !== '' && (props.secondaryYAxistitle === undefined || props.secondaryYAxistitle === '') && /*#__PURE__*/ _react.createElement(_SVGTooltipText.SVGTooltipText, {
++        key: "cartesian-y-axis-annotation",
+         ...commonSvgToolTipProps,
+         content: props.yAxisAnnotation,
+         textProps: {
+@@ -658,15 +669,18 @@ const CartesianChart = /*#__PURE__*/ _react.forwardRef(({ hideTickOverlap = true
+         },
+         maxWidth: yAxisTitleMaxHeight
+     })), hasAnnotations && annotationContext && /*#__PURE__*/ _react.createElement(_ChartAnnotationLayer.ChartAnnotationLayer, {
++        key: "cartesian-annotations",
+         annotations: annotations,
+         context: annotationContext,
+         className: classes.annotationLayer
+     })), !props.hideLegend && /*#__PURE__*/ _react.createElement("div", {
++        key: "cartesian-legend",
+         ref: (e)=>{
+             legendContainer = e;
+         },
+         className: classes.legendContainer
+     }, props.legendBars), callout && /*#__PURE__*/ _react.createElement(_react.Suspense, {
++        key: "cartesian-callout",
+         fallback: /*#__PURE__*/ _react.createElement("div", null, "Loading...")
+     }, callout));
+ });
 diff --git a/lib-commonjs/components/LineChart/LineChart.js b/lib-commonjs/components/LineChart/LineChart.js
 index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..8b4a988c3f3c14212120f7afbdf77b9d9c0fde5e 100644
 --- a/lib-commonjs/components/LineChart/LineChart.js
