@@ -30,6 +30,7 @@ export interface ProxyFormProps {
   onNameChange: (value: string) => void;
   onPortChange: (value: string) => void;
   onUrlChange: (value: string) => void;
+  showValidation: boolean;
   urlError: string | null;
   urlInput: string;
 }
@@ -44,18 +45,20 @@ export function ProxyForm({
   onNameChange,
   onPortChange,
   onUrlChange,
+  showValidation,
   urlError,
   urlInput,
 }: ProxyFormProps) {
   const { t } = useTranslation();
   const formKind = formKindFromConfig(config);
-  const hostInvalid = !config.host.trim();
-  const portInvalid = !isValidPort(config.port);
+  const nameInvalid = showValidation && !formName.trim();
+  const hostInvalid = showValidation && !config.host.trim();
+  const portInvalid = showValidation && !isValidPort(config.port);
   const uuidNeeded = config.kind === 'vless-tcp' || config.kind === 'vless-ws' || config.kind === 'reality';
-  const uuidInvalid = uuidNeeded && !isValidUuid((config as { uuid: string }).uuid);
+  const uuidInvalid = showValidation && uuidNeeded && !isValidUuid((config as { uuid: string }).uuid);
   return (
     <div className="grid gap-4 min-w-0">
-      <Field label={t('dashboard.proxy.form.name')} validationMessage={!formName.trim() ? t('dashboard.proxy.validation.nameRequired') : undefined} validationState={!formName.trim() ? 'error' : undefined}>
+      <Field label={t('dashboard.proxy.form.name')} validationMessage={nameInvalid ? t('dashboard.proxy.validation.nameRequired') : undefined} validationState={nameInvalid ? 'error' : undefined}>
         <Input
           onChange={(_, d) => onNameChange(d.value)}
           placeholder={t('dashboard.proxy.form.namePlaceholder')}
@@ -90,7 +93,7 @@ export function ProxyForm({
         </Dropdown>
       </Field>
 
-      <div className="grid grid-cols-1 gap-[12px] sm:grid-cols-[1fr_8rem]">
+      <div className="grid grid-cols-1 items-start gap-[12px] sm:grid-cols-[1fr_8rem]">
         <Field
           label={t('dashboard.proxy.form.host')}
           validationMessage={hostInvalid ? t('dashboard.proxy.validation.hostRequired') : undefined}
@@ -193,9 +196,9 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.passwordLabel')}
-            validationMessage={(config as ShadowsocksProxyConfig).password === '' ? t('dashboard.proxy.validation.required') : undefined}
+            validationMessage={showValidation && (config as ShadowsocksProxyConfig).password === '' ? t('dashboard.proxy.validation.required') : undefined}
             validationState={
-              (config as ShadowsocksProxyConfig).password === ''
+              showValidation && (config as ShadowsocksProxyConfig).password === ''
                 ? 'error'
                 : undefined
             }
@@ -238,9 +241,9 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.psk')}
-            validationMessage={(config as Shadowsocks2022ProxyConfig).passwordBase64 === '' ? t('dashboard.proxy.validation.required') : undefined}
+            validationMessage={showValidation && (config as Shadowsocks2022ProxyConfig).passwordBase64 === '' ? t('dashboard.proxy.validation.required') : undefined}
             validationState={
-              (config as Shadowsocks2022ProxyConfig).passwordBase64 === ''
+              showValidation && (config as Shadowsocks2022ProxyConfig).passwordBase64 === ''
                 ? 'error'
                 : undefined
             }
@@ -265,9 +268,9 @@ export function ProxyForm({
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
             label={t('dashboard.proxy.form.passwordLabel')}
-            validationMessage={(config as TrojanProxyConfig).password === '' ? t('dashboard.proxy.validation.required') : undefined}
+            validationMessage={showValidation && (config as TrojanProxyConfig).password === '' ? t('dashboard.proxy.validation.required') : undefined}
             validationState={
-              (config as TrojanProxyConfig).password === ''
+              showValidation && (config as TrojanProxyConfig).password === ''
                 ? 'error'
                 : undefined
             }
@@ -350,9 +353,9 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.wsPath')}
-            validationMessage={(config as VlessWsTlsProxyConfig).path === '' ? t('dashboard.proxy.validation.required') : undefined}
+            validationMessage={showValidation && (config as VlessWsTlsProxyConfig).path === '' ? t('dashboard.proxy.validation.required') : undefined}
             validationState={
-              (config as VlessWsTlsProxyConfig).path === ''
+              showValidation && (config as VlessWsTlsProxyConfig).path === ''
                 ? 'error'
                 : undefined
             }
@@ -403,9 +406,9 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.serverName')}
-            validationMessage={(config as RealityProxyConfig).serverName === '' ? t('dashboard.proxy.validation.required') : undefined}
+            validationMessage={showValidation && (config as RealityProxyConfig).serverName === '' ? t('dashboard.proxy.validation.required') : undefined}
             validationState={
-              (config as RealityProxyConfig).serverName === ''
+              showValidation && (config as RealityProxyConfig).serverName === ''
                 ? 'error'
                 : undefined
             }
@@ -423,9 +426,9 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.publicKey')}
-            validationMessage={(config as RealityProxyConfig).publicKey === '' ? t('dashboard.proxy.validation.required') : undefined}
+            validationMessage={showValidation && (config as RealityProxyConfig).publicKey === '' ? t('dashboard.proxy.validation.required') : undefined}
             validationState={
-              (config as RealityProxyConfig).publicKey === ''
+              showValidation && (config as RealityProxyConfig).publicKey === ''
                 ? 'error'
                 : undefined
             }

@@ -71,6 +71,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   const [dialTimeoutInput, setDialTimeoutInput] = useState('');
 
   const [saving, setSaving] = useState(false);
+  const [showValidation, setShowValidation] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [testing, setTesting] = useState(false);
@@ -146,6 +147,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setDialTimeoutInput('');
     setSaveError(null);
     setTestResult(null);
+    setShowValidation(false);
   }, []);
 
   const openCreate = useCallback(() => {
@@ -173,6 +175,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setUrlError(parsed.error);
     setSaveError(null);
     setTestResult(null);
+    setShowValidation(false);
     setInitialDraft(proxyDraftSignature(proxy.name, nextConfig, proxy.url, proxy.dial_timeout_seconds == null ? '' : String(proxy.dial_timeout_seconds)));
     setDialogOpen(true);
   }, []);
@@ -200,6 +203,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   }, [clearDiagnostics]);
 
   const handleSave = useCallback(async () => {
+    setShowValidation(true);
     setSaving(true);
     setSaveError(null);
 
@@ -378,6 +382,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           onNameChange={handleNameChange}
           onPortChange={setPort}
           onUrlChange={handleUrlChange}
+          showValidation={showValidation}
           urlError={urlError}
           urlInput={urlInput}
         />
