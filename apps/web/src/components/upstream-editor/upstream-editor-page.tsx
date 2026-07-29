@@ -1,10 +1,11 @@
-import { ArrowLeftRegular, SaveRegular } from '@fluentui/react-icons';
+import { SaveRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBlocker, useNavigate } from 'react-router';
 
 import { UpstreamConfigSidebar } from './config-sidebar';
+import { BackNavigationButton } from './back-navigation-button';
 import {
   createBody,
   discoveredModelsFromResponse,
@@ -173,7 +174,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     <Toaster toasterId={toasterId} position="top-end" />
     <div className="grid grid-rows-[auto_auto_minmax(0,1fr)] gap-[14px] h-full min-h-0">
       <header className="flex items-center gap-3 min-w-0 px-1">
-        <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</Button>
+        <BackNavigationButton onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
         <Text size={500} weight="semibold" truncate className="min-w-0">{name || t('dashboard.upstreamEditor.new')}</Text>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
         <div className="ml-auto flex items-center gap-2">

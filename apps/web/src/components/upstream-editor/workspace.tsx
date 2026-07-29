@@ -1,6 +1,5 @@
 import {
   AddRegular,
-  ArrowLeftRegular,
   ArrowSyncRegular,
   CheckmarkCircleRegular,
   CodeRegular,
@@ -14,6 +13,7 @@ import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-
 import { useTranslation } from 'react-i18next';
 
 import type { UpstreamEditorValues } from './editor-data';
+import { BackNavigationButton } from './back-navigation-button';
 import { publicModelId } from './editor-data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
@@ -96,7 +96,7 @@ export function UpstreamWorkspace({
     <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
         ? <>
-            <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => setModelView('list')}>{t('dashboard.upstreamEditor.models.back')}</Button>
+            <BackNavigationButton onClick={() => setModelView('list')}>{t('dashboard.upstreamEditor.models.back')}</BackNavigationButton>
             <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => setModelDetailTab(data.value as ModelDetailTab)}>
               <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
               <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
