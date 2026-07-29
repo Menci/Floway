@@ -23,6 +23,7 @@ import { fluentComponents } from '../../fluent';
 import { useNow } from '../../lib/use-now';
 import { formatFullTime, formatRelativeTime } from '../requests/format';
 import { ConfirmDialog } from '../ui/confirm-dialog';
+import { ContentLoadingScreen } from '../ui/app-loading-screen';
 import { Input } from '../ui/fluent-form-controls';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../ui/table-actions';
@@ -244,7 +245,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
         </Button>
       </div>
       <div className="h-full min-h-0 overflow-hidden border-0 border-y border-solid border-fui-stroke1">
-        <Suspense fallback={<div className="h-full" />}>
+        <Suspense fallback={<ContentLoadingScreen label={t('common.loading')} />}>
           <ModelsYamlEditor value={yaml} onChange={value => { onYamlChange(value); onYamlErrorChange(null); }} />
         </Suspense>
       </div>

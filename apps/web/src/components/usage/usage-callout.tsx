@@ -20,14 +20,11 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
   if (rows.length === 0) return null;
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(650px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">
-      <Text size={200} weight="semibold">
-        {formatCalloutTitle(point.x, labelByTime, chart.range, locale)}
-      </Text>
       {chart.kind === 'token' && bucketDetails ? (
         <table className="border-collapse leading-[1.15] whitespace-nowrap [&_td]:!py-0 [&_th]:!py-0">
           <thead>
             <tr>
-              <th className="max-w-[180px] min-w-[120px] pl-0 text-left" />
+              <th className="max-w-[180px] min-w-[120px] pl-0 text-left"><Text size={200} weight="semibold">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text></th>
               {(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output', 'hitRate'] as const).map(label => <th className="px-1.5 py-px text-right" key={label}><Text size={100} weight="semibold" className="text-fui-fg2">{t(`dashboard.usage.callout.${label}`)}</Text></th>)}
             </tr>
           </thead>
@@ -59,12 +56,15 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
           </tbody>
         </table>
       ) : (
-        rows.map(item => (
-          <Text key={item.id} size={100} className="flex items-center gap-1.5 justify-between tabular-nums">
-            <i className="rounded-full h-[8px] w-[8px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-            {item.label}: {valueFormatter(item.value)}
-          </Text>
-        ))
+        <>
+          <Text size={200} weight="semibold">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text>
+          {rows.map(item => (
+            <Text key={item.id} size={100} className="flex items-center gap-1.5 justify-between tabular-nums">
+              <i className="rounded-full h-[8px] w-[8px] flex-shrink-0" style={{ backgroundColor: item.color }} />
+              {item.label}: {valueFormatter(item.value)}
+            </Text>
+          ))}
+        </>
       )}
     </ScrollArea>
   );

@@ -357,7 +357,8 @@ function UpstreamsTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[930px]">
+      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[1100px] table-fixed">
+        <colgroup><col className="w-[130px]" /><col className="w-[150px]" /><col className="w-[420px]" /><col className="w-[180px]" /><col className="w-[110px]" /><col className="w-[88px]" /></colgroup>
         <TableHeader>
           <TableRow>
             <TableHeaderCell className="!w-[130px]">{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
@@ -389,7 +390,7 @@ function UpstreamsTable({
                 </div>
               </TableCell>
               <TableCell><ProviderBadge color={record.color} kind={record.kind} /></TableCell>
-              <TableCell>
+              <TableCell className="!overflow-hidden">
                 <div className="grid gap-[3px] min-w-0 max-w-[520px]">
                   <Link
                     className="text-fui-fg1 no-underline hover:underline truncate"

@@ -148,14 +148,14 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
             {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}
             {items.map(item => {
               const Icon = item.icon;
-              return <NavItem icon={<Icon />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
+              return <NavItem icon={<Icon fontSize={20} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
             })}
           </div>;
         })}
       </NavDrawerBody>
       <NavDrawerFooter className="!border-t !border-t-solid !border-fui-stroke2 !py-3">
-        <NavItem icon={<AccountIcon />} value="/dashboard/settings">{user.username}</NavItem>
-        <NavItem icon={<SignOutRegular />} value="logout">{t('dashboard.logout.label')}</NavItem>
+        <NavItem icon={<AccountIcon fontSize={20} />} value="/dashboard/settings">{user.username}</NavItem>
+        <NavItem icon={<SignOutRegular fontSize={20} />} value="logout">{t('dashboard.logout.label')}</NavItem>
       </NavDrawerFooter>
     </NavDrawer>
     <ConfirmDialog
