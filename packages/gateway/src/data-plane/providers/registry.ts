@@ -36,29 +36,20 @@ export const listModelProviders = async (
 ): Promise<Provider[]> => {
   const upstreams = preFetchedUpstreams ?? await getRepo().upstreams.list();
   const enabledById = new Map<string, UpstreamRecord>();
-  const knownIds = new Set<string>();
   for (const upstream of upstreams) {
-    knownIds.add(upstream.id);
     if (upstream.enabled) enabledById.set(upstream.id, upstream);
   }
 
-  let selection: UpstreamRecord[];
-  if (upstreamFilter) {
-    // Unknown ids are a caller-side configuration error (the filter is the
-    // intersection of per-user + per-api-key caps; both reference upstreams
-    // by id); surface them so the operator notices instead of silently
-    // serving a smaller subset. Disabled-but-known ids stay silent: a user
-    // cap may legitimately mention an upstream the operator just disabled.
-    const unknown = upstreamFilter.filter(id => !knownIds.has(id));
-    if (unknown.length > 0) {
-      throw new Error(`Unknown upstream id(s) in filter: ${unknown.join(', ')}`);
-    }
-    selection = upstreamFilter
-      .map(id => enabledById.get(id))
-      .filter((u): u is UpstreamRecord => u !== undefined);
-  } else {
-    selection = [...enabledById.values()];
-  }
+  // The filter is the intersection of the per-user and per-api-key caps, both
+  // of which reference upstreams by id. Deleting or disabling an upstream does
+  // not prune those lists, so an id that no longer resolves is inert rather
+  // than fatal: it narrows the scope and drops out on the next write to the
+  // user or key. The principal keeps serving on the rest of its cap, and a
+  // selection emptied this way surfaces downstream as "no upstream provider
+  // configured".
+  const selection = upstreamFilter
+    ? upstreamFilter.map(id => enabledById.get(id)).filter((u): u is UpstreamRecord => u !== undefined)
+    : [...enabledById.values()];
 
   return selection.map(createProvider);
 };
