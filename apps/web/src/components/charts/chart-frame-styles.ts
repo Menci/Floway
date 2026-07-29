@@ -13,6 +13,7 @@ export const useUnclippedChartFrame = makeStyles({
     overflow: 'visible',
     '& .fui-cart__xAxis .tick:first-of-type text': { textAnchor: 'start' },
     '& .fui-cart__xAxis .tick:last-of-type text': { textAnchor: 'end' },
+    '& .fui-PopoverSurface:not(:has(table))': { display: 'none' },
     '& .fui-PopoverSurface': {
       backdropFilter: 'blur(8px)',
       backgroundColor: 'color-mix(in srgb, var(--colorNeutralBackground1) 86%, transparent)',
