@@ -92,6 +92,7 @@ export const dialogCss = `
   padding: 24px;
   gap: 0;
   background-color: var(--winui-layer-fill-alt);
+  border-radius: var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0;
   max-height: calc(min(756px, 100dvh) - 2px);
 }
 
@@ -128,6 +129,7 @@ export const dialogCss = `
   padding: 24px;
   background-color: var(--winui-solid-background-fill-base);
   border-top: 1px solid var(--winui-card-stroke-default);
+  border-radius: 0 0 var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius);
 }
 
 /* A lone button lands in WinUI's CloseColumn with PrimaryColumn still at star
