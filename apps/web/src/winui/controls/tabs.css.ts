@@ -79,8 +79,9 @@ export const tabsCss = `
   color: var(--winui-text-fill-tertiary);
 }
 
-/* WinUI's disabled foreground is a translucent step of the text ramp where
-   Fluent's is an opaque grey.
+/* The disabled foreground is the step the theme layer already resolves, and it
+   is restated here because the rest rule above paints every tab's content and
+   would otherwise outrank Fluent's own disabled atom.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L21 */
 .fui-Tab:disabled .fui-Tab__content.fui-Tab__content,

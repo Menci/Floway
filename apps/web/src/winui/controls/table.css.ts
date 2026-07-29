@@ -56,7 +56,9 @@ export const tableCss = `
    outside the table. The ring takes WinUI's outer focus stroke, the only one
    of its two strokes a single ring can carry; the header cell keys its ring
    off the focus landing anywhere inside it, the other three off the element
-   itself.
+   itself. Fluent's outline carries no offset, so it sits directly against the
+   border box and WinUI's inner ring goes inside it as an inset shadow, as on
+   every other item-shaped surface in the layer.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L144
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L348 */
@@ -64,6 +66,7 @@ export const tableCss = `
 .fui-TableCell.fui-TableCell[data-fui-focus-visible],
 .fui-TableSelectionCell.fui-TableSelectionCell[data-fui-focus-visible],
 .fui-TableHeaderCell.fui-TableHeaderCell[data-fui-focus-within]:focus-within {
+  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
   outline-color: var(--winui-focus-stroke-outer);
 }
 

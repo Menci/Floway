@@ -97,7 +97,7 @@ export const accordionCss = `
   margin-inline-end: 8px;
 }
 
-.fui-AccordionHeader__button:has(> .fui-AccordionHeader__expandIcon:last-child) {
+.fui-AccordionHeader__button.fui-AccordionHeader__button:has(> .fui-AccordionHeader__expandIcon:last-child) {
   padding-inline-end: 0;
 }
 
@@ -121,12 +121,14 @@ export const accordionCss = `
 }
 
 /* The focus visual. Fluent already draws 2px at a 2px outset, which is WinUI's
-   own outer-ring geometry, so only the ring's colour is restated — through the
-   token the ring reads, rewritten on the element that reads it.
+   own outer-ring geometry, so the ring's colour is restated through the token
+   the ring reads, rewritten on the element that reads it. A shadow spread
+   across the two pixels of that outset carries WinUI's second, inner ring.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258 */
 .fui-AccordionHeader__button.fui-AccordionHeader__button[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
+  box-shadow: 0 0 0 2px var(--winui-focus-stroke-inner);
 }
 
 /* The content region: the Secondary step of the card ramp, inside the same

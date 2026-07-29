@@ -58,7 +58,7 @@ export const messageBarCss = `
 .fui-MessageBar.fui-MessageBar {
   min-height: 48px;
   padding-inline-start: 16px;
-  border-color: var(--winui-card-stroke-default);
+  border-color: var(--winui-card-stroke, var(--colorNeutralStroke1));
 }
 
 /* WinUI's glyph is smaller than Fluent's and is spaced by InfoBarIconMargin,

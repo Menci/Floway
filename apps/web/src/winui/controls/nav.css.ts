@@ -107,7 +107,10 @@ export const navCss = `
    inset shadow rather than a second outline, since the item has no border box
    of its own to carry it: spread to 3px it fills the first three pixels, of
    which the outline then repaints the first two, leaving exactly the 2-3px band
-   the inner stroke occupies in WinUI.
+   the inner stroke occupies in WinUI. The item-shaped surfaces elsewhere in the
+   layer spread their inner ring to 1px instead, because Fluent draws their
+   outline outside the border box and leaves the first pixel unpainted; the
+   inward outline here is what makes this one three.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],

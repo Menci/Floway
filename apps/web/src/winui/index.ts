@@ -22,7 +22,6 @@ import { textInputCss } from './controls/text-input.css';
 import { textCss } from './controls/text.css';
 import { toastCss } from './controls/toast.css';
 import { toolbarCss } from './controls/toolbar.css';
-import { tooltipCss } from './controls/tooltip.css';
 import { winuiTokenCss } from './tokens';
 
 // The whole override layer as one stylesheet: the token vocabulary first, so a
@@ -58,5 +57,4 @@ export const winuiCss = [
   textCss,
   toastCss,
   toolbarCss,
-  tooltipCss,
 ].join('\n');

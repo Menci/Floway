@@ -25,12 +25,18 @@ export const menuCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L6
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L6
 
+   The presenter's Border is BackgroundSizing="InnerBorderEdge", which is
+   background-clip: padding-box on the web: the fill stops at the border so the
+   translucent stroke reads against whatever the flyout floats over.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L43
+
    Only the block term of WinUI's menu-flyout padding is transcribed. Its inline
    term is 0 because a NavigationView child flyout's items carry their own
    inline inset, which the corpus does not state for a plain menu item, so
    Fluent's inline padding is what keeps items off the surface edge.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L267 */
 .fui-MenuPopover.fui-MenuPopover {
+  background-clip: padding-box;
   border-radius: var(--winui-overlay-corner-radius);
   border-color: var(--winui-surface-stroke-flyout);
   padding-block: 2px;

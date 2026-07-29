@@ -19,6 +19,14 @@
 // alone and `--colorNeutralForeground2*` by the chromeless ones, so
 // redefining those is both shorter and less likely to collide with a Griffel
 // atom than restating the property per state.
+//
+// The rules below stop at the boundary of a subtree that opts out of the layer:
+// the composer and transcript of the playground are designed against Fluent's
+// own control palette, and every declaration here would repaint them. See
+// ../tokens.ts for the convention.
+
+import { notOptedOut } from '../tokens';
+
 export const buttonCss = `
 /* Geometry and typography. The weight is Normal rather than Fluent's semibold,
    and the style declares neither MinWidth nor MaxWidth, so a WinUI button is
@@ -36,23 +44,25 @@ export const buttonCss = `
    either way. Excluding every button that has an icon keeps the square ones
    square, and costs an icon-and-label button one pixel of horizontal padding.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
-.fui-Button.fui-Button:not(:has(> .fui-Button__icon)) {
+.fui-Button.fui-Button:not(:has(> .fui-Button__icon))${notOptedOut} {
   padding: var(--winui-button-padding);
   min-width: auto;
   max-width: none;
 }
 
-.fui-Button.fui-Button {
+.fui-Button.fui-Button${notOptedOut} {
   background-clip: padding-box;
   font-weight: var(--fontWeightRegular);
 }
 
-/* WinUI animates the fill alone, and only for the 83ms of the content
-   presenter's BrushTransition; border and foreground switch instantly.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L172-L174 */
-.fui-Button.fui-Button {
+/* WinUI animates the fill alone, and only for the ControlFasterAnimationDuration
+   of the content presenter's BrushTransition; border and foreground switch
+   instantly.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L172-L174
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L606 */
+.fui-Button.fui-Button${notOptedOut} {
   transition-property: background-color;
-  transition-duration: 83ms;
+  transition-duration: var(--winui-control-faster-animation-duration);
 }
 
 /* The default and outline appearances. A WinUI button's fill is translucent
@@ -62,7 +72,7 @@ export const buttonCss = `
    same partition WinUI draws.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L128-L139
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L30-L41 */
-.fui-Button.fui-Button {
+.fui-Button.fui-Button${notOptedOut} {
   --colorNeutralBackground1: var(--winui-control-fill-default);
   --colorNeutralForeground1Hover: var(--winui-text-fill-primary);
   --colorNeutralForeground1Pressed: var(--winui-text-fill-secondary);
@@ -80,17 +90,17 @@ export const buttonCss = `
    both fall back to the flat ControlStrokeColorDefault.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L136-L139
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L38-L41 */
-.fui-Button.fui-Button[data-winui-appearance='secondary'],
-.fui-Button.fui-Button[data-winui-appearance='outline'] {
+.fui-Button.fui-Button[data-winui-appearance='secondary']${notOptedOut},
+.fui-Button.fui-Button[data-winui-appearance='outline']${notOptedOut} {
   border-color: var(--winui-control-elevation-border-color);
 }
 
-.fui-Button.fui-Button[data-winui-appearance='secondary']:hover:active,
-.fui-Button.fui-Button[data-winui-appearance='outline']:hover:active,
-.fui-Button.fui-Button[data-winui-appearance='secondary']:disabled,
-.fui-Button.fui-Button[data-winui-appearance='outline']:disabled,
-.fui-Button.fui-Button[data-winui-appearance='secondary'][aria-disabled='true'],
-.fui-Button.fui-Button[data-winui-appearance='outline'][aria-disabled='true'] {
+.fui-Button.fui-Button[data-winui-appearance='secondary']:hover:active${notOptedOut},
+.fui-Button.fui-Button[data-winui-appearance='outline']:hover:active${notOptedOut},
+.fui-Button.fui-Button[data-winui-appearance='secondary']:disabled${notOptedOut},
+.fui-Button.fui-Button[data-winui-appearance='outline']:disabled${notOptedOut},
+.fui-Button.fui-Button[data-winui-appearance='secondary'][aria-disabled='true']${notOptedOut},
+.fui-Button.fui-Button[data-winui-appearance='outline'][aria-disabled='true']${notOptedOut} {
   border-color: var(--winui-control-stroke-default);
 }
 
@@ -99,7 +109,7 @@ export const buttonCss = `
    rest fill and the on-accent label already agree through the brand tokens.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L103-L109
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L5-L11 */
-.fui-Button.fui-Button {
+.fui-Button.fui-Button${notOptedOut} {
   --colorBrandBackgroundHover: var(--winui-accent-fill-secondary);
   --colorBrandBackgroundPressed: var(--winui-accent-fill-tertiary);
 }
@@ -111,16 +121,16 @@ export const buttonCss = `
    tokens, so they are restated here rather than redefined.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L106-L114
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L8-L16 */
-.fui-Button.fui-Button[data-winui-appearance='primary'] {
+.fui-Button.fui-Button[data-winui-appearance='primary']${notOptedOut} {
   border-color: var(--winui-accent-control-elevation-border-color);
 }
 
-.fui-Button.fui-Button[data-winui-appearance='primary']:hover:active {
+.fui-Button.fui-Button[data-winui-appearance='primary']:hover:active${notOptedOut} {
   border-color: var(--winui-control-fill-transparent);
 }
 
-.fui-Button.fui-Button[data-winui-appearance='primary']:disabled,
-.fui-Button.fui-Button[data-winui-appearance='primary'][aria-disabled='true'] {
+.fui-Button.fui-Button[data-winui-appearance='primary']:disabled${notOptedOut},
+.fui-Button.fui-Button[data-winui-appearance='primary'][aria-disabled='true']${notOptedOut} {
   background-color: var(--winui-accent-fill-disabled);
   border-color: var(--winui-control-fill-transparent);
   color: var(--winui-text-on-accent-fill-disabled);
@@ -135,7 +145,7 @@ export const buttonCss = `
    chromeless variants.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L21-L23 */
-.fui-Button.fui-Button {
+.fui-Button.fui-Button${notOptedOut} {
   --colorNeutralForeground2: var(--winui-text-fill-primary);
   --colorNeutralForeground2Hover: var(--winui-text-fill-primary);
   --colorNeutralForeground2Pressed: var(--winui-text-fill-secondary);
@@ -153,7 +163,7 @@ export const buttonCss = `
    above, which is why the border colour is repeated here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55 */
-.fui-Button.fui-Button[data-winui-appearance][data-fui-focus-visible] {
+.fui-Button.fui-Button[data-winui-appearance][data-fui-focus-visible]${notOptedOut} {
   --colorStrokeFocus2: var(--winui-focus-stroke-inner);
   --colorTransparentStroke: var(--winui-focus-stroke-outer);
   border-color: var(--winui-focus-stroke-inner);
@@ -165,7 +175,7 @@ export const buttonCss = `
    what keeps the unchecked states above intact.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L127-L151
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L11-L35 */
-.fui-ToggleButton.fui-ToggleButton {
+.fui-ToggleButton.fui-ToggleButton${notOptedOut} {
   --colorNeutralBackground1Selected: var(--winui-accent-fill-default);
   --colorSubtleBackgroundSelected: var(--winui-accent-fill-default);
   --colorTransparentBackgroundSelected: var(--winui-accent-fill-default);
@@ -183,8 +193,8 @@ export const buttonCss = `
    would repaint an unchecked toggle.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L128-L141
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L12-L25 */
-.fui-ToggleButton.fui-ToggleButton[aria-pressed='true'],
-.fui-ToggleButton.fui-ToggleButton[aria-checked='true'] {
+.fui-ToggleButton.fui-ToggleButton[aria-pressed='true']${notOptedOut},
+.fui-ToggleButton.fui-ToggleButton[aria-checked='true']${notOptedOut} {
   --colorNeutralBackground1Hover: var(--winui-accent-fill-secondary);
   --colorSubtleBackgroundHover: var(--winui-accent-fill-secondary);
   --colorTransparentBackgroundHover: var(--winui-accent-fill-secondary);
@@ -207,14 +217,14 @@ export const buttonCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L122
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L151-L154
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L35-L38 */
-.fui-ToggleButton.fui-ToggleButton[aria-pressed='true'],
-.fui-ToggleButton.fui-ToggleButton[aria-checked='true'] {
+.fui-ToggleButton.fui-ToggleButton[aria-pressed='true']${notOptedOut},
+.fui-ToggleButton.fui-ToggleButton[aria-checked='true']${notOptedOut} {
   background-clip: border-box;
   border-color: var(--winui-accent-control-elevation-border-color);
 }
 
-.fui-ToggleButton.fui-ToggleButton[aria-pressed='true']:hover:active,
-.fui-ToggleButton.fui-ToggleButton[aria-checked='true']:hover:active {
+.fui-ToggleButton.fui-ToggleButton[aria-pressed='true']:hover:active${notOptedOut},
+.fui-ToggleButton.fui-ToggleButton[aria-checked='true']:hover:active${notOptedOut} {
   border-color: var(--winui-control-fill-transparent);
 }
 
@@ -224,10 +234,10 @@ export const buttonCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L130
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L142
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L154 */
-.fui-ToggleButton.fui-ToggleButton[aria-pressed='true']:disabled,
-.fui-ToggleButton.fui-ToggleButton[aria-checked='true']:disabled,
-.fui-ToggleButton.fui-ToggleButton[aria-pressed='true'][aria-disabled='true'],
-.fui-ToggleButton.fui-ToggleButton[aria-checked='true'][aria-disabled='true'] {
+.fui-ToggleButton.fui-ToggleButton[aria-pressed='true']:disabled${notOptedOut},
+.fui-ToggleButton.fui-ToggleButton[aria-checked='true']:disabled${notOptedOut},
+.fui-ToggleButton.fui-ToggleButton[aria-pressed='true'][aria-disabled='true']${notOptedOut},
+.fui-ToggleButton.fui-ToggleButton[aria-checked='true'][aria-disabled='true']${notOptedOut} {
   background-color: var(--winui-accent-fill-disabled);
   border-color: var(--winui-control-fill-transparent);
   color: var(--winui-text-on-accent-fill-disabled);

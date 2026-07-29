@@ -188,8 +188,9 @@ export const choiceCss = `
    replacing Fluent's single 0.625 of a 16px box. WinUI grows and shrinks the
    dot over ControlNormalAnimationDuration on the fast-out-slow-in spline, which
    the transform transition restates. The return to rest runs instead at
-   ControlFastAnimationDuration, which the token vocabulary does not carry, so
-   both directions here take the normal duration.
+   ControlFastAnimationDuration; CSS states one duration per transitioned
+   property, not one per direction, so the growth timing is what the rule
+   carries and the return rides along on it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L371
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L179-L181
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L256

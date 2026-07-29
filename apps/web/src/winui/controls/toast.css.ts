@@ -19,8 +19,8 @@
 // Some of Fluent's rows are deliberately kept. The action slot's inline
 // placement in the title's third grid column has no counterpart in TeachingTip,
 // whose button metrics describe a panel below the content; and its brand
-// foreground would want AccentTextFillColorPrimary, which tokens.ts records as
-// unresolvable. The media glyph size likewise stands, because the only glyph
+// foreground would want AccentTextFillColorPrimary, a step of the
+// Windows-generated accent ramp the vocabulary carries no value for. The media glyph size likewise stands, because the only glyph
 // size the dictionary states belongs to that unrendered close button. The
 // ToastBody subtitle's own 4px step stands too: TeachingTip has two text rows to
 // the toast's three, so the third row's spacing is Fluent's alone.

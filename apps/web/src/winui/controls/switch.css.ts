@@ -54,9 +54,9 @@ export const switchCss = `
   margin-inline-start: 6.579%;
   transition:
     transform var(--durationNormal) var(--curveEasyEase),
-    width 83ms var(--winui-control-fast-out-slow-in-easing),
-    height 83ms var(--winui-control-fast-out-slow-in-easing),
-    margin-inline-start 83ms var(--winui-control-fast-out-slow-in-easing);
+    width var(--winui-control-faster-animation-duration) var(--winui-control-fast-out-slow-in-easing),
+    height var(--winui-control-faster-animation-duration) var(--winui-control-fast-out-slow-in-easing),
+    margin-inline-start var(--winui-control-faster-animation-duration) var(--winui-control-fast-out-slow-in-easing);
   width: 31.579%;
 }
 

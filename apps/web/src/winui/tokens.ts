@@ -72,6 +72,37 @@
 // scoping form; it appears below only as a declaration site, on the two token
 // blocks that have to be declared where the theme is.
 //
+// Two kinds of subject cannot take that form, and both are deliberate. A rule
+// about an element Fluent does not render — the OverlayScrollbars parts, and
+// the `.floway-*` elements our own wrappers add — has no `fui-` class to
+// double, so it names the class it has and doubles nothing; those elements
+// carry no Griffel atoms either, so there is no specificity to beat. A rule
+// about an unclassed descendant of a Fluent element — a slot Fluent renders as
+// a bare child — keeps the doubled Fluent subject in front of it and reaches
+// the child with a combinator.
+//
+// ---------------------------------------------------------------------------
+// Opting a subtree out of the restyle
+// ---------------------------------------------------------------------------
+//
+// `data-winui-card-restyle='off'` on an element removes the layer from it and
+// everything below. Surfaces designed against Fluent's own palette and
+// elevations live under it — the playground transcript and composer above all.
+// Two mechanisms carry it, and which one a rule needs depends on what the rule
+// spends. A rule that reads a `--winui-*` custom property goes through an
+// indirection declared on `:root` and reset to `initial` under the attribute,
+// with the Fluent value as the `var()` fallback; a rule that cannot be
+// expressed as a value — geometry, a new declaration Fluent does not make —
+// excludes the subtree in its selector with
+// `:not([data-winui-card-restyle='off'] *)`.
+//
+// The attribute cannot reach a portalled surface: a tooltip, a dialog or a menu
+// mounts under the provider root rather than under the element that opened it,
+// so neither inheritance nor a descendant selector connects the two. Anything
+// the layer restyles on a portalled surface therefore reaches every instance of
+// it in the app, and a portalled surface that must not be restyled cannot be
+// restyled at all.
+//
 // The trade the doubled form accepts is that a rule matches a Fluent element
 // anywhere in the document, including outside any provider. Fluent's classes
 // are only ever emitted by Fluent's own components, so in practice that set and
@@ -97,6 +128,12 @@
 // `applyStylesToPortals` is false, so this one selector holds under either
 // setting where the literal class alone would not.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-provider/library/src/components/FluentProvider/useFluentProviderThemeStyleTag.ts#L58
+
+// The selector half of the opt-out documented above: appended to a rule's
+// subject compound, it stops the rule at the boundary of an opted-out subtree.
+// Rules that spend a token instead go through a `:root` indirection reset to
+// `initial` there, and need nothing from here.
+export const notOptedOut = `:not([data-winui-card-restyle='off'] *)`;
 
 export const winuiTokenCss = `
 /* Control fills — the body of a button, combo box, or check box.
@@ -130,8 +167,6 @@ export const winuiTokenCss = `
   --winui-control-stroke-secondary: #00000029;
   --winui-control-stroke-on-accent-default: #ffffff14;
   --winui-control-stroke-on-accent-secondary: #00000066;
-  --winui-control-strong-fill-default: #72000000;
-  --winui-control-strong-fill-disabled: #51000000;
   --winui-control-strong-stroke-default: #00000072;
   --winui-control-strong-stroke-disabled: #00000037;
 }
@@ -143,10 +178,23 @@ export const winuiTokenCss = `
     --winui-control-stroke-secondary: #ffffff18;
     --winui-control-stroke-on-accent-default: #ffffff14;
     --winui-control-stroke-on-accent-secondary: #00000023;
-    --winui-control-strong-fill-default: #ffffff8b;
-    --winui-control-strong-fill-disabled: #ffffff3f;
     --winui-control-strong-stroke-default: #ffffff8b;
     --winui-control-strong-stroke-disabled: #ffffff28;
+  }
+}
+
+/* The control strong fill — the scroll bar thumb, and the panning indicator we
+   have no counterpart for. It sits in the fill block of the dictionaries rather
+   than with the strokes above, so it carries its own permalinks.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L226 */
+:root {
+  --winui-control-strong-fill-default: #00000072;
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L22 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --winui-control-strong-fill-default: #ffffff8b;
   }
 }
 
@@ -170,7 +218,7 @@ export const winuiTokenCss = `
 
 /* Card and layer fills — translucent surfaces that sit on the solid background
    ramp rather than replacing it.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250-L264 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250-L265 */
 :root {
   --winui-card-background-fill-default: #ffffffb3;
   --winui-card-background-fill-secondary: #f6f6f680;
@@ -179,7 +227,7 @@ export const winuiTokenCss = `
   --winui-layer-fill-alt: #ffffff;
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46-L60 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46-L61 */
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-card-background-fill-default: #ffffff0d;
@@ -191,21 +239,23 @@ export const winuiTokenCss = `
 }
 
 /* Solid backgrounds — the opaque ramp everything translucent is composited on.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L272-L275 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L272-L279 */
 :root {
   --winui-solid-background-fill-base: #f3f3f3;
   --winui-solid-background-fill-secondary: #eeeeee;
   --winui-solid-background-fill-tertiary: #f9f9f9;
   --winui-solid-background-fill-quarternary: #ffffff;
+  --winui-solid-background-fill-base-alt: #dadada;
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L68-L71 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L68-L75 */
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-solid-background-fill-base: #202020;
     --winui-solid-background-fill-secondary: #1c1c1c;
     --winui-solid-background-fill-tertiary: #282828;
     --winui-solid-background-fill-quarternary: #2c2c2c;
+    --winui-solid-background-fill-base-alt: #0a0a0a;
   }
 }
 
@@ -250,47 +300,43 @@ export const winuiTokenCss = `
   }
 }
 
-/* The system accent ramp. Windows generates seven steps from the user's chosen
-   accent and exposes them to XAML as SystemAccentColor plus Light1-3 and
-   Dark1-3; they appear in no theme dictionary because they do not exist until
-   a machine has an accent set. A browser cannot read them, so the ramp below
-   is the one Windows 11 generates for its own default accent, #0078D4. That is
-   the single assumption in this file: a user who has picked a different accent
-   sees Floway in Windows 11's default blue rather than in theirs.
+/* The accent. Windows generates a seven step ramp from the user's chosen accent
+   and exposes it to XAML as SystemAccentColor plus Light1-3 and Dark1-3. Those
+   steps exist only on a machine that has an accent set, so they appear in no
+   theme dictionary and there is nothing here to transcribe; a browser cannot
+   read them either. Floway's own brand ramp stands in for them, which is also
+   what keeps an accented WinUI surface on the product's colour rather than on
+   Windows'.
 
-   The generation algorithm changed between Windows 10 and 11, so these values
-   are the Windows 11 ones.
-   https://valer100.github.io/winaccent/colors/accent-color-and-shades/
-   https://learn.microsoft.com/en-us/uwp/api/windows.ui.viewmanagement.uicolortype */
-:root {
-  --winui-system-accent-light-3: #99ebff;
-  --winui-system-accent-light-2: #4cc2ff;
-  --winui-system-accent-light-1: #0091f8;
-  --winui-system-accent: #0078d4;
-  --winui-system-accent-dark-1: #0067c0;
-  --winui-system-accent-dark-2: #003e92;
-  --winui-system-accent-dark-3: #001a68;
-}
+   The substitution is why this block is keyed to the theme rather than to the
+   document root: it spends a Fluent brand variable, which resolves only where
+   Fluent declares its theme.
 
-/* Accent fill ramp, at the 1.0 / 0.9 / 0.8 opacities the dictionaries state.
-   Light keys off Dark1 and dark off Light2 -- the ramp is walked in opposite
-   directions so the accent stays legible against each theme's material, which
-   is also why the two themes cannot share one base.
+   What the dictionaries do state is the relationship between the fills — one
+   base at 1.0, 0.9 and 0.8 opacity — and that is transcribed. Light keys its
+   base off Dark1 and dark off Light2, walking the ramp in opposite directions
+   so the accent stays legible against each theme's material; Fluent's brand
+   fill already carries that per-theme adjustment, so one substitution covers
+   both.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L125-L127
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L329-L331 */
-:root {
-  --winui-accent-base: var(--winui-system-accent-dark-1);
+[class*='fui-FluentProvider'] {
+  --winui-accent-base: var(--colorBrandBackground);
   --winui-accent-fill-default: var(--winui-accent-base);
   --winui-accent-fill-secondary: color-mix(in srgb, var(--winui-accent-base) 90%, transparent);
   --winui-accent-fill-tertiary: color-mix(in srgb, var(--winui-accent-base) 80%, transparent);
-  --winui-accent-text-fill-primary: var(--winui-system-accent-dark-2);
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L125-L127 */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --winui-accent-base: var(--winui-system-accent-light-2);
-    --winui-accent-text-fill-primary: var(--winui-system-accent-light-3);
-  }
+/* The selection highlight behind selected text. Both dictionaries key it to
+   SystemAccentColor unmodified — not a step of the Dark1/Light2 ramp the accent
+   fills use — so it is the one accent surface that does not flip with the
+   theme. The web has a single brand fill standing in for the whole Windows
+   ramp, so the distinction between the unmodified accent and its neighbouring
+   step collapses here and both land on the same substituted colour.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L124
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L328 */
+[class*='fui-FluentProvider'] {
+  --winui-accent-fill-selected-text-background: var(--winui-accent-base);
 }
 
 /* The disabled accent fill is a literal rather than a step of that ramp.
@@ -392,16 +438,6 @@ export const winuiTokenCss = `
   }
 }
 
-/* The selection highlight behind selected text. Both dictionaries key it to
-   SystemAccentColor unmodified — not a step of the Dark1/Light2 ramp the accent
-   fills use — so it is the one accent surface that does not flip with the
-   theme.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L124
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L328 */
-:root {
-  --winui-accent-fill-selected-text-background: var(--winui-system-accent);
-}
-
 /* Status fills — the color of a validation or severity glyph. These are the
    only opaque hues in the vocabulary besides the background ramp, and the two
    dictionaries carry genuinely different hues rather than one hue at two
@@ -489,9 +525,11 @@ export const winuiTokenCss = `
 /* Motion. WinUI states durations as XAML timespans and easings as a KeySpline,
    whose four numbers are exactly the two control points of a CSS cubic-bezier.
    Both are declared outside the theme dictionaries and so do not vary by theme.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L603 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L603
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L606 */
 :root {
   --winui-control-normal-animation-duration: 250ms;
+  --winui-control-faster-animation-duration: 83ms;
   --winui-control-fast-out-slow-in-easing: cubic-bezier(0, 0, 0, 1);
 }
 
@@ -503,18 +541,18 @@ export const winuiTokenCss = `
   --winui-button-padding: 5px 11px 6px;
 }
 
-/* Unresolved. Four families are asked for by the controls above and are not
-   emitted, because the corpus does not carry a value to transcribe.
+/* Unresolved. Two families are asked for by the controls above and are not
+   emitted, because the corpus does not carry a value to transcribe and, unlike
+   the accent fills, neither states a relationship we could restate over a
+   substituted base.
 
    TextControlElevationBorderFocusedBrush, the outline a focused TextBox draws,
    has SystemAccentColorDark1 as its heavy stop, and AccentTextFillColor
    Primary/Secondary/Tertiary — the rest, hover and pressed fills of a link —
    are brushes over SystemAccentColorLight3/Light3/Light2 in dark and
-   Dark2/Dark3/Dark1 in light. Those are Windows-generated ramp steps that
-   appear in no theme dictionary, and unlike the accent fill ramp none of them
-   carries an opacity relationship we could restate over a substituted base, so
-   there is nothing to reproduce. Fluent's own brand foreground tokens remain in
-   use for both.
+   Dark2/Dark3/Dark1 in light. Both are stops of the Windows-generated ramp, and
+   each asks for a different step of it, which a single substituted brand fill
+   cannot express. Fluent's own brand foreground tokens remain in use for both.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93-L95
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297-L299

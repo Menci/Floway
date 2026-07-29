@@ -22,10 +22,12 @@
 // Every painted value is read through a `--winui-card-*` custom property. The
 // properties are declared on `:root`, so any ancestor can redefine them for its
 // subtree, and setting one to `initial` makes it guaranteed-invalid.
-// `[data-winui-card-restyle=off]` below is that opt-out spelled once, for a
-// subtree whose surfaces are hand-designed and are not meant to follow the
-// layer. What the opt-out restores is the Fluent value each rule displaces,
-// which is what the var() fallbacks name; the rules themselves keep matching,
+// `[data-winui-card-restyle=off]` below is the layer-wide opt-out documented in
+// ../tokens.ts, for a subtree whose surfaces are hand-designed and are not
+// meant to follow the layer; this file is where the token half of it is
+// declared, alongside the elevations the theme layer flattens. What the opt-out
+// restores is the Fluent value each rule displaces, which is what the var()
+// fallbacks name; the rules themselves keep matching,
 // so a trait Fluent varies by state comes back at its rest value only — the
 // card fills below are the case where that shows.
 //
@@ -53,20 +55,20 @@ export const cardCss = `
   --winui-card-corner-radius: initial;
   --winui-card-selected-fill: initial;
   --winui-card-focus-stroke: initial;
-  /* The theme layer drops Fluent's ambient elevations, because WinUI carries
-     depth on inline surfaces with a stroke instead of a shadow. The chat
-     composer was designed against those elevations and reads as a raised bar
-     because of them, so the subtree that opts out of the card restyle gets
-     them back at Fluent's own values. */
-  --shadow4: 0 0 2px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.14);
-  --shadow8: 0 0 2px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.14);
-}
-
-@media (prefers-color-scheme: dark) {
-  [data-winui-card-restyle='off'] {
-    --shadow4: 0 0 2px rgba(0, 0, 0, 0.24), 0 2px 4px rgba(0, 0, 0, 0.28);
-    --shadow8: 0 0 2px rgba(0, 0, 0, 0.24), 0 4px 8px rgba(0, 0, 0, 0.28);
-  }
+  /* The theme layer flattens Fluent's six ambient elevations, because WinUI
+     carries depth on inline surfaces with a stroke instead of a shadow. The
+     chat composer was designed against those elevations and reads as a raised
+     bar because of them, so the opted-out subtree gets every one of them back.
+     Each is Fluent's own composition over Fluent's own shadow colours, which
+     the theme layer leaves untouched, so no colour is restated here and both
+     schemes are covered by one declaration.
+     https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts#L3-L5 */
+  --shadow2: 0 0 2px var(--colorNeutralShadowAmbient), 0 1px 2px var(--colorNeutralShadowKey);
+  --shadow4: 0 0 2px var(--colorNeutralShadowAmbient), 0 2px 4px var(--colorNeutralShadowKey);
+  --shadow8: 0 0 2px var(--colorNeutralShadowAmbient), 0 4px 8px var(--colorNeutralShadowKey);
+  --shadow2Brand: 0 0 2px var(--colorBrandShadowAmbient), 0 1px 2px var(--colorBrandShadowKey);
+  --shadow4Brand: 0 0 2px var(--colorBrandShadowAmbient), 0 2px 4px var(--colorBrandShadowKey);
+  --shadow8Brand: 0 0 2px var(--colorBrandShadowAmbient), 0 4px 8px var(--colorBrandShadowKey);
 }
 
 /* WinUI gives every card-shaped surface the same OverlayCornerRadius, where

@@ -62,7 +62,10 @@ export const selectCss = `
    data attribute keeps pointer focus in the pressed/rest states while still
    finding the button or input inside each root. Fluent's brand underline is
    the affordance this replaces, so the pseudo-element drawing it is dropped on
-   the appearance WinUI paints.
+   the appearance WinUI paints. WinUI's focus visual is two concentric rings:
+   the outline supplies the outer one and a shadow spread across the two pixels
+   the outline is offset by supplies the inner one, which is where WinUI puts
+   it — immediately against the control.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L338
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L343
@@ -70,6 +73,7 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L476 */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has([data-fui-focus-visible]),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has([data-fui-focus-visible]) {
+  box-shadow: 0 0 0 2px var(--winui-focus-stroke-inner);
   outline: 2px solid var(--winui-focus-stroke-outer);
   outline-offset: 2px;
 }
@@ -183,15 +187,19 @@ export const selectCss = `
    flyout stroke, against Fluent's control radius and transparent outline.
    The WinUI fill is AcrylicInAppFillColorDefaultBrush, which the token
    vocabulary does not carry, so the surface keeps Fluent's neutral background.
+   BackgroundSizing is InnerBorderEdge, which is background-clip: padding-box on
+   the web: the fill stops at the border so the translucent stroke reads against
+   whatever the drop-down floats over, as on every other flyout in the layer.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L64
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L332
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L590 */
 .fui-Listbox.fui-Listbox,
 .fui-Dropdown__listbox.fui-Dropdown__listbox,
 .fui-Combobox__listbox.fui-Combobox__listbox {
+  background-clip: padding-box;
+  border-color: var(--winui-surface-stroke-flyout);
   border-radius: var(--winui-overlay-corner-radius);
   gap: 0;
-  outline: 1px solid var(--winui-surface-stroke-flyout);
   overflow: hidden;
   padding: 0;
 }
@@ -219,8 +227,11 @@ export const selectCss = `
   padding: 4px;
 }
 
-/* List items. WinUI uses a tighter corner and an asymmetric padding that sits
-   the label optically centred against the taller bottom inset.
+/* List items. WinUI uses a tighter corner — ComboBoxItemCornerRadius, stated
+   for this item alone rather than as a step of the shared radius pair — and an
+   asymmetric padding that sits the label optically centred against the taller
+   bottom inset.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L345
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L335
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L345 */
 .fui-Option.fui-Option {
@@ -246,7 +257,10 @@ export const selectCss = `
   color: var(--winui-text-fill-secondary);
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L8 */
+/* Restated for the same reason as the glyphs above: the item-state rules
+   further up paint every option, disabled ones included, and would otherwise
+   outrank Fluent's own disabled atom.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L8 */
 .fui-Option.fui-Option[aria-disabled='true'] {
   color: var(--winui-text-fill-disabled);
 }

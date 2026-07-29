@@ -132,4 +132,3 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
     </div>
   );
 });
-
