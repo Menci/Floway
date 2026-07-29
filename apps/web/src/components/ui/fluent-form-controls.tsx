@@ -1,5 +1,5 @@
-import { forwardRef, useLayoutEffect, useRef } from 'react';
-import type { ComponentProps, ElementType, ReactNode } from 'react';
+import { createElement, forwardRef, useLayoutEffect, useRef } from 'react';
+import type { ComponentProps, ElementType, ReactNode, Ref } from 'react';
 
 import { fluentComponents } from '../../fluent';
 import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from './scroll-area';
@@ -39,6 +39,9 @@ type ListboxRenderFunction = (
   ListboxComponent: ElementType<ListboxProps>,
   listboxProps: Omit<ListboxProps, 'as'>,
 ) => ReactNode;
+type ListboxRenderPropsWithRef = Omit<ListboxProps, 'as'> & {
+  ref?: Ref<HTMLDivElement>;
+};
 
 function ScrollableListbox({
   ListboxComponent,
@@ -50,7 +53,14 @@ function ScrollableListbox({
   const hostRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const overlayScrollbarsEnabled = useOverlayScrollbarsEnabled();
-  const mergedRef = useMergedRefs(listboxProps.ref, hostRef);
+  const {
+    children,
+    className,
+    ref: fluentRef,
+    style,
+    ...rootProps
+  } = listboxProps as ListboxRenderPropsWithRef;
+  const mergedRef = useMergedRefs(fluentRef, hostRef);
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -59,23 +69,21 @@ function ScrollableListbox({
     return initializeScrollArea(host, viewport, 'vertical', true, overlayScrollbarsEnabled);
   }, [overlayScrollbarsEnabled]);
 
-  return <ListboxComponent
-    {...listboxProps}
-    className={mergeClasses(listboxProps.className, scrollAreaHostClassName, 'floway-combobox-listbox')}
-    {...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {})}
-    ref={mergedRef}
-    style={{ ...listboxProps.style, overflowX: 'hidden', overflowY: 'hidden' }}
-  >
-    <div
-      className="floway-combobox-listbox-viewport"
-      ref={viewportRef}
-      style={{ overflowX: 'hidden', overflowY: 'scroll' }}
-    >
-      <div className="floway-combobox-listbox-content">
-        {listboxProps.children}
-      </div>
-    </div>
-  </ListboxComponent>;
+  return createElement(
+    ListboxComponent as ElementType,
+    {
+      ...rootProps,
+      className: mergeClasses(className, scrollAreaHostClassName, 'floway-combobox-listbox'),
+      ...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {}),
+      ref: mergedRef,
+      style: { ...style, overflowX: 'hidden', overflowY: 'hidden' },
+    },
+    createElement('div', {
+      className: 'floway-combobox-listbox-viewport',
+      ref: viewportRef,
+      style: { overflowX: 'hidden', overflowY: 'scroll' },
+    }, createElement('div', { className: 'floway-combobox-listbox-content' }, children)),
+  );
 }
 
 const renderScrollableListbox: ListboxRenderFunction = (ListboxComponent, listboxProps) => (
