@@ -22,21 +22,27 @@
 export const buttonCss = `
 /* Geometry and typography. The weight is Normal rather than Fluent's semibold,
    and the style declares neither MinWidth nor MaxWidth, so a WinUI button is
-   sized by its content instead of reserving Fluent's 96px. The same padding
-   covers the icon-only button: WinUI states no separate square style for it,
-   and Fluent's 32px square is not addressable anyway, since iconOnly reaches
-   the DOM only as a hashed atom and an icon-only root is structurally
-   identical to an icon-plus-label one whose label is a bare text node.
+   sized by its content instead of reserving Fluent's 96px.
    BackgroundSizing is InnerBorderEdge, which is background-clip: padding-box on
    the web: the fill stops at the border rather than running underneath it, so a
    translucent border reads against the surface behind the control and not
    against its own fill.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L154-L168
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleButton_themeresources.xaml#L182-L190 */
-.fui-Button.fui-Button {
+/* ButtonPadding and the absence of a MinWidth apply to a button that carries a
+   label. An icon-only button is square in both libraries, and Fluent expresses
+   that as a 32px box with even padding; CSS cannot tell a label apart from an
+   icon, because a label is a text node and the icon is the only element child
+   either way. Excluding every button that has an icon keeps the square ones
+   square, and costs an icon-and-label button one pixel of horizontal padding.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
+.fui-Button.fui-Button:not(:has(> .fui-Button__icon)) {
   padding: var(--winui-button-padding);
   min-width: auto;
   max-width: none;
+}
+
+.fui-Button.fui-Button {
   background-clip: padding-box;
   font-weight: var(--fontWeightRegular);
 }

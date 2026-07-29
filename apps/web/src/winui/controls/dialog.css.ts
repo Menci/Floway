@@ -117,11 +117,13 @@ export const dialogCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L248-L258
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L10-L19 */
 .fui-DialogActions.fui-DialogActions {
-  grid-column: 1 / 4;
+  grid-column: 1 / -1;
   justify-self: stretch;
+  width: auto;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
+  justify-items: stretch;
   margin: 24px -24px -24px;
   padding: 24px;
   background-color: var(--winui-solid-background-fill-base);

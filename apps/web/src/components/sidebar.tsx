@@ -201,7 +201,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
         </ScrollArea>
       </NavDrawerBody>
       <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
-        <div className="grid gap-y-1 relative" ref={footerRef}>
+        <div className="grid gap-y-1 relative w-full" ref={footerRef}>
           <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} selectedValue={selectedValue} />
           <NavItem
             className={styles.item}
