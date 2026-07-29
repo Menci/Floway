@@ -323,7 +323,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           refreshing={refreshing}
           title={t('dashboard.proxy.listTitle')}
         />
-        <ProxyList disabled={refreshing || deleting} proxies={proxies} onDelete={setDeleteTarget} onEdit={handleEdit} />
+        <ProxyList disabled={refreshing || deleting} proxies={proxies} onDelete={target => { setDeleteTarget(target); setDeleteOpen(true); }} onEdit={handleEdit} />
       </ResourceListPanel>
 
       <DialogShell
