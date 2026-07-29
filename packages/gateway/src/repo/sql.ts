@@ -74,10 +74,6 @@ const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
-// D1 and node:sqlite bind SQLite scalars, not JavaScript booleans. SQLite's
-// conditional expressions represent boolean flags as integer 0/1 values.
-const sqliteBoolean = (value: boolean): 0 | 1 => value ? 1 : 0;
-
 // Throws on bad data: silently returning null would broaden the row's
 // upstream access beyond what the admin set.
 const parseUpstreamIds = (raw: string | null, label: string): string[] | null => {
@@ -188,12 +184,12 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   }
 
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
-    const hasName = sqliteBoolean(patch.name !== undefined);
-    const hasKey = sqliteBoolean(patch.key !== undefined);
-    const hasLastUsedAt = sqliteBoolean(patch.lastUsedAt !== undefined);
-    const hasUpstreamIds = sqliteBoolean(patch.upstreamIds !== undefined);
-    const hasDumpRetention = sqliteBoolean(patch.dumpRetentionSeconds !== undefined);
-    const hasResponsesRetention = sqliteBoolean(patch.responsesRetentionSeconds !== undefined);
+    const hasName = patch.name !== undefined;
+    const hasKey = patch.key !== undefined;
+    const hasLastUsedAt = patch.lastUsedAt !== undefined;
+    const hasUpstreamIds = patch.upstreamIds !== undefined;
+    const hasDumpRetention = patch.dumpRetentionSeconds !== undefined;
+    const hasResponsesRetention = patch.responsesRetentionSeconds !== undefined;
     const row = await this.db
       .prepare(
         `UPDATE api_keys
@@ -870,13 +866,13 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
 
   async get(): Promise<unknown | null> {
     const row = await this.db
-      .prepare('SELECT provider, tavily_api_key, web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1')
-      .first<{ provider: string; tavily_api_key: string; web_iq_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model: string }>();
+      .prepare('SELECT provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1')
+      .first<{ provider: string; tavily_api_key: string; microsoft_web_iq_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model: string }>();
     if (!row) throw new Error('search_config singleton row missing');
     return {
       provider: row.provider,
       tavily: { apiKey: row.tavily_api_key },
-      webIq: { apiKey: row.web_iq_api_key },
+      microsoftWebIq: { apiKey: row.microsoft_web_iq_api_key },
       jina: { apiKey: row.jina_api_key },
       passthroughOpenAiSearch: {
         enabled: row.passthrough_openai_search === 1,
@@ -887,22 +883,22 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   }
 
   async save(config: WebSearchConfig): Promise<void> {
-    const { provider, tavily, webIq, jina, passthroughOpenAiSearch } = config;
+    const { provider, tavily, microsoftWebIq, jina, passthroughOpenAiSearch } = config;
     await this.db
       .prepare(
-        `INSERT INTO search_config (id, provider, tavily_api_key, web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
+        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
          VALUES (1, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            tavily_api_key = excluded.tavily_api_key,
-           web_iq_api_key = excluded.web_iq_api_key,
+           microsoft_web_iq_api_key = excluded.microsoft_web_iq_api_key,
            jina_api_key = excluded.jina_api_key,
            passthrough_openai_search = excluded.passthrough_openai_search,
            alpha_search_upstream_id = excluded.alpha_search_upstream_id,
            alpha_search_model = excluded.alpha_search_model,
            updated_at = excluded.updated_at`,
       )
-      .bind(provider, tavily.apiKey, webIq.apiKey, jina.apiKey, passthroughOpenAiSearch.enabled ? 1 : 0, passthroughOpenAiSearch.upstreamId, passthroughOpenAiSearch.model)
+      .bind(provider, tavily.apiKey, microsoftWebIq.apiKey, jina.apiKey, passthroughOpenAiSearch.enabled ? 1 : 0, passthroughOpenAiSearch.upstreamId, passthroughOpenAiSearch.model)
       .run();
   }
 }

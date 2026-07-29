@@ -1,7 +1,7 @@
 import { FIXED_WEB_SEARCH_CONFIG_TEST_QUERY } from './config.ts';
 import { createJinaWebSearchProvider } from './providers/jina.ts';
+import { createMicrosoftWebIqWebSearchProvider } from './providers/microsoft-web-iq.ts';
 import { createTavilyWebSearchProvider } from './providers/tavily.ts';
-import { createWebIqWebSearchProvider } from './providers/web-iq.ts';
 import type { ConfiguredWebSearchProvider, WebSearchConfig, WebSearchConfigConnectionTestResult, WebSearchProvider, WebSearchProviderName } from './types.ts';
 
 const toPreviewText = (content: Array<{ type: 'text'; text: string }>): string =>
@@ -16,7 +16,7 @@ const toPreviewText = (content: Array<{ type: 'text'; text: string }>): string =
 // if-branch.
 const PROVIDER_FACTORIES: { [N in WebSearchProviderName]: (config: WebSearchConfig) => { apiKey: string; build: (apiKey: string) => WebSearchProvider } } = {
   tavily: config => ({ apiKey: config.tavily.apiKey, build: createTavilyWebSearchProvider }),
-  'web-iq': config => ({ apiKey: config.webIq.apiKey, build: createWebIqWebSearchProvider }),
+  'microsoft-web-iq': config => ({ apiKey: config.microsoftWebIq.apiKey, build: createMicrosoftWebIqWebSearchProvider }),
   jina: config => ({ apiKey: config.jina.apiKey, build: createJinaWebSearchProvider }),
 };
 

@@ -1059,7 +1059,7 @@ const en = {
         provider: {
           disabled: 'Disabled',
           tavily: 'Tavily',
-          webIq: 'Microsoft Web IQ',
+          microsoftWebIq: 'Microsoft Web IQ',
           jina: 'Jina',
         },
         passthrough: {
@@ -1071,7 +1071,7 @@ const en = {
         },
         providerDescTavily:
             'Tavily is a search engine optimized for LLMs and RAG workflows.',
-        providerDescWebIq:
+        providerDescMicrosoftWebIq:
             'Microsoft Web IQ provides web search and page retrieval APIs built for AI agents.',
         providerDescJina:
             'Jina AI provides web search and content extraction APIs.',

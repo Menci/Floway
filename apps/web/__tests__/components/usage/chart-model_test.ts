@@ -173,8 +173,8 @@ describe('search chart', () => {
   });
 
   it('plots recorded traffic from every provider, not just the configured one', () => {
-    const chart = searchChart([searchRecord('tavily', 3), searchRecord('microsoft-grounding', 4)]);
-    expect(chart.providers).toEqual(['microsoft-grounding', 'tavily']);
+    const chart = searchChart([searchRecord('tavily', 3), searchRecord('microsoft-web-iq', 4)]);
+    expect(chart.providers).toEqual(['microsoft-web-iq', 'tavily']);
     expect(areaPlot(chart.plot).lineChartData![0]!.data).toEqual([expect.objectContaining({ y: 7 })]);
   });
 

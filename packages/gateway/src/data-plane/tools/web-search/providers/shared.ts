@@ -133,7 +133,7 @@ export const extractWebSearchProviderErrorMessage = async (response: Response): 
     if (typeof parsed.message === 'string') {
       return parsed.message;
     }
-    // Web IQ writes the human-readable half of its envelope to `userMessage`
+    // Microsoft Web IQ writes the human-readable half of its envelope to `userMessage`
     // and the diagnostic half to `technicalDetails`, alongside `errorCode`,
     // `errorCategory`, `requestId`, and `traceId`. Without this rung the whole
     // envelope reaches the operator as raw JSON. Observed on

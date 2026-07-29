@@ -96,13 +96,13 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     setApiKey: (c, k) => ({ ...c, tavily: { apiKey: k } }),
   },
   {
-    value: 'web-iq',
-    labelKey: 'dashboard.searchConfig.provider.webIq',
+    value: 'microsoft-web-iq',
+    labelKey: 'dashboard.searchConfig.provider.microsoftWebIq',
     iconUrl: microsoftIconUrl,
-    descKey: 'dashboard.searchConfig.providerDescWebIq',
+    descKey: 'dashboard.searchConfig.providerDescMicrosoftWebIq',
     url: 'https://webiq.microsoft.ai/profiles',
-    getApiKey: c => c.webIq.apiKey,
-    setApiKey: (c, k) => ({ ...c, webIq: { apiKey: k } }),
+    getApiKey: c => c.microsoftWebIq.apiKey,
+    setApiKey: (c, k) => ({ ...c, microsoftWebIq: { apiKey: k } }),
   },
   {
     value: 'jina',

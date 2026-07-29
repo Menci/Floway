@@ -15,7 +15,7 @@ test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, o
     resolveConfiguredWebSearchProvider({
       provider: 'tavily',
       tavily: { apiKey: '' },
-      webIq: { apiKey: 'ms-test' },
+      microsoftWebIq: { apiKey: 'ms-test' },
       jina: { apiKey: '' },
       passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
     }),
@@ -26,9 +26,9 @@ test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, o
   );
 
   const resolved = resolveConfiguredWebSearchProvider({
-    provider: 'web-iq',
+    provider: 'microsoft-web-iq',
     tavily: { apiKey: 'tvly-test' },
-    webIq: { apiKey: 'ms-test' },
+    microsoftWebIq: { apiKey: 'ms-test' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
@@ -37,7 +37,7 @@ test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, o
   if (resolved.type !== 'enabled') {
     throw new Error('expected enabled provider');
   }
-  assertEquals(resolved.provider, 'web-iq');
+  assertEquals(resolved.provider, 'microsoft-web-iq');
 });
 
 test('testWebSearchConfigConnection returns structured disabled and missing-credential errors', async () => {
@@ -55,7 +55,7 @@ test('testWebSearchConfigConnection returns structured disabled and missing-cred
     await testWebSearchConfigConnection({
       provider: 'tavily',
       tavily: { apiKey: '' },
-      webIq: { apiKey: 'ms-test' },
+      microsoftWebIq: { apiKey: 'ms-test' },
       jina: { apiKey: '' },
       passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
     }),
@@ -103,7 +103,7 @@ test('testWebSearchConfigConnection previews at most three normalized results', 
       const result = await testWebSearchConfigConnection({
         provider: 'tavily',
         tavily: { apiKey: 'tvly-test' },
-        webIq: { apiKey: 'ms-test' },
+        microsoftWebIq: { apiKey: 'ms-test' },
         jina: { apiKey: '' },
         passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
       });
@@ -133,7 +133,7 @@ test('testWebSearchConfigConnection returns no_results when the provider returns
         await testWebSearchConfigConnection({
           provider: 'tavily',
           tavily: { apiKey: 'tvly-test' },
-          webIq: { apiKey: 'ms-test' },
+          microsoftWebIq: { apiKey: 'ms-test' },
           jina: { apiKey: '' },
           passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
         }),
@@ -151,7 +151,7 @@ test('testWebSearchConfigConnection returns no_results when the provider returns
   );
 });
 
-test('testWebSearchConfigConnection returns preview results for Web IQ too', async () => {
+test('testWebSearchConfigConnection returns preview results for Microsoft Web IQ too', async () => {
   await withMockedFetch(
     () =>
       jsonResponse({
@@ -166,9 +166,9 @@ test('testWebSearchConfigConnection returns preview results for Web IQ too', asy
       }),
     async () => {
       const result = await testWebSearchConfigConnection({
-        provider: 'web-iq',
+        provider: 'microsoft-web-iq',
         tavily: { apiKey: 'tvly-test' },
-        webIq: { apiKey: 'ms-test' },
+        microsoftWebIq: { apiKey: 'ms-test' },
         jina: { apiKey: '' },
         passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
       });
@@ -178,7 +178,7 @@ test('testWebSearchConfigConnection returns preview results for Web IQ too', asy
         throw new Error('expected a successful Microsoft preview result');
       }
 
-      assertEquals(result.provider, 'web-iq');
+      assertEquals(result.provider, 'microsoft-web-iq');
       assertEquals(result.query, FIXED_WEB_SEARCH_CONFIG_TEST_QUERY);
       assertEquals(result.results, [
         {
@@ -211,7 +211,7 @@ test('testWebSearchConfigConnection does not record search usage', async () => {
       const result = await testWebSearchConfigConnection({
         provider: 'tavily',
         tavily: { apiKey: 'tvly-test' },
-        webIq: { apiKey: '' },
+        microsoftWebIq: { apiKey: '' },
         jina: { apiKey: '' },
         passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
       });

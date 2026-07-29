@@ -6,7 +6,7 @@ import { WEB_SEARCH_PROVIDER_NAMES, isWebSearchProviderName } from '../../../sha
 export const DEFAULT_WEB_SEARCH_CONFIG: WebSearchConfig = {
   provider: 'disabled',
   tavily: { apiKey: '' },
-  webIq: { apiKey: '' },
+  microsoftWebIq: { apiKey: '' },
   jina: { apiKey: '' },
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
@@ -33,11 +33,11 @@ export const parseWebSearchConfigStrict = (input: unknown): WebSearchConfig => {
   if (typeof input.tavily.apiKey !== 'string') {
     throw new Error('search config tavily.apiKey must be a string');
   }
-  if (!isJsonObject(input.webIq)) {
-    throw new Error('search config webIq must be an object');
+  if (!isJsonObject(input.microsoftWebIq)) {
+    throw new Error('search config microsoftWebIq must be an object');
   }
-  if (typeof input.webIq.apiKey !== 'string') {
-    throw new Error('search config webIq.apiKey must be a string');
+  if (typeof input.microsoftWebIq.apiKey !== 'string') {
+    throw new Error('search config microsoftWebIq.apiKey must be a string');
   }
   if (!isJsonObject(input.jina)) {
     throw new Error('search config jina must be an object');
@@ -60,7 +60,7 @@ export const parseWebSearchConfigStrict = (input: unknown): WebSearchConfig => {
   return {
     provider: input.provider,
     tavily: { apiKey: input.tavily.apiKey.trim() },
-    webIq: { apiKey: input.webIq.apiKey.trim() },
+    microsoftWebIq: { apiKey: input.microsoftWebIq.apiKey.trim() },
     jina: { apiKey: input.jina.apiKey.trim() },
     passthroughOpenAiSearch: { enabled: passthrough.enabled, upstreamId, model },
   };

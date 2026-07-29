@@ -295,7 +295,7 @@ beforeEach(() => {
   void repo.webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'test-key' },
-    webIq: { apiKey: '' },
+    microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   } satisfies WebSearchConfig);
@@ -3945,7 +3945,7 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
   await getRepo().webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'test-key' },
-    webIq: { apiKey: '' },
+    microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-search' },
   } satisfies WebSearchConfig);
@@ -4012,7 +4012,7 @@ test('local and cascaded Floway unsupported commands produce the same agent-visi
   await getRepo().webSearchConfig.save({
     provider: 'tavily',
     tavily: { apiKey: 'test-key' },
-    webIq: { apiKey: '' },
+    microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_floway', model: 'gpt-search' },
   } satisfies WebSearchConfig);

@@ -16,7 +16,7 @@ const exerciseWebSearchUsageRepo = async (repo: WebSearchUsageRepo) => {
   await repo.deleteAll();
   await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 });
   await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 2 });
-  await repo.record({ provider: 'web-iq', keyId: 'key_a', action: 'search', hour: '2026-04-25T11', requests: 4 });
+  await repo.record({ provider: 'microsoft-web-iq', keyId: 'key_a', action: 'search', hour: '2026-04-25T11', requests: 4 });
   await repo.record({ provider: 'tavily', keyId: 'key_b', action: 'search', hour: '2026-04-25T12', requests: 8 });
   await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T13', requests: 16 });
 
@@ -59,7 +59,7 @@ const exerciseWebSearchUsageRepo = async (repo: WebSearchUsageRepo) => {
         requests: 3,
       },
       {
-        provider: 'web-iq',
+        provider: 'microsoft-web-iq',
         keyId: 'key_a',
         action: 'search',
         hour: '2026-04-25T11',
