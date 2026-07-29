@@ -94,5 +94,5 @@ export type UsageChartModel = ChartModelBase & ({ kind: 'token' } | { kind: 'sea
 
 // One hovered bucket, normalized across the two plot forms so the callout does
 // not care which component produced it.
-export interface CalloutRow { legend: string; color: string; value: number }
+export interface CalloutRow { id: string; label: string; color: string; value: number }
 export interface CalloutPoint { x: Date | number | string; rows: CalloutRow[] }

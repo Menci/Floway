@@ -126,7 +126,7 @@ export function buildTokenChart({
           data: {
             chartTitle: '',
             lineChartData: series.map(({ entry, data }) => ({
-              legend: entry.label,
+              legend: entry.id,
               color: colorForSlot(entry.colorSlot),
               lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' },
               data: data.flatMap((value, index) => value === null ? [] : [{
@@ -151,7 +151,7 @@ function areaChartData(
     chartTitle: '',
     pointOptions: { r: 2, strokeWidth: 1.25 },
     lineChartData: series.map(({ entry, data }) => ({
-      legend: entry.label,
+      legend: entry.id,
       color: colorForSlot(entry.colorSlot),
       lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
       data: data.flatMap((value, index) => value === null ? [] : [{

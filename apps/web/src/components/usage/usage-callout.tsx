@@ -33,16 +33,16 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
           </thead>
           <tbody>
             {rows.map(item => {
-              const entry = chart.entries.find(candidate => candidate.label === item.legend);
+              const entry = chart.entries.find(candidate => candidate.id === item.id);
               const counters = entry ? bucketDetails.get(entry.id) : undefined;
               if (!counters) return null;
               const summary = summarizeCounters(counters);
               return (
-                <tr key={item.legend}>
+                <tr key={item.id}>
                   <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
                     <span className="flex items-center gap-[6px] min-w-0 overflow-hidden text-ellipsis">
                       <i className="rounded-[2px] h-[10px] w-[10px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-                      <Text size={100}>{item.legend}</Text>
+                      <Text size={100}>{item.label}</Text>
                     </span>
                   </td>
                   <td className="px-1.5 py-px text-right"><Text size={100}>{formatCount(summary.requests, locale)}</Text></td>
@@ -60,9 +60,9 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
         </table>
       ) : (
         rows.map(item => (
-          <Text key={item.legend} size={100} className="flex items-center gap-1.5 justify-between tabular-nums">
+          <Text key={item.id} size={100} className="flex items-center gap-1.5 justify-between tabular-nums">
             <i className="rounded-full h-[8px] w-[8px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-            {item.legend}: {valueFormatter(item.value)}
+            {item.label}: {valueFormatter(item.value)}
           </Text>
         ))
       )}

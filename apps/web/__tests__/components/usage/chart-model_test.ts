@@ -97,6 +97,30 @@ describe('redacted series labels', () => {
   });
 });
 
+describe('series identity', () => {
+  it('keeps duplicate display names as independently addressable series', () => {
+    const records = ['key-1', 'key-2'].map((keyId, index) => ({
+      ...record({ input_tokens: String(index + 1) }),
+      keyId,
+    }));
+    const model = buildTokenChart({
+      records,
+      metadata: [{ id: 'key-1', name: 'Shared name' }, { id: 'key-2', name: 'Shared name' }],
+      models: [],
+      groupKey: 'keyId',
+      hiddenOwn: new Set(),
+      hiddenOther: new Set(),
+      redactKeys: false,
+      metric: 'total',
+      range: 'today',
+      buckets: [bucket],
+    });
+
+    expect(model.entries.map(entry => entry.label)).toEqual(['Shared name', 'Shared name']);
+    expect(areaPlot(model.plot).lineChartData?.map(series => series.legend)).toEqual(['key-1', 'key-2']);
+  });
+});
+
 describe('bucket callout figures', () => {
   // Token counts are decimal strings, so a `+` between two of them concatenates
   // digits instead of failing to compile. Pin the arithmetic on values whose

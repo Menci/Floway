@@ -22,7 +22,7 @@ const useAreaBoundaryStyles = makeStyles({
 
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 54 } as const;
 
-export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleLegends: string[] }) {
+export function UsageChart({ chart, valueFormatter, visibleSeriesIds }: { chart: UsageChartModel; valueFormatter: (value: number) => string; visibleSeriesIds: string[] }) {
   const { i18n, t } = useTranslation();
   const chartStateStyles = useChartStateStyles();
   const areaBoundaryStyles = useAreaBoundaryStyles();
@@ -30,6 +30,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
+  const labelById = useMemo(() => new Map(chart.entries.map(entry => [entry.id, entry.label])), [chart.entries]);
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const tickCount = Math.max(2, Math.min(chart.buckets.length <= 24 ? 6 : 7, Math.floor(Math.max(0, size.width - chartMargins.left - chartMargins.right) / 120)));
   const tickValues = useMemo(() => chartTickValues(chart.buckets, tickCount).map(bucket => bucket.date), [chart.buckets, tickCount]);
@@ -41,8 +42,11 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
 
   const lineCallout = useCallback((data?: CustomizedCalloutData) => renderCallout(data ? {
     x: data.x,
-    rows: data.values.map(value => ({ legend: value.legend ?? '', color: value.color ?? '', value: Number(value.y) })),
-  } : null), [renderCallout]);
+    rows: data.values.map(value => {
+      const id = value.legend ?? '';
+      return { id, label: labelById.get(id) ?? id, color: value.color ?? '', value: Number(value.y) };
+    }),
+  } : null), [labelById, renderCallout]);
 
   const hasData = chart.plot.data.lineChartData?.some(series => series.data.length > 0) ?? false;
 
@@ -83,7 +87,7 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
             enablePerfOptimization
             height={size.height}
             hideLegend
-            legendProps={{ selectedLegends: visibleLegends, canSelectMultipleLegends: true }}
+            legendProps={{ selectedLegends: visibleSeriesIds, canSelectMultipleLegends: true }}
             margins={chartMargins}
             onRenderCalloutPerStack={lineCallout}
             styles={chartRootStyles}
