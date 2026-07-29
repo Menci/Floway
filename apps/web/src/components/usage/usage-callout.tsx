@@ -23,7 +23,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
         {formatCalloutTitle(point.x, labelByTime, chart.range, locale)}
       </Text>
       {chart.kind === 'token' && bucketDetails ? (
-        <table className="border-collapse whitespace-nowrap">
+        <table className="border-collapse leading-[1.15] whitespace-nowrap [&_td]:!py-0 [&_th]:!py-0">
           <thead>
             <tr>
               <th className="max-w-[180px] min-w-[120px] pl-0 text-left" />
