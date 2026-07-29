@@ -8,7 +8,6 @@ const {
   Dropdown: FluentDropdown,
   Input: FluentInput,
   Select: FluentSelect,
-  SpinButton: FluentSpinButton,
   Textarea: FluentTextarea,
   mergeClasses,
 } = fluentComponents;
@@ -73,9 +72,3 @@ export const Textarea = forwardRef<HTMLTextAreaElement, ComponentProps<typeof Fl
     <FluentTextarea {...props} className={mergeClasses(className, MIN_WIDTH_CLASS)} ref={ref} />
   ),
 ) as typeof FluentTextarea;
-
-export const SpinButton = forwardRef<HTMLInputElement, ComponentProps<typeof FluentSpinButton>>(
-  ({ className, ...props }, ref) => (
-    <FluentSpinButton {...props} className={mergeClasses(className, MIN_WIDTH_CLASS)} ref={ref} />
-  ),
-) as typeof FluentSpinButton;
