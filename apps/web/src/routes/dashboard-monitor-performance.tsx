@@ -222,10 +222,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
         ]} onChange={value => setRange(value as PerformanceRange)} value={range} /></Field>
       </div>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] items-end gap-3 min-w-0">
-        <Field label={t('dashboard.performance.groupBy.label')}>
+      <div className="flex items-end gap-3 min-w-0 flex-wrap">
+        <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
           <div className="flex items-center gap-2">
-            <Select aria-label={t('dashboard.performance.groupBy.label')} className="min-w-[160px]" value={groupBy} onChange={(_, data) => changeGroupBy(data.value as PerformanceGroupBy)}>
+            <Select aria-label={t('dashboard.performance.groupBy.label')} className="!min-w-0 flex-1" value={groupBy} onChange={(_, data) => changeGroupBy(data.value as PerformanceGroupBy)}>
               {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</option>)}
             </Select>
             {groupBy === 'keyId' && (
@@ -280,8 +280,8 @@ function PerformanceFilterFields({ filters, groupBy, onChange, overview, upstrea
       if (key === 'userId' && view !== 'all-by-user') return false;
       if ((key === 'userId' || key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId')) return false;
       return key !== groupBy;
-    }).map(({ key, values }) => <Field key={key} label={t(`dashboard.performance.filters.${key}`)}>
-      <Select aria-label={t(`dashboard.performance.filters.${key}`)} value={filters[key]} onChange={(_, data) => onChange(key, data.value)}>
+    }).map(({ key, values }) => <Field className="min-w-[150px] flex-[1_1_150px]" key={key} label={t(`dashboard.performance.filters.${key}`)}>
+      <Select aria-label={t(`dashboard.performance.filters.${key}`)} className="!min-w-0 w-full" value={filters[key]} onChange={(_, data) => onChange(key, data.value)}>
         <option value="">{t(`dashboard.performance.filters.all.${key}`)}</option>
         {values.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
       </Select>
