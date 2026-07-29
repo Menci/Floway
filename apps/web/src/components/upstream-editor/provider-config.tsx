@@ -355,7 +355,7 @@ function CopilotConfig({ record, onPatch }: {
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     {!flow ? <Button appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
       <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
-      <code className="text-xl tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
+      <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
       <Link href={flow.verification_uri} target="_blank">{flow.verification_uri}</Link>
       <span className="inline-flex items-center gap-2 text-xs text-fui-fg2"><Spinner size="tiny" />{t('dashboard.upstreamEditor.copilot.waiting')}</span>
     </>}

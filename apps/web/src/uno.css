@@ -14,6 +14,15 @@ samp {
   font-family: var(--fontFamilyMonospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 }
 
+:where(code, kbd, pre, samp, .font-mono),
+:where(.font-mono button, .font-mono input, .font-mono select, .font-mono textarea) {
+  font-size: var(--fontSizeBase200) !important;
+}
+
+.mono-display {
+  font-size: var(--fontSizeBase500) !important;
+}
+
 .font-mono,
 .font-mono button,
 .font-mono input,
