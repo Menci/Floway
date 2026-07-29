@@ -320,11 +320,39 @@ export const winuiTokenCss = `
    both.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L125-L127
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L329-L331 */
-[class*='fui-FluentProvider'] {
-  --winui-accent-base: var(--colorBrandBackground);
+/* The ramp itself is not in any dictionary, and cannot be: Windows generates
+   its seven steps per machine from the accent the user picked, and hands them
+   to XAML as SystemAccentColor with Light1-3 and Dark1-3. A browser cannot read
+   them. The values below are the ramp Windows 11 generates for its own default,
+   #0078D4, which is the one assumption in this file -- a user who picked a
+   different accent sees Floway in Windows' default blue rather than in theirs.
+
+   They are sourced from the Windows runtime rather than from a theme
+   dictionary, and cross-checked two ways: winaccent documents the generated
+   ramp for that default, and states independently that dark-mode UI takes
+   accent_light_2 while light-mode takes accent_dark_1 -- which is what
+   AccentFillColorDefaultBrush resolves to in each theme dictionary here. The
+   generation algorithm changed between Windows 10 and 11; these are the 11 ones.
+   https://valer100.github.io/winaccent/colors/accent-color-and-shades/
+   https://learn.microsoft.com/en-us/uwp/api/windows.ui.viewmanagement.uicolortype */
+:root {
+  --winui-system-accent-light-3: #99ebff;
+  --winui-system-accent-light-2: #4cc2ff;
+  --winui-system-accent: #0078d4;
+  --winui-system-accent-dark-1: #0067c0;
+  --winui-system-accent-dark-2: #003e92;
+  --winui-accent-base: var(--winui-system-accent-dark-1);
   --winui-accent-fill-default: var(--winui-accent-base);
   --winui-accent-fill-secondary: color-mix(in srgb, var(--winui-accent-base) 90%, transparent);
   --winui-accent-fill-tertiary: color-mix(in srgb, var(--winui-accent-base) 80%, transparent);
+  --winui-accent-text-fill-primary: var(--winui-system-accent-dark-2);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --winui-accent-base: var(--winui-system-accent-light-2);
+    --winui-accent-text-fill-primary: var(--winui-system-accent-light-3);
+  }
 }
 
 /* The selection highlight behind selected text. Both dictionaries key it to
