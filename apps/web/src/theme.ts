@@ -2,7 +2,7 @@ import { fluentComponents } from './fluent';
 
 const { webDarkTheme, webLightTheme } = fluentComponents;
 
-export const baseFontStack = "'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', sans-serif";
+export const baseFontStack = "'Segoe UI Web (West European)', system-ui, sans-serif";
 
 // The upstream web release has no NF-flavoured WOFF2, so every browser uses
 // the bundled Maple Mono webfont before falling back to platform coding faces.
