@@ -82,7 +82,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const keys = currentKeyRefresh?.keys ?? loaderData.keys;
   const keysError = currentKeyRefresh?.error ?? loaderData.error;
   const [detailOpen, setDetailOpen] = useState(false);
-  const narrow = useMediaQuery('(max-width: 900px)');
+  const narrow = useMediaQuery('(max-width: 1200px)');
   const selectedRecordId = searchParams.get('record');
   const selectedKeyId = loaderData.selectedKeyId;
   const subscription = useDumpSubscription(selectedKeyId, loaderData.records);

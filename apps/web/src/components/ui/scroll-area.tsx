@@ -1,5 +1,5 @@
 import { ClickScrollPlugin, OverlayScrollbars } from 'overlayscrollbars';
-import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from 'react';
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import type { PropsWithChildren } from 'react';
 import 'overlayscrollbars/overlayscrollbars.css';
 
@@ -15,23 +15,49 @@ interface ScrollAreaProps extends PropsWithChildren {
   noTabIndex?: boolean;
 }
 
-let nativeScrollbarSize: number | null = null;
+let nativeScrollbarSize = 0;
+let scrollbarProbe: HTMLDivElement | null = null;
+const scrollbarSizeListeners = new Set<() => void>();
 
-const measureNativeScrollbar = () => {
-  if (nativeScrollbarSize !== null) return nativeScrollbarSize;
+const updateNativeScrollbarSize = () => {
+  if (!scrollbarProbe) return;
+  const next = Math.max(
+    scrollbarProbe.offsetWidth - scrollbarProbe.clientWidth,
+    scrollbarProbe.offsetHeight - scrollbarProbe.clientHeight,
+  );
+  if (next === nativeScrollbarSize) return;
+  nativeScrollbarSize = next;
+  scrollbarSizeListeners.forEach(listener => listener());
+};
+
+const ensureScrollbarProbe = () => {
+  if (scrollbarProbe || typeof document === 'undefined') return;
   const outer = document.createElement('div');
-  outer.style.cssText = 'position:absolute;top:-9999px;width:100px;height:100px;overflow:scroll;';
+  outer.setAttribute('aria-hidden', 'true');
+  outer.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:500px;height:500px;overflow:scroll;pointer-events:none;visibility:hidden;';
   const inner = document.createElement('div');
-  inner.style.cssText = 'width:200px;height:200px;';
+  inner.style.cssText = 'width:1000px;height:1000px;';
   outer.appendChild(inner);
   document.body.appendChild(outer);
-  nativeScrollbarSize = Math.max(
-    outer.offsetWidth - outer.clientWidth,
-    outer.offsetHeight - outer.clientHeight,
-  );
-  outer.remove();
-  return nativeScrollbarSize;
+  scrollbarProbe = outer;
+  new ResizeObserver(updateNativeScrollbarSize).observe(outer);
+  updateNativeScrollbarSize();
 };
+
+const subscribeToScrollbarSize = (listener: () => void) => {
+  scrollbarSizeListeners.add(listener);
+  ensureScrollbarProbe();
+  return () => scrollbarSizeListeners.delete(listener);
+};
+
+const getNativeScrollbarSize = () => nativeScrollbarSize;
+const getServerScrollbarSize = () => 0;
+
+export const useOverlayScrollbarsEnabled = () => useSyncExternalStore(
+  subscribeToScrollbarSize,
+  getNativeScrollbarSize,
+  getServerScrollbarSize,
+) > 0;
 
 const overflowFor = (axes: ScrollAxes) => ({
   x: axes === 'vertical' ? 'hidden' as const : 'scroll' as const,
@@ -43,11 +69,9 @@ export const initializeScrollArea = (
   viewport: HTMLDivElement,
   axes: ScrollAxes,
   noTabIndex: boolean,
+  overlayScrollbarsEnabled: boolean,
 ) => {
-  if (measureNativeScrollbar() === 0) {
-    host.removeAttribute('data-overlayscrollbars-initialize');
-    return;
-  }
+  if (!overlayScrollbarsEnabled) return;
   const instance = OverlayScrollbars({ target: host, elements: { viewport } }, {
     overflow: overflowFor(axes),
     scrollbars: {
@@ -72,20 +96,21 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
 }, forwardedRef) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const overlayScrollbarsEnabled = useOverlayScrollbarsEnabled();
   useImperativeHandle(forwardedRef, () => viewportRef.current as HTMLDivElement, []);
 
   useLayoutEffect(() => {
     const host = hostRef.current;
     const viewport = viewportRef.current;
     if (!host || !viewport) return;
-    return initializeScrollArea(host, viewport, axes, noTabIndex);
-  }, [axes, noTabIndex]);
+    return initializeScrollArea(host, viewport, axes, noTabIndex, overlayScrollbarsEnabled);
+  }, [axes, noTabIndex, overlayScrollbarsEnabled]);
 
   const overflow = overflowFor(axes);
   return (
     <div
       className={`${scrollAreaHostClassName} ${className}`}
-      data-overlayscrollbars-initialize=""
+      {...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {})}
       ref={hostRef}
     >
       <div

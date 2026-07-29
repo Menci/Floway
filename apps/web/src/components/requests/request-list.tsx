@@ -25,7 +25,7 @@ import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useNow } from '../../lib/use-now';
 import { Select } from '../ui/fluent-form-controls';
-import { initializeScrollArea, scrollAreaHostClassName } from '../ui/scroll-area';
+import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from '../ui/scroll-area';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
@@ -154,6 +154,7 @@ export function RequestListPanel(props: RequestListProps) {
   const s = useStyles();
   const [listRef, setListRef] = useState<ListImperativeAPI | null>(null);
   const scrollHostRef = useRef<HTMLDivElement>(null);
+  const overlayScrollbarsEnabled = useOverlayScrollbarsEnabled();
   const now = useNow(30_000);
 
   const selectByIndex = useCallback((index: number) => {
@@ -168,8 +169,8 @@ export function RequestListPanel(props: RequestListProps) {
     const host = scrollHostRef.current;
     const viewport = listRef?.element;
     if (!host || !viewport) return;
-    return initializeScrollArea(host, viewport, 'vertical', true);
-  }, [listRef]);
+    return initializeScrollArea(host, viewport, 'vertical', true, overlayScrollbarsEnabled);
+  }, [listRef, overlayScrollbarsEnabled]);
 
   const rowProps = useMemo<RowProps>(() => ({
     now,
@@ -194,7 +195,7 @@ export function RequestListPanel(props: RequestListProps) {
           <Text size={200} className="text-fui-fg3">{t('dashboard.requests.empty')}</Text>
         </div>
       ) : (
-        <div className={`${scrollAreaHostClassName} flex-1 min-h-0`} data-overlayscrollbars-initialize="" ref={scrollHostRef}>
+        <div className={`${scrollAreaHostClassName} flex-1 min-h-0`} {...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {})} ref={scrollHostRef}>
           <List
             aria-label={t('dashboard.requests.listLabel')}
             className={s.list}
