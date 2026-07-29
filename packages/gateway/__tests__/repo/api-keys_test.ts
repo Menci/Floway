@@ -5,7 +5,7 @@ import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, Repo } from '../../src/repo/types.ts';
-import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
+import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
@@ -33,7 +33,7 @@ const baseKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
 class ScalarOnlyPreparedStatement implements SqlPreparedStatement {
   constructor(private readonly inner: SqlPreparedStatement) {}
 
-  bind(...values: unknown[]): SqlPreparedStatement {
+  bind(...values: SqlBindValue[]): SqlPreparedStatement {
     if (values.some(value => typeof value === 'boolean')) {
       throw new TypeError('JavaScript booleans are not SQLite-bindable values');
     }
