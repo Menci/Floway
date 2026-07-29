@@ -2,9 +2,8 @@ import {
   ChevronDownRegular,
   ChevronUpRegular,
   DeleteRegular,
-  DismissRegular,
   EditRegular,
-  SettingsRegular,
+  OptionsRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -35,25 +34,22 @@ import { PlaygroundMessageCard } from '../components/playground/playground-messa
 import { streamPlaygroundText } from '../components/playground/playground-stream';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { Combobox, Input, Select, Textarea } from '../components/ui/fluent-form-controls';
-import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
-import { useMediaQuery } from '../lib/use-media-query';
 
 export const handle = dashboardWorkspaceHandle;
 
 const {
   Button,
-  DrawerBody,
-  DrawerHeader,
-  DrawerHeaderTitle,
   Field,
   MessageBar,
   MessageBarBody,
   Option,
-  OverlayDrawer,
+  Popover,
+  PopoverSurface,
+  PopoverTrigger,
   Text,
   makeStyles,
   tokens,
@@ -134,7 +130,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const [settingsOpen, setSettingsOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const narrow = useMediaQuery('(max-width: 1100px)');
 
   const selectedKey = loaderData.keys.find(key => key.id === keyId) ?? null;
   const cap = useMemo(
@@ -305,9 +300,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           {loaderData.keys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
         </Select>
       </Field>
-      <Field label={t('dashboard.playground.api')}>
-        <ChoiceGroup ariaLabel={t('dashboard.playground.api')} value={api} items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))} onChange={value => changeContext(() => setApi(value as PlaygroundApi))} />
-      </Field>
       <Field label={t('dashboard.playground.model')}>
         <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
           if (!data.optionValue) return;
@@ -342,14 +334,35 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
   return (
     <>
-      <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_360px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
-        <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
-          <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
+      <section className="h-full min-h-[560px] min-w-0">
+        <div className="h-full min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
+          <div className={`min-w-0 px-4 py-3 flex flex-wrap items-center gap-3 ${s.toolbar}`}>
             <div className="grid gap-0.5 min-w-0">
               <Text as="h1" block size={700} weight="semibold" className="!m-0">{t('dashboard.nav.playground')}</Text>
               <Text block size={200} className={`text-fui-fg2 truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
             </div>
-            {narrow && <Button appearance="subtle" aria-label={t('dashboard.playground.settings.title')} className="!ml-auto" icon={<SettingsRegular />} onClick={() => setSettingsOpen(true)} />}
+            <div className="ml-auto flex items-center gap-2 max-w-full max-[720px]:ml-0 max-[720px]:w-full">
+              <ChoiceGroup
+                ariaLabel={t('dashboard.playground.api')}
+                value={api}
+                items={playgroundApis.map(value => ({ value, label: t(`dashboard.playground.apis.${value}`) }))}
+                onChange={value => changeContext(() => setApi(value as PlaygroundApi))}
+              />
+              <Popover open={settingsOpen} onOpenChange={(_, data) => setSettingsOpen(data.open)} positioning={{ position: 'below', align: 'end' }}>
+                <PopoverTrigger disableButtonEnhancement>
+                  <Button
+                    appearance="subtle"
+                    aria-expanded={settingsOpen}
+                    aria-label={t('dashboard.playground.settings.title')}
+                    className="!flex-none"
+                    icon={<OptionsRegular />}
+                  />
+                </PopoverTrigger>
+                <PopoverSurface className="!p-0 !w-[320px] max-w-[calc(100vw-24px)] !h-[min(640px,calc(100vh-96px))] overflow-hidden">
+                  {settingsContent}
+                </PopoverSurface>
+              </Popover>
+            </div>
           </div>
           <div className="px-4 py-2 grid gap-2">
             <button
@@ -440,10 +453,6 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           </div>
         </div>
 
-        {narrow ? <OverlayDrawer onOpenChange={(_, data) => setSettingsOpen(data.open)} open={settingsOpen} position="end" size="medium">
-          <DrawerHeader><DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.playground.settings.close')} icon={<DismissRegular />} onClick={() => setSettingsOpen(false)} />}>{t('dashboard.playground.settings.title')}</DrawerHeaderTitle></DrawerHeader>
-          <DrawerBody className="!p-0 min-h-0">{settingsContent}</DrawerBody>
-        </OverlayDrawer> : <Panel className="min-h-0 overflow-hidden !p-0">{settingsContent}</Panel>}
       </section>
     </>
   );
