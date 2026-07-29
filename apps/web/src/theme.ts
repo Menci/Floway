@@ -4,14 +4,11 @@ const { webDarkTheme, webLightTheme } = fluentComponents;
 
 export const baseFontStack = "'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', sans-serif";
 
-// Cascadia Code is Microsoft's own coding typeface and the one Fluent surfaces
-// pair with; `monospace` alone resolves to Courier on macOS, which reads
-// nothing like the rest of the dashboard. The bundled variable face is named
-// with the Fontsource `Variable` suffix, so locally installed Cascadia builds
-// come next, then the platform coding faces.
-// https://github.com/microsoft/cascadia-code/blob/2404.23/README.md#cascadia-code
-// https://github.com/fontsource/font-files/blob/main/fonts/variable/cascadia-code/README.md#cascadia-code
-export const monospaceStack = "'Cascadia Code Variable', 'Cascadia Code', 'Cascadia Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+// Prefer the Nerd Font build when it is already installed. The upstream web
+// release has no NF-flavoured WOFF2, so every other browser uses the bundled
+// Maple Mono webfont before falling back to platform coding faces.
+// https://github.com/subframe7536/maple-font/blob/v7.9/README.md#maple-mono-nf
+export const monospaceStack = "'Maple Mono NF', 'Maple Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 const fontOverrides = {
   fontFamilyBase: baseFontStack,

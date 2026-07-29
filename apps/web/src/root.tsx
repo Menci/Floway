@@ -26,7 +26,9 @@ import { fluentComponents } from './fluent';
 import { baseFontStack, flowayDarkTheme, flowayLightTheme } from './theme';
 import { segoeWebFontCss, segoeWebFontOrigin, segoeWebFonts } from './web-fonts';
 import './i18n';
-import '@fontsource-variable/cascadia-code';
+import '@fontsource/maple-mono/400.css';
+import '@fontsource/maple-mono/600.css';
+import '@fontsource/maple-mono/700.css';
 import './uno.css';
 
 const { FluentProvider } = fluentComponents;
