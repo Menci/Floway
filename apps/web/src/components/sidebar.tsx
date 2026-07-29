@@ -55,6 +55,7 @@ const useStyles = makeStyles({
   item: {
     backgroundColor: 'transparent !important',
     borderRadius: '6px !important',
+    position: 'relative',
     '&:hover': { backgroundColor: 'light-dark(rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.05)) !important' },
     '&[aria-current="page"]': {
       backgroundColor: 'light-dark(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.08)) !important',
@@ -62,7 +63,20 @@ const useStyles = makeStyles({
     '&[aria-current="page"]:hover': {
       backgroundColor: 'light-dark(rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.11)) !important',
     },
-    '&[aria-current="page"]::after': { left: '2px !important' },
+    '&[aria-current="page"]::after': {
+      backgroundColor: 'var(--colorBrandStroke1) !important',
+      borderRadius: '2px',
+      bottom: 'auto !important',
+      content: '"" !important',
+      display: 'block !important',
+      height: '20px !important',
+      left: '4px !important',
+      position: 'absolute !important',
+      right: 'auto !important',
+      top: '10px !important',
+      width: '3px !important',
+      zIndex: 1,
+    },
   },
 });
 
