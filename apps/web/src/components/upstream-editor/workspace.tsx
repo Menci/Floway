@@ -149,13 +149,12 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
   const [search, setSearch] = useState('');
   const readOnly = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
-  if (fields.length !== manual.length) throw new Error('Manual model fields are out of sync with form values');
   const autoFetchEnabled = record.kind !== 'custom'
     || (config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled;
   const rows = useMemo<ModelRow[]>(() => {
     const visibleDiscovered = autoFetchEnabled ? discovered : [];
     const autoById = new Map(visibleDiscovered.map(item => [item.upstreamModelId, item]));
-    const result: ModelRow[] = manual.map((item, index) => ({ key: `manual:${fields[index]!.id}`, source: 'manual', config: item, manualIndex: index, hasAuto: autoById.has(item.upstreamModelId) }));
+    const result: ModelRow[] = manual.map((item, index) => ({ key: `manual:${fields[index]?.id ?? `pending:${index}`}`, source: 'manual', config: item, manualIndex: index, hasAuto: autoById.has(item.upstreamModelId) }));
     const manualIds = new Set(manual.map(item => item.upstreamModelId));
     for (const item of visibleDiscovered) if (!manualIds.has(item.upstreamModelId)) result.push({ key: `auto:${item.upstreamModelId}`, source: 'auto', config: item, manualIndex: null, hasAuto: true });
     return result;
