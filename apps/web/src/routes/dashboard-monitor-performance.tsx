@@ -1,6 +1,5 @@
 import { LineChart, type ChartProps, type CustomizedCalloutData } from '@fluentui/react-charts';
 import { ArrowClockwiseRegular, InfoRegular } from '@fluentui/react-icons';
-import { curveMonotoneX } from 'd3-shape';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,13 +12,12 @@ import { getSessionToken } from '../auth/session';
 import { useUnclippedChartFrame } from '../components/charts/chart-frame-styles';
 import { ChartSection } from '../components/charts/chart-section';
 import { chartTickValues, dashboardBucketFrames, formatAxisDate, formatCalloutTitle } from '../components/charts/dashboard-time';
-import { colorForSlot } from '../components/charts/palette';
 import { useElementSize } from '../components/charts/use-element-size';
+import { buildPerformanceChart, type PerformanceBucket, type PerformanceChartModel } from '../components/performance/performance-chart-model';
 import {
   buildPerformanceQuery,
   clearGroupedFilter,
   emptyPerformanceOverview,
-  performanceValue,
   parsePerformanceUrlState,
   resolvePerformanceGroup,
   serializePerformanceUrlState,
@@ -46,9 +44,6 @@ const {
   Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip,
 } = fluentComponents;
 
-interface Bucket { key: string; label: string; date: Date }
-interface ChartEntry { id: string; label: string; colorSlot: number }
-interface PerformanceChartModel { data: ChartProps; entries: ChartEntry[]; buckets: Bucket[]; range: PerformanceRange; metric: PerformanceMetric }
 interface UpstreamName { id: string; name: string }
 
 const chartMargins = { top: 16, right: 20, bottom: 42, left: 64 } as const;
@@ -308,8 +303,8 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
   const formatter = chart.metric === 'ttft' ? formatDuration : formatRate;
-  const visibleLegends = chart.entries.filter(entry => !hidden.has(entry.id)).map(entry => entry.label);
-  const visibleData = useMemo<ChartProps>(() => ({ ...chart.data, lineChartData: chart.data.lineChartData?.filter(series => visibleLegends.includes(series.legend)) }), [chart.data, visibleLegends]);
+  const labelById = useMemo(() => new Map(chart.entries.map(entry => [entry.id, entry.label])), [chart.entries]);
+  const visibleData = useMemo<ChartProps>(() => ({ ...chart.data, lineChartData: chart.data.lineChartData?.filter(series => !hidden.has(series.legend)) }), [chart.data, hidden]);
   const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length
@@ -317,15 +312,17 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
     : <PerformanceChartCallout
         data={props}
         formatter={formatter}
+        labelById={labelById}
         title={formatCalloutTitle(props.x, labelByTime, chart.range, locale)}
-      />, [chart.range, formatter, labelByTime, locale]);
+      />, [chart.range, formatter, labelById, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
   return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
 }
 
-function PerformanceChartCallout({ data, formatter, title }: {
+function PerformanceChartCallout({ data, formatter, labelById, title }: {
   data: CustomizedCalloutData;
   formatter: (value: number) => string;
+  labelById: ReadonlyMap<string, string>;
   title: string;
 }) {
   const rows = data.values
@@ -343,7 +340,7 @@ function PerformanceChartCallout({ data, formatter, title }: {
               className="block h-1.5 w-1.5 rounded-full"
               style={{ backgroundColor: item.color }}
             />
-            <Text block size={100} className="truncate" title={item.legend}>{item.legend}</Text>
+            <Text block size={100} className="truncate" title={labelById.get(item.legend) ?? item.legend}>{labelById.get(item.legend) ?? item.legend}</Text>
             <Text block size={100} weight="semibold" className="tabular-nums text-right whitespace-nowrap">
               {formatter(item.y)}
             </Text>
@@ -395,21 +392,7 @@ const performanceTableSortValue = (row: PerformanceDisplayRecord, key: Performan
   return row.tpotUsP95 !== null && row.tpotUsP95 > 0 ? 1_000_000 / row.tpotUsP95 : Number.NEGATIVE_INFINITY;
 };
 
-function buildPerformanceChart(records: PerformanceDisplayRecord[], metric: PerformanceMetric, percentile: PerformancePercentile, groupBy: PerformanceGroupBy, overview: PerformanceOverviewResponse, upstreamNames: ReadonlyMap<string, string>, buckets: Bucket[], range: PerformanceRange): PerformanceChartModel {
-  const groups = [...new Set(records.map(record => record.group))].sort();
-  const entries = groups.map((group, colorSlot) => ({ id: group, label: resolvePerformanceGroup(group, groupBy, overview, upstreamNames), colorSlot }));
-  const values = new Map(records.map(record => [`${record.bucket}\0${record.group}`, record]));
-  return {
-    entries, buckets, range, metric, data: {
-      chartTitle: '', lineChartData: entries.flatMap(entry => {
-        const data = buckets.flatMap(bucket => { const value = values.get(`${bucket.key}\0${entry.id}`); const y = value ? performanceValue(value, metric, percentile) : null; return y === null || y <= 0 ? [] : [{ x: bucket.date, y }]; });
-        return data.length ? [{ legend: entry.label, color: colorForSlot(entry.colorSlot), lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' }, data: data.map(point => ({ ...point, markerSize: 3 })) }] : [];
-      }),
-    },
-  };
-}
-
-const performanceBuckets = (range: PerformanceRange, now: number, locale: string): Bucket[] =>
+const performanceBuckets = (range: PerformanceRange, now: number, locale: string): PerformanceBucket[] =>
   dashboardBucketFrames(range, now).map(({ date, key }) => ({
     key,
     date,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, clearGroupedFilter, parsePerformanceUrlState, performanceValue, serializePerformanceUrlState } from '../../../src/components/performance/performance-data';
+import { buildPerformanceChart } from '../../../src/components/performance/performance-chart-model';
+import { buildPerformanceQuery, clearGroupedFilter, emptyPerformanceOverview, parsePerformanceUrlState, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord } from '../../../src/components/performance/performance-data';
 
 describe('performance overview query', () => {
   it('sends group-by and all active filters using the new API shape', () => {
@@ -31,5 +32,43 @@ describe('performance overview query', () => {
     expect(state).toMatchObject({ metric: 'tokPerSec', percentile: 'p99', groupBy: 'upstream', range: '30d', filters: { model: 'gpt-5' }, hidden: ['a,b', 'c'] });
     expect(serializePerformanceUrlState(state).get('m')).toBe('tokPerSec');
     expect(serializePerformanceUrlState(state).get('fm')).toBe('gpt-5');
+  });
+});
+
+describe('performance chart series', () => {
+  it('uses stable group ids when two API keys have the same name', () => {
+    const record = (group: string): PerformanceDisplayRecord => ({
+      bucket: 'bucket-1',
+      group,
+      requests: 1,
+      errors: 0,
+      ttftSamples: 1,
+      tpotSamples: 1,
+      neutral: 0,
+      ttftMsP50: 10,
+      ttftMsP95: 20,
+      ttftMsP99: 30,
+      tpotUsP50: 10_000,
+      tpotUsP95: 20_000,
+      tpotUsP99: 30_000,
+    });
+    const overview = emptyPerformanceOverview();
+    overview.keys = [
+      { id: 'key-1', name: 'Shared name', createdAt: '' },
+      { id: 'key-2', name: 'Shared name', createdAt: '' },
+    ];
+    const chart = buildPerformanceChart(
+      [record('key-1'), record('key-2')],
+      'ttft',
+      'p95',
+      'keyId',
+      overview,
+      new Map(),
+      [{ key: 'bucket-1', label: 'Bucket 1', date: new Date(0) }],
+      'today',
+    );
+
+    expect(chart.entries.map(entry => entry.label)).toEqual(['Shared name', 'Shared name']);
+    expect(chart.data.lineChartData?.map(series => series.legend)).toEqual(['key-1', 'key-2']);
   });
 });
