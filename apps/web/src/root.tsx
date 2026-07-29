@@ -24,13 +24,18 @@ import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { scrollAreaCss } from './components/ui/scroll-area';
 import { fluentComponents } from './fluent';
 import { flowayDarkTheme, flowayLightTheme } from './theme';
+import { segoeWebFontCss, segoeWebFontOrigin, segoeWebFonts } from './web-fonts';
 import './i18n';
 import '@fontsource-variable/cascadia-code';
 import './uno.css';
 
 const { FluentProvider } = fluentComponents;
 
-export const links: Route.LinksFunction = () => [];
+export const links: Route.LinksFunction = () => [
+  { rel: 'preconnect', href: segoeWebFontOrigin, crossOrigin: 'anonymous' },
+  { rel: 'preload', href: segoeWebFonts.regular, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
+  { rel: 'preload', href: segoeWebFonts.semibold, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
+];
 
 const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)';
 
@@ -70,6 +75,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
           *, *::before, *::after { box-sizing: border-box; }
           html body pre[class*="language-"] { border: 0; }
+          ${segoeWebFontCss}
           ${gradientBackgroundCriticalCss}
           ${appLoadingCriticalCss}
           ${navigationProgressCss}
