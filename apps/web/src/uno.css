@@ -16,7 +16,7 @@ samp {
 
 :where(code, kbd, pre, samp, .font-mono),
 :where(.font-mono button, .font-mono input, .font-mono select, .font-mono textarea) {
-  font-size: var(--fontSizeBase200) !important;
+  font-size: 13px !important;
 }
 
 .mono-display {
