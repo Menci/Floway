@@ -2,12 +2,9 @@ import { useTranslation } from 'react-i18next';
 
 import { bucketKeyForCallout, formatCompactDecimalCount, formatCount, formatHitRate, formatInputRate, formatUsdCost, summarizeCounters } from './chart-model';
 import type { CalloutPoint, UsageChartModel } from './types';
-import { fluentComponents } from '../../fluent';
+import { ChartCalloutTable } from '../charts/chart-callout-table';
 import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';
-
-const { Text } = fluentComponents;
-const bodyTextStyle = { fontSize: '11px', lineHeight: '14px' } as const;
 
 export function UsageChartCallout({ chart, labelByTime, locale, point, valueFormatter }: { chart: UsageChartModel; labelByTime: Map<number, string>; locale: string; point: CalloutPoint | null; valueFormatter: (value: number) => string }) {
   const { t } = useTranslation();
@@ -19,63 +16,32 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
   const rows = (chart.plot.form === 'area' ? point.rows.filter(row => row.value > 0) : point.rows)
     .sort((a, b) => b.value - a.value);
   if (rows.length === 0) return null;
+  const title = formatCalloutTitle(point.x, labelByTime, chart.range, locale);
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(650px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">
       {chart.kind === 'token' && bucketDetails ? (
-        <table className="border-collapse leading-[1.15] whitespace-nowrap [&_td]:!py-0">
-          <thead>
-            <tr>
-              <th className="max-w-[180px] min-w-[120px] pb-1 pl-0 text-left"><Text size={200} weight="semibold" className="text-fui-fg2">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text></th>
-              {(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output', 'hitRate'] as const).map(label => <th className="px-1.5 pb-1 text-right" key={label}><Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.usage.callout.${label}`)}</Text></th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(item => {
+        <ChartCalloutTable
+          columns={(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output', 'hitRate'] as const).map(key => ({ key, label: t(`dashboard.usage.callout.${key}`) }))}
+          rows={rows.flatMap(item => {
               const entry = chart.entries.find(candidate => candidate.id === item.id);
               const counters = entry ? bucketDetails.get(entry.id) : undefined;
-              if (!counters) return null;
+              if (!counters) return [];
               const summary = summarizeCounters(counters);
-              return (
-                <tr key={item.id}>
-                  <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
-                    <span className="flex items-center gap-[6px] min-w-0 overflow-hidden text-ellipsis">
-                      <i className="rounded-[2px] h-[10px] w-[10px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-                      <Text style={bodyTextStyle}>{item.label}</Text>
-                    </span>
-                  </td>
-                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCount(summary.requests, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatUsdCost(summary.cost)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCompactDecimalCount(summary.total, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCompactDecimalCount(summary.cacheRead, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCompactDecimalCount(summary.prefill, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCompactDecimalCount(summary.output, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
-                </tr>
-              );
+              return [{
+                color: item.color,
+                key: item.id,
+                label: item.label,
+                values: [formatCount(summary.requests, locale), formatUsdCost(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatInputRate(summary.cacheRead, summary.prompt), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale), formatHitRate(summary.cacheRead, summary.cacheCreation)],
+              }];
             })}
-          </tbody>
-        </table>
+          title={title}
+        />
       ) : (
-        <table className="border-collapse leading-[1.15] whitespace-nowrap [&_td]:!py-0">
-          <thead>
-            <tr>
-              <th className="max-w-[180px] min-w-[120px] pb-1 pl-0 text-left"><Text size={200} weight="semibold" className="text-fui-fg2">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text></th>
-              <th className="pb-1 pl-4 pr-0 text-right"><Text size={200} weight="semibold" className="text-fui-fg2">{t('dashboard.usage.callout.requests')}</Text></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(item => <tr key={item.id}>
-              <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
-                <span className="flex items-center gap-[6px] min-w-0 overflow-hidden text-ellipsis">
-                  <i className="rounded-[2px] h-[10px] w-[10px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-                  <Text style={bodyTextStyle}>{item.label}</Text>
-                </span>
-              </td>
-              <td className="pl-4 pr-0 text-right"><Text style={bodyTextStyle}>{valueFormatter(item.value)}</Text></td>
-            </tr>)}
-          </tbody>
-        </table>
+        <ChartCalloutTable
+          columns={[{ key: 'requests', label: t('dashboard.usage.callout.requests') }]}
+          rows={rows.map(item => ({ color: item.color, key: item.id, label: item.label, values: [valueFormatter(item.value)] }))}
+          title={title}
+        />
       )}
     </ScrollArea>
   );
