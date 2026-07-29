@@ -412,7 +412,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               ))}
             </div>
           </ScrollArea>
-          <div className="p-3">
+          <div className="p-3" data-winui-card-restyle="off">
             <PlaygroundComposer
               canSend={canSend}
               cancelLabel={t('common.cancel')}
