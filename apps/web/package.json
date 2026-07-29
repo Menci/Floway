@@ -6,7 +6,7 @@
   "exports": {},
   "scripts": {
     "dev": "react-router dev",
-    "build": "react-router build",
+    "build": "react-router build && jiti ../../scripts/check-web-monaco-chunk.ts",
     "test": "vitest run",
     "typecheck": "react-router typegen && tsc --noEmit"
   },
