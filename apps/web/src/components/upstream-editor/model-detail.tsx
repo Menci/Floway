@@ -12,8 +12,8 @@ import type {
   UpstreamRecord,
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { Combobox, Input, Select } from '../ui/fluent-form-controls';
 import { ChoiceGroup } from '../ui/choice-group';
+import { Combobox, Input, Select } from '../ui/fluent-form-controls';
 import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
 import type { Flag } from '@floway-dev/provider/flags';
 

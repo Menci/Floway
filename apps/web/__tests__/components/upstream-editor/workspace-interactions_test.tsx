@@ -4,10 +4,10 @@ import type { PropsWithChildren } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { UpstreamRecord } from '../../../src/api/types';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/editor-data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/editor-data';
 import { UpstreamWorkspace } from '../../../src/components/upstream-editor/workspace';
-import type { UpstreamRecord } from '../../../src/api/types';
 import { fluentComponents } from '../../../src/fluent';
 import '../../../src/i18n';
 import { flowayLightTheme } from '../../../src/theme';

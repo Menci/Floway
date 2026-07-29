@@ -100,9 +100,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
       currentKeys: keys,
       load: signal => callApi(() => api.api.keys.$get(undefined, { init: { signal } })),
       onNavigate: nextSelectedKeyId => {
-          const next = new URLSearchParams();
-          if (nextSelectedKeyId) next.set('key', nextSelectedKeyId);
-          void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, { replace: true });
+        const next = new URLSearchParams();
+        if (nextSelectedKeyId) next.set('key', nextSelectedKeyId);
+        void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, { replace: true });
       },
       onUpdate: (nextKeys, error) => setKeyRefresh({ source: loaderData, keys: nextKeys, error }),
       selectedKeyId: loaderData.selectedKeyId,
