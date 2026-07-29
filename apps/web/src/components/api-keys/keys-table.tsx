@@ -140,7 +140,7 @@ export function KeysTable({
         <div className="flex items-start gap-2 min-w-0 w-full">
           <div className="grid gap-0.5 min-w-0 flex-1">
             <Text truncate size={300}>{key.name}</Text>
-            <code className="text-fui-base200 text-fui-fg2 truncate">{truncateKey(key.key)}</code>
+            <code className="block text-fui-base200 text-fui-fg2 truncate" title={key.key}>{key.key}</code>
             <Text truncate size={200} className="text-fui-fg2" title={upstreamsTitle(key, upstreamById, t)}>{upstreamsText(key, upstreamById, t)}</Text>
             <Text size={200} className="text-fui-fg3">{shortDate(key.created_at)} · {lastUsed}</Text>
           </div>
