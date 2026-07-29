@@ -27,9 +27,10 @@ const {
 const useStyles = makeStyles({
   methodBadge: {
     fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: 'var(--fontWeightRegular)',
     justifyContent: 'center',
+    minWidth: '48px',
   },
 });
 
@@ -98,7 +99,7 @@ function MethodBadge({ method }: { method: 'GET' | 'POST' }) {
     appearance="tint"
     className={s.methodBadge}
     color={method === 'GET' ? 'brand' : 'success'}
-    size="small"
+    size="medium"
     translate="no"
   >{method}</Badge>;
 }
