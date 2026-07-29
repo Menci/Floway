@@ -23,8 +23,9 @@ import {
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { scrollAreaCss } from './components/ui/scroll-area';
 import { fluentComponents } from './fluent';
-import { flowayDarkTheme, flowayLightTheme } from './theme';
 import { segoeWebFontCss, segoeWebFontOrigin, segoeWebFonts } from './web-fonts';
+import { winuiCss } from './winui';
+import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
 import '@fontsource-variable/cascadia-code';
 import './uno.css';
@@ -54,7 +55,7 @@ const useSystemTheme = () => {
     () => window.matchMedia(COLOR_SCHEME_QUERY).matches,
     () => false,
   );
-  return dark ? flowayDarkTheme : flowayLightTheme;
+  return dark ? winuiDarkTheme : winuiLightTheme;
 };
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -81,6 +82,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ${navigationProgressCss}
           ${scrollAreaCss}
         `}</style>
+        <style>{winuiCss}</style>
       </head>
       <body className="text-[14px] font-sans m-0">
         <FluentProvider theme={theme}>

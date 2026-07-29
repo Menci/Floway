@@ -1,26 +1,113 @@
 // Card restyled from Fluent 2 Web onto WinUI 3.
 //
-// WinUI has no Card control. Its card-shaped surfaces are the Expander header —
-// a CardBackgroundFillColorDefault fill inside a 1px CardStrokeColorDefault
-// border — and ListViewItem, which is where the selected and pointer states
-// come from. Every trait those two contribute is a surface trait: a fill, a
-// stroke, or a wash over both.
+// WinUI has no Card control. Its card-shaped surfaces are the Expander, whose
+// header is a CardBackgroundFillColorDefault fill and whose content region is
+// the Secondary step of the same ramp, both inside a 1px CardStrokeColorDefault
+// border; and ListViewItem, which is where the selected state and the focus
+// ring come from. Every trait those two contribute is a surface trait: a fill,
+// a stroke, or a wash replacing the fill.
 //
-// Fluent partitions a Card's surface by appearance, and it partitions it in
-// atoms: `filled` and `filled-alternative` paint a fill, `outline` paints a
-// neutral stroke, `subtle` is chromeless, and each writes `background-color`
-// and an `::after` border colour under a hashed class. `winui/appearance`
-// stamps the resolved appearance back onto the DOM for the components it
-// wraps, and Card is not one of them, so no selector in this file can name one
-// appearance. A fill or a stroke stated on `.fui-Card` would consequently land
-// on the chromeless appearances WinUI itself leaves bare, and would repaint
-// every Card in the app — including the hand-designed chat bubbles, which use
-// a plain Card as their container and own their look.
+// Fluent partitions a Card's surface by appearance — `filled` and
+// `filled-alternative` paint a fill, `outline` paints a neutral stroke, and
+// `subtle` is chromeless — so `winui/appearance` stamps the resolved appearance
+// onto the root and each rule below names exactly one variant. `subtle` gets no
+// fill and no stroke, because WinUI states no chrome for a surface that has
+// declared itself chromeless.
 //
-// The focus stroke is the one Card trait that survives that: WinUI states a
-// single focus visual for the card-shaped item whatever it is filled with, and
-// Fluent draws it on one pseudo-element shared by all four appearances.
+// WinUI never repaints a card surface on pointer, so there is no hover or
+// pressed rule here: the Expander header declares one background and no
+// pointer-over counterpart to it.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5-L26
+//
+// Every painted value is read through a `--winui-card-*` custom property. The
+// properties are declared on `:root`, so any ancestor can redefine them for its
+// subtree, and setting one to `initial` makes it guaranteed-invalid.
+// `[data-winui-card-restyle=off]` below is that opt-out spelled once, for a
+// subtree whose surfaces are hand-designed and are not meant to follow the
+// layer. What the opt-out restores is the Fluent value each rule displaces,
+// which is what the var() fallbacks name; the rules themselves keep matching,
+// so a trait Fluent varies by state comes back at its rest value only — the
+// card fills below are the case where that shows.
+//
+// The focus visual takes the other route open to a redefinition of a Fluent
+// token: `var()` with no fallback. Under the opt-out the declaration is invalid
+// at computed-value time, and a custom property that is invalid at computed
+// value time computes to its inherited value, which for a Fluent theme token is
+// the provider's own. Naming a fallback there would instead be a cycle.
+// https://drafts.csswg.org/css-variables/#guaranteed-invalid
+// https://drafts.csswg.org/css-variables/#invalid-at-computed-value-time
 export const cardCss = `
+:root {
+  --winui-card-fill: var(--winui-card-background-fill-default);
+  --winui-card-fill-alternative: var(--winui-card-background-fill-secondary);
+  --winui-card-stroke: var(--winui-card-stroke-default);
+  --winui-card-corner-radius: var(--winui-overlay-corner-radius);
+  --winui-card-selected-fill: var(--winui-subtle-fill-secondary);
+  --winui-card-focus-stroke: var(--winui-focus-stroke-outer);
+}
+
+[data-winui-card-restyle='off'] {
+  --winui-card-fill: initial;
+  --winui-card-fill-alternative: initial;
+  --winui-card-stroke: initial;
+  --winui-card-corner-radius: initial;
+  --winui-card-selected-fill: initial;
+  --winui-card-focus-stroke: initial;
+}
+
+/* WinUI gives every card-shaped surface the same OverlayCornerRadius, where
+   Fluent scales the radius with the card's size; the fallback is Fluent's own
+   per-size variable, so opting out restores that scaling.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L6 */
+.fui-Card.fui-Card,
+.fui-Card.fui-Card::after {
+  border-radius: var(--winui-card-corner-radius, var(--fui-Card--border-radius));
+}
+
+/* The Expander header: the card fill, and the stroke Fluent leaves transparent
+   on a filled card. One fill for every pointer state is the point — the rule
+   outranks Fluent's interactive hover and pressed atoms, which is how the
+   surface stops repainting under the pointer.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L5
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L9 */
+.fui-Card.fui-Card[data-winui-appearance='filled'] {
+  background-color: var(--winui-card-fill, var(--colorNeutralBackground1));
+}
+
+.fui-Card.fui-Card[data-winui-appearance='filled']::after {
+  border-color: var(--winui-card-stroke, var(--colorTransparentStroke));
+}
+
+/* The Expander content region, one step down the same ramp, inside the same
+   stroke.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L25-L26 */
+.fui-Card.fui-Card[data-winui-appearance='filled-alternative'] {
+  background-color: var(--winui-card-fill-alternative, var(--colorNeutralBackground2));
+}
+
+.fui-Card.fui-Card[data-winui-appearance='filled-alternative']::after {
+  border-color: var(--winui-card-stroke, var(--colorTransparentStroke));
+}
+
+/* An outline card keeps Fluent's transparent body and takes only the card
+   stroke, which is what an Expander contributes once its fill is dropped.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46 */
+.fui-Card.fui-Card[data-winui-appearance='outline']::after {
+  border-color: var(--winui-card-stroke, var(--colorNeutralStroke1));
+}
+
+/* Selection. A selected ListViewItem replaces its background with
+   SubtleFillColorSecondary rather than layering over it, and states one
+   selected background whatever the item is filled with, so this rule is not
+   partitioned by appearance. Fluent exposes selection to CSS only through the
+   checkbox it renders as a child of the card root, so a card whose selection
+   is driven by a floating action instead has no selector to match.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCardSelectable.ts#L92-L118 */
+.fui-Card.fui-Card:has(> .fui-Card__checkbox:checked) {
+  background-color: var(--winui-card-selected-fill, var(--colorNeutralBackground1Selected));
+}
+
 /* The focus visual. A ListViewItem draws its primary focus ring in
    FocusStrokeColorOuter at 2px, which is the width and the position Fluent's
    own ring already has, so the ring's colour is the only input left to state.
@@ -36,8 +123,8 @@ export const cardCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L181-L182
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258 */
-.fui-FluentProvider .fui-Card[data-fui-focus-visible]::after,
-.fui-FluentProvider .fui-Card[data-fui-focus-within]:focus-within::after {
-  --colorStrokeFocus2: var(--winui-focus-stroke-outer);
+.fui-Card.fui-Card[data-fui-focus-visible]::after,
+.fui-Card.fui-Card[data-fui-focus-within]:focus-within::after {
+  --colorStrokeFocus2: var(--winui-card-focus-stroke);
 }
 `;

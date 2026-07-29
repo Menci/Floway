@@ -13,23 +13,6 @@
 // DefaultFlyoutPresenterStyle declares no VisualStateGroup, so rest is the
 // entire state table.
 //
-// Unlike the units whose element sits inside the provider tree, this one cannot
-// be scoped under `.fui-FluentProvider`: a surface without `inline` is rendered
-// through `Portal`, whose mount node is appended to `document.body` and carries
-// only the hashed theme class `useId('fui-FluentProvider')` produced — never the
-// literal one. A descendant selector rooted at the provider therefore matches
-// nothing. The surface class is doubled instead, which lifts the rule one step
-// above Griffel's single-class atoms while staying independent of where the
-// surface is mounted.
-//
-// That leaves the `--winui-*` vocabulary itself, which `winui/tokens.ts`
-// declares on `.fui-FluentProvider` and which consequently does not reach the
-// portal subtree either. Until the token layer is declared on a scope that
-// covers portalled surfaces, the two declarations below that name a variable
-// resolve nowhere; the surface then falls back to no radius and a currentColor
-// hairline rather than to Fluent's paint, so this unit must not be injected
-// before that scope is widened.
-//
 // Two WinUI rows are diagnosed and deliberately left out. FlyoutContentPadding
 // is 16,15,16,17 against Fluent's flat 12/16/20px, but `size` is composed into
 // hashed padding atoms and `winui/appearance.ts` puts only the appearance on the

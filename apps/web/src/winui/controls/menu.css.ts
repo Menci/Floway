@@ -11,10 +11,6 @@
 // are the ListViewItem set — the mapping fluent-svelte's MenuFlyoutItem
 // independently arrives at.
 //
-// Every rule is scoped under `.fui-FluentProvider`, the element that carries
-// both Fluent's tokens and the `--winui-*` vocabulary, which puts each selector
-// at least one class above Griffel's single-class atoms.
-//
 // Menu and MenuTrigger render no element of their own, and MenuList declares
 // only layout, so neither appears below.
 //
@@ -34,7 +30,7 @@ export const menuCss = `
    inline inset, which the corpus does not state for a plain menu item, so
    Fluent's inline padding is what keeps items off the surface edge.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L267 */
-.fui-FluentProvider .fui-MenuPopover {
+.fui-MenuPopover.fui-MenuPopover {
   border-radius: var(--winui-overlay-corner-radius);
   border-color: var(--winui-surface-stroke-flyout);
   padding-block: 2px;
@@ -45,7 +41,7 @@ export const menuCss = `
    brush that every later state reuses.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L23 */
-.fui-FluentProvider .fui-MenuItem {
+.fui-MenuItem.fui-MenuItem {
   background-color: var(--winui-subtle-fill-transparent);
   color: var(--winui-text-fill-primary);
 }
@@ -54,7 +50,7 @@ export const menuCss = `
    also has it. Fluent moves the hint on its own :hover and :focus, so the item
    root is named as well to clear those two rules by a class.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L89 */
-.fui-FluentProvider .fui-MenuItem .fui-MenuItem__secondaryContent {
+.fui-MenuItem .fui-MenuItem__secondaryContent.fui-MenuItem__secondaryContent {
   color: var(--winui-text-fill-secondary);
 }
 
@@ -63,8 +59,8 @@ export const menuCss = `
    hover and while a submenu is open. Inheriting covers the disabled item too,
    whose own brush is already the disabled one.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L24 */
-.fui-FluentProvider .fui-MenuItem:hover .fui-MenuItem__icon,
-.fui-FluentProvider .fui-MenuItem[aria-expanded="true"] .fui-MenuItem__icon {
+.fui-MenuItem:hover .fui-MenuItem__icon.fui-MenuItem__icon,
+.fui-MenuItem[aria-expanded='true'] .fui-MenuItem__icon.fui-MenuItem__icon {
   color: inherit;
 }
 
@@ -74,14 +70,14 @@ export const menuCss = `
    deepening. The foreground brush does not move in either state.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L18
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L24 */
-.fui-FluentProvider .fui-MenuItem:hover {
+.fui-MenuItem.fui-MenuItem:hover {
   background-color: var(--winui-subtle-fill-secondary);
   color: var(--winui-text-fill-primary);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L19
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L25 */
-.fui-FluentProvider .fui-MenuItem:hover:active {
+.fui-MenuItem.fui-MenuItem:hover:active {
   background-color: var(--winui-subtle-fill-tertiary);
   color: var(--winui-text-fill-primary);
 }
@@ -93,7 +89,7 @@ export const menuCss = `
    leave the trigger flat. Only the fill is stated — the rest rule already
    outranks Fluent's single-atom open foreground.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L18 */
-.fui-FluentProvider .fui-MenuItem[aria-expanded="true"] {
+.fui-MenuItem.fui-MenuItem[aria-expanded='true'] {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
@@ -101,9 +97,9 @@ export const menuCss = `
    transparent one. The foreground is left to Fluent, whose disabled brush the
    theme already remaps onto the WinUI one.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17 */
-.fui-FluentProvider .fui-MenuItem[aria-disabled="true"],
-.fui-FluentProvider .fui-MenuItem[aria-disabled="true"]:hover,
-.fui-FluentProvider .fui-MenuItem[aria-disabled="true"]:hover:active {
+.fui-MenuItem.fui-MenuItem[aria-disabled='true'],
+.fui-MenuItem.fui-MenuItem[aria-disabled='true']:hover,
+.fui-MenuItem.fui-MenuItem[aria-disabled='true']:hover:active {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
@@ -111,8 +107,8 @@ export const menuCss = `
    matched one class deeper than the rule that paints it at rest, so the
    hovered forms need no selector of their own.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L91 */
-.fui-FluentProvider .fui-MenuItem[aria-disabled="true"] .fui-MenuItem__secondaryContent,
-.fui-FluentProvider .fui-MenuItem[aria-disabled="true"] .fui-MenuItem__subText {
+.fui-MenuItem[aria-disabled='true'] .fui-MenuItem__secondaryContent.fui-MenuItem__secondaryContent,
+.fui-MenuItem[aria-disabled='true'] .fui-MenuItem__subText.fui-MenuItem__subText {
   color: var(--winui-text-fill-disabled);
 }
 
@@ -124,7 +120,7 @@ export const menuCss = `
    immediately inside the 2px border — supplies the inner one.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L30 */
-.fui-FluentProvider .fui-MenuItem[data-fui-focus-visible]::after {
+.fui-MenuItem.fui-MenuItem[data-fui-focus-visible]::after {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
@@ -132,7 +128,7 @@ export const menuCss = `
 /* Separator. WinUI has a stroke ramp of its own for dividers rather than
    borrowing a neutral control stroke.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L143 */
-.fui-FluentProvider .fui-MenuDivider {
+.fui-MenuDivider.fui-MenuDivider {
   border-bottom-color: var(--winui-divider-stroke-default);
 }
 `;

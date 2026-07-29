@@ -379,7 +379,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             {!selectedKey ? <EmptyState text={t('dashboard.playground.noKey')} />
               : !selectedModel ? <EmptyState text={t('dashboard.playground.noModelForApi')} />
                   : messages.length === 0 && !sending ? <EmptyState text={t('dashboard.playground.empty')} /> : null}
-            <div className="mt-auto grid gap-3">
+            <div className="mt-auto grid gap-3" data-winui-card-restyle="off">
               {messages.map(message => (
                 <div key={message.id} className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'} ${s.messageRow}`}>
                   <div className="max-w-[78%] min-w-0">

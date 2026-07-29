@@ -5,11 +5,7 @@
 // detached focus ring instead of the underline, and marks the selected list
 // item with an accent pill instead of a check glyph alone.
 //
-// Every rule is scoped under `.fui-FluentProvider`, the element that carries
-// both Fluent's tokens and the `--winui-*` vocabulary, which puts each selector
-// at least one class above Griffel's single-class atoms.
-//
-// The field rules address `[data-winui-appearance="outline"]`, the appearance
+// The field rules address `[data-winui-appearance='outline']`, the appearance
 // whose Fluent form — opaque fill inside a full outline — is the one WinUI's
 // ComboBox has. Fluent's `underline`, `filled-lighter` and `filled-darker`
 // fields have no WinUI counterpart and are left as Fluent draws them.
@@ -27,23 +23,23 @@ export const selectCss = `
 /* Field shell at rest. WinUI fills the ComboBox with a translucent control fill
    over whatever sits behind it, where Fluent paints an opaque neutral.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32 */
-.fui-FluentProvider .fui-Select__select[data-winui-appearance="outline"],
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"],
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"] {
+.fui-Select__select.fui-Select__select[data-winui-appearance='outline'],
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline'],
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline'] {
   background-color: var(--winui-control-fill-default);
 }
 
 /* The rest outline is WinUI's directional elevation stroke rather than a
    uniform neutral plus a darker bottom edge.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L54 */
-.fui-FluentProvider .fui-Select__select[data-winui-appearance="outline"]:not([aria-invalid="true"]),
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:not(:has(.fui-Dropdown__button[aria-invalid="true"])),
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:not(:has(.fui-Combobox__input[aria-invalid="true"])) {
+.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:not([aria-invalid='true']),
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:not(:has(.fui-Dropdown__button[aria-invalid='true'])),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:not(:has(.fui-Combobox__input[aria-invalid='true'])) {
   border-color: var(--winui-control-elevation-border-color);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L48 */
-.fui-FluentProvider .fui-Combobox__input::placeholder {
+.fui-Combobox__input.fui-Combobox__input::placeholder {
   color: var(--winui-text-fill-secondary);
 }
 
@@ -52,15 +48,15 @@ export const selectCss = `
    brightening the outline.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L33
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L55 */
-.fui-FluentProvider .fui-Select__select[data-winui-appearance="outline"]:enabled:hover,
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:hover,
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:hover {
+.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:enabled:hover,
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover,
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover {
   background-color: var(--winui-control-fill-secondary);
 }
 
-.fui-FluentProvider .fui-Select__select[data-winui-appearance="outline"]:enabled:hover:not([aria-invalid="true"]),
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:hover:not(:has(.fui-Dropdown__button[aria-invalid="true"])),
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:hover:not(:has(.fui-Combobox__input[aria-invalid="true"])) {
+.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:enabled:hover:not([aria-invalid='true']),
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover:not(:has(.fui-Dropdown__button[aria-invalid='true'])),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover:not(:has(.fui-Combobox__input[aria-invalid='true'])) {
   border-color: var(--winui-control-elevation-border-color);
 }
 
@@ -77,16 +73,16 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L343
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L570
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L476 */
-.fui-FluentProvider .fui-Select[data-winui-appearance="outline"]:focus-within,
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:focus-within,
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:focus-within {
+.fui-Select.fui-Select[data-winui-appearance='outline']:focus-within,
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:focus-within,
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:focus-within {
   outline: 2px solid var(--winui-focus-stroke-outer);
   outline-offset: 2px;
 }
 
-.fui-FluentProvider .fui-Select[data-winui-appearance="outline"]::after,
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]::after,
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]::after {
+.fui-Select.fui-Select[data-winui-appearance='outline']::after,
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']::after,
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']::after {
   content: none;
 }
 
@@ -96,8 +92,8 @@ export const selectCss = `
    own invalid border is written against :not(:focus-within). The Select needs
    no rule of its own — Fluent changes its field border on hover and press only.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L487 */
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:focus-within,
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:focus-within {
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:focus-within,
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:focus-within {
   border-color: var(--winui-control-elevation-border-color);
 }
 
@@ -106,19 +102,19 @@ export const selectCss = `
    dims the text one step.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L34
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L56 */
-.fui-FluentProvider .fui-Select__select[data-winui-appearance="outline"]:enabled:active,
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:active,
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:active,
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:has(.fui-Dropdown__button[aria-expanded="true"]),
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:has(.fui-Combobox__input[aria-expanded="true"]) {
+.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:enabled:active,
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active,
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active,
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button[aria-expanded='true']),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input[aria-expanded='true']) {
   background-color: var(--winui-control-fill-tertiary);
 }
 
-.fui-FluentProvider .fui-Select__select[data-winui-appearance="outline"]:enabled:active:not([aria-invalid="true"]),
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:active:not(:has(.fui-Dropdown__button[aria-invalid="true"])),
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:active:not(:has(.fui-Combobox__input[aria-invalid="true"])),
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:has(.fui-Dropdown__button[aria-expanded="true"]),
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:has(.fui-Combobox__input[aria-expanded="true"]) {
+.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:enabled:active:not([aria-invalid='true']),
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button[aria-invalid='true'])),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input[aria-invalid='true'])),
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button[aria-expanded='true']),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input[aria-expanded='true']) {
   border-color: var(--winui-control-stroke-default);
 }
 
@@ -126,11 +122,11 @@ export const selectCss = `
    fill. WinUI dims it whatever the field looks like, so this one is not tied to
    an appearance.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L42 */
-.fui-FluentProvider .fui-Select__select:enabled:active,
-.fui-FluentProvider .fui-Dropdown:active .fui-Dropdown__button,
-.fui-FluentProvider .fui-Combobox:active .fui-Combobox__input,
-.fui-FluentProvider .fui-Dropdown__button[aria-expanded="true"],
-.fui-FluentProvider .fui-Combobox__input[aria-expanded="true"] {
+.fui-Select__select.fui-Select__select:enabled:active,
+.fui-Dropdown:active .fui-Dropdown__button.fui-Dropdown__button,
+.fui-Combobox:active .fui-Combobox__input.fui-Combobox__input,
+.fui-Dropdown__button.fui-Dropdown__button[aria-expanded='true'],
+.fui-Combobox__input.fui-Combobox__input[aria-expanded='true'] {
   color: var(--winui-text-fill-secondary);
 }
 
@@ -138,9 +134,9 @@ export const selectCss = `
    than going transparent behind a lightened outline the way Fluent does.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L35
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L57 */
-.fui-FluentProvider .fui-Select__select[data-winui-appearance="outline"]:disabled,
-.fui-FluentProvider .fui-Dropdown[data-winui-appearance="outline"]:has(.fui-Dropdown__button:disabled),
-.fui-FluentProvider .fui-Combobox[data-winui-appearance="outline"]:has(.fui-Combobox__input:disabled) {
+.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:disabled,
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button:disabled),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input:disabled) {
   background-color: var(--winui-control-fill-disabled);
   border-color: var(--winui-control-stroke-default);
 }
@@ -149,11 +145,11 @@ export const selectCss = `
    outweighs Fluent's own disabled icon colour; the labels do not, since Fluent
    already paints them with the token this theme maps onto that same fill.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L59 */
-.fui-FluentProvider .fui-Select__select:disabled ~ .fui-Select__icon,
-.fui-FluentProvider .fui-Dropdown:has(.fui-Dropdown__button:disabled) .fui-Dropdown__expandIcon,
-.fui-FluentProvider .fui-Dropdown:has(.fui-Dropdown__button:disabled) .fui-Dropdown__clearButton,
-.fui-FluentProvider .fui-Combobox:has(.fui-Combobox__input:disabled) .fui-Combobox__expandIcon,
-.fui-FluentProvider .fui-Combobox:has(.fui-Combobox__input:disabled) .fui-Combobox__clearIcon {
+.fui-Select__select:disabled ~ .fui-Select__icon.fui-Select__icon,
+.fui-Dropdown:has(.fui-Dropdown__button:disabled) .fui-Dropdown__expandIcon.fui-Dropdown__expandIcon,
+.fui-Dropdown:has(.fui-Dropdown__button:disabled) .fui-Dropdown__clearButton.fui-Dropdown__clearButton,
+.fui-Combobox:has(.fui-Combobox__input:disabled) .fui-Combobox__expandIcon.fui-Combobox__expandIcon,
+.fui-Combobox:has(.fui-Combobox__input:disabled) .fui-Combobox__clearIcon.fui-Combobox__clearIcon {
   color: var(--winui-text-fill-disabled);
 }
 
@@ -162,9 +158,9 @@ export const selectCss = `
    stroke colour.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L58
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582 */
-.fui-FluentProvider .fui-Select__icon,
-.fui-FluentProvider .fui-Dropdown__expandIcon,
-.fui-FluentProvider .fui-Combobox__expandIcon {
+.fui-Select__icon.fui-Select__icon,
+.fui-Dropdown__expandIcon.fui-Dropdown__expandIcon,
+.fui-Combobox__expandIcon.fui-Combobox__expandIcon {
   color: var(--winui-text-fill-secondary);
   font-size: 12px;
   height: 12px;
@@ -176,8 +172,8 @@ export const selectCss = `
    buttons inside a text control, so the pair reads as one. Its geometry stays
    Fluent's.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L45 */
-.fui-FluentProvider .fui-Dropdown__clearButton,
-.fui-FluentProvider .fui-Combobox__clearIcon {
+.fui-Dropdown__clearButton.fui-Dropdown__clearButton,
+.fui-Combobox__clearIcon.fui-Combobox__clearIcon {
   color: var(--winui-text-fill-secondary);
 }
 
@@ -189,12 +185,12 @@ export const selectCss = `
    keep Fluent's arithmetic.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L341
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582 */
-.fui-FluentProvider .fui-Dropdown__button {
+.fui-Dropdown__button.fui-Dropdown__button {
   padding-block: 5px 7px;
   padding-inline: 12px 0;
 }
 
-.fui-FluentProvider .fui-Dropdown__expandIcon {
+.fui-Dropdown__expandIcon.fui-Dropdown__expandIcon {
   margin-inline-end: 14px;
 }
 
@@ -204,7 +200,7 @@ export const selectCss = `
    ComboBox reserves (38px of text padding against a glyph ending at 26px).
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L342
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582 */
-.fui-FluentProvider .fui-Select__icon {
+.fui-Select__icon.fui-Select__icon {
   inset-inline-end: 14px;
 }
 
@@ -215,9 +211,9 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L64
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L332
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L590 */
-.fui-FluentProvider .fui-Listbox,
-.fui-FluentProvider .fui-Dropdown__listbox,
-.fui-FluentProvider .fui-Combobox__listbox {
+.fui-Listbox.fui-Listbox,
+.fui-Dropdown__listbox.fui-Dropdown__listbox,
+.fui-Combobox__listbox.fui-Combobox__listbox {
   border-radius: var(--winui-overlay-corner-radius);
   outline: 1px solid var(--winui-surface-stroke-flyout);
 }
@@ -226,7 +222,7 @@ export const selectCss = `
    the label optically centred against the taller bottom inset.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L335
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L345 */
-.fui-FluentProvider .fui-Option {
+.fui-Option.fui-Option {
   border-radius: 3px;
   padding-block: 5px 7px;
   padding-inline: 11px;
@@ -237,20 +233,20 @@ export const selectCss = `
    NeutralBackground1Hover/Pressed do. WinUI also dims the label on press.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L16
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L7 */
-.fui-FluentProvider .fui-Option:hover {
+.fui-Option.fui-Option:hover {
   background-color: var(--winui-subtle-fill-secondary);
   color: var(--winui-text-fill-primary);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L6 */
-.fui-FluentProvider .fui-Option:active {
+.fui-Option.fui-Option:active {
   background-color: var(--winui-subtle-fill-tertiary);
   color: var(--winui-text-fill-secondary);
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L8 */
-.fui-FluentProvider .fui-Option[aria-disabled="true"] {
+.fui-Option.fui-Option[aria-disabled='true'] {
   color: var(--winui-text-fill-disabled);
 }
 
@@ -263,18 +259,18 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L18
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L20
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L21 */
-.fui-FluentProvider .fui-Option[aria-selected="true"],
-.fui-FluentProvider .fui-Option[aria-checked="true"] {
+.fui-Option.fui-Option[aria-selected='true'],
+.fui-Option.fui-Option[aria-checked='true'] {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-.fui-FluentProvider .fui-Option[aria-selected="true"]:hover,
-.fui-FluentProvider .fui-Option[aria-checked="true"]:hover {
+.fui-Option.fui-Option[aria-selected='true']:hover,
+.fui-Option.fui-Option[aria-checked='true']:hover {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
-.fui-FluentProvider .fui-Option[aria-selected="true"]:active,
-.fui-FluentProvider .fui-Option[aria-checked="true"]:active {
+.fui-Option.fui-Option[aria-selected='true']:active,
+.fui-Option.fui-Option[aria-checked='true']:active {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
@@ -292,7 +288,7 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L325
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L346
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L759 */
-.fui-FluentProvider .fui-Option[aria-selected="true"]::before {
+.fui-Option.fui-Option[aria-selected='true']::before {
   background-color: var(--winui-accent-fill-default);
   border-radius: 1.5px;
   content: "";
@@ -304,7 +300,7 @@ export const selectCss = `
   width: 3px;
 }
 
-.fui-FluentProvider .fui-Option[aria-selected="true"] .fui-Option__checkIcon {
+.fui-Option[aria-selected='true'] .fui-Option__checkIcon.fui-Option__checkIcon {
   visibility: hidden;
 }
 `;

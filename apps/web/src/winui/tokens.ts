@@ -15,12 +15,93 @@
 // LinearGradientBrush as a per-side border colour, or as inset box-shadows
 // where the outlined part has no border box.
 //
-// Both blocks target `.fui-FluentProvider`, the element that already carries
-// Fluent's own token variables, so the WinUI vocabulary cascades alongside it.
+// ---------------------------------------------------------------------------
+// Selector convention for the whole WinUI override layer
+// ---------------------------------------------------------------------------
+//
+// Every rule in `controls/` takes the form
+//
+//     .fui-X.fui-X { … }
+//
+// repeating the class of the element the rule is about — its subject, the
+// rightmost compound of the selector. Context to the left of the subject stays
+// single-classed and uses whatever combinator the relationship needs:
+//
+//     .fui-DialogActions.fui-DialogActions { … }          /* about DialogActions */
+//     .fui-DialogActions > .fui-Button.fui-Button { … }   /* about the button in it */
+//     .fui-MenuList .fui-MenuItem.fui-MenuItem { … }      /* about the item in a list */
+//
+// The doubling is a specificity device and nothing else, so it applies once, to
+// the subject. That puts the subject at exactly one class above Griffel's
+// single-class atoms — enough to win regardless of stylesheet order, and low
+// enough that a consumer's own class can still override us.
+//
+// The rejected alternative was to scope each rule under an ancestor
+// `.fui-FluentProvider`. It works today, and it works on portalled surfaces
+// too, because a portal mount node created under document.body carries the
+// provider root's full className:
+//
+//   useFluentProviderStyles.styles.js:30
+//     state.root.className = mergeClasses(fluentProviderClassNames.root, state.themeClassName, …)
+//   useFluentProvider.js:28
+//     const { applyStylesToPortals = true, … }
+//   useFluentProviderContextValues.js:31
+//     themeClassName: applyStylesToPortals ? root.className : themeClassName
+//   usePortalMountNode.js:201
+//     className: mergeClasses(themeClassName, classes.root, options.className)
+//
+// That reach is conditional: it survives only while `applyStylesToPortals`
+// keeps its default. The prop belongs to Fluent's API and any consumer may set
+// it to false, at which point a mount node keeps the theme class alone and
+// every ancestor-scoped rule silently stops applying to dialogs, popovers,
+// menus and tooltips. We do not want the layer resting on a prop we do not own.
+//
+// The self-doubled form also reads better. A nested FluentProvider — a themed
+// subtree, a preview pane — adds another ancestor that matches, so the ancestor
+// form gains a second matching path and no new meaning, while the doubled form
+// is unaffected either way. And when a rule genuinely needs a combinator, the
+// ancestor form leaves two prefixes in front of the subject and pushes the
+// subject's own weight to three classes for no reason; the doubled form keeps
+// the selector's leftmost compound meaningful, so a reader can tell which
+// element a rule paints by looking at its end.
+//
+// A `[class*='fui-FluentProvider']` ancestor prefix would repair the reach,
+// since it also matches the bare theme class, but it buys that back at the
+// price of a substring match in front of every rule in the layer, for a
+// specificity floor the doubled subject already provides. It is out as a
+// scoping form; it appears below only as a declaration site, on the two token
+// blocks that have to be declared where the theme is.
+//
+// The trade the doubled form accepts is that a rule matches a Fluent element
+// anywhere in the document, including outside any provider. Fluent's classes
+// are only ever emitted by Fluent's own components, so in practice that set and
+// "everything under a provider" are the same elements.
+//
+// The `--winui-*` custom properties below follow from the same reasoning and
+// are declared on `:root`. They switch on `prefers-color-scheme`, never on the
+// provider's `theme` prop, so the provider element is not the scope they
+// belong to; the document root is the widest one there is, and inherits into
+// every node — mount nodes included, under either setting of the prop.
+//
+// Two blocks cannot sit on `:root`, and say so at their own comment: their
+// values substitute a Fluent brand token. A custom property's `var()` is
+// resolved on the element the declaration applies to, so a declaration reading
+// `--colorBrandBackground` is guaranteed-invalid anywhere Fluent's theme
+// variables are not in scope, `:root` included. Those two are therefore keyed
+// to the theme rather than to the provider element, as
+// `[class*='fui-FluentProvider']`: Fluent writes the theme variables to a
+// class named `useId(fluentProviderClassNames.root)`, i.e. the literal root
+// class plus a generated suffix, so the substring match names exactly the set
+// of elements the theme is declared on. The provider root carries both classes
+// and a portal mount node carries the theme class alone when
+// `applyStylesToPortals` is false, so this one selector holds under either
+// setting where the literal class alone would not.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-provider/library/src/components/FluentProvider/useFluentProviderThemeStyleTag.ts#L58
+
 export const winuiTokenCss = `
 /* Control fills — the body of a button, combo box, or check box.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L219-L225 */
-.fui-FluentProvider {
+:root {
   --winui-control-fill-default: #ffffffb3;
   --winui-control-fill-secondary: #f9f9f980;
   --winui-control-fill-tertiary: #f9f9f94d;
@@ -31,7 +112,7 @@ export const winuiTokenCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L15-L21 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-control-fill-default: #ffffff0f;
     --winui-control-fill-secondary: #ffffff15;
     --winui-control-fill-tertiary: #ffffff08;
@@ -44,7 +125,7 @@ export const winuiTokenCss = `
 /* Control strokes — the 1px outline around a control, plus the strong variant
    the text-control bottom edge is painted with.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L243-L253 */
-.fui-FluentProvider {
+:root {
   --winui-control-stroke-default: #0000000f;
   --winui-control-stroke-secondary: #00000029;
   --winui-control-stroke-on-accent-default: #ffffff14;
@@ -55,7 +136,7 @@ export const winuiTokenCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L39-L49 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-control-stroke-default: #ffffff12;
     --winui-control-stroke-secondary: #ffffff18;
     --winui-control-stroke-on-accent-default: #ffffff14;
@@ -68,7 +149,7 @@ export const winuiTokenCss = `
 /* Subtle fills — the hover and pressed wash on otherwise chromeless surfaces
    such as list rows and transparent buttons.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L229-L231 */
-.fui-FluentProvider {
+:root {
   --winui-subtle-fill-transparent: #ffffff00;
   --winui-subtle-fill-secondary: #00000009;
   --winui-subtle-fill-tertiary: #00000006;
@@ -76,7 +157,7 @@ export const winuiTokenCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L25-L27 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-subtle-fill-transparent: #ffffff00;
     --winui-subtle-fill-secondary: #ffffff0f;
     --winui-subtle-fill-tertiary: #ffffff0a;
@@ -86,7 +167,7 @@ export const winuiTokenCss = `
 /* Card and layer fills — translucent surfaces that sit on the solid background
    ramp rather than replacing it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250-L264 */
-.fui-FluentProvider {
+:root {
   --winui-card-background-fill-default: #ffffffb3;
   --winui-card-background-fill-secondary: #f6f6f680;
   --winui-card-stroke-default: #0000000f;
@@ -95,7 +176,7 @@ export const winuiTokenCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46-L60 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-card-background-fill-default: #ffffff0d;
     --winui-card-background-fill-secondary: #ffffff08;
     --winui-card-stroke-default: #00000019;
@@ -105,7 +186,7 @@ export const winuiTokenCss = `
 
 /* Solid backgrounds — the opaque ramp everything translucent is composited on.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L272-L275 */
-.fui-FluentProvider {
+:root {
   --winui-solid-background-fill-base: #f3f3f3;
   --winui-solid-background-fill-secondary: #eeeeee;
   --winui-solid-background-fill-tertiary: #f9f9f9;
@@ -114,7 +195,7 @@ export const winuiTokenCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L68-L71 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-solid-background-fill-base: #202020;
     --winui-solid-background-fill-secondary: #1c1c1c;
     --winui-solid-background-fill-tertiary: #282828;
@@ -125,7 +206,7 @@ export const winuiTokenCss = `
 /* Surface strokes and dividers — the outline of a flyout or dialog, and the
    hairline between list sections.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L254-L257 */
-.fui-FluentProvider {
+:root {
   --winui-surface-stroke-default: #75757566;
   --winui-surface-stroke-flyout: #0000000f;
   --winui-divider-stroke-default: #0000000f;
@@ -133,7 +214,7 @@ export const winuiTokenCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L50-L53 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-surface-stroke-default: #75757566;
     --winui-surface-stroke-flyout: #00000033;
     --winui-divider-stroke-default: #ffffff15;
@@ -144,7 +225,7 @@ export const winuiTokenCss = `
    Inverse is the one that flips: it is the fill for text sitting on a surface
    from the opposite theme, so it carries the other dictionary's primary.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L209-L213 */
-.fui-FluentProvider {
+:root {
   --winui-text-fill-primary: #000000e4;
   --winui-text-fill-secondary: #0000009e;
   --winui-text-fill-tertiary: #00000072;
@@ -154,7 +235,7 @@ export const winuiTokenCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L5-L9 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-text-fill-primary: #ffffff;
     --winui-text-fill-secondary: #ffffffc5;
     --winui-text-fill-tertiary: #ffffff87;
@@ -169,9 +250,11 @@ export const winuiTokenCss = `
    color and appears nowhere in the theme dictionaries, so we take the base
    from Fluent's brand token, which is likewise theme-aware, and reproduce only
    the opacity relationship the dictionaries do define. The base is therefore
-   ours; the two opacities are WinUI's.
+   ours; the two opacities are WinUI's. Substituting that token is why this
+   block, alone with the selection highlight below, is declared on the theme
+   class rather than on the document root.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L329-L331 */
-.fui-FluentProvider {
+[class*='fui-FluentProvider'] {
   --winui-accent-fill-default: var(--colorBrandBackground);
   --winui-accent-fill-secondary: color-mix(in srgb, var(--colorBrandBackground) 90%, transparent);
   --winui-accent-fill-tertiary: color-mix(in srgb, var(--colorBrandBackground) 80%, transparent);
@@ -184,20 +267,20 @@ export const winuiTokenCss = `
 
 /* The disabled accent fill is a literal rather than a step of that ramp.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L242 */
-.fui-FluentProvider {
+:root {
   --winui-accent-fill-disabled: #00000037;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L38 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-accent-fill-disabled: #ffffff28;
   }
 }
 
 /* Text on and against accent.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L214-L218 */
-.fui-FluentProvider {
+:root {
   --winui-accent-text-fill-disabled: #0000005c;
   --winui-text-on-accent-fill-primary: #ffffff;
   --winui-text-on-accent-fill-secondary: #ffffffb3;
@@ -207,7 +290,7 @@ export const winuiTokenCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L10-L14 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-accent-text-fill-disabled: #ffffff5d;
     --winui-text-on-accent-fill-primary: #000000;
     --winui-text-on-accent-fill-secondary: #00000080;
@@ -219,7 +302,7 @@ export const winuiTokenCss = `
 /* Corner radii. WinUI declares these per theme dictionary but ships the same
    two values in all of them.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L13-L15 */
-.fui-FluentProvider {
+:root {
   --winui-control-corner-radius: 4px;
   --winui-overlay-corner-radius: 8px;
 }
@@ -230,7 +313,7 @@ export const winuiTokenCss = `
    it darkens on light and lightens on dark, and the disabled step is fully
    transparent in both dictionaries rather than a faint wash.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L233-L237 */
-.fui-FluentProvider {
+:root {
   --winui-control-alt-fill-secondary: #00000006;
   --winui-control-alt-fill-tertiary: #0000000f;
   --winui-control-alt-fill-quarternary: #00000018;
@@ -239,7 +322,7 @@ export const winuiTokenCss = `
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L29-L33 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-control-alt-fill-secondary: #00000019;
     --winui-control-alt-fill-tertiary: #ffffff0b;
     --winui-control-alt-fill-quarternary: #ffffff12;
@@ -251,14 +334,14 @@ export const winuiTokenCss = `
    text color and an inner one in the surface color, so the visual survives on
    any fill including accent. Both flip with the theme.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
-.fui-FluentProvider {
+:root {
   --winui-focus-stroke-outer: #000000e4;
   --winui-focus-stroke-inner: #ffffffb3;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-focus-stroke-outer: #ffffff;
     --winui-focus-stroke-inner: #000000b3;
   }
@@ -270,13 +353,13 @@ export const winuiTokenCss = `
    disabled input reads slightly differently from other disabled text.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L129
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L141 */
-.fui-FluentProvider {
+:root {
   --winui-temporary-text-fill-disabled: #0101015c;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L22 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-temporary-text-fill-disabled: #fefefe5d;
   }
 }
@@ -284,10 +367,11 @@ export const winuiTokenCss = `
 /* The selection highlight behind selected text. Both dictionaries key it to
    SystemAccentColor unmodified — not a step of the Dark1/Light2 ramp the accent
    fills use — so it takes the same brand-token substitution the accent ramp
-   block explains, at full strength and with no dark override.
+   block explains, at full strength, with no dark override and on the same
+   theme-keyed declaration site.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L124
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L328 */
-.fui-FluentProvider {
+[class*='fui-FluentProvider'] {
   --winui-accent-fill-selected-text-background: var(--colorBrandBackground);
 }
 
@@ -296,14 +380,14 @@ export const winuiTokenCss = `
    dictionaries carry genuinely different hues rather than one hue at two
    opacities, because each is tuned for contrast against its own background.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L281-L282 */
-.fui-FluentProvider {
+:root {
   --winui-system-fill-caution: #9d5d00;
   --winui-system-fill-critical: #c42b1c;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L77-L78 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-system-fill-caution: #fce100;
     --winui-system-fill-critical: #ff99a4;
   }
@@ -329,7 +413,7 @@ export const winuiTokenCss = `
 /* Light flips the gradient (ScaleY="-1"), putting the heavier
    ControlStrokeColorSecondary edge at the bottom.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L382-L390 */
-.fui-FluentProvider {
+:root {
   --winui-control-elevation-border-color:
     var(--winui-control-stroke-default)
     var(--winui-control-stroke-default)
@@ -339,7 +423,7 @@ export const winuiTokenCss = `
 /* Dark leaves the gradient unflipped, so the brighter edge sits at the top.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L186-L191 */
 @media (prefers-color-scheme: dark) {
-  .fui-FluentProvider {
+  :root {
     --winui-control-elevation-border-color:
       var(--winui-control-stroke-secondary)
       var(--winui-control-stroke-default)
@@ -351,7 +435,7 @@ export const winuiTokenCss = `
    is likewise flipped in both dictionaries.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L198-L206
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L397-L405 */
-.fui-FluentProvider {
+:root {
   --winui-accent-control-elevation-border-color:
     var(--winui-control-stroke-on-accent-default)
     var(--winui-control-stroke-on-accent-default)
@@ -367,7 +451,7 @@ export const winuiTokenCss = `
    checked radio dot takes the accent stroke instead.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L192-L197
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L391-L396 */
-.fui-FluentProvider {
+:root {
   --winui-circle-elevation-shadow:
     inset 0 1px 0 0 var(--winui-control-stroke-default),
     inset 1px 0 0 0 var(--winui-control-stroke-default),
@@ -379,7 +463,7 @@ export const winuiTokenCss = `
    whose four numbers are exactly the two control points of a CSS cubic-bezier.
    Both are declared outside the theme dictionaries and so do not vary by theme.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L603 */
-.fui-FluentProvider {
+:root {
   --winui-control-normal-animation-duration: 250ms;
   --winui-control-fast-out-slow-in-easing: cubic-bezier(0, 0, 0, 1);
 }
@@ -388,7 +472,7 @@ export const winuiTokenCss = `
    shorthand reads top,right,bottom,left; the two horizontal values are equal
    here, so this collapses to three terms.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
-.fui-FluentProvider {
+:root {
   --winui-button-padding: 5px 11px 6px;
 }
 

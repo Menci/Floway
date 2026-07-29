@@ -13,6 +13,16 @@
 // theme dictionary as a literal. The rest, hover and pressed Link colors stay
 // on Fluent's brand ramp because the WinUI values do not exist to copy.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297
+
+// Fluent's only DOM marker for a Field's horizontal orientation is the hashed
+// atom Griffel emits for `useRootStyles.horizontal`, which no other variant
+// overrides. The name is a content hash of the declaration, so it is pinned to
+// the version this app resolves — in @fluentui/react-field 9.5.3 this atom is
+// `grid-template-rows: auto auto auto 1fr` — and exported so a suite can render
+// a horizontal Field and fail the moment a Fluent bump rehashes it.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-field/library/src/components/Field/useFieldStyles.styles.ts#L29-L32
+export const fieldHorizontalRootAtom = 'f1645dqt';
+
 export const fieldCss = `
 /* WinUI gives a text control's header no vertical padding and separates it
    from the control by a flat 8px, where Fluent uses 2px of padding on each
@@ -20,14 +30,11 @@ export const fieldCss = `
    fixed margin also covers Fluent's large-size ramp, which WinUI has no
    equivalent of. Fluent's horizontal orientation is a layout WinUI has no
    header for, and there the label's vertical padding is what aligns it with
-   the control's first text line, so this rule is kept off it. The only
-   orientation marker Fluent leaves in the DOM is the root's grid-template-rows
-   atom (useFieldStyles.styles.js, useRootStyles.horizontal), which no other
-   variant overrides; if Fluent ever rehashes it the negation stops narrowing
-   and the rule falls back to both orientations.
+   the control's first text line, so the horizontal root atom is negated to
+   keep this rule off it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L175
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L335 */
-.fui-FluentProvider .fui-Field:not(.f1645dqt) > .fui-Field__label {
+.fui-Field:not(.${fieldHorizontalRootAtom}) > .fui-Field__label.fui-Field__label {
   padding-block: 0;
   margin-bottom: 8px;
 }
@@ -43,8 +50,8 @@ export const fieldCss = `
    over it where they apply.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L340
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L142 */
-.fui-FluentProvider .fui-Field__hint,
-.fui-FluentProvider .fui-Field__validationMessage {
+.fui-Field__hint.fui-Field__hint,
+.fui-Field__validationMessage.fui-Field__validationMessage {
   --colorNeutralForeground3: var(--winui-text-fill-secondary);
 }
 
@@ -58,8 +65,8 @@ export const fieldCss = `
    also outranks the broader warning rule below.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L282
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L78 */
-.fui-FluentProvider .fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage,
-.fui-FluentProvider .fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage .fui-Field__validationMessageIcon {
+.fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage.fui-Field__validationMessage,
+.fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage .fui-Field__validationMessageIcon.fui-Field__validationMessageIcon {
   color: var(--winui-system-fill-critical);
 }
 
@@ -72,8 +79,8 @@ export const fieldCss = `
    validation state at all.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L281
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L77 */
-.fui-FluentProvider .fui-Field__validationMessage[role='alert'],
-.fui-FluentProvider .fui-Field__validationMessage[role='alert'] .fui-Field__validationMessageIcon {
+.fui-Field__validationMessage.fui-Field__validationMessage[role='alert'],
+.fui-Field__validationMessage[role='alert'] .fui-Field__validationMessageIcon.fui-Field__validationMessageIcon {
   color: var(--winui-system-fill-caution);
 }
 
@@ -87,9 +94,9 @@ export const fieldCss = `
    override repeats there.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L214
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L10 */
-.fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true'],
-.fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true']:hover,
-.fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true']:active {
+.fui-Link.fui-Link[data-winui-appearance='default'][aria-disabled='true'],
+.fui-Link.fui-Link[data-winui-appearance='default'][aria-disabled='true']:hover,
+.fui-Link.fui-Link[data-winui-appearance='default'][aria-disabled='true']:active {
   color: var(--winui-accent-text-fill-disabled);
 }
 
@@ -98,9 +105,9 @@ export const fieldCss = `
    from an enabled one. Fluent answers that with GrayText, and since a media
    query adds no specificity the override above would otherwise outrank it. */
 @media (forced-colors: active) {
-  .fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true'],
-  .fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true']:hover,
-  .fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true']:active {
+  .fui-Link.fui-Link[data-winui-appearance='default'][aria-disabled='true'],
+  .fui-Link.fui-Link[data-winui-appearance='default'][aria-disabled='true']:hover,
+  .fui-Link.fui-Link[data-winui-appearance='default'][aria-disabled='true']:active {
     color: GrayText;
   }
 }

@@ -14,13 +14,6 @@
 // 1px border, the 20px semibold title, the 8px button spacing -- carry no rule
 // here.
 //
-// Fluent portals the surface into a node it appends to `document.body`, and
-// that node carries only the generated theme class and the portal reset class.
-// A descendant selector rooted at `.fui-FluentProvider` therefore never matches
-// an open dialog, so each selector below doubles its own Fluent class instead:
-// that reaches the portal and still outweighs Griffel's single-class atoms at
-// the same specificity the provider-scoped form had.
-//
 // WinUI fills the content band with ContentDialogTopOverlay, which resolves to
 // LayerFillColorAltBrush. The token layer carries no variable for it, so the
 // band keeps the surface fill and the CommandSpace beneath it, which WinUI
@@ -130,7 +123,7 @@ export const dialogCss = `
    including its narrowing to a button, so a spinner or a wrapper element is
    not half-width by accident -- is taken here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L250-L256 */
-.fui-DialogActions.fui-DialogActions > .fui-Button:only-child {
+.fui-DialogActions > .fui-Button.fui-Button:only-child {
   width: 50%;
   justify-self: end;
 }
@@ -145,7 +138,7 @@ export const dialogCss = `
     grid-auto-flow: row;
   }
 
-  .fui-DialogActions.fui-DialogActions > .fui-Button:only-child {
+  .fui-DialogActions > .fui-Button.fui-Button:only-child {
     width: auto;
     justify-self: stretch;
   }

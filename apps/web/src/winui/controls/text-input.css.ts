@@ -32,9 +32,9 @@
 //
 // Fill is the exception. Fluent has no atom that recolours a text control's
 // fill on hover or focus, and its disabled atom empties the fill rather than
-// recolouring it, so those three states are written as declarations, scoped
-// one class above Griffel by `.fui-FluentProvider`. A declaration cannot pick
-// its variant the way a redefined variable does, so each one is narrowed by
+// recolouring it, so those three states are written as declarations. A
+// declaration cannot pick its variant the way a redefined variable does, so
+// each one is narrowed by
 // `data-winui-appearance` to exactly the appearances whose rest fill is
 // Fluent's Background1 — the ones the rest rule below moves onto the WinUI
 // control fill. The `underline` appearance stays transparent and
@@ -53,8 +53,8 @@ export const textInputCss = `
    atoms read it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L23
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L130 */
-.fui-FluentProvider .fui-Input,
-.fui-FluentProvider .fui-Textarea {
+.fui-Input.fui-Input,
+.fui-Textarea.fui-Textarea {
   --colorNeutralBackground1: var(--winui-control-fill-default);
 }
 
@@ -64,8 +64,8 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L24
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L131
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L256-L290 */
-.fui-FluentProvider .fui-Input${controlFillAppearances}:hover:not(:has(> .fui-Input__input:disabled)),
-.fui-FluentProvider .fui-Textarea${controlFillAppearances}:hover:not(:has(> .fui-Textarea__textarea:disabled)) {
+.fui-Input.fui-Input${controlFillAppearances}:hover:not(:has(> .fui-Input__input:disabled)),
+.fui-Textarea.fui-Textarea${controlFillAppearances}:hover:not(:has(> .fui-Textarea__textarea:disabled)) {
   background-color: var(--winui-control-fill-secondary);
 }
 
@@ -79,8 +79,8 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L25
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L132
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L291-L300 */
-.fui-FluentProvider .fui-Input${controlFillAppearances}:focus-within,
-.fui-FluentProvider .fui-Textarea${controlFillAppearances}:focus-within {
+.fui-Input.fui-Input${controlFillAppearances}:focus-within,
+.fui-Textarea.fui-Textarea${controlFillAppearances}:focus-within {
   background-color: var(--winui-control-fill-input-active);
 }
 
@@ -88,8 +88,8 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L26
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L133
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L260-L262 */
-.fui-FluentProvider .fui-Input${controlFillAppearances}:has(> .fui-Input__input:disabled),
-.fui-FluentProvider .fui-Textarea${controlFillAppearances}:has(> .fui-Textarea__textarea:disabled) {
+.fui-Input.fui-Input${controlFillAppearances}:has(> .fui-Input__input:disabled),
+.fui-Textarea.fui-Textarea${controlFillAppearances}:has(> .fui-Textarea__textarea:disabled) {
   background-color: var(--winui-control-fill-disabled);
 }
 
@@ -103,8 +103,8 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L56
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L135
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L155-L163 */
-.fui-FluentProvider .fui-Input,
-.fui-FluentProvider .fui-Textarea {
+.fui-Input.fui-Input,
+.fui-Textarea.fui-Textarea {
   --colorNeutralStroke1Hover: var(--winui-control-stroke-default);
   --colorNeutralStrokeAccessibleHover: var(--winui-control-strong-stroke-default);
 }
@@ -119,8 +119,8 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L57-L65
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L136
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172 */
-.fui-FluentProvider .fui-Input,
-.fui-FluentProvider .fui-Textarea {
+.fui-Input.fui-Input,
+.fui-Textarea.fui-Textarea {
   --colorNeutralStrokeAccessiblePressed: var(--winui-control-stroke-default);
 }
 
@@ -130,8 +130,8 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L30
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L137
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L263-L265 */
-.fui-FluentProvider .fui-Input,
-.fui-FluentProvider .fui-Textarea {
+.fui-Input.fui-Input,
+.fui-Textarea.fui-Textarea {
   --colorNeutralStrokeDisabled: var(--winui-control-stroke-default);
 }
 
@@ -141,8 +141,8 @@ export const textInputCss = `
    colorNeutralForegroundDisabled.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L35-L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L142-L145 */
-.fui-FluentProvider .fui-Input,
-.fui-FluentProvider .fui-Textarea {
+.fui-Input.fui-Input,
+.fui-Textarea.fui-Textarea {
   --colorNeutralForeground4: var(--winui-text-fill-secondary);
 }
 
@@ -151,7 +151,7 @@ export const textInputCss = `
    inherit. Textarea has no such slots.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L45
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L152 */
-.fui-FluentProvider .fui-Input {
+.fui-Input.fui-Input {
   --colorNeutralForeground3: var(--winui-text-fill-secondary);
 }
 
@@ -165,8 +165,8 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L34
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L141
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L145 */
-.fui-FluentProvider .fui-Input__input:disabled,
-.fui-FluentProvider .fui-Textarea__textarea:disabled {
+.fui-Input__input.fui-Input__input:disabled,
+.fui-Textarea__textarea.fui-Textarea__textarea:disabled {
   color: var(--winui-temporary-text-fill-disabled);
 }
 
@@ -178,8 +178,8 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L146
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L11
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L215 */
-.fui-FluentProvider .fui-Input__input::selection,
-.fui-FluentProvider .fui-Textarea__textarea::selection {
+.fui-Input__input.fui-Input__input::selection,
+.fui-Textarea__textarea.fui-Textarea__textarea::selection {
   background-color: var(--winui-accent-fill-selected-text-background);
   color: var(--winui-text-on-accent-fill-selected-text);
 }

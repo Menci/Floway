@@ -65,6 +65,12 @@ const splitButtonSlots = ['primaryActionButton', 'menuButton'] as const;
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInput.ts#L21
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-textarea/library/src/components/Textarea/useTextarea.ts#L21
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-select/library/src/components/Select/useSelect.tsx#L22
+//
+// Card defaults to `filled`, and its root is its primary slot, so the stamp
+// reaches the painted element on its own. Its three companions — CardHeader,
+// CardFooter and CardPreview — declare no appearance at all and are left
+// unwrapped.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-card/library/src/components/Card/useCard.ts#L54
 export const withWinuiAppearance = (components: FluentComponents): FluentComponents => {
   // A slot arrives as a props object, a string, a number, an iterable or a JSX
   // element, and only the first of those can take one more prop by merging.
@@ -115,5 +121,6 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Select: stampAppearance(components.Select, 'outline', rootAndPrimary),
     Combobox: stampAppearance(components.Combobox, 'outline', rootAndPrimary),
     Dropdown: stampAppearance(components.Dropdown, 'outline', rootAndPrimary),
+    Card: stampAppearance(components.Card, 'filled', rootIsPrimary),
   };
 };

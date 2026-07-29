@@ -16,6 +16,14 @@
 // offset below is stated relative to the track's outer edge and then reduced
 // by the 1px border the content box is inset by.
 //
+// The knob is also the one subject in the layer that the doubling convention
+// cannot be applied to. Fluent renders it as the indicator's only child and
+// gives it no class of its own, addressing it as `> *` from the indicator's
+// reset class; every knob rule here therefore doubles the indicator instead,
+// which puts the pair one class above that reset atom exactly as a doubled
+// subject would.
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-switch/library/src/components/Switch/useSwitchStyles.styles.ts#L74-L82
+//
 // XAML centres each knob inside the 20x20 cell minus its own margin, so the
 // 12x12 off knob (Margin="-1,0,0,0") sits at -1 + (21 - 12) / 2 = 3.5px and the
 // on knob (Margin="0,0,1,0") at (19 - 12) / 2 = 3.5px within a cell that
@@ -33,12 +41,12 @@ export const switchCss = `
    ControlFastOutSlowInKeySpline; the travel keeps Fluent's timing, since WinUI
    moves KnobTranslateTransform with Duration="0" and states no curve for it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L606 */
-.fui-FluentProvider .fui-Switch__indicator {
+.fui-Switch__indicator.fui-Switch__indicator {
   align-items: center;
   display: flex;
 }
 
-.fui-FluentProvider .fui-Switch__indicator > * {
+.fui-Switch__indicator.fui-Switch__indicator > * {
   background: currentColor;
   border-radius: 999px;
   fill: transparent;
@@ -53,7 +61,7 @@ export const switchCss = `
 }
 
 @media screen and (prefers-reduced-motion: reduce) {
-  .fui-FluentProvider .fui-Switch__indicator > * {
+  .fui-Switch__indicator.fui-Switch__indicator > * {
     transition-duration: 0.01ms;
   }
 }
@@ -64,22 +72,22 @@ export const switchCss = `
    back and the alt-fill ramp carries hover and press instead.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L135-L141
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L151-L153 */
-.fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]) ~ .fui-Switch__indicator,
-.fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]):hover ~ .fui-Switch__indicator,
-.fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]):hover:active ~ .fui-Switch__indicator {
+.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator,
+.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator,
+.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator {
   border-color: var(--winui-control-strong-stroke-default);
   color: var(--winui-text-fill-secondary);
 }
 
-.fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]) ~ .fui-Switch__indicator {
+.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator {
   background-color: var(--winui-control-alt-fill-secondary);
 }
 
-.fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]):hover ~ .fui-Switch__indicator {
+.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator {
   background-color: var(--winui-control-alt-fill-tertiary);
 }
 
-.fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]):hover:active ~ .fui-Switch__indicator {
+.fui-Switch__input:enabled:not(:checked):not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator {
   background-color: var(--winui-control-alt-fill-quarternary);
 }
 
@@ -88,18 +96,18 @@ export const switchCss = `
    that edge at 3px and stretches it to 17px wide, and the checked press pins
    the opposite end 3px from the trailing edge instead.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L274-L287 */
-.fui-FluentProvider .fui-Switch__input:enabled:not([aria-disabled="true"]):hover ~ .fui-Switch__indicator > * {
+.fui-Switch__input:enabled:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator > * {
   height: 77.778%;
   margin-inline-start: 3.947%;
   width: 36.842%;
 }
 
-.fui-FluentProvider .fui-Switch__input:enabled:not([aria-disabled="true"]):hover:active ~ .fui-Switch__indicator > * {
+.fui-Switch__input:enabled:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator > * {
   margin-inline-start: 5.263%;
   width: 44.737%;
 }
 
-.fui-FluentProvider .fui-Switch__input:enabled:checked:not([aria-disabled="true"]):hover:active ~ .fui-Switch__indicator > * {
+.fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator > * {
   margin-inline-start: -2.632%;
 }
 
@@ -108,16 +116,16 @@ export const switchCss = `
    background, so the fill alone reproduces the edgeless track — painting the
    border with the same ramp would composite these translucent accents twice.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L143-L150 */
-.fui-FluentProvider .fui-Switch__input:enabled:checked:not([aria-disabled="true"]) ~ .fui-Switch__indicator {
+.fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator {
   background-color: var(--winui-accent-fill-default);
   color: var(--winui-text-on-accent-fill-primary);
 }
 
-.fui-FluentProvider .fui-Switch__input:enabled:checked:not([aria-disabled="true"]):hover ~ .fui-Switch__indicator {
+.fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator {
   background-color: var(--winui-accent-fill-secondary);
 }
 
-.fui-FluentProvider .fui-Switch__input:enabled:checked:not([aria-disabled="true"]):hover:active ~ .fui-Switch__indicator {
+.fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator {
   background-color: var(--winui-accent-fill-tertiary);
 }
 
@@ -127,7 +135,7 @@ export const switchCss = `
    including disabled. Since the knob paints its own box, the stroke is drawn as
    inset shadows, which leaves the sizes stated above measuring the knob itself.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L159 */
-.fui-FluentProvider .fui-Switch__input:checked ~ .fui-Switch__indicator > * {
+.fui-Switch__input:checked ~ .fui-Switch__indicator.fui-Switch__indicator > * {
   box-shadow: var(--winui-circle-elevation-shadow);
 }
 
@@ -139,8 +147,8 @@ export const switchCss = `
    WinUI returns the knob to its rest size.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L138
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L146-L158 */
-.fui-FluentProvider .fui-Switch__input:disabled:checked ~ .fui-Switch__indicator,
-.fui-FluentProvider .fui-Switch__input[aria-disabled="true"]:checked ~ .fui-Switch__indicator {
+.fui-Switch__input:disabled:checked ~ .fui-Switch__indicator.fui-Switch__indicator,
+.fui-Switch__input[aria-disabled='true']:checked ~ .fui-Switch__indicator.fui-Switch__indicator {
   background-color: var(--winui-accent-fill-disabled);
   color: var(--winui-text-on-accent-fill-disabled);
 }
@@ -153,7 +161,7 @@ export const switchCss = `
    the inner stroke and the inflation stay as Fluent draws them.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L200
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
-.fui-FluentProvider .fui-Switch[data-fui-focus-within]:focus-within::after {
+.fui-Switch.fui-Switch[data-fui-focus-within]:focus-within::after {
   border-color: var(--winui-focus-stroke-outer);
 }
 `;

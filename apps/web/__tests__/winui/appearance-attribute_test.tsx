@@ -8,6 +8,10 @@ import { winuiAppearanceAttribute } from '../../src/winui/appearance';
 
 const {
   Button,
+  Card,
+  CardFooter,
+  CardHeader,
+  CardPreview,
   Combobox,
   CompoundButton,
   Dropdown,
@@ -245,5 +249,37 @@ describe('the checked axis the WinUI rules read', () => {
     expect(radio?.getAttribute('aria-checked')).toBe('true');
     expect(radio?.getAttribute('aria-pressed')).toBeNull();
     expect(radio?.getAttribute(winuiAppearanceAttribute)).toBe('subtle');
+  });
+});
+
+describe('the card surface', () => {
+  it('stamps the appearance the WinUI card rules are partitioned by', () => {
+    const view = inProvider(
+      <>
+        <Card>default card</Card>
+        <Card appearance="filled-alternative">alternative card</Card>
+        <Card appearance="outline">outline card</Card>
+        <Card appearance="subtle">subtle card</Card>
+      </>,
+    );
+
+    const stamped = [...view.container.querySelectorAll('.fui-Card')].map(element =>
+      element.getAttribute(winuiAppearanceAttribute));
+
+    expect(stamped).toEqual(['filled', 'filled-alternative', 'outline', 'subtle']);
+  });
+
+  it('leaves the card parts that have no appearance unstamped', () => {
+    const view = inProvider(
+      <Card>
+        <CardPreview>preview</CardPreview>
+        <CardHeader header="header" />
+        <CardFooter>footer</CardFooter>
+      </Card>,
+    );
+
+    const stamped = [...view.container.querySelectorAll(`[${winuiAppearanceAttribute}]`)];
+
+    expect(stamped.map(element => element.className.split(' ')[0])).toEqual(['fui-Card']);
   });
 });
