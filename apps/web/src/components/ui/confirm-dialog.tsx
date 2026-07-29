@@ -58,10 +58,11 @@ export function ConfirmDialog({
           </Button>
           <Button
             appearance="primary"
-            className={actionIntent === 'danger' ? `${s.danger} !whitespace-nowrap` : '!whitespace-nowrap'}
+            className={actionIntent === 'danger' ? s.danger : undefined}
             disabled={busy}
             icon={busy ? <Spinner size="tiny" /> : undefined}
             onClick={onConfirm}
+            style={{ whiteSpace: 'nowrap' }}
           >
             {actionLabel}
           </Button>
