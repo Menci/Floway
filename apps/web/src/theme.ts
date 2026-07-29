@@ -4,11 +4,10 @@ const { webDarkTheme, webLightTheme } = fluentComponents;
 
 export const baseFontStack = "'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', sans-serif";
 
-// Prefer the Nerd Font build when it is already installed. The upstream web
-// release has no NF-flavoured WOFF2, so every other browser uses the bundled
-// Maple Mono webfont before falling back to platform coding faces.
+// The upstream web release has no NF-flavoured WOFF2, so every browser uses
+// the bundled Maple Mono webfont before falling back to platform coding faces.
 // https://github.com/subframe7536/maple-font/blob/v7.9/README.md#maple-mono-nf
-export const monospaceStack = "'Maple Mono NF', 'Maple Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+export const monospaceStack = "'Maple Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 const fontOverrides = {
   fontFamilyBase: baseFontStack,
