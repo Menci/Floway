@@ -24,10 +24,23 @@ export const parseUpstreamIdsValue = (raw: unknown): ParseUpstreamIdsResult => {
   return { ok: true, value: ids };
 };
 
-export const validateUpstreamIdsExist = async (ids: readonly string[] | null): Promise<string | null> => {
+export const loadKnownUpstreamIds = async (): Promise<ReadonlySet<string>> =>
+  new Set((await getRepo().upstreams.list()).map(upstream => upstream.id));
+
+export const unknownUpstreamIdsError = (ids: readonly string[] | null, known: ReadonlySet<string>): string | null => {
   if (ids === null) return null;
-  const upstreams = await getRepo().upstreams.list();
-  const known = new Set(upstreams.map(upstream => upstream.id));
   const unknown = ids.filter(id => !known.has(id));
   return unknown.length ? `Unknown upstream(s): ${unknown.join(', ')}` : null;
 };
+
+// Deleting an upstream leaves its id behind in every user and api-key cap that
+// named it — nothing cascades, and the data plane treats such an id as inert.
+// Reads project a stored cap through the live catalog so the dashboard never
+// renders a dangling entry and never re-submits one into the write path, which
+// rejects unknown ids. A cap whose ids are all gone projects to an empty list:
+// that is what it grants now. Widening it to null would read as "inherit" and
+// hand the principal the entire catalog.
+export const pruneDeletedUpstreamIds = (
+  ids: readonly string[] | null,
+  known: ReadonlySet<string>,
+): string[] | null => ids === null ? null : ids.filter(id => known.has(id));

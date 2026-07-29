@@ -46,20 +46,36 @@ const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuota
   };
 };
 
+const loadKnownProxyIds = async (): Promise<ReadonlySet<string>> =>
+  new Set((await getRepo().proxies.list()).map(proxy => proxy.id));
+
+// Deleting a proxy is refused while an upstream still names it, so a dangling
+// entry only arises from a raced delete or a hand-edited row. Reads drop those
+// entries instead of handing the edit form a chip it cannot resolve and would
+// re-submit into a write path that rejects the whole list. Dial time already
+// skips an unresolvable entry and advances the chain.
+const pruneDeletedProxyEntries = (
+  entries: readonly ProxyFallbackEntry[],
+  knownProxyIds: ReadonlySet<string>,
+): ProxyFallbackEntry[] => entries.filter(entry => isDirectFallbackId(entry.id) || knownProxyIds.has(entry.id));
+
 // These projections need repository/provider I/O, which serialize.ts excludes
 // so it stays a pure persisted-record transform. The optional baseSerialize
 // override lets callers swap in upstreamRecordToFullJson to round-trip
 // unredacted secrets instead of the redacted default.
 const serializeForResponse = async (
   record: UpstreamRecord,
+  knownProxyIds: ReadonlySet<string>,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
 ): Promise<UpstreamWithCacheResponse> => {
   const [cacheRow, codexQuota] = await Promise.all([
     getRepo().modelsCache.get(record.id),
     codexQuotaForResponse(record),
   ]);
+  const serialized = baseSerialize(record);
   return {
-    ...baseSerialize(record),
+    ...serialized,
+    proxy_fallback_list: pruneDeletedProxyEntries(serialized.proxy_fallback_list, knownProxyIds),
     modelsCache: {
       fetchedAt: cacheRow?.fetchedAt ?? null,
       lastError: cacheRow?.lastError ?? null,
@@ -134,20 +150,20 @@ const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefix
 // Built-in direct transports are always valid entry ids; every other id must
 // reference an existing proxy row. List order matters at dial time (see
 // createFetcher), and persistence layers dedupe before storing.
-const validateProxyFallbackList = async (entries: readonly ProxyFallbackEntry[]): Promise<{ ok: true } | { ok: false; error: string }> => {
-  const ids = entries.map(e => e.id).filter(id => !isDirectFallbackId(id));
-  if (ids.length === 0) return { ok: true };
-  const proxies = await getRepo().proxies.list();
-  const known = new Set(proxies.map(p => p.id));
-  for (const id of ids) {
-    if (!known.has(id)) return { ok: false, error: `unknown proxy id in fallback list: ${id}` };
+const validateProxyFallbackList = (
+  entries: readonly ProxyFallbackEntry[],
+  knownProxyIds: ReadonlySet<string>,
+): { ok: true } | { ok: false; error: string } => {
+  for (const entry of entries) {
+    if (isDirectFallbackId(entry.id) || knownProxyIds.has(entry.id)) continue;
+    return { ok: false, error: `unknown proxy id in fallback list: ${entry.id}` };
   }
   return { ok: true };
 };
 
 export const listUpstreams = async (c: Context) => {
-  const items = await getRepo().upstreams.list();
-  return c.json(await Promise.all(items.map(record => serializeForResponse(record))));
+  const [items, knownProxyIds] = await Promise.all([getRepo().upstreams.list(), loadKnownProxyIds()]);
+  return c.json(await Promise.all(items.map(record => serializeForResponse(record, knownProxyIds))));
 };
 
 // Picker dataset for the per-key upstream whitelist editor. Non-admin users
@@ -193,16 +209,17 @@ export const getUpstreamBlueprint = (c: Context): Response => {
 // render the "last fetched / last error" panel on mount.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
-  const record = await getRepo().upstreams.getById(id);
+  const [record, knownProxyIds] = await Promise.all([getRepo().upstreams.getById(id), loadKnownProxyIds()]);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  return c.json(await serializeForResponse(record, upstreamRecordToFullJson));
+  return c.json(await serializeForResponse(record, knownProxyIds, upstreamRecordToFullJson));
 };
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
   const body = c.req.valid('json');
 
   const proxyFallbackList = normalizeProxyFallbackList(body.proxy_fallback_list ?? []);
-  const fallbackCheck = await validateProxyFallbackList(proxyFallbackList);
+  const knownProxyIds = await loadKnownProxyIds();
+  const fallbackCheck = validateProxyFallbackList(proxyFallbackList, knownProxyIds);
   if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
 
   const modelPrefixResult = normalizeModelPrefixField(body.model_prefix);
@@ -258,7 +275,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const record = { ...upstream, config: config.value };
   await getRepo().upstreams.save(record);
   await warmModelsCache(record, c);
-  return c.json(await serializeForResponse(record), 201);
+  return c.json(await serializeForResponse(record, knownProxyIds), 201);
 };
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
@@ -282,6 +299,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     return c.json({ error: `Use POST ${endpoint} to update ${existing.kind} credentials` }, 400);
   }
 
+  const knownProxyIds = await loadKnownProxyIds();
   let next: UpstreamRecord = { ...existing, updatedAt: new Date().toISOString() };
   if (body.name !== undefined) next = { ...next, name: body.name };
   if (body.enabled !== undefined) next = { ...next, enabled: body.enabled };
@@ -290,7 +308,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (body.disabled_public_model_ids !== undefined) next = { ...next, disabledPublicModelIds: body.disabled_public_model_ids };
   if (body.proxy_fallback_list !== undefined) {
     const normalized = normalizeProxyFallbackList(body.proxy_fallback_list);
-    const fallbackCheck = await validateProxyFallbackList(normalized);
+    const fallbackCheck = validateProxyFallbackList(normalized, knownProxyIds);
     if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
     next = { ...next, proxyFallbackList: normalized };
   }
@@ -312,7 +330,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
 
   await getRepo().upstreams.save(next);
   await warmModelsCache(next, c);
-  return c.json(await serializeForResponse(next));
+  return c.json(await serializeForResponse(next, knownProxyIds));
 };
 
 export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {

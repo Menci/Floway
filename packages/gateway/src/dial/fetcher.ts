@@ -156,8 +156,7 @@ const tryOne = async (
       // dial-shaped failure for THIS entry so the fallback chain advances
       // instead of killing the whole call (and any healthy built-in or proxy
       // siblings further down the list). We don't write to backoff
-      // here — the row is gone, and the upstream's fallback_list will
-      // surface the dangling reference next time the dashboard renders it.
+      // here — the row is gone.
       errors.push(new ProxyDialError(`unknown proxy id in fallback list: ${id}`, 'config'));
       return null;
     }

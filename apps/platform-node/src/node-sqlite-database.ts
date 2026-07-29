@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
-import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
+import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 
 // node:sqlite's prepared statement is synchronous and returns plain rows.
 // We adapt it to the platform's async, enveloped contract. bind() returns a
@@ -11,10 +11,10 @@ import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/p
 class NodeSqlitePreparedStatement implements SqlPreparedStatement {
   constructor(
     private readonly stmt: StatementSync,
-    private readonly bound: readonly unknown[] = [],
+    private readonly bound: readonly SqlBindValue[] = [],
   ) {}
 
-  bind(...values: unknown[]): SqlPreparedStatement {
+  bind(...values: SqlBindValue[]): SqlPreparedStatement {
     return new NodeSqlitePreparedStatement(this.stmt, values);
   }
 

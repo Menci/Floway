@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { test } from 'vitest';
 
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
@@ -74,12 +74,13 @@ test('listModelProviders silently drops disabled upstreams from a whitelist', as
   assertEquals(providers.map(p => p.upstreamId), ['up_a']);
 });
 
-test('listModelProviders throws on unknown upstream ids in the whitelist', async () => {
-  // Unknown ids are a caller-side configuration error, not a runtime state;
-  // surface them instead of silently serving a smaller subset.
+test('listModelProviders silently drops deleted upstreams from a whitelist', async () => {
+  // Deleting an upstream does not prune the caps that reference it, so a
+  // dangling id narrows the cap instead of failing the principal's requests.
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 10 }));
 
-  await expect(listModelProviders(['up_ghost', 'up_a'])).rejects.toThrow(/up_ghost/);
+  const providers = await listModelProviders(['up_ghost', 'up_a']);
+  assertEquals(providers.map(p => p.upstreamId), ['up_a']);
 });

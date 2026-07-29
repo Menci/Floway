@@ -413,8 +413,8 @@ test('enumerateModelCandidates returns the empty triple when the visible upstrea
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  // Save one upstream so `listModelProviders([])` (empty filter) can return
-  // an empty selection without throwing on "unknown id".
+  // A populated catalog is the case under test: the empty cap, not an empty
+  // catalog, is what yields the empty triple.
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 1 }));
 
   const resolved = await enumerateModelCandidates({

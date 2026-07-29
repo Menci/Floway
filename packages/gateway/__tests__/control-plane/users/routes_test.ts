@@ -3,8 +3,8 @@ import { expect, test } from 'vitest';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { hashPassword } from '../../../src/shared/passwords.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
-import { requestApp, setupAppTest } from '../../test-utils/app.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const adminPost = (sessionId: string, body: unknown) => requestApp('/api/users', {
   method: 'POST',
@@ -192,4 +192,21 @@ test('PATCH /api/users/me/password rejects API key auth (must be a session)', as
     body: JSON.stringify({ currentPassword: 'x', newPassword: 'y' }),
   });
   assertEquals(response.status, 401);
+});
+
+test('GET /api/users and /auth/me drop a cap entry whose upstream was deleted', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  const admin = await repo.users.getById(1);
+  assertExists(admin);
+  await repo.users.save({ ...admin, upstreamIds: ['up_gone', 'up_x'] });
+
+  const list = await requestApp('/api/users', { headers: { 'x-floway-session': adminSession } });
+  assertEquals(list.status, 200);
+  const users = (await list.json()) as Array<{ id: number; upstreamIds: string[] | null }>;
+  assertEquals(users.find(user => user.id === 1)?.upstreamIds, ['up_x']);
+
+  const me = await requestApp('/auth/me', { headers: { 'x-floway-session': adminSession } });
+  assertEquals(me.status, 200);
+  assertEquals(((await me.json()) as { user: { upstreamIds: string[] } }).user.upstreamIds, ['up_x']);
 });

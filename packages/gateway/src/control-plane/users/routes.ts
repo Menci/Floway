@@ -9,7 +9,7 @@ import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
-import { validateUpstreamIdsExist } from '../shared/upstream-ids.ts';
+import { loadKnownUpstreamIds, unknownUpstreamIdsError } from '../shared/upstream-ids.ts';
 
 const parseUserId = (raw: string): number | null => {
   const n = Number(raw);
@@ -17,8 +17,8 @@ const parseUserId = (raw: string): number | null => {
 };
 
 export const listUsers = async (c: AuthedContext) => {
-  const users = await getRepo().users.list();
-  return c.json(users.map(userToAdminWire));
+  const [users, knownUpstreamIds] = await Promise.all([getRepo().users.list(), loadKnownUpstreamIds()]);
+  return c.json(users.map(user => userToAdminWire(user, knownUpstreamIds)));
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
@@ -28,8 +28,9 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   if (await repo.users.findByUsername(body.username)) {
     return c.json({ error: 'That username is already taken (usernames are case-insensitive).' }, 400);
   }
+  const knownUpstreamIds = await loadKnownUpstreamIds();
   if (body.upstreamIds !== undefined) {
-    const upstreamErr = await validateUpstreamIdsExist(body.upstreamIds);
+    const upstreamErr = unknownUpstreamIdsError(body.upstreamIds, knownUpstreamIds);
     if (upstreamErr) return c.json({ error: upstreamErr }, 400);
   }
 
@@ -56,7 +57,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   };
   await repo.apiKeys.save(defaultKey);
 
-  return c.json({ user: userToAdminWire(user) }, 201);
+  return c.json({ user: userToAdminWire(user, knownUpstreamIds) }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -77,8 +78,9 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     const dup = await repo.users.findByUsername(body.username);
     if (dup && dup.id !== id) return c.json({ error: 'username taken' }, 400);
   }
+  const knownUpstreamIds = await loadKnownUpstreamIds();
   if (body.upstreamIds !== undefined) {
-    const err = await validateUpstreamIdsExist(body.upstreamIds);
+    const err = unknownUpstreamIdsError(body.upstreamIds, knownUpstreamIds);
     if (err) return c.json({ error: err }, 400);
   }
 
@@ -96,7 +98,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     else await repo.sessions.deleteByUserId(id);
   }
 
-  return c.json(userToAdminWire(next));
+  return c.json(userToAdminWire(next, knownUpstreamIds));
 };
 
 export const deleteUser = async (c: AuthedContext) => {

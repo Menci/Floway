@@ -60,19 +60,14 @@ const builtInTransportsNotInList = computed(() => {
   return BUILT_IN_TRANSPORTS.filter(transport => !used.has(transport.id));
 });
 
+// The upstream read path drops entries whose proxy is gone, so an unresolved
+// id here only means the proxies store has not answered yet; show the raw id
+// for that beat rather than holding the whole list back.
 const labelFor = (entry: ProxyFallbackEntry): string => {
   const builtIn = BUILT_IN_TRANSPORTS.find(transport => transport.id === entry.id);
   if (builtIn) return builtIn.label;
-  return proxiesById.value.get(entry.id)!.name;
+  return proxiesById.value.get(entry.id)?.name ?? entry.id;
 };
-
-// True for entries that name a proxy id we don't know about — typically a
-// row that was hand-removed from the proxies table after this upstream
-// referenced it. We render these distinctively and let the operator
-// remove them in one click instead of silently masquerading as a normal
-// entry whose label happens to be a UUID.
-const isOrphan = (entry: ProxyFallbackEntry): boolean =>
-  !isBuiltInTransport(entry.id) && !proxiesById.value.has(entry.id);
 
 const now = useNow({ interval: 1000 });
 
@@ -202,14 +197,9 @@ const toggleCurrentColoAt = (index: number) => {
           <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
             <span
               class="min-w-0 truncate"
-              :class="[
-                isBuiltInTransport(entry.id) ? 'font-mono text-gray-300' : (isOrphan(entry) ? 'font-mono text-accent-rose' : 'text-white'),
-              ]"
+              :class="isBuiltInTransport(entry.id) ? 'font-mono text-gray-300' : 'text-white'"
               :title="BUILT_IN_TRANSPORTS.find(transport => transport.id === entry.id)?.title ?? entry.id"
-            >
-              <template v-if="isOrphan(entry)">Unknown proxy · {{ entry.id }}</template>
-              <template v-else>{{ labelFor(entry) }}</template>
-            </span>
+            >{{ labelFor(entry) }}</span>
 
             <PopoverRoot v-if="coloAware">
               <PopoverTrigger as-child>

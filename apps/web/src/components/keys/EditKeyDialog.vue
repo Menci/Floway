@@ -61,9 +61,15 @@ const reset = () => {
     customKey.value = '';
   } else {
     name.value = props.apiKey.name;
+    // A key keeps the ids it was created with even after an admin narrows the
+    // owning user's cap, so a stored id can fall outside what this account may
+    // route to. An empty catalog means the option list is unavailable rather
+    // than genuinely empty — an empty deployment leaves nothing to drop anyway.
+    const stored = props.apiKey.upstream_ids ?? [];
+    const offered = new Set(visibleUpstreams.value.map(upstream => upstream.id));
     upstreamSelection.value = {
       override: props.apiKey.upstream_ids !== null,
-      ids: props.apiKey.upstream_ids ?? [],
+      ids: props.upstreams.length === 0 ? [...stored] : stored.filter(id => offered.has(id)),
     };
     dumpRetention.value = props.apiKey.dump_retention_seconds;
     responsesRetention.value = props.apiKey.responses_retention_seconds;
