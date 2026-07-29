@@ -60,7 +60,7 @@ export function ApiDocsContent() {
           <Text as="h3" size={400} weight="semibold" className="!m-0">{t(`dashboard.apiDocs.groups.${group}`)}</Text>
           <ScrollArea axes="horizontal" className="min-w-0">
             <Table aria-label={t(`dashboard.apiDocs.groups.${group}`)} className="min-w-[780px] table-fixed" size="small">
-              <colgroup><col className="w-[72px]" /><col /><col className="w-[300px]" /><col className="w-[80px]" /></colgroup>
+              <colgroup><col className="w-[72px]" /><col /><col className="w-[300px]" /><col className="w-[144px]" /></colgroup>
               <TableHeader><TableRow>
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.method')}</TableHeaderCell>
                 <TableHeaderCell>{t('dashboard.apiDocs.columns.endpoint')}</TableHeaderCell>

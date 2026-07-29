@@ -25,15 +25,8 @@ import {
 
 export type CollectKind = 'completions' | 'chat-completions' | 'messages' | 'responses' | 'gemini';
 
-// A recorded stream may be partial — the dump was cut off, or the upstream
-// failed mid-stream — so the outcome reports both facts instead of folding
-// them together. Collapsing a truncation into an empty result reads as a
-// dashboard bug rather than as the incomplete recording it is.
-//
-//   - happy path:       result populated, error null, truncated false
-//   - truncated:        result populated best-effort, error null, truncated true
-//   - mid-stream error: result populated best-effort, error set, truncated true
-//   - catastrophic:     result null, error set, truncated true
+// A recorded stream may be partial, so collection distinguishes a complete
+// result, a truncated best-effort result, and a failure with no result.
 export interface CollectedStream {
   result: unknown | null;
   error: string | null;

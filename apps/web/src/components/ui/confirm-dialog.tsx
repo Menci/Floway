@@ -6,10 +6,11 @@ const { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface,
 
 const useStyles = makeStyles({
   danger: {
-    backgroundColor: 'var(--colorPaletteRedBackground3)',
-    color: 'var(--colorNeutralForegroundInverted)',
-    ':hover': { backgroundColor: 'var(--colorPaletteRedBackground3Hover)' },
-    ':active': { backgroundColor: 'var(--colorPaletteRedBackground3Pressed)' },
+    backgroundColor: 'var(--colorStatusDangerBackground3)',
+    color: 'var(--colorStatusDangerForegroundInverted)',
+    '&:hover': { backgroundColor: 'var(--colorStatusDangerBackground3Hover)' },
+    '&:active': { backgroundColor: 'var(--colorStatusDangerBackground3Pressed)' },
+    '&:hover:active': { backgroundColor: 'var(--colorStatusDangerBackground3Pressed)' },
   },
 });
 

@@ -33,8 +33,8 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
   };
 
   const premium = quota?.quota_snapshots?.premium_interactions;
-  const used = premium && premium.entitlement > 0 ? Math.max(0, premium.entitlement - premium.remaining) : null;
-  const usedFraction = premium && premium.entitlement > 0 && used !== null
+  const used = premium && !premium.unlimited && premium.entitlement > 0 ? Math.max(0, premium.entitlement - premium.remaining) : null;
+  const usedFraction = premium && !premium.unlimited && premium.entitlement > 0 && used !== null
     ? Math.min(1, used / premium.entitlement)
     : null;
 
@@ -60,7 +60,7 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
       </Text>}
     </div>}
 
-    {quota && !premium && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.copilot.quota.unmetered')}</Text>}
+    {quota && (!premium || premium.unlimited) && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.copilot.quota.unmetered')}</Text>}
 
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
   </section>;
