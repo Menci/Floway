@@ -71,7 +71,7 @@ const useStyles = makeStyles({
       content: '"" !important',
       display: 'block !important',
       height: '20px !important',
-      left: '14px !important',
+      left: '16px !important',
       position: 'absolute',
       right: 'auto !important',
       top: '10px !important',
