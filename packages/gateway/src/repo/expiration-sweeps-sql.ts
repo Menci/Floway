@@ -204,7 +204,7 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
              claimed_at = NULL
          WHERE claim_token = ?`,
       )
-      .bind(expectedRevision, completion.kind === 'partial', nextDueAt, nextDueAt, token)
+      .bind(expectedRevision, completion.kind === 'partial' ? 1 : 0, nextDueAt, nextDueAt, token)
       .run();
   }
 }

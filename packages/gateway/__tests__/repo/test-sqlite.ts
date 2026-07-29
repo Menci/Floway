@@ -1,6 +1,6 @@
 import initSqlJs from 'sql.js';
 
-import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
+import type { SqlBindValue, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 
 export const migrationSqlByFilename = Object.entries(import.meta.glob('../../migrations/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
   .map(([path, sql]) => [path.slice(path.lastIndexOf('/') + 1), sql] as const)
@@ -18,11 +18,22 @@ export const createSqliteTestDb = async (): Promise<SqlDatabase> => {
   return new SqlJsSqlDatabase(db);
 };
 
-class SqlJsPreparedStatement implements SqlPreparedStatement {
-  constructor(private readonly db: SqlJsDatabase, private readonly query: string, private readonly bound: readonly unknown[] = []) {}
+// sql.js binds through JavaScript and happily takes values neither deployment
+// target accepts, so it would pass a statement that fails in production. Reject
+// anything outside the contract's own union here instead.
+const assertBindable = (values: readonly SqlBindValue[]): readonly SqlBindValue[] => {
+  values.forEach((value, index) => {
+    if (value === null || typeof value === 'number' || typeof value === 'string' || value instanceof Uint8Array) return;
+    throw new TypeError(`SQL parameter ${index + 1} is a ${typeof value}, which no deployment target can bind`);
+  });
+  return values;
+};
 
-  bind(...values: unknown[]): SqlPreparedStatement {
-    return new SqlJsPreparedStatement(this.db, this.query, values);
+class SqlJsPreparedStatement implements SqlPreparedStatement {
+  constructor(private readonly db: SqlJsDatabase, private readonly query: string, private readonly bound: readonly SqlBindValue[] = []) {}
+
+  bind(...values: SqlBindValue[]): SqlPreparedStatement {
+    return new SqlJsPreparedStatement(this.db, this.query, assertBindable(values));
   }
 
   first<T = Record<string, unknown>>(): Promise<T | null> {

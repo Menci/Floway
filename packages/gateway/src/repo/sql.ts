@@ -51,7 +51,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogra
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
+import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata } from '@floway-dev/protocols/common';
 import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix, parsePerformanceOperation } from '@floway-dev/provider';
@@ -203,12 +203,12 @@ class SqlApiKeyRepo implements ApiKeyRepo {
          RETURNING ${API_KEY_COLUMNS}`,
       )
       .bind(
-        hasName, patch.name ?? null,
-        hasKey, patch.key ?? null,
-        hasLastUsedAt, patch.lastUsedAt ?? null,
-        hasUpstreamIds, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
-        hasDumpRetention, patch.dumpRetentionSeconds ?? null,
-        hasResponsesRetention, patch.responsesRetentionSeconds ?? null,
+        hasName ? 1 : 0, patch.name ?? null,
+        hasKey ? 1 : 0, patch.key ?? null,
+        hasLastUsedAt ? 1 : 0, patch.lastUsedAt ?? null,
+        hasUpstreamIds ? 1 : 0, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
+        hasDumpRetention ? 1 : 0, patch.dumpRetentionSeconds ?? null,
+        hasResponsesRetention ? 1 : 0, patch.responsesRetentionSeconds ?? null,
         id,
       )
       .first<ApiKeyRow>();
@@ -545,7 +545,7 @@ class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
 
   async query(opts: { provider?: WebSearchUsageRecord['provider']; keyId?: string; action?: WebSearchUsageRecord['action']; start: string; end: string }): Promise<WebSearchUsageRecord[]> {
     const filters = ['hour >= ?', 'hour < ?'];
-    const binds: unknown[] = [opts.start, opts.end];
+    const binds: SqlBindValue[] = [opts.start, opts.end];
     if (opts.provider) {
       const validProvider = assertWebSearchProviderName(opts.provider);
       filters.unshift('provider = ?');
@@ -622,7 +622,7 @@ const performanceDimensionsFromRow = (row: PerformanceDimensionRow): Performance
 const performanceRecordKey = (dims: PerformanceDimensions): string =>
   `${dims.hour}\0${dims.keyId}\0${dims.model}\0${dims.upstream}\0${dims.operation}\0${dims.runtimeLocation}`;
 
-const performanceDimensionBinds = (dims: PerformanceDimensions): unknown[] =>
+const performanceDimensionBinds = (dims: PerformanceDimensions): SqlBindValue[] =>
   [dims.hour, dims.keyId, dims.model, dims.upstream, dims.operation, dims.runtimeLocation];
 
 const PERFORMANCE_SUMMARY_COUNT_COLUMNS = ['requests', 'ttft_samples_ok', 'errors_with_output', 'errors_no_output', 'neutral', 'tpot_samples', 'ttft_ms_sum', 'tpot_us_sum'] as const;
@@ -740,7 +740,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
   private async rowsFor(opts: { keyId?: string; start?: string; end?: string }): Promise<PerformanceTelemetryRecord[]> {
     const clauses: string[] = [];
-    const binds: unknown[] = [];
+    const binds: SqlBindValue[] = [];
     if (opts.start !== undefined) {
       clauses.push('hour >= ?');
       binds.push(opts.start);
