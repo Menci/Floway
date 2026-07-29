@@ -39,8 +39,11 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
+  // Geometry only. The fill ramp comes from the WinUI layer, which rests an
+  // item on the transparent subtle fill and steps it toward the material on
+  // pointer; a local fill here would have to win with `!important` and would
+  // then be the one thing in the dashboard that does not follow that ramp.
   item: {
-    backgroundColor: 'transparent !important',
     borderRadius: '6px !important',
     gap: '12px !important',
     height: '36px !important',
@@ -49,21 +52,6 @@ const useStyles = makeStyles({
     paddingLeft: '12px !important',
     paddingTop: '8px !important',
     position: 'relative',
-    '&:hover': { backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 5%, transparent) !important' },
-    '&:active': { backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 9%, transparent) !important' },
-    '&:hover:active': { backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 13%, transparent) !important' },
-    '&[aria-current="page"]': {
-      backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 9%, transparent) !important',
-    },
-    '&[aria-current="page"]:hover': {
-      backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 13%, transparent) !important',
-    },
-    '&[aria-current="page"]:active': {
-      backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 13%, transparent) !important',
-    },
-    '&[aria-current="page"]:hover:active': {
-      backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 17%, transparent) !important',
-    },
     '&[aria-current="page"]::after': {
       backgroundColor: 'var(--colorBrandStroke1) !important',
       borderRadius: '2px',

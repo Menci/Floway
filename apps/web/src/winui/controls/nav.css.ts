@@ -41,6 +41,38 @@ export const navCss = `
   --colorNeutralForeground2: var(--winui-text-fill-secondary);
 }
 
+/* The item fill. WinUI rests every navigation item on the transparent subtle
+   fill and steps it toward the material on pointer, where Fluent steps it away
+   from one. Selection is the same ramp held one step in, so a selected item and
+   a hovered one read alike until the indicator distinguishes them -- which is
+   why the indicator, not the fill, is what carries selection here.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L26-L32 */
+.fui-NavItem.fui-NavItem {
+  background-color: var(--winui-subtle-fill-transparent);
+}
+
+.fui-NavItem.fui-NavItem:hover,
+.fui-NavItem.fui-NavItem[aria-current='page'] {
+  background-color: var(--winui-subtle-fill-secondary);
+}
+
+.fui-NavItem.fui-NavItem:active,
+.fui-NavItem.fui-NavItem[aria-current='page']:hover {
+  background-color: var(--winui-subtle-fill-tertiary);
+}
+
+.fui-NavItem.fui-NavItem[aria-current='page']:active {
+  background-color: var(--winui-subtle-fill-secondary);
+}
+
+/* WinUI leaves a disabled item on the transparent fill rather than dimming it,
+   so the foreground above carries the whole disabled reading.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L33 */
+.fui-NavItem.fui-NavItem:disabled,
+.fui-NavItem.fui-NavItem[aria-disabled='true'] {
+  background-color: var(--winui-subtle-fill-transparent);
+}
+
 /* Fluent styles no disabled item anywhere in the nav package, so a disabled one
    reads exactly like an enabled one; WinUI dims it. Both the native and the
    ARIA form are named because an item renders as a button or as an anchor
