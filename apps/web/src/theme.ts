@@ -32,7 +32,16 @@ export const australianBrand: BrandVariants = {
 // https://github.com/fontsource/font-files/blob/main/fonts/variable/cascadia-code/README.md#cascadia-code
 const monospaceStack = "'Cascadia Code Variable', 'Cascadia Code', 'Cascadia Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
+// Fluent's own base stack leads with the static `Segoe UI`, which only Windows
+// carries and which has none of the optical sizes the ramp is drawn around. Our
+// hosted variable face (see segoe-ui-variable.css) leads instead, followed by
+// the three optical families Windows 11 installs, so a failed or still-loading
+// fetch lands on the real typeface wherever it exists.
+// https://learn.microsoft.com/en-us/typography/font-list/segoe-ui-variable
+const baseStack = "'Segoe UI Variable Web', 'Segoe UI Variable Text', 'Segoe UI Variable Display', 'Segoe UI Variable Small', 'Segoe UI', system-ui, sans-serif";
+
 const fontOverrides = {
+  fontFamilyBase: baseStack,
   fontFamilyMonospace: monospaceStack,
   fontSizeBase100: '10px',
   fontSizeBase200: '12px',

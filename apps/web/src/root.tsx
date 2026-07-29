@@ -25,11 +25,22 @@ import { fluentComponents } from './fluent';
 import { flowayDarkTheme, flowayLightTheme } from './theme';
 import './i18n';
 import '@fontsource-variable/cascadia-code';
+import './segoe-ui-variable.css';
 import './uno.css';
 
 const { FluentProvider } = fluentComponents;
 
-export const links: Route.LinksFunction = () => [];
+// The base typeface is the one third-party fetch the first paint waits on, so
+// it is preloaded rather than discovered when the stylesheet resolves. Fonts
+// are fetched in CORS mode whatever the crossOrigin value, and a preload whose
+// mode disagrees with the real request is fetched twice.
+// https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/rel/preload#cors-enabled_fetches
+const SEGOE_UI_VARIABLE_URL = 'https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf';
+
+export const links: Route.LinksFunction = () => [
+  { rel: 'preconnect', href: 'https://docs.azure.cn', crossOrigin: 'anonymous' },
+  { rel: 'preload', as: 'font', type: 'font/ttf', href: SEGOE_UI_VARIABLE_URL, crossOrigin: 'anonymous' },
+];
 
 const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)';
 

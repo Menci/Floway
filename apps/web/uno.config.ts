@@ -7,6 +7,7 @@ export default defineConfig({
   theme: {
     fontFamily: {
       mono: 'var(--fontFamilyMonospace)',
+      sans: 'var(--fontFamilyBase)',
     },
     fontSize: {
       'fui-base200': 'var(--fontSizeBase200)',
