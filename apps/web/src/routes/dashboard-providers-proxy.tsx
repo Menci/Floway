@@ -87,6 +87,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   }, []);
 
   const [deleteTarget, setDeleteTarget] = useState<ProxyRecord | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -278,11 +279,11 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       } else {
         setDeleteError(result.error.message);
       }
-      setDeleteTarget(null);
+      setDeleteOpen(false);
       return;
     }
 
-    setDeleteTarget(null);
+    setDeleteOpen(false);
     await refreshProxies();
   }, [refreshProxies, t]);
 
@@ -395,9 +396,9 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           })}
           onConfirm={() => void handleDeleteConfirm(deleteTarget)}
           onOpenChange={open => {
-            if (!open && !deleting) setDeleteTarget(null);
+            if (!deleting) setDeleteOpen(open);
           }}
-          open
+          open={deleteOpen}
           title={t('dashboard.proxy.delete.title')}
         />
       )}

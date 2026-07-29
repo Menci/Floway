@@ -146,6 +146,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
   const [selected, setSelected] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModelRow | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingManualId, setPendingManualId] = useState<string | null>(null);
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
   const [search, setSearch] = useState('');
@@ -209,7 +210,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
       setSelected(null);
       onViewChange('list');
     }
-    setDeleteTarget(null);
+    setDeleteOpen(false);
   };
 
   const manualDeleteTarget = deleteTarget?.manualIndex === null || deleteTarget === null
@@ -219,8 +220,8 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     actionLabel={t('dashboard.upstreamEditor.models.deleteConfirm')}
     message={t('dashboard.upstreamEditor.models.deleteMessage', { name: manualDeleteTarget.config.display_name ?? publicModelId(manualDeleteTarget.config) })}
     onConfirm={() => deleteModel(manualDeleteTarget)}
-    onOpenChange={open => { if (!open) setDeleteTarget(null); }}
-    open
+    onOpenChange={setDeleteOpen}
+    open={deleteOpen}
     title={t('dashboard.upstreamEditor.models.deleteTitle')}
   />;
 
@@ -253,7 +254,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     </div>;
   }
 
-  if (view === 'detail' && activeDetailRow) return <><ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} onDelete={() => setDeleteTarget(activeDetailRow)} onSourceChange={source => setModelSource(activeDetailRow, source)} onUpdate={value => {
+  if (view === 'detail' && activeDetailRow) return <><ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} onDelete={() => { setDeleteTarget(activeDetailRow); setDeleteOpen(true); }} onSourceChange={source => setModelSource(activeDetailRow, source)} onUpdate={value => {
     if (activeDetailRow.manualIndex === null) return;
     setValue(`manualModels.${activeDetailRow.manualIndex}`, value, {
       shouldDirty: true,
@@ -305,7 +306,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCell>
             <TableCell className="!overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block text-fui-base300 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCell>
-            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); onViewChange('detail'); }} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => setDeleteTarget(row)} />}</TableActions></TableCell>
+            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); onViewChange('detail'); }} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => { setDeleteTarget(row); setDeleteOpen(true); }} />}</TableActions></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>
