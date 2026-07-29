@@ -292,11 +292,11 @@ function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; ef
 
 function modelKindLabel(kind: UpstreamModelConfig['kind']): string {
   switch (kind) {
-    case 'chat': return 'Chat';
-    case 'embedding': return 'Embedding';
-    case 'image': return 'Image';
-    case 'transcription': return 'Transcription';
-    case 'rerank': return 'Rerank';
+  case 'chat': return 'Chat';
+  case 'embedding': return 'Embedding';
+  case 'image': return 'Image';
+  case 'transcription': return 'Transcription';
+  case 'rerank': return 'Rerank';
   }
 }
 

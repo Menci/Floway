@@ -1,9 +1,9 @@
-import { createElement, forwardRef, useLayoutEffect, useRef } from 'react';
+import type { ListboxProps } from '@fluentui/react-components';
+import { createElement, forwardRef, useCallback, useLayoutEffect, useRef } from 'react';
 import type { ComponentProps, ElementType, ReactNode, Ref } from 'react';
 
-import { fluentComponents } from '../../fluent';
 import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from './scroll-area';
-import type { ListboxProps } from '@fluentui/react-components';
+import { fluentComponents } from '../../fluent';
 
 const {
   Combobox: FluentCombobox,
@@ -61,6 +61,9 @@ function ScrollableListbox({
     ...rootProps
   } = listboxProps as ListboxRenderPropsWithRef;
   const mergedRef = useMergedRefs(fluentRef, hostRef);
+  const setViewportRef = useCallback((element: HTMLDivElement | null) => {
+    viewportRef.current = element;
+  }, []);
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -80,7 +83,7 @@ function ScrollableListbox({
     },
     createElement('div', {
       className: 'floway-combobox-listbox-viewport',
-      ref: viewportRef,
+      ref: setViewportRef,
       style: { overflowX: 'hidden', overflowY: 'scroll' },
     }, createElement('div', { className: 'floway-combobox-listbox-content' }, children)),
   );
