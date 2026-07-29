@@ -20,6 +20,7 @@ import { ModelDetail } from './model-detail';
 import { parseModels, serializeModels } from './models-yaml';
 import type { UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useNow } from '../../lib/use-now';
 import { formatFullTime, formatRelativeTime } from '../requests/format';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { Input } from '../ui/fluent-form-controls';
@@ -89,12 +90,12 @@ export function UpstreamWorkspace({
     <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
         ? <>
-          <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => setModelView('list')}>{t('dashboard.upstreamEditor.models.back')}</Button>
-          <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => setModelDetailTab(data.value as ModelDetailTab)}>
-            <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
-            <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
-          </TabList>
-        </>
+            <Button appearance="subtle" icon={<ArrowLeftRegular />} onClick={() => setModelView('list')}>{t('dashboard.upstreamEditor.models.back')}</Button>
+            <TabList selectedValue={modelDetailTab} onTabSelect={(_, data) => setModelDetailTab(data.value as ModelDetailTab)}>
+              <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
+              <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
+            </TabList>
+          </>
         : <TabList selectedValue={tab} onTabSelect={(_, data) => setTab(data.value as typeof tab)}>
             <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
@@ -304,10 +305,11 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
 
 function ModelsCacheStatus({ cache }: { cache: UpstreamRecord['modelsCache'] }) {
   const { t } = useTranslation();
+  const now = useNow(10_000);
   const elapsed = cache.fetchedAt === null ? null : formatRelativeTime(cache.fetchedAt);
   const label = elapsed === null
     ? t('dashboard.upstreamEditor.models.cacheNever')
-    : Date.now() - cache.fetchedAt! < 10_000
+    : now - cache.fetchedAt! < 10_000
       ? t('dashboard.upstreamEditor.models.cacheFetchedNow')
       : t('dashboard.upstreamEditor.models.cacheFetched', { time: elapsed });
   const detail = cache.lastError

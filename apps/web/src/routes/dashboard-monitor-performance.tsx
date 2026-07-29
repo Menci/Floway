@@ -32,11 +32,11 @@ import {
   type PerformanceRange,
   type PerformanceView,
 } from '../components/performance/performance-data';
+import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Select } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { ChoiceGroup } from '../components/ui/choice-group';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
@@ -222,26 +222,26 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} /></Field>
         <Field label={t('dashboard.performance.percentile.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} /></Field>
         <Field label={t('dashboard.performance.range.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
-            { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
-          ]} onChange={value => setRange(value as PerformanceRange)} value={range} /></Field>
+          { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
+        ]} onChange={value => setRange(value as PerformanceRange)} value={range} /></Field>
       </div>
       <div className="grid grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)] items-end gap-4 min-w-0 max-[900px]:grid-cols-1">
         <Field label={t('dashboard.performance.groupBy.label')}>
           <div className="flex items-center gap-2">
-          <Select aria-label={t('dashboard.performance.groupBy.label')} className="min-w-[160px]" value={groupBy} onChange={(_, data) => changeGroupBy(data.value as PerformanceGroupBy)}>
-            {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</option>)}
-          </Select>
-          {groupBy === 'keyId' && (
-            <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
-              <Button
-                appearance="subtle"
-                aria-label={t('dashboard.performance.apiKeyScopeLabel')}
-                className="!min-w-[36px] !text-fui-base500"
-                icon={<InfoRegular fontSize={22} />}
-                size="large"
-              />
-            </Tooltip>
-          )}
+            <Select aria-label={t('dashboard.performance.groupBy.label')} className="min-w-[160px]" value={groupBy} onChange={(_, data) => changeGroupBy(data.value as PerformanceGroupBy)}>
+              {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</option>)}
+            </Select>
+            {groupBy === 'keyId' && (
+              <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
+                <Button
+                  appearance="subtle"
+                  aria-label={t('dashboard.performance.apiKeyScopeLabel')}
+                  className="!min-w-[36px] !text-fui-base500"
+                  icon={<InfoRegular fontSize={22} />}
+                  size="large"
+                />
+              </Tooltip>
+            )}
           </div>
         </Field>
         <PerformanceFiltersBar filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />

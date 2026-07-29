@@ -26,14 +26,18 @@ const modelUri = monaco.Uri.parse('inmemory://floway/models.yaml');
 export default function ModelsYamlEditor({ onChange, value }: { onChange: (value: string) => void; value: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const initialValueRef = useRef(value);
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     monaco.editor.getModel(modelUri)?.dispose();
-    const model = monaco.editor.createModel(value, 'yaml', modelUri);
+    const model = monaco.editor.createModel(initialValueRef.current, 'yaml', modelUri);
     const editor = monaco.editor.create(container, {
       automaticLayout: true,
       fontFamily: 'Cascadia Code, monospace',

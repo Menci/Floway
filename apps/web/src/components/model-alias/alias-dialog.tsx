@@ -14,9 +14,9 @@ import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type { ControlPlaneModel, ModelAlias, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { ChoiceGroup } from '../ui/choice-group';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input, Select } from '../ui/fluent-form-controls';
-import { ChoiceGroup } from '../ui/choice-group';
 import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
 const { Accordion, AccordionHeader, AccordionItem, AccordionPanel, Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Switch, Text } = fluentComponents;

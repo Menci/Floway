@@ -1,6 +1,7 @@
+import { useTranslation } from 'react-i18next';
+
 import { bucketKeyForCallout, formatCompactDecimalCount, formatCount, formatHitRate, formatInputRate, formatUsdCost, summarizeCounters } from './chart-model';
 import type { CalloutPoint, UsageChartModel } from './types';
-import { useTranslation } from 'react-i18next';
 import { fluentComponents } from '../../fluent';
 import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';

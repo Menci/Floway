@@ -33,10 +33,10 @@ import {
 import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
+import { ChoiceGroup } from '../components/ui/choice-group';
 import { Combobox, Input, Select, Textarea } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { ChoiceGroup } from '../components/ui/choice-group';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';

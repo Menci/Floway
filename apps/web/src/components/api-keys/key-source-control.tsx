@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next';
 
 import type { KeySource } from './key-source';
 import { fluentComponents } from '../../fluent';
-import { Input } from '../ui/fluent-form-controls';
 import { ChoiceGroup } from '../ui/choice-group';
+import { Input } from '../ui/fluent-form-controls';
 
 const { Text, makeStyles } = fluentComponents;
 const useStyles = makeStyles({ fieldError: { color: 'var(--colorPaletteRedForeground1)' } });

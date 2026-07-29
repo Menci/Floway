@@ -46,26 +46,26 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogContent>{message}</DialogContent>
           <DialogActions>
-          <Button
-            className="!whitespace-nowrap"
-            disabled={busy}
-            onClick={() => {
-              if (onCancel) onCancel();
-              else onOpenChange(false);
-            }}
-          >
-            {cancelLabel ?? t('common.cancel')}
-          </Button>
-          <Button
-            appearance="primary"
-            className={actionIntent === 'danger' ? s.danger : undefined}
-            disabled={busy}
-            icon={busy ? <Spinner size="tiny" /> : undefined}
-            onClick={onConfirm}
-            style={{ whiteSpace: 'nowrap' }}
-          >
-            {actionLabel}
-          </Button>
+            <Button
+              className="!whitespace-nowrap"
+              disabled={busy}
+              onClick={() => {
+                if (onCancel) onCancel();
+                else onOpenChange(false);
+              }}
+            >
+              {cancelLabel ?? t('common.cancel')}
+            </Button>
+            <Button
+              appearance="primary"
+              className={actionIntent === 'danger' ? s.danger : undefined}
+              disabled={busy}
+              icon={busy ? <Spinner size="tiny" /> : undefined}
+              onClick={onConfirm}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              {actionLabel}
+            </Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

@@ -1,5 +1,5 @@
-import type { InferResponseType } from 'hono/client';
 import { EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
+import type { InferResponseType } from 'hono/client';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
@@ -311,16 +311,16 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
         {draft.provider === 'disabled'
           ? <MessageBar intent="info"><MessageBarBody>{t('dashboard.searchConfig.noCredentialNeeded')}</MessageBarBody></MessageBar>
           : (
-          <Field label={t('dashboard.searchConfig.apiKeyLabel')}>
-            <SecretInput
-              contentAfter={<Tooltip content={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} relationship="label"><Button appearance="subtle" aria-label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} icon={secretVisible ? <EyeOffRegular /> : <EyeRegular />} onClick={() => setSecretVisible(value => !value)} size="small" /></Tooltip>}
-              onChange={handleApiKeyChange}
-              placeholder={t('dashboard.searchConfig.apiKeyPlaceholder')}
-              revealed={secretVisible}
-              value={activeOption.getApiKey(draft)}
-            />
-          </Field>
-          )}
+              <Field label={t('dashboard.searchConfig.apiKeyLabel')}>
+                <SecretInput
+                  contentAfter={<Tooltip content={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} relationship="label"><Button appearance="subtle" aria-label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} icon={secretVisible ? <EyeOffRegular /> : <EyeRegular />} onClick={() => setSecretVisible(value => !value)} size="small" /></Tooltip>}
+                  onChange={handleApiKeyChange}
+                  placeholder={t('dashboard.searchConfig.apiKeyPlaceholder')}
+                  revealed={secretVisible}
+                  value={activeOption.getApiKey(draft)}
+                />
+              </Field>
+            )}
 
         <section className="grid gap-3 border-t border-t-solid border-fui-stroke1 pt-4">
           <div className="flex items-start justify-between gap-4">

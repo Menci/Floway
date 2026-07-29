@@ -183,9 +183,9 @@ export function RequestListPanel(props: RequestListProps) {
     <div className="h-full min-h-0 flex flex-col">
       <div className="py-3">
         <Field label={t('dashboard.requests.apiKey')}>
-        <Select value={props.selectedKeyId} onChange={event => props.onKeyChange(event.target.value)}>
-          {props.apiKeys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
-        </Select>
+          <Select value={props.selectedKeyId} onChange={event => props.onKeyChange(event.target.value)}>
+            {props.apiKeys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
+          </Select>
         </Field>
       </div>
       {props.error && <MessageBar intent="error" className="!m-2"><MessageBarBody>{props.error}</MessageBarBody></MessageBar>}
