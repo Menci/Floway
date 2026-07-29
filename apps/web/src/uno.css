@@ -1,5 +1,19 @@
 @unocss;
 
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--fontFamilyMonospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+
 .fui-TableHeaderCell,
 .fui-TableHeaderCell__button {
   font-weight: var(--fontWeightSemibold) !important;

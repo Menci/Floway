@@ -23,7 +23,7 @@ import {
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { scrollAreaCss } from './components/ui/scroll-area';
 import { fluentComponents } from './fluent';
-import { flowayDarkTheme, flowayLightTheme } from './theme';
+import { baseFontStack, flowayDarkTheme, flowayLightTheme } from './theme';
 import { segoeWebFontCss, segoeWebFontOrigin, segoeWebFonts } from './web-fonts';
 import './i18n';
 import '@fontsource-variable/cascadia-code';
@@ -72,6 +72,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
         <style>{`
           html, body { height: 100%; overflow: hidden; }
+          body { font-family: ${baseFontStack}; }
           @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
           *, *::before, *::after { box-sizing: border-box; }
           html body pre[class*="language-"] { border: 0; }
@@ -82,7 +83,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ${scrollAreaCss}
         `}</style>
       </head>
-      <body className="text-[14px] font-sans m-0">
+      <body className="text-[14px] m-0">
         <FluentProvider theme={theme}>
           <BrowserLanguageSync />
           <GradientBackground>{children}</GradientBackground>
