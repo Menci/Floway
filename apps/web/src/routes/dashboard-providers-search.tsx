@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-search';
-import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
@@ -19,6 +18,7 @@ import { Dropdown } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { SecretInput } from '../components/ui/secret-input';
 import { fluentComponents } from '../fluent';
+import { useAuthStore } from '../stores/auth-store';
 
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
 
@@ -37,15 +37,21 @@ const {
   Tooltip,
 } = fluentComponents;
 
-interface SearchPageLoaderData {
+interface AdminSearchPageLoaderData {
+  admin: true;
   config: SearchConfig;
   upstreams: UpstreamRecord[];
   models: ControlPlaneModel[];
   error: string | null;
 }
 
+type SearchPageLoaderData = AdminSearchPageLoaderData | { admin: false };
+
 export async function clientLoader(): Promise<SearchPageLoaderData> {
   if (!getSessionToken()) throw redirect('/');
+  const user = await useAuthStore.getState().initialize();
+  if (!user) throw redirect('/');
+  if (!user.isAdmin) return { admin: false };
   const [configResult, upstreamsResult, modelsResult] = await Promise.all([
     callApi(() => api.api['search-config'].$get()),
     callApi(() => api.api.upstreams.$get()),
@@ -53,6 +59,7 @@ export async function clientLoader(): Promise<SearchPageLoaderData> {
   ]);
   if (configResult.error) throw new Error(configResult.error.message);
   return {
+    admin: true,
     config: configResult.data,
     upstreams: upstreamsResult.data ?? [],
     models: modelsResult.data?.data ?? [],
@@ -125,8 +132,23 @@ function findProviderOption(
 
 export default function DashboardProvidersSearch({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const { user } = useDashboardOutletContext();
+  if (!loaderData.admin) {
+    return (
+      <section className="dashboard-page max-w-[960px]">
+        <DashboardPageHeader
+          description={t('dashboard.searchConfig.description')}
+          eyebrow={t('dashboard.groups.providers')}
+          title={t('dashboard.searchConfig.heading')}
+        />
+        <AdminOnlyNotice />
+      </section>
+    );
+  }
+  return <AdminSearchPage loaderData={loaderData} />;
+}
 
+function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<SearchConfig>(loaderData.config);
   const upstreams = loaderData.upstreams;
   const models = loaderData.models;
@@ -237,19 +259,6 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       setTesting(false);
     }
   }, [draft]);
-
-  if (!user.isAdmin) {
-    return (
-      <section className="dashboard-page max-w-[960px]">
-        <DashboardPageHeader
-          description={t('dashboard.searchConfig.description')}
-          eyebrow={t('dashboard.groups.providers')}
-          title={t('dashboard.searchConfig.heading')}
-        />
-        <AdminOnlyNotice />
-      </section>
-    );
-  }
 
   return (
     <section className="dashboard-page max-w-[960px]">
