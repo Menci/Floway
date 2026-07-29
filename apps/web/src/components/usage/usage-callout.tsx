@@ -7,6 +7,7 @@ import { formatCalloutTitle } from '../charts/dashboard-time';
 import { ScrollArea } from '../ui/scroll-area';
 
 const { Text } = fluentComponents;
+const bodyTextStyle = { fontSize: '11px', lineHeight: '14px' } as const;
 
 export function UsageChartCallout({ chart, labelByTime, locale, point, valueFormatter }: { chart: UsageChartModel; labelByTime: Map<number, string>; locale: string; point: CalloutPoint | null; valueFormatter: (value: number) => string }) {
   const { t } = useTranslation();
@@ -39,17 +40,17 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
                   <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
                     <span className="flex items-center gap-[6px] min-w-0 overflow-hidden text-ellipsis">
                       <i className="rounded-[2px] h-[10px] w-[10px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-                      <Text size={200}>{item.label}</Text>
+                      <Text style={bodyTextStyle}>{item.label}</Text>
                     </span>
                   </td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCount(summary.requests, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatUsdCost(summary.cost)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCompactDecimalCount(summary.total, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCompactDecimalCount(summary.cacheRead, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCompactDecimalCount(summary.prefill, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCompactDecimalCount(summary.output, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCount(summary.requests, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatUsdCost(summary.cost)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCompactDecimalCount(summary.total, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCompactDecimalCount(summary.cacheRead, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCompactDecimalCount(summary.prefill, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatCompactDecimalCount(summary.output, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text style={bodyTextStyle}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
                 </tr>
               );
             })}
@@ -59,7 +60,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
         <>
           <Text size={200} weight="semibold">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text>
           {rows.map(item => (
-            <Text key={item.id} size={200} className="flex items-center gap-1.5 justify-between tabular-nums">
+            <Text key={item.id} style={bodyTextStyle} className="flex items-center gap-1.5 justify-between tabular-nums">
               <i className="rounded-full h-[8px] w-[8px] flex-shrink-0" style={{ backgroundColor: item.color }} />
               {item.label}: {valueFormatter(item.value)}
             </Text>
