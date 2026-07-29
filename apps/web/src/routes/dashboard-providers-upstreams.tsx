@@ -106,6 +106,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const [pageError, setPageError] = useState(loaderData.loadError);
   const [mutation, setMutation] = useState<Mutation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UpstreamRecord | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const busy = mutation !== null;
 
@@ -220,7 +221,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       setMutation(null);
       return;
     }
-    setDeleteTarget(null);
+    setDeleteOpen(false);
     await reload();
     setMutation(null);
     dispatchToast(
@@ -303,7 +304,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           busy={busy}
           data={data}
           mutation={mutation}
-          onDelete={setDeleteTarget}
+          onDelete={record => { setDeleteTarget(record); setDeleteOpen(true); }}
           onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`)}
           onMove={(record, direction) => void move(record, direction)}
           onToggle={(record, enabled) => void setEnabled(record, enabled)}
@@ -322,9 +323,9 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           if (!busy) void deleteUpstream(deleteTarget);
         }}
         onOpenChange={open => {
-          if (!open && mutation?.kind !== 'delete') setDeleteTarget(null);
+          if (mutation?.kind !== 'delete') setDeleteOpen(open);
         }}
-        open
+        open={deleteOpen}
         title={t('dashboard.upstreams.delete.title')}
       />}
     </div>
@@ -357,16 +358,16 @@ function UpstreamsTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[1100px] table-fixed">
-        <colgroup><col className="w-[130px]" /><col className="w-[150px]" /><col className="w-[420px]" /><col className="w-[180px]" /><col className="w-[110px]" /><col className="w-[88px]" /></colgroup>
+      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[860px] table-fixed">
+        <colgroup><col className="w-[120px]" /><col className="w-[140px]" /><col className="w-[300px]" /><col className="w-[140px]" /><col className="w-[90px]" /><col className="w-[70px]" /></colgroup>
         <TableHeader>
           <TableRow>
-            <TableHeaderCell className="!w-[130px]">{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[150px]">{t('dashboard.upstreams.table.provider')}</TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.upstreams.table.provider')}</TableHeaderCell>
             <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[180px]">{t('dashboard.upstreams.table.models')}</TableHeaderCell>
-            <TableHeaderCell className="!w-[110px]">{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
-            <TableActionsHeader className="!w-[88px]">{t('dashboard.upstreams.table.actions')}</TableActionsHeader>
+            <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
+            <TableHeaderCell>{t('dashboard.upstreams.table.enabled')}</TableHeaderCell>
+            <TableActionsHeader>{t('dashboard.upstreams.table.actions')}</TableActionsHeader>
           </TableRow>
         </TableHeader>
         <TableBody>

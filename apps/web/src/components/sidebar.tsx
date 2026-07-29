@@ -48,7 +48,23 @@ const {
   NavDrawerHeader,
   NavItem,
   NavSectionHeader,
+  makeStyles,
 } = fluentComponents;
+
+const useStyles = makeStyles({
+  item: {
+    backgroundColor: 'transparent !important',
+    borderRadius: '6px !important',
+    '&:hover': { backgroundColor: 'light-dark(rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.05)) !important' },
+    '&[aria-current="page"]': {
+      backgroundColor: 'light-dark(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.08)) !important',
+    },
+    '&[aria-current="page"]:hover': {
+      backgroundColor: 'light-dark(rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.11)) !important',
+    },
+    '&[aria-current="page"]::after': { left: '2px !important' },
+  },
+});
 
 type NavItemDefinition = {
   to: string;
@@ -110,6 +126,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const logout = useAuthStore(state => state.logout);
+  const styles = useStyles();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const selectedValue = navGroups
     .flatMap(group => group.items)
@@ -119,7 +136,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   return <>
     <NavDrawer
       aria-label={t('dashboard.nav.label')}
-      className="!h-full !max-w-none !w-full"
+      className="!bg-transparent !h-full !max-w-none !w-full"
       density="medium"
       onNavItemSelect={(_, data) => {
         if (data.value === 'logout') {
@@ -133,13 +150,13 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       selectedValue={selectedValue}
       type="inline"
     >
-      <NavDrawerHeader className="!px-5 !py-4">
+      <NavDrawerHeader className="!bg-transparent !px-5 !py-4">
         <div className="flex items-center min-h-10">
           <FlowayLogo size="compact" />
           {onNavigate && <Button appearance="subtle" aria-label={t('dashboard.nav.close')} className="!ml-auto" icon={<DismissRegular />} onClick={onNavigate} />}
         </div>
       </NavDrawerHeader>
-      <NavDrawerBody>
+      <NavDrawerBody className="!bg-transparent">
         {navGroups.map((group, groupIndex) => {
           if (group.adminOnly && !user.isAdmin) return null;
           const items = group.items.filter(item => !item.adminOnly || user.isAdmin);
@@ -148,14 +165,14 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
             {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}
             {items.map(item => {
               const Icon = item.icon;
-              return <NavItem icon={<Icon fontSize={20} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
+              return <NavItem className={styles.item} icon={<Icon fontSize={20} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
             })}
           </div>;
         })}
       </NavDrawerBody>
-      <NavDrawerFooter className="!border-t !border-t-solid !border-fui-stroke2 !py-3">
-        <NavItem icon={<AccountIcon fontSize={20} />} value="/dashboard/settings">{user.username}</NavItem>
-        <NavItem icon={<SignOutRegular fontSize={20} />} value="logout">{t('dashboard.logout.label')}</NavItem>
+      <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
+        <NavItem className={styles.item} icon={<AccountIcon fontSize={20} />} value="/dashboard/settings">{user.username}</NavItem>
+        <NavItem className={styles.item} icon={<SignOutRegular fontSize={20} />} value="logout">{t('dashboard.logout.label')}</NavItem>
       </NavDrawerFooter>
     </NavDrawer>
     <ConfirmDialog
