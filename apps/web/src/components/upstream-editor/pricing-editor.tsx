@@ -102,7 +102,8 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
   const conditionsHeadingId = useId();
   const ratesHeadingId = useId();
 
-  const selectedIndex = Math.max(0, drafts.findIndex(draft => draft.id === selectedId));
+  const selectedDraftIndex = drafts.findIndex(draft => draft.id === selectedId);
+  const selectedIndex = selectedDraftIndex === -1 ? 0 : selectedDraftIndex;
   const active = drafts[selectedIndex];
   const fields = useMemo(() => visiblePricingFields(drafts, kind), [drafts, kind]);
   const issues = useMemo(() => collectDraftIssues(drafts, value), [drafts, value]);
@@ -174,7 +175,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
           const next = data.selectedItems[0];
           if (typeof next === 'number') setSelectedId(next);
         }}
-        selectedItems={selectedId === null ? [] : [selectedId]}
+        selectedItems={active ? [active.id] : []}
         selectionMode="single"
       >
         {drafts.map((draft, index) => {
