@@ -58,18 +58,18 @@ export const selectCss = `
    focus stroke drawn at its own 7px corner. An outline reproduces it — a 2px
    offset puts the stroke's outer edge at the same 4px out — except for that
    corner, which an outline can only inherit from the field plus the offset and
-   so rounds a pixel tighter than WinUI's fixed 7px. The descendant
-   :focus-visible keeps pointer focus in the pressed/rest states while still
-   finding the native select, button or input inside each Fluent root. Fluent's
-   brand underline is the affordance this replaces, so the pseudo-element
-   drawing it is dropped on the appearance WinUI paints.
+   so rounds a pixel tighter than WinUI's fixed 7px. Fluent's keyboard-modality
+   data attribute keeps pointer focus in the pressed/rest states while still
+   finding the button or input inside each root. Fluent's brand underline is
+   the affordance this replaces, so the pseudo-element drawing it is dropped on
+   the appearance WinUI paints.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L38
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L338
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L343
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L570
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L476 */
-.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(:focus-visible),
-.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(:focus-visible) {
+.fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has([data-fui-focus-visible]),
+.fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has([data-fui-focus-visible]) {
   outline: 2px solid var(--winui-focus-stroke-outer);
   outline-offset: 2px;
 }
@@ -190,7 +190,33 @@ export const selectCss = `
 .fui-Dropdown__listbox.fui-Dropdown__listbox,
 .fui-Combobox__listbox.fui-Combobox__listbox {
   border-radius: var(--winui-overlay-corner-radius);
+  gap: 0;
   outline: 1px solid var(--winui-surface-stroke-flyout);
+  overflow: hidden;
+  padding: 0;
+}
+
+/* Fluent keeps the positioned Listbox as the ARIA and event root. Its public
+   render slot inserts this existing viewport so OverlayScrollbars can own the
+   scrolling surface without reparenting React's Options or changing the
+   active-descendant search root. Floating UI writes a constrained height to
+   the outer root; flex propagates that height to the viewport, while max-height
+   keeps the unconstrained content path intrinsic.
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useCombobox.tsx#L43-L74
+   https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-positioning/library/src/middleware/maxSize.ts#L43-L70
+   https://github.com/KingSora/OverlayScrollbars/blob/79fc9549843635ac1627b34685b1209e621ac5d2/packages/overlayscrollbars/README.md#L124-L171 */
+.floway-combobox-listbox-viewport {
+  flex: 1 1 auto;
+  max-height: inherit;
+  min-height: 0;
+  width: 100%;
+}
+
+.floway-combobox-listbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
 }
 
 /* List items. WinUI uses a tighter corner and an asymmetric padding that sits
