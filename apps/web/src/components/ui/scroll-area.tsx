@@ -115,11 +115,11 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
       ref={hostRef}
     >
       <div
-        className={`h-full w-full ${contentClassName}`}
+        className="h-full w-full"
         ref={viewportRef}
         style={{ overflowX: overflow.x, overflowY: overflow.y }}
       >
-        {children}
+        <div className={contentClassName}>{children}</div>
       </div>
     </div>
   );
