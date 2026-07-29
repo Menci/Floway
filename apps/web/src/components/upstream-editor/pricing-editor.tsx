@@ -163,16 +163,17 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
 
   return <div className="grid min-w-0 grid-cols-[240px_minmax(0,1fr)] items-stretch gap-5 max-[760px]:grid-cols-1">
     <aside className="grid h-full min-w-0 content-start gap-2 border-0 border-r border-solid border-fui-stroke1 pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
-      <Toolbar aria-label={t('dashboard.upstreamEditor.models.pricingRules')} className="!min-h-8 !p-0" size="small">
-        <Text as="h4" size={300} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.pricingRules')}</Text>
-        <Badge appearance="tint" color="informative" size="small">{drafts.length}</Badge>
-        {editable && <Tooltip content={t('dashboard.upstreamEditor.models.addPricingOverride')} relationship="label">
-          <ToolbarButton aria-label={t('dashboard.upstreamEditor.models.addPricingOverride')} className="!ml-auto" icon={<AddRegular />} onClick={addEntry} />
-        </Tooltip>}
-      </Toolbar>
+      {editable && <Toolbar aria-label={t('dashboard.upstreamEditor.models.pricingRules')} className="!justify-end !min-h-8 !p-0" size="small">
+        <Tooltip content={t('dashboard.upstreamEditor.models.addPricingOverride')} relationship="label">
+          <ToolbarButton aria-label={t('dashboard.upstreamEditor.models.addPricingOverride')} icon={<AddRegular />} onClick={addEntry} />
+        </Tooltip>
+      </Toolbar>}
       <List
         aria-label={t('dashboard.upstreamEditor.models.pricingRules')}
-        onSelectionChange={(_, data) => setSelectedId(Number(data.selectedItems[0]))}
+        onSelectionChange={(_, data) => {
+          const next = data.selectedItems[0];
+          if (typeof next === 'number') setSelectedId(next);
+        }}
         selectedItems={selectedId === null ? [] : [selectedId]}
         selectionMode="single"
       >
