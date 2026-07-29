@@ -41,6 +41,7 @@ const ensureScrollbarProbe = () => {
   document.body.appendChild(outer);
   scrollbarProbe = outer;
   new ResizeObserver(updateNativeScrollbarSize).observe(outer);
+  window.addEventListener('resize', updateNativeScrollbarSize);
   updateNativeScrollbarSize();
 };
 
