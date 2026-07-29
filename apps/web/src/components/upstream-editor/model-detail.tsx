@@ -13,7 +13,7 @@ import type {
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
-import { Combobox, Input, Select } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
 import type { Flag } from '@floway-dev/provider/flags';
 
@@ -142,11 +142,11 @@ export function ModelDetail({
               <Input className="!w-full" placeholder={t('dashboard.upstreamEditor.models.displayNamePlaceholder')} readOnly={!editable} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
             </Field>
             <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.kind')}>
-              <Select key={row.config.kind} disabled={!editable} defaultValue={row.config.kind} onChange={(_, data) => setKind(data.value as UpstreamModelConfig['kind'])}>
-                <option value="chat">Chat</option><option value="embedding">Embedding</option><option value="image">Image</option><option value="transcription">Transcription</option>
+              <Dropdown disabled={!editable} selectedOptions={[row.config.kind]} value={modelKindLabel(row.config.kind)} onOptionSelect={(_, data) => data.optionValue !== undefined && setKind(data.optionValue as UpstreamModelConfig['kind'])}>
+                <Option value="chat">Chat</Option><Option value="embedding">Embedding</Option><Option value="image">Image</Option><Option value="transcription">Transcription</Option>
                 {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
-                {record.kind === 'custom' && <option value="rerank">Rerank</option>}
-              </Select>
+                {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
+              </Dropdown>
             </Field>
             <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')}>
               <Input className="!w-full font-mono" placeholder={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deploymentPlaceholder') : t('dashboard.upstreamEditor.models.upstreamIdPlaceholder')} readOnly={!editable || row.hasAuto} value={row.config.upstreamModelId} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
@@ -283,11 +283,21 @@ function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; ef
       </Combobox>
     </Field>
     <Field label={t('dashboard.upstreamEditor.models.defaultEffort')}>
-      <Select disabled={!editable || supported.length === 0} value={effort.default} onChange={(_, data) => onChange({ ...effort, default: data.value })}>
-        {supported.map(level => <option key={level} value={level}>{level}</option>)}
-      </Select>
+      <Dropdown disabled={!editable || supported.length === 0} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && onChange({ ...effort, default: data.optionValue })}>
+        {supported.map(level => <Option key={level} value={level}>{level}</Option>)}
+      </Dropdown>
     </Field>
   </div>;
+}
+
+function modelKindLabel(kind: UpstreamModelConfig['kind']): string {
+  switch (kind) {
+    case 'chat': return 'Chat';
+    case 'embedding': return 'Embedding';
+    case 'image': return 'Image';
+    case 'transcription': return 'Transcription';
+    case 'rerank': return 'Rerank';
+  }
 }
 
 export function modelValidationError(model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null {

@@ -8,7 +8,7 @@ import { publicModelId } from './editor-data';
 import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import type { ProxyRecord, UpstreamModelConfig, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { Combobox, Input, Select } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { UpstreamColorPicker } from '../upstreams/upstream-color-picker';
@@ -191,7 +191,7 @@ function ProxyFallbackEditor({ proxies, runtime }: { proxies: ProxyRecord[]; run
   >
     {fields.map((field, index) => <div className="grid gap-2 border-0 border-t border-solid border-fui-stroke1 py-2 first:border-t-0 first:pt-0" key={field.id}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-        <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Select aria-label={t('dashboard.upstreamEditor.sections.proxy')} key={item.value} defaultValue={item.value} onChange={(_, data) => item.onChange(data.value)}>{available.map(proxy => <option key={proxy.id} value={proxy.id}>{proxy.name}</option>)}</Select>} />
+        <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Dropdown aria-label={t('dashboard.upstreamEditor.sections.proxy')} selectedOptions={[item.value]} value={available.find(proxy => proxy.id === item.value)?.name ?? item.value} onOptionSelect={(_, data) => data.optionValue !== undefined && item.onChange(data.optionValue)}>{available.map(proxy => <Option key={proxy.id} value={proxy.id}>{proxy.name}</Option>)}</Dropdown>} />
         <div className="inline-flex">
           <TooltipIconButton disabled={index === 0} icon={<ArrowUpRegular />} label={t('dashboard.upstreamEditor.actions.moveUp')} onClick={() => move(index, index - 1)} />
           <TooltipIconButton disabled={index === fields.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.upstreamEditor.actions.moveDown')} onClick={() => move(index, index + 1)} />

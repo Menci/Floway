@@ -1,11 +1,11 @@
 import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
-import { Input, Select } from '../ui/fluent-form-controls';
+import { Dropdown, Input } from '../ui/fluent-form-controls';
 import type { RerankProtocol, RerankTarget } from '@floway-dev/protocols/common';
 import { DEFAULT_RERANK_PATHS } from '@floway-dev/protocols/rerank';
 
-const { Field } = fluentComponents;
+const { Field, Option } = fluentComponents;
 
 // Rerank upstreams disagree on both the request dialect and the path, and the
 // pairing is per model rather than per provider, so both live on the target.
@@ -27,15 +27,16 @@ export const RerankTargetEditor = ({ disabled, onChange, value }: {
 
   return <div className="grid gap-3 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[560px]:grid-cols-1">
     <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.rerankProtocol')}>
-      <Select
+      <Dropdown
         disabled={disabled}
-        value={value.protocol}
-        onChange={(_, data) => onChange({ ...value, protocol: data.value as RerankProtocol })}
+        selectedOptions={[value.protocol]}
+        value={PROTOCOL_LABELS[value.protocol]}
+        onOptionSelect={(_, data) => data.optionValue !== undefined && onChange({ ...value, protocol: data.optionValue as RerankProtocol })}
       >
         {Object.entries(PROTOCOL_LABELS).map(([protocol, label]) => (
-          <option key={protocol} value={protocol}>{label}</option>
+          <Option key={protocol} value={protocol}>{label}</Option>
         ))}
-      </Select>
+      </Dropdown>
     </Field>
 
     <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.rerankPath')} hint={t('dashboard.upstreamEditor.models.rerankPathHint')}>

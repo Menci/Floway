@@ -2,9 +2,9 @@ import { useTranslation } from 'react-i18next';
 
 import type { AnnouncedMetadata, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { Input, Select } from '../ui/fluent-form-controls';
+import { Dropdown, Input } from '../ui/fluent-form-controls';
 
-const { Field, Switch, Text } = fluentComponents;
+const { Field, Option, Switch, Text } = fluentComponents;
 
 const numberValue = (value: string) => value === '' ? undefined : Number(value);
 
@@ -62,7 +62,7 @@ export function MetadataEditor({ disabled, kind, onChange, value }: {
           </div>
           {effort && <div className="grid grid-cols-2 gap-3 max-[680px]:grid-cols-1">
             <Field hint={t('dashboard.modelAliases.metadata.effortsHint')} label={t('dashboard.modelAliases.metadata.efforts')}><Input disabled={disabled} value={effort.supported.join(', ')} onChange={(_, data) => { const supported = data.value.split(',').map(item => item.trim()).filter(Boolean); patchReasoning({ effort: { supported, default: supported.includes(effort.default) ? effort.default : supported[0] ?? '' } }); }} /></Field>
-            <Field label={t('dashboard.modelAliases.metadata.defaultEffort')}><Select disabled={disabled} value={effort.default} onChange={(_, data) => patchReasoning({ effort: { supported: effort.supported, default: data.value } })}>{effort.supported.map(item => <option key={item}>{item}</option>)}</Select></Field>
+            <Field label={t('dashboard.modelAliases.metadata.defaultEffort')}><Dropdown disabled={disabled} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && patchReasoning({ effort: { supported: effort.supported, default: data.optionValue } })}>{effort.supported.map(item => <Option key={item} value={item}>{item}</Option>)}</Dropdown></Field>
           </div>}
           {budget && <div className="grid grid-cols-2 gap-3 max-[680px]:grid-cols-1">
             <Field label={t('dashboard.modelAliases.metadata.minBudget')}><Input disabled={disabled} min={0} type="number" value={budget.min?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: { ...budget, min: numberValue(data.value) } })} /></Field>

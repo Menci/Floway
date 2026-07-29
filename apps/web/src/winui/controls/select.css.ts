@@ -1,5 +1,5 @@
-// WinUI 3 ComboBox styling for Fluent v9's Select, Dropdown, Combobox, Listbox
-// and Option. Fluent paints these as a Fluent 2 Web field — opaque background,
+// WinUI 3 ComboBox styling for Fluent v9's Dropdown, Combobox, Listbox and
+// Option. Fluent paints these as a Fluent 2 Web field — opaque background,
 // uniform neutral outline, brand underline on focus — while WinUI paints a
 // translucent control fill inside a directional elevation stroke, lights a
 // detached focus ring instead of the underline, and marks the selected list
@@ -14,16 +14,12 @@
 // so each rule below is written once against a theme-aware `--winui-*`
 // variable rather than duplicated per color scheme.
 //
-// The three field shells — the native `<select>`, the Dropdown button's root,
-// and the Combobox root — carry the same border and fill in Fluent, so they are
-// addressed as one selector list throughout. Where a rule belongs to the box
-// around the field rather than the field itself, it addresses the three roots
-// instead, the Select's included.
+// The Dropdown button's root and the Combobox root carry the same border and
+// fill in Fluent, so they are addressed as one selector list throughout.
 export const selectCss = `
 /* Field shell at rest. WinUI fills the ComboBox with a translucent control fill
    over whatever sits behind it, where Fluent paints an opaque neutral.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L32 */
-.fui-Select__select.fui-Select__select[data-winui-appearance='outline'],
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline'],
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline'] {
   background-color: var(--winui-control-fill-default);
@@ -32,7 +28,6 @@ export const selectCss = `
 /* The rest outline is WinUI's directional elevation stroke rather than a
    uniform neutral plus a darker bottom edge.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L54 */
-.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:not([aria-invalid='true']),
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:not(:has(.fui-Dropdown__button[aria-invalid='true'])),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:not(:has(.fui-Combobox__input[aria-invalid='true'])) {
   border-color: var(--winui-control-elevation-border-color);
@@ -48,13 +43,11 @@ export const selectCss = `
    brightening the outline.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L33
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L55 */
-.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:enabled:hover,
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover,
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover {
   background-color: var(--winui-control-fill-secondary);
 }
 
-.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:enabled:hover:not([aria-invalid='true']),
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:hover:not(:has(.fui-Dropdown__button[aria-invalid='true'])),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:hover:not(:has(.fui-Combobox__input[aria-invalid='true'])) {
   border-color: var(--winui-control-elevation-border-color);
@@ -75,14 +68,12 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L343
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L570
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L476 */
-.fui-Select.fui-Select[data-winui-appearance='outline']:has(:focus-visible),
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(:focus-visible),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(:focus-visible) {
   outline: 2px solid var(--winui-focus-stroke-outer);
   outline-offset: 2px;
 }
 
-.fui-Select.fui-Select[data-winui-appearance='outline']::after,
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']::after,
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']::after {
   content: none;
@@ -91,8 +82,7 @@ export const selectCss = `
 /* Fluent also swaps the field border to its pressed stroke while focus is
    inside, where WinUI's Focused state leaves the border brush untouched, so the
    rest stroke is restated against it. No invalid exclusion is needed: Fluent's
-   own invalid border is written against :not(:focus-within). The Select needs
-   no rule of its own — Fluent changes its field border on hover and press only.
+   own invalid border is written against :not(:focus-within).
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L473-L487 */
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:focus-within,
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:focus-within {
@@ -104,7 +94,6 @@ export const selectCss = `
    dims the text one step.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L34
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L56 */
-.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:enabled:active,
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active,
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active,
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button[aria-expanded='true']),
@@ -112,7 +101,6 @@ export const selectCss = `
   background-color: var(--winui-control-fill-tertiary);
 }
 
-.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:enabled:active:not([aria-invalid='true']),
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:active:not(:has(.fui-Dropdown__button[aria-invalid='true'])),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:active:not(:has(.fui-Combobox__input[aria-invalid='true'])),
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button[aria-expanded='true']),
@@ -124,7 +112,6 @@ export const selectCss = `
    fill. WinUI dims it whatever the field looks like, so this one is not tied to
    an appearance.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L42 */
-.fui-Select__select.fui-Select__select:enabled:active,
 .fui-Dropdown:active .fui-Dropdown__button.fui-Dropdown__button,
 .fui-Combobox:active .fui-Combobox__input.fui-Combobox__input,
 .fui-Dropdown__button.fui-Dropdown__button[aria-expanded='true'],
@@ -136,7 +123,6 @@ export const selectCss = `
    than going transparent behind a lightened outline the way Fluent does.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L35
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L57 */
-.fui-Select__select.fui-Select__select[data-winui-appearance='outline']:disabled,
 .fui-Dropdown.fui-Dropdown[data-winui-appearance='outline']:has(.fui-Dropdown__button:disabled),
 .fui-Combobox.fui-Combobox[data-winui-appearance='outline']:has(.fui-Combobox__input:disabled) {
   background-color: var(--winui-control-fill-disabled);
@@ -147,7 +133,6 @@ export const selectCss = `
    outweighs Fluent's own disabled icon colour; the labels do not, since Fluent
    already paints them with the token this theme maps onto that same fill.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L59 */
-.fui-Select__select:disabled ~ .fui-Select__icon.fui-Select__icon,
 .fui-Dropdown:has(.fui-Dropdown__button:disabled) .fui-Dropdown__expandIcon.fui-Dropdown__expandIcon,
 .fui-Dropdown:has(.fui-Dropdown__button:disabled) .fui-Dropdown__clearButton.fui-Dropdown__clearButton,
 .fui-Combobox:has(.fui-Combobox__input:disabled) .fui-Combobox__expandIcon.fui-Combobox__expandIcon,
@@ -160,7 +145,6 @@ export const selectCss = `
    stroke colour.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L58
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582 */
-.fui-Select__icon.fui-Select__icon,
 .fui-Dropdown__expandIcon.fui-Dropdown__expandIcon,
 .fui-Combobox__expandIcon.fui-Combobox__expandIcon {
   color: var(--winui-text-fill-secondary);
@@ -181,10 +165,9 @@ export const selectCss = `
 
 /* WinUI reads the content inset off the ComboBox padding and the glyph's own
    trailing margin: 12px leading, no trailing padding, and 14px between the
-   glyph and the field edge. Only the Dropdown button reproduces WinUI's grid
-   faithfully enough to take the padding — the Select's glyph is absolutely
-   positioned and the Combobox splits the inset between input and icon, so both
-   keep Fluent's arithmetic.
+   glyph and the field edge. The Dropdown button reproduces WinUI's grid
+   faithfully enough to take the padding; the Combobox splits the inset between
+   input and icon, so it keeps Fluent's arithmetic.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L341
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582 */
 .fui-Dropdown__button.fui-Dropdown__button {
@@ -194,16 +177,6 @@ export const selectCss = `
 
 .fui-Dropdown__expandIcon.fui-Dropdown__expandIcon {
   margin-inline-end: 14px;
-}
-
-/* The Select's own trailing inset is Fluent's, computed from a 20px icon; the
-   glyph shrunk to WinUI's 12px must therefore move out to the same 14px edge
-   distance, which leaves the 12px between text and glyph that WinUI's editable
-   ComboBox reserves (38px of text padding against a glyph ending at 26px).
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L342
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L582 */
-.fui-Select__icon.fui-Select__icon {
-  inset-inline-end: 14px;
 }
 
 /* The drop-down surface. WinUI gives the popup the overlay radius and a real

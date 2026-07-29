@@ -31,8 +31,8 @@ type AppearanceCarrier = { appearance?: string } & SlotProps;
 // the root element on their own and the list is empty. When it is not,
 // `getPartitionedNativeProps` forwards everything except `style` and
 // `className` to the primary slot, so a top-level `data-*` lands on the inner
-// `<input>`/`<select>`/`<button>` and never on the `.fui-Input`,
-// `.fui-Combobox` or `.fui-Dropdown` root; those name `root`, and end up
+// `<input>` or `<button>` and never on the `.fui-Input`, `.fui-Combobox` or
+// `.fui-Dropdown` root; those name `root`, and end up
 // stamped twice so a rule can address whichever element carries the trait it is
 // restating. SplitButton is a third shape: its root is a plain `<div>` and the
 // two `.fui-Button` elements are slots it renders from Fluent's own unwrapped
@@ -58,13 +58,12 @@ const splitButtonSlots = ['primaryActionButton', 'menuButton'] as const;
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Dropdown/useDropdown.tsx#L165
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-combobox/library/src/components/Combobox/useCombobox.tsx#L216
 //
-// Input, Textarea and Select spell their default as
+// Input and Textarea spell their default as
 // `overrides.inputDefaultAppearance ?? 'outline'`. That context is reachable
 // only through `@fluentui/react-shared-contexts`, which `react-components` does
 // not re-export, so `outline` is the value this app can resolve.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInput.ts#L21
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-textarea/library/src/components/Textarea/useTextarea.ts#L21
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-select/library/src/components/Select/useSelect.tsx#L22
 //
 // Card defaults to `filled`, and its root is its primary slot, so the stamp
 // reaches the painted element on its own. Its three companions — CardHeader,
@@ -118,7 +117,6 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Link: stampAppearance(components.Link, 'default', rootIsPrimary),
     Input: stampAppearance(components.Input, 'outline', rootAndPrimary),
     Textarea: stampAppearance(components.Textarea, 'outline', rootAndPrimary),
-    Select: stampAppearance(components.Select, 'outline', rootAndPrimary),
     Combobox: stampAppearance(components.Combobox, 'outline', rootAndPrimary),
     Dropdown: stampAppearance(components.Dropdown, 'outline', rootAndPrimary),
     Card: stampAppearance(components.Card, 'filled', rootIsPrimary),

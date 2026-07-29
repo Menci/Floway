@@ -24,12 +24,12 @@ import {
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useNow } from '../../lib/use-now';
-import { Select } from '../ui/fluent-form-controls';
+import { Dropdown } from '../ui/fluent-form-controls';
 import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from '../ui/scroll-area';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
-const { MessageBar, MessageBarBody, Text, makeStyles, mergeClasses } = fluentComponents;
+const { MessageBar, MessageBarBody, Option, Text, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 84;
 
 const useStyles = makeStyles({
@@ -157,6 +157,7 @@ export function RequestListPanel(props: RequestListProps) {
   const scrollHostRef = useRef<HTMLDivElement>(null);
   const overlayScrollbarsEnabled = useOverlayScrollbarsEnabled();
   const now = useNow(30_000);
+  const selectedKey = props.apiKeys.find(key => key.id === props.selectedKeyId)!;
 
   const selectByIndex = useCallback((index: number) => {
     const record = props.records[index];
@@ -184,9 +185,14 @@ export function RequestListPanel(props: RequestListProps) {
   return (
     <div className="h-full min-h-0 flex flex-col">
       <div className="py-3">
-        <Select aria-label={t('dashboard.requests.apiKey')} value={props.selectedKeyId} onChange={event => props.onKeyChange(event.target.value)}>
-          {props.apiKeys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
-        </Select>
+        <Dropdown
+          aria-label={t('dashboard.requests.apiKey')}
+          selectedOptions={[props.selectedKeyId]}
+          value={`${selectedKey.name} (${selectedKey.key.slice(-4)})`}
+          onOptionSelect={(_, data) => data.optionValue !== undefined && props.onKeyChange(data.optionValue)}
+        >
+          {props.apiKeys.map(key => <Option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
+        </Dropdown>
       </div>
       {props.error && <MessageBar intent="error" className="!m-2"><MessageBarBody>{props.error}</MessageBarBody></MessageBar>}
       {props.records.length === 0 ? (

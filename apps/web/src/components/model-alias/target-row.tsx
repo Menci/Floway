@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { computeModelWarning, computeRuleWarnings, findCatalogModel } from './warnings';
 import type { AliasTarget, ControlPlaneModel, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
-import { Combobox, Input, Select } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const { Button, Field, MessageBar, MessageBarBody, Option, Tooltip } = fluentComponents;
@@ -46,6 +46,8 @@ export function AliasTargetRow({
     patchRules({ reasoning: Object.keys(reasoning).length ? reasoning : undefined });
   };
   const warningFor = (field: string) => ruleWarnings.find(warning => warning.field === field);
+  const adaptive = target.rules.reasoning?.adaptive === true ? 'on' : target.rules.reasoning?.adaptive === false ? 'off' : 'auto';
+  const adaptiveLabel = t(`dashboard.modelAliases.rules.${adaptive === 'auto' ? 'adaptiveAuto' : adaptive === 'on' ? 'adaptiveOn' : 'adaptiveOff'}`);
 
   return (
     <div className="border-0 border-t border-solid border-fui-stroke1 pt-2" role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
@@ -87,9 +89,14 @@ export function AliasTargetRow({
             <Input disabled={disabled} inputMode="numeric" min={0} type="number" value={target.rules.reasoning?.budget_tokens?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: data.value === '' ? undefined : Number(data.value) })} />
           </Field>
           <Field label={t('dashboard.modelAliases.rules.adaptive')} validationMessage={warningFor('reasoning.adaptive') ? t(`dashboard.modelAliases.warnings.${warningFor('reasoning.adaptive')!.key}`) : undefined} validationState={warningFor('reasoning.adaptive') ? 'warning' : undefined}>
-            <Select disabled={disabled} value={target.rules.reasoning?.adaptive === true ? 'on' : target.rules.reasoning?.adaptive === false ? 'off' : 'auto'} onChange={(_, data) => patchReasoning({ adaptive: data.value === 'on' ? true : data.value === 'off' ? false : undefined, ...(data.value === 'on' ? { budget_tokens: undefined } : {}) })}>
-              <option value="auto">{t('dashboard.modelAliases.rules.adaptiveAuto')}</option><option value="on">{t('dashboard.modelAliases.rules.adaptiveOn')}</option><option value="off">{t('dashboard.modelAliases.rules.adaptiveOff')}</option>
-            </Select>
+            <Dropdown
+              disabled={disabled}
+              selectedOptions={[adaptive]}
+              value={adaptiveLabel}
+              onOptionSelect={(_, data) => data.optionValue !== undefined && patchReasoning({ adaptive: data.optionValue === 'on' ? true : data.optionValue === 'off' ? false : undefined, ...(data.optionValue === 'on' ? { budget_tokens: undefined } : {}) })}
+            >
+              <Option value="auto">{t('dashboard.modelAliases.rules.adaptiveAuto')}</Option><Option value="on">{t('dashboard.modelAliases.rules.adaptiveOn')}</Option><Option value="off">{t('dashboard.modelAliases.rules.adaptiveOff')}</Option>
+            </Dropdown>
           </Field>
           <RuleCombobox label={t('dashboard.modelAliases.rules.summary')} value={target.rules.reasoning?.summary ?? ''} items={suggestions.summary} disabled={disabled} onChange={value => patchReasoning({ summary: value || undefined })} />
           <RuleCombobox label={t('dashboard.modelAliases.rules.verbosity')} value={target.rules.verbosity ?? ''} items={suggestions.verbosity} disabled={disabled} onChange={value => patchRules({ verbosity: value || undefined })} />

@@ -12,7 +12,7 @@ import claudeIconUrl from '../../assets/claude-color.svg';
 import codexIconUrl from '../../assets/codex.svg';
 import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
-import { Combobox, Select } from '../ui/fluent-form-controls';
+import { Combobox, Dropdown } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 
 const { Button, Field, MessageBar, MessageBarBody, Option, Switch, Tab, TabList, Text } = fluentComponents;
@@ -271,10 +271,10 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.sonnetModel')} models={models} family="claude" picker="sonnet" value={configuration.claudeCode.defaultSonnetModel} onChange={model => patchClaude({ defaultSonnetModel: model })} />
       <ModelSelect label={t('dashboard.apiKeys.agentSetup.haikuModel')} models={models} family="claude" picker="haiku" value={configuration.claudeCode.defaultHaikuModel} onChange={model => patchClaude({ defaultHaikuModel: model })} />
       <Field label={t('dashboard.apiKeys.agentSetup.reasoningEffort')}>
-        <Select value={configuration.claudeCode.effortLevel ?? NONE} onChange={(_, data) => patchClaude({ effortLevel: data.value === NONE ? null : data.value as NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']> })}>
-          <option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</option>
-          {(['low', 'medium', 'high', 'xhigh'] as const).map(effort => <option key={effort} value={effort}>{effort}</option>)}
-        </Select>
+        <Dropdown selectedOptions={[configuration.claudeCode.effortLevel ?? NONE]} value={configuration.claudeCode.effortLevel ?? t('dashboard.apiKeys.agentSetup.modelDefault')} onOptionSelect={(_, data) => data.optionValue !== undefined && patchClaude({ effortLevel: data.optionValue === NONE ? null : data.optionValue as NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']> })}>
+          <Option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
+          {(['low', 'medium', 'high', 'xhigh'] as const).map(effort => <Option key={effort} value={effort}>{effort}</Option>)}
+        </Dropdown>
       </Field>
     </div>
     <section className="grid gap-3">
@@ -293,22 +293,23 @@ function AgentConfigurationFields({ agent, configuration, models, onChange }: {
       />
       <div className={FIELD_GRID_CLASS}>
         <Field label={{ children: infoLabelSlot(t('dashboard.apiKeys.agentSetup.cleanupRetention'), t('dashboard.apiKeys.agentSetup.cleanupRetentionHint')) }}>
-          <Select
-            value={configuration.claudeCode.cleanupPeriodDays?.toString() ?? NONE}
-            onChange={(_, data) => {
-              if (data.value === NONE) {
+          <Dropdown
+            selectedOptions={[configuration.claudeCode.cleanupPeriodDays?.toString() ?? NONE]}
+            value={configuration.claudeCode.cleanupPeriodDays === null ? t('dashboard.apiKeys.agentSetup.modelDefault') : t('dashboard.apiKeys.agentSetup.cleanupDays', { count: configuration.claudeCode.cleanupPeriodDays })}
+            onOptionSelect={(_, data) => {
+              if (data.optionValue === NONE) {
                 patchClaude({ cleanupPeriodDays: null });
                 return;
               }
-              const period = claudeCleanupPeriods.find(candidate => candidate.toString() === data.value);
+              const period = claudeCleanupPeriods.find(candidate => candidate.toString() === data.optionValue);
               if (period !== undefined) patchClaude({ cleanupPeriodDays: period });
             }}
           >
-            <option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</option>
+            <Option value={NONE}>{t('dashboard.apiKeys.agentSetup.modelDefault')}</Option>
             {claudeCleanupPeriods.map(period => (
-              <option key={period} value={period}>{t('dashboard.apiKeys.agentSetup.cleanupDays', { count: period })}</option>
+              <Option key={period} value={String(period)}>{t('dashboard.apiKeys.agentSetup.cleanupDays', { count: period })}</Option>
             ))}
-          </Select>
+          </Dropdown>
         </Field>
       </div>
     </section>

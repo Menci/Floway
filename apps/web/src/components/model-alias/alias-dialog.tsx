@@ -16,10 +16,10 @@ import type { ControlPlaneModel, ModelAlias, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { DialogShell } from '../ui/dialog-shell';
-import { Input, Select } from '../ui/fluent-form-controls';
+import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
-const { Accordion, AccordionHeader, AccordionItem, AccordionPanel, Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Switch, Text } = fluentComponents;
+const { Accordion, AccordionHeader, AccordionItem, AccordionPanel, Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Option, Switch, Text } = fluentComponents;
 
 export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, record }: {
   aliases: readonly ModelAlias[];
@@ -108,7 +108,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
     <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
       <Controller control={control} name="name" render={({ field }) => <Field required label={t('dashboard.modelAliases.form.name')} validationMessage={errors.name?.message ? t(errors.name.message) : undefined} validationState={errors.name ? 'error' : undefined}><Input {...field} className="font-mono" disabled={saving} placeholder={t('dashboard.modelAliases.form.namePlaceholder')} /></Field>} />
       <Controller control={control} name="displayName" render={({ field }) => <Field label={t('dashboard.modelAliases.form.displayName')}><Input {...field} disabled={saving} placeholder={values.name || t('dashboard.modelAliases.form.displayPlaceholder')} /></Field>} />
-      <Controller control={control} name="kind" render={({ field }) => <Field label={t('dashboard.modelAliases.form.kind')}><Select disabled={saving} value={field.value} onChange={(_, data) => changeKind(data.value as ModelKind)}>{MODEL_KINDS.map(modelKind => <option key={modelKind} value={modelKind}>{t(`dashboard.modelAliases.kind.${modelKind}`)}</option>)}</Select></Field>} />
+      <Controller control={control} name="kind" render={({ field }) => <Field label={t('dashboard.modelAliases.form.kind')}><Dropdown disabled={saving} selectedOptions={[field.value]} value={t(`dashboard.modelAliases.kind.${field.value}`)} onOptionSelect={(_, data) => data.optionValue !== undefined && changeKind(data.optionValue as ModelKind)}>{MODEL_KINDS.map(modelKind => <Option key={modelKind} value={modelKind}>{t(`dashboard.modelAliases.kind.${modelKind}`)}</Option>)}</Dropdown></Field>} />
       <Field label={t('dashboard.modelAliases.form.selection')}><ChoiceGroup ariaLabel={t('dashboard.modelAliases.form.selection')} value={values.selection} onChange={value => setValue('selection', value as AliasFormValues['selection'])} items={[{ value: 'first-available', label: t('dashboard.modelAliases.selection.first') }, { value: 'random', label: t('dashboard.modelAliases.selection.random') }]} /></Field>
     </div>
     <section className="grid gap-2" role="group" aria-labelledby="alias-targets-heading">

@@ -7,7 +7,6 @@ const {
   Combobox: FluentCombobox,
   Dropdown: FluentDropdown,
   Input: FluentInput,
-  Select: FluentSelect,
   Textarea: FluentTextarea,
   mergeClasses,
 } = fluentComponents;
@@ -38,12 +37,6 @@ export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentIn
     <FluentInput {...props} className={mergeClasses(className, MIN_WIDTH_CLASS)} ref={ref} />
   ),
 ) as typeof FluentInput;
-
-export const Select = forwardRef<HTMLSelectElement, ComponentProps<typeof FluentSelect>>(
-  ({ className, ...props }, ref) => (
-    <FluentSelect {...props} className={mergeClasses(className, MIN_WIDTH_CLASS)} ref={ref} />
-  ),
-) as typeof FluentSelect;
 
 export const Combobox = forwardRef<HTMLInputElement, ComponentProps<typeof FluentCombobox>>(
   ({ className, positioning, ...props }, ref) => (

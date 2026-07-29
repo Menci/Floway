@@ -21,10 +21,10 @@ import {
   type PricingField,
 } from './pricing-model';
 import { fluentComponents } from '../../fluent';
-import { Input, Select } from '../ui/fluent-form-controls';
+import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
-const { Badge, Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
+const { Badge, Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const TIGHT_STACK_CLASS = 'grid gap-1';
 const usePricingStyles = makeStyles({
   rule: {
@@ -227,16 +227,17 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
             const threshold = thresholdCoordinate(active, axis.id);
             return <Field className="min-w-0" key={axis.id} label={t('dashboard.upstreamEditor.models.inputTokens')} hint={t('dashboard.upstreamEditor.models.inputTokensHint')}>
               <div className="flex min-w-0 items-center gap-2">
-                <Select
+                <Dropdown
                   aria-label={t('dashboard.upstreamEditor.models.operator')}
                   disabled={!editable}
                   className="!w-[76px] flex-none"
-                  value={threshold?.operator ?? 'gt'}
-                  onChange={(_, data) => patchActive(draft => withThresholdCoordinate(draft, axis.id, { operator: data.value as 'gt' | 'gte' }))}
+                  selectedOptions={[threshold?.operator ?? 'gt']}
+                  value={threshold?.operator === 'gte' ? '≥' : '>'}
+                  onOptionSelect={(_, data) => data.optionValue !== undefined && patchActive(draft => withThresholdCoordinate(draft, axis.id, { operator: data.optionValue as 'gt' | 'gte' }))}
                 >
-                  <option value="gt">&gt;</option>
-                  <option value="gte">≥</option>
-                </Select>
+                  <Option value="gt">&gt;</Option>
+                  <Option value="gte">≥</Option>
+                </Dropdown>
                 <Input
                   className="!w-full"
                   inputMode="numeric"

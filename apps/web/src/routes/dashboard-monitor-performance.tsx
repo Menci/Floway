@@ -33,7 +33,7 @@ import {
 } from '../components/performance/performance-data';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { Select } from '../components/ui/fluent-form-controls';
+import { Dropdown } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
@@ -41,7 +41,7 @@ import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
 
 const {
-  Button, Field, Tab, TabList, makeStyles, MessageBar, MessageBarBody,
+  Button, Field, Option, Tab, TabList, makeStyles, MessageBar, MessageBarBody,
   Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip,
 } = fluentComponents;
 
@@ -230,9 +230,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
           <div className="flex items-center gap-2">
-            <Select aria-label={t('dashboard.performance.groupBy.label')} className="!min-w-0 flex-1" value={groupBy} onChange={(_, data) => changeGroupBy(data.value as PerformanceGroupBy)}>
-              {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</option>)}
-            </Select>
+            <Dropdown
+              aria-label={t('dashboard.performance.groupBy.label')}
+              className="!min-w-0 flex-1"
+              selectedOptions={[groupBy]}
+              value={t(`dashboard.performance.groupBy.${groupBy}`)}
+              onOptionSelect={(_, data) => data.optionValue !== undefined && changeGroupBy(data.optionValue as PerformanceGroupBy)}
+            >
+              {groupByValues.filter(value => value !== 'userId' || view === 'all-by-user').map(value => <Option key={value} value={value}>{t(`dashboard.performance.groupBy.${value}`)}</Option>)}
+            </Dropdown>
             {groupBy === 'keyId' && (
               <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
                 <Button
@@ -286,10 +292,16 @@ function PerformanceFilterFields({ filters, groupBy, onChange, overview, upstrea
       if ((key === 'userId' || key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId')) return false;
       return key !== groupBy;
     }).map(({ key, values }) => <Field className="min-w-[150px] flex-[1_1_150px]" key={key} label={t(`dashboard.performance.filters.${key}`)}>
-      <Select aria-label={t(`dashboard.performance.filters.${key}`)} className="!min-w-0 w-full" value={filters[key]} onChange={(_, data) => onChange(key, data.value)}>
-        <option value="">{t(`dashboard.performance.filters.all.${key}`)}</option>
-        {values.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-      </Select>
+      <Dropdown
+        aria-label={t(`dashboard.performance.filters.${key}`)}
+        className="!min-w-0 w-full"
+        selectedOptions={[filters[key]]}
+        value={filters[key] === '' ? t(`dashboard.performance.filters.all.${key}`) : values.find(item => item.value === filters[key])?.label ?? filters[key]}
+        onOptionSelect={(_, data) => data.optionValue !== undefined && onChange(key, data.optionValue)}
+      >
+        <Option value="">{t(`dashboard.performance.filters.all.${key}`)}</Option>
+        {values.map(item => <Option key={item.value} value={item.value}>{item.label}</Option>)}
+      </Dropdown>
     </Field>)}
   </>;
 }

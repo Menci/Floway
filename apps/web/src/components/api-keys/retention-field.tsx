@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 import { parseDuration } from '../../lib/parse-duration';
-import { Input, Select } from '../ui/fluent-form-controls';
+import { Dropdown, Input } from '../ui/fluent-form-controls';
 
-const { Field, Text } = fluentComponents;
+const { Field, Option, Text } = fluentComponents;
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
 
@@ -114,6 +114,11 @@ export const RetentionField = ({
   };
 
   const invalid = choice === 'custom' && parseCustom(custom) === null;
+  const choiceLabel = choice === 'off'
+    ? offLabel
+    : choice === 'custom'
+      ? t('dashboard.apiKeys.retention.custom')
+      : presets.find(preset => `seconds:${preset.seconds}` === choice)!.label;
 
   return <div aria-describedby={`${fieldId}-description`} aria-labelledby={`${fieldId}-label`} className="grid gap-2" role="group">
     <div className="grid gap-1">
@@ -122,11 +127,11 @@ export const RetentionField = ({
     </div>
     <div className="grid gap-2 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[560px]:grid-cols-1">
       <Field label={t('dashboard.apiKeys.retention.preset')}>
-        <Select id={`${fieldId}-preset`} value={choice} onChange={(_, data) => selectChoice(data.value as Choice)}>
-          <option value="off">{offLabel}</option>
-          {presets.map(preset => <option key={preset.seconds} value={`seconds:${preset.seconds}`}>{preset.label}</option>)}
-          <option value="custom">{t('dashboard.apiKeys.retention.custom')}</option>
-        </Select>
+        <Dropdown id={`${fieldId}-preset`} selectedOptions={[choice]} value={choiceLabel} onOptionSelect={(_, data) => data.optionValue !== undefined && selectChoice(data.optionValue as Choice)}>
+          <Option value="off">{offLabel}</Option>
+          {presets.map(preset => <Option key={preset.seconds} value={`seconds:${preset.seconds}`}>{preset.label}</Option>)}
+          <Option value="custom">{t('dashboard.apiKeys.retention.custom')}</Option>
+        </Dropdown>
       </Field>
       {choice === 'custom' && <Field
         label={t('dashboard.apiKeys.retention.customValue')}

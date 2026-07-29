@@ -33,7 +33,7 @@ import {
 import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
-import { Combobox, Input, Select, Textarea } from '../components/ui/fluent-form-controls';
+import { Combobox, Dropdown, Input, Textarea } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
@@ -290,15 +290,24 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const settingsContent = <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="!p-4 grid content-start gap-5" noTabIndex>
     <SettingsSection title={t('dashboard.playground.settings.connection')}>
       <Field label={t('dashboard.playground.key')}>
-        <Select value={keyId} disabled={!loaderData.keys.length} onChange={(_, data) => changeContext(() => setKeyId(data.value))}>
-          {!loaderData.keys.length && <option value="">{t('dashboard.playground.noKeyOption')}</option>}
-          {loaderData.keys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
-        </Select>
+        <Dropdown
+          disabled={!loaderData.keys.length}
+          selectedOptions={[keyId]}
+          value={selectedKey ? `${selectedKey.name} (${selectedKey.key.slice(-4)})` : t('dashboard.playground.noKeyOption')}
+          onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setKeyId(data.optionValue!))}
+        >
+          {!loaderData.keys.length && <Option value="">{t('dashboard.playground.noKeyOption')}</Option>}
+          {loaderData.keys.map(key => <Option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
+        </Dropdown>
       </Field>
       <Field label={t('dashboard.playground.api')}>
-        <Select value={api} onChange={(_, data) => changeContext(() => setApi(data.value as PlaygroundApi))}>
-          {playgroundApis.map(value => <option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</option>)}
-        </Select>
+        <Dropdown
+          selectedOptions={[api]}
+          value={t(`dashboard.playground.apis.${api}`)}
+          onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setApi(data.optionValue as PlaygroundApi))}
+        >
+          {playgroundApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
+        </Dropdown>
       </Field>
       <Field label={t('dashboard.playground.model')}>
         <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
