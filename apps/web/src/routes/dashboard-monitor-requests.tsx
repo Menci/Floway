@@ -76,8 +76,10 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [keys, setKeys] = useState(loaderData.keys);
-  const [keysError, setKeysError] = useState(loaderData.error);
+  const [keyRefresh, setKeyRefresh] = useState<{ source: LoaderData; keys: ApiKey[]; error: string | null } | null>(null);
+  const currentKeyRefresh = keyRefresh?.source === loaderData ? keyRefresh : null;
+  const keys = currentKeyRefresh?.keys ?? loaderData.keys;
+  const keysError = currentKeyRefresh?.error ?? loaderData.error;
   const [detailOpen, setDetailOpen] = useState(false);
   const narrow = useMediaQuery('(max-width: 900px)');
   const selectedRecordId = searchParams.get('record');
@@ -92,14 +94,9 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   }, [setSearchParams]);
 
   useEffect(() => {
-    setKeys(loaderData.keys);
-    setKeysError(loaderData.error);
-  }, [loaderData.error, loaderData.keys]);
-
-  useEffect(() => {
     const refresh = async () => {
       const result = await callApi(() => api.api.keys.$get());
-      if (result.error) setKeysError(result.error.message);
+      if (result.error) setKeyRefresh({ source: loaderData, keys, error: result.error.message });
       else {
         const nextKeys = result.data.filter(key => key.dump_retention_seconds !== null);
         const nextSelectedKeyId = nextKeys.some(key => key.id === loaderData.selectedKeyId)
@@ -111,14 +108,13 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, { replace: true });
           return;
         }
-        setKeys(nextKeys);
-        setKeysError(null);
+        setKeyRefresh({ source: loaderData, keys: nextKeys, error: null });
       }
     };
     const onFocus = () => { void refresh(); };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [loaderData.selectedKeyId, navigate]);
+  }, [keys, loaderData, navigate]);
 
   return (
     <section className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)] gap-[18px] min-w-0">
