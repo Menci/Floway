@@ -3,7 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { formatSummaryMetric, metricConfig, summaryMetrics } from './chart-model';
 import type { TokenSummary, UsageMetric } from './types';
 import { fluentComponents } from '../../fluent';
-const { Text, ToggleButton } = fluentComponents;
+const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
+
+const useStyles = makeStyles({
+  selectedText: { color: 'inherit' },
+});
 
 function SummaryMetricButton({
   active,
@@ -16,6 +20,7 @@ function SummaryMetricButton({
   onClick: () => void;
   value: string;
 }) {
+  const s = useStyles();
   return (
     <ToggleButton
       appearance="subtle"
@@ -24,8 +29,8 @@ function SummaryMetricButton({
       onClick={onClick}
     >
       <span className="grid gap-1 min-w-0">
-        <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">{label}</Text>
-        <Text size={500} weight="semibold" className="overflow-wrap-anywhere">{value}</Text>
+        <Text size={200} weight="semibold" className={mergeClasses('leading-[1.2]', active ? s.selectedText : 'text-fui-fg2')}>{label}</Text>
+        <Text size={500} weight="semibold" className={mergeClasses('overflow-wrap-anywhere', active && s.selectedText)}>{value}</Text>
       </span>
     </ToggleButton>
   );

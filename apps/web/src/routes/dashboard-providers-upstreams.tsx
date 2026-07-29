@@ -475,8 +475,8 @@ function ModelStatus({
             : t('dashboard.upstreams.models.unavailable')}
         </Text>
         {healthy
-          ? <CheckmarkCircleRegular className={`${s.ready} block flex-none`} fontSize={16} aria-label={t('dashboard.upstreams.cache.ready')} />
-          : <WarningRegular className={`${s.warning} block flex-none`} fontSize={16} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
+          ? <CheckmarkCircleRegular className={`${s.ready} block flex-none`} fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
+          : <WarningRegular className={`${s.warning} block flex-none`} fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
       </span>
     </Tooltip>
   );

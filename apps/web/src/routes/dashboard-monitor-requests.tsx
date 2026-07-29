@@ -128,7 +128,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </div>
         </Panel>
       ) : selectedKeyId ? narrow ? <>
-        <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
+        <Panel className="!p-0 !block overflow-hidden min-w-0 h-full">
           <RequestListPanel
             apiKeys={keys}
             error={subscription.error ?? loaderData.recordsError ?? keysError}
@@ -153,10 +153,10 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
         </OverlayDrawer>
       </> : (
         <div className="h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] gap-3">
-          <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
+          <Panel className="!p-0 !block overflow-hidden min-w-0 h-full">
             <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
           </Panel>
-          <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
+          <Panel className="!p-0 !block overflow-hidden min-w-0 h-full">
             <RequestListPanel
               apiKeys={keys}
               error={subscription.error ?? loaderData.recordsError ?? keysError}

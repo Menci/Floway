@@ -38,6 +38,8 @@ const useStyles = makeStyles({
     backgroundColor: 'transparent',
     borderBottom: '1px solid var(--colorNeutralStroke2)',
     cursor: 'pointer',
+    display: 'grid',
+    gridTemplateRows: 'repeat(3, minmax(0, 1fr))',
     outlineStyle: 'none',
     padding: '6px 10px',
     ':focus-visible': { boxShadow: 'inset 0 0 0 2px var(--colorCompoundBrandStroke)' },
@@ -109,7 +111,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
       tabIndex={selected || (selectedId === null && index === 0) ? 0 : -1}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <StatusIcon aria-hidden="true" className={s[severity]} />
+        <StatusIcon aria-hidden="true" className={`${s[severity]} block flex-none`} fontSize={22} />
         <span className="sr-only">{t(`dashboard.requests.status.${severity}`)}</span>
         <Text size={300} className="truncate min-w-0 font-mono">
           {record.model ?? t('dashboard.requests.unknownModel')}
@@ -118,7 +120,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
           {formatRelativeTime(record.startedAt, now)}
         </Text>
       </div>
-      <div className="mt-1 flex items-start gap-2 min-w-0">
+      <div className="flex items-center gap-2 min-w-0">
         <Text size={200} className="truncate min-w-0 flex-1 text-fui-fg3 font-mono" title={`${record.method} ${record.path}`}>
           {record.path}
         </Text>
@@ -130,7 +132,7 @@ function RequestRow({ index, style, records, selectedId, now, onSelect, selectBy
           title={`${record.upstream.kind} · ${record.upstream.id}`}
         />}
       </div>
-      <div className="mt-1 flex items-center gap-3 min-w-0 text-fui-fg3">
+      <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
         <span className="inline-flex items-center gap-1 shrink-0" title={t('dashboard.requests.duration', { value: record.durationMs })}>
           <TimerRegular aria-hidden="true" /> <Text size={200}>{formatDuration(record.durationMs)}</Text>
         </span>
