@@ -46,19 +46,19 @@ describe('custom JSON', () => {
 
 describe('parameters and capabilities', () => {
   it('names reasoning effort the way each protocol names it on the wire', () => {
-    expect(generationOptions('responses', { reasoningEffort: 'high' })).toEqual({ reasoning: { effort: 'high' } });
-    expect(generationOptions('chatCompletions', { reasoningEffort: 'high' })).toEqual({ reasoning_effort: 'high' });
-    expect(generationOptions('messages', { reasoningEffort: 'max' }, 100))
+    expect(generationOptions('responses', 'high')).toEqual({ reasoning: { effort: 'high' } });
+    expect(generationOptions('chatCompletions', 'high')).toEqual({ reasoning_effort: 'high' });
+    expect(generationOptions('messages', 'max', 100))
       .toEqual({ max_tokens: 100, thinking: { type: 'enabled' }, output_config: { effort: 'max' } });
   });
 
   it('always caps Messages output, which requires the field on the wire', () => {
-    expect(generationOptions('messages', {}, 2048)).toEqual({ max_tokens: 2048 });
-    expect(generationOptions('responses', {})).toEqual({});
+    expect(generationOptions('messages', undefined, 2048)).toEqual({ max_tokens: 2048 });
+    expect(generationOptions('responses', undefined)).toEqual({});
   });
 
   it('forwards an unknown reasoning effort rather than gating it', () => {
-    expect(generationOptions('chatCompletions', { reasoningEffort: 'ludicrous' })).toEqual({ reasoning_effort: 'ludicrous' });
+    expect(generationOptions('chatCompletions', 'ludicrous')).toEqual({ reasoning_effort: 'ludicrous' });
   });
 
   it('reads image and output limits conservatively', () => {

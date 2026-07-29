@@ -120,16 +120,8 @@ const en = {
         settings: { title: 'Playground settings', close: 'Close Playground settings', connection: 'Connection', generation: 'Generation', customJson: 'Custom JSON' },
         actions: { newTopic: 'New topic', edit: 'Edit', delete: 'Delete', save: 'Save', image: 'Add image URL', send: 'Send', stop: 'Stop' },
         parameters: {
-          title: 'Parameters',
-          temperature: 'Temperature',
-          maxOutputTokens: 'Max output tokens',
-          topP: 'Top P',
-          frequencyPenalty: 'Frequency penalty',
-          presencePenalty: 'Presence penalty',
-          stopSequences: 'Stop sequences',
           reasoningEffort: 'Reasoning effort',
           providerDefault: 'Provider default',
-          unset: 'Not set',
         },
         badges: {
           context: 'Context <strong>{{value}}</strong>',
