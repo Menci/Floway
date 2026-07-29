@@ -346,7 +346,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_320px] gap-[18px] max-[1100px]:h-auto max-[1100px]:grid-cols-1">
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
           <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
-            <div className="grid gap-0.5 min-w-0">
+            <div className="grid gap-[6px] min-w-0">
               <Text as="h1" block size={700} weight="semibold" className="!m-0">{t('dashboard.nav.playground')}</Text>
               <Text block size={200} className={`text-fui-fg2 truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
             </div>
