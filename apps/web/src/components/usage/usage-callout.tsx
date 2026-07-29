@@ -21,11 +21,11 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(650px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">
       {chart.kind === 'token' && bucketDetails ? (
-        <table className="border-collapse leading-[1.15] whitespace-nowrap [&_td]:!py-0 [&_th]:!py-0">
+        <table className="border-collapse leading-[1.15] whitespace-nowrap [&_td]:!py-0">
           <thead>
             <tr>
-              <th className="max-w-[180px] min-w-[120px] pl-0 text-left"><Text size={100} weight="semibold" className="text-fui-fg2">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text></th>
-              {(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output', 'hitRate'] as const).map(label => <th className="px-1.5 py-px text-right" key={label}><Text size={100} weight="semibold" className="text-fui-fg2">{t(`dashboard.usage.callout.${label}`)}</Text></th>)}
+              <th className="max-w-[180px] min-w-[120px] pb-1 pl-0 text-left"><Text size={200} weight="semibold" className="text-fui-fg2">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text></th>
+              {(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output', 'hitRate'] as const).map(label => <th className="px-1.5 pb-1 text-right" key={label}><Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.usage.callout.${label}`)}</Text></th>)}
             </tr>
           </thead>
           <tbody>
@@ -39,17 +39,17 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
                   <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
                     <span className="flex items-center gap-[6px] min-w-0 overflow-hidden text-ellipsis">
                       <i className="rounded-[2px] h-[10px] w-[10px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-                      <Text size={100}>{item.label}</Text>
+                      <Text size={200}>{item.label}</Text>
                     </span>
                   </td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCount(summary.requests, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatUsdCost(summary.cost)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCompactDecimalCount(summary.total, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCompactDecimalCount(summary.cacheRead, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCompactDecimalCount(summary.prefill, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatCompactDecimalCount(summary.output, locale)}</Text></td>
-                  <td className="px-1.5 py-px text-right"><Text size={100}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCount(summary.requests, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatUsdCost(summary.cost)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCompactDecimalCount(summary.total, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCompactDecimalCount(summary.cacheRead, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatInputRate(summary.cacheRead, summary.prompt)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCompactDecimalCount(summary.prefill, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatCompactDecimalCount(summary.output, locale)}</Text></td>
+                  <td className="px-1.5 py-px text-right"><Text size={200}>{formatHitRate(summary.cacheRead, summary.cacheCreation)}</Text></td>
                 </tr>
               );
             })}
@@ -59,7 +59,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
         <>
           <Text size={200} weight="semibold">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text>
           {rows.map(item => (
-            <Text key={item.id} size={100} className="flex items-center gap-1.5 justify-between tabular-nums">
+            <Text key={item.id} size={200} className="flex items-center gap-1.5 justify-between tabular-nums">
               <i className="rounded-full h-[8px] w-[8px] flex-shrink-0" style={{ backgroundColor: item.color }} />
               {item.label}: {valueFormatter(item.value)}
             </Text>

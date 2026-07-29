@@ -29,7 +29,7 @@ import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnab
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
-const { Field, MessageBar, MessageBarBody, Text, makeStyles, mergeClasses } = fluentComponents;
+const { MessageBar, MessageBarBody, Text, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 84;
 
 const useStyles = makeStyles({
@@ -183,11 +183,9 @@ export function RequestListPanel(props: RequestListProps) {
   return (
     <div className="h-full min-h-0 flex flex-col">
       <div className="py-3">
-        <Field label={t('dashboard.requests.apiKey')}>
-          <Select value={props.selectedKeyId} onChange={event => props.onKeyChange(event.target.value)}>
-            {props.apiKeys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
-          </Select>
-        </Field>
+        <Select aria-label={t('dashboard.requests.apiKey')} value={props.selectedKeyId} onChange={event => props.onKeyChange(event.target.value)}>
+          {props.apiKeys.map(key => <option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</option>)}
+        </Select>
       </div>
       {props.error && <MessageBar intent="error" className="!m-2"><MessageBarBody>{props.error}</MessageBarBody></MessageBar>}
       {props.records.length === 0 ? (
