@@ -84,7 +84,11 @@ const useStyles = makeStyles({
     color: 'light-dark(#616161, #d6d6d6)',
   } as any,
   // The tone classes paint the identity color; the chip supplies geometry.
-  tagText: { fontWeight: tokens.fontWeightSemibold },
+  tagText: {
+    fontSize: '12px',
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: '16px',
+  },
 });
 
 export const providerLabel = (kind: ProviderBadgeKind) =>

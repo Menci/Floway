@@ -21,7 +21,17 @@ const {
   TableHeaderCell,
   TableRow,
   Text,
+  makeStyles,
 } = fluentComponents;
+
+const useStyles = makeStyles({
+  methodBadge: {
+    fontFamily: 'var(--fontFamilyMonospace)',
+    fontSize: '12px',
+    fontWeight: 'var(--fontWeightRegular)',
+    justifyContent: 'center',
+  },
+});
 
 export function ApiDocsContent() {
   const { t } = useTranslation();
@@ -83,11 +93,12 @@ export function ApiDocsContent() {
 }
 
 function MethodBadge({ method }: { method: 'GET' | 'POST' }) {
+  const s = useStyles();
   return <Badge
     appearance="tint"
-    className="!font-bold !font-mono !justify-center !min-w-[48px]"
+    className={s.methodBadge}
     color={method === 'GET' ? 'brand' : 'success'}
-    size="medium"
+    size="small"
     translate="no"
   >{method}</Badge>;
 }
