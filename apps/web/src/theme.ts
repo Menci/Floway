@@ -40,6 +40,12 @@ const monospaceStack = "'Cascadia Code Variable', 'Cascadia Code', 'Cascadia Mon
 // https://learn.microsoft.com/en-us/typography/font-list/segoe-ui-variable
 const baseStack = "'Segoe UI Variable Web', 'Segoe UI Variable Text', 'Segoe UI Variable Display', 'Segoe UI Variable Small', 'Segoe UI', system-ui, sans-serif";
 
+// Fluent scopes its tokens to the FluentProvider element, so anything rendered
+// outside it — `<body>`, the loading screen, the error shell — sees no
+// `--fontFamilyBase` at all. Publishing the stack at the document root puts
+// every surface on one typeface while `baseStack` stays the only copy of it.
+export const fontFamilyCriticalCss = `:root { --fontFamilyBase: ${baseStack}; }`;
+
 const fontOverrides = {
   fontFamilyBase: baseStack,
   fontFamilyMonospace: monospaceStack,

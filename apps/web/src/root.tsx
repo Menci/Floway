@@ -22,7 +22,7 @@ import {
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { scrollAreaCss } from './components/ui/scroll-area';
 import { fluentComponents } from './fluent';
-import { flowayDarkTheme, flowayLightTheme } from './theme';
+import { flowayDarkTheme, flowayLightTheme, fontFamilyCriticalCss } from './theme';
 import './i18n';
 import '@fontsource-variable/cascadia-code';
 import './segoe-ui-variable.css';
@@ -80,6 +80,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
           *, *::before, *::after { box-sizing: border-box; }
           html body pre[class*="language-"] { border: 0; }
+          ${fontFamilyCriticalCss}
           ${gradientBackgroundCriticalCss}
           ${appLoadingCriticalCss}
           ${scrollAreaCss}
