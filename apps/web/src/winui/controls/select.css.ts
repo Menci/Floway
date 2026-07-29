@@ -66,7 +66,7 @@ export const selectCss = `
    offset puts the stroke's outer edge at the same 4px out — except for that
    corner, which an outline can only inherit from the field plus the offset and
    so rounds a pixel tighter than WinUI's fixed 7px. The descendant
-   `:focus-visible` keeps pointer focus in the pressed/rest states while still
+   :focus-visible keeps pointer focus in the pressed/rest states while still
    finding the native select, button or input inside each Fluent root. Fluent's
    brand underline is the affordance this replaces, so the pseudo-element
    drawing it is dropped on the appearance WinUI paints.
