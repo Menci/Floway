@@ -257,7 +257,9 @@ export const selectCss = `
    the space it occupies is kept so labels stay aligned down the list. A
    multiselect option is left alone in both respects: WinUI's ComboBox has no
    multiselect form, and Fluent's checkbox there is a control of its own rather
-   than a second reading of the same state.
+   than a second reading of the same state. WinUI's standard 32px item carries
+   a 16px pill; quarter-block insets preserve that exact geometry and let the
+   indicator grow proportionally when an Option has multi-line content.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L106
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L324
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L325
@@ -267,8 +269,7 @@ export const selectCss = `
   background-color: var(--winui-accent-fill-default);
   border-radius: 1.5px;
   content: "";
-  height: 16px;
-  inset-block-start: calc(50% - 8px);
+  inset-block: 25%;
   inset-inline-start: 0;
   pointer-events: none;
   position: absolute;
