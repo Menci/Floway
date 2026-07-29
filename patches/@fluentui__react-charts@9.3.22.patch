@@ -30,10 +30,23 @@ index 1000ec66f9f2447b572ced78f9b106da400a6edc..e357bd63ab058cb245612e73481be022
          });
      }
 diff --git a/lib/components/LineChart/LineChart.js b/lib/components/LineChart/LineChart.js
-index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..9f642b369814a1c987967789bb016f5a55611de7 100644
+index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..2560bcca985da067caaef9f4eaef22dafd804b3f 100644
 --- a/lib/components/LineChart/LineChart.js
 +++ b/lib/components/LineChart/LineChart.js
-@@ -1299,7 +1299,12 @@ const PATH_MULTIPLY_SIZE = 2.5;
+@@ -883,7 +883,11 @@ const PATH_MULTIPLY_SIZE = 2.5;
+                 key: `line_${i}`,
+                 role: "region",
+                 "aria-label": `${legendVal}, line ${i + 1} of ${_points.length} with ${_points[i].data.length} data points.`
+-            }, bordersForLine, linesForLine, pointsForLine));
++            }, React.Children.toArray([
++                ...bordersForLine,
++                ...linesForLine,
++                ...pointsForLine
++            ])));
+         }
+         return lines;
+     }
+@@ -1299,7 +1303,12 @@ const PATH_MULTIPLY_SIZE = 2.5;
              _xAxisScale = props.xScale;
              _yScalePrimary = props.yScalePrimary;
              _yScaleSecondary = props.yScaleSecondary;
@@ -47,7 +60,7 @@ index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..9f642b369814a1c987967789bb016f5a
                  x1: 0,
                  y1: 0,
                  x2: 0,
-@@ -1309,11 +1314,17 @@ const PATH_MULTIPLY_SIZE = 2.5;
+@@ -1309,11 +1318,20 @@ const PATH_MULTIPLY_SIZE = 2.5;
                  visibility: 'hidden',
                  strokeDasharray: '5,5'
              }), props.optimizeLargeData ? /*#__PURE__*/ React.createElement("rect", {
@@ -61,7 +74,10 @@ index 3eb0732414a7275dd80bfb99600e29fe7e5fd591..9f642b369814a1c987967789bb016f5a
 +                key: "line-chart-no-hit-target"
 +            }), /*#__PURE__*/ React.createElement("g", {
 +                key: "line-chart-series"
-+            }, _renderedColorFillBars, lines), eventAnnotationProps && /*#__PURE__*/ React.createElement(EventsAnnotation, {
++            }, React.Children.toArray([
++                ..._renderedColorFillBars,
++                ...lines
++            ])), eventAnnotationProps && /*#__PURE__*/ React.createElement(EventsAnnotation, {
 +                key: "line-chart-events",
                  ...eventAnnotationProps,
                  scale: props.xScale,
@@ -98,10 +114,23 @@ index 5204125c8498f697d3673b3017ec7e6cbbbe960e..2cd00a86ba8480e8b7f591a94458c0a2
          });
      }
 diff --git a/lib-commonjs/components/LineChart/LineChart.js b/lib-commonjs/components/LineChart/LineChart.js
-index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..9aa7c2beba5cae87b5c2a171c7f249f082a26847 100644
+index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..8b4a988c3f3c14212120f7afbdf77b9d9c0fde5e 100644
 --- a/lib-commonjs/components/LineChart/LineChart.js
 +++ b/lib-commonjs/components/LineChart/LineChart.js
-@@ -1304,7 +1304,12 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+@@ -888,7 +888,11 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+                 key: `line_${i}`,
+                 role: "region",
+                 "aria-label": `${legendVal}, line ${i + 1} of ${_points.length} with ${_points[i].data.length} data points.`
+-            }, bordersForLine, linesForLine, pointsForLine));
++            }, _react.Children.toArray([
++                ...bordersForLine,
++                ...linesForLine,
++                ...pointsForLine
++            ])));
+         }
+         return lines;
+     }
+@@ -1304,7 +1308,12 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
              _xAxisScale = props.xScale;
              _yScalePrimary = props.yScalePrimary;
              _yScaleSecondary = props.yScaleSecondary;
@@ -115,7 +144,7 @@ index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..9aa7c2beba5cae87b5c2a171c7f249f0
                  x1: 0,
                  y1: 0,
                  x2: 0,
-@@ -1314,11 +1319,17 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
+@@ -1314,11 +1323,20 @@ const LineChart = /*#__PURE__*/ _react.forwardRef(({ isCalloutForStack = true, .
                  visibility: 'hidden',
                  strokeDasharray: '5,5'
              }), props.optimizeLargeData ? /*#__PURE__*/ _react.createElement("rect", {
@@ -129,7 +158,10 @@ index 9aa30c4008883b4910888cfeb3c4b2d9858f8efd..9aa7c2beba5cae87b5c2a171c7f249f0
 +                key: "line-chart-no-hit-target"
 +            }), /*#__PURE__*/ _react.createElement("g", {
 +                key: "line-chart-series"
-+            }, _renderedColorFillBars, lines), eventAnnotationProps && /*#__PURE__*/ _react.createElement(_EventAnnotation.EventsAnnotation, {
++            }, _react.Children.toArray([
++                ..._renderedColorFillBars,
++                ...lines
++            ])), eventAnnotationProps && /*#__PURE__*/ _react.createElement(_EventAnnotation.EventsAnnotation, {
 +                key: "line-chart-events",
                  ...eventAnnotationProps,
                  scale: props.xScale,
