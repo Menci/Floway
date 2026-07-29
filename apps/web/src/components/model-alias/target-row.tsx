@@ -61,6 +61,7 @@ export function AliasTargetRow({
         />
         <Combobox
           aria-label={t('dashboard.modelAliases.target.modelId')}
+          className="font-mono"
           disabled={disabled}
           freeform
           onChange={event => onChange({ ...target, target_model_id: event.target.value })}
@@ -68,7 +69,7 @@ export function AliasTargetRow({
           placeholder={t('dashboard.modelAliases.target.placeholder')}
           value={target.target_model_id}
         >
-          {options.map(id => <Option key={id} text={id}>{id}</Option>)}
+          {options.map(id => <Option className="font-mono" key={id} text={id}>{id}</Option>)}
         </Combobox>
         <div className="grid grid-cols-4 gap-0.5 w-[134px] max-[620px]:col-span-2 max-[620px]:justify-self-end">
           {modelWarning
