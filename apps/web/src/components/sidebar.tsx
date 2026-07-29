@@ -83,11 +83,11 @@ const useStyles = makeStyles({
       bottom: 'auto !important',
       content: '"" !important',
       display: 'block !important',
-      height: '20px !important',
+      height: '16px !important',
       left: '16px !important',
       position: 'absolute',
       right: 'auto !important',
-      top: '8px !important',
+      top: '10px !important',
       width: '3px !important',
       zIndex: 1,
     },
@@ -192,10 +192,12 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
             if (items.length === 0) return null;
             return <div key={group.labelKey ?? groupIndex}>
               {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}
-              {items.map(item => {
-                const Icon = item.icon;
-                return <NavItem className={styles.item} icon={<Icon fontSize={20} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
-              })}
+              <div className="grid gap-1">
+                {items.map(item => {
+                  const Icon = item.icon;
+                  return <NavItem className={styles.item} icon={<Icon fontSize={20} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
+                })}
+              </div>
             </div>;
           })}
         </ScrollArea>
