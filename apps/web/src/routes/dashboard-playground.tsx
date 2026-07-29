@@ -79,15 +79,6 @@ export function meta({}: Route.MetaArgs) {
 
 const useStyles = makeStyles({
   toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke1}` },
-  systemToggle: {
-    color: tokens.colorNeutralForeground2,
-    backgroundColor: 'transparent',
-    border: 0,
-    '&:hover': {
-      color: tokens.colorNeutralForeground1,
-      backgroundColor: tokens.colorNeutralBackground1Hover,
-    },
-  },
   brandIconAction: {
     color: 'light-dark(#2770ea, #244b8f)',
     '&:hover': { color: 'light-dark(#1b4aef, #203581)' },
@@ -353,15 +344,16 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             {narrow && <Button appearance="subtle" aria-label={t('dashboard.playground.settings.title')} className="!ml-auto" icon={<SettingsRegular />} onClick={() => setSettingsOpen(true)} />}
           </div>
           <div className="px-4 py-2 grid gap-2">
-            <button
-              type="button"
+            <Button
+              appearance="subtle"
               aria-expanded={showSystem}
-              className={`w-fit min-h-[32px] rounded-md px-2 flex items-center gap-2 text-fui-base300 font-fui-regular ${s.systemToggle}`}
+              className="!w-fit !min-w-0"
+              icon={showSystem ? <ChevronUpRegular /> : <ChevronDownRegular />}
+              iconPosition="after"
               onClick={() => setShowSystem(value => !value)}
             >
-              <span>{t('dashboard.playground.system')}</span>
-              {showSystem ? <ChevronUpRegular /> : <ChevronDownRegular />}
-            </button>
+              {t('dashboard.playground.system')}
+            </Button>
             {showSystem && (
               <Textarea
                 aria-label={t('dashboard.playground.system')}
