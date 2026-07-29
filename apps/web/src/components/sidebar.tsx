@@ -39,10 +39,6 @@ const {
 } = fluentComponents;
 
 const useStyles = makeStyles({
-  drawer: {
-    transitionDuration: '0s !important',
-    transitionProperty: 'none !important',
-  },
   item: {
     backgroundColor: 'transparent !important',
     borderRadius: '6px !important',
@@ -162,7 +158,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   return <>
     <NavDrawer
       aria-label={t('dashboard.nav.label')}
-      className={`!bg-transparent !h-full !max-w-none !w-full ${styles.drawer}`}
+      className="!bg-transparent !h-full !max-w-none !w-full"
       density="medium"
       onNavItemSelect={(_, data) => {
         if (data.value === 'logout') {
@@ -174,6 +170,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       }}
       open
       selectedValue={selectedValue}
+      surfaceMotion={null}
       type="inline"
     >
       <NavDrawerHeader className="!bg-transparent !px-5 !py-4">

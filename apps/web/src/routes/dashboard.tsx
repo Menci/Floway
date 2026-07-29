@@ -19,14 +19,7 @@ import { fluentComponents } from '../fluent';
 import { isDashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { useAuthStore } from '../stores/auth-store';
 
-const { Button, DrawerBody, OverlayDrawer, makeStyles } = fluentComponents;
-
-const useStyles = makeStyles({
-  noDrawerTransition: {
-    transitionDuration: '0s !important',
-    transitionProperty: 'none !important',
-  },
-});
+const { Button, DrawerBody, OverlayDrawer } = fluentComponents;
 
 export type DashboardOutletContext = {
   user: AuthUser;
@@ -49,7 +42,6 @@ export function meta({}: Route.MetaArgs) {
 export default function Dashboard({}: Route.ComponentProps) {
   const { t } = useTranslation();
   const user = useAuthStore(state => state.user);
-  const styles = useStyles();
   const [navigationOpen, setNavigationOpen] = useState(false);
   const workspace = useMatches().some(match => isDashboardWorkspaceHandle(match.handle));
 
@@ -91,10 +83,11 @@ export default function Dashboard({}: Route.ComponentProps) {
       </div>
       <OverlayDrawer
         aria-label={t('dashboard.nav.label')}
-        className={styles.noDrawerTransition}
+        backdropMotion={null}
         onOpenChange={(_, data) => setNavigationOpen(data.open)}
         open={navigationOpen}
         position="start"
+        surfaceMotion={null}
       >
         <DrawerBody className="!p-0">
           <Sidebar onNavigate={() => setNavigationOpen(false)} user={user} />
