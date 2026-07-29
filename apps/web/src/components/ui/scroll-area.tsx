@@ -45,9 +45,17 @@ const ensureScrollbarProbe = () => {
   updateNativeScrollbarSize();
 };
 
+// The first ScrollArea must know whether native scrollbars consume layout
+// space before React renders it. Module scripts run after the document is
+// parsed, so this normally measures synchronously; the listener only covers
+// non-browser tooling that imports the module unusually early.
+if (typeof document !== 'undefined') {
+  if (document.body) ensureScrollbarProbe();
+  else document.addEventListener('DOMContentLoaded', ensureScrollbarProbe, { once: true });
+}
+
 const subscribeToScrollbarSize = (listener: () => void) => {
   scrollbarSizeListeners.add(listener);
-  ensureScrollbarProbe();
   return () => scrollbarSizeListeners.delete(listener);
 };
 

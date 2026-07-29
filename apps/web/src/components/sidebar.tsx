@@ -158,6 +158,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       }}
       open
       selectedValue={selectedValue}
+      surfaceMotion={null}
       type="inline"
     >
       <NavDrawerHeader className="!bg-transparent !px-5 !py-4">

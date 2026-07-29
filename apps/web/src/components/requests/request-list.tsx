@@ -44,7 +44,6 @@ const useStyles = makeStyles({
   },
   selected: {
     backgroundColor: 'var(--colorBrandBackgroundInvertedHover)',
-    boxShadow: 'inset 3px 0 0 var(--colorBrandStroke1)',
     '@media (prefers-color-scheme: dark)': {
       backgroundColor: 'var(--colorBrandBackground2)',
     },

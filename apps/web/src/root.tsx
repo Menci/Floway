@@ -23,11 +23,14 @@ import {
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { scrollAreaCss } from './components/ui/scroll-area';
 import { fluentComponents } from './fluent';
+import { baseFontStack } from './theme';
 import { segoeWebFontCss, segoeWebFontOrigin, segoeWebFonts } from './web-fonts';
 import { winuiCss } from './winui';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
-import '@fontsource-variable/cascadia-code';
+import '@fontsource/maple-mono/400.css';
+import '@fontsource/maple-mono/600.css';
+import '@fontsource/maple-mono/700.css';
 import './uno.css';
 
 const { FluentProvider } = fluentComponents;
@@ -73,6 +76,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
         <style>{`
           html, body { height: 100%; overflow: hidden; }
+          body { font-family: ${baseFontStack}; }
           @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
           *, *::before, *::after { box-sizing: border-box; }
           html body pre[class*="language-"] { border: 0; }
@@ -84,7 +88,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         `}</style>
         <style>{winuiCss}</style>
       </head>
-      <body className="text-[14px] font-sans m-0">
+      <body className="text-[14px] m-0">
         <FluentProvider theme={theme}>
           <BrowserLanguageSync />
           <GradientBackground>{children}</GradientBackground>

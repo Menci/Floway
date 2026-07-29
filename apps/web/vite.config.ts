@@ -107,16 +107,6 @@ export default defineConfig({
             codeSplitting: {
               groups: [
                 {
-                  name: 'models-yaml-editor',
-                  test: /[\\/]src[\\/]components[\\/]upstream-editor[\\/]models-yaml-editor/,
-                  priority: 50,
-                },
-                {
-                  name: 'monaco-editor',
-                  test: /(?:node_modules[\\/](?:\.pnpm[\\/])?monaco-|[\\/]src[\\/]components[\\/]upstream-editor[\\/]models-yaml\.worker)/,
-                  priority: 40,
-                },
-                {
                   name: 'fluent',
                   test: /node_modules[\\/](?:\.pnpm[\\/])?(?:@fluentui\+|@griffel\+|tabster@|@fluentui[\\/]|@griffel[\\/]|tabster[\\/])/,
                   priority: 30,
@@ -125,16 +115,6 @@ export default defineConfig({
                   name: 'react-runtime',
                   test: /node_modules[\\/](?:\.pnpm[\\/])?(?:react(?:-dom|-router)?@|scheduler@|react(?:-dom|-router)?[\\/]|scheduler[\\/])/,
                   priority: 20,
-                },
-                {
-                  name: 'vendor',
-                  test: /node_modules/,
-                  priority: 10,
-                },
-                {
-                  name: 'app',
-                  test: /[\\/]src[\\/]/,
-                  priority: 5,
                 },
               ],
             },

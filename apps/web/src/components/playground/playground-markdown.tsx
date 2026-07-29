@@ -80,7 +80,7 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground3,
     borderRadius: tokens.borderRadiusSmall,
     fontFamily: tokens.fontFamilyMonospace,
-    fontSize: tokens.fontSizeBase300,
+    fontSize: 'var(--floway-font-size-mono)',
     padding: `1px ${tokens.spacingHorizontalXS}`,
   },
   blockquote: {
@@ -120,7 +120,7 @@ const useStyles = makeStyles({
     '& code': {
       color: tokens.colorNeutralForeground1,
       fontFamily: tokens.fontFamilyMonospace,
-      fontSize: tokens.fontSizeBase300,
+      fontSize: 'var(--floway-font-size-mono)',
       lineHeight: tokens.lineHeightBase400,
       whiteSpace: 'pre',
     },

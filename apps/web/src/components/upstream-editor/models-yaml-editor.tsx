@@ -4,6 +4,7 @@ import { configureMonacoYaml } from 'monaco-yaml';
 import { useEffect, useRef } from 'react';
 
 import YamlWorker from './models-yaml.worker.ts?worker';
+import { monospaceStack } from '../../theme';
 
 type MonacoEnvironment = {
   getWorker: (moduleId: string, label: string) => Worker;
@@ -41,8 +42,8 @@ export default function ModelsYamlEditor({ onChange, value }: { onChange: (value
     const model = monaco.editor.createModel(initialValueRef.current, 'yaml', modelUri);
     const editor = monaco.editor.create(container, {
       automaticLayout: true,
-      fontFamily: 'Cascadia Code, monospace',
-      fontSize: 14,
+      fontFamily: monospaceStack,
+      fontSize: 13,
       formatOnPaste: true,
       formatOnType: true,
       minimap: { enabled: false },

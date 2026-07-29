@@ -83,9 +83,11 @@ export default function Dashboard({}: Route.ComponentProps) {
       </div>
       <OverlayDrawer
         aria-label={t('dashboard.nav.label')}
+        backdropMotion={null}
         onOpenChange={(_, data) => setNavigationOpen(data.open)}
         open={navigationOpen}
         position="start"
+        surfaceMotion={null}
       >
         <DrawerBody className="!p-0">
           <Sidebar onNavigate={() => setNavigationOpen(false)} user={user} />
