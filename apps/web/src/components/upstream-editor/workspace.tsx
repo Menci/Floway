@@ -270,9 +270,9 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     </MessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table className="w-full min-w-[640px] table-fixed">
-        <colgroup><col className="w-[88px]" /><col className="w-[25%]" /><col className="w-[96px]" /><col /><col className="w-[96px]" /><col className="w-[88px]" /></colgroup>
-        <TableHeader><TableRow><TableHeaderCell className="!w-[88px]">{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell className="!w-[25%]">{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell className="!w-[96px]">{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableActionsHeader className="!w-[88px]">{t('dashboard.upstreamEditor.models.actions')}</TableActionsHeader></TableRow></TableHeader>
+      <Table className="w-full min-w-[640px]" style={{ tableLayout: 'fixed' }}>
+        <colgroup><col style={{ width: 80 }} /><col style={{ width: '25%' }} /><col style={{ width: 88 }} /><col /><col style={{ width: 80 }} /><col style={{ width: 80 }} /></colgroup>
+        <TableHeader><TableRow><TableHeaderCell>{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableActionsHeader>{t('dashboard.upstreamEditor.models.actions')}</TableActionsHeader></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
             <TableCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} size="small" /></TableCell>
