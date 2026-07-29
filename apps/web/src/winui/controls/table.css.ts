@@ -80,7 +80,6 @@ export const tableCss = `
    writes; the appearance prop a plain Table row takes never does.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L20 */
 .fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true'] {
-  position: relative;
   background-color: var(--winui-subtle-fill-secondary);
 }
 
@@ -94,24 +93,10 @@ export const tableCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-/* The selection indicator. WinUI's ListViewItemPresenter draws it natively, so
-   the dictionary states its brush and its 1.5px corner radius — a full
-   half-width round-off, which fixes the pill at 3px wide — while the 16px
-   length and the leading, vertically centred placement follow fluent-svelte's
-   ListItem, which reproduces the same indicator as a pseudo-element.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60 */
-.fui-TableBody .fui-DataGridRow.fui-DataGridRow[aria-selected='true']::before {
-  content: '';
-  position: absolute;
-  inset-inline-start: 0;
-  inset-block-start: 50%;
-  transform: translateY(-50%);
-  inline-size: 3px;
-  block-size: 16px;
-  border-radius: 1.5px;
-  background-color: var(--winui-accent-fill-default);
-}
+/* WinUI's selection indicator is not restated here. It exists because a
+   ListViewItem has nothing else to mark selection with; these rows carry a
+   selection control in their first cell, which says the same thing in the
+   place a reader already looks for it. */
 
 /* Sortable header cell. Its label walks the same neutral ramp the row's does,
    and takes the same answer: WinUI holds one foreground across normal,
