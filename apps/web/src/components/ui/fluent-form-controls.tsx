@@ -1,5 +1,5 @@
 import type { ListboxProps } from '@fluentui/react-components';
-import { createElement, forwardRef, useCallback, useLayoutEffect, useRef } from 'react';
+import { createElement, forwardRef, useLayoutEffect, useRef } from 'react';
 import type { ComponentProps, ElementType, ReactNode, Ref } from 'react';
 
 import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from './scroll-area';
@@ -61,10 +61,6 @@ function ScrollableListbox({
     ...rootProps
   } = listboxProps as ListboxRenderPropsWithRef;
   const mergedRef = useMergedRefs(fluentRef, hostRef);
-  const setViewportRef = useCallback((element: HTMLDivElement | null) => {
-    viewportRef.current = element;
-  }, []);
-
   useLayoutEffect(() => {
     const host = hostRef.current;
     const viewport = viewportRef.current;
@@ -81,11 +77,11 @@ function ScrollableListbox({
       ref: mergedRef,
       style: { ...style, overflowX: 'hidden', overflowY: 'hidden' },
     },
-    createElement('div', {
-      className: 'floway-combobox-listbox-viewport',
-      ref: setViewportRef,
-      style: { overflowX: 'hidden', overflowY: 'scroll' },
-    }, createElement('div', { className: 'floway-combobox-listbox-content' }, children)),
+    // JSX rather than createElement for the viewport, so the ref is a ref to
+    // the compiler and not an ordinary prop it has to assume is read in render.
+    <div className="floway-combobox-listbox-viewport" ref={viewportRef} style={{ overflowX: 'hidden', overflowY: 'scroll' }}>
+      <div className="floway-combobox-listbox-content">{children}</div>
+    </div>,
   );
 }
 
