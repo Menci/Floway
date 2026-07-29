@@ -47,7 +47,7 @@ export function NavSelectionIndicator({
   containerRef,
   inset,
   // Where the other list sits relative to this one, so a crossing knows which
-  // way to reach. Null while the selection is inside this list.
+  // way to reach. Null while the selection stays inside this list.
   crossing,
   selectedValue,
 }: {
@@ -89,22 +89,29 @@ export function NavSelectionIndicator({
   }, [containerRef, selectedValue]);
 
   useEffect(() => {
+    const container = containerRef.current;
     const track = trackRef.current;
     const bar = barRef.current;
     const previous = previousRef.current;
     previousRef.current = geometry;
-    if (!track || !bar || !geometry || !previous) return;
+    // The arriving half has no previous geometry of its own -- the selection was
+    // never in this list -- and animates from the crossing instead.
+    if (!track || !bar || !geometry || (!previous && !crossing)) return;
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     // A crossing has no measurable gap inside this list, so the reach is the
     // item's own length -- enough to read as travel toward the other list.
+    const holds = Boolean(container?.querySelector(`[data-nav-value="${CSS.escape(selectedValue)}"]`));
+    const towardOther = crossing === 'below' ? geometry.height : -geometry.height;
     const distance = crossing
-      ? (crossing === 'below' ? geometry.height : -geometry.height)
-      : geometry.top - previous.top;
+      // The half that keeps the selection reaches back toward where it came
+      // from; the half that loses it reaches after where it went.
+      ? (holds ? -towardOther : towardOther)
+      : geometry.top - (previous?.top ?? geometry.top);
     if (distance === 0) return;
 
-    const from = crossing ? 0 : previous.top - geometry.top;
+    const from = crossing ? 0 : (previous?.top ?? geometry.top) - geometry.top;
     // The indicator stretches far enough to span the gap it is crossing, then
     // settles back to its own height.
     const peak = Math.abs(distance) / INDICATOR_HEIGHT + 1;
@@ -129,7 +136,7 @@ export function NavSelectionIndicator({
 
     // The outgoing half fades where the incoming half does not. WinUI holds it
     // opaque for the stretch and clears it over the settle.
-    if (!crossing) return;
+    if (!crossing || holds) return;
     const exit = bar.animate([
       { opacity: 1, easing: 'steps(1, end)' },
       { opacity: 1, offset: POSITION_SNAP, easing: SETTLE_EASING },
@@ -139,7 +146,7 @@ export function NavSelectionIndicator({
       previousRef.current = null;
       setGeometry(null);
     }, () => {});
-  }, [crossing, geometry]);
+  }, [containerRef, crossing, geometry, selectedValue]);
 
   if (!geometry) return null;
 
