@@ -210,17 +210,19 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     />
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] items-start gap-4">
-        <Field label={t('dashboard.performance.metric.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
-          { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
-          { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
-        ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} /></Field>
-        <Field label={t('dashboard.performance.percentile.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} /></Field>
-        <Field label={t('dashboard.performance.range.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
+      <div className="flex items-start justify-between gap-4 min-w-0 flex-wrap">
+        <div className="flex items-start gap-4 min-w-0 flex-wrap">
+          <Field label={t('dashboard.performance.metric.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
+            { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
+            { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
+          ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} /></Field>
+          <Field label={t('dashboard.performance.percentile.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} /></Field>
+        </div>
+        <Field className="ml-auto" label={t('dashboard.performance.range.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
           { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
         ]} onChange={value => setRange(value as PerformanceRange)} value={range} /></Field>
       </div>
-      <div className="grid grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)] items-end gap-4 min-w-0 max-[900px]:grid-cols-1">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] items-end gap-3 min-w-0">
         <Field label={t('dashboard.performance.groupBy.label')}>
           <div className="flex items-center gap-2">
             <Select aria-label={t('dashboard.performance.groupBy.label')} className="min-w-[160px]" value={groupBy} onChange={(_, data) => changeGroupBy(data.value as PerformanceGroupBy)}>
@@ -239,7 +241,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
             )}
           </div>
         </Field>
-        <PerformanceFiltersBar filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />
+        <PerformanceFilterFields filters={filters} groupBy={groupBy} overview={overview} upstreamNames={upstreamNames} view={view} onChange={setFilter} />
       </div>
       <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
         {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
@@ -260,7 +262,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   </section>;
 }
 
-function PerformanceFiltersBar({ filters, groupBy, onChange, overview, upstreamNames, view }: {
+function PerformanceFilterFields({ filters, groupBy, onChange, overview, upstreamNames, view }: {
   filters: PerformanceFilters; groupBy: PerformanceGroupBy; onChange: (key: keyof PerformanceFilters, value: string) => void;
   overview: PerformanceOverviewResponse; upstreamNames: ReadonlyMap<string, string>; view: PerformanceView;
 }) {
@@ -273,7 +275,7 @@ function PerformanceFiltersBar({ filters, groupBy, onChange, overview, upstreamN
     { key: 'userId', values: overview.dimensionValues.userIds.map(value => ({ value: String(value), label: overview.users.find(user => user.id === value)?.username ?? `user ${value}` })) },
     { key: 'keyId', values: overview.dimensionValues.keyIds.map(value => ({ value, label: overview.keys.find(key => key.id === value)?.name ?? value })) },
   ];
-  return <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3 min-w-0">
+  return <>
     {entries.filter(({ key }) => {
       if (key === 'userId' && view !== 'all-by-user') return false;
       if ((key === 'userId' || key === 'keyId') && (groupBy === 'userId' || groupBy === 'keyId')) return false;
@@ -284,7 +286,7 @@ function PerformanceFiltersBar({ filters, groupBy, onChange, overview, upstreamN
         {values.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
       </Select>
     </Field>)}
-  </div>;
+  </>;
 }
 
 function PerformanceChartSection({ chart, hidden, onHiddenChange, title }: { chart: PerformanceChartModel; hidden: Set<string>; onHiddenChange: (next: Set<string>) => void; title: string }) {

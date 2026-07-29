@@ -29,16 +29,16 @@ const useStyles = makeStyles({
     position: 'relative',
     whiteSpace: 'nowrap',
     '&:has(input:checked)': {
-      backgroundColor: tokens.colorNeutralBackground2,
+      backgroundColor: tokens.colorNeutralBackground1,
       color: tokens.colorNeutralForeground1,
       fontWeight: tokens.fontWeightSemibold,
     },
     '&:has(input:not(:checked):not(:disabled)):hover': {
-      backgroundColor: tokens.colorNeutralBackground2Hover,
+      backgroundColor: tokens.colorNeutralBackground2,
       color: tokens.colorNeutralForeground1,
     },
     '&:has(input:not(:checked):not(:disabled)):active': {
-      backgroundColor: tokens.colorNeutralBackground2Pressed,
+      backgroundColor: tokens.colorNeutralBackground1,
       color: tokens.colorNeutralForeground1,
     },
     '&:has(input:focus-visible)': {
