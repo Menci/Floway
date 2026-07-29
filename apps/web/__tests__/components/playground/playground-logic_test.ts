@@ -44,7 +44,7 @@ describe('custom JSON', () => {
   });
 });
 
-describe('parameters and capabilities', () => {
+describe('generation and capabilities', () => {
   it('names reasoning effort the way each protocol names it on the wire', () => {
     expect(generationOptions('responses', 'high')).toEqual({ reasoning: { effort: 'high' } });
     expect(generationOptions('chatCompletions', 'high')).toEqual({ reasoning_effort: 'high' });

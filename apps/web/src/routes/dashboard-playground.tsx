@@ -325,8 +325,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       {selectedModel && <ModelInfoBadges cap={cap} catalog={loaderData.models} model={selectedModel} />}
     </SettingsSection>
     <SettingsSection title={t('dashboard.playground.settings.generation')}>
-      <Field label={t('dashboard.playground.parameters.reasoningEffort')}>
-        <Combobox freeform placeholder={t('dashboard.playground.parameters.providerDefault')} value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value)} onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}>
+      <Field label={t('dashboard.playground.generation.reasoningEffort')}>
+        <Combobox freeform placeholder={t('dashboard.playground.generation.providerDefault')} value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value)} onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}>
           {effortOptions.map(effort => <Option key={effort}>{effort}</Option>)}
         </Combobox>
       </Field>
