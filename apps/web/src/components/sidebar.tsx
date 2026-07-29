@@ -56,6 +56,7 @@ const useStyles = makeStyles({
   item: {
     backgroundColor: 'transparent !important',
     borderRadius: '6px !important',
+    gap: '12px !important',
     height: '36px !important',
     minHeight: '36px !important',
     paddingBottom: '8px !important',
