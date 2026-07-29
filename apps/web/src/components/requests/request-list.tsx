@@ -191,7 +191,7 @@ export function RequestListPanel(props: RequestListProps) {
           value={`${selectedKey.name} (${selectedKey.key.slice(-4)})`}
           onOptionSelect={(_, data) => data.optionValue !== undefined && props.onKeyChange(data.optionValue)}
         >
-          {props.apiKeys.map(key => <Option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
+          {props.apiKeys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
         </Dropdown>
       </div>
       {props.error && <MessageBar intent="error" className="!m-2"><MessageBarBody>{props.error}</MessageBarBody></MessageBar>}

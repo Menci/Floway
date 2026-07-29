@@ -297,7 +297,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
           onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setKeyId(data.optionValue!))}
         >
           {!loaderData.keys.length && <Option value="">{t('dashboard.playground.noKeyOption')}</Option>}
-          {loaderData.keys.map(key => <Option key={key.id} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
+          {loaderData.keys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
         </Dropdown>
       </Field>
       <Field label={t('dashboard.playground.api')}>
