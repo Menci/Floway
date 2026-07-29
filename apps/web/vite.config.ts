@@ -107,8 +107,13 @@ export default defineConfig({
             codeSplitting: {
               groups: [
                 {
+                  name: 'models-yaml-editor',
+                  test: /[\\/]src[\\/]components[\\/]upstream-editor[\\/]models-yaml-editor/,
+                  priority: 50,
+                },
+                {
                   name: 'monaco-editor',
-                  test: /(?:node_modules[\\/](?:\.pnpm[\\/])?monaco-|[\\/]src[\\/]components[\\/]upstream-editor[\\/]models-yaml(?:-editor|\.worker))/,
+                  test: /(?:node_modules[\\/](?:\.pnpm[\\/])?monaco-|[\\/]src[\\/]components[\\/]upstream-editor[\\/]models-yaml\.worker)/,
                   priority: 40,
                 },
                 {
