@@ -86,6 +86,7 @@ export function UpstreamWorkspace({
     setModelView(next);
     if (next === 'detail') setModelDetailTab('details');
   };
+  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
@@ -101,13 +102,17 @@ export function UpstreamWorkspace({
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
           </TabList>}
     </div>
-    <ScrollArea key={`${tab}:${modelView}:${modelDetailTab}`} axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName={tab === 'models' && modelView === 'yaml' ? 'h-full min-w-0' : 'px-5 py-4'} noTabIndex>
-      {tab === 'models' ? <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} /> : <div className="grid gap-5">
-        <Text size={300} className="text-fui-fg2 leading-[1.45]">
-          {t('dashboard.upstreamEditor.flags.intro')}
-        </Text>
-        <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} flags={flags} value={field.value} onChange={field.onChange} />} />
-      </div>}
+    <ScrollArea key={`${tab}:${modelView}:${modelDetailTab}`} axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName={tab === 'models' && modelView === 'yaml' ? 'h-full min-w-0' : ''} noTabIndex>
+      {tab === 'models' && modelView === 'yaml'
+        ? modelsWorkspace
+        : <div className="px-5 py-4">
+            {tab === 'models' ? modelsWorkspace : <div className="grid gap-5">
+              <Text size={300} className="text-fui-fg2 leading-[1.45]">
+                {t('dashboard.upstreamEditor.flags.intro')}
+              </Text>
+              <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} flags={flags} value={field.value} onChange={field.onChange} />} />
+            </div>}
+          </div>}
     </ScrollArea>
   </section>;
 }
