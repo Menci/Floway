@@ -72,7 +72,7 @@ export interface TokenSummary {
   cacheRead: DecimalString;
   cacheCreation: DecimalString;
 }
-export interface ChartEntry { id: string; label: string; colorSlot: number }
+export interface ChartEntry { id: string; label: string; legend: string; colorSlot: number }
 
 // Token, request and cost figures use stacked areas; percentage rates stay
 // lines so their shared 0–100 scale remains readable.

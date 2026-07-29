@@ -303,8 +303,9 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
   const formatter = chart.metric === 'ttft' ? formatDuration : formatRate;
-  const labelById = useMemo(() => new Map(chart.entries.map(entry => [entry.id, entry.label])), [chart.entries]);
-  const visibleData = useMemo<ChartProps>(() => ({ ...chart.data, lineChartData: chart.data.lineChartData?.filter(series => !hidden.has(series.legend)) }), [chart.data, hidden]);
+  const labelByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry.label])), [chart.entries]);
+  const visibleLegends = useMemo(() => new Set(chart.entries.filter(entry => !hidden.has(entry.id)).map(entry => entry.legend)), [chart.entries, hidden]);
+  const visibleData = useMemo<ChartProps>(() => ({ ...chart.data, lineChartData: chart.data.lineChartData?.filter(series => visibleLegends.has(series.legend)) }), [chart.data, visibleLegends]);
   const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length
@@ -312,17 +313,17 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
     : <PerformanceChartCallout
         data={props}
         formatter={formatter}
-        labelById={labelById}
+        labelByLegend={labelByLegend}
         title={formatCalloutTitle(props.x, labelByTime, chart.range, locale)}
-      />, [chart.range, formatter, labelById, labelByTime, locale]);
+      />, [chart.range, formatter, labelByLegend, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
   return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
 }
 
-function PerformanceChartCallout({ data, formatter, labelById, title }: {
+function PerformanceChartCallout({ data, formatter, labelByLegend, title }: {
   data: CustomizedCalloutData;
   formatter: (value: number) => string;
-  labelById: ReadonlyMap<string, string>;
+  labelByLegend: ReadonlyMap<string, string>;
   title: string;
 }) {
   const rows = data.values
@@ -340,7 +341,7 @@ function PerformanceChartCallout({ data, formatter, labelById, title }: {
               className="block h-1.5 w-1.5 rounded-full"
               style={{ backgroundColor: item.color }}
             />
-            <Text block size={100} className="truncate" title={labelById.get(item.legend) ?? item.legend}>{labelById.get(item.legend) ?? item.legend}</Text>
+            <Text block size={100} className="truncate" title={labelByLegend.get(item.legend) ?? item.legend}>{labelByLegend.get(item.legend) ?? item.legend}</Text>
             <Text block size={100} weight="semibold" className="tabular-nums text-right whitespace-nowrap">
               {formatter(item.y)}
             </Text>

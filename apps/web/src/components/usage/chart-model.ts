@@ -9,6 +9,7 @@ import {
   dashboardBucketKeyForUtcHour,
 } from '../charts/dashboard-time';
 import { colorForSlot } from '../charts/palette';
+import { withUniqueSeriesLegends } from '../charts/series-legends';
 import type { DecimalString } from '@floway-dev/protocols/common';
 
 export const metricConfig: Record<
@@ -126,7 +127,7 @@ export function buildTokenChart({
           data: {
             chartTitle: '',
             lineChartData: series.map(({ entry, data }) => ({
-              legend: entry.id,
+              legend: entry.legend,
               color: colorForSlot(entry.colorSlot),
               lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' },
               data: data.flatMap((value, index) => value === null ? [] : [{
@@ -151,7 +152,7 @@ function areaChartData(
     chartTitle: '',
     pointOptions: { r: 2, strokeWidth: 1.25 },
     lineChartData: series.map(({ entry, data }) => ({
-      legend: entry.id,
+      legend: entry.legend,
       color: colorForSlot(entry.colorSlot),
       lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
       data: data.flatMap((value, index) => value === null ? [] : [{
@@ -310,7 +311,7 @@ function keyChartEntries(
     .sort()
     .forEach((id, index) => slotById.set(id, orderedIds.length + index));
 
-  return [...new Set(presentKeyIds)]
+  return withUniqueSeriesLegends([...new Set(presentKeyIds)]
     .map(id => {
       const colorSlot = slotById.get(id)!;
       return {
@@ -319,7 +320,7 @@ function keyChartEntries(
         colorSlot,
       };
     })
-    .sort((a, b) => a.colorSlot - b.colorSlot);
+    .sort((a, b) => a.colorSlot - b.colorSlot));
 }
 
 function modelChartEntries(
@@ -327,10 +328,10 @@ function modelChartEntries(
   models: ControlPlaneModel[],
 ): ChartEntry[] {
   const present = new Set(presentModelIds);
-  return [...new Set([...models.map(model => model.id), ...presentModelIds])]
+  return withUniqueSeriesLegends([...new Set([...models.map(model => model.id), ...presentModelIds])]
     .sort()
     .map((id, colorSlot) => ({ id, label: id, colorSlot }))
-    .filter(entry => present.has(entry.id));
+    .filter(entry => present.has(entry.id)));
 }
 
 export function summarizeUsage(records: DisplayUsageRecord[]): TokenSummary {

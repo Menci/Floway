@@ -118,7 +118,8 @@ describe('series identity', () => {
     });
 
     expect(model.entries.map(entry => entry.label)).toEqual(['Shared name', 'Shared name']);
-    expect(areaPlot(model.plot).lineChartData?.map(series => series.legend)).toEqual(['key-1', 'key-2']);
+    expect(model.entries.map(entry => entry.id)).toEqual(['key-1', 'key-2']);
+    expect(areaPlot(model.plot).lineChartData?.map(series => series.legend)).toEqual(['Shared name (1)', 'Shared name (2)']);
   });
 });
 

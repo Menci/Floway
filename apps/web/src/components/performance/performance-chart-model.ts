@@ -12,9 +12,10 @@ import {
   type PerformanceRange,
 } from './performance-data';
 import { colorForSlot } from '../charts/palette';
+import { withUniqueSeriesLegends } from '../charts/series-legends';
 
 export interface PerformanceBucket { key: string; label: string; date: Date }
-export interface PerformanceChartEntry { id: string; label: string; colorSlot: number }
+export interface PerformanceChartEntry { id: string; label: string; legend: string; colorSlot: number }
 export interface PerformanceChartModel {
   data: ChartProps;
   entries: PerformanceChartEntry[];
@@ -34,11 +35,11 @@ export function buildPerformanceChart(
   range: PerformanceRange,
 ): PerformanceChartModel {
   const groups = [...new Set(records.map(record => record.group))].sort();
-  const entries = groups.map((group, colorSlot) => ({
+  const entries = withUniqueSeriesLegends(groups.map((group, colorSlot) => ({
     id: group,
     label: resolvePerformanceGroup(group, groupBy, overview, upstreamNames),
     colorSlot,
-  }));
+  })));
   const values = new Map(records.map(record => [`${record.bucket}\0${record.group}`, record]));
   return {
     entries,
@@ -55,7 +56,7 @@ export function buildPerformanceChart(
         });
         return data.length
           ? [{
-              legend: entry.id,
+              legend: entry.legend,
               color: colorForSlot(entry.colorSlot),
               lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' as const },
               data: data.map(point => ({ ...point, markerSize: 3 })),

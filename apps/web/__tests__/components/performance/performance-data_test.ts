@@ -69,6 +69,7 @@ describe('performance chart series', () => {
     );
 
     expect(chart.entries.map(entry => entry.label)).toEqual(['Shared name', 'Shared name']);
-    expect(chart.data.lineChartData?.map(series => series.legend)).toEqual(['key-1', 'key-2']);
+    expect(chart.entries.map(entry => entry.id)).toEqual(['key-1', 'key-2']);
+    expect(chart.data.lineChartData?.map(series => series.legend)).toEqual(['Shared name (1)', 'Shared name (2)']);
   });
 });
