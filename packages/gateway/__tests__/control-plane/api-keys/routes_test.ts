@@ -141,7 +141,7 @@ test('PATCH /api/keys/:id leaves name unchanged when only upstream_ids is sent',
   assertEquals(stored.name, apiKey.name);
 });
 
-test('PATCH /api/keys/:id leaves upstream_ids unchanged (stale ids included) when only name is sent', async () => {
+test('PATCH /api/keys/:id keeps a stored deleted-upstream id but hides it from the response', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
   // Stale id surviving from a prior write; only touched by writes that target upstream_ids.
@@ -149,10 +149,31 @@ test('PATCH /api/keys/:id leaves upstream_ids unchanged (stale ids included) whe
 
   const response = await ownerPatch(apiKey.id, { name: 'renamed' }, apiKey.key);
   assertEquals(response.status, 200);
+  assertEquals(((await response.json()) as { upstream_ids: string[] }).upstream_ids, ['up_x']);
   const stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
   assertEquals(stored.name, 'renamed');
   assertEquals(stored.upstreamIds, ['up_x', 'up_gone']);
+});
+
+test('GET /api/keys drops deleted-upstream ids so the editor cannot re-submit them', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
+  await repo.apiKeys.save({ ...apiKey, upstreamIds: ['up_gone', 'up_x'] });
+
+  const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 200);
+  const body = (await response.json()) as Array<{ id: string; upstream_ids: string[] }>;
+  assertEquals(body.find(row => row.id === apiKey.id)?.upstream_ids, ['up_x']);
+});
+
+test('GET /api/keys projects a wholly deleted cap to an empty list, never to inherit-all', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, upstreamIds: ['up_gone'] });
+
+  const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
+  const body = (await response.json()) as Array<{ id: string; upstream_ids: string[] | null }>;
+  assertEquals(body.find(row => row.id === apiKey.id)?.upstream_ids, []);
 });
 
 test('PATCH /api/keys/:id is owner-only — admins are not privileged on other users\' keys', async () => {
