@@ -210,7 +210,7 @@ export function RequestListPanel(props: RequestListProps) {
             rowCount={props.records.length}
             rowHeight={ROW_HEIGHT}
             rowProps={rowProps}
-            style={{ height: '100%' }}
+            style={{ height: '100%', overflowX: 'hidden' }}
           />
         </div>
       )}

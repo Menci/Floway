@@ -81,7 +81,6 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const currentKeyRefresh = keyRefresh?.source === loaderData ? keyRefresh : null;
   const keys = currentKeyRefresh?.keys ?? loaderData.keys;
   const keysError = currentKeyRefresh?.error ?? loaderData.error;
-  const [detailOpen, setDetailOpen] = useState(false);
   const narrow = useMediaQuery('(max-width: 1200px)');
   const selectedRecordId = searchParams.get('record');
   const selectedKeyId = loaderData.selectedKeyId;
@@ -135,17 +134,17 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
             apiKeys={keys}
             error={subscription.error ?? loaderData.recordsError ?? keysError}
             hasOlder={subscription.hasOlder}
-            onKeyChange={keyId => { setDetailOpen(false); updateSelection(keyId); }}
+            onKeyChange={keyId => updateSelection(keyId)}
             onLoadOlder={() => void subscription.loadOlder()}
-            onRecordChange={recordId => { updateSelection(selectedKeyId, recordId); setDetailOpen(true); }}
+            onRecordChange={recordId => updateSelection(selectedKeyId, recordId)}
             records={subscription.records}
             selectedKeyId={selectedKeyId}
             selectedRecordId={selectedRecordId}
           />
         </Panel>
-        <OverlayDrawer onOpenChange={(_, data) => setDetailOpen(data.open)} open={detailOpen && selectedRecordId !== null} position="end" size="full">
+        <OverlayDrawer onOpenChange={(_, data) => { if (!data.open) updateSelection(selectedKeyId); }} open={selectedRecordId !== null} position="end" size="full">
           <DrawerHeader>
-            <DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.requests.closeDetails')} icon={<DismissRegular />} onClick={() => setDetailOpen(false)} />}>
+            <DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.requests.closeDetails')} icon={<DismissRegular />} onClick={() => updateSelection(selectedKeyId)} />}>
               {t('dashboard.requests.detailTitle')}
             </DrawerHeaderTitle>
           </DrawerHeader>
@@ -154,8 +153,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </DrawerBody>
         </OverlayDrawer>
       </> : (
-        <ScrollArea axes="horizontal" className="min-h-0 p-1 -m-1">
-          <div className="h-full min-w-[1080px] grid grid-cols-[minmax(700px,1fr)_360px] gap-3">
+        <div className="h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] gap-3">
             <Panel className="!py-0 !block overflow-hidden min-w-0 h-full">
               <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
             </Panel>
@@ -172,8 +170,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
                 selectedRecordId={selectedRecordId}
               />
             </Panel>
-          </div>
-        </ScrollArea>
+        </div>
       ) : null}
     </section>
   );

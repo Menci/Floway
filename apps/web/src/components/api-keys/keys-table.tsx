@@ -61,7 +61,7 @@ export function KeysTable({
         columnId: 'key', renderHeaderCell: () => t('dashboard.apiKeys.table.key'),
         renderCell: key => (
           <code className="bg-fui-bg2 border border-fui-stroke1 rounded-md text-fui-fg2 inline-block font-mono text-fui-base300 max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap p-[2px_6px]">
-            {truncateKey(key.key)}
+            {key.key}
           </code>
         ),
       }),
@@ -207,9 +207,6 @@ export function KeysTable({
     </ScrollArea>
   );
 }
-
-const truncateKey = (key: string) =>
-  key.length <= 14 ? key : `${key.slice(0, 7)}...${key.slice(-4)}`;
 
 const upstreamsText = (
   key: ApiKey,
