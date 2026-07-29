@@ -57,15 +57,25 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
           </tbody>
         </table>
       ) : (
-        <>
-          <Text size={200} weight="semibold">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text>
-          {rows.map(item => (
-            <Text key={item.id} style={bodyTextStyle} className="flex items-center gap-1.5 justify-between tabular-nums">
-              <i className="rounded-full h-[8px] w-[8px] flex-shrink-0" style={{ backgroundColor: item.color }} />
-              {item.label}: {valueFormatter(item.value)}
-            </Text>
-          ))}
-        </>
+        <table className="border-collapse leading-[1.15] whitespace-nowrap [&_td]:!py-0">
+          <thead>
+            <tr>
+              <th className="max-w-[180px] min-w-[120px] pb-1 pl-0 text-left"><Text size={200} weight="semibold" className="text-fui-fg2">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text></th>
+              <th className="pb-1 pl-4 pr-0 text-right"><Text size={200} weight="semibold" className="text-fui-fg2">{t('dashboard.usage.callout.requests')}</Text></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(item => <tr key={item.id}>
+              <td className="max-w-[180px] min-w-[120px] pl-0 text-left">
+                <span className="flex items-center gap-[6px] min-w-0 overflow-hidden text-ellipsis">
+                  <i className="rounded-[2px] h-[10px] w-[10px] flex-shrink-0" style={{ backgroundColor: item.color }} />
+                  <Text style={bodyTextStyle}>{item.label}</Text>
+                </span>
+              </td>
+              <td className="pl-4 pr-0 text-right"><Text style={bodyTextStyle}>{valueFormatter(item.value)}</Text></td>
+            </tr>)}
+          </tbody>
+        </table>
       )}
     </ScrollArea>
   );
