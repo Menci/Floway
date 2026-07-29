@@ -371,7 +371,6 @@ const en = {
           durationPlaceholder: 'e.g. 30m, 2h, 3d',
           daysPlaceholder: 'e.g. 14',
           invalid: 'Enter a valid retention window.',
-          effective: 'Keeps data for {{duration}}.',
           off: 'Off',
           '1h': '1 hour',
           '6h': '6 hours',

@@ -356,7 +356,6 @@ const zhHansCN = {
           durationPlaceholder: '例如 30m、2h、3d',
           daysPlaceholder: '例如 14',
           invalid: '请输入有效的保留时长。',
-          effective: '保留 {{duration}}。',
           off: '关闭',
           '1h': '1 小时',
           '6h': '6 小时',

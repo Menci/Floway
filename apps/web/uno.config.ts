@@ -25,6 +25,10 @@ export default defineConfig({
     'text-fui-fg1': 'text-[var(--colorNeutralForeground1)]',
     'text-fui-fg2': 'text-[var(--colorNeutralForeground2)]',
     'text-fui-fg3': 'text-[var(--colorNeutralForeground3)]',
+    // The hyperlink foreground. Named here rather than left to the caller,
+    // because a bare `<a>` with an undefined colour falls through to the user
+    // agent's visited purple, which is what happened while this was missing.
+    'text-fui-brand1': 'text-[var(--colorBrandForeground1)]',
     'bg-fui-bg1': 'bg-[var(--colorNeutralBackground1)]',
     'bg-fui-bg2': 'bg-[var(--colorNeutralBackground2)]',
     'border-fui-stroke1': 'border-[var(--colorNeutralStroke1)]',

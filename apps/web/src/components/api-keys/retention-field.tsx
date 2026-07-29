@@ -151,8 +151,5 @@ export const RetentionField = ({
       </Field>}
     </div>
     {children !== undefined && <div className="grid gap-1">{children}</div>}
-    {!invalid && typeof value === 'number' && value !== offValue && <Text size={200} className="text-fui-fg3">
-      {t('dashboard.apiKeys.retention.effective', { duration: formatDuration(value) })}
-    </Text>}
   </div>;
 };
