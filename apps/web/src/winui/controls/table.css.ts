@@ -26,6 +26,19 @@ export const tableCss = `
   color: var(--winui-text-fill-primary);
 }
 
+/* The header row is not an item and takes no pointer fill. Fluent gives both
+   the row and the header cell inside it the same interactive fill, which was
+   invisible while that token was opaque -- the inner fill simply replaced the
+   outer one. Against WinUI's translucent subtle fill the two composite, and a
+   hovered header reads as a band with a darker block inside it. WinUI resolves
+   this at the source: a ListViewHeaderItem declares no pointer states, and the
+   affordance belongs to the sortable cell alone.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17-L25 */
+.fui-TableHeader .fui-TableRow.fui-TableRow:hover,
+.fui-TableHeader .fui-TableRow.fui-TableRow:active {
+  background-color: var(--winui-subtle-fill-transparent);
+}
+
 /* The rule between rows. Fluent's neutral stroke gives way to WinUI's divider
    brush; the edge itself is Fluent's, since a ListView draws no separator and a
    table without one is unreadable. Only the colour is stated, so the sizes that
