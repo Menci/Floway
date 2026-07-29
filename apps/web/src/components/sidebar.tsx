@@ -55,14 +55,16 @@ const useStyles = makeStyles({
   item: {
     backgroundColor: 'transparent !important',
     borderRadius: '6px !important',
-    paddingLeft: '30px !important',
+    height: '36px !important',
+    minHeight: '36px !important',
+    paddingLeft: '20px !important',
     position: 'relative',
     '&:hover': { backgroundColor: 'light-dark(rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.05)) !important' },
     '&[aria-current="page"]': {
-      backgroundColor: 'light-dark(rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.08)) !important',
+      backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 14%, transparent) !important',
     },
     '&[aria-current="page"]:hover': {
-      backgroundColor: 'light-dark(rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.11)) !important',
+      backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 20%, transparent) !important',
     },
     '&[aria-current="page"]::after': {
       backgroundColor: 'var(--colorBrandStroke1) !important',
@@ -74,7 +76,7 @@ const useStyles = makeStyles({
       left: '16px !important',
       position: 'absolute',
       right: 'auto !important',
-      top: '10px !important',
+      top: '8px !important',
       width: '3px !important',
       zIndex: 1,
     },
@@ -180,14 +182,14 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
             {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}
             {items.map(item => {
               const Icon = item.icon;
-              return <NavItem className={styles.item} icon={<Icon fontSize={20} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
+              return <NavItem className={styles.item} icon={<Icon fontSize={24} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
             })}
           </div>;
         })}
       </NavDrawerBody>
       <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
-        <NavItem className={styles.item} icon={<AccountIcon fontSize={20} />} value="/dashboard/settings">{user.username}</NavItem>
-        <NavItem className={styles.item} icon={<SignOutRegular fontSize={20} />} value="logout">{t('dashboard.logout.label')}</NavItem>
+        <NavItem className={styles.item} icon={<AccountIcon fontSize={24} />} value="/dashboard/settings">{user.username}</NavItem>
+        <NavItem className={styles.item} icon={<SignOutRegular fontSize={24} />} value="logout">{t('dashboard.logout.label')}</NavItem>
       </NavDrawerFooter>
     </NavDrawer>
     <ConfirmDialog
