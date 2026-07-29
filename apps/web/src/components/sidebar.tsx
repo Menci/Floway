@@ -62,12 +62,20 @@ const useStyles = makeStyles({
     paddingLeft: '12px !important',
     paddingTop: '8px !important',
     position: 'relative',
-    '&:hover': { backgroundColor: 'light-dark(rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.05)) !important' },
+    '&:hover': { backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 5%, transparent) !important' },
+    '&:active': { backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 9%, transparent) !important' },
+    '&:hover:active': { backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 13%, transparent) !important' },
     '&[aria-current="page"]': {
       backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 9%, transparent) !important',
     },
     '&[aria-current="page"]:hover': {
       backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 13%, transparent) !important',
+    },
+    '&[aria-current="page"]:active': {
+      backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 13%, transparent) !important',
+    },
+    '&[aria-current="page"]:hover:active': {
+      backgroundColor: 'color-mix(in srgb, var(--colorBrandBackground) 17%, transparent) !important',
     },
     '&[aria-current="page"]::after': {
       backgroundColor: 'var(--colorBrandStroke1) !important',
@@ -177,7 +185,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
         </div>
       </NavDrawerHeader>
       <NavDrawerBody className="!bg-transparent !overflow-hidden !p-0">
-        <ScrollArea axes="vertical" className="h-full min-h-0" noTabIndex>
+        <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="px-[10px]" noTabIndex>
           {navGroups.map((group, groupIndex) => {
             if (group.adminOnly && !user.isAdmin) return null;
             const items = group.items.filter(item => !item.adminOnly || user.isAdmin);
