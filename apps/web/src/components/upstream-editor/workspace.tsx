@@ -78,6 +78,8 @@ export function UpstreamWorkspace({
   const [tab, setTab] = useState<'models' | 'flags'>('models');
   const [modelView, setModelView] = useState<ModelView>('list');
   const [modelDetailTab, setModelDetailTab] = useState<ModelDetailTab>('details');
+  const [yaml, setYaml] = useState('');
+  const [yamlError, setYamlError] = useState<string | null>(null);
   const showModelDetail = modelView === 'detail';
   const changeModelView = (next: ModelView) => {
     setModelView(next);
@@ -98,8 +100,8 @@ export function UpstreamWorkspace({
             <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
           </TabList>}
     </div>
-    <ScrollArea axes="vertical" className="min-h-0 max-[1050px]:h-auto" contentClassName="px-5 py-4" noTabIndex>
-      {tab === 'models' ? <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} /> : <div className="grid gap-5">
+    <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName={tab === 'models' && modelView === 'yaml' ? 'h-full min-w-0' : 'px-5 py-4'} noTabIndex>
+      {tab === 'models' ? <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} /> : <div className="grid gap-5">
         <Text size={300} className="text-fui-fg2 leading-[1.45]">
           {t('dashboard.upstreamEditor.flags.intro')}
         </Text>
@@ -109,7 +111,7 @@ export function UpstreamWorkspace({
   </section>;
 }
 
-function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onRefresh, onViewChange, record, view }: {
+function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onRefresh, onViewChange, onYamlChange, onYamlErrorChange, record, view, yaml, yamlError }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
   error: string | null;
@@ -117,8 +119,12 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
   loading: boolean;
   onRefresh: () => void;
   onViewChange: (view: ModelView) => void;
+  onYamlChange: (value: string) => void;
+  onYamlErrorChange: (value: string | null) => void;
   record: UpstreamRecord;
   view: ModelView;
+  yaml: string;
+  yamlError: string | null;
 }) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext<UpstreamEditorValues>();
@@ -127,8 +133,6 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
   const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
-  const [yaml, setYaml] = useState('');
-  const [yamlError, setYamlError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModelRow | null>(null);
   const [pendingManualId, setPendingManualId] = useState<string | null>(null);
@@ -213,27 +217,27 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
     // error is what keeps the operator's unsaved text on screen.
     const applyAndLeave = () => {
       const parsed = parseModels(yaml, { allowRerank: record.kind === 'custom' });
-      if (!parsed.ok) { setYamlError(parsed.message); return; }
+      if (!parsed.ok) { onYamlErrorChange(parsed.message); return; }
       replace(parsed.models);
-      setYamlError(null);
+      onYamlErrorChange(null);
       onViewChange('list');
     };
-    return <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
-      <div className="flex flex-wrap items-center gap-3">
+    return <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-[480px] min-w-0">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5 py-4">
         <div className="grid gap-0.5">
           <Text as="h2" size={500} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.yamlTitle')}</Text>
           <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.yamlHint')}</Text>
         </div>
-        <Button appearance="secondary" className="!min-w-[160px] ml-auto" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
+        <Button appearance="secondary" className="!min-w-[160px]" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
           {t('dashboard.upstreamEditor.models.editWithUi')}
         </Button>
       </div>
-      <div className="h-[max(480px,calc(100vh-330px))] min-h-[480px] overflow-hidden border border-solid border-fui-stroke1 rounded-md">
+      <div className="h-full min-h-0 overflow-hidden border-0 border-y border-solid border-fui-stroke1">
         <Suspense fallback={<div className="h-full" />}>
-          <ModelsYamlEditor value={yaml} onChange={value => { setYaml(value); setYamlError(null); }} />
+          <ModelsYamlEditor value={yaml} onChange={value => { onYamlChange(value); onYamlErrorChange(null); }} />
         </Suspense>
       </div>
-      {yamlError && <MessageBar intent="error"><MessageBarBody>{yamlError}</MessageBarBody></MessageBar>}
+      {yamlError && <div className="px-5 py-3"><MessageBar intent="error"><MessageBarBody>{yamlError}</MessageBarBody></MessageBar></div>}
     </div>;
   }
 
@@ -250,7 +254,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
       <div className="grid gap-0.5"><Text size={500} weight="semibold">{t('dashboard.upstreamEditor.models.title')}</Text><Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}</Text></div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={() => append({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } })}>{t('dashboard.upstreamEditor.models.add')}</Button>}
-        {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { setYaml(serializeModels(manual)); setYamlError(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
+        {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
           <Button disabled={loading || !autoFetchEnabled} icon={loading ? <Spinner size="tiny" /> : <ArrowSyncRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
