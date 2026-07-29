@@ -4,8 +4,8 @@ import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useBlocker, useNavigate } from 'react-router';
 
-import { UpstreamConfigSidebar } from './config-sidebar';
 import { BackNavigationButton } from './back-navigation-button';
+import { UpstreamConfigSidebar } from './config-sidebar';
 import {
   createBody,
   discoveredModelsFromResponse,
