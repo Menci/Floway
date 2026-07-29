@@ -3,10 +3,15 @@ import type { RefObject } from 'react';
 
 // WinUI's NavigationView does not move one indicator between items. It keeps a
 // separate indicator per item and, on a selection change, plays a matched pair
-// of composition animations that overlap so precisely that they read as a
-// single bar stretching from the old item to the new one. Reproducing them on
-// one element is faithful and much simpler: the pair only ever differs by the
-// outgoing indicator's fade, which is invisible while the two are superimposed.
+// of composition animations: the one losing selection stretches toward the
+// destination and fades, the one taking it stretches in from the source. Within
+// a single list the two are superimposed and read as one bar, which is why one
+// element reproduces them there.
+//
+// The drawer is two lists, though -- a scrolling body and a pinned footer --
+// and a selection that crosses between them has no single element that can span
+// both. Each list owns an indicator, and on a crossing the pair plays for real:
+// the leaving list runs the outgoing half, the arriving list the incoming half.
 //
 // The offset and the scale are separate animations there and stay separate
 // here, because they carry different easings and only a nested element can give
@@ -41,10 +46,14 @@ const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
 export function NavSelectionIndicator({
   containerRef,
   inset,
+  // Where the other list sits relative to this one, so a crossing knows which
+  // way to reach. Null while the selection is inside this list.
+  crossing,
   selectedValue,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   inset: number;
+  crossing: 'above' | 'below' | null;
   selectedValue: string;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -55,7 +64,10 @@ export function NavSelectionIndicator({
   useLayoutEffect(() => {
     const container = containerRef.current;
     const item = container?.querySelector<HTMLElement>(`[data-nav-value="${CSS.escape(selectedValue)}"]`);
-    setGeometry(container && item ? geometryOf(container, item) : null);
+    // On a crossing the item is in the other list, and the bar has to stay put
+    // long enough to play its exit; it is cleared when that finishes.
+    if (container && item) setGeometry(geometryOf(container, item));
+    else if (!previousRef.current) setGeometry(null);
   }, [containerRef, selectedValue]);
 
   // The item can move without the selection changing -- a group appearing above
@@ -83,11 +95,16 @@ export function NavSelectionIndicator({
     previousRef.current = geometry;
     if (!track || !bar || !geometry || !previous) return;
 
-    const distance = geometry.top - previous.top;
-    if (distance === 0) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-    const from = previous.top - geometry.top;
+    // A crossing has no measurable gap inside this list, so the reach is the
+    // item's own length -- enough to read as travel toward the other list.
+    const distance = crossing
+      ? (crossing === 'below' ? geometry.height : -geometry.height)
+      : geometry.top - previous.top;
+    if (distance === 0) return;
+
+    const from = crossing ? 0 : previous.top - geometry.top;
     // The indicator stretches far enough to span the gap it is crossing, then
     // settles back to its own height.
     const peak = Math.abs(distance) / INDICATOR_HEIGHT + 1;
@@ -109,7 +126,20 @@ export function NavSelectionIndicator({
       composite: 'replace',
     });
     bar.style.transformOrigin = distance > 0 ? 'top' : 'bottom';
-  }, [geometry]);
+
+    // The outgoing half fades where the incoming half does not. WinUI holds it
+    // opaque for the stretch and clears it over the settle.
+    if (!crossing) return;
+    const exit = bar.animate([
+      { opacity: 1, easing: 'steps(1, end)' },
+      { opacity: 1, offset: POSITION_SNAP, easing: SETTLE_EASING },
+      { opacity: 0 },
+    ], { duration: DURATION_MS, fill: 'forwards' });
+    exit.finished.then(() => {
+      previousRef.current = null;
+      setGeometry(null);
+    }, () => {});
+  }, [crossing, geometry]);
 
   if (!geometry) return null;
 
