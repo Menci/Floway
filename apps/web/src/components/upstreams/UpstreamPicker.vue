@@ -15,7 +15,7 @@ export interface UpstreamPickerValue {
 interface RowState {
   id: string;
   name: string;
-  kind: UpstreamProviderKind | null;
+  kind: UpstreamProviderKind;
   color: UpstreamColor | null;
   enabled: boolean;
 }
@@ -30,22 +30,18 @@ const value = defineModel<UpstreamPickerValue>({ required: true });
 
 const rows = ref<RowState[]>([]);
 
+// Selected ids are resolved against the options rather than rendered on their
+// own: the read path already drops ids whose upstream is gone, so anything
+// left unresolved here is an option list that has not loaded yet.
 const reset = () => {
-  const orderedIds = value.value.ids;
-  const orderedSet = new Set(orderedIds);
-  const rest = props.available.filter(u => !orderedSet.has(u.id));
+  const optionById = new Map(props.available.map(option => [option.id, option]));
+  const selected = value.value.ids.map(id => optionById.get(id)).filter(option => option !== undefined);
+  const selectedIds = new Set(selected.map(option => option.id));
+  const toRow = (option: UpstreamOption, enabled: boolean): RowState =>
+    ({ id: option.id, name: option.name, kind: option.kind, color: option.color, enabled });
   rows.value = [
-    ...orderedIds.map(id => {
-      const u = props.available.find(x => x.id === id);
-      return {
-        id,
-        name: u?.name ?? `Unknown (${id})`,
-        kind: u?.kind ?? null,
-        color: u?.color ?? null,
-        enabled: true,
-      };
-    }),
-    ...rest.map(u => ({ id: u.id, name: u.name, kind: u.kind, color: u.color, enabled: false })),
+    ...selected.map(option => toRow(option, true)),
+    ...props.available.filter(option => !selectedIds.has(option.id)).map(option => toRow(option, false)),
   ];
 };
 
@@ -65,11 +61,6 @@ const toggleRow = (id: string, enabled: boolean) => {
 };
 
 const badgeCount = computed(() => value.value.override ? rows.value.filter(r => r.enabled).length : props.available.length);
-
-// Deleted-upstream rows retain a saved id but have no matching option, so
-// `kind` goes null. Show a plain neutral badge for those.
-const kindLabel = (kind: UpstreamProviderKind | null): string =>
-  kind === null ? 'Unknown' : providerMeta(kind).label;
 </script>
 
 <template>
@@ -105,17 +96,12 @@ const kindLabel = (kind: UpstreamProviderKind | null): string =>
           </button>
           <Switch :model-value="row.enabled" @update:model-value="v => toggleRow(row.id, !!v)" />
           <UpstreamBadge
-            v-if="row.kind !== null"
             :kind="row.kind"
             :color="row.color"
             variant="badge"
             size="sm"
             class="shrink-0 !rounded !uppercase tracking-wide"
-          >{{ kindLabel(row.kind) }}</UpstreamBadge>
-          <span
-            v-else
-            class="shrink-0 rounded border border-white/[0.1] bg-surface-700 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-300"
-          >Unknown</span>
+          >{{ providerMeta(row.kind).label }}</UpstreamBadge>
           <span class="min-w-0 flex-1 truncate text-sm text-white">{{ row.name }}</span>
           <code class="text-xs text-gray-500">{{ row.id }}</code>
         </li>
