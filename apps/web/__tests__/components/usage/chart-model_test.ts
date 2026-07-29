@@ -102,6 +102,7 @@ describe('series identity', () => {
     const records = ['key-1', 'key-2'].map((keyId, index) => ({
       ...record({ input_tokens: String(index + 1) }),
       keyId,
+      keyName: 'Shared name',
     }));
     const model = buildTokenChart({
       records,
