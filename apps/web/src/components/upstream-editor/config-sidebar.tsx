@@ -46,8 +46,9 @@ export function UpstreamConfigSidebar({
 }) {
   const { t } = useTranslation();
   const { control } = useFormContext<UpstreamEditorValues>();
-  return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName="p-[18px_20px_28px]" noTabIndex>
-    <aside className="grid gap-7">
+  return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex>
+    <div className="p-[18px_20px_28px]">
+      <aside className="grid gap-7">
       <EditorSection required title={t('dashboard.upstreamEditor.fields.name')}>
         <Controller
           control={control}
@@ -91,7 +92,8 @@ export function UpstreamConfigSidebar({
       <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
         <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} />
       </EditorSection>
-    </aside>
+      </aside>
+    </div>
   </ScrollArea>;
 }
 
