@@ -9,11 +9,11 @@ import {
   Gauge20Color,
   People20Color,
   Person20Color,
+  PersonKey20Color,
   SearchSparkle20Color,
   ShareAndroid20Color,
-  SignOutRegular,
+  ShareIos20Color,
   TextEditStyle20Color,
-  Vault20Color,
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
 import { useId, useState } from 'react';
@@ -79,6 +79,11 @@ const useStyles = makeStyles({
       zIndex: 1,
     },
   },
+  // ShareIos draws its tray opening upward. Turned a quarter clockwise the
+  // arrow leaves to the right, which is the direction a sign-out reads in.
+  signOutIcon: {
+    transform: 'rotate(90deg)',
+  },
 });
 
 type NavItemDefinition = {
@@ -112,7 +117,7 @@ const navGroups: NavGroup[] = [
   {
     labelKey: 'dashboard.groups.services',
     items: [
-      { to: '/dashboard/services/api-keys', labelKey: 'dashboard.nav.apiKeys', icon: Vault20Color },
+      { to: '/dashboard/services/api-keys', labelKey: 'dashboard.nav.apiKeys', icon: PersonKey20Color },
       { to: '/dashboard/services/api-docs', labelKey: 'dashboard.nav.apiDocs', icon: DocumentText20Color },
     ],
   },
@@ -193,7 +198,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       </NavDrawerBody>
       <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
         <NavItem className={styles.item} icon={<Person20Color idPrefix={iconIdPrefix} />} value="/dashboard/settings">{user.username}</NavItem>
-        <NavItem className={styles.item} icon={<SignOutRegular fontSize={20} />} value="logout">{t('dashboard.logout.label')}</NavItem>
+        <NavItem className={styles.item} icon={<ShareIos20Color className={styles.signOutIcon} idPrefix={iconIdPrefix} />} value="logout">{t('dashboard.logout.label')}</NavItem>
       </NavDrawerFooter>
     </NavDrawer>
     <ConfirmDialog
