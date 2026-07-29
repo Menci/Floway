@@ -24,7 +24,7 @@
     "hono": "^4",
     "i18next": "^26.3.6",
     "isbot": "^5.2.1",
-    "monaco-editor": "^0.56.0",
+    "monaco-editor": "0.54.0",
     "monaco-yaml": "^5.5.1",
     "overlayscrollbars": "2.13.0",
     "prismjs": "^1.30.0",

@@ -1,8 +1,9 @@
 import * as monaco from 'monaco-editor';
-import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
+import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
 import { configureMonacoYaml } from 'monaco-yaml';
-import YamlWorker from 'monaco-yaml/yaml.worker.js?worker';
 import { useEffect, useRef } from 'react';
+
+import YamlWorker from './models-yaml.worker.ts?worker';
 
 type MonacoEnvironment = {
   getWorker: (moduleId: string, label: string) => Worker;
