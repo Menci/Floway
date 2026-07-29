@@ -65,7 +65,11 @@ const useChartStateStyles = makeStyles({
   root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' },
 });
 const usePerformanceChartStyles = makeStyles({
-  root: { '& .fui-cart__xAxis line': { pointerEvents: 'none' }, '& circle[id*="staticHighlightCircle"]': { pointerEvents: 'none', visibility: 'hidden' } },
+  root: {
+    '& .fui-cart__xAxis line': { pointerEvents: 'none' },
+    '& circle:not([id*="staticHighlightCircle"])': { r: '2px !important', strokeWidth: '1.5px' },
+    '& circle[id*="staticHighlightCircle"]': { pointerEvents: 'none', visibility: 'hidden' },
+  },
 });
 const usePerformanceTableStyles = makeStyles({
   numericHeader: {
