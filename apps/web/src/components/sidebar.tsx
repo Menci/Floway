@@ -39,6 +39,7 @@ import { fluentComponents } from '../fluent';
 import { FlowayLogo } from './logo';
 import { useAuthStore } from '../stores/auth-store';
 import { ConfirmDialog } from './ui/confirm-dialog';
+import { ScrollArea } from './ui/scroll-area';
 
 const {
   Button,
@@ -57,9 +58,9 @@ const useStyles = makeStyles({
     borderRadius: '6px !important',
     height: '36px !important',
     minHeight: '36px !important',
-    paddingBottom: '7px !important',
-    paddingLeft: '20px !important',
-    paddingTop: '7px !important',
+    paddingBottom: '8px !important',
+    paddingLeft: '12px !important',
+    paddingTop: '8px !important',
     position: 'relative',
     '&:hover': { backgroundColor: 'light-dark(rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.05)) !important' },
     '&[aria-current="page"]': {
@@ -175,23 +176,25 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           {onNavigate && <Button appearance="subtle" aria-label={t('dashboard.nav.close')} className="!ml-auto" icon={<DismissRegular />} onClick={onNavigate} />}
         </div>
       </NavDrawerHeader>
-      <NavDrawerBody className="!bg-transparent">
-        {navGroups.map((group, groupIndex) => {
-          if (group.adminOnly && !user.isAdmin) return null;
-          const items = group.items.filter(item => !item.adminOnly || user.isAdmin);
-          if (items.length === 0) return null;
-          return <div key={group.labelKey ?? groupIndex}>
-            {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}
-            {items.map(item => {
-              const Icon = item.icon;
-              return <NavItem className={styles.item} icon={<Icon fontSize={22} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
-            })}
-          </div>;
-        })}
+      <NavDrawerBody className="!bg-transparent !overflow-hidden !p-0">
+        <ScrollArea axes="vertical" className="h-full min-h-0" noTabIndex>
+          {navGroups.map((group, groupIndex) => {
+            if (group.adminOnly && !user.isAdmin) return null;
+            const items = group.items.filter(item => !item.adminOnly || user.isAdmin);
+            if (items.length === 0) return null;
+            return <div key={group.labelKey ?? groupIndex}>
+              {group.labelKey && <NavSectionHeader>{t(group.labelKey)}</NavSectionHeader>}
+              {items.map(item => {
+                const Icon = item.icon;
+                return <NavItem className={styles.item} icon={<Icon fontSize={20} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
+              })}
+            </div>;
+          })}
+        </ScrollArea>
       </NavDrawerBody>
       <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
-        <NavItem className={styles.item} icon={<AccountIcon fontSize={22} />} value="/dashboard/settings">{user.username}</NavItem>
-        <NavItem className={styles.item} icon={<SignOutRegular fontSize={22} />} value="logout">{t('dashboard.logout.label')}</NavItem>
+        <NavItem className={styles.item} icon={<AccountIcon fontSize={20} />} value="/dashboard/settings">{user.username}</NavItem>
+        <NavItem className={styles.item} icon={<SignOutRegular fontSize={20} />} value="logout">{t('dashboard.logout.label')}</NavItem>
       </NavDrawerFooter>
     </NavDrawer>
     <ConfirmDialog
