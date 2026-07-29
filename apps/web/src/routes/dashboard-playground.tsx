@@ -104,7 +104,7 @@ const useStyles = makeStyles({
   code: { fontFamily: tokens.fontFamilyMonospace },
 });
 
-const randomId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+const randomId = () => crypto.randomUUID();
 
 export default function DashboardPlayground({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();

@@ -8,8 +8,8 @@ const prismComponentsEsm = (): Plugin => ({
   name: 'prism-components-esm',
   enforce: 'pre',
   transform(code, id) {
-    const path = id.split('?', 1)[0]?.replaceAll('\\', '/');
-    if (!path || !/\/prismjs\/components\/prism-[^/]+\.js$/.test(path)) return;
+    const path = id.split('?', 1)[0]!.replaceAll('\\', '/');
+    if (!/\/prismjs\/components\/prism-[^/]+\.js$/.test(path)) return;
     return `import Prism from "prismjs";\n${code}`;
   },
 });

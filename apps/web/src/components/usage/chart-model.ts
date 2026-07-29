@@ -220,13 +220,10 @@ export function buildSearchChart({
     redactKeys,
   );
   const visibleEntries = entries.filter(entry => !hiddenKeys.has(entry.id));
-  const details = new Map<string, Map<string, TokenCounters>>();
-  for (const bucket of buckets) details.set(bucket.key, new Map());
 
   return {
     entries,
     buckets,
-    details,
     kind: 'search',
     providers: [...providers].sort(),
     range,

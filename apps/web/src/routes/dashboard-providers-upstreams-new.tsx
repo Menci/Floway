@@ -8,22 +8,21 @@ import { getSessionToken } from '../auth/session';
 import {
   loadEditorAux,
   providerDefaultName,
-  providerKinds,
   requireAdmin,
 } from '../components/upstream-editor/editor-data';
 import { UpstreamEditorPage } from '../components/upstream-editor/upstream-editor-page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
+import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
 
 export const handle = dashboardWorkspaceHandle;
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   if (!getSessionToken()) throw redirect('/');
   if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
-  if (!providerKinds.includes(params.provider as UpstreamProviderKind)) {
+  const provider = ALL_PROVIDER_KINDS.find(kind => kind === params.provider);
+  if (!provider) {
     throw redirect('/dashboard/providers/upstreams');
   }
-
-  const provider = params.provider as UpstreamProviderKind;
   const [recordResult, aux] = await Promise.all([
     callApi(() =>
       api.api.upstreams.blueprint.$get({ query: { kind: provider } })),

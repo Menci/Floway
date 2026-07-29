@@ -135,7 +135,7 @@ function MarkdownCode({ children, className, streaming, ...props }: MarkdownCode
   const match = /language-([\w-]+)/.exec(className ?? '');
   if (!match) return <code {...props} className={s.inlineCode}>{children}</code>;
 
-  const language = match[1] ?? 'plain';
+  const language = match[1]!;
   const code = String(children).replace(/\n$/, '');
   const grammar = Prism.languages[language] ?? Prism.languages.plain;
   const highlighted = !streaming && grammar

@@ -8,13 +8,12 @@ import { PricingEditor } from './pricing-editor';
 import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
 import { RerankTargetEditor } from './rerank-target-editor';
 import type {
-  UpstreamChatConfig,
   UpstreamModelConfig,
   UpstreamRecord,
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Combobox, Input, Select } from '../ui/fluent-form-controls';
-import { modelsField } from '@floway-dev/provider';
+import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
 import type { Flag } from '@floway-dev/provider/flags';
 
 const {
@@ -96,7 +95,7 @@ export function ModelDetail({
     patch({ limits: Object.keys(limits).length ? limits : undefined });
   };
 
-  const updateReasoning = (update: Partial<NonNullable<UpstreamChatConfig['reasoning']>>) => {
+  const updateReasoning = (update: Partial<NonNullable<UpstreamChatModelConfig['reasoning']>>) => {
     const reasoning = cleanObject({ ...(row.config.chat?.reasoning ?? {}), ...update });
     const chat = cleanChat({ ...(row.config.chat ?? {}), reasoning: Object.keys(reasoning).length ? reasoning : undefined });
     patch({ chat });
@@ -238,7 +237,7 @@ function NumberField({ label, onChange, placeholder, readOnly, value }: { label:
   return <Field className="min-w-0" label={label}><Input className="!w-full" min={0} placeholder={placeholder} readOnly={readOnly} type="number" value={value === undefined ? '' : String(value)} onChange={(_, data) => onChange(data.value)} /></Field>;
 }
 
-function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; effort: NonNullable<UpstreamChatConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatConfig['reasoning']>['effort']) => void; t: ReturnType<typeof useTranslation>['t'] }) {
+function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort'] & {}; onChange: (effort: NonNullable<UpstreamChatModelConfig['reasoning']>['effort']) => void; t: ReturnType<typeof useTranslation>['t'] }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const supported = effort.supported;
@@ -324,7 +323,7 @@ export const modelsAreValid = (models: readonly UpstreamModelConfig[]) => {
 
 const optionalNumber = (raw: string): number | undefined => raw === '' ? undefined : Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined;
 const cleanObject = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
-const cleanChat = (chat: UpstreamChatConfig): UpstreamChatConfig | undefined => chat.modalities || chat.reasoning ? chat : undefined;
+const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | undefined => chat.modalities || chat.reasoning ? chat : undefined;
 const numberRange = (range: { min?: number; max?: number }, key: 'min' | 'max', raw: string) => { const next = { ...range }; const value = optionalNumber(raw); if (value === undefined) delete next[key]; else next[key] = value; return next; };
 
 const ENDPOINT_CHOICE_KINDS = new Set<UpstreamModelConfig['kind']>(['chat', 'image']);

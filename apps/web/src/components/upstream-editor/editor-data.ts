@@ -33,13 +33,16 @@ export interface EditorAuxData {
   upstreams: UpstreamRecord[];
 }
 
-export interface UpstreamEditorLoaderData extends EditorAuxData {
-  mode: 'create' | 'edit';
+interface UpstreamEditorLoaderDataBase extends EditorAuxData {
   record: UpstreamRecord;
-  nextSortOrder: number;
   discovered: UpstreamModelConfig[];
   modelsError: string | null;
 }
+
+export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
+  | { mode: 'create'; nextSortOrder: number }
+  | { mode: 'edit' }
+);
 
 export interface UpstreamEditorValues {
   name: string;
@@ -53,10 +56,6 @@ export interface UpstreamEditorValues {
   state: UpstreamRecord['state'];
   manualModels: UpstreamModelConfig[];
 }
-
-export const providerKinds: readonly UpstreamProviderKind[] = [
-  'custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama',
-];
 
 export const providerDefaultName: Record<UpstreamProviderKind, string> = {
   custom: 'Custom upstream',

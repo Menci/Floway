@@ -43,9 +43,9 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
   const lineCallout = useCallback((data?: CustomizedCalloutData) => renderCallout(data ? {
     x: data.x,
     rows: data.values.map(value => {
-      const id = value.legend ?? '';
-      const entry = entryByLegend.get(id);
-      return { id: entry?.id ?? id, label: entry?.label ?? id, color: value.color ?? '', value: Number(value.y) };
+      const entry = entryByLegend.get(value.legend);
+      if (!entry) throw new Error(`Chart callout references unknown series: ${value.legend}`);
+      return { id: entry.id, label: entry.label, color: value.color, value: Number(value.y) };
     }),
   } : null), [entryByLegend, renderCallout]);
 
@@ -55,7 +55,11 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
     if (!host || chart.plot.form !== 'area') return;
     const frame = window.requestAnimationFrame(() => {
       const lines = [...host.querySelectorAll<SVGPathElement>('path[id*="-line-"]')];
-      for (const line of lines.toReversed()) line.parentNode?.append(line);
+      for (const line of lines.toReversed()) {
+        const parent = line.parentNode;
+        if (!parent) throw new Error('Area chart line is detached from its series');
+        parent.append(line);
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, [chart.plot.data, chart.plot.form, host, size.height, size.width]);

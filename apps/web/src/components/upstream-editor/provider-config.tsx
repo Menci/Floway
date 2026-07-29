@@ -344,7 +344,7 @@ function CopilotConfig({ record, onPatch }: {
     timer.current = window.setTimeout(() => void poll(result.data.device_code, result.data.interval), result.data.interval * 1000);
   };
 
-  if (config.user?.login) {
+  if (config.user.login) {
     return <div className="grid gap-3">
       <AccountSummary kind="copilot" title={config.user.name ?? config.user.login} subtitle={`@${config.user.login}`} />
       {record.id === '' ? <ReadyToSaveHint kind="copilot" /> : <CopilotQuotaCard record={record} />}

@@ -55,7 +55,7 @@ export async function clientAction({
   });
 
   if (!values.success) {
-    return { ok: false, error: values.error.issues[0]?.message ?? 'validation.passwordRequired' };
+    return { ok: false, error: values.error.issues[0]!.message };
   }
 
   const result = await changeOwnPassword({

@@ -163,9 +163,6 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.5.7
         version: 5.5.7(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.83.0(react@19.2.8))(valibot@1.4.2(typescript@5.9.3))(zod@4.4.3)
-      '@react-router/node':
-        specifier: 8.3.0
-        version: 8.3.0(react-router@8.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(typescript@5.9.3)
       d3-shape:
         specifier: ^3.2.0
         version: 3.2.0
@@ -175,9 +172,6 @@ importers:
       i18next:
         specifier: ^26.3.6
         version: 26.3.6(typescript@5.9.3)
-      isbot:
-        specifier: ^5.2.1
-        version: 5.2.1
       monaco-editor:
         specifier: 0.54.0
         version: 0.54.0

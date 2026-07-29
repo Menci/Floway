@@ -61,7 +61,6 @@ test('/api/search-usage in self-by-key mode includes per-key metadata for the ac
   assertEquals(response.status, 200);
   const body = await response.json();
   assertEquals(body.view, 'self-by-key');
-  assertEquals(body.activeProvider, 'microsoft-web-iq');
   assertEquals(body.keys, [
     { id: apiKey.id, name: apiKey.name, createdAt: apiKey.createdAt },
   ]);

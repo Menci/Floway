@@ -20,7 +20,7 @@ import type {
   PublicModel,
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
-import type { UpstreamChatModelConfig, UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
@@ -28,7 +28,6 @@ export type { BillingMetric, ModelEndpointKey, ModelEndpoints, ModelKind, ModelP
 export type { AddressableForm, ModelPrefixConfig };
 export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };
 export type { UpstreamModelConfig };
-export type UpstreamChatConfig = UpstreamChatModelConfig;
 export type {
   AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
   PublicModel, PublicModelLimits,

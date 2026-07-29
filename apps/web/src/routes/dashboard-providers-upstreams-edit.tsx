@@ -26,7 +26,6 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     ...aux,
     ...catalog,
     mode: 'edit' as const,
-    nextSortOrder: recordResult.data.sort_order,
   };
 }
 

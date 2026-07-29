@@ -83,14 +83,14 @@ export type ChartPlot =
 interface ChartModelBase {
   entries: ChartEntry[];
   plot: ChartPlot;
-  details: Map<string, Map<string, TokenCounters>>;
   buckets: UsageBucket[];
   range: UsageRange;
 }
+export type TokenChartModel = ChartModelBase & { kind: 'token'; details: Map<string, Map<string, TokenCounters>> };
 // A search chart names the providers whose records it actually plotted, which
 // is a property of the window's data rather than of the current configuration.
 export type SearchChartModel = ChartModelBase & { kind: 'search'; providers: string[] };
-export type UsageChartModel = ChartModelBase & ({ kind: 'token' } | { kind: 'search'; providers: string[] });
+export type UsageChartModel = TokenChartModel | SearchChartModel;
 
 // One hovered bucket, normalized across the two plot forms so the callout does
 // not care which component produced it.
