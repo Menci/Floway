@@ -51,25 +51,18 @@ export async function clientLoader(): Promise<SearchPageLoaderData> {
     callApi(() => api.api.upstreams.$get()),
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
+  if (configResult.error) throw new Error(configResult.error.message);
   return {
-    config: configResult.data ?? DEFAULT_CONFIG,
+    config: configResult.data,
     upstreams: upstreamsResult.data ?? [],
     models: modelsResult.data?.data ?? [],
-    error: configResult.error?.message ?? upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
+    error: upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
   };
 }
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: 'Provider Search | Floway' }];
 }
-
-const DEFAULT_CONFIG: SearchConfig = {
-  provider: 'disabled',
-  tavily: { apiKey: '' },
-  webIq: { apiKey: '' },
-  jina: { apiKey: '' },
-  passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
-};
 
 export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], models: readonly ControlPlaneModel[]) =>
   upstreams.filter(upstream => upstream.enabled
