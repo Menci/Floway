@@ -16,8 +16,10 @@ import { withUniqueSeriesLegends } from '../charts/series-legends';
 
 export interface PerformanceBucket { key: string; label: string; date: Date }
 export interface PerformanceChartEntry { id: string; label: string; legend: string; colorSlot: number }
+export interface PerformanceChartPointDetails { outputSpeed: number | null; ttft: number | null }
 export interface PerformanceChartModel {
   data: ChartProps;
+  details: Map<number, Map<string, PerformanceChartPointDetails>>;
   entries: PerformanceChartEntry[];
   buckets: PerformanceBucket[];
   range: PerformanceRange;
@@ -44,6 +46,16 @@ export function buildPerformanceChart(
   return {
     entries,
     buckets,
+    details: new Map(buckets.map(bucket => [
+      bucket.date.getTime(),
+      new Map(entries.flatMap(entry => {
+        const record = values.get(`${bucket.key}\0${entry.id}`);
+        return record ? [[entry.id, {
+          outputSpeed: performanceValue(record, 'tokPerSec', percentile),
+          ttft: performanceValue(record, 'ttft', percentile),
+        }] as const] : [];
+      })),
+    ])),
     range,
     metric,
     data: {

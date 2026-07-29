@@ -10,10 +10,11 @@ import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { useUnclippedChartFrame } from '../components/charts/chart-frame-styles';
+import { ChartCalloutTable } from '../components/charts/chart-callout-table';
 import { ChartSection } from '../components/charts/chart-section';
 import { chartTickValues, dashboardBucketFrames, formatAxisDate, formatCalloutTitle } from '../components/charts/dashboard-time';
 import { useElementSize } from '../components/charts/use-element-size';
-import { buildPerformanceChart, type PerformanceBucket, type PerformanceChartModel } from '../components/performance/performance-chart-model';
+import { buildPerformanceChart, type PerformanceBucket, type PerformanceChartEntry, type PerformanceChartModel, type PerformanceChartPointDetails } from '../components/performance/performance-chart-model';
 import {
   buildPerformanceQuery,
   clearGroupedFilter,
@@ -309,7 +310,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
   const size = useElementSize(host);
   const locale = localeForLanguage(i18n.language);
   const formatter = chart.metric === 'ttft' ? formatDuration : formatRate;
-  const labelByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry.label])), [chart.entries]);
+  const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleLegends = useMemo(() => new Set(chart.entries.filter(entry => !hidden.has(entry.id)).map(entry => entry.legend)), [chart.entries, hidden]);
   const visibleData = useMemo<ChartProps>(() => ({ ...chart.data, lineChartData: chart.data.lineChartData?.filter(series => visibleLegends.has(series.legend)) }), [chart.data, visibleLegends]);
   const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
@@ -318,43 +319,47 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
     ? null
     : <PerformanceChartCallout
         data={props}
-        formatter={formatter}
-        labelByLegend={labelByLegend}
+        details={chart.details.get(props.x instanceof Date ? props.x.getTime() : Number(props.x))}
+        entryByLegend={entryByLegend}
         title={formatCalloutTitle(props.x, labelByTime, chart.range, locale)}
-      />, [chart.range, formatter, labelByLegend, labelByTime, locale]);
+      />, [chart.details, chart.range, entryByLegend, labelByTime, locale]);
   const plotHeight = Math.max(0, size.height - chartMargins.top - chartMargins.bottom);
   return <div className={`${chartStyles.root} h-[320px] min-w-0 w-full`} ref={setHost}>{size.width < 120 ? null : visibleData.lineChartData?.length ? <LineChart styles={chartRootStyles} customDateTimeFormatter={date => formatAxisDate(date, chart.range, locale)} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-plotHeight} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" /> : <div className={stateStyles.root}>{t('dashboard.performance.empty')}</div>}</div>;
 }
 
-function PerformanceChartCallout({ data, formatter, labelByLegend, title }: {
+function PerformanceChartCallout({ data, details, entryByLegend, title }: {
   data: CustomizedCalloutData;
-  formatter: (value: number) => string;
-  labelByLegend: ReadonlyMap<string, string>;
+  details: ReadonlyMap<string, PerformanceChartPointDetails> | undefined;
+  entryByLegend: ReadonlyMap<string, PerformanceChartEntry>;
   title: string;
 }) {
+  const { t } = useTranslation();
   const rows = data.values
     .filter(item => item.y > 0)
-    .toSorted((left, right) => right.y - left.y);
+    .toSorted((left, right) => right.y - left.y)
+    .map(item => {
+      const entry = entryByLegend.get(item.legend);
+      if (!entry) throw new Error(`Performance callout references unknown series: ${item.legend}`);
+      const point = details?.get(entry.id);
+      return {
+        color: item.color,
+        key: entry.id,
+        label: entry.label,
+        values: [formatDuration(point?.ttft ?? null), formatRate(point?.outputSpeed ?? null)],
+      };
+    });
 
   return (
-    <div className="grid gap-1 w-[min(230px,calc(100vw-48px))] min-w-0 max-w-[360px]">
-      <Text block size={200} weight="semibold">{title}</Text>
-      <div className="grid gap-1">
-        {rows.map(item => (
-          <div className="grid grid-cols-[6px_minmax(0,1fr)_auto] items-center gap-1.5 min-w-0" key={item.legend}>
-            <span
-              aria-hidden
-              className="block h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: item.color }}
-            />
-            <Text block size={100} className="truncate" title={labelByLegend.get(item.legend) ?? item.legend}>{labelByLegend.get(item.legend) ?? item.legend}</Text>
-            <Text block size={100} weight="semibold" className="tabular-nums text-right whitespace-nowrap">
-              {formatter(item.y)}
-            </Text>
-          </div>
-        ))}
-      </div>
-    </div>
+    <ScrollArea axes="horizontal" className="max-w-[min(420px,calc(100vw-48px))] min-w-[300px]" contentClassName="grid gap-1">
+      <ChartCalloutTable
+        columns={[
+          { key: 'ttft', label: t('dashboard.performance.metric.ttft') },
+          { key: 'outputSpeed', label: t('dashboard.performance.metric.outputSpeed') },
+        ]}
+        rows={rows}
+        title={title}
+      />
+    </ScrollArea>
   );
 }
 
