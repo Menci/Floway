@@ -1,36 +1,22 @@
 import {
-  ArrowRoutingFilled,
-  ArrowRoutingRegular,
-  ChatFilled,
-  ChatRegular,
-  ClipboardTextLtrFilled,
-  ClipboardTextLtrRegular,
-  DatabaseArrowUpFilled,
-  DatabaseArrowUpRegular,
-  DataUsageFilled,
-  DataUsageRegular,
+  Chat20Color,
+  Clipboard20Color,
+  Cloud20Color,
+  Database20Color,
+  DataPie20Color,
   DismissRegular,
-  DocumentTextFilled,
-  DocumentTextRegular,
-  GaugeFilled,
-  GaugeRegular,
-  KeyFilled,
-  KeyRegular,
-  PeopleFilled,
-  PeopleRegular,
-  PersonFilled,
-  PersonRegular,
-  PlugConnectedFilled,
-  PlugConnectedRegular,
-  RenameFilled,
-  RenameRegular,
-  SearchFilled,
-  SearchRegular,
+  DocumentText20Color,
+  Gauge20Color,
+  People20Color,
+  Person20Color,
+  SearchSparkle20Color,
+  ShareAndroid20Color,
   SignOutRegular,
-  bundleIcon,
+  TextEditStyle20Color,
+  Vault20Color,
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router';
 
@@ -111,44 +97,42 @@ type NavGroup = {
 const navGroups: NavGroup[] = [
   {
     items: [
-      { to: '/dashboard/playground', labelKey: 'dashboard.nav.playground', icon: bundleIcon(ChatFilled, ChatRegular) },
+      { to: '/dashboard/playground', labelKey: 'dashboard.nav.playground', icon: Chat20Color },
     ],
   },
   {
     labelKey: 'dashboard.groups.providers',
     items: [
-      { to: '/dashboard/providers/upstreams', labelKey: 'dashboard.nav.upstreams', icon: bundleIcon(PlugConnectedFilled, PlugConnectedRegular), adminOnly: true },
-      { to: '/dashboard/providers/search', labelKey: 'dashboard.nav.search', icon: bundleIcon(SearchFilled, SearchRegular), adminOnly: true },
-      { to: '/dashboard/providers/proxy', labelKey: 'dashboard.nav.proxy', icon: bundleIcon(ArrowRoutingFilled, ArrowRoutingRegular), adminOnly: true },
-      { to: '/dashboard/providers/model-aliases', labelKey: 'dashboard.nav.modelAliases', icon: bundleIcon(RenameFilled, RenameRegular), adminOnly: true },
+      { to: '/dashboard/providers/upstreams', labelKey: 'dashboard.nav.upstreams', icon: Cloud20Color, adminOnly: true },
+      { to: '/dashboard/providers/search', labelKey: 'dashboard.nav.search', icon: SearchSparkle20Color, adminOnly: true },
+      { to: '/dashboard/providers/proxy', labelKey: 'dashboard.nav.proxy', icon: ShareAndroid20Color, adminOnly: true },
+      { to: '/dashboard/providers/model-aliases', labelKey: 'dashboard.nav.modelAliases', icon: TextEditStyle20Color, adminOnly: true },
     ],
   },
   {
     labelKey: 'dashboard.groups.services',
     items: [
-      { to: '/dashboard/services/api-keys', labelKey: 'dashboard.nav.apiKeys', icon: bundleIcon(KeyFilled, KeyRegular) },
-      { to: '/dashboard/services/api-docs', labelKey: 'dashboard.nav.apiDocs', icon: bundleIcon(DocumentTextFilled, DocumentTextRegular) },
+      { to: '/dashboard/services/api-keys', labelKey: 'dashboard.nav.apiKeys', icon: Vault20Color },
+      { to: '/dashboard/services/api-docs', labelKey: 'dashboard.nav.apiDocs', icon: DocumentText20Color },
     ],
   },
   {
     labelKey: 'dashboard.groups.monitor',
     items: [
-      { to: '/dashboard/monitor/requests', labelKey: 'dashboard.nav.requests', icon: bundleIcon(ClipboardTextLtrFilled, ClipboardTextLtrRegular) },
-      { to: '/dashboard/monitor/usage', labelKey: 'dashboard.nav.usage', icon: bundleIcon(DataUsageFilled, DataUsageRegular) },
-      { to: '/dashboard/monitor/performance', labelKey: 'dashboard.nav.performance', icon: bundleIcon(GaugeFilled, GaugeRegular) },
+      { to: '/dashboard/monitor/requests', labelKey: 'dashboard.nav.requests', icon: Clipboard20Color },
+      { to: '/dashboard/monitor/usage', labelKey: 'dashboard.nav.usage', icon: DataPie20Color },
+      { to: '/dashboard/monitor/performance', labelKey: 'dashboard.nav.performance', icon: Gauge20Color },
     ],
   },
   {
     labelKey: 'dashboard.groups.admin',
     adminOnly: true,
     items: [
-      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: bundleIcon(PeopleFilled, PeopleRegular) },
-      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: bundleIcon(DatabaseArrowUpFilled, DatabaseArrowUpRegular) },
+      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color },
+      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: Database20Color },
     ],
   },
 ];
-
-const AccountIcon = bundleIcon(PersonFilled, PersonRegular);
 
 export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: AuthUser }) {
   const { t } = useTranslation();
@@ -157,6 +141,10 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   const logout = useAuthStore(state => state.logout);
   const styles = useStyles();
   const [logoutOpen, setLogoutOpen] = useState(false);
+  // Color icons carry hardcoded gradient ids, so two mounted drawers would
+  // collide on them. idPrefix namespaces the ids per Sidebar instance, and the
+  // separators React puts around useId() are illegal inside url(#…).
+  const iconIdPrefix = useId().replace(/[^a-zA-Z0-9]/g, '');
   const selectedValue = navGroups
     .flatMap(group => group.items)
     .find(item => pathname === item.to || pathname.startsWith(`${item.to}/`))?.to
@@ -196,7 +184,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
               <div className="grid gap-1">
                 {items.map(item => {
                   const Icon = item.icon;
-                  return <NavItem className={styles.item} icon={<Icon fontSize={20} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
+                  return <NavItem className={styles.item} icon={<Icon idPrefix={iconIdPrefix} />} key={item.to} value={item.to}>{t(item.labelKey)}</NavItem>;
                 })}
               </div>
             </div>;
@@ -204,7 +192,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
         </ScrollArea>
       </NavDrawerBody>
       <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
-        <NavItem className={styles.item} icon={<AccountIcon fontSize={20} />} value="/dashboard/settings">{user.username}</NavItem>
+        <NavItem className={styles.item} icon={<Person20Color idPrefix={iconIdPrefix} />} value="/dashboard/settings">{user.username}</NavItem>
         <NavItem className={styles.item} icon={<SignOutRegular fontSize={20} />} value="logout">{t('dashboard.logout.label')}</NavItem>
       </NavDrawerFooter>
     </NavDrawer>
