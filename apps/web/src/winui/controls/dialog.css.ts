@@ -24,9 +24,11 @@ export const dialogCss = `
    Fluent's raised Background1, the surface stroke rather than a transparent
    one, and BackgroundSizing="InnerBorderEdge", which is background-clip:
    padding-box on the web, so the translucent border reads against the smoke
-   layer behind it instead of against its own fill. The size envelope is stated
-   in full by WinUI where Fluent states only a maximum width; the height cap
-   stays bounded by the viewport, since 756px exceeds many of them.
+   layer behind it instead of against its own fill. WinUI states a full size
+   envelope where Fluent states only a maximum width; the width bounds land
+   here and the height bounds on the body, which is the box that can absorb
+   them. The height cap stays bounded by the viewport, since 756px exceeds
+   many of them.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L223 */
 .fui-DialogSurface.fui-DialogSurface {
@@ -36,7 +38,6 @@ export const dialogCss = `
   background-clip: padding-box;
   min-width: 320px;
   max-width: 548px;
-  min-height: 184px;
   max-height: min(756px, 100dvh);
 }
 
@@ -72,16 +73,20 @@ export const dialogCss = `
 
 /* The body takes over the 24px ContentDialogPadding the surface gave up, and
    drops Fluent's 8px gap: WinUI's bands abut, and the step under the title is
-   a margin on the title itself. Its height cap loses the term that compensated
-   for the surface padding and becomes the surface's own cap less the 1px
-   ContentDialogBorderWidth on each end: the body now fills the surface edge to
-   edge, and the surface does not clip, so anything above that spills past the
-   stroke.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L233
+   a margin on the title itself. Both height bounds sit here rather than on the
+   surface, less the 1px ContentDialogBorderWidth on each end. The surface is a
+   block box around a content-sized grid, so a floor set there would leave the
+   body short and strand the command band mid-surface; on the body, its own
+   star-height content row absorbs the slack and the band stays at the bottom
+   edge, which is how WinUI's DialogSpace pins CommandSpace to begin with.
+   The cap belongs here for the matching reason: the body now
+   fills the surface edge to edge, and the surface does not clip.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L228-L233
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L11 */
 .fui-DialogBody.fui-DialogBody {
   padding: 24px;
   gap: 0;
+  min-height: calc(184px - 2px);
   max-height: calc(min(756px, 100dvh) - 2px);
 }
 
