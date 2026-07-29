@@ -12,8 +12,8 @@
 // Two families cannot be a plain literal transcription and say so at their own
 // block: the accent ramp, whose base is a Windows-generated system color that
 // no dictionary contains, and the composed strokes, which restate a
-// LinearGradientBrush as inset box-shadows because the web has no
-// absolute-mapped border brush.
+// LinearGradientBrush as a per-side border colour, or as inset box-shadows
+// where the outlined part has no border box.
 //
 // Both blocks target `.fui-FluentProvider`, the element that already carries
 // Fluent's own token variables, so the WinUI vocabulary cascades alongside it.
@@ -224,34 +224,112 @@ export const winuiTokenCss = `
   --winui-overlay-corner-radius: 8px;
 }
 
+/* Control alt fills — the interior of a control whose body is a cavity rather
+   than a surface: the unchecked check box and radio button, and the off track
+   of a toggle switch. The ramp runs the opposite way to the control fills, so
+   it darkens on light and lightens on dark, and the disabled step is fully
+   transparent in both dictionaries rather than a faint wash.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L233-L237 */
+.fui-FluentProvider {
+  --winui-control-alt-fill-secondary: #00000006;
+  --winui-control-alt-fill-tertiary: #0000000f;
+  --winui-control-alt-fill-quarternary: #00000018;
+  --winui-control-alt-fill-disabled: #ffffff00;
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L29-L33 */
+@media (prefers-color-scheme: dark) {
+  .fui-FluentProvider {
+    --winui-control-alt-fill-secondary: #00000019;
+    --winui-control-alt-fill-tertiary: #ffffff0b;
+    --winui-control-alt-fill-quarternary: #ffffff12;
+    --winui-control-alt-fill-disabled: #ffffff00;
+  }
+}
+
+/* Focus strokes. WinUI draws focus as two concentric rings, an outer one in the
+   text color and an inner one in the surface color, so the visual survives on
+   any fill including accent. Both flip with the theme.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
+.fui-FluentProvider {
+  --winui-focus-stroke-outer: #000000e4;
+  --winui-focus-stroke-inner: #ffffffb3;
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L54-L55 */
+@media (prefers-color-scheme: dark) {
+  .fui-FluentProvider {
+    --winui-focus-stroke-outer: #ffffff;
+    --winui-focus-stroke-inner: #000000b3;
+  }
+}
+
+/* Disabled text inside a text control. TextControlForegroundDisabled resolves
+   to TemporaryTextFillColorDisabled, which is a near-neutral off by one step
+   from black and white rather than TextFillColorDisabled's pure channel, so a
+   disabled input reads slightly differently from other disabled text.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L129
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L141 */
+.fui-FluentProvider {
+  --winui-temporary-text-fill-disabled: #0101015c;
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L22 */
+@media (prefers-color-scheme: dark) {
+  .fui-FluentProvider {
+    --winui-temporary-text-fill-disabled: #fefefe5d;
+  }
+}
+
+/* The selection highlight behind selected text. Both dictionaries key it to
+   SystemAccentColor unmodified — not a step of the Dark1/Light2 ramp the accent
+   fills use — so it takes the same brand-token substitution the accent ramp
+   block explains, at full strength and with no dark override.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L124
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L328 */
+.fui-FluentProvider {
+  --winui-accent-fill-selected-text-background: var(--colorBrandBackground);
+}
+
+/* Status fills — the color of a validation or severity glyph. These are the
+   only opaque hues in the vocabulary besides the background ramp, and the two
+   dictionaries carry genuinely different hues rather than one hue at two
+   opacities, because each is tuned for contrast against its own background.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L281-L282 */
+.fui-FluentProvider {
+  --winui-system-fill-caution: #9d5d00;
+  --winui-system-fill-critical: #c42b1c;
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L77-L78 */
+@media (prefers-color-scheme: dark) {
+  .fui-FluentProvider {
+    --winui-system-fill-caution: #fce100;
+    --winui-system-fill-critical: #ff99a4;
+  }
+}
+
 /* Composed strokes. WinUI outlines a control with a LinearGradientBrush mapped
    in absolute units — a 3px span for ControlElevationBorderBrush and
-   AccentControlElevationBorderBrush, 2px for TextControlElevationBorderBrush —
-   so one edge reads heavier than the other three regardless of how tall the
-   control is. The web has no equivalent of an absolute-mapped brush used as a
-   border, so each is provided twice:
+   AccentControlElevationBorderBrush — so one edge reads heavier than the other
+   three regardless of how tall the control is. The web has no equivalent of an
+   absolute-mapped brush used as a border, so each is transcribed as a
+   border-color shorthand whose three terms are the top, the sides and the
+   bottom.
 
-   the *-shadow form is a set of inset box-shadows, which follows border-radius
-   and needs no border box, and is what most surfaces should use; the
-   *-border-color form is a border-color shorthand for the cases where a real
-   1px border already exists and only its per-side color is in question.
-
-   The shadow form paints each side as its own 1px inset rather than a full
-   ring plus a heavier strip: box-shadow composites, so a translucent ring
-   under a translucent strip would render the heavy edge darker than the XAML
-   gradient ever gets. One deviation survives that split — the two pixels where
-   the heavy edge meets a side edge are covered by both insets and composite
-   there. A border-radius large enough to round those pixels away removes it. */
+   The circle stroke is the exception: it outlines a round part that has no
+   border box of its own, so it is transcribed as a set of per-side 1px inset
+   box-shadows, which follow border-radius. Painting each side separately rather
+   than a full ring plus a heavier strip matters because box-shadow composites,
+   and a translucent ring under a translucent strip would render the heavy edge
+   darker than the XAML gradient ever gets. The two pixels where the heavy edge
+   meets a side edge are covered by both insets, and a fully round part rounds
+   them away. */
 
 /* Light flips the gradient (ScaleY="-1"), putting the heavier
    ControlStrokeColorSecondary edge at the bottom.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L382-L390 */
 .fui-FluentProvider {
-  --winui-control-elevation-shadow:
-    inset 0 1px 0 0 var(--winui-control-stroke-default),
-    inset 1px 0 0 0 var(--winui-control-stroke-default),
-    inset -1px 0 0 0 var(--winui-control-stroke-default),
-    inset 0 -1px 0 0 var(--winui-control-stroke-secondary);
   --winui-control-elevation-border-color:
     var(--winui-control-stroke-default)
     var(--winui-control-stroke-default)
@@ -262,11 +340,6 @@ export const winuiTokenCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L186-L191 */
 @media (prefers-color-scheme: dark) {
   .fui-FluentProvider {
-    --winui-control-elevation-shadow:
-      inset 0 1px 0 0 var(--winui-control-stroke-secondary),
-      inset 1px 0 0 0 var(--winui-control-stroke-default),
-      inset -1px 0 0 0 var(--winui-control-stroke-default),
-      inset 0 -1px 0 0 var(--winui-control-stroke-default);
     --winui-control-elevation-border-color:
       var(--winui-control-stroke-secondary)
       var(--winui-control-stroke-default)
@@ -274,45 +347,75 @@ export const winuiTokenCss = `
   }
 }
 
-/* The text-control stroke carries ScaleY="-1" in both dictionaries, so its
-   heavy edge is at the bottom either way; that edge is
-   ControlStrongStrokeColorDefault, which is what gives a TextBox its
-   pronounced underline. Both inputs are already theme-aware, so this needs no
-   dark override.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L56
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L155-L163 */
-.fui-FluentProvider {
-  --winui-text-control-elevation-shadow:
-    inset 0 1px 0 0 var(--winui-control-stroke-default),
-    inset 1px 0 0 0 var(--winui-control-stroke-default),
-    inset -1px 0 0 0 var(--winui-control-stroke-default),
-    inset 0 -1px 0 0 var(--winui-control-strong-stroke-default);
-  --winui-text-control-elevation-border-color:
-    var(--winui-control-stroke-default)
-    var(--winui-control-stroke-default)
-    var(--winui-control-strong-stroke-default);
-}
-
 /* The accent outline is the same construction over the on-accent strokes, and
    is likewise flipped in both dictionaries.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L198-L206
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L397-L405 */
 .fui-FluentProvider {
-  --winui-accent-control-elevation-shadow:
-    inset 0 1px 0 0 var(--winui-control-stroke-on-accent-default),
-    inset 1px 0 0 0 var(--winui-control-stroke-on-accent-default),
-    inset -1px 0 0 0 var(--winui-control-stroke-on-accent-default),
-    inset 0 -1px 0 0 var(--winui-control-stroke-on-accent-secondary);
   --winui-accent-control-elevation-border-color:
     var(--winui-control-stroke-on-accent-default)
     var(--winui-control-stroke-on-accent-default)
     var(--winui-control-stroke-on-accent-secondary);
 }
 
-/* Unresolved: TextControlElevationBorderFocusedBrush, the outline a focused
-   TextBox draws, is not emitted. Its heavy stop is SystemAccentColorDark1 — a
-   Windows-generated system color absent from every theme dictionary — and
-   unlike the accent fill ramp it has no accompanying opacity relationship to
-   restate, so there is nothing here to transcribe.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172 */
+/* The circle stroke is a different construction from the three above: it maps
+   relative to the bounding box rather than in absolute pixels, so its heavy
+   edge is a proportion of the control rather than a fixed pixel, and its stops
+   sit at 0.50 and 0.70 instead of 0.33 and 1.0. Neither dictionary flips it, so
+   the heavy ControlStrokeColorSecondary edge is at the bottom in both themes
+   and no dark override is needed. It outlines the toggle switch's knob; a
+   checked radio dot takes the accent stroke instead.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L192-L197
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L391-L396 */
+.fui-FluentProvider {
+  --winui-circle-elevation-shadow:
+    inset 0 1px 0 0 var(--winui-control-stroke-default),
+    inset 1px 0 0 0 var(--winui-control-stroke-default),
+    inset -1px 0 0 0 var(--winui-control-stroke-default),
+    inset 0 -1px 0 0 var(--winui-control-stroke-secondary);
+}
+
+/* Motion. WinUI states durations as XAML timespans and easings as a KeySpline,
+   whose four numbers are exactly the two control points of a CSS cubic-bezier.
+   Both are declared outside the theme dictionaries and so do not vary by theme.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L603 */
+.fui-FluentProvider {
+  --winui-control-normal-animation-duration: 250ms;
+  --winui-control-fast-out-slow-in-easing: cubic-bezier(0, 0, 0, 1);
+}
+
+/* Button padding. XAML thicknesses read left,top,right,bottom while the CSS
+   shorthand reads top,right,bottom,left; the two horizontal values are equal
+   here, so this collapses to three terms.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L152 */
+.fui-FluentProvider {
+  --winui-button-padding: 5px 11px 6px;
+}
+
+/* Unresolved. Four families are asked for by the controls above and are not
+   emitted, because the corpus does not carry a value to transcribe.
+
+   TextControlElevationBorderFocusedBrush, the outline a focused TextBox draws,
+   has SystemAccentColorDark1 as its heavy stop, and AccentTextFillColor
+   Primary/Secondary/Tertiary — the rest, hover and pressed fills of a link —
+   are brushes over SystemAccentColorLight3/Light3/Light2 in dark and
+   Dark2/Dark3/Dark1 in light. Those are Windows-generated ramp steps that
+   appear in no theme dictionary, and unlike the accent fill ramp none of them
+   carries an opacity relationship we could restate over a substituted base, so
+   there is nothing to reproduce. Fluent's own brand foreground tokens remain in
+   use for both.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93-L95
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297-L299
+
+   TextControlThemeMinHeight and TextControlThemePadding are referenced by the
+   text control templates but defined nowhere in the theme resources; they come
+   from the framework's own generic dictionary, which is not part of this
+   corpus. Fluent's control sizing stands in for both.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L192-L194
+
+   There is likewise no spacing or type scale to lift: WinUI states each metric
+   as a per-control thickness or size, of which ButtonPadding above is one, and
+   never as a shared ramp. Anything needing a step other than a metric a control
+   actually declares uses Fluent's spacing and type tokens. */
 `;

@@ -12,23 +12,45 @@
 // colorNeutralStroke1 is ControlStrokeColorDefault, colorNeutralStrokeAccessible
 // is ControlStrongStrokeColorDefault, colorNeutralForeground1 is
 // TextFillColorPrimary, and colorNeutralForegroundDisabled is
-// TextFillColorDisabled. What is left is written the way button.css.ts writes
+// TextFillColorDisabled. The first two are the whole rest stroke: Fluent already
+// paints the root's four sides from colorNeutralStroke1 and overrides the bottom
+// with colorNeutralStrokeAccessible, which is precisely how
+// TextControlElevationBorderBrush resolves once its ScaleY="-1" puts the heavy
+// ControlStrongStrokeColorDefault stop at the bottom. No rule here restates it,
+// because any declaration on the root would also outrank Fluent's focus and
+// aria-invalid strokes.
+//
+// What is left is written the way button.css.ts writes
 // it: as redefinition of the Fluent variables that only the disagreeing states
 // read, so Fluent's own atoms keep deciding which state wins. That is what
 // keeps a disabled field disabled under the pointer and leaves the red
 // aria-invalid stroke — an affordance WinUI's text controls do not have —
 // standing.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L48-L56
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L155-L163
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L186-L201
 //
 // Fill is the exception. Fluent has no atom that recolours a text control's
 // fill on hover or focus, and its disabled atom empties the fill rather than
 // recolouring it, so those three states are written as declarations, scoped
-// one class above Griffel by `.fui-FluentProvider`.
+// one class above Griffel by `.fui-FluentProvider`. A declaration cannot pick
+// its variant the way a redefined variable does, so each one is narrowed by
+// `data-winui-appearance` to exactly the appearances whose rest fill is
+// Fluent's Background1 — the ones the rest rule below moves onto the WinUI
+// control fill. The `underline` appearance stays transparent and
+// `filled-darker` keeps its Background3 step, as they do at rest.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L179-L182
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-input/library/src/components/Input/useInputStyles.styles.ts#L186-L201
+const controlFillAppearances = `:is(\
+[data-winui-appearance='outline'],\
+[data-winui-appearance='filled-lighter'],\
+[data-winui-appearance='filled-lighter-shadow'])`;
+
 export const textInputCss = `
 /* Rest fill. Fluent leaves the control on the opaque neutral ramp; WinUI puts
-   it on the translucent control fill. Redefining the variable rather than
-   setting background-color keeps the transparent \`underline\` appearance
-   transparent and leaves \`filled-darker\`, which reads Background3, alone.
+   it on the translucent control fill. Redefining Background1 reaches exactly
+   the appearances the state rules below name, because those are the ones whose
+   atoms read it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L23
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L130 */
 .fui-FluentProvider .fui-Input,
@@ -42,21 +64,23 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L24
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L131
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L256-L290 */
-.fui-FluentProvider .fui-Input:hover:not(:has(> .fui-Input__input:disabled)),
-.fui-FluentProvider .fui-Textarea:hover:not(:has(> .fui-Textarea__textarea:disabled)) {
+.fui-FluentProvider .fui-Input${controlFillAppearances}:hover:not(:has(> .fui-Input__input:disabled)),
+.fui-FluentProvider .fui-Textarea${controlFillAppearances}:hover:not(:has(> .fui-Textarea__textarea:disabled)) {
   background-color: var(--winui-control-fill-secondary);
 }
 
 /* Focus lifts the fill to the opaque input colour. A disabled field cannot
    take focus, so no exclusion is needed here. The accent bottom edge of
-   TextControlElevationBorderFocusedBrush is left to Fluent's own ::after
-   strip — its colour is a Windows-generated system accent that no theme
-   dictionary carries.
+   TextControlElevationBorderFocusedBrush is still left to Fluent's own ::after
+   strip: its heavy stop is SystemAccentColorDark1 in light and
+   SystemAccentColorLight2 in dark, ramp steps Windows generates from the user
+   accent that appear in no theme dictionary and carry no opacity relationship
+   to a base we could substitute, so there is no value to transcribe.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L25
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L132
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L291-L300 */
-.fui-FluentProvider .fui-Input:focus-within,
-.fui-FluentProvider .fui-Textarea:focus-within {
+.fui-FluentProvider .fui-Input${controlFillAppearances}:focus-within,
+.fui-FluentProvider .fui-Textarea${controlFillAppearances}:focus-within {
   background-color: var(--winui-control-fill-input-active);
 }
 
@@ -64,8 +88,8 @@ export const textInputCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L26
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L133
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L260-L262 */
-.fui-FluentProvider .fui-Input:has(> .fui-Input__input:disabled),
-.fui-FluentProvider .fui-Textarea:has(> .fui-Textarea__textarea:disabled) {
+.fui-FluentProvider .fui-Input${controlFillAppearances}:has(> .fui-Input__input:disabled),
+.fui-FluentProvider .fui-Textarea${controlFillAppearances}:has(> .fui-Textarea__textarea:disabled) {
   background-color: var(--winui-control-fill-disabled);
 }
 
@@ -131,12 +155,32 @@ export const textInputCss = `
   --colorNeutralForeground3: var(--winui-text-fill-secondary);
 }
 
-/* Disabled text is left to the foundation's TextFillColorDisabled. WinUI keys
-   it to TemporaryTextFillColorDisabled instead, a one-off that differs by a
-   single unit per channel (#5DFEFEFE against #5DFFFFFF) and is not worth a
-   variable of its own.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L22
+/* Disabled text. WinUI keys TextControlForegroundDisabled to
+   TemporaryTextFillColorDisabled, a near-neutral one step off the pure channel
+   of TextFillColorDisabled. Fluent reads one variable for both the disabled
+   text and the disabled placeholder, and WinUI splits them — the placeholder
+   keeps TextFillColorDisabled, which the foundation already installs — so the
+   text side is written as a declaration on the control element rather than as
+   a redefinition.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L34
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L129
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L141 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L141
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L145 */
+.fui-FluentProvider .fui-Input__input:disabled,
+.fui-FluentProvider .fui-Textarea__textarea:disabled {
+  color: var(--winui-temporary-text-fill-disabled);
+}
+
+/* Selection highlight. WinUI paints the band behind selected text with the
+   accent; the glyphs over it take TextOnAccentFillColorSelectedText, white in
+   both dictionaries, which the text control templates leave to the system
+   rather than setting themselves.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L39
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L146
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L11
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L215 */
+.fui-FluentProvider .fui-Input__input::selection,
+.fui-FluentProvider .fui-Textarea__textarea::selection {
+  background-color: var(--winui-accent-fill-selected-text-background);
+  color: var(--winui-text-on-accent-fill-selected-text);
+}
 `;

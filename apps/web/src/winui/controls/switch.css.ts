@@ -46,9 +46,9 @@ export const switchCss = `
   margin-inline-start: 6.579%;
   transition:
     transform var(--durationNormal) var(--curveEasyEase),
-    width 83ms cubic-bezier(0, 0, 0, 1),
-    height 83ms cubic-bezier(0, 0, 0, 1),
-    margin-inline-start 83ms cubic-bezier(0, 0, 0, 1);
+    width 83ms var(--winui-control-fast-out-slow-in-easing),
+    height 83ms var(--winui-control-fast-out-slow-in-easing),
+    margin-inline-start 83ms var(--winui-control-fast-out-slow-in-easing);
   width: 31.579%;
 }
 
@@ -58,20 +58,29 @@ export const switchCss = `
   }
 }
 
-/* Off knob: TextFillColorSecondary, and WinUI holds it there through hover and
-   press instead of following the track stroke the way Fluent does.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L151-L153
-
-   WinUI carries off-state hover and press on the track fill alone
-   (ControlAltFillColorTertiary / Quarternary) and holds the stroke at
-   ToggleSwitchStrokeOff. Those two fills have no token here, so pinning the
-   stroke as well would leave the off track with no pointer feedback at all;
-   Fluent's stroke-accessible shift is left in place to carry it.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L136-L141 */
+/* Off: WinUI puts the whole pointer response on the track fill and holds both
+   the stroke (ToggleSwitchStrokeOff) and the knob (TextFillColorSecondary) at
+   their rest values, so Fluent's stroke-accessible and knob shifts are pinned
+   back and the alt-fill ramp carries hover and press instead.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L135-L141
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L151-L153 */
 .fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]) ~ .fui-Switch__indicator,
 .fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]):hover ~ .fui-Switch__indicator,
 .fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]):hover:active ~ .fui-Switch__indicator {
+  border-color: var(--winui-control-strong-stroke-default);
   color: var(--winui-text-fill-secondary);
+}
+
+.fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]) ~ .fui-Switch__indicator {
+  background-color: var(--winui-control-alt-fill-secondary);
+}
+
+.fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]):hover ~ .fui-Switch__indicator {
+  background-color: var(--winui-control-alt-fill-tertiary);
+}
+
+.fui-FluentProvider .fui-Switch__input:enabled:not(:checked):not([aria-disabled="true"]):hover:active ~ .fui-Switch__indicator {
+  background-color: var(--winui-control-alt-fill-quarternary);
 }
 
 /* The knob swells to 14x14 under the pointer, keeping its margins, so the same
@@ -112,14 +121,39 @@ export const switchCss = `
   background-color: var(--winui-accent-fill-tertiary);
 }
 
+/* The on knob is the one part of this control that carries an elevation stroke:
+   ToggleSwitchKnobStrokeOn is CircleElevationBorderBrush, light along the top
+   and sides over a heavier bottom edge. WinUI keeps it across every on state,
+   including disabled. Since the knob paints its own box, the stroke is drawn as
+   inset shadows, which leaves the sizes stated above measuring the knob itself.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L159 */
+.fui-FluentProvider .fui-Switch__input:checked ~ .fui-Switch__indicator > * {
+  box-shadow: var(--winui-circle-elevation-shadow);
+}
+
 /* Disabled on: the accent ramp keeps carrying the track, and the knob moves to
-   the disabled on-accent text fill. Disabled off needs no rule — Fluent's
-   disabled stroke and foreground are already the WinUI values, and WinUI
-   returns the knob to its rest size there.
+   the disabled on-accent text fill. Disabled off still needs no rule — the
+   alt-fill ramp above is scoped to the enabled track and ToggleSwitchFillOffDisabled
+   is fully transparent in both dictionaries, which is what Fluent already
+   leaves there; its disabled stroke and foreground are the WinUI values, and
+   WinUI returns the knob to its rest size.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L138
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L146-L158 */
 .fui-FluentProvider .fui-Switch__input:disabled:checked ~ .fui-Switch__indicator,
 .fui-FluentProvider .fui-Switch__input[aria-disabled="true"]:checked ~ .fui-Switch__indicator {
   background-color: var(--winui-accent-fill-disabled);
   color: var(--winui-text-on-accent-fill-disabled);
+}
+
+/* Focus: Fluent already draws a 2px ring around the whole control, so only its
+   colour is restated as FocusStrokeColorOuter. WinUI backs that primary stroke
+   with a thinner FocusStrokeColorInner one and inflates the pair by
+   FocusVisualMargin -7,-3,-7,-3 around SwitchAreaGrid; neither the two
+   thicknesses nor that template part is expressed in the theme dictionaries, so
+   the inner stroke and the inflation stay as Fluent draws them.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L200
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
+.fui-FluentProvider .fui-Switch[data-fui-focus-within]:focus-within::after {
+  border-color: var(--winui-focus-stroke-outer);
 }
 `;

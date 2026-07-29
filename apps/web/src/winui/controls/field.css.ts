@@ -6,11 +6,13 @@
 // Hyperlink paints; the rules below take their values from those roles.
 // InfoLabel contributes only layout plumbing and needs nothing.
 //
-// Two families WinUI would use here are absent from winui/tokens.ts because
-// the theme dictionaries never state them as literals: the SystemFillColor*
-// validation ramp and the accent *text* ramp above its disabled member. The
-// error, warning and success validation colors and the rest/hover/pressed Link
-// colors are therefore left on Fluent's own values.
+// One WinUI family stays out of reach: the accent *text* ramp above its
+// disabled member. AccentTextFillColorPrimary, Secondary and Tertiary resolve
+// to SystemAccentColorDark2/Light3 and their neighbours, which Windows derives
+// at runtime from the user's accent colour and which therefore appear in no
+// theme dictionary as a literal. The rest, hover and pressed Link colors stay
+// on Fluent's brand ramp because the WinUI values do not exist to copy.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297
 export const fieldCss = `
 /* WinUI gives a text control's header no vertical padding and separates it
    from the control by a flat 8px, where Fluent uses 2px of padding on each
@@ -37,8 +39,8 @@ export const fieldCss = `
    which resolves to TextFillColorSecondaryBrush. Fluent's caption metrics
    already match WinUI's CaptionTextBlockStyle. Hint and validation message
    share one neutral base atom, so the substitution is written as a
-   redefinition of that token on both slots and the two captions stay one
-   color; the error state paints itself directly and so keeps Fluent's red.
+   redefinition of that token on both slots; the validation states below paint
+   over it where they apply.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L340
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L142 */
 .fui-FluentProvider .fui-Field__hint,
@@ -46,16 +48,48 @@ export const fieldCss = `
   --colorNeutralForeground3: var(--winui-text-fill-secondary);
 }
 
+/* An invalid control is the one validation state Fluent states in the DOM
+   rather than in a Griffel atom: the Field pushes aria-invalid onto the
+   control it wraps (useFieldControlProps.js, getFieldControlProps), which lets
+   the message and its icon be addressed from the root. WinUI's counterpart is
+   SystemFillColorCritical. The icon carries its own per-state color atom
+   nested inside the message, so inheriting from the message is not enough and
+   both slots are named; the icon is addressed through the message so that it
+   also outranks the broader warning rule below.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L282
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L78 */
+.fui-FluentProvider .fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage,
+.fui-FluentProvider .fui-Field:has([aria-invalid='true']) .fui-Field__validationMessage .fui-Field__validationMessageIcon {
+  color: var(--winui-system-fill-critical);
+}
+
+/* The warning state announces itself through role="alert" on the message
+   (useFieldBase.js), which the error state also sets — so this rule matches
+   both and the error rule above, one attribute more specific, takes the fields
+   that are actually invalid. WinUI's counterpart is SystemFillColorCaution.
+   The success state is left on Fluent's green: it writes neither aria-invalid
+   nor role, so nothing in the DOM tells it apart from a field with no
+   validation state at all.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L281
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L77 */
+.fui-FluentProvider .fui-Field__validationMessage[role='alert'],
+.fui-FluentProvider .fui-Field__validationMessage[role='alert'] .fui-Field__validationMessageIcon {
+  color: var(--winui-system-fill-caution);
+}
+
 /* A disabled link stays in the accent family in WinUI and is only faded;
    Fluent moves it onto the neutral disabled foreground, which erases the fact
    that it was a link at all. AccentTextFillColorDisabled is the one member of
-   the accent text ramp the dictionaries state as a literal. Fluent repeats its
-   own disabled color under :hover and :active, so the override repeats there.
+   the accent text ramp the dictionaries state as a literal. The fade belongs
+   to the accent-coloured link only, so it is scoped to the default appearance
+   — Fluent's subtle link is neutral by design and has no accent to fade.
+   Fluent repeats its own disabled color under :hover and :active, so the
+   override repeats there.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L214
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L10 */
-.fui-FluentProvider .fui-Link[aria-disabled='true'],
-.fui-FluentProvider .fui-Link[aria-disabled='true']:hover,
-.fui-FluentProvider .fui-Link[aria-disabled='true']:active {
+.fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true'],
+.fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true']:hover,
+.fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true']:active {
   color: var(--winui-accent-text-fill-disabled);
 }
 
@@ -64,9 +98,9 @@ export const fieldCss = `
    from an enabled one. Fluent answers that with GrayText, and since a media
    query adds no specificity the override above would otherwise outrank it. */
 @media (forced-colors: active) {
-  .fui-FluentProvider .fui-Link[aria-disabled='true'],
-  .fui-FluentProvider .fui-Link[aria-disabled='true']:hover,
-  .fui-FluentProvider .fui-Link[aria-disabled='true']:active {
+  .fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true'],
+  .fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true']:hover,
+  .fui-FluentProvider .fui-Link[data-winui-appearance='default'][aria-disabled='true']:active {
     color: GrayText;
   }
 }
