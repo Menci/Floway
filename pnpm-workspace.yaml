@@ -22,3 +22,4 @@ patchedDependencies:
 # docker-compose topology.
 overrides:
   '@react-router/dev>@react-router/serve': '-'
+  dompurify: 3.4.12
