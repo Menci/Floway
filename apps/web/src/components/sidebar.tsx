@@ -83,11 +83,11 @@ const useStyles = makeStyles({
       bottom: 'auto !important',
       content: '"" !important',
       display: 'block !important',
-      height: '16px !important',
+      height: '18px !important',
       left: '16px !important',
       position: 'absolute',
       right: 'auto !important',
-      top: '10px !important',
+      top: '9px !important',
       width: '3px !important',
       zIndex: 1,
     },
@@ -202,7 +202,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           })}
         </ScrollArea>
       </NavDrawerBody>
-      <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
+      <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
         <NavItem className={styles.item} icon={<AccountIcon fontSize={20} />} value="/dashboard/settings">{user.username}</NavItem>
         <NavItem className={styles.item} icon={<SignOutRegular fontSize={20} />} value="logout">{t('dashboard.logout.label')}</NavItem>
       </NavDrawerFooter>
