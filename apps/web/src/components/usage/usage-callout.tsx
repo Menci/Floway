@@ -24,7 +24,7 @@ export function UsageChartCallout({ chart, labelByTime, locale, point, valueForm
         <table className="border-collapse leading-[1.15] whitespace-nowrap [&_td]:!py-0 [&_th]:!py-0">
           <thead>
             <tr>
-              <th className="max-w-[180px] min-w-[120px] pl-0 text-left"><Text size={200} weight="semibold">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text></th>
+              <th className="max-w-[180px] min-w-[120px] pl-0 text-left"><Text size={100} weight="semibold" className="text-fui-fg2">{formatCalloutTitle(point.x, labelByTime, chart.range, locale)}</Text></th>
               {(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output', 'hitRate'] as const).map(label => <th className="px-1.5 py-px text-right" key={label}><Text size={100} weight="semibold" className="text-fui-fg2">{t(`dashboard.usage.callout.${label}`)}</Text></th>)}
             </tr>
           </thead>
