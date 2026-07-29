@@ -146,7 +146,7 @@ export function KeysTable({
           </div>
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <Button appearance="subtle" aria-label={t('dashboard.apiKeys.table.actions')} disabled={disabled} icon={<MoreHorizontalRegular />} onClick={event => event.stopPropagation()} />
+              <Button appearance="subtle" aria-label={t('dashboard.apiKeys.table.actions')} disabled={disabled} icon={<MoreHorizontalRegular />} />
             </MenuTrigger>
             <MenuPopover><MenuList>
               <MenuItem icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => onCopy(key.key, copyTag)}>{t('dashboard.apiKeys.actions.copy')}</MenuItem>
