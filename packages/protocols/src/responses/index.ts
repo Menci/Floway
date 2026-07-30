@@ -913,10 +913,18 @@ export type ResponsesOutputItem =
   | ResponsesMcpApprovalResponseItem
   | ResponsesOutputImageGenerationCall;
 
+// The Responses item schema requires `status` on an output message and
+// `annotations` on every `output_text` part, even when the text carries no
+// citations, so both are modeled as required and the compiler forces every
+// producer to state them:
+// https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L44868-L44873
+// https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L66303-L66307
+// `id` is schema-required too but stays optional: an upstream item that omits
+// it is surfaced by `requireItemId` rather than given an invented value.
 export interface ResponsesOutputMessage {
   type: 'message';
   id?: string;
-  status?: string;
+  status: string;
   role: 'assistant';
   content: ResponsesOutputContentBlock[];
   phase?: ResponsesMessagePhase;
@@ -924,9 +932,18 @@ export interface ResponsesOutputMessage {
 
 export type ResponsesOutputContentBlock = ResponsesOutputText | ResponsesOutputRefusal;
 
-interface ResponsesOutputText {
+export interface ResponsesAnnotation {
+  type: 'url_citation';
+  url: string;
+  title: string;
+  start_index: number;
+  end_index: number;
+}
+
+export interface ResponsesOutputText {
   type: 'output_text';
   text: string;
+  annotations: ResponsesAnnotation[];
 }
 
 export interface ResponsesOutputRefusal {
@@ -1118,14 +1135,7 @@ type ResponsesStreamEventVariant =
     content_index: number;
     annotation_index: number;
     item_id: string;
-    annotation:
-      | {
-        type: 'url_citation';
-        url: string;
-        title: string;
-        start_index: number;
-        end_index: number;
-      };
+    annotation: ResponsesAnnotation;
   }
   | {
     type: 'response.web_search_call.in_progress';
