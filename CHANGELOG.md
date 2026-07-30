@@ -10,6 +10,12 @@ Impact levels:
 
 Hard and minor entries may include recommended actions; those actions do not need a separate advisory entry.
 
+## 2026-07-30 · minor
+
+### Responses SSE streams now end with the `[DONE]` sentinel
+
+Streaming `POST /v1/responses` responses now terminate with the literal `data: [DONE]` event, matching the streaming contract already followed by Chat Completions and Completions. Standard OpenAI SDKs already recognize the sentinel and stop there. A hand-written client that feeds every `data:` payload on the Responses stream straight into a JSON parser will now hit a parse failure on the final event and must skip `[DONE]` instead.
+
 ## 2026-07-24 · advisory
 
 ### Audit dump files created before payload-file tracking
