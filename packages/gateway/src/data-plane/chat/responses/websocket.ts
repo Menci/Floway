@@ -35,11 +35,14 @@ interface ResponsesWebSocketSocket {
 const UTF8_ENCODER = new TextEncoder();
 
 // Our implementor slug prefixes the keep-alive's wire type; the spec reserves
-// every unprefixed type for itself. The frame carries nothing beyond `type`
-// and `sequence_number`: a top-level `error` key in particular would be fatal,
-// since openai-node raises an `APIError` on any frame carrying one whatever
-// its type.
-// https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L70
+// every unprefixed type for itself, gives `acme:trace_event` as the form, and
+// makes `type` and `sequence_number` the only mandatory fields — which is all
+// this frame carries.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L758-L765
+// A slug type is inert in openai-node's WebSocket reader: the frame is emitted
+// under its own literal type name, nothing is listening on that name, and only
+// a frame typed `error` is routed into the socket's error path.
+// https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/resources/responses/ws-base.ts#L346-L371
 export const KEEP_ALIVE_EVENT_TYPE = 'floway:keep_alive';
 
 interface ResponsesWebSocketHandlers {
