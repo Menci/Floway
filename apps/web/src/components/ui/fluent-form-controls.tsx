@@ -1,4 +1,5 @@
 import type { ListboxProps } from '@fluentui/react-components';
+import { ChevronDown12Regular } from '@fluentui/react-icons';
 import { createElement, forwardRef, useLayoutEffect, useRef } from 'react';
 import type { ComponentProps, ElementType, ReactNode, Ref } from 'react';
 
@@ -34,6 +35,16 @@ const LISTBOX_POSITIONING: ComponentProps<typeof FluentCombobox>['positioning'] 
   fallbackPositions: ['above'],
   overflowBoundaryPadding: 8,
 };
+
+// The chevron is drawn at 12px, and Fluent's default is the 20px artwork scaled
+// down to fit. Its stroke is one unit in a twenty-unit box, so at 12px it is
+// six tenths of a pixel of ink and no pixel of the glyph ever reaches full
+// strength -- measured, the darkest pixel came out 145 where a solid glyph on
+// that fill reaches 97. WinUI draws the same chevron from Segoe Fluent Icons at
+// a size the artwork was made for, which is why its arrow reads solid. The 12px
+// cut of the same icon is that: one unit of stroke in a twelve-unit box.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ComboBox_themeresources.xaml#L582-L586
+const EXPAND_ICON = <ChevronDown12Regular />;
 
 type ListboxRenderFunction = (
   ListboxComponent: ElementType<ListboxProps>,
@@ -100,9 +111,10 @@ export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentIn
 ) as typeof FluentInput;
 
 export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'listbox'>>(
-  ({ className, positioning, ...props }, ref) => (
+  ({ className, expandIcon, positioning, ...props }, ref) => (
     <FluentCombobox
       {...props}
+      expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={SCROLLABLE_LISTBOX}
       className={mergeClasses(className, MIN_WIDTH_CLASS)}
@@ -112,9 +124,10 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
 );
 
 export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'listbox'>>(
-  ({ className, positioning, ...props }, ref) => (
+  ({ className, expandIcon, positioning, ...props }, ref) => (
     <FluentDropdown
       {...props}
+      expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={SCROLLABLE_LISTBOX}
       className={mergeClasses(className, MIN_WIDTH_CLASS)}
