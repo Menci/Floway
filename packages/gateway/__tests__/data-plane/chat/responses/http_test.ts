@@ -351,6 +351,32 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
   assertEquals(body.status, 'completed');
 });
 
+// Every key `ResponseResource.required` lists.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
+const REQUIRED_ENVELOPE_KEYS = [
+  'id', 'object', 'created_at', 'completed_at', 'status', 'incomplete_details', 'model',
+  'previous_response_id', 'instructions', 'output', 'error', 'tools', 'tool_choice',
+  'truncation', 'parallel_tool_calls', 'text', 'top_p', 'presence_penalty',
+  'frequency_penalty', 'top_logprobs', 'temperature', 'reasoning', 'usage',
+  'max_output_tokens', 'max_tool_calls', 'store', 'background', 'service_tier',
+  'metadata', 'safety_identifier', 'prompt_cache_key',
+];
+
+test('POST /v1/responses answers a translated-shape upstream with a complete response resource', async () => {
+  installRepo();
+  queueCompletedResponse('resp_complete');
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello' }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(REQUIRED_ENVELOPE_KEYS.filter(key => !(key in body)), []);
+});
+
 test('POST /v1/responses returns 502 when a non-streaming output item cannot be persisted', async () => {
   const repo = installRepo();
   const persistence = vi.spyOn(repo.responsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
