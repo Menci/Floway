@@ -84,7 +84,7 @@ export function LoginForm() {
     >
       <header className="mb-9 grid justify-items-center gap-6 text-center">
         <FlowayLogo />
-        <h1 className="m-0 text-fui-base600 font-fui-semibold leading-[1.15] tracking-normal">
+        <h1 className="m-0 text-fui-base600 font-fui-semibold leading-[1.15]">
           {t('auth.login.title')}
         </h1>
       </header>
@@ -153,7 +153,7 @@ export function LoginForm() {
           )}
         </Button>
 
-        <p className="m-0 text-center text-fui-base300 leading-[1.45] text-fui-fg2">
+        <p className="m-0 text-center text-fui-base300 text-fui-fg2">
           <Trans
             i18nKey="auth.adminKeyHint"
             components={{

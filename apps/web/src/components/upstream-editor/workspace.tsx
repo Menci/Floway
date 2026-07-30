@@ -109,7 +109,7 @@ export function UpstreamWorkspace({
         ? modelsWorkspace
         : <div className="px-5 py-4">
             {tab === 'models' ? modelsWorkspace : <div className="grid gap-5">
-              <Text size={300} className="text-fui-fg2 leading-[1.45]">
+              <Text size={300} className="text-fui-fg2">
                 {t('dashboard.upstreamEditor.flags.intro')}
               </Text>
               <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} value={field.value} onChange={field.onChange} />} />

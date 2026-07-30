@@ -152,7 +152,7 @@ export default function DashboardSettings() {
             )}
           />
 
-          <Text size={200} className="text-fui-fg2 leading-[1.45]">
+          <Text size={200} className="text-fui-fg2">
             {t('dashboard.settings.otherDevices')}
           </Text>
 

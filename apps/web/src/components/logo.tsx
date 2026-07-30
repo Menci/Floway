@@ -44,7 +44,7 @@ export function FlowayLogo({ size = 'default' }: FlowayLogoProps) {
         🌸
       </span>
       <span
-        className={`font-semibold leading-none tracking-normal ${compact ? 'text-lg max-[520px]:text-xl' : 'text-xl'}`}
+        className={`font-semibold leading-none ${compact ? 'text-lg max-[520px]:text-xl' : 'text-xl'}`}
       >
         Floway
       </span>

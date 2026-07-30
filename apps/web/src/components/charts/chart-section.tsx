@@ -42,7 +42,7 @@ export function ChartSection({
   return (
     <section className="grid gap-3 min-w-0">
       <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-        <Text as="h2" size={500} weight="semibold" className="m-0 text-fui-fg1 leading-[1.25]">{title}</Text>
+        <Text as="h2" size={500} weight="semibold" className="m-0 text-fui-fg1">{title}</Text>
         <Toolbar aria-label={controlsLabel} className="flex-none !p-0" size="small">
           <Tooltip content={t('dashboard.charts.series.all')} relationship="label">
             <ToolbarButton aria-label={t('dashboard.charts.series.all')} icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />
@@ -64,7 +64,7 @@ export function ChartSection({
                   className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
                   icon={<span
                     aria-hidden="true"
-                    className="inline-block rounded-full h-[8px] w-[8px] mx-[4px] flex-shrink-0"
+                    className="rounded-full h-[8px] w-[8px] mx-[4px] flex-shrink-0"
                     style={{ backgroundColor: colorForEntry(entry.colorSlot) }}
                   />}
                   title={t('dashboard.charts.series.toggleHint')}

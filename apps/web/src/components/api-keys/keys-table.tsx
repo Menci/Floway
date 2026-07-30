@@ -60,7 +60,7 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'key', renderHeaderCell: () => t('dashboard.apiKeys.table.key'),
         renderCell: key => (
-          <code className="text-fui-fg2 inline-block font-mono text-fui-base300 max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap" title={key.key}>
+          <code className="text-fui-fg2 font-mono text-fui-base300 max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap" title={key.key}>
             {key.key}
           </code>
         ),

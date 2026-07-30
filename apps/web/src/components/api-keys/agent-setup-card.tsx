@@ -83,7 +83,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
 
   return <div className="grid gap-[14px] min-w-0">
     <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-      <Text as="h2" size={500} weight="semibold" className="m-0 text-fui-fg1 leading-[1.25] min-w-0">
+      <Text as="h2" size={500} weight="semibold" className="m-0 text-fui-fg1 min-w-0">
         {t('dashboard.apiKeys.configuration.title')}
       </Text>
       <TabList aria-label={t('dashboard.apiKeys.agentSetup.accessMethod')} onTabSelect={(_, data) => setView(data.value === 'snippets' ? 'snippets' : 'setup')} selectedValue={view} size="small">
