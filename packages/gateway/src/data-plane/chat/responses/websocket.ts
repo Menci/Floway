@@ -210,13 +210,13 @@ const handleClientMessage = async (
   // `previous_response_not_found`."
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
   //
-  // A turn fails in one of two shapes and neither subsumes the other: it
-  // answers with an error envelope, or it streams a failing terminal event.
-  // `fail` carries the eviction for the first — including the `api-error` and
-  // `internal-error` results, which return before the streaming loop's
-  // `finally` is ever entered — and that `finally` carries it for the second.
-  // A throw inside the streaming loop is the one path that takes both routes,
-  // so it evicts twice; the delete is idempotent.
+  // Eviction is wired at two points because a failing turn can leave through
+  // two exits that do not share a path. `fail` covers the turn that answers
+  // the client with an error envelope, including the `api-error` and
+  // `internal-error` results, which return before the streaming loop is
+  // entered; the loop's `finally` covers the turn that ends failed without
+  // one. A throw inside the loop is the single path that takes both, and
+  // `Map.delete` makes the second call inert.
   const turnFailure: ResponsesWsTurnFailure = {
     evict: () => {
       if (ctx === undefined || previousResponseId === undefined) return;
@@ -557,9 +557,12 @@ const respondResponsesWebSocket = async (input: {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
     if (failed) {
-      // A turn that streamed an `error` or `response.failed` event answered the
-      // client with a streaming event rather than an error envelope, so its
-      // eviction cannot come from `turnFailure.fail`.
+      // `fail` cannot carry the eviction for every failed turn: one that
+      // streamed an `error` or `response.failed` terminal answered the client
+      // with an event rather than an error envelope, and one the client
+      // abandoned before the terminal event answered with nothing at all.
+      // Both settle here. For the abandoned turn the eviction is inert — the
+      // connection-local cache dies with the socket.
       turnFailure.evict();
       ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
     } else ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));

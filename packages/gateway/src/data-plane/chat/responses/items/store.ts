@@ -410,10 +410,6 @@ export const createResponsesWsSession = (): {
         writes,
       });
     },
-    // "If a continuation turn fails with a `4xx` or `5xx` error, the server
-    // MUST evict the referenced `previous_response_id` from the
-    // connection-local cache."
-    // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
     evictSnapshot(apiKeyId: string, id: string): void {
       local.evictSnapshot(apiKeyId, id);
     },
