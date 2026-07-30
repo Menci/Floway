@@ -100,23 +100,25 @@ export const navCss = `
   --colorNeutralForeground2: var(--winui-text-fill-disabled);
 }
 
-/* Focus. WinUI draws both rings on the item's own boundary rather than beyond
-   it: the primary sits against the edge and the secondary just inside it, so a
-   focused item covers the outermost pixels of its fill instead of growing. That
-   is what Fluent's inward outline already does, so only the two colours are
-   restated -- the outline carries the outer stroke, and an inset shadow spread
-   to 3px shows through as the inner one in the pixel the outline leaves.
+/* Focus. WinUI's focus visual on a navigation item is one ring: the outer
+   stroke, two pixels thick, sitting a pixel beyond the item with nothing drawn
+   in between. The gap is transparent, not filled -- what shows through it is
+   whatever the item sits on, which on Windows is the pane's material. The item
+   itself is untouched, so its fill is the same rectangle in every state.
 
-   Drawing them outward instead, which reads as the more obvious way to leave
-   the fill alone, puts the outer ring past the scroll area's clip and leaves
-   only the inner one visible.
+   FocusStrokeColorInner is not a second ring here. It belongs to controls that
+   draw a stroke against their own body, which a navigation item has none of;
+   painting it as one is what puts a pale edge on the fill.
+
+   Fluent draws the same ring but pulls it inward, so only the offset and the
+   colour are restated.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
 .fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible],
 .fui-AppItem.fui-AppItem[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
-  box-shadow: inset 0 0 0 3px var(--winui-focus-stroke-inner);
+  outline-offset: 1px;
 }
 
 /* A selected item's icon keeps the primary text fill in WinUI instead of taking
