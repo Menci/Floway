@@ -100,8 +100,10 @@ const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, cust
         type: 'function',
         function: {
           name: tool.name,
-          parameters: tool.parameters,
-          strict: tool.strict,
+          // Responses spells "unspecified" as an omitted key or an explicit
+          // `null`; Chat Completions has only the omitted-key spelling.
+          ...(tool.parameters === undefined || tool.parameters === null ? {} : { parameters: tool.parameters }),
+          ...(tool.strict === undefined || tool.strict === null ? {} : { strict: tool.strict }),
           ...(tool.description ? { description: tool.description } : {}),
         },
       });

@@ -5,7 +5,7 @@ import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-
 import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): ResponsesResult['usage'] | undefined => {
+const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): NonNullable<ResponsesResult['usage']> | undefined => {
   if (!usage) return undefined;
   const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
@@ -95,7 +95,7 @@ interface ChatCompletionsToResponsesStreamState {
   openFunctionCalls: Map<number, PendingFunctionCallItem>;
   deferredAfterReasoning: DeferredAfterReasoning[];
   reasoningItemsSeen: boolean;
-  usage?: ResponsesResult['usage'];
+  usage?: NonNullable<ResponsesResult['usage']>;
   serviceTier?: ResponsesResult['service_tier'];
   pendingFinishReason?: ChatCompletionsFinishReason;
   completed: boolean;
