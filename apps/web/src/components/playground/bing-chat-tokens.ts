@@ -67,25 +67,36 @@ export const bingComposerFontWeight = 400;
 // function of height: the bar is a pill until it holds something, and squares
 // off to 12px the moment it does. Bing keyed this on having content rather than
 // on having wrapped, which is why its corners are never caught mid-blob.
-export const bingComposerRadiusResting = '24px';
-export const bingComposerRadiusFilled = '12px';
+export const bingComposerRadiusResting = '20px';
+export const bingComposerRadiusFilled = '10px';
 
 // `static.motion.duration.fast` and `easingFunction.motionIn`, the pair the
 // composer names in its own `transition-property`.
 export const bingComposerTransitionDuration = '187ms';
 export const bingComposerTransitionEasing = 'cubic-bezier(0, 0, 0, 1)';
 
-// `.main-container` padding, `.button-compose`/`.controls-*` geometry. 48px is
-// the number the rest of the bar is built on — the compose button is 48px, and
-// a 36px control in a 6px/8px gutter fills exactly 48px — so the padding is
-// what absorbs the ramp shift: Bing's `13px 11px` around a 24px line, ours
-// around a 20px one, keeping both the height and the optical asymmetry that
-// seats a single line slightly above centre.
-export const bingComposerPaddingBlock = '15px 13px';
-export const bingComposerButtonSize = '36px';
-export const bingComposerGutterPadding = '6px 8px';
-export const bingComposeButtonSize = '48px';
-export const bingComposerColumnGap = '12px';
+// The bar's geometry is a function of its line, not a set of loose numbers:
+// Bing's `13px 11px` sums to 24px, exactly the Body2 line it sits around, so
+// the resting bar is twice its line — 48px — and everything else follows from
+// that. The compose button is the bar's full height; a control plus its gutter
+// fills the same height; the resting corner is half of it and the filled
+// corner a quarter. Carrying those numbers over unscaled while the type moved
+// down a step is what made the bar look padded: 24px of padding around a 20px
+// line instead of 20px.
+//
+// So the whole set is restated against a 20px line. The trailing inset holds
+// two controls, which is the case the original sized separately.
+export const bingComposerPaddingBlock = '11px 9px';
+export const bingComposerButtonSize = '30px';
+export const bingComposerGutterPadding = '5px 7px';
+export const bingComposeButtonSize = '40px';
+export const bingComposerColumnGap = '10px';
+export const bingComposerTrailingInset = '74px';
+
+// The field's own text inset. The bar's leading inset is sized to clear a
+// control the playground's composer does not have, so this is the inset a
+// message's content carries instead, and the text of the two lines up.
+export const bingComposerLeadingInset = '16px';
 
 // The only cap the bundle expresses. On the shipped desktop path it sits behind
 // a disabled flag and the field simply grows without bound, which a page-sized

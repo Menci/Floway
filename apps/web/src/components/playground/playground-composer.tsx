@@ -15,7 +15,10 @@ import {
   bingComposerFontWeight,
   bingComposerLineHeight,
   bingComposerButtonSize,
+  bingComposerColumnGap,
   bingComposerGutterPadding,
+  bingComposerLeadingInset,
+  bingComposerTrailingInset,
   bingComposerMaxHeight,
   bingComposerPaddingBlock,
   bingComposerRadiusFilled,
@@ -34,11 +37,20 @@ const { Button, Tooltip, makeStyles, tokens } = fluentComponents;
 const useStyles = makeStyles({
   inputShell: {
     position: 'relative',
+    // A column, as the original's container is. The field's label is an
+    // `inline-grid`, which is only ever a flex item there and so is blockified
+    // before it can sit on a line box; left inside a block it keeps its inline
+    // level, and the line box under it reserves descender space that appears
+    // and disappears with the field's own baseline — the bar grew by 5px for
+    // as long as a response was streaming and snapped back when it finished.
+    display: 'flex',
+    flexDirection: 'column',
     backgroundColor: tokens.colorNeutralBackground1,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     boxShadow: tokens.shadow4,
     borderRadius: bingComposerRadiusResting,
     paddingBlock: bingComposerPaddingBlock,
+    paddingInline: `${bingComposerLeadingInset} ${bingComposerTrailingInset}`,
     transitionProperty: 'border-color, box-shadow, border-radius',
     transitionDuration: bingComposerTransitionDuration,
     transitionTimingFunction: bingComposerTransitionEasing,
@@ -99,6 +111,7 @@ const useStyles = makeStyles({
   },
   // Pinned to the bar's top edge rather than laid out beside the field, so the
   // controls hold their place as the bar grows downward.
+  composerRow: { gap: bingComposerColumnGap },
   controlsRight: {
     position: 'absolute',
     insetInlineEnd: 0,
@@ -218,7 +231,7 @@ export function PlaygroundComposer({
           </Tooltip>
         </div>
       )}
-      <div className="flex items-start gap-3 min-w-0">
+      <div className={`flex items-start min-w-0 ${s.composerRow}`}>
         <button
           type="button"
           className={`shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 font-fui-regular ${s.newTopicButton}`}
@@ -228,7 +241,7 @@ export function PlaygroundComposer({
           <img alt="" aria-hidden="true" className={s.broomIcon} src={broomUrl} />
           <span>{newTopicLabel}</span>
         </button>
-        <div className={`min-w-0 flex-1 pl-5 pr-[88px] ${s.inputShell}`} data-has-text={draft.length > 0}>
+        <div className={`min-w-0 flex-1 ${s.inputShell}`} data-has-text={draft.length > 0}>
           <label className={s.textInput} data-input={draft}>
             <textarea
               aria-label={placeholder}
