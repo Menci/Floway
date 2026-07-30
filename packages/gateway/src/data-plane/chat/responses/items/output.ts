@@ -77,20 +77,18 @@ export const wrapResponsesClientOutput = async function* (
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       if (store.writesState) {
-        // A terminal may state fewer items than the turn closed — a Codex turn
-        // closes `reasoning` and `message` and states only `reasoning` — but it
-        // may not state one that never closed, which would mean an item reached
-        // the client without the lifecycle the spec requires of it.
+        // A terminal may restate fewer items than the turn closed, but never
+        // one that never closed: that item reached the client without the
+        // lifecycle the spec requires of it.
         event.response.output.forEach((_item, outputIndex) => {
           if (!finalizedOutputIds.has(outputIndex)) {
             throw new TypeError(`Responses terminal output_index ${outputIndex} arrived before output_item.done`);
           }
         });
         // The snapshot a `previous_response_id` continuation replays is the
-        // items this turn closed, in `output_index` order. Committing what the
-        // terminal restated instead would drop the assistant's own message on
-        // that same Codex turn, so the next turn would continue from a
-        // conversation in which the assistant never spoke.
+        // items this turn closed, in `output_index` order; taking the terminal's
+        // own restatement would drop the assistant's message from the history
+        // the next turn continues from.
         const orderedOutputIds = [...finalizedOutputIds]
           .sort(([left], [right]) => left - right)
           .map(([, id]) => id);

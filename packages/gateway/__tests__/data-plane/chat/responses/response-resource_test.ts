@@ -284,9 +284,8 @@ describe('terminal output authority', () => {
   };
 
   it('states the items the turn closed, not the output the envelope stated', async () => {
-    // Measured against a live Codex upstream: an ordinary turn closes
-    // `reasoning` and `message` and then states `output: ['reasoning']`, so the
-    // assistant's answer reaches the client only if the items are believed.
+    // Shape measured against a live Codex upstream: the turn closes `reasoning`
+    // and `message`, then states `output: ['reasoning']`.
     const source = async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
       yield eventFrame({ type: 'response.output_item.added', sequence_number: 0, output_index: 0, item: reasoningItem } as ResponsesStreamEvent);
       yield eventFrame({ type: 'response.output_item.done', sequence_number: 1, output_index: 0, item: reasoningItem } as ResponsesStreamEvent);
