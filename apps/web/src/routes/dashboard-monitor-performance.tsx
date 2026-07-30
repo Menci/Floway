@@ -215,17 +215,17 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     />
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
-      <div className="flex items-start justify-between gap-4 min-w-0 flex-wrap">
-        <div className="flex items-start gap-4 min-w-0 flex-wrap">
-          <Field label={t('dashboard.performance.metric.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
+      <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">
+        <div className="flex items-center gap-4 min-w-0 flex-wrap">
+          <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
             { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
             { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
-          ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} /></Field>
-          <Field label={t('dashboard.performance.percentile.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} /></Field>
+          ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
+          <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
         </div>
-        <Field className="ml-auto" label={t('dashboard.performance.range.label')}><ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
+        <div className="ml-auto"><ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
           { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
-        ]} onChange={value => setRange(value as PerformanceRange)} value={range} /></Field>
+        ]} onChange={value => setRange(value as PerformanceRange)} value={range} /></div>
       </div>
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
