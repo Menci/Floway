@@ -4,7 +4,7 @@ import {
   KeyRegular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { redirect, useOutletContext } from 'react-router';
@@ -331,7 +331,6 @@ interface UserDialogCommonProps {
   models: ControlPlaneModel[];
   onOpenChange: (open: boolean) => void;
   onSaved: (userId?: number) => Promise<void>;
-  open: boolean;
   upstreams: UpstreamOption[];
 }
 
@@ -341,7 +340,7 @@ type UserDialogProps = UserDialogCommonProps & (
 );
 
 function UserDialog(props: UserDialogProps) {
-  const { actorId, mode, models, onOpenChange, onSaved, open, upstreams } = props;
+  const { actorId, mode, models, onOpenChange, onSaved, upstreams } = props;
   const { t } = useTranslation();
   const user = props.mode === 'edit' ? props.user : null;
   const [saving, setSaving] = useState(false);
@@ -363,21 +362,11 @@ function UserDialog(props: UserDialogProps) {
     }),
     [mode],
   );
-  const { control, handleSubmit, reset, setValue, formState: { errors } } =
+  const { control, handleSubmit, setValue, formState: { errors } } =
     useForm<UserFormValues>({
       resolver: zodResolver(schema),
       defaultValues: userFormDefaults(user),
     });
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      setSaving(false);
-      reset(userFormDefaults(user));
-      setError(null);
-    }
-    wasOpen.current = open;
-  }, [open, reset, user]);
-
   const values = useWatch({ control }) as UserFormValues;
   const adminLocked = props.mode === 'edit' && (props.user.id === 1 || props.user.id === actorId);
 
@@ -424,7 +413,6 @@ function UserDialog(props: UserDialogProps) {
       }
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
-      open={open}
       title={<DialogTitle>{props.mode === 'create'
         ? t('dashboard.users.dialog.createTitle')
         : t('dashboard.users.dialog.editTitle', { username: props.user.username })}</DialogTitle>}
@@ -512,10 +500,9 @@ function PermissionToggle({ checked, description, disabled, label, onChange }: {
   );
 }
 
-function PasswordDialog({ onOpenChange, onSaved, open, user }: {
+function PasswordDialog({ onOpenChange, onSaved, user }: {
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
-  open: boolean;
   user: ControlPlaneUser;
 }) {
   const { t } = useTranslation();
@@ -528,20 +515,10 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
     message: 'dashboard.users.validation.passwordMismatch',
     path: ['confirmation'],
   }), []);
-  const { control, handleSubmit, reset, formState: { errors } } = useForm<PasswordFormValues>({
+  const { control, handleSubmit, formState: { errors } } = useForm<PasswordFormValues>({
     resolver: zodResolver(schema),
     defaultValues: { password: '', confirmation: '' },
   });
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      setSaving(false);
-      reset({ password: '', confirmation: '' });
-      setError(null);
-    }
-    wasOpen.current = open;
-  }, [open, reset]);
-
   const save = async (values: PasswordFormValues) => {
     setSaving(true);
     setError(null);
@@ -568,7 +545,6 @@ function PasswordDialog({ onOpenChange, onSaved, open, user }: {
       </DialogActions>}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
-      open={open}
       title={<DialogTitle>{t('dashboard.users.dialog.passwordTitle', { username: user.username })}</DialogTitle>}
     >
       <Controller control={control} name="password" render={({ field }) => (

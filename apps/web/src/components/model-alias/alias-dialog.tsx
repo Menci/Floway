@@ -1,6 +1,6 @@
 import { AddRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -21,12 +21,11 @@ import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
 const { Accordion, AccordionHeader, AccordionItem, AccordionPanel, Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Option, Switch, Text } = fluentComponents;
 
-export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, record }: {
+export function AliasDialog({ aliases, models, onOpenChange, onSaved, record }: {
   aliases: readonly ModelAlias[];
   models: readonly ControlPlaneModel[] | null;
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
-  open: boolean;
   record: ModelAlias | null;
 }) {
   const { t } = useTranslation();
@@ -53,16 +52,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
     for (const value of [budget?.min, budget?.max]) if (value !== undefined && (!Number.isInteger(value) || value < 0)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataNumber', path: ['announcedMetadata'] });
     if (values.manualMetadata && budget?.min !== undefined && budget?.max !== undefined && budget.max < budget.min) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataRange', path: ['announcedMetadata'] });
   }), [aliases, record?.name]);
-  const { control, formState: { errors }, handleSubmit, reset, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: aliasDefaults(record) });
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      setSaving(false);
-      reset(aliasDefaults(record));
-      setServerError(null);
-    }
-    wasOpen.current = open;
-  }, [open, record, reset]);
+  const { control, formState: { errors }, handleSubmit, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: aliasDefaults(record) });
   // Every field has a default and useFieldArray preserves complete target rows;
   // RHF still exposes useWatch as DeepPartial, so narrow at this form boundary.
   const values = useWatch({ control }) as AliasFormValues;
@@ -98,7 +88,6 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, open, reco
   };
 
   return <DialogShell
-    open={open}
     onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
     onSubmit={() => void handleSubmit(save)()}
     title={<DialogTitle>{record ? t('dashboard.modelAliases.dialog.editTitle', { name: record.name }) : t('dashboard.modelAliases.dialog.createTitle')}</DialogTitle>}

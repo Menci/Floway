@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -35,7 +35,6 @@ interface KeyDialogCommonProps {
   mutationToasts: MutationToastController;
   onOpenChange: (open: boolean) => void;
   onSaved: (key: ApiKey) => Promise<void>;
-  open: boolean;
   models: ControlPlaneModel[];
   upstreams: UpstreamOption[];
   userUpstreamIds: string[] | null;
@@ -47,7 +46,7 @@ type KeyDialogProps = KeyDialogCommonProps & (
 );
 
 export function KeyDialog(props: KeyDialogProps) {
-  const { mode, models, mutationToasts, onOpenChange, onSaved, open, upstreams, userUpstreamIds } = props;
+  const { mode, models, mutationToasts, onOpenChange, onSaved, upstreams, userUpstreamIds } = props;
   const { t } = useTranslation();
   const isCreate = mode === 'create';
   const apiKey = props.mode === 'edit' ? props.apiKey : null;
@@ -103,23 +102,12 @@ export function KeyDialog(props: KeyDialogProps) {
   const {
     control,
     handleSubmit,
-    reset,
     setValue,
     formState: { errors },
   } = useForm<KeyFormValues>({
     resolver: zodResolver(schema),
     defaultValues: keyFormDefaults(apiKey),
   });
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      setSaving(false);
-      reset(keyFormDefaults(apiKey));
-      setError(null);
-    }
-    wasOpen.current = open;
-  }, [apiKey, open, reset]);
-
   const values = useWatch({ control }) as KeyFormValues;
   const dumpRetentionPresets = DUMP_RETENTION_PRESETS.map(preset => ({
     seconds: preset.seconds,
@@ -169,7 +157,6 @@ export function KeyDialog(props: KeyDialogProps) {
 
   return (
     <DialogShell
-      open={open}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
       title={

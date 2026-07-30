@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { keyWriteBody, type KeySource } from './key-source';
@@ -16,13 +16,11 @@ export function RotateKeyDialog({
   mutationToasts,
   onOpenChange,
   onSaved,
-  open,
 }: {
   apiKey: ApiKey;
   mutationToasts: MutationToastController;
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
-  open: boolean;
 }) {
   const { t } = useTranslation();
   const [keySource, setKeySource] = useState<KeySource>('generate');
@@ -30,17 +28,6 @@ export function RotateKeyDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const snapName = apiKey.name;
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      setSaving(false);
-      setKeySource('generate');
-      setCustomKey('');
-      setError(null);
-    }
-    wasOpen.current = open;
-  }, [open]);
-
   const rotate = async () => {
     const trimmed = customKey.trim();
     if (keySource === 'custom' && !trimmed) {
@@ -67,7 +54,6 @@ export function RotateKeyDialog({
 
   return (
     <DialogShell
-      open={open}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       title={<DialogTitle>{t('dashboard.apiKeys.rotate.title')}</DialogTitle>}
       actions={
