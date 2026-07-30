@@ -5,7 +5,6 @@ export const CUSTOM_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,
   'vendor-kimi': false,
-  'retry-cyber-policy': false,
   'messages-web-search-shim': true,
   'responses-web-search-shim': true,
   'responses-image-generation-shim': true,
