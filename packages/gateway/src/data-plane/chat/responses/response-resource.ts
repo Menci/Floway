@@ -7,6 +7,7 @@ import type {
   ClientResponsesTextField,
   ClientResponsesTool,
   ClientResponsesUsage,
+  ResponsesOutputItem,
   ResponsesResult,
   ResponsesStreamEvent,
   ResponsesTool,
@@ -207,10 +208,36 @@ export const completeResponseResource = (
 // validates too. The narrowed yield type propagates the guarantee, so a stage
 // inserted between this one and a client-facing exit must preserve it or fail
 // to compile.
+// The spec makes the item lifecycle the authority on what a response produced:
+// `response.output_item.added` MUST be an item's first event, the item is closed
+// with `response.output_item.done`, and an extension event MUST NOT change that
+// lifecycle. Nothing requires the terminal envelope's `output` to restate it.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
+//
+// Upstreams take that literally. A Codex `/responses` turn closes a `message`
+// item and then answers `output: ['reasoning']`, and its compaction turn closes
+// a `compaction` item and answers `output: []` — so a non-streaming client got
+// a response with the assistant's answer missing and no error to go with it.
+// The items are what the response produced; the terminal restates them.
+//
+// A stream that closed no item at all leaves the terminal alone. Only two
+// stages upstream of here reconstruct `output` themselves, both optional, and
+// neither can be relied on for the mandatory path — but a stream reaching this
+// stage without item events would otherwise be emptied, which is a worse
+// failure than the one this fixes.
+const withObservedOutput = (
+  response: ResponsesResult,
+  observed: Map<number, ResponsesOutputItem>,
+): ResponsesResult =>
+  observed.size === 0
+    ? response
+    : { ...response, output: [...observed].sort(([left], [right]) => left - right).map(([, item]) => item) };
+
 export const wrapResponseResourceCompletion = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   sources: ResponseResourceSources,
 ): AsyncGenerator<ProtocolFrame<ClientResponsesStreamEvent>> {
+  const observed = new Map<number, ResponsesOutputItem>();
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;
@@ -223,10 +250,14 @@ export const wrapResponseResourceCompletion = async function* (
     case 'response.in_progress':
       yield eventFrame({ ...event, response: completeResponseResource(event.response, sources, false) });
       continue;
+    case 'response.output_item.done':
+      observed.set(event.output_index, event.item);
+      yield eventFrame(event);
+      continue;
     case 'response.completed':
     case 'response.incomplete':
     case 'response.failed':
-      yield eventFrame({ ...event, response: completeResponseResource(event.response, sources, true) });
+      yield eventFrame({ ...event, response: completeResponseResource(withObservedOutput(event.response, observed), sources, true) });
       continue;
     default:
       yield eventFrame(event);
