@@ -40,6 +40,7 @@ const useStyles = makeStyles({
     top: 0,
     zIndex: 2,
   },
+  sectionTitle: { lineHeight: '20px' },
   section: { borderBottom: '1px solid var(--colorNeutralStroke1)' },
   code: {
     backgroundColor: 'var(--colorNeutralBackground1)',
@@ -143,7 +144,7 @@ function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
 
 function SectionHeader({ title, detail, actions, copyText }: { title: string; detail?: React.ReactNode; actions?: React.ReactNode; copyText?: string }) {
   const s = useStyles();
-  return <header className={s.sectionHeader}><div className="flex items-center gap-2 min-w-0"><Text as="h3" size={400} weight="semibold" className="!m-0">{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
+  return <header className={s.sectionHeader}><div className="flex items-center gap-3 min-w-0"><Text as="h3" size={400} weight="semibold" className={mergeClasses('!m-0', s.sectionTitle)}>{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
 }
 
 function SectionBody({ children }: PropsWithChildren) {

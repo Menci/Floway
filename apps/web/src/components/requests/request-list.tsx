@@ -33,6 +33,20 @@ const { MessageBar, MessageBarBody, Option, Text, makeStyles, mergeClasses } = f
 const ROW_HEIGHT = 84;
 
 const useStyles = makeStyles({
+  keySelector: {
+    backgroundColor: 'transparent !important',
+    borderTop: '0 !important',
+    borderRight: '0 !important',
+    borderBottom: '1px solid var(--colorNeutralStroke1) !important',
+    borderLeft: '0 !important',
+    borderRadius: '7px 7px 0 0 !important',
+    boxShadow: 'none !important',
+    minHeight: '56px',
+    width: '100%',
+    '&:hover': { backgroundColor: 'var(--colorSubtleBackgroundHover) !important' },
+    '&:active, &:has(.fui-Dropdown__button[aria-expanded="true"])': { backgroundColor: 'var(--colorSubtleBackgroundPressed) !important' },
+    '& .fui-Dropdown__button': { height: '100%', paddingInlineStart: '16px' },
+  },
   list: { outlineStyle: 'none' },
   row: {
     backgroundColor: 'transparent',
@@ -184,16 +198,15 @@ export function RequestListPanel(props: RequestListProps) {
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <div className="py-3">
-        <Dropdown
-          aria-label={t('dashboard.requests.apiKey')}
-          selectedOptions={[props.selectedKeyId]}
-          value={`${selectedKey.name} (${selectedKey.key.slice(-4)})`}
-          onOptionSelect={(_, data) => data.optionValue !== undefined && props.onKeyChange(data.optionValue)}
-        >
-          {props.apiKeys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
-        </Dropdown>
-      </div>
+      <Dropdown
+        aria-label={t('dashboard.requests.apiKey')}
+        className={s.keySelector}
+        selectedOptions={[props.selectedKeyId]}
+        value={`${selectedKey.name} (${selectedKey.key.slice(-4)})`}
+        onOptionSelect={(_, data) => data.optionValue !== undefined && props.onKeyChange(data.optionValue)}
+      >
+        {props.apiKeys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
+      </Dropdown>
       {props.error && <MessageBar intent="error" className="!m-2"><MessageBarBody>{props.error}</MessageBarBody></MessageBar>}
       {props.records.length === 0 ? (
         <div className="flex-1 grid place-items-center text-center p-6">
