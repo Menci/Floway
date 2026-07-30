@@ -67,13 +67,20 @@ export function NavSelectionIndicator({
 
   // The item can move without the selection changing -- a group appearing above
   // it, the drawer resizing, the list scrolling under a sticky footer. Tracking
-  // the container keeps the pill on its item without animating, since nothing
-  // was selected.
+  // the container keeps the pill on its item, and writing the new position as
+  // the previous one too means the move is taken without animating, since
+  // nothing was selected.
+  //
+  // The selected item is found through the attribute Fluent already marks it
+  // with, so this subscription depends on nothing that a selection changes and
+  // outlives one. Re-subscribing would re-observe, and re-observing fires the
+  // callback at once -- overwriting the position the pill is supposed to travel
+  // from, a frame before it travels.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const observer = new ResizeObserver(() => {
-      const item = container.querySelector<HTMLElement>(`[data-nav-value="${CSS.escape(selectedValue)}"]`);
+      const item = container.querySelector<HTMLElement>('[data-nav-value][aria-current="page"]');
       if (!item) return;
       const next = geometryOf(container, item);
       previousRef.current = next;
@@ -81,7 +88,7 @@ export function NavSelectionIndicator({
     });
     observer.observe(container);
     return () => observer.disconnect();
-  }, [containerRef, selectedValue]);
+  }, [containerRef]);
 
   useEffect(() => {
     const track = trackRef.current;
