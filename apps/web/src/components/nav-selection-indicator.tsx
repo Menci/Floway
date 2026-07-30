@@ -12,8 +12,11 @@ import type { RefObject } from 'react';
 // and a selection crossing between them has no single element that can span
 // both. Playing WinUI's pair there puts one bar in each list and shows them
 // moving at once, which reads as two things rather than one. Only the arriving
-// half is played instead: the list losing the selection drops its bar, and the
-// one taking it settles in from the edge facing where the selection came from.
+// half is played instead, and the two are sequenced: the list losing the
+// selection drops its bar, and only once it is gone does the list taking it
+// settle a bar in from the edge facing where the selection came from. Played
+// together they land in the same instant and read as one switch rather than as
+// a handover.
 //
 // Only the settle, not the stretch before it. The stretch exists to cross the
 // gap between two items, and a crossing has no gap to cross inside either list;
@@ -32,6 +35,10 @@ const STRETCH_EASING = 'cubic-bezier(0.9, 0.1, 1, 0.2)';
 const SETTLE_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
+// How long the list losing a selection has the stage to itself before the list
+// taking it starts its own animation.
+const HANDOVER_MS = 150;
+
 const INDICATOR_HEIGHT = 16;
 const INDICATOR_WIDTH = 3;
 const INDICATOR_RADIUS = 2;
@@ -72,7 +79,19 @@ export function NavSelectionIndicator({
   useLayoutEffect(() => {
     const container = containerRef.current;
     const item = container?.querySelector<HTMLElement>(`[data-nav-value="${CSS.escape(selectedValue)}"]`);
-    setGeometry(container && item ? geometryOf(container, item) : null);
+    if (!container || !item) {
+      setGeometry(null);
+      return;
+    }
+    const next = geometryOf(container, item);
+    // Arriving from the other list, where a bar is being dropped in the same
+    // commit. Waiting out the handover is what separates the two.
+    if (previousRef.current) {
+      setGeometry(next);
+      return;
+    }
+    const handover = window.setTimeout(() => setGeometry(next), HANDOVER_MS);
+    return () => window.clearTimeout(handover);
   }, [containerRef, selectedValue]);
 
   // The item can move without the selection changing -- a group appearing above
