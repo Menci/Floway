@@ -183,6 +183,11 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   };
 };
 
+interface ResponsesWsTurnFailure {
+  evict(): void;
+  fail(status: number, error: Record<string, unknown>): void;
+}
+
 const handleClientMessage = async (
   c: AuthedContext,
   socket: ResponsesWebSocketSocket,
@@ -196,7 +201,7 @@ const handleClientMessage = async (
   const signal = downstreamAbortController.signal;
   let eventId: string | undefined;
   let ctx: ChatGatewayCtx | undefined;
-  let previousResponseId: string | null | undefined;
+  let previousResponseId: string | undefined;
 
   // "If a continuation turn fails with a `4xx` or `5xx` error, the server MUST
   // evict the referenced `previous_response_id` from the connection-local
@@ -205,13 +210,16 @@ const handleClientMessage = async (
   // `previous_response_not_found`."
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
   //
-  // Every failing exit of the turn routes through this one helper, so the
-  // eviction cannot drift away from the error it belongs to. `fail` covers the
-  // exits that answer with an error envelope; `evict` alone covers the turn
-  // that reported its failure through a `response.failed` terminal event.
+  // A turn fails in one of two shapes and neither subsumes the other: it
+  // answers with an error envelope, or it streams a failing terminal event.
+  // `fail` carries the eviction for the first — including the `api-error` and
+  // `internal-error` results, which return before the streaming loop's
+  // `finally` is ever entered — and that `finally` carries it for the second.
+  // A throw inside the streaming loop is the one path that takes both routes,
+  // so it evicts twice; the delete is idempotent.
   const turnFailure: ResponsesWsTurnFailure = {
     evict: () => {
-      if (ctx === undefined || previousResponseId === undefined || previousResponseId === null) return;
+      if (ctx === undefined || previousResponseId === undefined) return;
       session.evictSnapshot(ctx.store.apiKeyId, previousResponseId);
     },
     fail: (status, error) => {
@@ -257,10 +265,7 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
-    // Remember the continuation target before `expandPreviousResponseId`
-    // strips the field off the payload: a failing turn must evict exactly the
-    // id this turn referenced.
-    previousResponseId = payload.previous_response_id;
+    previousResponseId = payload.previous_response_id ?? undefined;
     ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
       downstreamAbortController,
@@ -328,11 +333,6 @@ const handleClientMessage = async (
     }
   }
 };
-
-interface ResponsesWsTurnFailure {
-  evict(): void;
-  fail(status: number, error: Record<string, unknown>): void;
-}
 
 class WebSocketClientMessageError extends Error {}
 
@@ -557,10 +557,9 @@ const respondResponsesWebSocket = async (input: {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
     if (failed) {
-      // A turn that ends on a `response.failed` terminal event answered the
-      // client with a streaming event rather than an error envelope, so the
-      // eviction the spec attaches to a failed continuation has to happen here
-      // instead of inside `turnFailure.fail`.
+      // A turn that streamed an `error` or `response.failed` event answered the
+      // client with a streaming event rather than an error envelope, so its
+      // eviction cannot come from `turnFailure.fail`.
       turnFailure.evict();
       ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
     } else ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));

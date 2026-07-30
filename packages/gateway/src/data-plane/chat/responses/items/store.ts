@@ -352,9 +352,11 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     return Promise.resolve();
   }
 
-  // Beyond the backing contract: only the connection-local layer forgets a
-  // snapshot, so the delete path deliberately stops here rather than reaching
-  // the interface every backing implements.
+  // Beyond `StatefulResponsesBacking`: the spec scopes eviction to the
+  // connection-local cache, so the delete path deliberately stops at this
+  // in-memory backing rather than becoming a contract every backing — the
+  // durable one included — has to answer for.
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
   evictSnapshot(apiKeyId: string, id: string): void {
     this.snapshots.delete(scopedResponsesKey(apiKeyId, id));
   }
