@@ -60,7 +60,7 @@ export function KeysTable({
       createTableColumn<ApiKey>({
         columnId: 'key', renderHeaderCell: () => t('dashboard.apiKeys.table.key'),
         renderCell: key => (
-          <code className="text-fui-fg2 font-mono text-fui-base300 max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap" title={key.key}>
+          <code className="max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap" title={key.key}>
             {key.key}
           </code>
         ),
@@ -140,7 +140,7 @@ export function KeysTable({
         <div className="flex items-start gap-2 min-w-0 w-full">
           <div className="grid gap-0.5 min-w-0 flex-1">
             <Text truncate size={300}>{key.name}</Text>
-            <code className="block text-fui-base200 text-fui-fg2 truncate" title={key.key}>{key.key}</code>
+            <code className="block truncate" title={key.key}>{key.key}</code>
             <Text truncate size={200} className="text-fui-fg2" title={upstreamsTitle(key, upstreamById, t)}>{upstreamsText(key, upstreamById, t)}</Text>
             <Text size={200} className="text-fui-fg3">{shortDate(key.created_at)} · {lastUsed}</Text>
           </div>

@@ -33,8 +33,23 @@ samp {
   font-family: var(--fontFamilyMonospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 }
 
+/* Code set inside prose is the same text, in a different face. It takes its
+   colour and its surface from whatever it sits in, and a pixel off its size so
+   the monospace face does not out-measure the proportional one beside it. It is
+   never a boxed token: WinUI has no inline-code chip, and a background plus a
+   border plus its own foreground turns a word in a sentence into a control.
+   A `pre` block is the exception and states its own surface. */
 :where(code, kbd, samp) {
   font-size: calc(1em - 1px) !important;
+  background-color: transparent;
+  color: inherit;
+}
+
+/* Strong text is semibold. WinUI's BodyStrong is the 600 weight, and the
+   dashboard's own headings stop there too; the 700 a browser gives `strong` by
+   default is heavier than anything the type ramp uses. */
+:where(strong, b) {
+  font-weight: var(--fontWeightSemibold);
 }
 
 pre,

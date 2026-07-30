@@ -158,7 +158,7 @@ export function LoginForm() {
             i18nKey="auth.adminKeyHint"
             components={{
               adminKey: (
-                <code className="rounded border border-solid border-fui-stroke1 bg-fui-bg2 px-1.5 py-px font-mono text-fui-base200 text-fui-fg2" />
+                <code />
               ),
             }}
           />
