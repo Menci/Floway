@@ -10,6 +10,12 @@ Impact levels:
 
 Hard and minor entries may include recommended actions; those actions do not need a separate advisory entry.
 
+## 2026-07-30 · minor
+
+### Responses WebSocket error frames carry `status` instead of `status_code`
+
+The JSON error envelope sent on the Responses WebSocket transport renamed its HTTP-style status key from `status_code` to `status`, matching the OpenResponses 2026-04-24 `WebSocketErrorEvent` contract. The nested `error` object (`type`, `code`, `message`, `param`) is unchanged, so clients that only read `error.code` need no adaptation; clients that read the numeric status off the envelope must read `status`.
+
 ## 2026-07-24 · advisory
 
 ### Audit dump files created before payload-file tracking
