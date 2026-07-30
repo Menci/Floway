@@ -1,6 +1,5 @@
-// Synthesizes the `response.compaction` envelope from Copilot's trigger turn,
-// which returns one `compaction` output item. Copilot has no native
-// /responses/compact endpoint and replays the official
+// Synthesizes the `response.compaction` envelope from Copilot's trigger turn.
+// Copilot has no native /responses/compact endpoint and replays the official
 // `RemoteCompactionV2` protocol client-side over /responses with stream:false.
 // Providers whose upstream exposes native /responses/compact (Azure, Codex,
 // custom) call that endpoint directly and bypass this helper entirely.
@@ -73,16 +72,33 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
     });
   }
 
-  // The trigger turn may also emit a stray assistant message; codex ignores
-  // everything but the lone compaction item and errors if it is not exactly one.
+  // The trigger turn may also emit a stray assistant message, and it may segment
+  // its state across several compaction items: `gpt-5-mini-2025-08-07` returns
+  // two deterministically — independent ciphertexts of 7800 and 8968 bytes, each
+  // individually replayable, the first recovering the early turns and the second
+  // the full history. Every other Responses model on the same account returns
+  // one. The compaction resource declares `output` as an unbounded array, so a
+  // segmented reply is a conformant reply and the whole array is what the client
+  // resends as the next turn's `input`:
+  //   https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L3935
+  //
+  // codex hard-fails a count other than one, but that is a consumer-side
+  // invariant guarding its own single-blob history model; its own gateway-shaped
+  // /responses/compact handler installs the entire `output` array untouched.
+  // Serving the client means forwarding every segment in upstream order and
+  // failing only when the trigger turn produced no compaction state at all.
+  //
+  // References (codex @ 3d805abdf09093bfa806f359a5adc6514766c420):
+  //   codex-rs/core/src/compact_remote_v2.rs#L380-L432
+  //   codex-api/src/endpoint/compact.rs#L39-L86
   const compactionItems = generated.output.filter(it => it.type === 'compaction');
-  if (compactionItems.length !== 1) {
-    throw new Error(`Expected exactly one compaction output item, got ${compactionItems.length}`);
+  if (compactionItems.length === 0) {
+    throw new Error('Expected at least one compaction output item, got none');
   }
 
   return {
     ...generated,
     object: 'response.compaction',
-    output: [...kept.reverse(), compactionItems[0]] as unknown as ResponsesOutputItem[],
+    output: [...kept.reverse(), ...compactionItems] as unknown as ResponsesOutputItem[],
   };
 };

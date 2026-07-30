@@ -27,8 +27,8 @@ test('keeps retained user/assistant/developer/system messages and appends the co
     { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed' },
     { type: 'message', role: 'system', content: 'be nice' },
   ];
-  // The trigger turn may also emit a stray assistant message; only the lone
-  // compaction item survives, regardless of the generated assistant output.
+  // The trigger turn may also emit a stray assistant message; only the
+  // compaction items survive, regardless of the generated assistant output.
   const result = compactionResponse(input, generatedResult([{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'stray' }] }, compaction]));
 
   expect(result.object).toBe('response.compaction');
@@ -66,9 +66,19 @@ test('assigns final random ids to retained messages instead of reusing input ids
   expect(id).not.toBe('msg_input');
 });
 
-test('throws when the trigger turn did not return exactly one compaction item', () => {
-  expect(() => compactionResponse([], generatedResult([]))).toThrow(/exactly one compaction/);
-  expect(() => compactionResponse([], generatedResult([compaction, { type: 'compaction', id: 'cmp_2', encrypted_content: 'X' }]))).toThrow(/exactly one compaction/);
+test('forwards every compaction item of a segmented trigger turn, in upstream order, after the retained messages', () => {
+  const second = { type: 'compaction', id: 'cmp_2', encrypted_content: 'X' };
+  const result = compactionResponse(
+    [{ type: 'message', role: 'user', content: 'hello' }],
+    generatedResult([compaction, second]),
+  );
+
+  expect(shape(result)).toEqual(['message:user', 'compaction', 'compaction']);
+  expect(result.output.slice(1)).toEqual([compaction, second]);
+});
+
+test('throws when the trigger turn returned no compaction item', () => {
+  expect(() => compactionResponse([], generatedResult([]))).toThrow(/at least one compaction/);
 });
 
 test('truncates retained messages newest-first to the 64k token budget', () => {
