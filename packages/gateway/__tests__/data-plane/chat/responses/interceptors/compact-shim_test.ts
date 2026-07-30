@@ -563,9 +563,6 @@ test('round-trip: outbound synthesis then inbound expansion recovers the summary
   assertEquals(items[0].content[0].text, `${SUMMARY_PREFIX}\nSUMMARY TEXT`);
 });
 
-// A Codex upstream closes a `message` item and then states an `output` that
-// omits it. Reading the terminal would pack an empty summary into the blob and
-// answer 200 with it.
 const upstreamRunStatingNoOutput = (summaryText: string): () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const message = {
     type: 'message' as const,

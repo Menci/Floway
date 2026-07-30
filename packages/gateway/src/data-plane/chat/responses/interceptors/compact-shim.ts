@@ -184,13 +184,10 @@ export const expandShimCompactionItems = (payload: CanonicalResponsesPayload): C
 
 type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
 
-// The summarization turn's answer, read from the items it closed rather than
-// from the terminal envelope it stated. The spec makes the item lifecycle the
-// authority and requires nothing of the terminal's `output`, and a Codex
-// upstream states an `output` that omits the assistant's own message — which
-// here would mean packing an empty summary into the compaction blob and
-// answering 200 with it. A turn that closed no item at all is read from what
-// its terminal stated, the same rule the client-facing egress applies.
+// The spec makes the item lifecycle the authority and requires nothing of the
+// terminal's `output`; a Codex upstream states an `output` that omits the
+// assistant message it just closed. A turn that closed nothing falls back to
+// the terminal, as the client-facing egress does.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
 const summaryTextFrom = (closed: Map<number, ResponsesOutputItem>, stated: readonly ResponsesOutputItem[]): string => {
   const items = closed.size === 0
@@ -344,9 +341,7 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
   const collected = await collectResponsesProtocolEventsToResult(observed);
   const summaryText = summaryTextFrom(closedItems, collected.output);
   // A compaction blob is the whole of what the next turn inherits, so an empty
-  // one silently discards the conversation. The turn answered without saying
-  // anything the summary could be built from, and that is reported rather than
-  // sealed into an envelope that looks successful.
+  // one silently discards the conversation.
   if (summaryText.length === 0) {
     throw new Error('Responses compact shim: the summarization turn closed no assistant text to summarize');
   }
