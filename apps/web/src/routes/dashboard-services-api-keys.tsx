@@ -249,6 +249,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       </Panel>
 
       <KeyDialog
+        models={data.models}
         mode="create"
         onOpenChange={setCreateOpen}
         onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
@@ -259,6 +260,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       />
       {editTarget && <KeyDialog
         apiKey={editTarget}
+        models={data.models}
         mode="edit"
         onOpenChange={setEditOpen}
         onSaved={async () => { await reload(); }}

@@ -9,13 +9,13 @@ import { keyWriteBody, type KeySource } from './key-source';
 import { KeySourceControl } from './key-source-control';
 import { RetentionField, type RetentionValue } from './retention-field';
 import type { MutationToastController, UpstreamOption } from './types';
-import { UpstreamPicker } from './upstream-picker';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
-import type { ApiKey } from '../../api/types';
+import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
+import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
 const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody } = fluentComponents;
 interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: Exclude<RetentionValue, null> }
 const RESPONSES_RETENTION_MAX_SECONDS = 10 * 365 * 86400;
@@ -36,6 +36,7 @@ interface KeyDialogCommonProps {
   onOpenChange: (open: boolean) => void;
   onSaved: (key: ApiKey) => Promise<void>;
   open: boolean;
+  models: ControlPlaneModel[];
   upstreams: UpstreamOption[];
   userUpstreamIds: string[] | null;
 }
@@ -46,7 +47,7 @@ type KeyDialogProps = KeyDialogCommonProps & (
 );
 
 export function KeyDialog(props: KeyDialogProps) {
-  const { mode, mutationToasts, onOpenChange, onSaved, open, upstreams, userUpstreamIds } = props;
+  const { mode, models, mutationToasts, onOpenChange, onSaved, open, upstreams, userUpstreamIds } = props;
   const { t } = useTranslation();
   const isCreate = mode === 'create';
   const apiKey = props.mode === 'edit' ? props.apiKey : null;
@@ -75,7 +76,7 @@ export function KeyDialog(props: KeyDialogProps) {
           if (value.upstreamOverride && value.upstreamIds.length === 0) {
             ctx.addIssue({
               code: 'custom',
-              message: 'dashboard.apiKeys.validation.upstreamRequired',
+              message: 'dashboard.upstreamAccess.validation',
               path: ['upstreamIds'],
             });
           }
@@ -207,11 +208,12 @@ export function KeyDialog(props: KeyDialogProps) {
         )}
       />
 
-      <UpstreamPicker
+      <UpstreamAccessControl
         available={visibleUpstreams}
         disabled={saving}
         error={errors.upstreamIds?.message ? t(errors.upstreamIds.message) : null}
         ids={values.upstreamIds}
+        models={models}
         override={values.upstreamOverride}
         onChange={next => {
           setValue('upstreamOverride', next.override, { shouldValidate: true });
