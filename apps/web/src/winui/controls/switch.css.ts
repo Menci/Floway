@@ -52,11 +52,15 @@ export const switchCss = `
   fill: transparent;
   height: 66.667%;
   margin-inline-start: 6.579%;
-  transition:
-    transform var(--durationNormal) var(--curveEasyEase),
-    width var(--winui-control-faster-animation-duration) var(--winui-control-fast-out-slow-in-easing),
-    height var(--winui-control-faster-animation-duration) var(--winui-control-fast-out-slow-in-easing),
-    margin-inline-start var(--winui-control-faster-animation-duration) var(--winui-control-fast-out-slow-in-easing);
+  /* One timing for every property the knob moves. Fluent slides the knob with a
+     transform and this file resizes it, and while the two ran on different
+     durations the knob finished growing before it finished travelling -- the
+     square background of the glyph element showing past the round one it is
+     meant to sit under, which reads as a second ring while the pointer is
+     down. */
+  transition-duration: var(--winui-control-faster-animation-duration);
+  transition-property: transform, width, height, margin-inline-start;
+  transition-timing-function: var(--winui-control-fast-out-slow-in-easing);
   width: 31.579%;
 }
 
