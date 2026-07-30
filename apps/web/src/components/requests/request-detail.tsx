@@ -6,6 +6,7 @@ import {
 } from '@fluentui/react-icons';
 import Prism from 'prismjs';
 import { useMemo, useState } from 'react';
+import type { PropsWithChildren } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
@@ -144,6 +145,10 @@ function SectionHeader({ title, detail, actions, copyText }: { title: string; de
   return <header className={s.sectionHeader}><div className="flex items-center gap-2 min-w-0"><Text as="h3" size={400} weight="semibold" className="!m-0">{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
 }
 
+function SectionBody({ children }: PropsWithChildren) {
+  return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full w-max" noTabIndex>{children}</ScrollArea>;
+}
+
 export function RequestDetailPanel({ collected: loadedCollected, error, record, recordId }: DetailProps) {
   const { t } = useTranslation();
   const s = useStyles();
@@ -181,19 +186,23 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
     : JSON.stringify(collected.result, null, 2);
 
   return (
-    <ScrollArea axes="both" className="h-full" contentClassName="min-h-full" noTabIndex>
+    <ScrollArea axes="vertical" className="h-full" contentClassName="min-h-full" noTabIndex>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.request')} detail={<><Badge appearance="tint" color="brand" size="small">{record.request.method}</Badge><Text size={300} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
-        <HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} />
+        <SectionBody><HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} /></SectionBody>
       </section>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
-        {requestBody.decodeError && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</MessageBarBody></MessageBar>}
-        {requestBody.text ? <CodeView body={requestBody} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noRequestBody')}</Text>}
+        <SectionBody>
+          {requestBody.decodeError && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</MessageBarBody></MessageBar>}
+          {requestBody.text ? <CodeView body={requestBody} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noRequestBody')}</Text>}
+        </SectionBody>
       </section>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.response')} detail={<><Badge appearance="tint" color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'} size="small">{record.response.status ?? t('dashboard.requests.noStatus')}</Badge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
-        {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noResponseHeaders')}</Text>}
+        <SectionBody>
+          {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noResponseHeaders')}</Text>}
+        </SectionBody>
       </section>
       <section>
         <SectionHeader
@@ -212,23 +221,25 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
                 ? collectedCopyText
                 : undefined}
         />
-        {record.response.body.type === 'none' ? <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noResponseBody')}</Text> : null}
-        {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.emptyBody')}</Text>)}
-        {record.response.body.type === 'stream' && streamView === 'collected' && (
-          collectKind === null ? <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.noCollector')}</MessageBarBody></MessageBar>
-            : collected === null ? null
-              : <>
-                  {collected.error && <MessageBar intent="error" className="!m-3"><MessageBarBody>{collected.error}</MessageBarBody></MessageBar>}
-                  {!collected.error && collected.truncated && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.truncatedStream')}</MessageBarBody></MessageBar>}
-                  {collected.result !== null && <CodeView body={{ text: JSON.stringify(collected.result, null, 2), copyText: '', decodeError: null, isJson: true }} />}
-                </>
-        )}
-        {record.response.body.type === 'stream' && streamView === 'events' && renderedEvents.map((event, index) => (
-          <div className={s.section} key={index}>
-            <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={s.error}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
-            <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
-          </div>
-        ))}
+        <SectionBody>
+          {record.response.body.type === 'none' ? <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noResponseBody')}</Text> : null}
+          {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.emptyBody')}</Text>)}
+          {record.response.body.type === 'stream' && streamView === 'collected' && (
+            collectKind === null ? <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.noCollector')}</MessageBarBody></MessageBar>
+              : collected === null ? null
+                : <>
+                    {collected.error && <MessageBar intent="error" className="!m-3"><MessageBarBody>{collected.error}</MessageBarBody></MessageBar>}
+                    {!collected.error && collected.truncated && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.truncatedStream')}</MessageBarBody></MessageBar>}
+                    {collected.result !== null && <CodeView body={{ text: JSON.stringify(collected.result, null, 2), copyText: '', decodeError: null, isJson: true }} />}
+                  </>
+          )}
+          {record.response.body.type === 'stream' && streamView === 'events' && renderedEvents.map((event, index) => (
+            <div className={s.section} key={index}>
+              <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={s.error}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
+              <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
+            </div>
+          ))}
+        </SectionBody>
       </section>
     </ScrollArea>
   );
