@@ -22,8 +22,13 @@ const { makeStyles, tokens } = fluentComponents;
 // raised pill steps up.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml
 const useStyles = makeStyles({
-  // SelectorBarItemSpacing is 8, and SelectorBarPadding is 0,4 -- no fill, no
-  // radius, and room only above and below.
+  // SelectorBarItemSpacing is 8. SelectorBar's own vertical metrics are not
+  // kept: its padding of 0,4 over an item padded 12,10,12,7 stands the control
+  // 45px tall, and this one is a form field sitting in a row with inputs and
+  // dropdowns that are 32. A control that does not line up with the field
+  // beside it is a worse answer than one that departs from the dictionary, so
+  // the block padding goes to the item and the row comes to 32. The asymmetry
+  // stays, because the shallower bottom is the room the pill occupies.
   root: {
     alignItems: 'center',
     display: 'flex',
@@ -31,18 +36,17 @@ const useStyles = makeStyles({
     flexWrap: 'nowrap',
     gap: '8px',
     maxWidth: '100%',
-    paddingBlock: '4px',
     width: 'fit-content',
   },
-  // SelectorBarItemPadding is 12,10,12,7 -- three pixels shallower at the
-  // bottom, which is the room the pill occupies.
+  // 8 above and 4 below a 20px line is 32, the height of the input beside it,
+  // and it keeps the pill its room at the bottom edge.
   item: {
     alignItems: 'center',
     cursor: 'pointer',
     display: 'inline-flex',
     fontSize: tokens.fontSizeBase300,
     lineHeight: tokens.lineHeightBase300,
-    padding: '10px 12px 7px',
+    padding: '8px 12px 4px',
     position: 'relative',
     whiteSpace: 'nowrap',
     '&:has(input:not(:disabled)):hover': { color: 'var(--winui-text-fill-secondary)' },
@@ -67,7 +71,7 @@ const useStyles = makeStyles({
   // fixed order -- translate, rotate, scale, then transform -- and multiply the
   // travel by the stretch.
   pillTrack: {
-    bottom: '4px',
+    bottom: '0',
     height: '3px',
     pointerEvents: 'none',
     position: 'absolute',
