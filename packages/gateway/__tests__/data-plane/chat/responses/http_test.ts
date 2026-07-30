@@ -635,10 +635,7 @@ test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no
   assert(body.error.message.includes('does not support'));
 });
 
-test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stream reader throws on it', async () => {
-  // Both official SDKs key their mid-stream throw on a top-level `error` key.
-  // A frame stating `message`/`code` at the top level is yielded to them as an
-  // ordinary event, so the failure never surfaces to the client as one.
+test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stream reader throws on it, then follows it with response.failed', async () => {
   installRepo();
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
     action: 'generate', ok: true,
@@ -669,8 +666,6 @@ test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stre
   assertEquals(data.error?.message, 'upstream exploded mid-stream');
   assert(data.message === undefined, 'expected the payload to sit under `error`, not at the top level');
 
-  // "Any error incurred while streaming will be followed by a `response.failed`
-  // event." Without it a client tracking response state is left in progress.
   const failedChunk = body.split('\n\n').find(part => part.startsWith('event: response.failed'));
   assert(failedChunk !== undefined, `expected a response.failed frame in ${body}`);
   const failed = JSON.parse(failedChunk.slice(failedChunk.indexOf('data: ') + 'data: '.length)) as {
@@ -678,7 +673,6 @@ test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stre
   };
   assertEquals(failed.response.status, 'failed');
   assertEquals(failed.response.error.message, 'upstream exploded mid-stream');
-  // The failure states the response the client was already watching.
   const created = JSON.parse(
     body.split('\n\n').find(part => part.startsWith('event: response.created'))!.split('data: ')[1]!,
   ) as { response: { id: string } };
