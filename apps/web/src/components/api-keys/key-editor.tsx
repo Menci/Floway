@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Open16Regular } from '@fluentui/react-icons';
 import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -236,8 +237,8 @@ export function KeyDialog(props: KeyDialogProps) {
               <MessageBar intent="warning"><MessageBarBody>{retentionWarning}</MessageBarBody></MessageBar>
             )}
             {apiKey !== null && field.value !== null && field.value !== 'invalid' && (
-              <Link className="text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
-                {t('dashboard.apiKeys.form.viewCapturedRequests')}
+              <Link className="inline-flex items-center gap-1 text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
+                {t('dashboard.apiKeys.form.viewCapturedRequests')} <Open16Regular aria-hidden="true" />
               </Link>
             )}
           </RetentionField>

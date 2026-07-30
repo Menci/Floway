@@ -328,7 +328,7 @@ const zhHansCN = {
           customKey: '自定义 API 密钥',
           customKeyPlaceholder: '粘贴自定义 API 密钥',
           retention: '记录请求转储',
-          viewCapturedRequests: '查看已捕获的请求 →',
+          viewCapturedRequests: '查看已捕获的请求',
           responsesRetention: 'Stateful Responses 保留',
           responsesRetentionHint: '该 key 的 Responses 条目可被后续请求按 id 引用的时长。关闭表示不做持久化。',
           retentionHint:
@@ -884,7 +884,6 @@ const zhHansCN = {
         },
       },
       usage: {
-        tokenUsage: 'Token 使用量',
         empty: '此时间范围内没有使用记录。',
         callout: { requests: '请求', cost: '费用', total: '总量', cached: '缓存', cachedRate: '缓存率', prefill: '预填充', output: '输出', hitRate: '命中率' },
         view: {

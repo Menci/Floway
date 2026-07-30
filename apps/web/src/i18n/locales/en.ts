@@ -340,7 +340,7 @@ const en = {
           customKey: 'Custom API key',
           customKeyPlaceholder: 'Paste custom API key',
           retention: 'Request dump retention',
-          viewCapturedRequests: 'View captured requests →',
+          viewCapturedRequests: 'View captured requests',
           responsesRetention: 'Stateful Responses retention',
           responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id. Off means nothing is persisted.',
           retentionHint:
@@ -922,7 +922,6 @@ const en = {
         },
       },
       usage: {
-        tokenUsage: 'Token Usage',
         empty: 'No usage records in this range.',
         callout: { requests: 'Req', cost: 'Cost', total: 'Total', cached: 'Cached', cachedRate: 'Cached%', prefill: 'Prefill', output: 'Output', hitRate: 'Hit%' },
         view: {
