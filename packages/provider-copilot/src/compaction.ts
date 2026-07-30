@@ -8,7 +8,7 @@
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L439-L501
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/utils/string/src/truncate.rs#L71-L74
 
-import { createRandomResponsesItemId, type ResponsesCompactionTriggerItem, type ResponsesInputContent, type ResponsesInputItem, type ResponsesInputMessage, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesCompactionResult, type ResponsesCompactionTriggerItem, type ResponsesInputContent, type ResponsesInputItem, type ResponsesInputMessage, type ResponsesOutputItem, type ResponsesResult } from '@floway-dev/protocols/responses';
 
 export const COMPACTION_TRIGGER: ResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 

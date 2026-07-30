@@ -51,18 +51,14 @@ export const toCompactPayloadShape = (payload: Omit<CanonicalResponsesPayload, '
   ...(payload.service_tier !== undefined && { service_tier: payload.service_tier }),
 });
 
-// The `/responses/compact` wire body. `CompactResource` declares exactly these
-// five keys and requires all of them; a compaction states none of the
+// The `/responses/compact` wire body: `CompactResource` states none of the
 // response-only fields a `ResponseResource` requires — no `status`, `model`,
-// `error` or `incomplete_details` — and there is no spelling for a failed
-// compaction, which arrives as an HTTP error instead.
+// `error` or `incomplete_details`.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L3935-L4008
 //
 // This models what an upstream sends, so `created_at` and `usage` stay optional
-// even though the schema requires them: presence on the client-facing body is
-// `ClientResponsesCompaction`'s guarantee, stated at the egress that completes
-// it. The schema forbids no extras, so a key an upstream sent beyond these
-// rides through untouched rather than being dropped on the way to the client.
+// even though the schema requires them; presence on the client-facing body is
+// `ClientResponsesCompaction`'s guarantee.
 export interface ResponsesCompactionResult {
   id: string;
   object: string;
