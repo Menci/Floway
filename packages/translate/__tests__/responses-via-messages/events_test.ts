@@ -25,6 +25,7 @@ const runToCompletion = (
     cache_read_input_tokens?: number;
     cache_creation_input_tokens?: number;
     cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number };
+    output_tokens_details?: { thinking_tokens: number };
     speed?: string;
     service_tier?: string;
   },
@@ -132,6 +133,19 @@ test('handles no cache fields (backward compat)', () => {
   assertEquals(result.usage!.input_tokens, 100);
   assertEquals(result.usage!.total_tokens, 150);
   assertEquals(result.usage!.input_tokens_details, undefined);
+  assertEquals(result.usage!.output_tokens_details, undefined);
+});
+
+// ── output_tokens_details ──
+
+test('maps Messages thinking_tokens onto Responses reasoning_tokens', () => {
+  const result = runToCompletion(
+    { input_tokens: 10, output_tokens: 60 },
+    { output_tokens_details: { thinking_tokens: 45 } },
+  );
+
+  assertEquals(result.usage!.output_tokens, 60);
+  assertEquals(result.usage!.output_tokens_details, { reasoning_tokens: 45 });
 });
 
 test('redacted_thinking stream block round-trips its opaque data as encrypted_content', () => {
