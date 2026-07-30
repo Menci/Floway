@@ -193,7 +193,15 @@ test('Responses WebSocket forwards stream events, echoes event_id, and ends the 
       assertEquals(typeof responseId, 'string');
       assert(responseId !== 'resp_ws', 'expected the source boundary to replace the upstream response id');
       assertEquals(completed.type, 'response.completed');
-      assertEquals((completed.response as { usage?: unknown }).usage, { input_tokens: 3, output_tokens: 5, total_tokens: 8 });
+      // The egress stage completes the response resource before the terminal
+      // event reaches the socket, so the usage breakdowns are present on it.
+      assertEquals((completed.response as { usage?: unknown }).usage, {
+        input_tokens: 3,
+        output_tokens: 5,
+        total_tokens: 8,
+        input_tokens_details: { cached_tokens: 0 },
+        output_tokens_details: { reasoning_tokens: 0 },
+      });
     }),
   );
 });
@@ -880,13 +888,13 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
     async () => await withWorkerWebSocketRuntime(async () => {
       try {
         firstClient = await connectResponsesWebSocket(apiKey.key);
-        const firstTerminal = waitForMessages(firstClient, messages =>
+        const firstItemDone = waitForMessages(firstClient, messages =>
           messages.some(message => message.type === 'response.output_item.done'));
         firstClient.send(JSON.stringify({
           type: 'response.create',
           response: { model: 'gpt-direct-responses', store: true, input: 'first' },
         }));
-        const messages = await firstTerminal;
+        const messages = await firstItemDone;
         const done = messages.find(message => message.type === 'response.output_item.done') as { item?: typeof originalReasoning } | undefined;
         assertExists(done?.item);
         assert(done.item.id !== originalReasoning.id, 'expected Copilot to replace the carried reasoning id');
