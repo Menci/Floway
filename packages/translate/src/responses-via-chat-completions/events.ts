@@ -10,6 +10,7 @@ const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['u
   const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage.prompt_tokens_details?.cache_write_tokens;
+  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
   splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
   return {
     input_tokens: usage.prompt_tokens,
@@ -23,6 +24,14 @@ const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['u
           },
         }
       : {}),
+    // Chat Completions' `reasoning_tokens` and Responses' `reasoning_tokens`
+    // are the same quantity, so an upstream that reports one is translated
+    // rather than dropped. OpenAI's schema makes the breakdown mandatory, but
+    // a translator's output is interior — a zero synthesized here would be
+    // indistinguishable from a zero an upstream measured — so absence stays
+    // absence, exactly as for the input breakdown above.
+    // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/response_usage.py#L21-L47
+    ...(reasoningTokens === undefined ? {} : { output_tokens_details: { reasoning_tokens: reasoningTokens } }),
   };
 };
 
