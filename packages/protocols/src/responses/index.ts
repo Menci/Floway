@@ -839,9 +839,9 @@ export interface ResponsesResult {
   tools?: ResponsesTool[];
   tool_choice?: ResponsesToolChoice | null;
   // The response resource requires `usage` and gives it an explicit `null`
-  // alternative, so `null` is what an upstream sends for a completed response
-  // that reported no token counts — distinct from a mid-stream envelope that
-  // has not accounted for them yet and omits the key entirely.
+  // alternative, so `null` is what an upstream sends for a response that
+  // reported no token counts. The key stays optional because a partially built
+  // envelope carries no usage until the terminal event accounts for the turn.
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2613-L2629
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
   usage?: {
