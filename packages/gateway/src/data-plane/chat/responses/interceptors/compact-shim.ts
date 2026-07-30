@@ -189,11 +189,15 @@ type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>
 // authority and requires nothing of the terminal's `output`, and a Codex
 // upstream states an `output` that omits the assistant's own message — which
 // here would mean packing an empty summary into the compaction blob and
-// answering 200 with it.
+// answering 200 with it. A turn that closed no item at all is read from what
+// its terminal stated, the same rule the client-facing egress applies.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
-const summaryTextFromClosedItems = (closed: Map<number, ResponsesOutputItem>): string => {
+const summaryTextFrom = (closed: Map<number, ResponsesOutputItem>, stated: readonly ResponsesOutputItem[]): string => {
+  const items = closed.size === 0
+    ? stated
+    : [...closed].sort(([left], [right]) => left - right).map(([, item]) => item);
   const parts: string[] = [];
-  for (const [, item] of [...closed].sort(([left], [right]) => left - right)) {
+  for (const item of items) {
     if (item.type !== 'message') continue;
     for (const block of item.content) {
       if (block.type === 'output_text') parts.push(block.text);
@@ -338,7 +342,7 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
   })();
 
   const collected = await collectResponsesProtocolEventsToResult(observed);
-  const summaryText = summaryTextFromClosedItems(closedItems);
+  const summaryText = summaryTextFrom(closedItems, collected.output);
   // A compaction blob is the whole of what the next turn inherits, so an empty
   // one silently discards the conversation. The turn answered without saying
   // anything the summary could be built from, and that is reported rather than
