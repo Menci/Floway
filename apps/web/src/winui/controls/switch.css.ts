@@ -79,9 +79,10 @@ export const switchCss = `
      knob swelling under the pointer, and that spline leaves the knob half way
      across in a sixth of the move.
 
-     With no value to transcribe it borrows the one WinUI moves a selection
-     indicator with -- the settle half of PlayIndicatorAnimations, its own
-     400ms on its own spline. That curve is decisive at the start and unhurried
+     With no value to transcribe it borrows the curve WinUI moves a selection
+     indicator with -- the settle half of PlayIndicatorAnimations -- over 200ms
+     rather than that animation's own 400, which spends its tail crawling the
+     last two pixels. That curve is decisive at the start and unhurried
      at the end, which is how a knob crossing a track reads; Fluent's symmetric
      easy-ease is too soft for it, and the size animation's spline, tried here
      first, is a lunge -- it puts the knob 46% across in 61ms.
