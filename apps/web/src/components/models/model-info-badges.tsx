@@ -1,4 +1,5 @@
 import { Trans, useTranslation } from 'react-i18next';
+import type { ReactNode } from 'react';
 
 import { effectiveUpstreams, modelBadges, type ModelBadge } from './model-badges';
 import type { ControlPlaneModel } from '../../api/types';
@@ -9,11 +10,22 @@ import { ProviderBadge } from '../upstreams/provider-badge';
 const { makeStyles, tokens } = fluentComponents;
 
 const useStyles = makeStyles({
+  modelValue: {
+    fontFamily: 'var(--fontFamilyMonospace)',
+    fontSize: '11px',
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: '16px',
+  },
+  strongValue: { fontWeight: tokens.fontWeightSemibold },
   tag: { color: tokens.colorNeutralForeground2 },
   tagText: { fontSize: '12px', lineHeight: '16px' },
 });
 
-const ruleBadgeText = (badge: Extract<ModelBadge, { kind: 'rule' }>, t: ReturnType<typeof useTranslation>['t']): string => {
+const ruleBadgeContent = (
+  badge: Extract<ModelBadge, { kind: 'rule' }>,
+  t: ReturnType<typeof useTranslation>['t'],
+  strongValueClassName: string,
+): ReactNode => {
   if (badge.varies) {
     switch (badge.field) {
     case 'reasoning.effort': return t('dashboard.playground.badges.ruleVaries.reasoningEffort');
@@ -24,35 +36,48 @@ const ruleBadgeText = (badge: Extract<ModelBadge, { kind: 'rule' }>, t: ReturnTy
     case 'serviceTier': return t('dashboard.playground.badges.ruleVaries.serviceTier');
     }
   }
+  const components = { strong: <strong className={strongValueClassName} /> };
   switch (badge.field) {
-  case 'reasoning.effort': return t('dashboard.playground.badges.rules.reasoningEffort', { value: badge.value });
-  case 'reasoning.budget_tokens': return t('dashboard.playground.badges.rules.reasoningBudget', { value: badge.value });
+  case 'reasoning.effort': return <Trans components={components} i18nKey="dashboard.playground.badges.rules.reasoningEffort" values={{ value: String(badge.value) }} />;
+  case 'reasoning.budget_tokens': return <Trans components={components} i18nKey="dashboard.playground.badges.rules.reasoningBudget" values={{ value: String(badge.value) }} />;
   case 'reasoning.adaptive':
     return badge.value === true
       ? t('dashboard.playground.badges.rules.adaptive')
       : t('dashboard.playground.badges.rules.nonAdaptive');
-  case 'reasoning.summary': return t('dashboard.playground.badges.rules.reasoningSummary', { value: badge.value });
-  case 'verbosity': return t('dashboard.playground.badges.rules.verbosity', { value: badge.value });
-  case 'serviceTier': return t('dashboard.playground.badges.rules.serviceTier', { value: badge.value });
+  case 'reasoning.summary': return <Trans components={components} i18nKey="dashboard.playground.badges.rules.reasoningSummary" values={{ value: String(badge.value) }} />;
+  case 'verbosity': return <Trans components={components} i18nKey="dashboard.playground.badges.rules.verbosity" values={{ value: String(badge.value) }} />;
+  case 'serviceTier': return <Trans components={components} i18nKey="dashboard.playground.badges.rules.serviceTier" values={{ value: String(badge.value) }} />;
   }
 };
 
-const badgeText = (badge: Exclude<ModelBadge, { kind: 'limit' }>, t: ReturnType<typeof useTranslation>['t']): string => {
+const badgeContent = (
+  badge: Exclude<ModelBadge, { kind: 'limit' }>,
+  t: ReturnType<typeof useTranslation>['t'],
+  modelValueClassName: string,
+  strongValueClassName: string,
+): ReactNode => {
+  const strong = { strong: <strong className={strongValueClassName} /> };
   switch (badge.kind) {
   case 'aliasOfModel':
-    return t('dashboard.playground.badges.aliasOfModel', { target: badge.target });
+    return <Trans components={{ model: <strong className={modelValueClassName} /> }} i18nKey="dashboard.playground.badges.aliasOfModel" values={{ target: badge.target }} />;
   case 'aliasOfCount':
-    return badge.reachable === badge.total
-      ? t('dashboard.playground.badges.aliasOfCount', { count: badge.total })
-      : t('dashboard.playground.badges.aliasOfPartial', { reachable: badge.reachable, total: badge.total });
+    return badge.reachable === badge.total ? (
+      <Trans components={strong} count={badge.total} i18nKey="dashboard.playground.badges.aliasOfCount" values={{ count: badge.total }} />
+    ) : (
+      <Trans components={strong} i18nKey="dashboard.playground.badges.aliasOfPartial" values={{ reachable: badge.reachable, total: badge.total }} />
+    );
   case 'selection':
-    return t('dashboard.playground.badges.selection', {
-      selection: t(badge.selection === 'first-available'
-        ? 'dashboard.playground.badges.selectionValues.firstAvailable'
-        : 'dashboard.playground.badges.selectionValues.random'),
-    });
+    return <Trans
+      components={strong}
+      i18nKey="dashboard.playground.badges.selection"
+      values={{
+        selection: t(badge.selection === 'first-available'
+          ? 'dashboard.playground.badges.selectionValues.firstAvailable'
+          : 'dashboard.playground.badges.selectionValues.random'),
+      }}
+    />;
   case 'rule':
-    return ruleBadgeText(badge, t);
+    return ruleBadgeContent(badge, t, strongValueClassName);
   }
 };
 
@@ -84,11 +109,11 @@ export function ModelInfoBadges({ cap, catalog, model }: {
         <Chip key={badge.key} className={styles.tag} textClassName={styles.tagText}>
           {badge.kind === 'limit'
             ? <Trans
-                components={{ strong: <strong className="font-fui-semibold" /> }}
+                components={{ strong: <strong className={styles.strongValue} /> }}
                 i18nKey={`dashboard.playground.badges.${badge.limit}`}
                 values={{ value: badge.value }}
               />
-            : badgeText(badge, t)}
+            : badgeContent(badge, t, styles.modelValue, styles.strongValue)}
         </Chip>
       ))}
     </div>
