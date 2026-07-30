@@ -68,16 +68,31 @@ export const listCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-/* The selection indicator — the accent bar WinUI runs down the leading edge of
-   a selected row — is left out. The dictionary states its brushes, its enabled
-   flag and its 1.5px corner radius, but the bar's width, height and inset live
-   in the native presenter, and nothing in the corpus states them; drawing it
-   would mean inventing the whole geometry from one radius. A call site that
-   wants the bar can draw it against its own row metrics, which is what the
-   pricing rule editor already does.
+/* The selection indicator: the accent bar WinUI runs down the leading edge of a
+   selected row. ListViewItem states its brush, its enabled flag and its 1.5px
+   corner radius, and the radius fixes the width -- a full round-off is one only
+   on a 3px bar. The length is not stated for a ListViewItem, but WinUI marks a
+   selected NavigationViewItem with the same bar and states 16 there; one
+   selection indicator, described once.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L57
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75-L78 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75-L78
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222 */
+.fui-ListItem.fui-ListItem[aria-selected='true'] {
+  position: relative;
+}
+
+.fui-ListItem.fui-ListItem[aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  inline-size: 3px;
+  block-size: 16px;
+  border-radius: 1.5px;
+  background-color: var(--winui-accent-fill-default);
+}
 
 /* Disablement. Fluent only softens the cursor; WinUI drops ContentBorder — the
    row's fill and its content together — to 0.3, which is the whole of what

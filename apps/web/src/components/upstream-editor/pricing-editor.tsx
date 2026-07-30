@@ -27,15 +27,13 @@ import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, ty
 const { Badge, Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const TIGHT_STACK_CLASS = 'grid gap-1';
 const usePricingStyles = makeStyles({
+  // Selection is drawn by the WinUI layer, which marks a selected row with the
+  // accent bar WinUI runs down its leading edge; a full-height border here
+  // would sit on top of it and read as an edge rather than as a marker.
   rule: {
-    borderLeft: '3px solid transparent',
     borderRadius: 'var(--borderRadiusMedium)',
     minWidth: 0,
-    padding: '8px 10px',
-    '&[aria-selected="true"]': {
-      backgroundColor: 'var(--colorSubtleBackgroundSelected)',
-      borderLeftColor: 'var(--colorCompoundBrandStroke)',
-    },
+    padding: '8px 10px 8px 16px',
   },
 });
 
