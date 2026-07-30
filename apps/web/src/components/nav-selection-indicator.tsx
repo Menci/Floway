@@ -12,11 +12,11 @@ import type { RefObject } from 'react';
 // and a selection crossing between them has no single element that can span
 // both. Playing WinUI's pair there puts one bar in each list and shows them
 // moving at once, which reads as two things rather than one. Only the arriving
-// half is played instead, and the two are sequenced: the list losing the
-// selection drops its bar, and only once it is gone does the list taking it
-// settle a bar in from the edge facing where the selection came from. Played
-// together they land in the same instant and read as one switch rather than as
-// a handover.
+// the two halves are sequenced instead. The list losing the selection reaches
+// its bar out toward the other one and only then drops it; the list taking the
+// selection waits for that, then settles a bar in from the edge facing where
+// the selection came from. Played together they land in the same instant and
+// read as one switch rather than as a handover.
 //
 // Only the settle, not the stretch before it. The stretch exists to cross the
 // gap between two items, and a crossing has no gap to cross inside either list;
@@ -79,13 +79,12 @@ export function NavSelectionIndicator({
   useLayoutEffect(() => {
     const container = containerRef.current;
     const item = container?.querySelector<HTMLElement>(`[data-nav-value="${CSS.escape(selectedValue)}"]`);
-    if (!container || !item) {
-      setGeometry(null);
-      return;
-    }
+    // A bar that has to leave is not cleared here; the effect below reaches it
+    // out first.
+    if (!container || !item) return;
     const next = geometryOf(container, item);
-    // Arriving from the other list, where a bar is being dropped in the same
-    // commit. Waiting out the handover is what separates the two.
+    // Arriving from the other list, which is reaching its own bar out in this
+    // same commit. Waiting that out is what separates the two.
     if (previousRef.current) {
       setGeometry(next);
       return;
@@ -93,6 +92,27 @@ export function NavSelectionIndicator({
     const handover = window.setTimeout(() => setGeometry(next), HANDOVER_MS);
     return () => window.clearTimeout(handover);
   }, [containerRef, selectedValue]);
+
+  // Leaving for the other list. The bar stays long enough to reach after the
+  // selection before it goes, which is the half of WinUI's pair that plays on
+  // this side.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!geometry || container?.querySelector(`[data-nav-value="${CSS.escape(selectedValue)}"]`)) return;
+    const bar = barRef.current;
+    if (bar && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      bar.style.transformOrigin = otherListIs === 'below' ? 'top' : 'bottom';
+      bar.animate(
+        [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / INDICATOR_HEIGHT})` }],
+        { duration: HANDOVER_MS, easing: STRETCH_EASING, fill: 'forwards' },
+      );
+    }
+    const gone = window.setTimeout(() => {
+      previousRef.current = null;
+      setGeometry(null);
+    }, HANDOVER_MS);
+    return () => window.clearTimeout(gone);
+  }, [containerRef, geometry, otherListIs, selectedValue]);
 
   // The item can move without the selection changing -- a group appearing above
   // it, the drawer resizing, the list scrolling under a sticky footer. Tracking
