@@ -163,8 +163,8 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
           }
         })
         // WS-specific top-level: Hono's onError never runs for callbacks fired off
-        // an open socket, so we serialize the error inline as a close-frame-shaped
-        // JSON envelope. (HTTP entries let onError handle the same case.)
+        // an open socket, so we serialize the error inline as the spec's
+        // WebSocket error envelope. (HTTP entries let onError handle the same case.)
         .catch(error => {
           if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
         });
@@ -240,7 +240,7 @@ const handleClientMessage = async (
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
-      // same body wrapped in our standard close-frame error shape so clients
+      // same body nested under the spec's WebSocket error envelope so clients
       // can still compare error.message byte-for-byte against upstream.
       if (error instanceof PreviousResponseNotFoundError) {
         sendError(socket, 400, {
@@ -534,14 +534,18 @@ const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, u
   };
 };
 
+// "WebSocket failures MUST be sent as a JSON `error` envelope with a `status`
+// code and an `error.code`." The OpenAPI `WebSocketErrorEvent` schema pins the
+// required keys to exactly `type`, `status`, and `error`.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L166
 const sendError = (
   socket: ResponsesWebSocketSocket,
-  statusCode: number,
+  status: number,
   error: Record<string, unknown>,
   eventId?: string,
   dump?: DumpAccumulator | null,
 ): void => {
-  sendJson(socket, { type: 'error', status_code: statusCode, error }, eventId, dump);
+  sendJson(socket, { type: 'error', status, error }, eventId, dump);
 };
 
 // A turn's own frames go out through this entry, which accepts only a stream
