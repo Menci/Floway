@@ -1,5 +1,5 @@
-import { Trans, useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { effectiveUpstreams, modelBadges, type ModelBadge } from './model-badges';
 import type { ControlPlaneModel } from '../../api/types';
