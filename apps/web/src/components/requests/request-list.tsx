@@ -41,11 +41,10 @@ const useStyles = makeStyles({
     borderLeft: '0 !important',
     borderRadius: '7px 7px 0 0 !important',
     boxShadow: 'none !important',
-    minHeight: '56px',
     width: '100%',
     '&:hover': { backgroundColor: 'var(--colorSubtleBackgroundHover) !important' },
     '&:active, &:has(.fui-Dropdown__button[aria-expanded="true"])': { backgroundColor: 'var(--colorSubtleBackgroundPressed) !important' },
-    '& .fui-Dropdown__button': { height: '100%', paddingInlineStart: '16px' },
+    '& .fui-Dropdown__button': { paddingInlineStart: '16px' },
   },
   list: { outlineStyle: 'none' },
   row: {
