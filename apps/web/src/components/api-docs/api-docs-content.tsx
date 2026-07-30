@@ -1,4 +1,4 @@
-import { ArrowUpRight16Regular } from '@fluentui/react-icons';
+import { Open16Regular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -72,7 +72,7 @@ export function ApiDocsContent() {
                 <TableCell><HttpMethodBadge method={endpoint.method} /></TableCell>
                 <TableCell><code className="font-mono text-fui-base300" translate="no">{endpoint.path}</code></TableCell>
                 <TableCell><Text size={300}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text></TableCell>
-                <TableCell className="!text-right"><Link href={endpoint.docs} target="_blank">{t('dashboard.apiDocs.docsLink')} <ArrowUpRight16Regular aria-hidden="true" /></Link></TableCell>
+                <TableCell className="!text-right"><Link href={endpoint.docs} target="_blank">{t('dashboard.apiDocs.docsLink')} <Open16Regular aria-hidden="true" /></Link></TableCell>
               </TableRow>)}</TableBody>
             </Table>
           </ScrollArea>
