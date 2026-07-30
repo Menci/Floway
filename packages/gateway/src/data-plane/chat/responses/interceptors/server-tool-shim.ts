@@ -662,6 +662,16 @@ export const consumeTurnStreaming = async function* (
       yield stamp(rewriteResult);
       continue;
     }
+
+    // What this stage rewrites is an item's position, so an event that states
+    // no position has nothing here to rewrite and is forwarded as it arrived.
+    // Every event type that lacks `output_index` today is a wrapper, a
+    // terminal, or `error`, and each is answered by a branch above, so nothing
+    // in the current protocol reaches this line. What does reach it is
+    // whatever the protocol grows: `parseResponsesStream` classifies by
+    // deny-list precisely so an unrecognized type survives parsing as
+    // structured, and a stage that dropped it would spend that guarantee.
+    yield stamp(event);
   }
 
   if (terminalStatus === undefined) {

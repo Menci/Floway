@@ -6259,3 +6259,25 @@ test('the shim carries the upstream turn cost onto the metadata pricing reads', 
   await collectFrames(result.events);
   assertEquals((await result.finalMetadata!).billableUsage, billableUsage);
 });
+
+test('consumeTurn forwards an event carrying no output_index instead of dropping it', async () => {
+  // The stream parser classifies by deny-list so an event type it does not
+  // recognize survives as structured. This stage rewrites item positions, so
+  // a positionless event has nothing to rewrite and must reach the client
+  // unchanged rather than disappear.
+  const unrecognized = eventFrame({
+    type: 'response.some_future_event',
+    detail: 'carried through',
+  } as unknown as ResponsesStreamEvent);
+
+  const result = await consumeTurn(
+    framesOf(mkResponseCreated(), unrecognized, mkResponseCompleted()),
+    createMergeState(),
+    true,
+  );
+
+  assertEquals(eventTypesOf(result.downstreamFrames), ['response.created', 'response.some_future_event']);
+  const forwarded = result.downstreamFrames[1];
+  assert(forwarded.type === 'event');
+  assertEquals((forwarded.event as unknown as { detail: string }).detail, 'carried through');
+});
