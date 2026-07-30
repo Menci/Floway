@@ -1,0 +1,138 @@
+import { ArrowDownRegular, ArrowUpRegular } from '@fluentui/react-icons';
+import { useCallback, useId, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { ProviderBadge } from './provider-badge';
+import type { ControlPlaneModel, UpstreamOption } from '../../api/types';
+import { fluentComponents } from '../../fluent';
+import { ScrollArea } from '../ui/scroll-area';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
+
+const {
+  Checkbox,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+  Text,
+  makeStyles,
+} = fluentComponents;
+
+const useStyles = makeStyles({
+  error: { color: 'var(--colorPaletteRedForeground1)' },
+});
+
+interface UpstreamAccessRow {
+  color: UpstreamOption['color'];
+  enabled: boolean;
+  id: string;
+  kind: UpstreamOption['kind'] | null;
+  modelCount: number;
+  name: string;
+}
+
+export function UpstreamAccessControl({
+  available,
+  disabled,
+  error,
+  ids,
+  models,
+  onChange,
+  override,
+}: {
+  available: UpstreamOption[];
+  disabled: boolean;
+  error: string | null;
+  ids: string[];
+  models: ControlPlaneModel[];
+  onChange: (value: { override: boolean; ids: string[] }) => void;
+  override: boolean;
+}) {
+  const { t } = useTranslation();
+  const styles = useStyles();
+  const errorId = useId();
+  const rows = useMemo(() => accessRows(available, ids, models), [available, ids, models]);
+
+  const toggleUpstream = useCallback((id: string, enabled: boolean) => {
+    const nextIds = enabled ? [...new Set([...ids, id])] : ids.filter(candidate => candidate !== id);
+    onChange({ override: true, ids: nextIds });
+  }, [ids, onChange]);
+
+  const moveUpstream = useCallback((id: string, direction: -1 | 1) => {
+    const index = ids.indexOf(id);
+    const nextIndex = index + direction;
+    if (index === -1 || nextIndex < 0 || nextIndex >= ids.length) return;
+    const next = [...ids];
+    const [item] = next.splice(index, 1);
+    next.splice(nextIndex, 0, item);
+    onChange({ override: true, ids: next });
+  }, [ids, onChange]);
+
+  return <section className="grid gap-3 min-w-0" aria-describedby={error ? errorId : undefined}>
+    <div className="flex items-start justify-between gap-4 min-w-0 py-1">
+      <div className="grid gap-1 min-w-0">
+        <Text weight="semibold">{t('dashboard.upstreamAccess.title')}</Text>
+        <Text size={200} className="text-fui-fg2 leading-[1.4]">{t('dashboard.upstreamAccess.description')}</Text>
+      </div>
+      <Switch
+        aria-label={t('dashboard.upstreamAccess.title')}
+        checked={override}
+        className="flex-none"
+        disabled={disabled}
+        onChange={(_, data) => onChange({ override: !!data.checked, ids })}
+      />
+    </div>
+    {error && <Text className={styles.error} id={errorId} role="alert" size={200}>{error}</Text>}
+    {override && <ScrollArea axes="horizontal" className="min-w-0">
+      <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[620px] table-fixed">
+        <colgroup><col className="w-[80px]" /><col className="w-[96px]" /><col /><col className="w-[120px]" /></colgroup>
+        <TableHeader><TableRow>
+          <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
+          <TableHeaderCell>{t('dashboard.upstreamAccess.order')}</TableHeaderCell>
+          <TableHeaderCell>{t('dashboard.upstreamAccess.upstream')}</TableHeaderCell>
+          <TableHeaderCell>{t('dashboard.upstreamAccess.models')}</TableHeaderCell>
+        </TableRow></TableHeader>
+        <TableBody>{rows.map(row => {
+          const index = ids.indexOf(row.id);
+          return <TableRow key={row.id}>
+            <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.enabled} disabled={disabled} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
+            <TableCell><div className="inline-flex items-center gap-1"><TooltipIconButton disabled={disabled || index <= 0} icon={<ArrowUpRegular />} label={t('dashboard.upstreamAccess.moveUp')} onClick={() => moveUpstream(row.id, -1)} /><TooltipIconButton disabled={disabled || index === -1 || index >= ids.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.upstreamAccess.moveDown')} onClick={() => moveUpstream(row.id, 1)} /></div></TableCell>
+            <TableCell><ProviderBadge color={row.color} kind={row.kind} label={row.name} /></TableCell>
+            <TableCell><Text>{t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}</Text></TableCell>
+          </TableRow>;
+        })}</TableBody>
+      </Table>
+    </ScrollArea>}
+  </section>;
+}
+
+const accessRows = (
+  available: UpstreamOption[],
+  ids: string[],
+  models: ControlPlaneModel[],
+): UpstreamAccessRow[] => {
+  const selected = new Set(ids);
+  const modelCounts = new Map<string, number>();
+  for (const model of models) {
+    for (const id of new Set(model.upstreams.map(upstream => upstream.id))) {
+      modelCounts.set(id, (modelCounts.get(id) ?? 0) + 1);
+    }
+  }
+  const rowFor = (upstream: UpstreamOption, enabled: boolean): UpstreamAccessRow => ({
+    ...upstream,
+    enabled,
+    modelCount: modelCounts.get(upstream.id) ?? 0,
+  });
+  return [
+    ...ids.map(id => {
+      const upstream = available.find(candidate => candidate.id === id);
+      return upstream
+        ? rowFor(upstream, true)
+        : { id, name: `Unknown (${id})`, kind: null, color: null, enabled: true, modelCount: 0 };
+    }),
+    ...available.filter(upstream => !selected.has(upstream.id)).map(upstream => rowFor(upstream, false)),
+  ];
+};
