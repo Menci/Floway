@@ -19,7 +19,7 @@ import type {
   MessagesTextCitation,
   MessagesUsageSnapshot,
 } from '@floway-dev/protocols/messages';
-import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesAnnotation, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const UPSTREAM_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Messages stream ended without a message_stop event.';
 
@@ -52,12 +52,13 @@ type OutputBlockInfo =
     outputIndex: number;
     itemId: string;
     blockText: string;
-    // Monotonic counter of url_citation annotations for this text
-    // content part. The Responses protocol requires per-content-part
-    // ordering and Responses targets always use content_index=0 for our
-    // single-part assistant message, so one counter per text block
-    // matches the spec.
-    annotationIndex: number;
+    // Annotations accumulated from the block's citation deltas, in emission
+    // order. They are both streamed as
+    // `response.output_text.annotation.added` — whose `annotation_index` is
+    // this array's length at push time, since Responses targets always use
+    // content_index=0 for our single-part assistant message — and carried on
+    // the completed content part, which the Responses item schema requires.
+    annotations: ResponsesAnnotation[];
   }
   | {
     type: 'tool_use';
@@ -176,7 +177,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
       outputIndex,
       itemId,
       blockText: '',
-      annotationIndex: 0,
+      annotations: [],
     });
 
     return responses.textStart(state, outputIndex, itemId);
@@ -256,7 +257,16 @@ const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, ci
 
   const endIndex = info.blockText.length;
   const startIndex = Math.max(0, endIndex - citation.cited_text.length);
-  const annotationIndex = info.annotationIndex++;
+  const annotationIndex = info.annotations.length;
+  const annotation: ResponsesAnnotation = {
+    type: 'url_citation',
+    url: citation.url,
+    title: citation.title,
+    start_index: startIndex,
+    end_index: endIndex,
+  };
+
+  info.annotations.push(annotation);
 
   return responses.seq(state, [
     {
@@ -265,13 +275,7 @@ const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, ci
       content_index: 0,
       item_id: info.itemId,
       annotation_index: annotationIndex,
-      annotation: {
-        type: 'url_citation',
-        url: citation.url,
-        title: citation.title,
-        start_index: startIndex,
-        end_index: endIndex,
-      },
+      annotation,
     },
   ]);
 };
@@ -332,11 +336,12 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
   }
 
   if (info.type === 'text') {
-    const item = responses.messageItem(info.itemId, info.blockText);
+    const part = responses.textPart(info.blockText, info.annotations);
+    const item = responses.messageItem(info.itemId, 'completed', part);
 
     state.completedItems.push(item);
 
-    return responses.textDone(state, info.outputIndex, info.itemId, info.blockText, item);
+    return responses.textDone(state, info.outputIndex, info.itemId, part, item);
   }
 
   if (info.type === 'custom_tool_use') {

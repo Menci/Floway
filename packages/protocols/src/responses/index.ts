@@ -924,9 +924,21 @@ export interface ResponsesOutputMessage {
 
 export type ResponsesOutputContentBlock = ResponsesOutputText | ResponsesOutputRefusal;
 
-interface ResponsesOutputText {
+export interface ResponsesAnnotation {
+  type: 'url_citation';
+  url: string;
+  title: string;
+  start_index: number;
+  end_index: number;
+}
+
+export interface ResponsesOutputText {
   type: 'output_text';
   text: string;
+  // Required by the Responses item schema even when the text carries no
+  // citations, so every producer states the empty case explicitly rather
+  // than leaving the key off.
+  annotations: ResponsesAnnotation[];
 }
 
 export interface ResponsesOutputRefusal {
@@ -1118,14 +1130,7 @@ type ResponsesStreamEventVariant =
     content_index: number;
     annotation_index: number;
     item_id: string;
-    annotation:
-      | {
-        type: 'url_citation';
-        url: string;
-        title: string;
-        start_index: number;
-        end_index: number;
-      };
+    annotation: ResponsesAnnotation;
   }
   | {
     type: 'response.web_search_call.in_progress';
