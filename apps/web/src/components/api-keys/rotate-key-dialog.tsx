@@ -67,7 +67,7 @@ export function RotateKeyDialog({
         </DialogActions>
       }
     >
-      <Text size={200} className="text-fui-fg2 leading-[1.35] !m-0">
+      <Text size={200} className="text-fui-fg2 leading-[1.35] m-0">
         {t('dashboard.apiKeys.rotate.message', { name: snapName })}
       </Text>
       <KeySourceControl

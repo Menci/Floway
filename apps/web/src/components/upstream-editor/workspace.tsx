@@ -233,7 +233,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
     return <div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-[480px] min-w-0">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5 py-4">
         <div className="grid gap-0.5">
-          <Text as="h2" size={500} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.yamlTitle')}</Text>
+          <Text as="h2" size={500} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.models.yamlTitle')}</Text>
           <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.yamlHint')}</Text>
         </div>
         <Button appearance="secondary" className="!min-w-[160px]" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
@@ -288,7 +288,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
             <TableCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} size="small" /></TableCell>
-            <TableCell className="!overflow-hidden">
+            <TableCell className="overflow-hidden">
               <button
                 className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full overflow-hidden p-0 text-ellipsis text-fui-base300 text-fui-fg1 text-left whitespace-nowrap hover:underline"
                 onClick={() => { setSelected(row.key); onViewChange('detail'); }}
@@ -299,7 +299,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
               </button>
             </TableCell>
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCell>
-            <TableCell className="!overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-[var(--lineHeightBase300)]" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
+            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-[var(--lineHeightBase300)]" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
             <TableCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCell>
             <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => { setSelected(row.key); onViewChange('detail'); }} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => { setDeleteTarget(row); setDeleteOpen(true); }} />}</TableActions></TableCell>
           </TableRow>;

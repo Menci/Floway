@@ -58,7 +58,7 @@ export function ProxyList({
 
             return (
               <TableRow key={proxy.id}>
-                <TableCell className="!overflow-hidden">
+                <TableCell className="overflow-hidden">
                   <div className="flex items-center gap-2 min-w-0">
                     <Badge
                       appearance="tint"
@@ -72,7 +72,7 @@ export function ProxyList({
                     <Text className="truncate" title={proxy.name}>{proxy.name}</Text>
                   </div>
                 </TableCell>
-                <TableCell className="!overflow-hidden">
+                <TableCell className="overflow-hidden">
                   <Text block className="text-fui-fg2 truncate" title={hostPortLabel(proxy.url)}>
                     {hostPortLabel(proxy.url)}
                   </Text>

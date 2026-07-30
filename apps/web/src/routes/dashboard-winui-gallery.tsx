@@ -122,7 +122,7 @@ export function meta() {
 
 function Section({ children, id, title }: { children: React.ReactNode; id: string; title: string }) {
   return <section className="grid gap-4" id={id}>
-    <Text as="h2" size={500} weight="semibold" className="!m-0">{title}</Text>
+    <Text as="h2" size={500} weight="semibold" className="m-0">{title}</Text>
     <Card className="!gap-5 !p-5">{children}</Card>
   </section>;
 }
@@ -410,7 +410,7 @@ function CardSection() {
     <Hint>Hover and press a card, and tab to a selectable one, to reach hover, pressed and focus-visible.</Hint>
     <Row label="appearances">
       {cardAppearances.map(appearance => <StateLabel key={appearance} state={appearance}>
-        <Card appearance={appearance} className="!w-[220px]">
+        <Card appearance={appearance} className="w-[220px]">
           <CardHeader
             description={<Text size={200} className="text-fui-fg2">12 models · 2 aliases</Text>}
             header={<Text weight="semibold">Copilot (work)</Text>}
@@ -421,27 +421,27 @@ function CardSection() {
     </Row>
     <Row label="selection">
       <StateLabel state="unselected">
-        <Card className="!w-[220px]" selected={false} onSelectionChange={() => {}}>
+        <Card className="w-[220px]" selected={false} onSelectionChange={() => {}}>
           <CardHeader header={<Text weight="semibold">Azure AI Foundry</Text>} />
         </Card>
       </StateLabel>
       <StateLabel state="selected">
-        <Card className="!w-[220px]" selected onSelectionChange={() => {}}>
+        <Card className="w-[220px]" selected onSelectionChange={() => {}}>
           <CardHeader header={<Text weight="semibold">Azure AI Foundry</Text>} />
         </Card>
       </StateLabel>
       <StateLabel state="focusable content">
-        <Card className="!w-[220px]" focusMode="tab-exit">
+        <Card className="w-[220px]" focusMode="tab-exit">
           <CardHeader header={<Text weight="semibold">Ollama (local)</Text>} />
           <Button appearance="subtle" size="small">Refresh models</Button>
         </Card>
       </StateLabel>
     </Row>
     <Row label="sizes and orientation">
-      <Card className="!w-[200px]" size="small"><Text>Small</Text></Card>
-      <Card className="!w-[200px]" size="medium"><Text>Medium</Text></Card>
-      <Card className="!w-[200px]" size="large"><Text>Large</Text></Card>
-      <Card className="!w-[260px]" orientation="horizontal">
+      <Card className="w-[200px]" size="small"><Text>Small</Text></Card>
+      <Card className="w-[200px]" size="medium"><Text>Medium</Text></Card>
+      <Card className="w-[200px]" size="large"><Text>Large</Text></Card>
+      <Card className="w-[260px]" orientation="horizontal">
         <ServerRegular fontSize={24} />
         <Text>Horizontal — 4 upstreams online</Text>
       </Card>
@@ -963,12 +963,12 @@ function ListSection() {
       </List>
     </Row>
     <Row label="navigable list, and a plain static list">
-      <List className="!w-[280px]" navigationMode="items">
+      <List className="w-[280px]" navigationMode="items">
         <ListItem value="requests" onAction={() => {}}>Requests</ListItem>
         <ListItem value="usage" onAction={() => {}}>Usage</ListItem>
         <ListItem value="performance" onAction={() => {}}>Performance</ListItem>
       </List>
-      <List className="!w-[280px]">
+      <List className="w-[280px]">
         <ListItem>gpt-5-codex</ListItem>
         <ListItem>claude-sonnet-4.5</ListItem>
         <ListItem>text-embedding-3-large</ListItem>

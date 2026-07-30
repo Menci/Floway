@@ -75,7 +75,7 @@ export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }:
             <ProviderBadge color={value} kind={kind} />
           </Button>
         </PopoverTrigger>
-        <PopoverSurface className="!p-4 w-[min(360px,calc(100vw-32px))]">
+        <PopoverSurface className="p-4 w-[min(360px,calc(100vw-32px))]">
           <div className="grid gap-3">
             <SwatchPicker
               aria-label={t('dashboard.upstreamEditor.color.label')}

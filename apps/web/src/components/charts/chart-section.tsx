@@ -42,8 +42,8 @@ export function ChartSection({
   return (
     <section className="grid gap-3 min-w-0">
       <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
-        <Text as="h2" size={500} weight="semibold" className="!m-0 text-fui-fg1 leading-[1.25]">{title}</Text>
-        <Toolbar aria-label={controlsLabel} className="!flex-none !p-0" size="small">
+        <Text as="h2" size={500} weight="semibold" className="m-0 text-fui-fg1 leading-[1.25]">{title}</Text>
+        <Toolbar aria-label={controlsLabel} className="flex-none !p-0" size="small">
           <Tooltip content={t('dashboard.charts.series.all')} relationship="label">
             <ToolbarButton aria-label={t('dashboard.charts.series.all')} icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />
           </Tooltip>

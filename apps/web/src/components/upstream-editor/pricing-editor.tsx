@@ -200,7 +200,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
       <section className="grid min-w-0 gap-3" aria-labelledby={conditionsHeadingId}>
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className={TIGHT_STACK_CLASS}>
-            <Text as="h4" id={conditionsHeadingId} size={300} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.pricingConditions')}</Text>
+            <Text as="h4" id={conditionsHeadingId} size={300} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.models.pricingConditions')}</Text>
             <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingConditionsHint')}</Text>
           </div>
           {editable && selectedIndex !== baseIndex && <Tooltip content={t('dashboard.upstreamEditor.models.removePricingEntry')} relationship="label">
@@ -258,7 +258,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
 
       <section className="grid min-w-0 gap-3" aria-labelledby={ratesHeadingId}>
         <div className={TIGHT_STACK_CLASS}>
-          <Text as="h4" id={ratesHeadingId} size={300} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.models.pricingRates')}</Text>
+          <Text as="h4" id={ratesHeadingId} size={300} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.models.pricingRates')}</Text>
           <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.models.pricingRatesHint')}</Text>
         </div>
         <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">

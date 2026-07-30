@@ -390,7 +390,7 @@ function UpstreamsTable({
                 </div>
               </TableCell>
               <TableCell><ProviderBadge color={record.color} kind={record.kind} /></TableCell>
-              <TableCell className="!overflow-hidden">
+              <TableCell className="overflow-hidden">
                 <div className="grid gap-[3px] min-w-0 max-w-[520px]">
                   <Link
                     className="text-fui-fg1 no-underline hover:underline truncate"

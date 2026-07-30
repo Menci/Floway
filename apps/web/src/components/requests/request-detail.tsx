@@ -144,7 +144,7 @@ function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
 
 function SectionHeader({ title, detail, actions, copyText }: { title: string; detail?: React.ReactNode; actions?: React.ReactNode; copyText?: string }) {
   const s = useStyles();
-  return <header className={s.sectionHeader}><div className="flex items-center gap-3 min-w-0"><Text as="h3" size={400} weight="semibold" className={mergeClasses('!m-0', s.sectionTitle)}>{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
+  return <header className={s.sectionHeader}><div className="flex items-center gap-3 min-w-0"><Text as="h3" size={400} weight="semibold" className={mergeClasses('m-0', s.sectionTitle)}>{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
 }
 
 function SectionBody({ children }: PropsWithChildren) {
@@ -201,13 +201,13 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
         <SectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
         <SectionBody>
           {requestBody.decodeError && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</MessageBarBody></MessageBar>}
-          {requestBody.text ? <CodeView body={requestBody} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noRequestBody')}</Text>}
+          {requestBody.text ? <CodeView body={requestBody} /> : <Text size={200} className="block p-4 text-fui-fg3">{t('dashboard.requests.noRequestBody')}</Text>}
         </SectionBody>
       </section>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
         <HeaderSectionBody>
-          {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noResponseHeaders')}</Text>}
+          {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <Text size={200} className="block p-4 text-fui-fg3">{t('dashboard.requests.noResponseHeaders')}</Text>}
         </HeaderSectionBody>
       </section>
       <section>
@@ -228,8 +228,8 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
                 : undefined}
         />
         <SectionBody>
-          {record.response.body.type === 'none' ? <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noResponseBody')}</Text> : null}
-          {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.emptyBody')}</Text>)}
+          {record.response.body.type === 'none' ? <Text size={200} className="block p-4 text-fui-fg3">{t('dashboard.requests.noResponseBody')}</Text> : null}
+          {record.response.body.type === 'bytes' && (responseBody.text ? <CodeView body={responseBody} /> : <Text size={200} className="block p-4 text-fui-fg3">{t('dashboard.requests.emptyBody')}</Text>)}
           {record.response.body.type === 'stream' && streamView === 'collected' && (
             collectKind === null ? <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.noCollector')}</MessageBarBody></MessageBar>
               : collected === null ? null

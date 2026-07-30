@@ -100,7 +100,7 @@ export function FeatureFlagsEditor({
   return <div className="grid gap-5 min-w-0">
     {groupedFlags.map(group => (
       <section className="grid gap-2" key={group.id}>
-        <Text as="h3" size={400} weight="semibold" className="!m-0">
+        <Text as="h3" size={400} weight="semibold" className="m-0">
           {t(`dashboard.upstreamEditor.flags.groups.${group.id}`)}
         </Text>
         <div>

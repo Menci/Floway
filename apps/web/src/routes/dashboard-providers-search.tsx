@@ -423,7 +423,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
 
       {testResult && (
         <Panel className="!p-[22px_24px] grid gap-[14px]">
-          <Text as="h2" size={400} weight="semibold" className="!m-0">
+          <Text as="h2" size={400} weight="semibold" className="m-0">
             {t('dashboard.searchConfig.testResults')}
           </Text>
 

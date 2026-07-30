@@ -40,7 +40,7 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
 
   return <section className="grid gap-2">
     <div className="flex items-center justify-between gap-3">
-      <Text as="h3" size={300} weight="semibold" className="!m-0">{t('dashboard.upstreamEditor.copilot.quota.title')}</Text>
+      <Text as="h3" size={300} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.copilot.quota.title')}</Text>
       <Button appearance="subtle" disabled={loading} icon={<ArrowClockwiseRegular />} onClick={() => void load()}>
         {loading
           ? t('dashboard.upstreamEditor.copilot.quota.loading')

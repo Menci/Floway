@@ -14,9 +14,9 @@ const { makeStyles } = fluentComponents;
 const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' } });
 const useAreaBoundaryStyles = makeStyles({
   root: {
-    '& path[id*="-line-"]': { opacity: '1 !important', strokeWidth: '2px' },
-    '& path[id*="-graph-"]': { fillOpacity: '0.42 !important' },
-    '& circle:not([id*="staticHighlightCircle"])': { r: '2px !important', strokeWidth: '1.5px' },
+    '& path[id*="-line-"]': { opacity: '1', strokeWidth: '2px' },
+    '& path[id*="-graph-"]': { fillOpacity: '0.42' },
+    '& circle:not([id*="staticHighlightCircle"])': { r: '2px', strokeWidth: '1.5px' },
   },
 });
 

@@ -90,7 +90,7 @@ export function CodeBlock({ code, copied, copyFailed, disabled = false, header, 
         </Button>
       </div>
       <ScrollArea axes="both" className="max-h-[340px]">
-        <pre className={`language-${language} ${s.pre} !m-0`}>
+        <pre className={`language-${language} ${s.pre} m-0`}>
           <code
             className={`language-${language} ${s.code}`}
             dangerouslySetInnerHTML={{ __html: highlighted }}

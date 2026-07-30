@@ -54,12 +54,12 @@ const useStyles = makeStyles({
     // borderRadiusMedium -- restated only because Fluent's own nav radius has
     // to be outranked here alongside the rest of this block.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L13
-    gap: '12px !important',
-    height: '36px !important',
-    minHeight: '36px !important',
-    paddingBottom: '8px !important',
-    paddingLeft: '12px !important',
-    paddingTop: '8px !important',
+    gap: '12px',
+    height: '36px',
+    minHeight: '36px',
+    paddingBottom: '8px',
+    paddingLeft: '12px',
+    paddingTop: '8px',
   },
   // ShareIos draws its tray opening upward. Turned a quarter clockwise the
   // arrow leaves to the right, which is the direction a sign-out reads in.
@@ -201,7 +201,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           {onNavigate && <Button appearance="subtle" aria-label={t('dashboard.nav.close')} className="!ml-auto" icon={<DismissRegular />} onClick={onNavigate} />}
         </div>
       </NavDrawerHeader>
-      <NavDrawerBody className="!bg-transparent !overflow-hidden !p-0">
+      <NavDrawerBody className="!bg-transparent overflow-hidden !p-0">
         <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="px-[10px]" noTabIndex>
           <div className="relative" ref={bodyRef}>
             <NavSelectionIndicator containerRef={bodyRef} inset={NAV_INDICATOR_INSET} otherListIs="below" selectedValue={selectedValue} />
@@ -228,7 +228,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
           </div>
         </ScrollArea>
       </NavDrawerBody>
-      <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
+      <NavDrawerFooter className="!bg-transparent border-t border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
         <div className="grid gap-y-1 relative w-full" ref={footerRef}>
           <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} otherListIs="above" selectedValue={selectedValue} />
           <SidebarLink

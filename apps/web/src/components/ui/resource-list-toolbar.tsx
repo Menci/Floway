@@ -56,7 +56,7 @@ export function ResourceListToolbar(props: ResourceListToolbarProps) {
   return (
     <div aria-busy={refreshing} className="flex items-center justify-between gap-3 min-w-0 max-[560px]:flex-col max-[560px]:items-stretch">
       <div className="min-w-0">
-        <Text as="h2" block size={500} weight="semibold" className="!m-0">{title}</Text>
+        <Text as="h2" block size={500} weight="semibold" className="m-0">{title}</Text>
         {detail !== undefined && (
           <Text block size={200} className="text-fui-fg2 mt-1">{detail}</Text>
         )}

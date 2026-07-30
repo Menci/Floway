@@ -287,7 +287,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const canSend = Boolean(selectedKey && selectedModel && (draft.trim() || imageUrl.trim()));
   const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
 
-  const settingsContent = <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="!p-4 grid content-start gap-5" noTabIndex>
+  const settingsContent = <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="p-4 grid content-start gap-5" noTabIndex>
     <SettingsSection title={t('dashboard.playground.settings.connection')}>
       <Field label={t('dashboard.playground.key')}>
         <Dropdown
@@ -347,7 +347,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
           <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
             <div className="grid gap-[6px] min-w-0">
-              <Text as="h1" block size={700} weight="semibold" className="!m-0">{t('dashboard.nav.playground')}</Text>
+              <Text as="h1" block size={700} weight="semibold" className="m-0">{t('dashboard.nav.playground')}</Text>
               <Text block size={200} className={`text-fui-fg2 truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
             </div>
             {narrow && <Button appearance="subtle" aria-label={t('dashboard.playground.settings.title')} className="!ml-auto" icon={<SettingsRegular />} onClick={() => setSettingsOpen(true)} />}
@@ -356,7 +356,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             <Button
               appearance="subtle"
               aria-expanded={showSystem}
-              className="!w-fit !min-w-0"
+              className="w-fit !min-w-0"
               icon={showSystem ? <ChevronUpRegular /> : <ChevronDownRegular />}
               iconPosition="after"
               onClick={() => setShowSystem(value => !value)}
@@ -451,7 +451,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 }
 
 function SettingsSection({ children, title }: { children: React.ReactNode; title: string }) {
-  return <section className="grid gap-3 min-w-0"><Text as="h2" size={500} weight="semibold" className="!m-0">{title}</Text>{children}</section>;
+  return <section className="grid gap-3 min-w-0"><Text as="h2" size={500} weight="semibold" className="m-0">{title}</Text>{children}</section>;
 }
 
 function EmptyState({ text }: { text: string }) {

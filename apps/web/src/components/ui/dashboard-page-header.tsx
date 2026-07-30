@@ -13,7 +13,7 @@ export function DashboardPageHeader({ actions, description, eyebrow, title }: {
       <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2] uppercase">
         {eyebrow}
       </Text>
-      <Text as="h1" size={700} weight="semibold" className="!m-0">
+      <Text as="h1" size={700} weight="semibold" className="m-0">
         {title}
       </Text>
       {description !== undefined && <Text size={300} className="text-fui-fg2 leading-[1.45] max-w-[760px]">

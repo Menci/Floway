@@ -23,12 +23,12 @@ const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
 const useStyles = makeStyles({
   tile: {
     '&[aria-pressed="true"]': {
-      backgroundColor: 'var(--winui-subtle-fill-secondary) !important',
+      backgroundColor: 'var(--winui-subtle-fill-secondary)',
       borderTopColor: 'transparent !important',
       borderRightColor: 'transparent !important',
       borderBottomColor: 'transparent !important',
       borderLeftColor: 'transparent !important',
-      color: 'var(--winui-text-fill-primary) !important',
+      color: 'var(--winui-text-fill-primary)',
       position: 'relative',
     },
     '&[aria-pressed="true"]:hover': { backgroundColor: 'var(--winui-subtle-fill-tertiary) !important' },
@@ -63,7 +63,7 @@ function SummaryMetricButton({
     <ToggleButton
       appearance="subtle"
       checked={active}
-      className={mergeClasses('!justify-start !min-h-[62px] !text-left min-w-0 !pl-3 !pr-2 !py-2', s.tile)}
+      className={mergeClasses('!justify-start min-h-[62px] text-left min-w-0 !pl-3 !pr-2 !py-2', s.tile)}
       onClick={onClick}
     >
       <span className="grid gap-1 min-w-0">
