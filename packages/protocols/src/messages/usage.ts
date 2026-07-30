@@ -41,6 +41,11 @@ export interface MessagesUsage {
     ephemeral_5m_input_tokens?: number;
     ephemeral_1h_input_tokens?: number;
   };
+  // `thinking_tokens` is the reasoning subset of the inclusive, authoritative
+  // `output_tokens` total, re-tokenized from the raw reasoning rather than from
+  // the possibly summarized thinking text that reaches the response body.
+  // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1292-L1304
+  output_tokens_details?: { thinking_tokens: number };
   // https://docs.claude.com/en/api/service-tiers
   service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
   // https://docs.claude.com/en/build-with-claude/fast-mode
@@ -61,6 +66,7 @@ export interface MessagesUsageSnapshot extends MessagesCacheCreationUsage {
   input_tokens?: number;
   output_tokens: number;
   cache_read_input_tokens?: number;
+  output_tokens_details?: { thinking_tokens: number };
   service_tier?: string;
   speed?: string;
   iterations?: MessagesUsageIteration[] | null;
@@ -71,6 +77,7 @@ export const messagesUsageSnapshot = (usage?: MessagesUsageSnapshot): MessagesUs
   : {
       ...usage,
       ...(usage.cache_creation === undefined ? {} : { cache_creation: { ...usage.cache_creation } }),
+      ...(usage.output_tokens_details === undefined ? {} : { output_tokens_details: { ...usage.output_tokens_details } }),
       ...(usage.iterations === undefined ? {} : { iterations: cloneMessagesUsageIterations(usage.iterations) }),
     };
 
@@ -84,6 +91,7 @@ export const mergeMessagesUsageSnapshot = (
   ...(delta.cache_read_input_tokens === undefined ? {} : { cache_read_input_tokens: delta.cache_read_input_tokens }),
   ...(delta.cache_creation_input_tokens === undefined ? {} : { cache_creation_input_tokens: delta.cache_creation_input_tokens }),
   ...(delta.cache_creation === undefined ? {} : { cache_creation: { ...delta.cache_creation } }),
+  ...(delta.output_tokens_details === undefined ? {} : { output_tokens_details: { ...delta.output_tokens_details } }),
   ...(delta.iterations === undefined ? {} : { iterations: cloneMessagesUsageIterations(delta.iterations) }),
   ...(delta.speed === undefined && delta.service_tier === undefined
     ? {}
