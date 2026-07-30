@@ -47,6 +47,16 @@ test('agentMessageContent normalizes readable beta content into Responses input 
   ]);
 });
 
+test('agentMessageContent carries images that omit detail', () => {
+  assertEquals(agentMessageContent(agentMessage([
+    { type: 'input_image', image_url: 'https://example.com/image.png', file_id: null },
+    { type: 'computer_screenshot', image_url: null, file_id: 'file_screen' },
+  ])).filter(part => part.type === 'input_image'), [
+    { type: 'input_image', image_url: 'https://example.com/image.png', file_id: null, detail: undefined },
+    { type: 'input_image', image_url: null, file_id: 'file_screen', detail: undefined },
+  ]);
+});
+
 test('agentMessageContent reports the exact path for unknown beta content', () => {
   const error = assertThrows(
     () => agentMessageContent(agentMessage([{ type: 'future_agent_part', value: 1 }])),

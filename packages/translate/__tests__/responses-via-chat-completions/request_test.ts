@@ -611,15 +611,62 @@ test('buildTargetRequest rejects file_id-only images', () => {
   );
 });
 
-test('buildTargetRequest rejects Responses-only original image detail', () => {
-  assertThrows(
-    () => buildTargetRequest({
-      model: 'gpt-test',
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'original' }] }],
-    }),
-    Error,
-    "image detail 'original'",
-  );
+test('buildTargetRequest forwards image details Chat Completions does not publish', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [{
+      type: 'message',
+      role: 'user',
+      content: [
+        { type: 'input_image', image_url: 'https://example.com/a.png', detail: 'original' },
+        { type: 'input_image', image_url: 'https://example.com/b.png', detail: 'ultra' },
+      ],
+    }],
+  });
+
+  assertEquals(result.target.messages[0].content, [
+    { type: 'image_url', image_url: { url: 'https://example.com/a.png', detail: 'original' } },
+    { type: 'image_url', image_url: { url: 'https://example.com/b.png', detail: 'ultra' } },
+  ]);
+});
+
+test('buildTargetRequest omits image detail when the client sends none', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
+  });
+
+  assertEquals(result.target.messages, [
+    { role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } }] },
+  ]);
+});
+
+test('buildTargetRequest omits image detail when the client sends null', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID', detail: null }] }],
+  });
+
+  assertEquals(result.target.messages[0].content, [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } }]);
+});
+
+test('buildTargetRequest omits image detail on lifted tool-output images', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [
+      { type: 'function_call', call_id: 'call_1', name: 'screenshot', arguments: '{}', status: 'completed' },
+      {
+        type: 'function_call_output',
+        call_id: 'call_1',
+        output: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }],
+      },
+    ],
+  });
+
+  assertEquals(result.target.messages.at(-1)?.content, [
+    { type: 'text', text: 'Image output from tool call call_1:' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } },
+  ]);
 });
 
 test('buildTargetRequest throws on a stray web_search_call input item (shim owns the reverse path)', () => {
