@@ -45,7 +45,6 @@ test('buildTargetRequest maps instructions and multimodal user input without def
           {
             type: 'input_image',
             image_url: 'data:image/png;base64,aW1hZ2U=',
-            detail: 'auto',
           },
         ],
       },
