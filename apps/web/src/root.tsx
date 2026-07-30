@@ -39,7 +39,10 @@ const { FluentProvider } = fluentComponents;
 // are fetched in CORS mode whatever the crossOrigin value, and a preload whose
 // mode disagrees with the real request is fetched twice.
 // https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/rel/preload#cors-enabled_fetches
-const SEGOE_UI_VARIABLE_URL = 'https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf';
+// The version query also isolates the cross-origin response from a bare-path
+// Azure CDN cache entry that was stored with docs.azure.cn as its sole allowed
+// origin and no `Vary: Origin` header.
+const SEGOE_UI_VARIABLE_URL = 'https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02';
 
 export const links: Route.LinksFunction = () => [
   { rel: 'preconnect', href: 'https://docs.azure.cn', crossOrigin: 'anonymous' },

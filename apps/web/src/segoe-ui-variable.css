@@ -21,7 +21,8 @@
    continuously rather than at two pinned stops. */
 @font-face {
   font-family: 'Segoe UI Variable Web';
-  src: url('https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf') format('truetype-variations');
+  src: url('https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02') format('truetype');
+  font-style: normal;
   font-weight: 300 700;
   font-display: swap;
 }
