@@ -39,13 +39,27 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: 'Backup and Restore | Floway' }];
 }
 
+// A drop target has no counterpart in either library, so it is composed from
+// the WinUI families the rest of the dashboard already spends. It is a button,
+// and WinUI paints a chromeless button by stepping the subtle fill ramp, which
+// is what the pointer and the drag both do here. The stroke is the strong
+// control stroke rather than the card stroke a surface would take: this outline
+// has to be seen, the same reason an unchecked check box reads that family. The
+// radius is the overlay step, matching the card the zone sits in, and the
+// dashed pattern is the one thing with no WinUI provenance -- it is the
+// affordance itself, and nothing in the corpus describes a drop target.
+//
+// Dragging a file over it is the accepting state, so it takes the accent
+// stroke; disablement steps the fill and the foreground rather than fading the
+// whole element, which is how WinUI disables everything except a list item.
 const useDropzoneStyles = makeStyles({
   root: {
     alignItems: 'center',
-    ...shorthands.border('2px', 'dashed', 'var(--colorNeutralStroke1)'),
-    ...shorthands.borderRadius('8px'),
+    ...shorthands.border('2px', 'dashed', 'var(--winui-control-strong-stroke-default)'),
+    ...shorthands.borderRadius('var(--winui-overlay-corner-radius)'),
+    backgroundColor: 'var(--winui-subtle-fill-transparent)',
+    color: 'var(--winui-text-fill-secondary)',
     cursor: 'pointer',
-    color: 'inherit',
     display: 'flex',
     font: 'inherit',
     flexDirection: 'column',
@@ -54,19 +68,21 @@ const useDropzoneStyles = makeStyles({
     minHeight: '120px',
     padding: '24px',
     textAlign: 'center',
-    transition: 'border-color .15s, background-color .15s',
-    ':hover': {
-      ...shorthands.borderColor('var(--colorBrandForeground1)'),
-      backgroundColor: 'var(--colorBrandBackground2)',
-    },
+    transitionDuration: 'var(--winui-control-faster-animation-duration)',
+    transitionProperty: 'border-color, background-color',
+    transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
+    ':hover': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
+    ':active': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
   },
   active: {
-    ...shorthands.borderColor('var(--colorBrandForeground1)'),
-    backgroundColor: 'var(--colorBrandBackground2)',
+    ...shorthands.borderColor('var(--winui-accent-fill-default)'),
+    backgroundColor: 'var(--winui-subtle-fill-secondary)',
   },
   disabled: {
+    ...shorthands.borderColor('var(--winui-control-strong-stroke-disabled)'),
+    backgroundColor: 'var(--winui-control-fill-disabled)',
+    color: 'var(--winui-text-fill-disabled)',
     cursor: 'not-allowed',
-    opacity: '.6',
   },
 });
 
@@ -76,10 +92,13 @@ const usePreviewGridStyles = makeStyles({
     gap: '10px',
     gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
   },
+  // One tile per counted entity. It is the Expander's content region -- the
+  // secondary step of the card ramp -- at the control corner rather than the
+  // overlay one, because these sit inside a card rather than being one.
   cell: {
     alignItems: 'center',
-    backgroundColor: 'var(--colorNeutralBackground2)',
-    ...shorthands.borderRadius('6px'),
+    backgroundColor: 'var(--winui-card-background-fill-secondary)',
+    ...shorthands.borderRadius('var(--winui-control-corner-radius)'),
     display: 'flex',
     flexDirection: 'column',
     gap: '2px',
@@ -339,11 +358,8 @@ export default function DashboardAdminBackupRestore() {
           aria-label={t('dashboard.backupRestore.import.dropzone')}
           type="button"
         >
-          <ArrowUploadRegular
-            className="text-fui-fg3"
-            style={{ fontSize: '28px' }}
-          />
-          <Text size={300} className="text-fui-fg3">
+          <ArrowUploadRegular style={{ fontSize: '28px' }} />
+          <Text size={300}>
             {dragOver
               ? t('dashboard.backupRestore.import.dropzoneActive')
               : t('dashboard.backupRestore.import.dropzone')}
