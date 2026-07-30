@@ -171,6 +171,7 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
+      const raw = recordRawMessages(client);
       const received = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
 
       client.send(JSON.stringify({
@@ -183,6 +184,8 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
       }));
 
       const messages = await received;
+      raw.stop();
+      assert(raw.messages.every(message => !message.includes('[DONE]')), 'expected the WebSocket transport to carry no SSE sentinel');
       assert(messages.every(message => message.event_id === 'evt_1'));
       const completed = messages.find(message => message.type === 'response.completed') as { response?: { id?: unknown } } | undefined;
       assertExists(completed);

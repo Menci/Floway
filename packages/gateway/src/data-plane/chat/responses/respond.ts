@@ -9,7 +9,7 @@ import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
@@ -135,9 +135,16 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
 const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
-      const sse = responsesProtocolFrameToSSEFrame(frame);
-      if (sse) yield sse;
+      yield responsesProtocolFrameToSSEFrame(frame);
     }
+    // The SSE transport terminates on the literal `[DONE]` payload, per the
+    // OpenResponses 2026-04-24 spec, "Streaming HTTP Responses":
+    // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx?plain=1#L84
+    // The terminating frame is appended here rather than by a producer because
+    // a Responses stream ends on its terminal event: the client-output boundary
+    // and `observeResponsesFrames` both return there, so an upstream `done`
+    // frame never survives a completed stream.
+    yield responsesProtocolFrameToSSEFrame(doneFrame());
   } catch (error) {
     state.failed = true;
     yield internalResponsesStreamErrorFrame(error);
