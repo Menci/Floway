@@ -29,7 +29,7 @@ export const chatCompletionsContentToResponsesInputContent = (content: string | 
         return {
           type: 'input_image',
           image_url: part.image_url.url,
-          detail: part.image_url.detail ?? 'auto',
+          ...(part.image_url.detail === undefined ? {} : { detail: part.image_url.detail }),
         };
       }
     },
@@ -51,19 +51,19 @@ export const responsesContentToChatCompletionsContent = (content: string | Respo
             if (typeof part.image_url !== 'string') {
               throw new TranslatorInputError('Cannot translate file_id-only image content to Chat Completions.');
             }
-            let detail: 'auto' | 'low' | 'high';
-            switch (part.detail) {
-            case 'auto': detail = 'auto'; break;
-            case 'low': detail = 'low'; break;
-            case 'high': detail = 'high'; break;
-            default:
+            // Both protocols default an absent `detail` to `auto`, so dropping the
+            // key is lossless. Forwarding `null` is not an option: the Chat
+            // Completions `image_url.detail` enum has no null member.
+            // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L31089-L31097
+            // https://web.archive.org/web/20260730100926/https://developers.openai.com/api/docs/guides/images-vision.md
+            if (part.detail !== undefined && part.detail !== null && part.detail !== 'auto' && part.detail !== 'low' && part.detail !== 'high') {
               throw new TranslatorInputError(`Cannot translate image detail '${part.detail}' to Chat Completions.`);
             }
             return {
               type: 'image_url',
               image_url: {
                 url: part.image_url,
-                detail,
+                ...(part.detail === undefined || part.detail === null ? {} : { detail: part.detail }),
               },
             };
           }

@@ -150,11 +150,18 @@ export interface ResponsesInputText {
 }
 
 export interface ResponsesInputImage {
-  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3947-L3979
+  // The request-side shape is `ResponseInputImageContent` /
+  // `InputImageContentParamAutoParam`, where `detail` is optional and nullable.
+  // `ResponseInputImage` / `InputImageContent` — which requires `detail` — is the
+  // response-side echo. Omitting `detail` means `auto` on both Responses and Chat
+  // Completions.
+  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4000-L4029
+  // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L68380-L68416
+  // https://web.archive.org/web/20260730100926/https://developers.openai.com/api/docs/guides/images-vision.md
   type: 'input_image';
   image_url?: string | null;
   file_id?: string | null;
-  detail: 'auto' | 'low' | 'high' | 'original' | (string & {});
+  detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null;
   prompt_cache_breakpoint?: ResponsesPromptCacheBreakpoint | null;
 }
 
@@ -391,7 +398,7 @@ export type ResponsesAgentMessageContent =
   | ResponsesInputFile
   | { type: 'text' | 'summary_text' | 'reasoning_text'; text: string }
   | { type: 'refusal'; refusal: string }
-  | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail: 'auto' | 'low' | 'high' | 'original' | (string & {}) }
+  | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null }
   | { type: 'encrypted_content'; encrypted_content: string }
   | (Record<string, unknown> & { type: string });
 
