@@ -15,9 +15,9 @@
 // be selected and carry an icon.
 //
 // Several rows below substitute a Fluent token rather than declare the property
-// the token feeds. That is not a style choice: the values are reached only
-// through a keyframe stop or through a declaration the sidebar marks
-// `!important`, and in both cases the variable is the one place left where the
+// the token feeds. That is not a style choice: those values are reached only
+// through a keyframe stop, or through an inline style the sidebar writes on the
+// element itself, and in both cases the variable is the one place left where the
 // colour can still be chosen. See ./tokens.ts for the selector convention.
 export const navCss = `
 /* Item foreground. Fluent's neutral pair gives way to WinUI's primary text
