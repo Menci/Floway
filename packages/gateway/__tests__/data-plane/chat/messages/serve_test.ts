@@ -108,7 +108,7 @@ const makeResponsesResultEvent = (id = 'resp_test'): ResponsesStreamEvent => {
       id: 'msg_resp',
       role: 'assistant',
       status: 'completed',
-      content: [{ type: 'output_text', text: 'hi from responses' }],
+      content: [{ type: 'output_text', text: 'hi from responses', annotations: [] }],
     }],
     output_text: 'hi from responses',
     error: null,

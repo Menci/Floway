@@ -50,7 +50,7 @@ describe('Responses affinity egress', () => {
       type: 'message' as const,
       id: 'msg_queued',
       role: 'assistant' as const,
-      content: [{ type: 'output_text' as const, text: 'waiting' }],
+      content: [{ type: 'output_text' as const, text: 'waiting', annotations: [] }],
     };
     const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
     for await (const frame of wrapResponsesAffinityEgress(frames([
@@ -103,7 +103,7 @@ describe('Responses affinity egress', () => {
       id: 'msg_1',
       role: 'assistant' as const,
       status: 'completed',
-      content: [{ type: 'output_text' as const, text: 'answer' }],
+      content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
     };
     const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
     for await (const frame of wrapResponsesAffinityEgress(frames([
@@ -178,7 +178,7 @@ describe('Responses affinity egress', () => {
       id: 'msg_1',
       role: 'assistant' as const,
       status: 'completed',
-      content: [{ type: 'output_text' as const, text: 'answer' }],
+      content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
     };
     const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
     for await (const frame of wrapResponsesAffinityEgress(frames([

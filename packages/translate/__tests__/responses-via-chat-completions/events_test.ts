@@ -163,7 +163,7 @@ test('translateChatCompletionsChunkToResponsesEvents replaces buffered scalar re
       type: 'message',
       id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer' }],
+      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     },
   ]);
 });
@@ -401,7 +401,7 @@ test('translateChatCompletionsChunkToResponsesEvents prefers reasoning_items ove
       type: 'message',
       id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer' }],
+      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     },
   ]);
 });
@@ -498,7 +498,7 @@ test('translateChatCompletionsChunkToResponsesEvents discards scalar reasoning w
       type: 'message',
       id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer' }],
+      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     },
   ]);
 });
