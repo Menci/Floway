@@ -120,7 +120,6 @@ export const bingCardShadow = [
   '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
 ].join(', ');
 
-
 export const bingElevation4Shadow = [
   '0px 0.3px 0.9px light-dark(rgba(0, 0, 0, 0.12), transparent)',
   '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
