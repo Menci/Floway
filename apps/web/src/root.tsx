@@ -22,22 +22,28 @@ import {
 } from './components/ui/app-loading-screen';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { fluentComponents } from './fluent';
-import { baseFontStack } from './theme';
-import { segoeWebFontCss, segoeWebFontOrigin, segoeWebFonts } from './web-fonts';
+import { fontFamilyCriticalCss } from './theme';
 import { winuiCss } from './winui';
 import { winuiDarkTheme, winuiLightTheme } from './winui/theme';
 import './i18n';
 import '@fontsource/maple-mono/400.css';
 import '@fontsource/maple-mono/600.css';
 import '@fontsource/maple-mono/700.css';
+import './segoe-ui-variable.css';
 import './uno.css';
 
 const { FluentProvider } = fluentComponents;
 
+// The base typeface is the one third-party fetch the first paint waits on, so
+// it is preloaded rather than discovered when the stylesheet resolves. Fonts
+// are fetched in CORS mode whatever the crossOrigin value, and a preload whose
+// mode disagrees with the real request is fetched twice.
+// https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/rel/preload#cors-enabled_fetches
+const SEGOE_UI_VARIABLE_URL = 'https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf';
+
 export const links: Route.LinksFunction = () => [
-  { rel: 'preconnect', href: segoeWebFontOrigin, crossOrigin: 'anonymous' },
-  { rel: 'preload', href: segoeWebFonts.regular, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
-  { rel: 'preload', href: segoeWebFonts.semibold, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' },
+  { rel: 'preconnect', href: 'https://docs.azure.cn', crossOrigin: 'anonymous' },
+  { rel: 'preload', as: 'font', type: 'font/ttf', href: SEGOE_UI_VARIABLE_URL, crossOrigin: 'anonymous' },
 ];
 
 const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)';
@@ -75,11 +81,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
         <style>{`
           html, body { height: 100%; overflow: hidden; }
-          body { font-family: ${baseFontStack}; }
           @media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
           *, *::before, *::after { box-sizing: border-box; }
           html body pre[class*="language-"] { border: 0; }
-          ${segoeWebFontCss}
+          ${fontFamilyCriticalCss}
           ${gradientBackgroundCriticalCss}
           ${appLoadingCriticalCss}
           ${navigationProgressCss}
