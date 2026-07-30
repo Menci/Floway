@@ -47,12 +47,15 @@ export const navCss = `
    a hovered one read alike until the indicator distinguishes them -- which is
    why the indicator, not the fill, is what carries selection here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L26-L32 */
-.fui-NavItem.fui-NavItem {
+.fui-NavItem.fui-NavItem,
+.fui-NavCategoryItem.fui-NavCategoryItem {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
 .fui-NavItem.fui-NavItem:hover,
-.fui-NavItem.fui-NavItem[aria-current='page'] {
+.fui-NavItem.fui-NavItem[aria-current='page'],
+.fui-NavCategoryItem.fui-NavCategoryItem:hover,
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page'] {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
@@ -68,22 +71,51 @@ export const navCss = `
 }
 
 /* Fluent draws its own selection indicator as an ::after on the selected item,
-   4px wide and 20px tall in the compound brand foreground. WinUI's is 3px by
-   16px in the accent fill, and it animates between the item losing selection
-   and the one taking it, which a per-item pseudo-element cannot do. The
-   sidebar draws that one; this clears Fluent's so the two do not both show.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222 */
+   4px wide and 20px tall and fully rounded, in the compound brand foreground.
+   WinUI's is 3px by 16px at a 2px radius in the accent fill.
+
+   A NavItem's is cleared outright: WinUI's indicator animates between the item
+   losing selection and the one taking it, which a per-item pseudo-element
+   cannot do, so the sidebar draws a measured one and this stops the two from
+   both showing. A category row is never the source or the destination of that
+   animation -- it opens and closes rather than navigating -- so it keeps a
+   pseudo-element, restated at WinUI's geometry and colour. The 16px is carried
+   as the inset it leaves against the 36px row it is stated for, which is how
+   every other selection indicator here is written.
+
+   Its colour is not a declaration but a token substitution, because Fluent
+   grows the pill in with a keyframe -- \`0% { background: transparent }\` to
+   \`100% { background: var(--colorCompoundBrandForeground1) }\` -- filled in
+   both directions. An animation outranks every normal rule in the cascade, so
+   a \`background-color\` of ours would be overridden by the 100% stop for as
+   long as the item stays selected; the variable that stop reads is the only
+   input left. It is declared on the pseudo-element itself so it reaches the
+   one declaration that reads it and nothing the row contains.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L217
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L48 */
 .fui-NavItem.fui-NavItem::after {
   content: none;
 }
 
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']::after {
+  --colorCompoundBrandForeground1: var(--winui-accent-fill-default);
+  border-radius: 2px;
+  height: auto;
+  inset-block: 10px;
+  width: 3px;
+}
+
 .fui-NavItem.fui-NavItem:active,
 .fui-NavItem.fui-NavItem[data-nav-pending],
-.fui-NavItem.fui-NavItem[aria-current='page']:hover {
+.fui-NavItem.fui-NavItem[aria-current='page']:hover,
+.fui-NavCategoryItem.fui-NavCategoryItem:active,
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:hover {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
-.fui-NavItem.fui-NavItem[aria-current='page']:active {
+.fui-NavItem.fui-NavItem[aria-current='page']:active,
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page']:active {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
@@ -91,7 +123,9 @@ export const navCss = `
    so the foreground above carries the whole disabled reading.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L33 */
 .fui-NavItem.fui-NavItem:disabled,
-.fui-NavItem.fui-NavItem[aria-disabled='true'] {
+.fui-NavItem.fui-NavItem[aria-disabled='true'],
+.fui-NavCategoryItem.fui-NavCategoryItem:disabled,
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-disabled='true'] {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
