@@ -382,17 +382,34 @@ const respondResponsesWebSocket = async (input: {
         if (next.type === 'keep-alive') {
           // Extended reasoning turns go completely silent: upstream sends SSE
           // `ping` events, `parseResponsesStream` drops them, and no frame at
-          // all reaches this socket for minutes. A silent Workers WebSocket is
-          // torn down — a raw probe against a Cloudflare-proxied endpoint died
-          // at TCP level around 125 s with no close frame and no
-          // edge-originated ping, and a Worker cannot answer with one of its
-          // own: workerd's `WebSocket` exposes only
-          // accept/send/close/(de)serializeAttachment, and the kj layer beneath
-          // states the omission as a design decision ("Ping/Pong … are not
-          // exposed through this interface"). RFC 6455 §5.5.2 is the right
-          // mechanism and it is unreachable here; it would also not help the
-          // client that needs it most, since Codex's frame pump swallows
-          // control frames and only a text frame rearms its 300 s idle timeout.
+          // all reaches this socket for minutes. A silent Workers WebSocket
+          // does not reliably survive that. Cloudflare states the
+          // teardown without naming a duration — "when no data is transmitted
+          // in either direction for a period of time" — and probing a
+          // `workers.dev` endpoint built on this handler's own `WebSocketPair`
+          // shape found no constant to design against: from one vantage point
+          // an idle socket lived a full hour, 4/4, while from another 13 of 16
+          // idle sockets died between 215.8 s and 1788.2 s, median around
+          // 660 s. Teardown is path-dependent and stochastic, and it is always
+          // a silent EOF — across roughly 40 observed teardowns, not one CLOSE
+          // frame and not one RST, so the failure carries no protocol-level
+          // signal.
+          // https://developers.cloudflare.com/network/websockets/#idle-timeout
+          //
+          // Cloudflare's stated remedy, a client-side ping/pong heartbeat,
+          // does not cover it: on the path that drops, 6 of 9 sockets pinging
+          // every 30 s died anyway, one of them after 61.5 s. A
+          // server-originated text frame did cover it — 12/12 survived on that
+          // same path, with ≤400 s intervals holding and ≥500 s failing. Why a
+          // data frame outlives a protocol ping there was not established.
+          // Sending a ping is not open to us regardless: workerd's `WebSocket`
+          // exposes only accept/send/close/(de)serializeAttachment, and the kj
+          // layer beneath states the omission as a design decision ("Ping/Pong
+          // … are not exposed through this interface"). RFC 6455 §5.5.2 is the
+          // right mechanism, it is unreachable here, and it would not help the
+          // client that needs it most either, since Codex's frame pump
+          // swallows control frames and only a text frame rearms its 300 s
+          // idle timeout.
           // https://github.com/cloudflare/workerd/blob/26b5461b7dcc640bb16072f1ba6f2c6df82572ba/src/workerd/api/web-socket.h#L346-L394
           // https://github.com/capnproto/capnproto/blob/e9fa5c7dc98192fc0dc0098ec770db68f997a938/c%2B%2B/src/kj/compat/http.h#L622-L631
           //
@@ -524,6 +541,12 @@ const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<
     (error): WsFrameRaceResult => ({ type: 'next-error', error }),
   );
 
+// The interval is the one already shared with SSE rather than a WebSocket
+// constant of its own. Probing showed intervals up to 400 s still holding a
+// dropping path open, so 15 s is far more frequent than the mechanism needs;
+// it is kept because there is nothing to buy by widening it. A keep-alive is
+// ~70 bytes, and the observed teardowns had a low tail at 61.5 s, against
+// which any interval chosen for economy would have no margin left.
 const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const keepAlive = new Promise<WsFrameRaceResult>(resolve => {
