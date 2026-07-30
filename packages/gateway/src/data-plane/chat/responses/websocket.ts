@@ -163,8 +163,8 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
           }
         })
         // WS-specific top-level: Hono's onError never runs for callbacks fired off
-        // an open socket, so we serialize the error inline as a close-frame-shaped
-        // JSON envelope. (HTTP entries let onError handle the same case.)
+        // an open socket, so we serialize the error inline as the spec's
+        // WebSocket error envelope. (HTTP entries let onError handle the same case.)
         .catch(error => {
           if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
         });
@@ -240,7 +240,7 @@ const handleClientMessage = async (
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
-      // same body wrapped in our standard close-frame error shape so clients
+      // same body nested under the spec's WebSocket error envelope so clients
       // can still compare error.message byte-for-byte against upstream.
       if (error instanceof PreviousResponseNotFoundError) {
         sendError(socket, 400, {
@@ -513,7 +513,7 @@ const responseDoneSummary = (event: ResponsesStreamEvent) => {
   return usage === undefined ? { id } : { id, usage };
 };
 
-const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, unknown> => {
+const normalizeErrorBody = (body: unknown, status: number): Record<string, unknown> => {
   const source = body && typeof body === 'object' && 'error' in body && typeof (body as { error?: unknown }).error === 'object'
     ? (body as { error: Record<string, unknown> }).error
     : body && typeof body === 'object'
@@ -521,10 +521,10 @@ const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, u
       : {};
   const type = typeof source.type === 'string'
     ? source.type
-    : statusCode >= 500 ? 'server_error' : 'invalid_request_error';
+    : status >= 500 ? 'server_error' : 'invalid_request_error';
   const message = typeof source.message === 'string'
     ? source.message
-    : `Responses request failed with status ${statusCode}.`;
+    : `Responses request failed with status ${status}.`;
   return {
     ...source,
     type,
@@ -533,14 +533,20 @@ const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, u
   };
 };
 
+// "WebSocket failures MUST be sent as a JSON `error` envelope with a `status`
+// code and an `error.code`."
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L166
+// The `WebSocketErrorEvent` schema requires `type`, `status`, and `error` and
+// leaves the top level open, so `sendJson` may add `event_id` beside them.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/schema/components/schemas/WebSocketErrorEvent.json#L47
 const sendError = (
   socket: ResponsesWebSocketSocket,
-  statusCode: number,
+  status: number,
   error: Record<string, unknown>,
   eventId?: string,
   dump?: DumpAccumulator | null,
 ): void => {
-  sendJson(socket, { type: 'error', status_code: statusCode, error }, eventId, dump);
+  sendJson(socket, { type: 'error', status, error }, eventId, dump);
 };
 
 const sendJson = (
