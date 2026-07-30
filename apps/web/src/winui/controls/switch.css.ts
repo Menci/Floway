@@ -67,9 +67,26 @@ export const switchCss = `
      square background of the glyph element showing past the round one it is
      meant to sit under, which reads as a second ring while the pointer is
      down. */
-  transition-duration: var(--winui-control-faster-animation-duration);
-  transition-property: transform, width, height, margin-inline-start;
-  transition-timing-function: var(--winui-control-fast-out-slow-in-easing);
+  /* Two animations, not one. The size and the margin are the template's own
+     keyframes: ControlFasterAnimationDuration on the fast-out-slow-in spline,
+     stated outright for Width and Height in the PointerOver and Pressed states.
+
+     The travel is not. Toggling states KnobTranslateTransform with Duration="0"
+     and hands the movement to a RepositionThemeAnimation, whose timing comes
+     from the OS theme and appears nowhere in the corpus -- the same dead end as
+     the flyout transitions. Giving it the size animation's 83ms and spline was
+     wrong in the direction that shows: the travel is longer and softer than a
+     knob swelling under the pointer, and that spline leaves the knob half way
+     across in a sixth of the move.
+
+     With no value to transcribe, the travel keeps Fluent's own -- an easy-ease
+     over the normal duration, which is symmetric where every WinUI curve in
+     reach is front-loaded. Left alone rather than replaced with a number chosen
+     to look right.
+     https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L443-L446 */
+  transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--durationNormal);
+  transition-property: width, height, margin-inline-start, transform;
+  transition-timing-function: var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--curveEasyEase);
   width: 12px;
 }
 
