@@ -19,7 +19,7 @@ import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
 
-const { Button, MessageBar, MessageBarBody, Text, Tooltip } = fluentComponents;
+const { Button, MessageBar, MessageBarBody, Tooltip } = fluentComponents;
 const usageMetricValues: UsageMetric[] = ['requests', 'cost', 'total', 'input', 'output', 'prefill', 'cached', 'cachedRate', 'cacheCreation', 'cacheHitRate'];
 const usageRangeValues: UsageRange[] = ['today', '7d', '30d'];
 
@@ -267,9 +267,6 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
         <div className="flex items-center gap-3 justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch">
           <div className="flex items-center flex-wrap gap-2.5 min-w-0">
-            <Text size={200} weight="semibold" className="text-fui-fg3 leading-[1.2]">
-              {t('dashboard.usage.tokenUsage')}
-            </Text>
             {canSwitchView && (
               <ChoiceGroup
                 ariaLabel={t('dashboard.usage.view.label')}

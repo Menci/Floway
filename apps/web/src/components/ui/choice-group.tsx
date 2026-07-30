@@ -16,14 +16,15 @@ const { makeStyles, tokens } = fluentComponents;
 // raised pill steps up.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SelectorBar/SelectorBar_themeresources.xaml
 const useStyles = makeStyles({
-  // SelectorBarItemSpacing is 8; the track keeps no fill, radius or padding of
-  // its own, because SelectorBar draws none.
+  // SelectorBarItemSpacing is 8, and SelectorBarPadding is 0,4 -- no fill, no
+  // radius, and room only above and below.
   root: {
     alignItems: 'center',
     display: 'flex',
     flexWrap: 'nowrap',
     gap: '8px',
     maxWidth: '100%',
+    paddingBlock: '4px',
     width: 'fit-content',
   },
   // SelectorBarItemPadding is 12,10,12,7 -- three pixels shallower at the
@@ -39,14 +40,15 @@ const useStyles = makeStyles({
     position: 'relative',
     whiteSpace: 'nowrap',
     // SelectorBarItemPillHeight is 3 and SelectorBarItemPillWidth 4, the latter
-    // being the diameter its ends round by; the pill spans the item it marks.
+    // being the diameter its ends round by. SelectorBarItemSelectionVisualMargin
+    // is 0, so the pill spans the item rather than only its label.
     '&:has(input:checked)::after': {
       backgroundColor: 'var(--winui-accent-fill-default)',
       borderRadius: '2px',
       bottom: 0,
       content: '""',
       height: '3px',
-      insetInline: '12px',
+      insetInline: 0,
       position: 'absolute',
     },
     '&:has(input:not(:disabled)):hover': { color: 'var(--winui-text-fill-secondary)' },
