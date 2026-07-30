@@ -39,7 +39,7 @@ const useStyles = makeStyles({
   pre: {
     fontFamily: 'var(--fontFamilyMonospace)',
     fontSize: 'var(--floway-font-size-mono)',
-    lineHeight: '1.55',
+    lineHeight: 'var(--lineHeightBase300)',
     margin: 0,
     minWidth: 0,
     padding: '12px',

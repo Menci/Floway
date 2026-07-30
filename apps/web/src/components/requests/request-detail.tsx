@@ -47,7 +47,7 @@ const useStyles = makeStyles({
     color: 'var(--colorNeutralForeground1)',
     fontFamily: 'var(--fontFamilyMonospace)',
     fontSize: 'var(--floway-font-size-mono)',
-    lineHeight: 1.55,
+    lineHeight: 'var(--lineHeightBase300)',
     margin: 0,
     overflow: 'visible',
     padding: '14px 16px 18px',

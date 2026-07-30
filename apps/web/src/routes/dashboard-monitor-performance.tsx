@@ -63,7 +63,7 @@ const labelledOnLogAxis = (value: number): boolean => {
 const groupByValues: PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'];
 
 const useChartStateStyles = makeStyles({
-  root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' },
+  root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: 'var(--fontSizeBase300)', height: '100%', lineHeight: 'var(--lineHeightBase300)', justifyItems: 'center' },
 });
 const usePerformanceChartStyles = makeStyles({
   root: {

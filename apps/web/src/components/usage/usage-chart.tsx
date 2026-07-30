@@ -11,7 +11,7 @@ import { chartTickValues, formatAxisDate } from '../charts/dashboard-time';
 import { useElementSize } from '../charts/use-element-size';
 
 const { makeStyles } = fluentComponents;
-const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: '13px', height: '100%', justifyItems: 'center' } });
+const useChartStateStyles = makeStyles({ root: { alignItems: 'center', color: 'var(--colorNeutralForeground3)', display: 'grid', fontSize: 'var(--fontSizeBase300)', height: '100%', lineHeight: 'var(--lineHeightBase300)', justifyItems: 'center' } });
 const useAreaBoundaryStyles = makeStyles({
   root: {
     '& path[id*="-line-"]': { opacity: '1', strokeWidth: '2px' },

@@ -1,10 +1,22 @@
 @unocss;
 
+/* The monospace ramp. WinUI states none -- it has no code face -- so this is the
+   app's own, and each size carries the leading it is set with. Without that
+   pairing a size alone inherits whatever leading its context happens to have,
+   and one identifier rendered at 13px was measured three ways in three places:
+   13/20 in a list row, 13/16 in a detail pane, and 13/13 in a table cell, where
+   the leading had collapsed onto the size. Each step is paired with the
+   proportional leading its size sits closest to, so a mono cell lines up with
+   the ordinary text in the same row. */
 :root {
   --floway-font-size-mono: 13px;
+  --floway-line-height-mono: 20px;
   --floway-font-size-mono-base100: 9px;
+  --floway-line-height-mono-base100: 14px;
   --floway-font-size-mono-base500: 17px;
+  --floway-line-height-mono-base500: 24px;
   --floway-font-size-mono-xs: 11px;
+  --floway-line-height-mono-xs: 16px;
 }
 
 button,
@@ -28,6 +40,7 @@ samp {
 pre,
 .font-mono {
   font-size: var(--floway-font-size-mono) !important;
+  line-height: var(--floway-line-height-mono) !important;
 }
 
 .font-mono :where(button, input, select, textarea, code, kbd, pre, samp),
@@ -37,14 +50,17 @@ pre :where(code, kbd, samp) {
 
 .mono-size-100 {
   --floway-font-size-mono: var(--floway-font-size-mono-base100);
+  --floway-line-height-mono: var(--floway-line-height-mono-base100);
 }
 
 .mono-size-xs {
   --floway-font-size-mono: var(--floway-font-size-mono-xs);
+  --floway-line-height-mono: var(--floway-line-height-mono-xs);
 }
 
 .mono-display {
   font-size: var(--floway-font-size-mono-base500) !important;
+  line-height: var(--floway-line-height-mono-base500) !important;
 }
 
 .font-mono,
@@ -58,4 +74,5 @@ pre :where(code, kbd, samp) {
 .fui-TableHeaderCell,
 .fui-TableHeaderCell__button {
   font-weight: var(--fontWeightSemibold) !important;
+  line-height: var(--lineHeightBase300) !important;
 }

@@ -16,7 +16,7 @@ export function DashboardPageHeader({ actions, description, eyebrow, title }: {
       <Text as="h1" size={700} weight="semibold" className="m-0">
         {title}
       </Text>
-      {description !== undefined && <Text size={300} className="text-fui-fg2 max-w-[760px]">
+      {description !== undefined && <Text size={200} className="text-fui-fg2 max-w-[760px]">
         {description}
       </Text>}
     </div>
