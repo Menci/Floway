@@ -613,9 +613,17 @@ export type ResponsesToolAllowedCaller = 'direct' | 'programmatic';
 export interface ResponsesFunctionTool {
   type: 'function';
   name: string;
-  parameters: Record<string, unknown>;
-  strict: boolean;
-  description?: string;
+  // `description`, `parameters` and `strict` are asymmetric across the two
+  // sides of the wire: a request may omit any of them, while the response tool
+  // schema marks all three required with an explicit `null` alternative. This
+  // interface models what a client may actually send, so all three are
+  // optional-nullable here and the client-facing egress completes an absent one
+  // as `null`.
+  // Request: https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L808-L845
+  // Response: https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2141-L2192
+  description?: string | null;
+  parameters?: Record<string, unknown> | null;
+  strict?: boolean | null;
   allowed_callers?: ResponsesToolAllowedCaller[] | null;
   defer_loading?: boolean;
   output_schema?: Record<string, unknown> | null;
@@ -841,7 +849,12 @@ export interface ResponsesResult {
     // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L7259-L7269
     input_tokens_details?: { cached_tokens: number; cache_write_tokens?: number };
     output_tokens_details?: { reasoning_tokens: number };
-  };
+    // `usage` is required-with-a-`null`-alternative on the response resource,
+    // so `null` is a value an upstream legitimately sends for a response that
+    // reported no token counts — distinct from a mid-stream envelope that has
+    // not accounted for them yet, which omits the key.
+    // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
+  } | null;
 }
 
 // Stored/output additional-tools roles are wider than the input-only
