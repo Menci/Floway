@@ -146,13 +146,21 @@ const useStyles = makeStyles({
   // pointer states of its own, because the whole header row is the button and
   // the chevron only shows which way that button is pointing.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L540-L574
-  // The chevron sits eight pixels clear of whatever precedes it, which with the
-  // header's four of trailing padding is the twelve the toolkit leaves between
-  // the content and the card edge.
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
+  // The chevron's box is 32 square around a 16px glyph, so it carries eight
+  // pixels of its own air on every side, and that air is what spaces the glyph
+  // rather than any margin.
+  //
+  // The header's right padding is 4 where a plain card's is 16, and the
+  // difference is the eight of air plus the four that remains: the glyph ends
+  // up twelve from the card's edge and eight from whatever precedes it, which
+  // is why it reads as centred between the two without either gap being
+  // written down. An explicit margin on top of that is what pushed it off
+  // centre in both directions while I was moving one.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L15
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L540-L560
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L99
   chevron: {
     alignItems: 'center',
-    marginInlineStart: '8px',
     color: 'var(--winui-text-fill-primary)',
     display: 'flex',
     flexGrow: 0,
