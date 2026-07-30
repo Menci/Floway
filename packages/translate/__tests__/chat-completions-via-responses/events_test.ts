@@ -29,7 +29,7 @@ const makeResponse = (status: ResponsesResult['status']): ResponsesResult => ({
       type: 'message',
       id: 'msg_base',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'hello' }],
+      content: [{ type: 'output_text', text: 'hello', annotations: [] }],
     },
   ],
   error: null,
@@ -885,7 +885,7 @@ test('translateResponsesEventToChatCompletionsChunks preserves text order around
             {
               type: 'message',
               role: 'assistant',
-              content: [{ type: 'output_text', text: 'answer' }],
+              content: [{ type: 'output_text', text: 'answer', annotations: [] }],
             },
           ],
           output_text: 'answer',
@@ -973,7 +973,7 @@ test('translateResponsesEventToChatCompletionsChunks preserves later text after 
             {
               type: 'message',
               role: 'assistant',
-              content: [{ type: 'output_text', text: 'answer' }],
+              content: [{ type: 'output_text', text: 'answer', annotations: [] }],
             },
           ],
           output_text: 'answer',

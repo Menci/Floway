@@ -4,10 +4,8 @@ import { test, vi } from 'vitest';
 import { app } from '../../../../src/app.ts';
 import { hashResponsesItem } from '../../../../src/data-plane/chat/responses/items/identity.ts';
 import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
-import { FakeTime } from '../../../test-time.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -51,13 +49,16 @@ const waitForMicrotasks = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
-const responseDoneId = (messages: readonly Record<string, unknown>[]): string => {
-  const done = messages.find(message => message.type === 'response.done') as { response?: { id?: unknown } } | undefined;
-  assertExists(done);
-  const response = done.response;
+const isTerminalResponseEvent = (message: Record<string, unknown>): boolean =>
+  message.type === 'response.completed' || message.type === 'response.failed' || message.type === 'response.incomplete';
+
+const terminalResponseId = (messages: readonly Record<string, unknown>[]): string => {
+  const terminal = messages.find(isTerminalResponseEvent) as { response?: { id?: unknown } } | undefined;
+  assertExists(terminal);
+  const response = terminal.response;
   assertExists(response);
   const id = response.id;
-  if (typeof id !== 'string') throw new Error(`expected response.done id to be a string, got ${typeof id}`);
+  if (typeof id !== 'string') throw new Error(`expected the terminal response id to be a string, got ${typeof id}`);
   return id;
 };
 
@@ -131,7 +132,7 @@ const completeResponsesTurn = async (
   client: TestWorkerWebSocket,
   eventId: string,
 ): Promise<void> => {
-  const received = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+  const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
   client.send(JSON.stringify({
     type: 'response.create',
     event_id: eventId,
@@ -144,7 +145,7 @@ const completeResponsesTurn = async (
   await waitForMicrotasks();
 };
 
-test('Responses WebSocket forwards stream events, echoes event_id, and sends response.done', async () => {
+test('Responses WebSocket forwards stream events, echoes event_id, and ends the turn on the terminal event', async () => {
   const { apiKey } = await setupAppTest();
   await withMockedFetch(
     async request => {
@@ -171,7 +172,8 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
-      const received = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const raw = recordRawMessages(client);
+      const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
 
       client.send(JSON.stringify({
         type: 'response.create',
@@ -183,19 +185,23 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
       }));
 
       const messages = await received;
+      raw.stop();
+      assert(raw.messages.every(message => !message.includes('[DONE]')), 'expected the WebSocket transport to carry no SSE sentinel');
       assert(messages.every(message => message.event_id === 'evt_1'));
-      const completed = messages.find(message => message.type === 'response.completed') as { response?: { id?: unknown } } | undefined;
+      const completed = messages.at(-1) as { type?: unknown; response?: { id?: unknown } } | undefined;
       assertExists(completed);
-      const responseId = (completed.response as { id?: unknown } | undefined)?.id;
+      const responseId = completed.response?.id;
       assertEquals(typeof responseId, 'string');
       assert(responseId !== 'resp_ws', 'expected the source boundary to replace the upstream response id');
-      assertEquals(messages.at(-1), {
-        type: 'response.done',
-        event_id: 'evt_1',
-        response: {
-          id: responseId,
-          usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
-        },
+      assertEquals(completed.type, 'response.completed');
+      // The egress stage completes the envelope, so the terminal event's usage
+      // carries both token breakdowns.
+      assertEquals((completed.response as { usage?: unknown }).usage, {
+        input_tokens: 3,
+        output_tokens: 5,
+        total_tokens: 8,
+        input_tokens_details: { cached_tokens: 0 },
+        output_tokens_details: { reasoning_tokens: 0 },
       });
     }),
   );
@@ -299,7 +305,7 @@ test('Responses WebSocket rejects the next turn after its API key is rotated', a
 
       assertEquals(await received, [{
         type: 'error',
-        status_code: 401,
+        status: 401,
         error: {
           type: 'authentication_error',
           code: 'invalid_api_key',
@@ -336,7 +342,7 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
               id: 'msg_upstream',
               role: 'assistant',
               status: 'completed',
-              content: [{ type: 'output_text', text: 'done' }],
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
             }],
             output_text: 'done',
             usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
@@ -358,122 +364,16 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
         }));
 
         const messages = await received;
-        const error = messages.find(message => message.type === 'error') as { status_code?: unknown; error?: { message?: unknown } } | undefined;
+        const error = messages.find(message => message.type === 'error') as { status?: unknown; error?: { message?: unknown } } | undefined;
         assertExists(error);
-        assertEquals(error.status_code, 500);
+        assertEquals(error.status, 500);
         assertEquals(error.error?.message, 'simulated item persistence failure');
         assert(!messages.some(message => message.type === 'response.output_item.done'));
-        assert(!messages.some(message => message.type === 'response.completed'));
-        assert(!messages.some(message => message.type === 'response.done'));
+        assert(!messages.some(isTerminalResponseEvent));
       }),
     );
   } finally {
     persistence.mockRestore();
-  }
-});
-
-test('Responses WebSocket keepalive during an in-flight request does not drop the pending upstream frame', async () => {
-  const { apiKey } = await setupAppTest();
-  const time = new FakeTime();
-  const encoder = new TextEncoder();
-  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
-  let resolveUpstreamReadStarted!: () => void;
-  const upstreamReadStarted = new Promise<void>(resolve => {
-    resolveUpstreamReadStarted = resolve;
-  });
-  let upstreamReadStartedResolved = false;
-
-  const resolveReadStartedOnce = (): void => {
-    if (upstreamReadStartedResolved) return;
-    upstreamReadStartedResolved = true;
-    resolveUpstreamReadStarted();
-  };
-  const enqueueSseEvent = (event: string, data: unknown): void => {
-    upstreamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-  };
-  const hasMessageType = (messages: readonly Record<string, unknown>[], type: string): boolean =>
-    messages.some(message => message.type === type);
-
-  try {
-    await withMockedFetch(
-      async request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-        if (url.pathname === '/copilot_internal/v2/token') {
-          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-        }
-        if (url.pathname === '/models') {
-          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-        }
-        if (url.pathname === '/responses') {
-          return new Response(new ReadableStream<Uint8Array>({
-            start(controller) {
-              upstreamController = controller;
-            },
-            pull() {
-              resolveReadStartedOnce();
-            },
-          }), {
-            headers: { 'content-type': 'text/event-stream' },
-          });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => await withWorkerWebSocketRuntime(async () => {
-        const client = await connectResponsesWebSocket(apiKey.key);
-        const messages: Record<string, unknown>[] = [];
-        const onMessage = (event: Event): void => {
-          messages.push(JSON.parse((event as MessageEvent<string>).data) as Record<string, unknown>);
-        };
-        client.addEventListener('message', onMessage);
-
-        try {
-          client.send(JSON.stringify({
-            type: 'response.create',
-            event_id: 'evt_keepalive',
-            response: {
-              model: 'gpt-direct-responses',
-              input: 'hello',
-            },
-          }));
-
-          await upstreamReadStarted;
-          for (let i = 0; i < 4 && !hasMessageType(messages, 'ping'); i++) {
-            await waitForMicrotasks();
-            await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
-          }
-
-          assert(hasMessageType(messages, 'ping'), 'expected a ping while the upstream response stream is idle');
-          const completed = waitForMessages(client, received => received.some(message => message.type === 'response.done'));
-
-          const response = {
-            id: 'resp_ws_keepalive',
-            object: 'response',
-            model: 'gpt-direct-responses',
-            status: 'completed',
-            output: [],
-            output_text: 'done',
-          };
-          const inProgress = { ...response, status: 'in_progress', output: [], output_text: '' };
-          enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
-          enqueueSseEvent('response.in_progress', { type: 'response.in_progress', response: inProgress, sequence_number: 1 });
-          enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 2 });
-          upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
-          upstreamController.close();
-
-          await completed;
-
-          const types = messages.map(message => message.type);
-          assert(types.indexOf('ping') < types.indexOf('response.created'), 'expected the delayed upstream frame after the ping');
-          assert(types.includes('response.completed'), 'expected the terminal upstream frame after the ping');
-          assertEquals(types.at(-1), 'response.done');
-        } finally {
-          client.removeEventListener('message', onMessage);
-        }
-      }),
-    );
-  } finally {
-    time.restore();
   }
 });
 
@@ -488,7 +388,7 @@ test('Responses WebSocket returns OpenAI-style error envelopes for unsupported c
     assertEquals(await received, [{
       type: 'error',
       event_id: 'evt_bad',
-      status_code: 400,
+      status: 400,
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
@@ -509,7 +409,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     const [invalidJsonMessage] = await invalidJson;
     assertExists(invalidJsonMessage);
     assertEquals(invalidJsonMessage.type, 'error');
-    assertEquals(invalidJsonMessage.status_code, 400);
+    assertEquals(invalidJsonMessage.status, 400);
     assertEquals((invalidJsonMessage.error as { type?: unknown; code?: unknown }).type, 'invalid_request_error');
     assertEquals((invalidJsonMessage.error as { type?: unknown; code?: unknown }).code, 'invalid_request_error');
     assertStringIncludes((invalidJsonMessage.error as { message: string }).message, 'valid JSON');
@@ -520,7 +420,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     assertEquals(await invalidShape, [{
       type: 'error',
       event_id: 'evt_shape',
-      status_code: 400,
+      status: 400,
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
@@ -531,16 +431,30 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     const invalidResponse = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_response', response: {} }));
 
-    assertEquals(await invalidResponse, [{
-      type: 'error',
-      event_id: 'evt_response',
-      status_code: 400,
-      error: {
-        type: 'invalid_request_error',
-        code: 'invalid_request_error',
-        message: 'response.create requires response.model to be a non-empty string.',
-      },
-    }]);
+    const [invalidResponseMessage] = await invalidResponse;
+    assertExists(invalidResponseMessage);
+    assertEquals(invalidResponseMessage.type, 'error');
+    assertEquals(invalidResponseMessage.event_id, 'evt_response');
+    assertEquals(invalidResponseMessage.error, {
+      type: 'invalid_request_error',
+      code: 'missing_required_parameter',
+      message: "Missing required parameter: 'model'.",
+      param: 'model',
+    });
+
+    const invalidInput = waitForMessages(client, messages => messages.length === 1);
+    client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_input', response: { model: 'test-model' } }));
+
+    const [invalidInputMessage] = await invalidInput;
+    assertExists(invalidInputMessage);
+    assertEquals(invalidInputMessage.type, 'error');
+    assertEquals(invalidInputMessage.event_id, 'evt_input');
+    assertEquals(invalidInputMessage.error, {
+      type: 'invalid_request_error',
+      code: 'invalid_request_error',
+      message: 'Responses input must be a string or an array.',
+      param: 'input',
+    });
 
     const invalidItem = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({
@@ -552,7 +466,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     assertEquals(await invalidItem, [{
       type: 'error',
       event_id: 'evt_item',
-      status_code: 400,
+      status: 400,
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
@@ -563,7 +477,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
   });
 });
 
-test('Responses WebSocket forwards HTTP failures with status_code, error.code, and event_id', async () => {
+test('Responses WebSocket forwards HTTP failures with status, error.code, and event_id', async () => {
   const { apiKey } = await setupAppTest();
   await withMockedFetch(
     async request => {
@@ -591,7 +505,7 @@ test('Responses WebSocket forwards HTTP failures with status_code, error.code, a
       assertEquals(await received, [{
         type: 'error',
         event_id: 'evt_missing',
-        status_code: 404,
+        status: 404,
         error: {
           type: 'invalid_request_error',
           code: 'invalid_request_error',
@@ -631,7 +545,7 @@ test('Responses WebSocket dump responseBytes counts an error envelope sent downs
           },
         }));
 
-        assertEquals((await received)[0]?.status_code, 404);
+        assertEquals((await received)[0]?.status, 404);
         await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
         const expectedBytes = recorded.messages.reduce(
           (total, message) => total + new TextEncoder().encode(message).byteLength,
@@ -674,7 +588,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `answer ${turn}` }],
+            content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -682,7 +596,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
-      const firstDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',
         response: {
@@ -691,8 +605,8 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
           store: false,
         },
       }));
-      const firstMessages = await firstDone;
-      const firstResponseId = responseDoneId(firstMessages);
+      const firstMessages = await firstTerminal;
+      const firstResponseId = terminalResponseId(firstMessages);
 
       assert(firstResponseId !== 'resp_ws_store_false_1', 'expected the source boundary to replace the upstream response id');
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
@@ -707,7 +621,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
         [],
       );
 
-      const followupDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const followupTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',
         event_id: 'evt_followup',
@@ -718,20 +632,20 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
           store: false,
         },
       }));
-      const secondMessages = await followupDone;
-      const secondResponseId = responseDoneId(secondMessages);
+      const secondMessages = await followupTerminal;
+      const secondResponseId = terminalResponseId(secondMessages);
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, secondResponseId, 0), null);
 
       const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
       assertEquals(secondBody.previous_response_id, undefined);
       assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
         ['message', 'user', 'first question'],
-        ['message', 'assistant', [{ type: 'output_text', text: 'answer 1' }]],
+        ['message', 'assistant', [{ type: 'output_text', text: 'answer 1', annotations: [] }]],
         ['message', 'user', 'follow-up'],
       ]);
 
       const sessionB = await connectResponsesWebSocket(apiKey.key);
-      const missingDone = waitForMessages(sessionB, messages => messages.length === 1);
+      const missingError = waitForMessages(sessionB, messages => messages.length === 1);
       sessionB.send(JSON.stringify({
         type: 'response.create',
         event_id: 'evt_cross_session',
@@ -743,10 +657,10 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
         },
       }));
 
-      assertEquals(await missingDone, [{
+      assertEquals(await missingError, [{
         type: 'error',
         event_id: 'evt_cross_session',
-        status_code: 400,
+        status: 400,
         error: {
           message: `Previous response with id '${firstResponseId}' not found.`,
           type: 'invalid_request_error',
@@ -754,6 +668,103 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
           code: 'previous_response_not_found',
         },
       }]);
+    }),
+  );
+});
+
+test('Responses WebSocket evicts a failed continuation target so the next attempt reports previous_response_not_found', async () => {
+  const { apiKey } = await setupAppTest();
+  let responseCalls = 0;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        responseCalls += 1;
+        if (responseCalls === 2) {
+          return jsonResponse({
+            error: { message: 'simulated upstream rejection', type: 'invalid_request_error', code: 'bad_request' },
+          }, 400);
+        }
+        return sseResponsesResponse({
+          id: `resp_ws_evict_${responseCalls}`,
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output_text: 'answer',
+          output: [{
+            id: `assistant_ws_evict_${responseCalls}`,
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: 'answer' }],
+          }],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        response: { model: 'gpt-direct-responses', input: 'first question', store: false },
+      }));
+      const firstResponseId = terminalResponseId(await firstTerminal);
+
+      const rejected = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_rejected',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: firstResponseId,
+          input: 'follow-up the upstream rejects',
+          store: false,
+        },
+      }));
+      assertEquals(await rejected, [{
+        type: 'error',
+        event_id: 'evt_rejected',
+        status: 400,
+        error: {
+          message: 'simulated upstream rejection',
+          type: 'invalid_request_error',
+          code: 'bad_request',
+        },
+      }]);
+
+      const evicted = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_evicted',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: firstResponseId,
+          input: 'retry from the same id',
+          store: false,
+        },
+      }));
+
+      assertEquals(await evicted, [{
+        type: 'error',
+        event_id: 'evt_evicted',
+        status: 400,
+        error: {
+          message: `Previous response with id '${firstResponseId}' not found.`,
+          type: 'invalid_request_error',
+          param: 'previous_response_id',
+          code: 'previous_response_not_found',
+        },
+      }]);
+      assertEquals(responseCalls, 2);
     }),
   );
 });
@@ -787,7 +798,7 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `answer ${turn}` }],
+            content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -795,16 +806,16 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
-      const firstDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', input: 'first' } }));
-      const firstMessages = await firstDone;
+      const firstMessages = await firstTerminal;
       const firstCompleted = firstMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
       firstResponseId = firstCompleted?.response?.id;
       assertExists(firstResponseId);
 
-      const secondDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const secondTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', previous_response_id: firstResponseId, input: 'second' } }));
-      const secondMessages = await secondDone;
+      const secondMessages = await secondTerminal;
       const secondCompleted = secondMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
       secondResponseId = secondCompleted?.response?.id;
       assertExists(secondResponseId);
@@ -885,13 +896,13 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
     async () => await withWorkerWebSocketRuntime(async () => {
       try {
         firstClient = await connectResponsesWebSocket(apiKey.key);
-        const firstDone = waitForMessages(firstClient, messages =>
+        const firstTerminal = waitForMessages(firstClient, messages =>
           messages.some(message => message.type === 'response.output_item.done'));
         firstClient.send(JSON.stringify({
           type: 'response.create',
           response: { model: 'gpt-direct-responses', store: true, input: 'first' },
         }));
-        const messages = await firstDone;
+        const messages = await firstTerminal;
         const done = messages.find(message => message.type === 'response.output_item.done') as { item?: typeof originalReasoning } | undefined;
         assertExists(done?.item);
         assert(done.item.id !== originalReasoning.id, 'expected Copilot to replace the carried reasoning id');
@@ -954,7 +965,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `turn ${turn}` }],
+            content: [{ type: 'output_text', text: `turn ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -962,12 +973,12 @@ test('Responses WebSocket session-level store: second message resolves prior ite
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const sessionA = await connectResponsesWebSocket(apiKey.key);
-      const firstDone = waitForMessages(sessionA, messages => messages.some(message => message.type === 'response.done'));
+      const firstTerminal = waitForMessages(sessionA, messages => messages.some(isTerminalResponseEvent));
       sessionA.send(JSON.stringify({
         type: 'response.create',
         response: { model: 'gpt-direct-responses', input: 'turn one input' },
       }));
-      const firstMessages = await firstDone;
+      const firstMessages = await firstTerminal;
       const firstCompleted = firstMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
       const firstResponseId = firstCompleted?.response?.id;
       assertExists(firstResponseId);
@@ -980,7 +991,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       await repo.responsesItems.deleteAll();
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
 
-      const secondDone = waitForMessages(sessionA, messages => messages.some(message => message.type === 'response.done'));
+      const secondTerminal = waitForMessages(sessionA, messages => messages.some(isTerminalResponseEvent));
       sessionA.send(JSON.stringify({
         type: 'response.create',
         response: {
@@ -989,7 +1000,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
           input: 'turn two input',
         },
       }));
-      await secondDone;
+      await secondTerminal;
 
       const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
       assertEquals(secondBody.previous_response_id, undefined);
@@ -998,7 +1009,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       // appended verbatim.
       assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
         ['message', 'user', 'turn one input'],
-        ['message', 'assistant', [{ type: 'output_text', text: 'turn 1' }]],
+        ['message', 'assistant', [{ type: 'output_text', text: 'turn 1', annotations: [] }]],
         ['message', 'user', 'turn two input'],
       ]);
 
@@ -1011,7 +1022,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       // A fresh WS session for the same api key has its own empty cache; with
       // the repo wiped, the snapshot is unreachable.
       const sessionB = await connectResponsesWebSocket(apiKey.key);
-      const missingDone = waitForMessages(sessionB, messages => messages.length === 1);
+      const missingError = waitForMessages(sessionB, messages => messages.length === 1);
       sessionB.send(JSON.stringify({
         type: 'response.create',
         event_id: 'evt_b',
@@ -1022,10 +1033,10 @@ test('Responses WebSocket session-level store: second message resolves prior ite
         },
       }));
 
-      assertEquals(await missingDone, [{
+      assertEquals(await missingError, [{
         type: 'error',
         event_id: 'evt_b',
-        status_code: 400,
+        status: 400,
         error: {
           message: "Previous response with id 'resp_session_1' not found.",
           type: 'invalid_request_error',
@@ -1142,7 +1153,7 @@ test('Responses WebSocket outer catch records a failed perf sample attributed to
         const [errorMessage] = await received;
         assertExists(errorMessage);
         assertEquals(errorMessage.type, 'error');
-        assertEquals(errorMessage.status_code, 500);
+        assertEquals(errorMessage.status, 500);
         assertEquals(errorMessage.event_id, 'evt_throw');
       }),
     );

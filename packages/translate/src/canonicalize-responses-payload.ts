@@ -34,7 +34,6 @@ export function canonicalizeResponsesPayload(value: unknown): CanonicalResponses
           return typeof content.text === 'string' && hasValidPromptCacheBreakpoint(content);
         case 'input_image':
           return (typeof content.image_url === 'string' || typeof content.file_id === 'string')
-            && typeof content.detail === 'string'
             && hasValidPromptCacheBreakpoint(content);
         case 'input_file':
           return hasValidPromptCacheBreakpoint(content);
@@ -48,6 +47,14 @@ export function canonicalizeResponsesPayload(value: unknown): CanonicalResponses
     throw new TranslatorInputError('Responses payload must be an object.');
   }
   const payload = value as ResponsesRequestPayload;
+  // `model` is required on both the create and the compact request bodies, and
+  // resolution binds it straight into a SQL lookup, so the wire boundary is the
+  // only place that can still turn a missing id into a caller-facing 400. The
+  // message and code reproduce OpenAI's own rejection verbatim.
+  // https://github.com/mattermost/mattermost-plugin-agents/issues/476
+  if (typeof payload.model !== 'string' || payload.model.length === 0) {
+    throw new TranslatorInputError("Missing required parameter: 'model'.", { param: 'model', code: 'missing_required_parameter' });
+  }
   const input: unknown = payload.input;
   if (typeof input !== 'string' && !Array.isArray(input)) {
     throw new TranslatorInputError('Responses input must be a string or an array.', { param: 'input' });

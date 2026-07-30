@@ -38,7 +38,6 @@ const translateUserContentBlock = (
     return {
       type: 'input_image',
       image_url: `data:${block.source.media_type};base64,${block.source.data}`,
-      detail: 'auto',
     };
   }
 

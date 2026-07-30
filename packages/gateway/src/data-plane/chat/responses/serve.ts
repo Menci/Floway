@@ -1,12 +1,13 @@
 import { responsesAttempt } from './attempt.ts';
-import { wrapNativeResponsesClientOutput } from './client-output.ts';
+import { responsesCreatedAt, wrapResponsesStatefulOutput } from './client-output.ts';
+import { completeResponsesCompaction } from './envelope.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ClientResponsesCompaction, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 interface ResponsesServeArgs {
@@ -48,7 +49,7 @@ export const responsesServe = {
     return result;
   },
 
-  compact: async (args: ResponsesServeArgs): Promise<ResponsesAttemptResult> => {
+  compact: async (args: ResponsesServeArgs): Promise<ResponsesAttemptResult<ClientResponsesCompaction>> => {
     const { payload, ctx, headers } = args;
     // Compact accepts `previous_response_id` (the official endpoint documents
     // it). When present serve-prep expands it the same way generate does so
@@ -82,11 +83,11 @@ export const responsesServe = {
     );
     if (result.type !== 'result') return result;
 
-    const stored = wrapNativeResponsesClientOutput(syntheticEventsFromResult(result.result), ctx);
-    const clientResult = await collectResponsesProtocolEventsToResult(stored);
+    const stored = wrapResponsesStatefulOutput(syntheticEventsFromResult(result.result), ctx);
+    const persisted = await collectResponsesProtocolEventsToResult(stored);
     return {
       ...result,
-      result: clientResult,
+      result: completeResponsesCompaction(persisted, responsesCreatedAt(ctx)),
       usage: result.usage,
     };
   },
