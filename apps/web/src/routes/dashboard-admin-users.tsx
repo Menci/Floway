@@ -4,7 +4,7 @@ import {
   KeyRegular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { redirect, useOutletContext } from 'react-router';
@@ -13,7 +13,7 @@ import { z } from 'zod';
 import type { DashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
-import type { ControlPlaneUser, UpstreamOption } from '../api/types';
+import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import type { Route } from './+types/dashboard-admin-users';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -24,6 +24,7 @@ import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
+import { UpstreamAccessControl } from '../components/upstreams/upstream-access-control';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
 import { useAuthStore } from '../stores/auth-store';
@@ -31,7 +32,6 @@ import { useAuthStore } from '../stores/auth-store';
 const {
   Badge,
   Button,
-  Checkbox,
   DialogActions,
   DialogTitle,
   Field,
@@ -47,13 +47,14 @@ const {
   TableHeaderCell,
   TableRow,
   Text,
-  makeStyles,
 } = fluentComponents;
 
 interface UsersPageData {
   users: ControlPlaneUser[];
   upstreams: UpstreamOption[];
+  models: ControlPlaneModel[];
   error: string | null;
+  modelsLoaded: boolean;
   usersLoaded: boolean;
   upstreamsLoaded: boolean;
 }
@@ -70,10 +71,6 @@ interface PasswordFormValues {
   password: string;
   confirmation: string;
 }
-
-const useStyles = makeStyles({
-  validationMessage: { color: 'var(--colorPaletteRedForeground1)' },
-});
 
 export async function clientLoader(): Promise<UsersPageData> {
   if (!getSessionToken()) throw redirect('/');
@@ -111,9 +108,11 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
     const next = await loadUsersPageData();
     setLoading(false);
     setData(current => ({
+      models: next.modelsLoaded ? next.models : current.models,
       users: next.usersLoaded ? next.users : current.users,
       upstreams: next.upstreamsLoaded ? next.upstreams : current.upstreams,
       error: next.error,
+      modelsLoaded: next.modelsLoaded,
       usersLoaded: next.usersLoaded,
       upstreamsLoaded: next.upstreamsLoaded,
     }));
@@ -188,6 +187,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       <UserDialog
         actorId={actor.id}
         mode="create"
+        models={data.models}
         onOpenChange={setCreateOpen}
         onSaved={() => afterSaved()}
         open={createOpen}
@@ -196,6 +196,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       {editTarget && <UserDialog
         actorId={actor.id}
         mode="edit"
+        models={data.models}
         onOpenChange={setEditOpen}
         onSaved={afterSaved}
         open={editOpen}
@@ -327,6 +328,7 @@ function UsersTable({
 
 interface UserDialogCommonProps {
   actorId: number;
+  models: ControlPlaneModel[];
   onOpenChange: (open: boolean) => void;
   onSaved: (userId?: number) => Promise<void>;
   open: boolean;
@@ -339,7 +341,7 @@ type UserDialogProps = UserDialogCommonProps & (
 );
 
 function UserDialog(props: UserDialogProps) {
-  const { actorId, mode, onOpenChange, onSaved, open, upstreams } = props;
+  const { actorId, mode, models, onOpenChange, onSaved, open, upstreams } = props;
   const { t } = useTranslation();
   const user = props.mode === 'edit' ? props.user : null;
   const [saving, setSaving] = useState(false);
@@ -356,7 +358,7 @@ function UserDialog(props: UserDialogProps) {
         ctx.addIssue({ code: 'custom', message: 'dashboard.users.validation.passwordRequired', path: ['password'] });
       }
       if (value.upstreamOverride && value.upstreamIds.length === 0) {
-        ctx.addIssue({ code: 'custom', message: 'dashboard.users.validation.upstreamRequired', path: ['upstreamIds'] });
+        ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamAccess.validation', path: ['upstreamIds'] });
       }
     }),
     [mode],
@@ -467,16 +469,17 @@ function UserDialog(props: UserDialogProps) {
           onChange={checked => setValue('isAdmin', checked, { shouldValidate: true })}
         />
       </div>
-      <UpstreamAccessPicker
+      <UpstreamAccessControl
+        available={upstreams}
         disabled={saving}
         error={errors.upstreamIds?.message ? t(errors.upstreamIds.message) : null}
         ids={values.upstreamIds}
+        models={models}
         onChange={next => {
           setValue('upstreamOverride', next.override, { shouldValidate: true });
           setValue('upstreamIds', next.ids, { shouldValidate: true });
         }}
         override={values.upstreamOverride}
-        upstreams={upstreams}
       />
       {mode === 'create' && (
         <MessageBar intent="info"><MessageBarBody>{t('dashboard.users.createdDefaultKey')}</MessageBarBody></MessageBar>
@@ -505,71 +508,6 @@ function PermissionToggle({ checked, description, disabled, label, onChange }: {
         disabled={disabled}
         onChange={(_, data) => onChange(!!data.checked)}
       />
-    </div>
-  );
-}
-
-function UpstreamAccessPicker({ disabled, error, ids, onChange, override, upstreams }: {
-  disabled: boolean;
-  error: string | null;
-  ids: string[];
-  onChange: (value: { override: boolean; ids: string[] }) => void;
-  override: boolean;
-  upstreams: UpstreamOption[];
-}) {
-  const { t } = useTranslation();
-  const idPrefix = useId();
-  const styles = useStyles();
-  return (
-    <div className="grid gap-[10px] min-w-0">
-      <div className="flex items-start justify-between gap-3 py-1">
-        <div className="grid gap-1 min-w-0">
-          <Text weight="semibold">{t('dashboard.users.upstreams.override')}</Text>
-          <Text size={200} className="text-fui-fg2 leading-[1.4]">{t('dashboard.users.upstreams.description')}</Text>
-        </div>
-        <Switch
-          aria-label={t('dashboard.users.upstreams.override')}
-          checked={override}
-          disabled={disabled}
-          onChange={(_, next) => onChange({ override: !!next.checked, ids })}
-        />
-      </div>
-      {override && (
-        <div
-          aria-describedby={error ? `${idPrefix}-error` : undefined}
-          aria-invalid={error ? true : undefined}
-          aria-labelledby={`${idPrefix}-label`}
-          className="grid gap-1.5"
-          role="group"
-        >
-          <Text id={`${idPrefix}-label`} weight="semibold">
-            {t('dashboard.users.upstreams.select')}
-          </Text>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 max-[560px]:grid-cols-1">
-            {upstreams.map((upstream, index) => (
-              <Checkbox
-                checked={ids.includes(upstream.id)}
-                disabled={disabled}
-                id={`${idPrefix}-upstream-${index}`}
-                key={upstream.id}
-                label={upstream.name}
-                name={`available-upstream-${upstream.id}`}
-                onChange={(_, data) => onChange({
-                  override: true,
-                  ids: data.checked
-                    ? [...new Set([...ids, upstream.id])]
-                    : ids.filter(id => id !== upstream.id),
-                })}
-              />
-            ))}
-          </div>
-          {error && (
-            <Text className={styles.validationMessage} id={`${idPrefix}-error`} role="alert" size={200}>
-              {error}
-            </Text>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -667,14 +605,17 @@ function userFormDefaults(user: ControlPlaneUser | null): UserFormValues {
 }
 
 async function loadUsersPageData(): Promise<UsersPageData> {
-  const [usersResult, upstreamsResult] = await Promise.all([
+  const [usersResult, upstreamsResult, modelsResult] = await Promise.all([
     callApi(() => api.api.users.$get()),
     callApi(() => api.api['upstream-options'].$get()),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
   ]);
   return {
     users: usersResult.data ?? [],
     upstreams: upstreamsResult.data ?? [],
-    error: usersResult.error?.message ?? upstreamsResult.error?.message ?? null,
+    models: modelsResult.data?.data ?? [],
+    error: usersResult.error?.message ?? upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
+    modelsLoaded: !!modelsResult.data,
     usersLoaded: !!usersResult.data,
     upstreamsLoaded: !!upstreamsResult.data,
   };
