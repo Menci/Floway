@@ -9,7 +9,7 @@ import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
@@ -142,9 +142,18 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
 const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
-      const sse = responsesProtocolFrameToSSEFrame(frame);
-      if (sse) yield sse;
+      yield responsesProtocolFrameToSSEFrame(frame);
     }
+    // The SSE transport terminates on the literal `[DONE]` payload, per the
+    // OpenResponses 2026-04-24 spec, "Streaming HTTP Responses":
+    // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx?plain=1#L84
+    // A Responses stream is defined to end on its terminal event, not on a
+    // `done` frame: both the client-output boundary and `observeResponsesFrames`
+    // return as soon as the terminal event passes, so a producer's `done` frame
+    // can never reach a serializer. This generator is therefore the only place
+    // that knows the stream ran to a clean terminal, and it appends the
+    // terminating frame itself. A failed stream ends on the error frame below.
+    yield responsesProtocolFrameToSSEFrame(doneFrame());
   } catch (error) {
     state.failed = true;
     yield internalResponsesStreamErrorFrame(error);
