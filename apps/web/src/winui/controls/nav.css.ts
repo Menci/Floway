@@ -179,14 +179,16 @@ export const navCss = `
 
 /* Section header. Fluent styles the header's type but lets its colour inherit
    from the drawer body, so it arrives at full strength; WinUI gives the header
-   a brush of its own, a step quieter than the items it introduces. Its size
-   parts from WinUI too — Fluent sets caption1Strong's 12px against
-   NavigationViewItemHeaderTextStyle's 14px — and stays as it is for the same
-   reason the selected weight does.
+   a brush of its own, a step quieter than the items it introduces, and states
+   the type outright: NavigationViewItemHeaderTextStyle is 14 SemiBold, which is
+   BodyStrong. Fluent sets caption1Strong's 12 instead, a size the WinUI ramp
+   pairs with the regular weight and never with a strong one.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L47
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L1082 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L1081-L1083 */
 .fui-NavSectionHeader.fui-NavSectionHeader {
   color: var(--winui-text-fill-secondary);
+  font-size: var(--fontSizeBase300);
+  line-height: var(--lineHeightBase300);
 }
 
 /* The rule separating the footer from the scrolling item list is a nav
