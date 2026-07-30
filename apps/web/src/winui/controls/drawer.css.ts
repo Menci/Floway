@@ -59,6 +59,16 @@ export const drawerCss = `
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
 }
 
+/* Fluent makes every DrawerBody an unconditional browser scroll owner. Floway
+   composes each production body around an explicit ScrollArea, so the parent
+   must remain a clipped layout cell; otherwise a one-pixel rounding overflow
+   can expose a second native scrollbar beside the OverlayScrollbars viewport.
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-drawer/library/src/components/DrawerBody/useDrawerBodyStyles.styles.ts#L15-L28 */
+.fui-DrawerBody.fui-DrawerBody {
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* The hairline that appears once the body scrolls is WinUI's ContentDialog
    title separator, a card stroke rather than a neutral one, and it fades on
    WinUI's normal control timing instead of Fluent's. Header and footer share
