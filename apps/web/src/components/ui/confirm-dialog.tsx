@@ -29,6 +29,7 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
   onOpenChange,
+  open,
   title,
 }: {
   actionLabel: string;
@@ -39,6 +40,7 @@ export function ConfirmDialog({
   onCancel?: () => void;
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
+  open?: boolean;
   title: string;
 }) {
   const { t } = useTranslation();
@@ -69,6 +71,7 @@ export function ConfirmDialog({
         </Button>
       </DialogActions>}
       onOpenChange={(_, data) => !busy && onOpenChange(data.open)}
+      open={open}
       surfaceClassName="!w-[min(430px,calc(100vw-48px))]"
       title={<DialogTitle>{title}</DialogTitle>}
     >

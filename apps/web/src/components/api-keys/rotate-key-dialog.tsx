@@ -16,11 +16,13 @@ export function RotateKeyDialog({
   mutationToasts,
   onOpenChange,
   onSaved,
+  open,
 }: {
   apiKey: ApiKey;
   mutationToasts: MutationToastController;
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
+  open?: boolean;
 }) {
   const { t } = useTranslation();
   const [keySource, setKeySource] = useState<KeySource>('generate');
@@ -54,6 +56,7 @@ export function RotateKeyDialog({
 
   return (
     <DialogShell
+      open={open}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       title={<DialogTitle>{t('dashboard.apiKeys.rotate.title')}</DialogTitle>}
       actions={

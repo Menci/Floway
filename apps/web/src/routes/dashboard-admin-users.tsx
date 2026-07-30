@@ -331,6 +331,7 @@ interface UserDialogCommonProps {
   models: ControlPlaneModel[];
   onOpenChange: (open: boolean) => void;
   onSaved: (userId?: number) => Promise<void>;
+  open?: boolean;
   upstreams: UpstreamOption[];
 }
 
@@ -340,7 +341,7 @@ type UserDialogProps = UserDialogCommonProps & (
 );
 
 function UserDialog(props: UserDialogProps) {
-  const { actorId, mode, models, onOpenChange, onSaved, upstreams } = props;
+  const { actorId, mode, models, onOpenChange, onSaved, open, upstreams } = props;
   const { t } = useTranslation();
   const user = props.mode === 'edit' ? props.user : null;
   const [saving, setSaving] = useState(false);
@@ -401,6 +402,7 @@ function UserDialog(props: UserDialogProps) {
 
   return (
     <DialogShell
+      open={open}
       actions={
         <DialogActions>
           <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
@@ -500,9 +502,10 @@ function PermissionToggle({ checked, description, disabled, label, onChange }: {
   );
 }
 
-function PasswordDialog({ onOpenChange, onSaved, user }: {
+function PasswordDialog({ onOpenChange, onSaved, open, user }: {
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
+  open?: boolean;
   user: ControlPlaneUser;
 }) {
   const { t } = useTranslation();
@@ -537,6 +540,7 @@ function PasswordDialog({ onOpenChange, onSaved, user }: {
 
   return (
     <DialogShell
+      open={open}
       actions={<DialogActions>
         <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
         <Button appearance="primary" disabled={saving} type="submit">

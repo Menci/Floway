@@ -19,6 +19,7 @@ import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
 import { ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
 
 const { MessageBar, MessageBarBody, Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
@@ -66,13 +67,9 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const [selectedKeyId, setSelectedKeyId] = useState(loaderData.selectedKeyId);
   const [pageError, setPageError] = useState(loaderData.error);
   const [refreshing, setRefreshing] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<ApiKey | null>(null);
-  const [rotateOpen, setRotateOpen] = useState(false);
-  const [rotateTarget, setRotateTarget] = useState<ApiKey | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<ApiKey | null>(null);
+  const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; apiKey: ApiKey }>();
+  const rotateDialog = useDialogInvocation<ApiKey>();
+  const deleteDialog = useDialogInvocation<ApiKey>();
   const [deletingKey, setDeletingKey] = useState(false);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [copyFailedTag, setCopyFailedTag] = useState<string | null>(null);
@@ -188,7 +185,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       setPageError(result.error.message);
       return;
     }
-    setDeleteOpen(false);
+    deleteDialog.close();
     mutationToasts.succeed(toastId, 'delete', key.name);
     await reload();
   };
@@ -214,7 +211,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           createLabel={t('dashboard.apiKeys.actions.create')}
           detail={t('dashboard.apiKeys.count', { count: data.keys.length })}
           disabled={deletingKey}
-          onCreate={() => setCreateOpen(true)}
+          onCreate={() => editorDialog.open({ kind: 'create' })}
           onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.apiKeys.actions.refresh')}
           refreshing={refreshing}
@@ -226,9 +223,9 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           disabled={refreshing || deletingKey}
           keys={data.keys}
           onCopy={(text, tag) => void copyToClipboard(text, tag)}
-          onDelete={key => { setDeleteTarget(key); setDeleteOpen(true); }}
-          onEdit={target => { setEditTarget(target); setEditOpen(true); }}
-          onRotate={target => { setRotateTarget(target); setRotateOpen(true); }}
+          onDelete={deleteDialog.open}
+          onEdit={apiKey => editorDialog.open({ kind: 'edit', apiKey })}
+          onRotate={rotateDialog.open}
           onSelect={setSelectedKeyId}
           selectedKeyId={selectedKey?.id ?? ''}
           upstreams={data.upstreams}
@@ -248,47 +245,47 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         />
       </Panel>
 
-      <KeyDialog
+      {editorDialog.invocation?.value.kind === 'create' && <KeyDialog
+        key={editorDialog.invocation.key}
         models={data.models}
         mode="create"
-        onOpenChange={setCreateOpen}
+        onOpenChange={open => { if (!open) editorDialog.close(); }}
         onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
         mutationToasts={mutationToasts}
-        open={createOpen}
         upstreams={data.upstreams}
         userUpstreamIds={user.upstreamIds}
-      />
-      {editTarget && <KeyDialog
-        apiKey={editTarget}
+      />}
+      {editorDialog.invocation?.value.kind === 'edit' && <KeyDialog
+        apiKey={editorDialog.invocation.value.apiKey}
+        key={editorDialog.invocation.key}
         models={data.models}
         mode="edit"
-        onOpenChange={setEditOpen}
+        onOpenChange={open => { if (!open) editorDialog.close(); }}
         onSaved={async () => { await reload(); }}
         mutationToasts={mutationToasts}
-        open={editOpen}
         upstreams={data.upstreams}
         userUpstreamIds={user.upstreamIds}
       />}
-      {rotateTarget && <RotateKeyDialog
-        apiKey={rotateTarget}
-        onOpenChange={setRotateOpen}
+      {rotateDialog.invocation && <RotateKeyDialog
+        apiKey={rotateDialog.invocation.value}
+        key={rotateDialog.invocation.key}
+        onOpenChange={open => { if (!open) rotateDialog.close(); }}
         onSaved={reload}
         mutationToasts={mutationToasts}
-        open={rotateOpen}
       />}
-      {deleteTarget && <ConfirmDialog
+      {deleteDialog.invocation && <ConfirmDialog
         actionLabel={t('dashboard.apiKeys.actions.delete')}
         busy={deletingKey}
         message={t('dashboard.apiKeys.delete.message', {
-          name: deleteTarget.name,
+          name: deleteDialog.invocation.value.name,
         })}
         onConfirm={() => {
-          if (!deletingKey) void deleteKey(deleteTarget);
+          if (!deletingKey) void deleteKey(deleteDialog.invocation!.value);
         }}
         onOpenChange={open => {
-          if (!deletingKey) setDeleteOpen(open);
+          if (!deletingKey && !open) deleteDialog.close();
         }}
-        open={deleteOpen}
+        key={deleteDialog.invocation.key}
         title={t('dashboard.apiKeys.delete.title')}
       />}
     </div>

@@ -35,6 +35,7 @@ interface KeyDialogCommonProps {
   mutationToasts: MutationToastController;
   onOpenChange: (open: boolean) => void;
   onSaved: (key: ApiKey) => Promise<void>;
+  open?: boolean;
   models: ControlPlaneModel[];
   upstreams: UpstreamOption[];
   userUpstreamIds: string[] | null;
@@ -46,7 +47,7 @@ type KeyDialogProps = KeyDialogCommonProps & (
 );
 
 export function KeyDialog(props: KeyDialogProps) {
-  const { mode, models, mutationToasts, onOpenChange, onSaved, upstreams, userUpstreamIds } = props;
+  const { mode, models, mutationToasts, onOpenChange, onSaved, open, upstreams, userUpstreamIds } = props;
   const { t } = useTranslation();
   const isCreate = mode === 'create';
   const apiKey = props.mode === 'edit' ? props.apiKey : null;
@@ -157,6 +158,7 @@ export function KeyDialog(props: KeyDialogProps) {
 
   return (
     <DialogShell
+      open={open}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
       title={
