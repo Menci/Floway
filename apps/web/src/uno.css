@@ -1,9 +1,9 @@
 @unocss;
 
 :root {
-  --floway-font-size-mono: calc(var(--fontSizeBase300) - 1px);
-  --floway-font-size-mono-base100: calc(var(--fontSizeBase100) - 1px);
-  --floway-font-size-mono-base500: calc(var(--fontSizeBase500) - 1px);
+  --floway-font-size-mono: 13px;
+  --floway-font-size-mono-base100: 9px;
+  --floway-font-size-mono-base500: 17px;
   --floway-font-size-mono-xs: 11px;
 }
 
