@@ -5834,7 +5834,7 @@ test('consumeTurn keeps swallowing keepalive/ping-shape events that lack output_
     framesOf(
       mkResponseCreated(),
       eventFrame<ResponsesStreamEvent>({ type: 'keepalive' } as unknown as ResponsesStreamEvent),
-      eventFrame<ResponsesStreamEvent>({ type: 'ping' }),
+      eventFrame<ResponsesStreamEvent>({ type: 'ping' } as unknown as ResponsesStreamEvent),
       mkResponseCompleted(),
     ),
     state,

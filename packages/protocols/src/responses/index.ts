@@ -1240,8 +1240,7 @@ type ResponsesStreamEventVariant =
     stack?: string;
     cause?: unknown;
     target_api?: string;
-  }
-  | { type: 'ping' };
+  };
 
 // Either side of the Responses reasoning round trip: input echoes a prior
 // turn's reasoning back in, output emits the current turn's reasoning. Shape

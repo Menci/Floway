@@ -370,7 +370,7 @@ test('parseResponsesStream fast-paths when ping interleaves the wrappers', async
     sseFrame('[DONE]'),
   ));
 
-  const eventTypes = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? frame.event.type : ''));
+  const eventTypes: string[] = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? frame.event.type : ''));
   assertEquals(eventTypes.includes('response.output_item.added'), true);
   assertEquals(eventTypes.at(-1), 'response.completed');
   assertEquals(eventTypes.includes('ping'), false);
