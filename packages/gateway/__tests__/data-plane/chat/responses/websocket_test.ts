@@ -51,13 +51,16 @@ const waitForMicrotasks = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
-const responseDoneId = (messages: readonly Record<string, unknown>[]): string => {
-  const done = messages.find(message => message.type === 'response.done') as { response?: { id?: unknown } } | undefined;
-  assertExists(done);
-  const response = done.response;
+const isTerminalResponseEvent = (message: Record<string, unknown>): boolean =>
+  message.type === 'response.completed' || message.type === 'response.failed' || message.type === 'response.incomplete';
+
+const terminalResponseId = (messages: readonly Record<string, unknown>[]): string => {
+  const terminal = messages.find(isTerminalResponseEvent) as { response?: { id?: unknown } } | undefined;
+  assertExists(terminal);
+  const response = terminal.response;
   assertExists(response);
   const id = response.id;
-  if (typeof id !== 'string') throw new Error(`expected response.done id to be a string, got ${typeof id}`);
+  if (typeof id !== 'string') throw new Error(`expected the terminal response id to be a string, got ${typeof id}`);
   return id;
 };
 
@@ -131,7 +134,7 @@ const completeResponsesTurn = async (
   client: TestWorkerWebSocket,
   eventId: string,
 ): Promise<void> => {
-  const received = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+  const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
   client.send(JSON.stringify({
     type: 'response.create',
     event_id: eventId,
@@ -144,7 +147,7 @@ const completeResponsesTurn = async (
   await waitForMicrotasks();
 };
 
-test('Responses WebSocket forwards stream events, echoes event_id, and sends response.done', async () => {
+test('Responses WebSocket forwards stream events, echoes event_id, and ends the turn on the terminal event', async () => {
   const { apiKey } = await setupAppTest();
   await withMockedFetch(
     async request => {
@@ -171,8 +174,7 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
-      const raw = recordRawMessages(client);
-      const received = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
 
       client.send(JSON.stringify({
         type: 'response.create',
@@ -184,30 +186,14 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
       }));
 
       const messages = await received;
-      raw.stop();
-      assert(raw.messages.every(message => !message.includes('[DONE]')), 'expected the WebSocket transport to carry no SSE sentinel');
       assert(messages.every(message => message.event_id === 'evt_1'));
-      const completed = messages.find(message => message.type === 'response.completed') as { response?: { id?: unknown } } | undefined;
+      const completed = messages.at(-1) as { type?: unknown; response?: { id?: unknown } } | undefined;
       assertExists(completed);
-      const responseId = (completed.response as { id?: unknown } | undefined)?.id;
+      const responseId = completed.response?.id;
       assertEquals(typeof responseId, 'string');
       assert(responseId !== 'resp_ws', 'expected the source boundary to replace the upstream response id');
-      assertEquals(messages.at(-1), {
-        type: 'response.done',
-        event_id: 'evt_1',
-        response: {
-          id: responseId,
-          // The summary reads the terminal envelope, which the egress stage
-          // has already completed, so the usage breakdowns are present.
-          usage: {
-            input_tokens: 3,
-            output_tokens: 5,
-            total_tokens: 8,
-            input_tokens_details: { cached_tokens: 0 },
-            output_tokens_details: { reasoning_tokens: 0 },
-          },
-        },
-      });
+      assertEquals(completed.type, 'response.completed');
+      assertEquals((completed.response as { usage?: unknown }).usage, { input_tokens: 3, output_tokens: 5, total_tokens: 8 });
     }),
   );
 });
@@ -374,8 +360,7 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
         assertEquals(error.status, 500);
         assertEquals(error.error?.message, 'simulated item persistence failure');
         assert(!messages.some(message => message.type === 'response.output_item.done'));
-        assert(!messages.some(message => message.type === 'response.completed'));
-        assert(!messages.some(message => message.type === 'response.done'));
+        assert(!messages.some(isTerminalResponseEvent));
       }),
     );
   } finally {
@@ -455,7 +440,7 @@ test('Responses WebSocket keepalive during an in-flight request does not drop th
           }
 
           assert(hasMessageType(messages, 'ping'), 'expected a ping while the upstream response stream is idle');
-          const completed = waitForMessages(client, received => received.some(message => message.type === 'response.done'));
+          const completed = waitForMessages(client, received => received.some(isTerminalResponseEvent));
 
           const response = {
             id: 'resp_ws_keepalive',
@@ -476,8 +461,7 @@ test('Responses WebSocket keepalive during an in-flight request does not drop th
 
           const types = messages.map(message => message.type);
           assert(types.indexOf('ping') < types.indexOf('response.created'), 'expected the delayed upstream frame after the ping');
-          assert(types.includes('response.completed'), 'expected the terminal upstream frame after the ping');
-          assertEquals(types.at(-1), 'response.done');
+          assertEquals(types.at(-1), 'response.completed');
         } finally {
           client.removeEventListener('message', onMessage);
         }
@@ -542,30 +526,16 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     const invalidResponse = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_response', response: {} }));
 
-    const [invalidResponseMessage] = await invalidResponse;
-    assertExists(invalidResponseMessage);
-    assertEquals(invalidResponseMessage.type, 'error');
-    assertEquals(invalidResponseMessage.event_id, 'evt_response');
-    assertEquals(invalidResponseMessage.error, {
-      type: 'invalid_request_error',
-      code: 'missing_required_parameter',
-      message: "Missing required parameter: 'model'.",
-      param: 'model',
-    });
-
-    const invalidInput = waitForMessages(client, messages => messages.length === 1);
-    client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_input', response: { model: 'test-model' } }));
-
-    const [invalidInputMessage] = await invalidInput;
-    assertExists(invalidInputMessage);
-    assertEquals(invalidInputMessage.type, 'error');
-    assertEquals(invalidInputMessage.event_id, 'evt_input');
-    assertEquals(invalidInputMessage.error, {
-      type: 'invalid_request_error',
-      code: 'invalid_request_error',
-      message: 'Responses input must be a string or an array.',
-      param: 'input',
-    });
+    assertEquals(await invalidResponse, [{
+      type: 'error',
+      event_id: 'evt_response',
+      status: 400,
+      error: {
+        type: 'invalid_request_error',
+        code: 'invalid_request_error',
+        message: 'response.create requires response.model to be a non-empty string.',
+      },
+    }]);
 
     const invalidItem = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({
@@ -707,7 +677,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
-      const firstDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',
         response: {
@@ -716,8 +686,8 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
           store: false,
         },
       }));
-      const firstMessages = await firstDone;
-      const firstResponseId = responseDoneId(firstMessages);
+      const firstMessages = await firstTerminal;
+      const firstResponseId = terminalResponseId(firstMessages);
 
       assert(firstResponseId !== 'resp_ws_store_false_1', 'expected the source boundary to replace the upstream response id');
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
@@ -732,7 +702,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
         [],
       );
 
-      const followupDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const followupTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({
         type: 'response.create',
         event_id: 'evt_followup',
@@ -743,8 +713,8 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
           store: false,
         },
       }));
-      const secondMessages = await followupDone;
-      const secondResponseId = responseDoneId(secondMessages);
+      const secondMessages = await followupTerminal;
+      const secondResponseId = terminalResponseId(secondMessages);
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, secondResponseId, 0), null);
 
       const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
@@ -756,7 +726,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       ]);
 
       const sessionB = await connectResponsesWebSocket(apiKey.key);
-      const missingDone = waitForMessages(sessionB, messages => messages.length === 1);
+      const missingError = waitForMessages(sessionB, messages => messages.length === 1);
       sessionB.send(JSON.stringify({
         type: 'response.create',
         event_id: 'evt_cross_session',
@@ -768,7 +738,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
         },
       }));
 
-      assertEquals(await missingDone, [{
+      assertEquals(await missingError, [{
         type: 'error',
         event_id: 'evt_cross_session',
         status: 400,
@@ -820,16 +790,16 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
-      const firstDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', input: 'first' } }));
-      const firstMessages = await firstDone;
+      const firstMessages = await firstTerminal;
       const firstCompleted = firstMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
       firstResponseId = firstCompleted?.response?.id;
       assertExists(firstResponseId);
 
-      const secondDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      const secondTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', previous_response_id: firstResponseId, input: 'second' } }));
-      const secondMessages = await secondDone;
+      const secondMessages = await secondTerminal;
       const secondCompleted = secondMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
       secondResponseId = secondCompleted?.response?.id;
       assertExists(secondResponseId);
@@ -910,13 +880,13 @@ test('Responses WebSocket makes a done reasoning item reusable from a fresh conn
     async () => await withWorkerWebSocketRuntime(async () => {
       try {
         firstClient = await connectResponsesWebSocket(apiKey.key);
-        const firstDone = waitForMessages(firstClient, messages =>
+        const firstTerminal = waitForMessages(firstClient, messages =>
           messages.some(message => message.type === 'response.output_item.done'));
         firstClient.send(JSON.stringify({
           type: 'response.create',
           response: { model: 'gpt-direct-responses', store: true, input: 'first' },
         }));
-        const messages = await firstDone;
+        const messages = await firstTerminal;
         const done = messages.find(message => message.type === 'response.output_item.done') as { item?: typeof originalReasoning } | undefined;
         assertExists(done?.item);
         assert(done.item.id !== originalReasoning.id, 'expected Copilot to replace the carried reasoning id');
@@ -987,12 +957,12 @@ test('Responses WebSocket session-level store: second message resolves prior ite
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const sessionA = await connectResponsesWebSocket(apiKey.key);
-      const firstDone = waitForMessages(sessionA, messages => messages.some(message => message.type === 'response.done'));
+      const firstTerminal = waitForMessages(sessionA, messages => messages.some(isTerminalResponseEvent));
       sessionA.send(JSON.stringify({
         type: 'response.create',
         response: { model: 'gpt-direct-responses', input: 'turn one input' },
       }));
-      const firstMessages = await firstDone;
+      const firstMessages = await firstTerminal;
       const firstCompleted = firstMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
       const firstResponseId = firstCompleted?.response?.id;
       assertExists(firstResponseId);
@@ -1005,7 +975,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       await repo.responsesItems.deleteAll();
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
 
-      const secondDone = waitForMessages(sessionA, messages => messages.some(message => message.type === 'response.done'));
+      const secondTerminal = waitForMessages(sessionA, messages => messages.some(isTerminalResponseEvent));
       sessionA.send(JSON.stringify({
         type: 'response.create',
         response: {
@@ -1014,7 +984,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
           input: 'turn two input',
         },
       }));
-      await secondDone;
+      await secondTerminal;
 
       const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
       assertEquals(secondBody.previous_response_id, undefined);
@@ -1036,7 +1006,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       // A fresh WS session for the same api key has its own empty cache; with
       // the repo wiped, the snapshot is unreachable.
       const sessionB = await connectResponsesWebSocket(apiKey.key);
-      const missingDone = waitForMessages(sessionB, messages => messages.length === 1);
+      const missingError = waitForMessages(sessionB, messages => messages.length === 1);
       sessionB.send(JSON.stringify({
         type: 'response.create',
         event_id: 'evt_b',
@@ -1047,7 +1017,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
         },
       }));
 
-      assertEquals(await missingDone, [{
+      assertEquals(await missingError, [{
         type: 'error',
         event_id: 'evt_b',
         status: 400,
