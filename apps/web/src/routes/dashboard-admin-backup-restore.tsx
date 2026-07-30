@@ -434,7 +434,7 @@ export default function DashboardAdminBackupRestore() {
         )}
       </Panel>
 
-      <ConfirmDialog
+      {confirmOpen && <ConfirmDialog
         actionLabel={t('dashboard.backupRestore.import.button')}
         actionIntent="primary"
         busy={importing}
@@ -445,9 +445,8 @@ export default function DashboardAdminBackupRestore() {
           void doImport();
         }}
         onOpenChange={setConfirmOpen}
-        open={confirmOpen}
         title={t('dashboard.backupRestore.confirmTitle')}
-      />
+      />}
     </section>
   );
 }

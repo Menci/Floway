@@ -199,16 +199,15 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         </Panel>
       </div>
     </div>
-    <ConfirmDialog
+    {blocker.state === 'blocked' && <ConfirmDialog
       actionLabel={t('dashboard.upstreamEditor.leave.leave')}
       cancelLabel={t('dashboard.upstreamEditor.leave.stay')}
       message={t('dashboard.upstreamEditor.leave.message')}
       onCancel={() => blocker.state === 'blocked' && blocker.reset()}
       onConfirm={() => blocker.state === 'blocked' && blocker.proceed()}
       onOpenChange={open => { if (!open && blocker.state === 'blocked') blocker.reset(); }}
-      open={blocker.state === 'blocked'}
       title={t('dashboard.upstreamEditor.leave.title')}
-    />
+    />}
   </FormProvider>;
 }
 

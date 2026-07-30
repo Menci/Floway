@@ -216,12 +216,11 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
   const manualDeleteTarget = deleteTarget?.manualIndex === null || deleteTarget === null
     ? null
     : { ...deleteTarget, manualIndex: deleteTarget.manualIndex };
-  const deleteDialog = manualDeleteTarget && <ConfirmDialog
+  const deleteDialog = deleteOpen && manualDeleteTarget && <ConfirmDialog
     actionLabel={t('dashboard.upstreamEditor.models.deleteConfirm')}
     message={t('dashboard.upstreamEditor.models.deleteMessage', { name: manualDeleteTarget.config.display_name ?? publicModelId(manualDeleteTarget.config) })}
     onConfirm={() => deleteModel(manualDeleteTarget)}
     onOpenChange={setDeleteOpen}
-    open={deleteOpen}
     title={t('dashboard.upstreamEditor.models.deleteTitle')}
   />;
 
