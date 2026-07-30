@@ -27,15 +27,6 @@
 // selected step repeats the interaction pseudo-classes of the step it has to
 // outweigh, so a pressed selected tab still reads as pressed.
 export const tabsCss = `
-/* Rest: label and icon share one brush in WinUI, where Fluent tints the icon
-   with the compound brand ramp once the tab is selected.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L12
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L17 */
-.fui-Tab .fui-Tab__content.fui-Tab__content,
-.fui-Tab .fui-Tab__icon.fui-Tab__icon {
-  color: var(--winui-text-fill-secondary);
-}
-
 /* Hover holds the rest brush: TabViewItemHeaderForegroundPointerOver resolves
    to the same TextFillColorSecondary, so the pointer alone carries the state.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L15
@@ -77,16 +68,6 @@ export const tabsCss = `
 .fui-Tab[aria-selected='true']:enabled:active .fui-Tab__content.fui-Tab__content,
 .fui-Tab[aria-selected='true']:enabled:active .fui-Tab__icon.fui-Tab__icon {
   color: var(--winui-text-fill-tertiary);
-}
-
-/* The disabled foreground is the step the theme layer already resolves, and it
-   is restated here because the rest rule above paints every tab's content and
-   would otherwise outrank Fluent's own disabled atom.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L16
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TabView/TabView_themeresources.xaml#L21 */
-.fui-Tab:disabled .fui-Tab__content.fui-Tab__content,
-.fui-Tab:disabled .fui-Tab__icon.fui-Tab__icon {
-  color: var(--winui-text-fill-disabled);
 }
 
 /* Both pseudo-elements are repainted only outside High Contrast. Fluent guards

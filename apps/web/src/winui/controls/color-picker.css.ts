@@ -31,13 +31,6 @@
 // would freeze the medium geometry onto the smaller sizes.
 
 export const colorPickerCss = `
-/* The saturation/brightness field is a control body, so its outline takes the
-   control stroke rather than the neutral divider Fluent draws.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L243 */
-.fui-ColorArea.fui-ColorArea {
-  border-color: var(--winui-control-stroke-default);
-}
-
 /* Both thumbs are WinUI's slider thumb: an elevation-stroked ring with no
    shadow under it. The stroke is an absolute-mapped gradient, so it lands as
    the three-term border-color the vocabulary composes.
