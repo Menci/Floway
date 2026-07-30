@@ -70,6 +70,11 @@ export const bingComposerFontWeight = 400;
 export const bingComposerRadiusResting = '20px';
 export const bingComposerRadiusFilled = '10px';
 
+// The same rule that tightens the corner also raises the bar's floor, and that
+// half is deliberately not taken. The room it opens is for a bottom bar
+// carrying a character counter, which this composer has no counterpart for; the
+// bar would grow downward into a strip holding nothing.
+
 // `static.motion.duration.fast` and `easingFunction.motionIn`, the pair the
 // composer names in its own `transition-property`.
 export const bingComposerTransitionDuration = '187ms';
