@@ -19,6 +19,7 @@ import {
   type CollectedStream,
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
+import { HttpMethodBadge } from '../ui/http-method-badge';
 import { prismTokenStyles } from '../ui/prism-token-styles';
 import { ScrollArea } from '../ui/scroll-area';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
@@ -188,7 +189,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
   return (
     <ScrollArea axes="vertical" className="h-full" contentClassName="min-h-full" noTabIndex>
       <section className={s.section}>
-        <SectionHeader title={t('dashboard.requests.request')} detail={<><Badge appearance="tint" color="brand" size="small">{record.request.method}</Badge><Text size={300} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
+        <SectionHeader title={t('dashboard.requests.request')} detail={<><HttpMethodBadge method={record.request.method} /><Text size={300} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
         <SectionBody><HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} /></SectionBody>
       </section>
       <section className={s.section}>

@@ -5,12 +5,12 @@ import { useTranslation } from 'react-i18next';
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
 import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
+import { HttpMethodBadge } from '../ui/http-method-badge';
 import { Panel } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActionsHeader } from '../ui/table-actions';
 
 const {
-  Badge,
   Link,
   MessageBar,
   MessageBarBody,
@@ -21,18 +21,7 @@ const {
   TableHeaderCell,
   TableRow,
   Text,
-  makeStyles,
 } = fluentComponents;
-
-const useStyles = makeStyles({
-  methodBadge: {
-    fontFamily: 'var(--fontFamilyMonospace)',
-    fontSize: '13px',
-    fontWeight: 'var(--fontWeightRegular)',
-    justifyContent: 'center',
-    minWidth: '48px',
-  },
-});
 
 export function ApiDocsContent() {
   const { t } = useTranslation();
@@ -80,7 +69,7 @@ export function ApiDocsContent() {
                 <TableActionsHeader>{t('dashboard.apiDocs.columns.docs')}</TableActionsHeader>
               </TableRow></TableHeader>
               <TableBody>{endpoints.map(endpoint => <TableRow key={`${endpoint.method} ${endpoint.path}`}>
-                <TableCell><MethodBadge method={endpoint.method} /></TableCell>
+                <TableCell><HttpMethodBadge method={endpoint.method} /></TableCell>
                 <TableCell><code className="font-mono text-fui-base300" translate="no">{endpoint.path}</code></TableCell>
                 <TableCell><Text size={300}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text></TableCell>
                 <TableCell className="!text-right"><Link href={endpoint.docs} target="_blank">{t('dashboard.apiDocs.docsLink')} <ArrowUpRight16Regular aria-hidden="true" /></Link></TableCell>
@@ -91,15 +80,4 @@ export function ApiDocsContent() {
       })}
     </Panel>
   </>;
-}
-
-function MethodBadge({ method }: { method: 'GET' | 'POST' }) {
-  const s = useStyles();
-  return <Badge
-    appearance="tint"
-    className={s.methodBadge}
-    color={method === 'GET' ? 'brand' : 'success'}
-    size="medium"
-    translate="no"
-  >{method}</Badge>;
 }
