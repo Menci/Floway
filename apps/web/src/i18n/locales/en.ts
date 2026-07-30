@@ -229,10 +229,6 @@ const en = {
           all: 'All upstreams',
           count_one: '{{count}} upstream',
           count_other: '{{count}} upstreams',
-          override: 'Limit available upstreams',
-          description:
-              'When off, this user can use every upstream. API key restrictions still apply.',
-          select: 'Available upstreams',
         },
         dialog: {
           createTitle: 'New user',
@@ -256,7 +252,6 @@ const en = {
           passwordRequired: 'A password is required.',
           passwordMax: 'Password must be 1024 characters or fewer.',
           passwordMismatch: 'Passwords do not match.',
-          upstreamRequired: 'Select at least one upstream, or turn off the limit.',
         },
         delete: {
           title: 'Delete user',
@@ -355,22 +350,11 @@ const en = {
         },
         validation: {
           nameRequired: 'Name is required.',
-          upstreamRequired:
-              'Select at least one upstream, or turn off the override.',
           customKeyRequired: 'Custom API key is required.',
           retentionInvalid:
               'Retention must be seconds or a value like 30m, 2h, or 3d.',
         },
         upstreams: {
-          title: 'Override available upstreams ({{count}})',
-          inheritDescription:
-              'When off, this key inherits every upstream available to your account.',
-          enabled: 'Enabled',
-          order: 'Order',
-          name: 'Name',
-          kind: 'Kind',
-          moveUp: 'Move up',
-          moveDown: 'Move down',
           all: 'All',
           none: 'None',
           summary: '{{first}} +{{count}}',

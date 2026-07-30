@@ -219,9 +219,6 @@ const zhHansCN = {
           all: '全部上游',
           count_one: '{{count}} 个上游',
           count_other: '{{count}} 个上游',
-          override: '限制可用上游',
-          description: '关闭时，该用户可使用全部上游；API 密钥的限制仍会叠加生效。',
-          select: '可用上游',
         },
         dialog: {
           createTitle: '新建用户',
@@ -244,7 +241,6 @@ const zhHansCN = {
           passwordRequired: '必须填写密码。',
           passwordMax: '密码不能超过 1024 个字符。',
           passwordMismatch: '两次输入的密码不一致。',
-          upstreamRequired: '至少选择一个上游，或关闭限制。',
         },
         delete: {
           title: '删除用户',
@@ -342,19 +338,10 @@ const zhHansCN = {
         },
         validation: {
           nameRequired: '名称不能为空。',
-          upstreamRequired: '至少选择一个上游，或关闭覆盖设置。',
           customKeyRequired: '必须填写自定义 API 密钥。',
           retentionInvalid: '保留时间必须是秒数，或类似 30m、2h、3d 的值。',
         },
         upstreams: {
-          title: '覆盖可用上游（{{count}}）',
-          inheritDescription: '关闭时，该 API 密钥继承当前账号可用的全部上游。',
-          enabled: '启用',
-          order: '顺序',
-          name: '名称',
-          kind: '类型',
-          moveUp: '上移',
-          moveDown: '下移',
           all: '全部',
           none: '无',
           summary: '{{first}} +{{count}}',
