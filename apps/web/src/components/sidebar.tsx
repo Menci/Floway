@@ -181,7 +181,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       <NavDrawerBody className="!bg-transparent !overflow-hidden !p-0">
         <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="px-[10px]" noTabIndex>
           <div className="relative" ref={bodyRef}>
-            <NavSelectionIndicator containerRef={bodyRef} inset={NAV_INDICATOR_INSET} selectedValue={selectedValue} />
+            <NavSelectionIndicator containerRef={bodyRef} inset={NAV_INDICATOR_INSET} otherListIs="below" selectedValue={selectedValue} />
             {navGroups.map((group, groupIndex) => {
               if (group.adminOnly && !user.isAdmin) return null;
               const items = group.items.filter(item => !item.adminOnly || user.isAdmin);
@@ -208,7 +208,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       </NavDrawerBody>
       <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
         <div className="grid gap-y-1 relative w-full" ref={footerRef}>
-          <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} selectedValue={selectedValue} />
+          <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} otherListIs="above" selectedValue={selectedValue} />
           <NavItem
             className={styles.item}
             data-nav-pending={pendingValue === '/dashboard/settings' || undefined}

@@ -10,10 +10,11 @@ import type { RefObject } from 'react';
 //
 // The drawer is two lists, though -- a scrolling body and a pinned footer --
 // and a selection crossing between them has no single element that can span
-// both. Neither does the pair help: superimposed it reads as one bar, and in
-// two separate lists it cannot be, so playing it there shows two bars moving at
-// once. A crossing therefore just switches, and only travel within one list is
-// animated.
+// both. Playing WinUI's pair there puts one bar in each list and shows them
+// moving at once, which reads as two things rather than one. Only the arriving
+// half is played instead: the list losing the selection drops its bar, and the
+// one taking it stretches in from the edge facing where the selection came
+// from. One bar moves, and it moves the way it would have travelled.
 //
 // The offset and the scale are separate animations there and stay separate
 // here, because they carry different easings and only a nested element can give
@@ -48,10 +49,14 @@ const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
 export function NavSelectionIndicator({
   containerRef,
   inset,
+  otherListIs,
   selectedValue,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   inset: number;
+  // Where the other list sits. Fixed per instance, and only read when the
+  // selection arrives from there.
+  otherListIs: 'above' | 'below';
   selectedValue: string;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -95,20 +100,22 @@ export function NavSelectionIndicator({
     const bar = barRef.current;
     const previous = previousRef.current;
     previousRef.current = geometry;
-    // No previous geometry means the selection arrived from the other list, and
-    // there is nothing in this one to travel from.
-    if (!track || !bar || !geometry || !previous) return;
-
-    const distance = geometry.top - previous.top;
-    if (distance === 0) return;
+    if (!track || !bar || !geometry) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    // Arriving from the other list: there is no position in this one to travel
+    // from, so the reach is the item's own length toward where it came from.
+    const distance = previous
+      ? geometry.top - previous.top
+      : (otherListIs === 'below' ? geometry.height : -geometry.height);
+    if (distance === 0) return;
 
     // The indicator stretches far enough to span the gap it is crossing, then
     // settles back to its own height.
     const peak = Math.abs(distance) / INDICATOR_HEIGHT + 1;
 
     track.animate([
-      { transform: `translateY(${previous.top - geometry.top}px)`, easing: 'steps(1, end)' },
+      { transform: `translateY(${previous ? previous.top - geometry.top : 0}px)`, easing: 'steps(1, end)' },
       { transform: 'translateY(0px)', offset: POSITION_SNAP },
       { transform: 'translateY(0px)' },
     ], { duration: DURATION_MS });
@@ -121,7 +128,7 @@ export function NavSelectionIndicator({
     // The stretch grows from the edge facing the destination, so the bar reaches
     // toward the item it is travelling to rather than away from it.
     bar.style.transformOrigin = distance > 0 ? 'top' : 'bottom';
-  }, [geometry]);
+  }, [geometry, otherListIs]);
 
   if (!geometry) return null;
 
