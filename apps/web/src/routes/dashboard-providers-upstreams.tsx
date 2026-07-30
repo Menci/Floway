@@ -311,7 +311,8 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         />
       </ResourceListPanel>
 
-      {deleteOpen && deleteTarget && <ConfirmDialog
+      {deleteTarget && <ConfirmDialog
+        open={deleteOpen}
         actionLabel={
           mutation?.kind === 'delete'
             ? t('dashboard.upstreams.actions.deleting')

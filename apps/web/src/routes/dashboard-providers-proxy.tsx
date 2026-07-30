@@ -79,9 +79,10 @@ const proxyDialogDraft = (record: ProxyRecord | null) => {
   };
 };
 
-function ProxyDialog({ backoffs, onDismiss, onSaved, record }: {
+function ProxyDialog({ backoffs, onDismiss, open, onSaved, record }: {
   backoffs: BackoffRow[];
   onDismiss: () => void;
+  open: boolean;
   onSaved: () => Promise<void>;
   record: ProxyRecord | null;
 }) {
@@ -181,6 +182,7 @@ function ProxyDialog({ backoffs, onDismiss, onSaved, record }: {
   const canTest = urlInput.trim() !== '' && urlError === null && dialTimeout.error === null && config.host.trim() !== '' && isValidPort(config.port);
 
   return <DialogShell
+    open={open}
     actions={<DialogActions>
       <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={onDismiss} type="button">{t('common.cancel')}</Button>
       <Button className="!whitespace-nowrap" disabled={!canTest || saving || testing} icon={testing ? <Spinner size="tiny" /> : undefined} onClick={() => void handleTest()} type="button">{testing ? t('dashboard.proxy.actions.testing') : t('dashboard.proxy.actions.test')}</Button>
@@ -310,6 +312,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       </ResourceListPanel>
 
       {editorDialog.invocation && <ProxyDialog
+        open={editorDialog.isOpen}
         backoffs={backoffs}
         key={editorDialog.invocation.key}
         onDismiss={editorDialog.close}
@@ -317,8 +320,9 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         record={editorDialog.invocation.value}
       />}
 
-      {deleteOpen && deleteTarget && (
+      {deleteTarget && (
         <ConfirmDialog
+          open={deleteOpen}
           actionLabel={
             deleting
               ? t('dashboard.proxy.actions.deleting')

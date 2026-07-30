@@ -35,6 +35,7 @@ const RESPONSES_RETENTION_PRESETS = [
 interface KeyDialogCommonProps {
   mutationToasts: MutationToastController;
   onOpenChange: (open: boolean) => void;
+  open: boolean;
   onSaved: (key: ApiKey) => Promise<void>;
   models: ControlPlaneModel[];
   upstreams: UpstreamOption[];
@@ -158,6 +159,7 @@ export function KeyDialog(props: KeyDialogProps) {
 
   return (
     <DialogShell
+      open={props.open}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}
       title={

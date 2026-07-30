@@ -182,6 +182,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       </ResourceListPanel>
 
       {editorDialog.invocation?.value.kind === 'create' && <UserDialog
+        open={editorDialog.isOpen}
         actorId={actor.id}
         key={editorDialog.invocation.key}
         mode="create"
@@ -191,6 +192,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         upstreams={data.upstreams}
       />}
       {editorDialog.invocation?.value.kind === 'edit' && <UserDialog
+        open={editorDialog.isOpen}
         actorId={actor.id}
         key={editorDialog.invocation.key}
         mode="edit"
@@ -201,12 +203,14 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         user={editorDialog.invocation.value.user}
       />}
       {passwordDialog.invocation && <PasswordDialog
+        open={passwordDialog.isOpen}
         key={passwordDialog.invocation.key}
         onOpenChange={open => { if (!open) passwordDialog.close(); }}
         onSaved={reload}
         user={passwordDialog.invocation.value}
       />}
       {deleteDialog.invocation && <ConfirmDialog
+        open={deleteDialog.isOpen}
         actionLabel={deleting
           ? t('dashboard.users.actions.deleting')
           : t('dashboard.users.actions.delete')}
@@ -327,6 +331,7 @@ interface UserDialogCommonProps {
   actorId: number;
   models: ControlPlaneModel[];
   onOpenChange: (open: boolean) => void;
+  open: boolean;
   onSaved: (userId?: number) => Promise<void>;
   upstreams: UpstreamOption[];
 }
@@ -398,6 +403,7 @@ function UserDialog(props: UserDialogProps) {
 
   return (
     <DialogShell
+      open={props.open}
       actions={
         <DialogActions>
           <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
@@ -497,8 +503,9 @@ function PermissionToggle({ checked, description, disabled, label, onChange }: {
   );
 }
 
-function PasswordDialog({ onOpenChange, onSaved, user }: {
+function PasswordDialog({ onOpenChange, open, onSaved, user }: {
   onOpenChange: (open: boolean) => void;
+  open: boolean;
   onSaved: () => Promise<void>;
   user: ControlPlaneUser;
 }) {
@@ -534,6 +541,7 @@ function PasswordDialog({ onOpenChange, onSaved, user }: {
 
   return (
     <DialogShell
+      open={open}
       actions={<DialogActions>
         <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
         <Button appearance="primary" disabled={saving} type="submit">

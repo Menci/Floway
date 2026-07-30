@@ -200,6 +200,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       </div>
     </div>
     {blocker.state === 'blocked' && <ConfirmDialog
+      open
       actionLabel={t('dashboard.upstreamEditor.leave.leave')}
       cancelLabel={t('dashboard.upstreamEditor.leave.stay')}
       message={t('dashboard.upstreamEditor.leave.message')}

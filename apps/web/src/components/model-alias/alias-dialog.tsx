@@ -21,10 +21,11 @@ import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
 const { Accordion, AccordionHeader, AccordionItem, AccordionPanel, Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Option, Switch, Text } = fluentComponents;
 
-export function AliasDialog({ aliases, models, onOpenChange, onSaved, record }: {
+export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, record }: {
   aliases: readonly ModelAlias[];
   models: readonly ControlPlaneModel[] | null;
   onOpenChange: (open: boolean) => void;
+  open: boolean;
   onSaved: () => Promise<void>;
   record: ModelAlias | null;
 }) {
@@ -88,6 +89,7 @@ export function AliasDialog({ aliases, models, onOpenChange, onSaved, record }: 
   };
 
   return <DialogShell
+    open={open}
     onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
     onSubmit={() => void handleSubmit(save)()}
     title={<DialogTitle>{record ? t('dashboard.modelAliases.dialog.editTitle', { name: record.name }) : t('dashboard.modelAliases.dialog.createTitle')}</DialogTitle>}

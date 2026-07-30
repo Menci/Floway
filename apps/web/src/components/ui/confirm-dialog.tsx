@@ -29,6 +29,7 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
   onOpenChange,
+  open,
   title,
 }: {
   actionLabel: string;
@@ -39,6 +40,7 @@ export function ConfirmDialog({
   onCancel?: () => void;
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
+  open: boolean;
   title: string;
 }) {
   const { t } = useTranslation();
@@ -46,6 +48,7 @@ export function ConfirmDialog({
 
   return (
     <DialogShell
+      open={open}
       actions={<DialogActions>
         <Button
           className="!whitespace-nowrap"

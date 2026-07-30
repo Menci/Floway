@@ -7,6 +7,7 @@ import { fluentComponents } from '../../fluent';
 const { Dialog, DialogBody, DialogContent, DialogSurface } = fluentComponents;
 
 interface DialogShellProps {
+  open: boolean;
   onOpenChange: DialogProps['onOpenChange'];
   title: ReactNode;
   actions: ReactNode;
@@ -15,9 +16,13 @@ interface DialogShellProps {
   surfaceClassName?: string;
 }
 
-export function DialogShell({ onOpenChange, title, actions, onSubmit, children, surfaceClassName }: DialogShellProps) {
+// `open` is a prop rather than a constant because Fluent animates a dialog out
+// of the page, and it can only do that while the surface is still mounted. A
+// shell hard-coded to `open` is closed by being unmounted, which removes the
+// surface in the same commit and leaves the exit no frames to run in.
+export function DialogShell({ open, onOpenChange, title, actions, onSubmit, children, surfaceClassName }: DialogShellProps) {
   return (
-    <Dialog open onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogSurface className={`floway-dialog-shell !m-auto max-w-[min(760px,calc(100vw-32px))] ${surfaceClassName ?? ''}`}>
         <form
           className="floway-dialog-shell__form"

@@ -246,6 +246,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       </Panel>
 
       {editorDialog.invocation?.value.kind === 'create' && <KeyDialog
+        open={editorDialog.isOpen}
         key={editorDialog.invocation.key}
         models={data.models}
         mode="create"
@@ -256,6 +257,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         userUpstreamIds={user.upstreamIds}
       />}
       {editorDialog.invocation?.value.kind === 'edit' && <KeyDialog
+        open={editorDialog.isOpen}
         apiKey={editorDialog.invocation.value.apiKey}
         key={editorDialog.invocation.key}
         models={data.models}
@@ -267,6 +269,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         userUpstreamIds={user.upstreamIds}
       />}
       {rotateDialog.invocation && <RotateKeyDialog
+        open={rotateDialog.isOpen}
         apiKey={rotateDialog.invocation.value}
         key={rotateDialog.invocation.key}
         onOpenChange={open => { if (!open) rotateDialog.close(); }}
@@ -274,6 +277,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         mutationToasts={mutationToasts}
       />}
       {deleteDialog.invocation && <ConfirmDialog
+        open={deleteDialog.isOpen}
         actionLabel={t('dashboard.apiKeys.actions.delete')}
         busy={deletingKey}
         message={t('dashboard.apiKeys.delete.message', {

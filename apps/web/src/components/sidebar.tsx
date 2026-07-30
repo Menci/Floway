@@ -241,13 +241,14 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
         </div>
       </NavDrawerFooter>
     </NavDrawer>
-    {logoutOpen && <ConfirmDialog
+    <ConfirmDialog
+      open={logoutOpen}
       actionLabel={t('dashboard.logout.action')}
       actionIntent="primary"
       message={t('dashboard.logout.message')}
       onConfirm={() => void logout()}
       onOpenChange={setLogoutOpen}
       title={t('dashboard.logout.title')}
-    />}
+    />
   </>;
 }
