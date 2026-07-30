@@ -455,5 +455,5 @@ function SettingsSection({ children, title }: { children: React.ReactNode; title
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="h-full min-h-[180px] grid place-items-center text-center px-6"><Text className="text-fui-fg2">{text}</Text></div>;
+  return <div className="flex-1 min-h-[180px] grid place-items-center text-center px-6"><Text className="text-fui-fg2">{text}</Text></div>;
 }
