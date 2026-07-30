@@ -56,6 +56,17 @@ export function UpstreamAccessControl({
   const errorId = useId();
   const rows = useMemo(() => accessRows(available, ids, models), [available, ids, models]);
 
+  // The switch says "this scope picks its own upstreams", not "this scope
+  // reaches nothing". Opening it on an empty selection would state the second
+  // and fail validation before the operator has touched a row, so it opens on
+  // everything the scope can see and is narrowed from there.
+  const toggleOverride = useCallback((next: boolean) => {
+    onChange({
+      override: next,
+      ids: next && ids.length === 0 ? available.map(upstream => upstream.id) : ids,
+    });
+  }, [available, ids, onChange]);
+
   const toggleUpstream = useCallback((id: string, enabled: boolean) => {
     const nextIds = enabled ? [...new Set([...ids, id])] : ids.filter(candidate => candidate !== id);
     onChange({ override: true, ids: nextIds });
@@ -82,12 +93,17 @@ export function UpstreamAccessControl({
         checked={override}
         className="flex-none"
         disabled={disabled}
-        onChange={(_, data) => onChange({ override: !!data.checked, ids })}
+        onChange={(_, data) => toggleOverride(!!data.checked)}
       />
     </div>
     {error && <Text className={styles.error} id={errorId} role="alert" size={200}>{error}</Text>}
     {override && <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[620px] table-fixed">
+      {/* Fluent's Table is already `width: 100%; table-layout: fixed`, so the
+          only thing this minimum decides is when the region starts scrolling.
+          It is the three sized columns plus enough room for a provider chip to
+          stay readable — a dialog wide enough to show that much never scrolls,
+          and a chip narrower than its column truncates on its own. */}
+      <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[440px]">
         <colgroup><col className="w-[80px]" /><col className="w-[96px]" /><col /><col className="w-[120px]" /></colgroup>
         <TableHeader><TableRow>
           <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
