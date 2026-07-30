@@ -105,13 +105,21 @@ export const accordionCss = `
 
 /* A trailing chevron is the arrangement WinUI does state: an auto-width column
    at the end of the header grid, with the content column taking the rest. The
-   auto inline-start margin reproduces that split now that the slot no longer
-   grows, and it exceeds the 20px leading term of the WinUI chevron margin
-   wherever the row has free space. The trailing 8px and the resulting zero
-   trailing padding on the row are transcribed literally.
+   auto inline-start margin reproduces that split, and the row gap supplies the
+   20px leading term of the chevron margin as the floor it is -- the auto margin
+   alone exceeds it while the row has slack and collapses to nothing once the
+   content fills the row, which is the one case the margin exists for. It is a
+   gap rather than a margin because a header's content is often a bare text
+   node, and an anonymous flex item cannot be given a margin. The trailing 8px
+   and the resulting zero trailing padding on the row are transcribed
+   literally.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L98-L99
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L81
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L80 */
+.fui-AccordionHeader__button.fui-AccordionHeader__button:has(> .fui-AccordionHeader__expandIcon:last-child) {
+  column-gap: 20px;
+}
+
 .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon:last-child {
   margin-inline-start: auto;
   margin-inline-end: 8px;
