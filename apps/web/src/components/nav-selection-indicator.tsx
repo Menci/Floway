@@ -13,8 +13,13 @@ import type { RefObject } from 'react';
 // both. Playing WinUI's pair there puts one bar in each list and shows them
 // moving at once, which reads as two things rather than one. Only the arriving
 // half is played instead: the list losing the selection drops its bar, and the
-// one taking it stretches in from the edge facing where the selection came
-// from. One bar moves, and it moves the way it would have travelled.
+// one taking it settles in from the edge facing where the selection came from.
+//
+// Only the settle, not the stretch before it. The stretch exists to cross the
+// gap between two items, and a crossing has no gap to cross inside either list;
+// starting the arriving bar already extended toward where the selection came
+// from, and letting it contract, is that same animation with the phase it has
+// no distance for left out.
 //
 // The offset and the scale are separate animations there and stay separate
 // here, because they carry different easings and only a nested element can give
@@ -114,17 +119,25 @@ export function NavSelectionIndicator({
     // settles back to its own height.
     const peak = Math.abs(distance) / INDICATOR_HEIGHT + 1;
 
-    track.animate([
-      { transform: `translateY(${previous ? previous.top - geometry.top : 0}px)`, easing: 'steps(1, end)' },
-      { transform: 'translateY(0px)', offset: POSITION_SNAP },
-      { transform: 'translateY(0px)' },
-    ], { duration: DURATION_MS });
+    if (previous) {
+      track.animate([
+        { transform: `translateY(${previous.top - geometry.top}px)`, easing: 'steps(1, end)' },
+        { transform: 'translateY(0px)', offset: POSITION_SNAP },
+        { transform: 'translateY(0px)' },
+      ], { duration: DURATION_MS });
+    }
 
-    bar.animate([
-      { transform: 'scaleY(1)', easing: STRETCH_EASING },
-      { transform: `scaleY(${peak})`, offset: POSITION_SNAP, easing: SETTLE_EASING },
-      { transform: 'scaleY(1)' },
-    ], { duration: DURATION_MS });
+    bar.animate(previous
+      ? [
+          { transform: 'scaleY(1)', easing: STRETCH_EASING },
+          { transform: `scaleY(${peak})`, offset: POSITION_SNAP, easing: SETTLE_EASING },
+          { transform: 'scaleY(1)' },
+        ]
+      : [
+          { transform: `scaleY(${peak})`, easing: SETTLE_EASING },
+          { transform: 'scaleY(1)' },
+        ],
+    { duration: previous ? DURATION_MS : Math.round(DURATION_MS * (1 - POSITION_SNAP)) });
     // The stretch grows from the edge facing the destination, so the bar reaches
     // toward the item it is travelling to rather than away from it.
     bar.style.transformOrigin = distance > 0 ? 'top' : 'bottom';
