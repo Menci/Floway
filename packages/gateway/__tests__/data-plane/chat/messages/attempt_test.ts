@@ -119,7 +119,7 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
     output: [{
       type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
-      content: [{ type: 'output_text', text: 'hi' }],
+      content: [{ type: 'output_text', text: 'hi', annotations: [] }],
     }],
     output_text: 'hi', error: null, incomplete_details: null,
   };

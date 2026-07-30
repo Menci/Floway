@@ -738,7 +738,7 @@ test('synthesized message item carries a stable id consistent across added, chil
   assertEquals(doneId, addedId);
   assertEquals(new Set(allChildIds), new Set([addedId]));
   assertEquals(state.completedItems, [
-    { type: 'message', id: addedId, role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] },
+    { type: 'message', id: addedId, role: 'assistant', content: [{ type: 'output_text', text: 'hi', annotations: [] }] },
   ]);
 });
 

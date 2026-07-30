@@ -452,7 +452,7 @@ test('rejects conflicting ids carried by one input item', async () => {
 
 test('normalizes the generated compaction item without touching retained compact messages', async () => {
   const compactResult = response([
-    { type: 'message', id: 'msg_retained', role: 'assistant', content: [] },
+    { type: 'message', id: 'msg_retained', status: 'completed', role: 'assistant', content: [] },
     { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compact state' },
   ]);
   const result = await withCopilotResponsesItemIdMembrane(invocation(), {}, () => Promise.resolve({
@@ -485,7 +485,7 @@ test('fails closed on unknown output types before yielding a raw id', async () =
 });
 
 test('rejects a repeated output_item.added observation', async () => {
-  const item: ResponsesOutputItem = { type: 'message', id: 'msg_raw', role: 'assistant', content: [] };
+  const item: ResponsesOutputItem = { type: 'message', id: 'msg_raw', status: 'in_progress', role: 'assistant', content: [] };
   const { result } = await runStream([
     eventFrame(outputItemEvent('added', 0, item)),
     eventFrame(outputItemEvent('added', 0, item)),
@@ -496,7 +496,7 @@ test('rejects a repeated output_item.added observation', async () => {
 
 test('rejects an output index whose observed item type changes', async () => {
   const { result } = await runStream([
-    eventFrame(outputItemEvent('added', 0, { type: 'message', id: 'msg_raw', role: 'assistant', content: [] })),
+    eventFrame(outputItemEvent('added', 0, { type: 'message', id: 'msg_raw', status: 'in_progress', role: 'assistant', content: [] })),
     eventFrame(outputItemEvent('done', 0, { type: 'reasoning', id: 'rs_raw', summary: [] })),
   ]);
 
@@ -539,7 +539,7 @@ test('passes through an unknown scalar event without item identity', async () =>
 });
 
 test('rewrites an item id extension on an unknown scalar event', async () => {
-  const item: ResponsesOutputItem = { type: 'message', id: 'msg_raw', role: 'assistant', content: [] };
+  const item: ResponsesOutputItem = { type: 'message', id: 'msg_raw', status: 'in_progress', role: 'assistant', content: [] };
   const future = {
     type: 'response.future_delta',
     item_id: 'msg_raw',
@@ -589,7 +589,7 @@ test('forwards repeated done frames with stable public identity and each frame o
 });
 
 test('normalizes a failed response with an open item instead of suppressing the failure', async () => {
-  const partial: ResponsesOutputItem = { type: 'message', id: 'msg_failed', role: 'assistant', content: [] };
+  const partial: ResponsesOutputItem = { type: 'message', id: 'msg_failed', status: 'in_progress', role: 'assistant', content: [] };
   const { result } = await runStream([
     eventFrame(outputItemEvent('added', 0, partial)),
     eventFrame({ type: 'response.failed', response: { ...response([partial]), status: 'failed' } }),
