@@ -61,12 +61,6 @@ export const switchCss = `
   border-radius: 999px;
   height: 12px;
   margin-inline-start: 2.5px;
-  /* One timing for every property the knob moves. Fluent slides the knob with a
-     transform and this file resizes it, and while the two ran on different
-     durations the knob finished growing before it finished travelling -- the
-     square background of the glyph element showing past the round one it is
-     meant to sit under, which reads as a second ring while the pointer is
-     down. */
   /* Two animations, not one. The size and the margin are the template's own
      keyframes: ControlFasterAnimationDuration on the fast-out-slow-in spline,
      stated outright for Width and Height in the PointerOver and Pressed states.
@@ -84,9 +78,6 @@ export const switchCss = `
   transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-reposition-animation-duration);
   transition-property: width, height, margin-inline-start, transform;
   transition-timing-function: var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-reposition-easing);
-  transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-indicator-settle-duration);
-  transition-property: width, height, margin-inline-start, transform;
-  transition-timing-function: var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-indicator-settle-easing);
   width: 12px;
 }
 
