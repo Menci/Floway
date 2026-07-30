@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
+import { DURATION_MS, POSITION_SNAP, REACH_MS, SETTLE_EASING, SETTLE_MS, STRETCH_EASING } from '../lib/winui-motion';
+
 // WinUI's NavigationView does not move one indicator between items. It keeps a
 // separate indicator per item and, on a selection change, plays a matched pair
 // of composition animations: the one losing selection stretches toward the
@@ -31,10 +33,6 @@ import type { RefObject } from 'react';
 // two transforms their own timing.
 //
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L2176-L2233
-const DURATION_MS = 600;
-const POSITION_SNAP = 0.333;
-const STRETCH_EASING = 'cubic-bezier(0.9, 0.1, 1, 0.2)';
-const SETTLE_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
 const INDICATOR_HEIGHT = 16;
@@ -44,8 +42,6 @@ const INDICATOR_WIDTH = 3;
 // across the two lists instead of running on one bar: the reach occupies the
 // span before the position snap, the settle everything after it. Deriving both
 // from the same constants is what keeps a crossing on the timing of a move.
-const REACH_MS = Math.round(DURATION_MS * POSITION_SNAP);
-const SETTLE_MS = DURATION_MS - REACH_MS;
 const INDICATOR_RADIUS = 2;
 
 type Geometry = { top: number; left: number; width: number; height: number };
