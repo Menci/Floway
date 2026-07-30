@@ -45,6 +45,16 @@ test('canonicalizes string and implicit-message wire inputs', () => {
   });
 });
 
+test('canonicalizes an untyped message carrying an image without detail', () => {
+  assertEquals(canonicalizeResponsesPayload({
+    model: 'gpt-test',
+    input: [{ role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
+  }), {
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
+  });
+});
+
 test('rejects malformed untyped input items at the canonical boundary', () => {
   for (const malformed of [
     null,
