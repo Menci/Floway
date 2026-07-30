@@ -65,7 +65,6 @@ function Harness() {
       <FormProvider {...form}>
         <UpstreamWorkspace
           discovered={[]}
-          flags={[]}
           loadingModels={false}
           modelsError={null}
           onRefreshModels={vi.fn()}
