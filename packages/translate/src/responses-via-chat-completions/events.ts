@@ -174,11 +174,14 @@ const closeText = (state: ChatCompletionsToResponsesStreamState): ResponsesStrea
   const textItem = state.openText;
   state.openText = undefined;
 
-  const item = responses.messageItem(textItem.itemId, textItem.text);
+  // Chat Completions has no citation channel, so a translated text part
+  // never carries annotations.
+  const part = responses.textPart(textItem.text, []);
+  const item = responses.messageItem(textItem.itemId, 'completed', part);
 
   state.completedItems[textItem.outputIndex] = item;
 
-  return responses.textDone(state, textItem.outputIndex, textItem.itemId, textItem.text, item);
+  return responses.textDone(state, textItem.outputIndex, textItem.itemId, part, item);
 };
 
 const closeRefusal = (state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
@@ -187,10 +190,11 @@ const closeRefusal = (state: ChatCompletionsToResponsesStreamState): ResponsesSt
   const refusalItem = state.openRefusal;
   state.openRefusal = undefined;
 
-  const item = responses.refusalItem(refusalItem.itemId, refusalItem.refusal);
+  const part = responses.refusalPart(refusalItem.refusal);
+  const item = responses.messageItem(refusalItem.itemId, 'completed', part);
   state.completedItems[refusalItem.outputIndex] = item;
 
-  return responses.refusalDone(state, refusalItem.outputIndex, refusalItem.itemId, refusalItem.refusal, item);
+  return responses.refusalDone(state, refusalItem.outputIndex, refusalItem.itemId, part, item);
 };
 
 const closeFunctionCalls = (state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
