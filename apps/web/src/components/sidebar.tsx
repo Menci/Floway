@@ -63,11 +63,13 @@ const useStyles = makeStyles({
   },
 });
 
-// The pill sits inside the item, hard against its leading edge -- WinUI marks
-// the selected item within its own fill rather than alongside it, which is also
-// what keeps the marker and the fill reading as one object.
+// The pill sits flush against the inside of the item's leading edge. WinUI
+// marks the selected item within its own fill rather than alongside it, which
+// is what keeps the marker and the fill reading as one object. Nothing has to
+// be held back for the item's rounded corners: the pill is 16px of a 36px row
+// and is centred, so it never reaches the height the curve occupies.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
-const NAV_INDICATOR_INSET = 4;
+const NAV_INDICATOR_INSET = 0;
 
 type NavItemDefinition = {
   to: string;

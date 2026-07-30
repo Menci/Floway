@@ -105,16 +105,18 @@ export const navCss = `
    the same item's fill under the pointer. WinUI has no such difference: a
    FocusVisualMargin puts the visual outside the control, and the fill it
    surrounds is the one every other state paints. The offset therefore moves
-   outward, the outer ring goes with it, and the inner stroke sits against the
-   control as a 1px inset -- the same construction every other item-shaped
-   surface in this layer uses.
+   outward and takes the inner stroke with it: WinUI draws both rings in that
+   margin, the secondary against the control and the primary beyond it, so
+   neither touches the fill. An inset shadow would have covered its outermost
+   pixel and left the focused item reading a pixel narrower than the hovered
+   one, which is the whole defect this rule exists to remove.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
 .fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible],
 .fui-AppItem.fui-AppItem[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
-  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  box-shadow: 0 0 0 1px var(--winui-focus-stroke-inner);
   outline-offset: 1px;
 }
 
