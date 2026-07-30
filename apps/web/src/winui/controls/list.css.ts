@@ -71,18 +71,16 @@ export const listCss = `
 /* The selection indicator: the accent bar WinUI runs down the leading edge of a
    selected row. ListViewItem states its brush, its enabled flag and its 1.5px
    corner radius, and the radius fixes the width -- a full round-off is one only
-   on a 3px bar. The length is not stated for a ListViewItem, but WinUI marks a
-   selected NavigationViewItem with the same bar and states 16 there; one
-   selection indicator, described once.
+   on a 3px bar.
 
-   That 16 is stated against a 36px row, so it is carried here as the inset it
-   leaves -- ten pixels at each end -- rather than as a length. A list row here
-   sizes itself to its own content and runs well past 36, and a fixed 16 on a
-   tall row reads as a tick beside it instead of a mark down its edge.
+   The length is the presenter's own formula rather than the navigation pane's:
+   MAX(16, itemHeight - 40), centred. A NavigationViewItem states a flat 16
+   because its row is pinned at 36; a list row sizes itself to its content, and
+   the chrome answers that by holding 16 until the row passes 56 and then
+   growing with it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L57
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75-L78
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L1750-L1758 */
 .fui-ListItem.fui-ListItem[aria-selected='true'] {
   position: relative;
 }
@@ -91,10 +89,38 @@ export const listCss = `
   content: '';
   position: absolute;
   inset-inline-start: 0;
-  inset-block: 10px;
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  block-size: max(16px, calc(100% - 40px));
   inline-size: 3px;
   border-radius: 1.5px;
   background-color: var(--winui-accent-fill-default);
+}
+
+/* The bar arrives on its own rather than travelling from the row that lost the
+   selection. A moving indicator is NavigationView's alone in this corpus; the
+   presenter runs one storyboard per item, and two rows changing selection
+   simply overlap in time. The bar fades in over 83ms while it grows from
+   nothing to full height over 167ms, from its own centre.
+
+   Only the arrival is reproduced. WinUI fades a deselected bar out over 83ms
+   and then destroys the rectangle, which needs the element to outlive the
+   state that selects it -- a pseudo-element cannot.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/ListViewBaseItemPresenter_Partial.cpp#L891-L1022 */
+@media (prefers-reduced-motion: no-preference) {
+  .fui-ListItem.fui-ListItem[aria-selected='true']::before {
+    animation:
+      winui-selection-indicator-fade 83ms linear,
+      winui-selection-indicator-grow 167ms cubic-bezier(0.167, 0.167, 0, 1);
+  }
+}
+
+@keyframes winui-selection-indicator-fade {
+  from { opacity: 0; }
+}
+
+@keyframes winui-selection-indicator-grow {
+  from { scale: 1 0; }
 }
 
 /* Disablement. Fluent only softens the cursor; WinUI drops ContentBorder — the
