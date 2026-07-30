@@ -27,6 +27,12 @@
 
 import { notOptedOut } from '../tokens';
 
+// The two chromeless appearances, minus the checked state, which paints itself
+// from the accent family instead.
+const chromeless = ['subtle', 'transparent']
+  .map(appearance => `.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='${appearance}']:not([aria-pressed='true']):not([aria-checked='true'])`)
+  .join(', ');
+
 export const buttonCss = `
 /* Geometry and typography. The weight is Normal rather than Fluent's semibold,
    and the style declares neither MinWidth nor MaxWidth, so a WinUI button is
@@ -151,15 +157,11 @@ export const buttonCss = `
    naming its own wins over it, which is the distinction that was missing.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L21-L23 */
-.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='subtle'],
-.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='transparent'],
-.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='subtle']:hover,
-.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='transparent']:hover {
+${chromeless}, ${chromeless}:hover {
   color: var(--winui-text-fill-primary);
 }
 
-.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='subtle']:hover:active,
-.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='transparent']:hover:active {
+${chromeless}:hover:active {
   color: var(--winui-text-fill-secondary);
 }
 
