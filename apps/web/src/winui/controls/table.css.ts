@@ -26,16 +26,23 @@ export const tableCss = `
   color: var(--winui-text-fill-primary);
 }
 
-/* The header row is not an item and takes no pointer fill. Fluent gives both
-   the row and the header cell inside it the same interactive fill, which was
-   invisible while that token was opaque -- the inner fill simply replaced the
-   outer one. Against WinUI's translucent subtle fill the two composite, and a
-   hovered header reads as a band with a darker block inside it. WinUI resolves
-   this at the source: a ListViewHeaderItem declares no pointer states, and the
-   affordance belongs to the sortable cell alone.
+/* Only one element in a header may paint the pointer fill. A sortable header
+   cell nests a button inside the cell, and Fluent gives both of them the same
+   interactive fill; a header row carries it too. While that token was an opaque
+   grey the inner fill simply replaced the outer, so the stack was invisible.
+   WinUI's fill is translucent, so they composite instead, and a hovered header
+   reads as a band with a darker block inside it -- which is why only sortable
+   headers show it, since only they render the button.
+
+   The cell keeps the fill, because the cell is what the pointer is over and
+   what a click acts on. The row gives it up for the same reason a
+   ListViewHeaderItem declares no pointer states at all, and the button gives it
+   up because it is the cell's own interior.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L17-L25 */
 .fui-TableHeader .fui-TableRow.fui-TableRow:hover,
-.fui-TableHeader .fui-TableRow.fui-TableRow:active {
+.fui-TableHeader .fui-TableRow.fui-TableRow:active,
+.fui-TableHeaderCell .fui-TableHeaderCell__button.fui-TableHeaderCell__button:hover,
+.fui-TableHeaderCell .fui-TableHeaderCell__button.fui-TableHeaderCell__button:active {
   background-color: var(--winui-subtle-fill-transparent);
 }
 
