@@ -16,8 +16,9 @@ import {
   TextEditStyle20Color,
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
+import type { NavItemProps } from '@fluentui/react-components';
 import { useId, useRef, useState } from 'react';
-import type { MouseEvent, ReactNode } from 'react';
+import type { MouseEventHandler, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLinkClickHandler, useLocation, useNavigation } from 'react-router';
 
@@ -131,14 +132,14 @@ const navGroups: NavGroup[] = [
 
 function SidebarLink({ children, icon, onNavigate, pending, to }: {
   children: ReactNode;
-  icon: ReactNode;
+  icon: NavItemProps['icon'];
   onNavigate?: () => void;
   pending: boolean;
   to: string;
 }) {
   const styles = useStyles();
   const handleLinkClick = useLinkClickHandler(to);
-  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+  const handleClick: MouseEventHandler<HTMLAnchorElement> = event => {
     const followsInThisView = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
     handleLinkClick(event);
     if (followsInThisView) onNavigate?.();
@@ -149,7 +150,7 @@ function SidebarLink({ children, icon, onNavigate, pending, to }: {
     data-nav-value={to}
     href={to}
     icon={icon}
-    onClick={event => handleClick(event as MouseEvent<HTMLAnchorElement>)}
+    onClick={handleClick as NavItemProps['onClick']}
     value={to}
   >{children}</NavItem>;
 }
