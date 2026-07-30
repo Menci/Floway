@@ -18,6 +18,7 @@ import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ModelInfoBadges } from '../components/models/model-info-badges';
 import { effectiveUpstreamCap } from '../components/models/reachability';
+import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-palette';
 import { PlaygroundComposer } from '../components/playground/playground-composer';
 import {
   availableModels,
@@ -80,8 +81,8 @@ export function meta({}: Route.MetaArgs) {
 const useStyles = makeStyles({
   toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke1}` },
   brandIconAction: {
-    color: 'light-dark(#2770ea, #244b8f)',
-    '&:hover': { color: 'light-dark(#1b4aef, #203581)' },
+    color: bingAccentForeground,
+    '&:hover': { color: bingAccentForegroundHover },
   },
   messageActions: {
     opacity: 0,

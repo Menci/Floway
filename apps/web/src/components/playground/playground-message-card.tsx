@@ -1,5 +1,6 @@
 import type { PropsWithChildren } from 'react';
 
+import { bingAccentGradient } from './bing-chat-palette';
 import type { PlaygroundMessage } from './playground-logic';
 import { fluentComponents } from '../../fluent';
 
@@ -8,8 +9,7 @@ const { Card, makeStyles, tokens } = fluentComponents;
 const useStyles = makeStyles({
   user: {
     color: tokens.colorNeutralForegroundOnBrand,
-    backgroundImage:
-      'linear-gradient(to right, light-dark(#2770ea, #244b8f), light-dark(#1b4aef, #203581))',
+    backgroundImage: bingAccentGradient,
   },
 });
 

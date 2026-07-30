@@ -6,6 +6,13 @@ import {
 } from '@fluentui/react-icons';
 import { useLayoutEffect, useRef } from 'react';
 
+import {
+  bingAccentForeground,
+  bingAccentForegroundHover,
+  bingAccentGradient,
+  bingAccentGradientActive,
+  bingAccentGradientHover,
+} from './bing-chat-palette';
 import broomUrl from '../../assets/broom.svg';
 import { fluentComponents } from '../../fluent';
 import { Input } from '../ui/fluent-form-controls';
@@ -40,12 +47,12 @@ const useStyles = makeStyles({
     },
   },
   imageButton: {
-    color: 'light-dark(#2770ea, #244b8f)',
+    color: bingAccentForeground,
     backgroundColor: 'transparent',
     border: 0,
     cursor: 'pointer',
     '&:hover': {
-      color: 'light-dark(#1b4aef, #203581)',
+      color: bingAccentForegroundHover,
       backgroundColor: tokens.colorNeutralBackground1Hover,
     },
     '&:disabled': {
@@ -55,14 +62,14 @@ const useStyles = makeStyles({
   },
   newTopicButton: {
     color: tokens.colorNeutralForegroundOnBrand,
-    backgroundImage: 'linear-gradient(to right, light-dark(#2770ea, #244b8f), light-dark(#1b4aef, #203581))',
+    backgroundImage: bingAccentGradient,
     border: 0,
     boxShadow: tokens.shadow4,
     cursor: 'pointer',
-    transitionProperty: 'filter, transform',
+    transitionProperty: 'transform',
     transitionDuration: tokens.durationFaster,
-    '&:hover': { filter: 'brightness(1.06)' },
-    '&:active': { transform: 'translateY(1px)' },
+    '&:hover': { backgroundImage: bingAccentGradientHover },
+    '&:active': { backgroundImage: bingAccentGradientActive, transform: 'translateY(1px)' },
   },
   broomIcon: {
     display: 'block',
