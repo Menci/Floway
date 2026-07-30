@@ -647,6 +647,23 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2' });
 });
 
+test('buildTargetRequest gives a schema-less function tool the empty object schema', async () => {
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    tools: [{ type: 'function', name: 'ping' }],
+  });
+
+  // Forwarding an absent `parameters` verbatim put `input_schema: undefined` on
+  // the wire, which Anthropic rejects with a 400 for the whole request.
+  assertEquals(result.target.tools, [
+    {
+      name: 'ping',
+      input_schema: { type: 'object', properties: {} },
+      cache_control: { type: 'ephemeral' },
+    },
+  ]);
+});
+
 test('buildTargetRequest keeps plain-text function_call_output as string content', async () => {
   const result = await buildTargetRequest({
     model: 'claude-test',

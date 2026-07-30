@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { wrapNativeResponsesClientOutput } from './client-output.ts';
+import { wrapResponsesClientEgress } from './client-output.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -9,9 +9,9 @@ import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
@@ -19,11 +19,16 @@ import { apiErrorToResponse } from '@floway-dev/provider';
 // error-typed result is a pre-stream failure and always answers as HTTP; an
 // events result drains to one JSON body (non-streaming) or is proxied frame by
 // frame (streaming).
+//
+// `request` is the payload the events answer. It is absent only on the
+// error-only entries that render a pre-parse failure, which never reach the
+// events branch — the branch asserts that rather than inventing a stand-in.
 export const respondResponses = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | PlainResult,
   wantsStream: boolean,
   ctx: GatewayCtx,
+  request: CanonicalResponsesPayload | undefined,
 ): Promise<Response> => {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
@@ -44,9 +49,11 @@ export const respondResponses = async (
     return plainResultToResponse(result);
   }
 
+  if (request === undefined) throw new Error('Responses events reached the client-facing boundary without the originating request payload');
+
   const state = new SourceStreamState();
   const observed = observeResponsesFrames(result.events, state, ctx);
-  const frames = wrapNativeResponsesClientOutput(observed, ctx);
+  const frames = wrapResponsesClientEgress(observed, ctx, request);
 
   if (!wantsStream) {
     try {
@@ -132,12 +139,21 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
   throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
 };
 
-const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState) {
+const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
-      const sse = responsesProtocolFrameToSSEFrame(frame);
-      if (sse) yield sse;
+      yield responsesProtocolFrameToSSEFrame(frame);
     }
+    // The SSE transport terminates on the literal `[DONE]` payload, per the
+    // OpenResponses 2026-04-24 spec, "Streaming HTTP Responses":
+    // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx?plain=1#L84
+    // A Responses stream is defined to end on its terminal event, not on a
+    // `done` frame: both the client-output boundary and `observeResponsesFrames`
+    // return as soon as the terminal event passes, so a producer's `done` frame
+    // can never reach a serializer. This generator is therefore the only place
+    // that knows the stream ran to a clean terminal, and it appends the
+    // terminating frame itself. A failed stream ends on the error frame below.
+    yield responsesProtocolFrameToSSEFrame(doneFrame());
   } catch (error) {
     state.failed = true;
     yield internalResponsesStreamErrorFrame(error);

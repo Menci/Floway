@@ -351,6 +351,13 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     }
     return Promise.resolve();
   }
+
+  // Beyond the backing contract: only the connection-local layer forgets a
+  // snapshot, so the delete path deliberately stops here rather than reaching
+  // the interface every backing implements.
+  evictSnapshot(apiKeyId: string, id: string): void {
+    this.snapshots.delete(scopedResponsesKey(apiKeyId, id));
+  }
 }
 
 type ResponsesStatePolicy = Pick<ApiKey, 'id' | 'responsesRetentionSeconds'>;
@@ -380,7 +387,14 @@ export const createNonResponsesSourceStore = (apiKeyId: string): StatefulRespons
 
 export const createResponsesWsSession = (): {
   createStore(apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore;
+  evictSnapshot(apiKeyId: string, id: string): void;
 } => {
+  // "Servers SHOULD keep the most recent previous-response state in
+  // connection-local memory for the active WebSocket. […] With `store=false`,
+  // there is no persisted fallback; if the referenced response is not
+  // available from connection-local state, the server MUST fail the turn with
+  // an error whose code is `previous_response_not_found`."
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L125
   const local = new MemoryStatefulResponsesBacking();
   return {
     createStore(apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore {
@@ -393,6 +407,13 @@ export const createResponsesWsSession = (): {
         reads: durable === null ? [local] : [local, durable],
         writes,
       });
+    },
+    // "If a continuation turn fails with a `4xx` or `5xx` error, the server
+    // MUST evict the referenced `previous_response_id` from the
+    // connection-local cache."
+    // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
+    evictSnapshot(apiKeyId: string, id: string): void {
+      local.evictSnapshot(apiKeyId, id);
     },
   };
 };

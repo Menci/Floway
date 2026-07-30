@@ -5,11 +5,12 @@ import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-
 import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomResponsesItemId, type ResponsesOutputItem, type ResponsesOutputReasoning, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): ResponsesResult['usage'] | undefined => {
+const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): NonNullable<ResponsesResult['usage']> | undefined => {
   if (!usage) return undefined;
   const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage.prompt_tokens_details?.cache_write_tokens;
+  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
   splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
   return {
     input_tokens: usage.prompt_tokens,
@@ -23,6 +24,12 @@ const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['u
           },
         }
       : {}),
+    // Chat Completions' `reasoning_tokens` and Responses' `reasoning_tokens`
+    // are the same quantity, so an upstream that reports one is translated
+    // rather than dropped. An upstream that reports none says nothing here;
+    // the client-facing egress owns the schema's presence requirement.
+    // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/response_usage.py#L28-L47
+    ...(reasoningTokens === undefined ? {} : { output_tokens_details: { reasoning_tokens: reasoningTokens } }),
   };
 };
 
@@ -95,7 +102,7 @@ interface ChatCompletionsToResponsesStreamState {
   openFunctionCalls: Map<number, PendingFunctionCallItem>;
   deferredAfterReasoning: DeferredAfterReasoning[];
   reasoningItemsSeen: boolean;
-  usage?: ResponsesResult['usage'];
+  usage?: NonNullable<ResponsesResult['usage']>;
   serviceTier?: ResponsesResult['service_tier'];
   pendingFinishReason?: ChatCompletionsFinishReason;
   completed: boolean;
@@ -174,11 +181,14 @@ const closeText = (state: ChatCompletionsToResponsesStreamState): ResponsesStrea
   const textItem = state.openText;
   state.openText = undefined;
 
-  const item = responses.messageItem(textItem.itemId, textItem.text);
+  // Chat Completions has no citation channel, so a translated text part
+  // never carries annotations.
+  const part = responses.textPart(textItem.text, []);
+  const item = responses.messageItem(textItem.itemId, 'completed', part);
 
   state.completedItems[textItem.outputIndex] = item;
 
-  return responses.textDone(state, textItem.outputIndex, textItem.itemId, textItem.text, item);
+  return responses.textDone(state, textItem.outputIndex, textItem.itemId, part, item);
 };
 
 const closeRefusal = (state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
@@ -187,10 +197,11 @@ const closeRefusal = (state: ChatCompletionsToResponsesStreamState): ResponsesSt
   const refusalItem = state.openRefusal;
   state.openRefusal = undefined;
 
-  const item = responses.refusalItem(refusalItem.itemId, refusalItem.refusal);
+  const part = responses.refusalPart(refusalItem.refusal);
+  const item = responses.messageItem(refusalItem.itemId, 'completed', part);
   state.completedItems[refusalItem.outputIndex] = item;
 
-  return responses.refusalDone(state, refusalItem.outputIndex, refusalItem.itemId, refusalItem.refusal, item);
+  return responses.refusalDone(state, refusalItem.outputIndex, refusalItem.itemId, part, item);
 };
 
 const closeFunctionCalls = (state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
