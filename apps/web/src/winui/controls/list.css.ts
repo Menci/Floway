@@ -112,10 +112,18 @@ export const listCss = `
    of its own to carry a second ring.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L29-L30
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L250
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L252 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L252
+
+   The ring is pulled a pixel inside the row. Rows in a list carry no margin --
+   WinUI states none, and the 4px corner is meant to show only on the row the
+   pointer or the selection is on -- so a ring drawn on the border box lands
+   exactly on the boundary it shares with the row above. FocusVisualMargin is
+   the thickness WinUI keeps between the two.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L248 */
 .fui-ListItem.fui-ListItem[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
   box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  outline-offset: -1px;
 }
 
 /* The selection checkbox. Its fills, strokes and glyph belong to ./choice.css,
