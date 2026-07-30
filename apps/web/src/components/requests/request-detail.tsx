@@ -55,9 +55,9 @@ const useStyles = makeStyles({
     whiteSpace: 'pre',
   },
   highlightedCode: prismTokenStyles,
-  headers: { borderCollapse: 'collapse', fontFamily: 'var(--fontFamilyMonospace)', fontSize: 'var(--floway-font-size-mono)', tableLayout: 'fixed', width: '100%' },
+  headers: { borderCollapse: 'collapse', fontFamily: 'var(--fontFamilyMonospace)', fontSize: 'var(--floway-font-size-mono)', width: '100%' },
   headerRow: { borderBottom: '1px solid var(--colorNeutralStroke3)' },
-  headerName: { color: 'var(--colorNeutralForeground3)', fontWeight: 'var(--fontWeightRegular)', overflowWrap: 'anywhere', padding: '7px 14px 7px 16px', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'normal', width: '190px' },
+  headerName: { color: 'var(--colorNeutralForeground3)', fontWeight: 'var(--fontWeightRegular)', padding: '7px 14px 7px 16px', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'nowrap' },
   headerValue: { color: 'var(--colorNeutralForeground1)', overflowWrap: 'anywhere', padding: '7px 16px 7px 0', verticalAlign: 'top', whiteSpace: 'normal' },
   success: { color: 'var(--colorPaletteGreenForeground1)' },
   warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
@@ -151,6 +151,10 @@ function SectionBody({ children }: PropsWithChildren) {
   return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full w-max" noTabIndex>{children}</ScrollArea>;
 }
 
+function HeaderSectionBody({ children }: PropsWithChildren) {
+  return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full" noTabIndex>{children}</ScrollArea>;
+}
+
 export function RequestDetailPanel({ collected: loadedCollected, error, record, recordId }: DetailProps) {
   const { t } = useTranslation();
   const s = useStyles();
@@ -191,7 +195,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
     <ScrollArea axes="vertical" className="h-full" contentClassName="min-h-full" noTabIndex>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.request')} detail={<><HttpMethodBadge method={record.request.method} /><Text size={300} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
-        <SectionBody><HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} /></SectionBody>
+        <HeaderSectionBody><HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} /></HeaderSectionBody>
       </section>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
@@ -202,9 +206,9 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
       </section>
       <section className={s.section}>
         <SectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
-        <SectionBody>
+        <HeaderSectionBody>
           {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noResponseHeaders')}</Text>}
-        </SectionBody>
+        </HeaderSectionBody>
       </section>
       <section>
         <SectionHeader
