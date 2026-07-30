@@ -503,8 +503,6 @@ const translateReadyResponsesEvent = (event: ResponsesStreamEvent, state: Respon
     return handleFailed((event as Extract<ResponsesStreamEvent, { type: 'response.failed' }>).response, state);
   case 'error':
     return handleError(event as Extract<ResponsesStreamEvent, { type: 'error' }>, state);
-  case 'ping':
-    return [{ type: 'ping' }];
   default:
     return [];
   }

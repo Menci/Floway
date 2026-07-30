@@ -224,7 +224,7 @@ const normalizeStreamEvent = (event: ResponsesStreamEvent, state: StreamItemStat
     return { ...event, response: normalizeResponseOutput(event.response, state) };
   }
 
-  if (event.type === 'error' || event.type === 'ping') return event;
+  if (event.type === 'error') return event;
   const carrier = event as ResponsesStreamEvent & { item_id?: unknown; output_index?: unknown };
   const requiresItemId = ITEM_ID_EVENT_TYPES.has(event.type);
   const permitsMissingItemId = NO_ITEM_ID_EVENT_TYPES.has(event.type);

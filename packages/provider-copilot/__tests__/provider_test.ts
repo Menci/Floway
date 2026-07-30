@@ -450,7 +450,7 @@ test('Copilot provider exposes its default flag set via ProviderModel.enabledFla
       const models = await instance.instance.getProvidedModels(directFetcher);
       const model = models[0];
       if (!model) throw new Error('expected at least one Copilot model in test fixture');
-      assertEquals(model.enabledFlags.has('retry-cyber-policy'), true);
+      assertEquals(model.enabledFlags.has('strip-billing-attribution'), true);
       assertEquals(model.enabledFlags.has('messages-web-search-shim'), true);
     },
   );

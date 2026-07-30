@@ -1,7 +1,6 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
-import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import { withResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
@@ -26,7 +25,6 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //     items so the upstream sees the summarized history.
 //   - withResponsesServerToolShim: wraps the multi-turn ReAct loop around
 //     the rest of the chain.
-//   - withCyberPolicyRetried: gated by `retry-cyber-policy`.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
 //   - withRoleCompatibilityApplied: applies role flags in the fixed order
@@ -46,7 +44,6 @@ export const responsesInterceptors: readonly ResponsesInterceptor[] = [
     webSearchServerTool,
     imageGenerationServerTool,
   ]),
-  withCyberPolicyRetried,
   withReasoningDisabledOnForcedToolChoice,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,

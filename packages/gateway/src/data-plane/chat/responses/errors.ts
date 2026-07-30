@@ -2,7 +2,7 @@ import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import { openAiErrorResult, type ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 
 export type ResponsesServeFailure = ChatServeFailure | { readonly kind: 'item-not-found'; readonly itemId: string };
 
@@ -12,7 +12,7 @@ export type ResponsesServeFailure = ChatServeFailure | { readonly kind: 'item-no
 export const responsesInputErrorResult = (
   error: { readonly message: string; readonly param?: string },
   performance?: PerformanceTelemetryContext,
-): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> =>
+): ApiErrorResult =>
   openAiErrorResult(400, error.message, { param: error.param ?? 'input', code: null }, performance);
 
 export const renderResponsesFailure = (

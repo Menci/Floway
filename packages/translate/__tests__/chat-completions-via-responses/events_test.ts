@@ -28,8 +28,9 @@ const makeResponse = (status: ResponsesResult['status']): ResponsesResult => ({
     {
       type: 'message',
       id: 'msg_base',
+      status: 'completed',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'hello' }],
+      content: [{ type: 'output_text', text: 'hello', annotations: [] }],
     },
   ],
   error: null,
@@ -210,6 +211,7 @@ test('translateToSourceEvents preserves refusal text from JSON fallback', async 
         {
           type: 'message',
           id: 'msg_refusal',
+          status: 'completed',
           role: 'assistant',
           content: [{ type: 'refusal', refusal: 'No.' }],
         },
@@ -884,8 +886,9 @@ test('translateResponsesEventToChatCompletionsChunks preserves text order around
             },
             {
               type: 'message',
+              status: 'completed',
               role: 'assistant',
-              content: [{ type: 'output_text', text: 'answer' }],
+              content: [{ type: 'output_text', text: 'answer', annotations: [] }],
             },
           ],
           output_text: 'answer',
@@ -972,8 +975,9 @@ test('translateResponsesEventToChatCompletionsChunks preserves later text after 
             },
             {
               type: 'message',
+              status: 'completed',
               role: 'assistant',
-              content: [{ type: 'output_text', text: 'answer' }],
+              content: [{ type: 'output_text', text: 'answer', annotations: [] }],
             },
           ],
           output_text: 'answer',

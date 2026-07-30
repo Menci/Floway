@@ -4,10 +4,12 @@ import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesInputContent, ResponsesInputImage, ResponsesToolOutputContent } from '@floway-dev/protocols/responses';
 import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
-// A cyber-policy retry re-enters this boundary with the same nested image
-// part. Remember the exact generated URL on that request-owned object so the
-// retry neither re-encodes a lossy WebP nor mistakes an unrelated client WebP
-// for our output. The non-enumerable property stays off the wire and does not
+// A single client request can reach this boundary more than once — a
+// fallback candidate attempt, or another turn of the Responses server-tool
+// shim's loop — carrying the same nested image part. Remember the exact
+// generated URL on that request-owned object so the repeat neither
+// re-encodes a lossy WebP nor mistakes an unrelated client WebP for our
+// output. The non-enumerable property stays off the wire and does not
 // cross an object-spread/JSON ownership boundary.
 const compressedImageUrl = Symbol('compressedImageUrl');
 type CompressibleImagePart = ResponsesInputImage & { image_url: string; [compressedImageUrl]?: string };

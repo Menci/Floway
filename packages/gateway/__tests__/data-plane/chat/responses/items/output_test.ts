@@ -369,7 +369,7 @@ test('client output refuses to persist an id-less upstream item', async () => {
     type: 'message' as const,
     role: 'assistant' as const,
     status: 'completed' as const,
-    content: [{ type: 'output_text' as const, text: 'answer' }],
+    content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
   };
   const result: ResponsesResult = {
     id: 'resp_upstream',
@@ -425,7 +425,7 @@ test('store=false forwards an id-less finalized item without persistence work', 
     type: 'message' as const,
     role: 'assistant' as const,
     status: 'completed' as const,
-    content: [{ type: 'output_text' as const, text: 'answer' }],
+    content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
   };
   const response: ResponsesResult = {
     id: 'resp_upstream',
@@ -529,13 +529,15 @@ test('later done and terminal views may omit id after first-done durability', as
   const first = {
     type: 'message' as const,
     id: 'msg_first_done',
+    status: 'completed' as const,
     role: 'assistant' as const,
-    content: [{ type: 'output_text' as const, text: 'first' }],
+    content: [{ type: 'output_text' as const, text: 'first', annotations: [] }],
   };
   const later = {
     type: 'message' as const,
+    status: 'completed' as const,
     role: 'assistant' as const,
-    content: [{ type: 'output_text' as const, text: 'later' }],
+    content: [{ type: 'output_text' as const, text: 'later', annotations: [] }],
   };
   const response: ResponsesResult = {
     id: 'resp_upstream',
