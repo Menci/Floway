@@ -13,12 +13,9 @@ const getTerminalEventName = (response: ResponsesResult): 'response.failed' | 'r
   case 'cancelled':
     throw new TypeError(`Cannot expand nonterminal Responses status '${response.status}' into terminal events`);
   }
-  // `status` is required on `ResponsesResult`, so the switch above is
-  // exhaustive to the compiler and this line is unreachable by the type. It is
-  // reachable by a value that was cast into the type without carrying the
-  // field, and returning `undefined` there produced a terminal frame typed
-  // `undefined` — a malformed event that no consumer recognizes as terminal,
-  // surfacing far downstream as a stream that never terminated.
+  // Unreachable by the type, reachable by a value cast into it without a
+  // `status`: falling out of the switch instead minted a terminal frame typed
+  // `undefined`, which no consumer recognizes as terminal.
   throw new TypeError(`Responses result states no terminal status (got ${JSON.stringify(response.status)})`);
 };
 
@@ -324,13 +321,8 @@ const responsesOutputItemEvents = (item: ResponsesOutputItem, outputIndex: numbe
 // compaction blob is opaque; expanding them as assistant-message content
 // would mint mid-stream `output_text.delta` events that would not match the
 // item shape.
-// `terminal` lets a caller state the terminal event rather than have it read
-// off `status`. `/responses/compact` needs that: `CompactResource` declares
-// exactly `id`, `object`, `output`, `created_at` and `usage`, so a conformant
-// compaction body carries no `status` to read, and a compaction that reached
-// this expansion is one the upstream answered 200 — the resource has no
-// spelling for a failed compaction, which arrives as an HTTP error instead.
-// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L3935-L4008
+// `terminal` lets a caller state the terminal event instead of having it read
+// off `status`.
 export const responsesResultToEvents = (
   response: ResponsesResult,
   options?: { genericOutputItems?: boolean; terminal?: 'response.completed' | 'response.incomplete' | 'response.failed' },

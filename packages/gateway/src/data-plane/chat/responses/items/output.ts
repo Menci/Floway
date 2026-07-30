@@ -111,16 +111,11 @@ export const syntheticEventsFromResult = async function* (result: ResponsesResul
   yield doneFrame();
 };
 
-// The same path for a body answered by a native `/responses/compact` upstream.
-// `CompactResource` declares no `status`, so the terminal is stated here rather
-// than read off the body: a compaction that got this far is one the upstream
-// answered 200, and the resource has no spelling for a failed compaction.
-//
-// The synthetic stream is response-shaped plumbing — it exists so a compaction
-// traverses the same item persistence a live turn does and is reassembled
-// straight back — so the two shapes meet here and nowhere else. Nothing in the
-// expansion reads a response-only field: the terminal is stated rather than
-// derived, and the start snapshot spreads whatever the body carried.
+// `ResponsesCompactionResult` states no `status`, so the terminal is stated
+// here rather than read off the body: a compaction that got this far is one the
+// upstream answered 200, and there is no spelling for a failed one. Widening it
+// back to `ResponsesResult` is safe because the expansion reads no
+// response-only field — it spreads whatever the body carried.
 export const syntheticEventsFromCompaction = async function* (result: ResponsesCompactionResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
   yield* responsesResultToEvents(result as unknown as ResponsesResult, { genericOutputItems: true, terminal: 'response.completed' });
   yield doneFrame();

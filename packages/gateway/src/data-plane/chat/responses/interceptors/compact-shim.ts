@@ -327,9 +327,8 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
   const cmpId = createRandomResponsesItemId('compaction');
   const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
 
-  // The status-reading expansion, not the compaction one: this envelope
-  // spreads a real generate turn, so it does state a status, and a
-  // summarization turn that ended `incomplete` or `failed` must keep saying so.
+  // A real generate turn backs this envelope, so its own `incomplete` or
+  // `failed` status must reach the terminal event.
   return {
     ...upstreamResult,
     events: syntheticEventsFromResult(synthesized),
