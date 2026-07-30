@@ -156,7 +156,9 @@ const useStyles = makeStyles({
     transitionDuration: tokens.durationFaster,
     '&:hover': { backgroundImage: bingAccentGradientHover },
     '&:active': { backgroundImage: bingAccentGradientActive, transform: 'translateY(1px)' },
-    '&:disabled': { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' },
+    // The original dims the disabled button and leaves everything else
+    // alone; its lift lives on a pseudo-element that the state never touches.
+    '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },
   },
   broomIcon: {
     display: 'block',
