@@ -9,7 +9,7 @@ import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../..
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { takeRequestBody } from '../../shared/request-body.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
+import type { StreamCompletion } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
@@ -366,15 +366,13 @@ const respondResponsesWebSocket = async (input: {
           return;
         }
 
-        const next = await nextFrameOrKeepAlive(pendingNext);
+        // An idle upstream is simply awaited. WebSocket carries its own
+        // protocol-level ping/pong control frames (RFC 6455 §5.5.2), so the
+        // transport needs no in-band keep-alive, and a JSON `{"type":"ping"}`
+        // frame is not a member of the Responses streaming-event union.
+        // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
+        const next = await pendingNext;
 
-        if (next.type === 'keep-alive') {
-          if (!sendJson(socket, { type: 'ping' }, eventId, ctx.dump)) {
-            stopForDownstream();
-            return;
-          }
-          continue;
-        }
         if (next.type === 'next-error') throw next.error;
         if (next.result.done) {
           completed = true;
@@ -457,28 +455,19 @@ const observeResponsesWebSocketFrames = async function* (
   }
 };
 
-type WsFrameRaceResult =
+type WsFrameResult =
   | { type: 'frame'; result: IteratorResult<ProtocolFrame<ResponsesStreamEvent>> }
-  | { type: 'next-error'; error: unknown }
-  | { type: 'keep-alive' };
+  | { type: 'next-error'; error: unknown };
 
-const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
+// The next frame is pulled before the current one is sent, so the pending
+// promise outlives the statement that created it; folding its rejection into a
+// value attaches a handler synchronously and keeps a mid-stream upstream
+// failure from surfacing as an unhandled rejection.
+const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ResponsesStreamEvent>>>): Promise<WsFrameResult> =>
   pendingNext.then(
-    (result): WsFrameRaceResult => ({ type: 'frame', result }),
-    (error): WsFrameRaceResult => ({ type: 'next-error', error }),
+    (result): WsFrameResult => ({ type: 'frame', result }),
+    (error): WsFrameResult => ({ type: 'next-error', error }),
   );
-
-const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const keepAlive = new Promise<WsFrameRaceResult>(resolve => {
-    timeoutId = setTimeout(() => resolve({ type: 'keep-alive' }), DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
-  });
-  try {
-    return await Promise.race([pendingFrame, keepAlive]);
-  } finally {
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
-  }
-};
 
 const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
   const text = new TextDecoder().decode(body);
