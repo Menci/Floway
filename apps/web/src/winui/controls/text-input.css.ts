@@ -178,17 +178,4 @@ export const textInputCss = `
   color: var(--winui-temporary-text-fill-disabled);
 }
 
-/* Selection highlight. WinUI paints the band behind selected text with the
-   accent; the glyphs over it take TextOnAccentFillColorSelectedText, white in
-   both dictionaries, which the text control templates leave to the system
-   rather than setting themselves.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L39
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L146
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L11
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L215 */
-.fui-Input__input.fui-Input__input${notOptedOut}::selection,
-.fui-Textarea__textarea.fui-Textarea__textarea${notOptedOut}::selection {
-  background-color: var(--winui-accent-fill-selected-text-background);
-  color: var(--winui-text-on-accent-fill-selected-text);
-}
 `;

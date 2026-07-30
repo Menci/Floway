@@ -33,4 +33,17 @@ export const textCss = `
 .fui-Divider.fui-Divider::after {
   --colorNeutralStroke2: var(--winui-divider-stroke-default);
 }
+
+/* Selection highlight. WinUI paints the band behind selected text with the
+   accent and the glyphs over it with TextOnAccentFillColorSelectedText, and it
+   does so for text anywhere, not only inside a text control -- the control
+   templates leave the pair to the system rather than setting it themselves.
+   So does the browser, which is why this is stated once for the document
+   instead of per control.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L11
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L215 */
+::selection {
+  background-color: var(--winui-accent-fill-selected-text-background);
+  color: var(--winui-text-on-accent-fill-selected-text);
+}
 `;
