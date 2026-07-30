@@ -56,6 +56,17 @@ export const navCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
+/* Selection does not change the weight. NavigationViewItem states Normal and
+   states it once, for every state it has; Fluent bolds the selected label,
+   which puts a second signal on a state the indicator already carries and
+   shifts the label's width as it lands. The selected-label atom is the only
+   place the weight is set, so naming the state is enough to undo it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L641 */
+.fui-NavItem.fui-NavItem[aria-current='page'],
+.fui-NavCategoryItem.fui-NavCategoryItem[aria-current='page'] {
+  font-weight: var(--fontWeightRegular);
+}
+
 /* Fluent draws its own selection indicator as an ::after on the selected item,
    4px wide and 20px tall in the compound brand foreground. WinUI's is 3px by
    16px in the accent fill, and it animates between the item losing selection
