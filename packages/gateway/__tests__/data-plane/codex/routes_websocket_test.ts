@@ -95,7 +95,7 @@ it('chains previous_response_id on the Codex Responses WebSocket', async () => {
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `codex ws answer ${turn}` }],
+            content: [{ type: 'output_text', text: `codex ws answer ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -131,7 +131,7 @@ it('chains previous_response_id on the Codex Responses WebSocket', async () => {
   expect(secondBody.previous_response_id).toBeUndefined();
   expect(secondBody.input.map(item => [item.type, item.role, item.content])).toEqual([
     ['message', 'user', 'codex first'],
-    ['message', 'assistant', [{ type: 'output_text', text: 'codex ws answer 1' }]],
+    ['message', 'assistant', [{ type: 'output_text', text: 'codex ws answer 1', annotations: [] }]],
     ['message', 'user', 'codex second'],
   ]);
 });

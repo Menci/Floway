@@ -32,8 +32,9 @@ test('reassembleResponsesEvents extracts response from completed event', async (
     output: [
       {
         type: 'message',
+        status: 'completed',
         role: 'assistant',
-        content: [{ type: 'output_text', text: 'Hello' }],
+        content: [{ type: 'output_text', text: 'Hello', annotations: [] }],
       },
     ],
     error: null,

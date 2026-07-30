@@ -150,11 +150,23 @@ export interface ResponsesInputText {
 }
 
 export interface ResponsesInputImage {
-  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3947-L3979
+  // OpenAI splits this part in two: `ResponseInputImageContent` /
+  // `InputImageContentParamAutoParam` is the request-side shape and leaves
+  // `detail` optional and nullable, while `ResponseInputImage` /
+  // `InputImageContent` requires it and is the response-side echo. This
+  // interface types requests, so it follows the former. Omitting `detail`
+  // means `auto` on both Responses and Chat Completions.
+  // https://web.archive.org/web/20260730100926/https://developers.openai.com/api/docs/guides/images-vision.md
+  // Request side:
+  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4000-L4029
+  // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L67923-L67961
+  // Response side:
+  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3951-L3980
+  // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L65928-L65961
   type: 'input_image';
   image_url?: string | null;
   file_id?: string | null;
-  detail: 'auto' | 'low' | 'high' | 'original' | (string & {});
+  detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null;
   prompt_cache_breakpoint?: ResponsesPromptCacheBreakpoint | null;
 }
 
@@ -391,7 +403,7 @@ export type ResponsesAgentMessageContent =
   | ResponsesInputFile
   | { type: 'text' | 'summary_text' | 'reasoning_text'; text: string }
   | { type: 'refusal'; refusal: string }
-  | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail: 'auto' | 'low' | 'high' | 'original' | (string & {}) }
+  | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null }
   | { type: 'encrypted_content'; encrypted_content: string }
   | (Record<string, unknown> & { type: string });
 
@@ -613,9 +625,16 @@ export type ResponsesToolAllowedCaller = 'direct' | 'programmatic';
 export interface ResponsesFunctionTool {
   type: 'function';
   name: string;
-  parameters: Record<string, unknown>;
-  strict: boolean;
-  description?: string;
+  // One interface serves both wire directions, and they disagree on
+  // `description`, `parameters` and `strict`: a request may omit all three,
+  // while the echoed response tool marks all three required with an explicit
+  // `null` alternative. The union of the two is optional-and-nullable, so a
+  // translator must handle absent and `null` alike.
+  // Request: https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L808-L847
+  // Response: https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2141-L2192
+  description?: string | null;
+  parameters?: Record<string, unknown> | null;
+  strict?: boolean | null;
   allowed_callers?: ResponsesToolAllowedCaller[] | null;
   defer_loading?: boolean;
   output_schema?: Record<string, unknown> | null;
@@ -831,6 +850,12 @@ export interface ResponsesResult {
   // confirm they're populated with server-enriched defaults.
   tools?: ResponsesTool[];
   tool_choice?: ResponsesToolChoice | null;
+  // The response resource requires `usage` and gives it an explicit `null`
+  // alternative, so `null` is what an upstream sends for a response that
+  // reported no token counts. The key stays optional because a partially built
+  // envelope carries no usage until the terminal event accounts for the turn.
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2613-L2629
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -841,7 +866,7 @@ export interface ResponsesResult {
     // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L7259-L7269
     input_tokens_details?: { cached_tokens: number; cache_write_tokens?: number };
     output_tokens_details?: { reasoning_tokens: number };
-  };
+  } | null;
 }
 
 // Stored/output additional-tools roles are wider than the input-only
@@ -913,10 +938,18 @@ export type ResponsesOutputItem =
   | ResponsesMcpApprovalResponseItem
   | ResponsesOutputImageGenerationCall;
 
+// The Responses item schema requires `status` on an output message and
+// `annotations` on every `output_text` part, even when the text carries no
+// citations, so both are modeled as required and the compiler forces every
+// producer to state them:
+// https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L44868-L44873
+// https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L66303-L66307
+// `id` is schema-required too but stays optional: an upstream item that omits
+// it is surfaced by `requireItemId` rather than given an invented value.
 export interface ResponsesOutputMessage {
   type: 'message';
   id?: string;
-  status?: string;
+  status: string;
   role: 'assistant';
   content: ResponsesOutputContentBlock[];
   phase?: ResponsesMessagePhase;
@@ -924,9 +957,18 @@ export interface ResponsesOutputMessage {
 
 export type ResponsesOutputContentBlock = ResponsesOutputText | ResponsesOutputRefusal;
 
-interface ResponsesOutputText {
+export interface ResponsesAnnotation {
+  type: 'url_citation';
+  url: string;
+  title: string;
+  start_index: number;
+  end_index: number;
+}
+
+export interface ResponsesOutputText {
   type: 'output_text';
   text: string;
+  annotations: ResponsesAnnotation[];
 }
 
 export interface ResponsesOutputRefusal {
@@ -1118,14 +1160,7 @@ type ResponsesStreamEventVariant =
     content_index: number;
     annotation_index: number;
     item_id: string;
-    annotation:
-      | {
-        type: 'url_citation';
-        url: string;
-        title: string;
-        start_index: number;
-        end_index: number;
-      };
+    annotation: ResponsesAnnotation;
   }
   | {
     type: 'response.web_search_call.in_progress';
@@ -1240,8 +1275,7 @@ type ResponsesStreamEventVariant =
     stack?: string;
     cause?: unknown;
     target_api?: string;
-  }
-  | { type: 'ping' };
+  };
 
 // Either side of the Responses reasoning round trip: input echoes a prior
 // turn's reasoning back in, output emits the current turn's reasoning. Shape

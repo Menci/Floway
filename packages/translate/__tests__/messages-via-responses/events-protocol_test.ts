@@ -16,8 +16,9 @@ const makeResponse = (status: ResponsesResult['status']): ResponsesResult => ({
     {
       type: 'message',
       id: 'msg_123',
+      status: 'completed',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'hello' }],
+      content: [{ type: 'output_text', text: 'hello', annotations: [] }],
     },
   ],
   error: null,
@@ -104,6 +105,7 @@ test('translateToSourceEvents preserves refusal semantics from JSON fallback', a
         {
           type: 'message',
           id: 'msg_refusal',
+          status: 'completed',
           role: 'assistant',
           content: [{ type: 'refusal', refusal: 'No.' }],
         },

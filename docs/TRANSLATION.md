@@ -334,7 +334,9 @@ Request mapping:
   open-string tier passes through as Messages `service_tier`.
 - `reasoning.effort: "none"` maps to disabled thinking; any other explicit
   effort maps to `output_config.effort`.
-- Responses function tools become Messages tools, preserving explicit `strict`.
+- Responses function tools become Messages tools, preserving explicit `strict`
+  and `description`. Messages requires `input_schema`, so a tool that specifies
+  no `parameters` gets the empty object schema.
   Freeform `custom` tools are wrapped as single-string function tools; see
   "Responses Custom Tool Wrapping".
 - Responses `tool_choice` maps to the corresponding Messages tool choice when
@@ -564,7 +566,9 @@ Request mapping:
   `service_tier`, and explicit `reasoning.effort` pass through when present.
 - Responses `text.format` maps directly to Chat `response_format`; `text: {}`
   omits `response_format`, while `text: null` stays explicit `null`.
-- Responses function tools become Chat function tools, preserving `strict`.
+- Responses function tools become Chat function tools, preserving explicit
+  `strict`, `parameters`, and `description`. Chat has no `null` spelling, so an
+  unspecified one is omitted rather than forwarded.
   Freeform `custom` tools are wrapped as single-string function tools; see
   "Responses Custom Tool Wrapping".
 - Programmatic Tool Calling state handling is identical to Responses Via
@@ -600,8 +604,9 @@ Known losses:
 - `input_file` message/tool-output content and assistant-side files or images
   have no Chat counterpart and are rejected.
 - File-id-only images cannot be materialized by the pure translator and are
-  rejected. Chat image detail supports only `auto`, `low`, and `high`; other
-  Responses values such as `original` are rejected.
+  rejected. Image `detail` is forwarded verbatim and the target decides what it
+  accepts; an absent or null value becomes an omitted key, which both protocols
+  read as `auto`.
 - opaque Responses reasoning state is not requested, translated, or preserved on
   Chat fallback paths.
 

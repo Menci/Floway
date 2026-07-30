@@ -370,6 +370,7 @@ export interface MessagesMessageDeltaEvent {
       ephemeral_5m_input_tokens?: number;
       ephemeral_1h_input_tokens?: number;
     };
+    output_tokens_details?: { thinking_tokens: number };
     service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
     speed?: 'standard' | 'fast' | (string & {});
     server_tool_use?: MessagesUsageServerToolUse;

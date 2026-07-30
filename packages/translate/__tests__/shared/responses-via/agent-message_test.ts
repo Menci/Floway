@@ -14,7 +14,7 @@ const agentMessage = (content: ResponsesInputAgentMessageItem['content']): Respo
 test('agentMessageContent normalizes readable beta content into Responses input parts', () => {
   assertEquals(agentMessageContent({
     ...agentMessage([
-      { type: 'output_text', text: '<output>&' },
+      { type: 'output_text', text: '<output>&', annotations: [] },
       { type: 'text', text: 'visible' },
       { type: 'summary_text', text: 'summary' },
       { type: 'reasoning_text', text: 'reasoning' },
@@ -44,6 +44,16 @@ test('agentMessageContent normalizes readable beta content into Responses input 
     { type: 'input_text', text: '</content>' },
     { type: 'input_file', file_id: 'file_doc' },
     { type: 'input_text', text: '\n</agent-message>' },
+  ]);
+});
+
+test('agentMessageContent carries images that omit detail', () => {
+  assertEquals(agentMessageContent(agentMessage([
+    { type: 'input_image', image_url: 'https://example.com/image.png', file_id: null },
+    { type: 'computer_screenshot', image_url: null, file_id: 'file_screen' },
+  ])).filter(part => part.type === 'input_image'), [
+    { type: 'input_image', image_url: 'https://example.com/image.png', file_id: null, detail: undefined },
+    { type: 'input_image', image_url: null, file_id: 'file_screen', detail: undefined },
   ]);
 });
 

@@ -299,7 +299,7 @@ test('Responses WebSocket rejects the next turn after its API key is rotated', a
 
       assertEquals(await received, [{
         type: 'error',
-        status_code: 401,
+        status: 401,
         error: {
           type: 'authentication_error',
           code: 'invalid_api_key',
@@ -336,7 +336,7 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
               id: 'msg_upstream',
               role: 'assistant',
               status: 'completed',
-              content: [{ type: 'output_text', text: 'done' }],
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
             }],
             output_text: 'done',
             usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
@@ -358,9 +358,9 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
         }));
 
         const messages = await received;
-        const error = messages.find(message => message.type === 'error') as { status_code?: unknown; error?: { message?: unknown } } | undefined;
+        const error = messages.find(message => message.type === 'error') as { status?: unknown; error?: { message?: unknown } } | undefined;
         assertExists(error);
-        assertEquals(error.status_code, 500);
+        assertEquals(error.status, 500);
         assertEquals(error.error?.message, 'simulated item persistence failure');
         assert(!messages.some(message => message.type === 'response.output_item.done'));
         assert(!messages.some(message => message.type === 'response.completed'));
@@ -488,7 +488,7 @@ test('Responses WebSocket returns OpenAI-style error envelopes for unsupported c
     assertEquals(await received, [{
       type: 'error',
       event_id: 'evt_bad',
-      status_code: 400,
+      status: 400,
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
@@ -509,7 +509,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     const [invalidJsonMessage] = await invalidJson;
     assertExists(invalidJsonMessage);
     assertEquals(invalidJsonMessage.type, 'error');
-    assertEquals(invalidJsonMessage.status_code, 400);
+    assertEquals(invalidJsonMessage.status, 400);
     assertEquals((invalidJsonMessage.error as { type?: unknown; code?: unknown }).type, 'invalid_request_error');
     assertEquals((invalidJsonMessage.error as { type?: unknown; code?: unknown }).code, 'invalid_request_error');
     assertStringIncludes((invalidJsonMessage.error as { message: string }).message, 'valid JSON');
@@ -520,7 +520,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     assertEquals(await invalidShape, [{
       type: 'error',
       event_id: 'evt_shape',
-      status_code: 400,
+      status: 400,
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
@@ -534,7 +534,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     assertEquals(await invalidResponse, [{
       type: 'error',
       event_id: 'evt_response',
-      status_code: 400,
+      status: 400,
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
@@ -552,7 +552,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     assertEquals(await invalidItem, [{
       type: 'error',
       event_id: 'evt_item',
-      status_code: 400,
+      status: 400,
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
@@ -563,7 +563,7 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
   });
 });
 
-test('Responses WebSocket forwards HTTP failures with status_code, error.code, and event_id', async () => {
+test('Responses WebSocket forwards HTTP failures with status, error.code, and event_id', async () => {
   const { apiKey } = await setupAppTest();
   await withMockedFetch(
     async request => {
@@ -591,7 +591,7 @@ test('Responses WebSocket forwards HTTP failures with status_code, error.code, a
       assertEquals(await received, [{
         type: 'error',
         event_id: 'evt_missing',
-        status_code: 404,
+        status: 404,
         error: {
           type: 'invalid_request_error',
           code: 'invalid_request_error',
@@ -631,7 +631,7 @@ test('Responses WebSocket dump responseBytes counts an error envelope sent downs
           },
         }));
 
-        assertEquals((await received)[0]?.status_code, 404);
+        assertEquals((await received)[0]?.status, 404);
         await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
         const expectedBytes = recorded.messages.reduce(
           (total, message) => total + new TextEncoder().encode(message).byteLength,
@@ -674,7 +674,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `answer ${turn}` }],
+            content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -726,7 +726,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       assertEquals(secondBody.previous_response_id, undefined);
       assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
         ['message', 'user', 'first question'],
-        ['message', 'assistant', [{ type: 'output_text', text: 'answer 1' }]],
+        ['message', 'assistant', [{ type: 'output_text', text: 'answer 1', annotations: [] }]],
         ['message', 'user', 'follow-up'],
       ]);
 
@@ -746,7 +746,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       assertEquals(await missingDone, [{
         type: 'error',
         event_id: 'evt_cross_session',
-        status_code: 400,
+        status: 400,
         error: {
           message: `Previous response with id '${firstResponseId}' not found.`,
           type: 'invalid_request_error',
@@ -787,7 +787,7 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `answer ${turn}` }],
+            content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -954,7 +954,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `turn ${turn}` }],
+            content: [{ type: 'output_text', text: `turn ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -998,7 +998,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       // appended verbatim.
       assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
         ['message', 'user', 'turn one input'],
-        ['message', 'assistant', [{ type: 'output_text', text: 'turn 1' }]],
+        ['message', 'assistant', [{ type: 'output_text', text: 'turn 1', annotations: [] }]],
         ['message', 'user', 'turn two input'],
       ]);
 
@@ -1025,7 +1025,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       assertEquals(await missingDone, [{
         type: 'error',
         event_id: 'evt_b',
-        status_code: 400,
+        status: 400,
         error: {
           message: "Previous response with id 'resp_session_1' not found.",
           type: 'invalid_request_error',
@@ -1142,7 +1142,7 @@ test('Responses WebSocket outer catch records a failed perf sample attributed to
         const [errorMessage] = await received;
         assertExists(errorMessage);
         assertEquals(errorMessage.type, 'error');
-        assertEquals(errorMessage.status_code, 500);
+        assertEquals(errorMessage.status, 500);
         assertEquals(errorMessage.event_id, 'evt_throw');
       }),
     );

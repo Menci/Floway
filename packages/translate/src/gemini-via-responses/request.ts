@@ -31,7 +31,6 @@ const inlineDataToInputImage = (part: GeminiPart): ResponsesInputContent | null 
   return {
     type: 'input_image',
     image_url: imageUrl,
-    detail: 'auto',
   };
 };
 

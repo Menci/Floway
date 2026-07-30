@@ -40,7 +40,7 @@ const makeResponsesResult = (id = 'resp_test'): ResponsesResult => ({
     id: 'msg_1',
     role: 'assistant',
     status: 'completed',
-    content: [{ type: 'output_text', text: 'hi' }],
+    content: [{ type: 'output_text', text: 'hi', annotations: [] }],
   }],
   output_text: 'hi',
   error: null,
