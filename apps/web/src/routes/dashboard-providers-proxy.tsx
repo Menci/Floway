@@ -19,6 +19,7 @@ import { ProxyList } from '../components/proxy/proxy-list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DialogShell } from '../components/ui/dialog-shell';
 import { ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
+import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
 
@@ -51,6 +52,166 @@ export async function clientLoader(): Promise<LoaderData> {
 }
 export function meta({}: Route.MetaArgs) { return [{ title: 'Proxy | Floway' }]; }
 
+const proxyDialogDraft = (record: ProxyRecord | null) => {
+  if (record === null) {
+    const config = defaultsFor('http', { host: '', port: 0, name: '' });
+    return {
+      config,
+      dialTimeoutInput: '',
+      editingId: null,
+      formName: '',
+      initialDraft: proxyDraftSignature('', config, null, ''),
+      urlDraft: null,
+      urlError: null,
+    };
+  }
+  const parsed = parseProxyInput(record.url);
+  if (parsed.config === null) throw new Error(parsed.error);
+  const dialTimeoutInput = record.dial_timeout_seconds == null ? '' : String(record.dial_timeout_seconds);
+  return {
+    config: parsed.config,
+    dialTimeoutInput,
+    editingId: record.id,
+    formName: record.name,
+    initialDraft: proxyDraftSignature(record.name, parsed.config, record.url, dialTimeoutInput),
+    urlDraft: record.url,
+    urlError: parsed.error,
+  };
+};
+
+function ProxyDialog({ backoffs, onDismiss, onSaved, record }: {
+  backoffs: BackoffRow[];
+  onDismiss: () => void;
+  onSaved: () => Promise<void>;
+  record: ProxyRecord | null;
+}) {
+  const { t } = useTranslation();
+  const [initial] = useState(() => proxyDialogDraft(record));
+  const { editingId, initialDraft } = initial;
+  const [formName, setFormName] = useState(initial.formName);
+  const [config, setConfig] = useState<ProxyConfig>(initial.config);
+  const [urlDraft, setUrlDraft] = useState<string | null>(initial.urlDraft);
+  const [urlError, setUrlError] = useState<string | null>(initial.urlError);
+  const [dialTimeoutInput, setDialTimeoutInput] = useState(initial.dialTimeoutInput);
+  const [saving, setSaving] = useState(false);
+  const [showValidation, setShowValidation] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ProxyTestResult | null>(null);
+  const structuredUrl = config.host.trim() ? formatProxyUri({ ...config, name: formName.trim() }) : '';
+  const urlInput = urlDraft ?? structuredUrl;
+  const dialTimeout = parseDialTimeoutInput(dialTimeoutInput);
+  const draftDirty = initialDraft !== proxyDraftSignature(formName, config, urlDraft, dialTimeoutInput);
+  const clearDiagnostics = useCallback(() => {
+    setSaveError(null);
+    setTestResult(null);
+  }, []);
+  const updateStructuredConfig = useCallback<Dispatch<SetStateAction<ProxyConfig>>>(update => {
+    setConfig(update);
+    setUrlDraft(null);
+    setUrlError(null);
+    clearDiagnostics();
+  }, [clearDiagnostics]);
+  const handleKindChange = useCallback((_: unknown, data: { optionValue?: string }) => {
+    if (!data.optionValue) return;
+    const next = data.optionValue as FormKind;
+    updateStructuredConfig(previous => defaultsFor(next, { host: previous.host, port: previous.port, name: previous.name }));
+  }, [updateStructuredConfig]);
+  const setPort = useCallback((raw: string) => {
+    const trimmed = raw.trim();
+    const value = trimmed === '' ? 0 : Number(trimmed);
+    updateStructuredConfig(previous => ({ ...previous, port: Number.isFinite(value) ? value : 0 } as ProxyConfig));
+  }, [updateStructuredConfig]);
+  const handleUrlChange = useCallback((value: string) => {
+    clearDiagnostics();
+    setUrlDraft(value);
+    if (!value.trim()) {
+      setUrlError(null);
+      return;
+    }
+    const parsed = parseProxyInput(value.trim());
+    setUrlError(parsed.error);
+    if (parsed.config) setConfig(parsed.config);
+  }, [clearDiagnostics]);
+  const handleSave = useCallback(async () => {
+    setShowValidation(true);
+    setSaving(true);
+    setSaveError(null);
+    const trimmedName = formName.trim();
+    if (!trimmedName) {
+      setSaveError(t('dashboard.proxy.validation.nameRequired'));
+      setSaving(false);
+      return;
+    }
+    const builtUrl = urlInput.trim();
+    if (!builtUrl || urlError || !config.host.trim() || !isValidPort(config.port)) {
+      setSaveError(urlError ?? t('dashboard.proxy.validation.urlRequired'));
+      setSaving(false);
+      return;
+    }
+    if (dialTimeout.error) {
+      setSaveError(t(`dashboard.proxy.validation.timeout.${dialTimeout.error}`));
+      setSaving(false);
+      return;
+    }
+    const body = { name: trimmedName, url: builtUrl, dial_timeout_seconds: dialTimeout.value };
+    const result = editingId === null
+      ? await callApi(() => api.api.proxies.$post({ json: body }))
+      : await callApi(() => api.api.proxies[':id'].$patch({ param: { id: editingId }, json: body }));
+    if (result.error) {
+      setSaveError(result.error.message);
+      setSaving(false);
+      return;
+    }
+    onDismiss();
+    await onSaved();
+  }, [config.host, config.port, dialTimeout, editingId, formName, onDismiss, onSaved, t, urlError, urlInput]);
+  const handleTest = useCallback(async () => {
+    setTesting(true);
+    setTestResult(null);
+    const result = await callApi(() => api.api.proxies.test.$post({
+      json: {
+        url: urlInput.trim(),
+        ...(dialTimeout.value === null ? {} : { dial_timeout_seconds: dialTimeout.value }),
+      },
+    }));
+    setTestResult(result.error ? { ok: false, error: result.error.message } : result.data);
+    setTesting(false);
+  }, [dialTimeout, urlInput]);
+  const canTest = urlInput.trim() !== '' && urlError === null && dialTimeout.error === null && config.host.trim() !== '' && isValidPort(config.port);
+
+  return <DialogShell
+    actions={<DialogActions>
+      <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={onDismiss} type="button">{t('common.cancel')}</Button>
+      <Button className="!whitespace-nowrap" disabled={!canTest || saving || testing} icon={testing ? <Spinner size="tiny" /> : undefined} onClick={() => void handleTest()} type="button">{testing ? t('dashboard.proxy.actions.testing') : t('dashboard.proxy.actions.test')}</Button>
+      <Button appearance="primary" className="!whitespace-nowrap" disabled={saving || testing} icon={saving ? <Spinner size="tiny" /> : undefined} type="submit">{saving ? t('dashboard.proxy.actions.saving') : t('dashboard.proxy.actions.save')}</Button>
+    </DialogActions>}
+    onOpenChange={(_, data) => {
+      if (!data.open && !saving && !testing && !draftDirty) onDismiss();
+    }}
+    onSubmit={() => void handleSave()}
+    title={<DialogTitle>{editingId === null ? t('dashboard.proxy.addTitle') : t('dashboard.proxy.editTitle')}</DialogTitle>}
+  >
+    {editingId !== null && <ProxyBackoffPanel backoffs={backoffs} onReset={() => void onSaved()} proxyId={editingId} />}
+    <ProxyForm
+      config={config}
+      dialTimeoutInput={dialTimeoutInput}
+      formName={formName}
+      onConfigChange={updateStructuredConfig}
+      onDialTimeoutChange={value => { clearDiagnostics(); setDialTimeoutInput(value); }}
+      onKindChange={handleKindChange}
+      onNameChange={value => { clearDiagnostics(); setFormName(value); }}
+      onPortChange={setPort}
+      onUrlChange={handleUrlChange}
+      showValidation={showValidation}
+      urlError={urlError}
+      urlInput={urlInput}
+    />
+    {testResult && <MessageBar intent={testResult.ok ? 'success' : 'error'}><MessageBarBody><div className="grid gap-1"><Text size={200} weight="semibold">{testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}</Text>{testResult.ok && <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</Text>}</div></MessageBarBody></MessageBar>}
+    {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
+  </DialogShell>;
+}
+
 export default function DashboardProvidersProxy({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
@@ -58,35 +219,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   const [proxies, setProxies] = useState(loaderData.proxies);
   const [loadError, setLoadError] = useState(loaderData.error);
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [initialDraft, setInitialDraft] = useState('');
   const [backoffs, setBackoffs] = useState(loaderData.backoffs);
-  const [formName, setFormName] = useState('');
-  const [config, setConfig] = useState<ProxyConfig>(
-    defaultsFor('http', { host: '', port: 0, name: '' }),
-  );
-  const [urlDraft, setUrlDraft] = useState<string | null>(null);
-  const [urlError, setUrlError] = useState<string | null>(null);
-  const [dialTimeoutInput, setDialTimeoutInput] = useState('');
-
-  const [saving, setSaving] = useState(false);
-  const [showValidation, setShowValidation] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<ProxyTestResult | null>(null);
-  const structuredUrl = config.host.trim()
-    ? formatProxyUri({ ...config, name: formName.trim() })
-    : '';
-  const urlInput = urlDraft ?? structuredUrl;
-  const dialTimeout = parseDialTimeoutInput(dialTimeoutInput);
-  const draftDirty = initialDraft !== '' && initialDraft !== proxyDraftSignature(formName, config, urlDraft, dialTimeoutInput);
-  const clearDiagnostics = useCallback(() => {
-    setSaveError(null);
-    setTestResult(null);
-  }, []);
-
+  const editorDialog = useDialogInvocation<ProxyRecord | null>();
   const [deleteTarget, setDeleteTarget] = useState<ProxyRecord | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -109,160 +243,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     await refreshProxies();
     setRefreshing(false);
   }, [refreshProxies]);
-
-  const updateStructuredConfig = useCallback<Dispatch<SetStateAction<ProxyConfig>>>(update => {
-    setConfig(update);
-    setUrlDraft(null);
-    setUrlError(null);
-    clearDiagnostics();
-  }, [clearDiagnostics]);
-
-  const handleKindChange = useCallback(
-    (_: unknown, data: { optionValue?: string }) => {
-      if (!data.optionValue) return;
-      const next = data.optionValue as FormKind;
-      updateStructuredConfig(prev =>
-        defaultsFor(next, {
-          host: prev.host,
-          port: prev.port,
-          name: prev.name,
-        }));
-    },
-    [updateStructuredConfig],
-  );
-
-  const setPort = useCallback((raw: string) => {
-    const trimmed = raw.trim();
-    const n = trimmed === '' ? 0 : Number(trimmed);
-    updateStructuredConfig(prev => ({ ...prev, port: Number.isFinite(n) ? n : 0 } as ProxyConfig));
-  }, [updateStructuredConfig]);
-
-  const clearForm = useCallback(() => {
-    const blank = defaultsFor('http', { host: '', port: 0, name: '' });
-    setEditingId(null);
-    setFormName('');
-    setConfig(blank);
-    setUrlDraft(null);
-    setUrlError(null);
-    setDialTimeoutInput('');
-    setSaveError(null);
-    setTestResult(null);
-    setShowValidation(false);
-  }, []);
-
-  const openCreate = useCallback(() => {
-    clearForm();
-    setSaving(false);
-    const blank = defaultsFor('http', { host: '', port: 0, name: '' });
-    setInitialDraft(proxyDraftSignature('', blank, null, ''));
-    setDialogOpen(true);
-  }, [clearForm]);
-
-  const handleEdit = useCallback((proxy: ProxyRecord) => {
-    setSaving(false);
-    setEditingId(proxy.id);
-    setFormName(proxy.name);
-    setDialTimeoutInput(
-      proxy.dial_timeout_seconds != null
-        ? String(proxy.dial_timeout_seconds)
-        : '',
-    );
-    const parsed = parseProxyInput(proxy.url);
-    if (parsed.config === null) throw new Error(parsed.error);
-    const nextConfig = parsed.config;
-    setConfig(nextConfig);
-    setUrlDraft(proxy.url);
-    setUrlError(parsed.error);
-    setSaveError(null);
-    setTestResult(null);
-    setShowValidation(false);
-    setInitialDraft(proxyDraftSignature(proxy.name, nextConfig, proxy.url, proxy.dial_timeout_seconds == null ? '' : String(proxy.dial_timeout_seconds)));
-    setDialogOpen(true);
-  }, []);
-
-  const handleUrlChange = useCallback((value: string) => {
-    clearDiagnostics();
-    setUrlDraft(value);
-    if (!value.trim()) {
-      setUrlError(null);
-      return;
-    }
-    const parsed = parseProxyInput(value.trim());
-    setUrlError(parsed.error);
-    if (parsed.config) setConfig(parsed.config);
-  }, [clearDiagnostics]);
-
-  const handleNameChange = useCallback((value: string) => {
-    clearDiagnostics();
-    setFormName(value);
-  }, [clearDiagnostics]);
-
-  const handleDialTimeoutChange = useCallback((value: string) => {
-    clearDiagnostics();
-    setDialTimeoutInput(value);
-  }, [clearDiagnostics]);
-
-  const handleSave = useCallback(async () => {
-    setShowValidation(true);
-    setSaving(true);
-    setSaveError(null);
-
-    const trimmedName = formName.trim();
-    if (!trimmedName) {
-      setSaveError(t('dashboard.proxy.validation.nameRequired'));
-      setSaving(false);
-      return;
-    }
-
-    const builtUrl = urlInput.trim();
-    if (!builtUrl || urlError || !config.host.trim() || !isValidPort(config.port)) {
-      setSaveError(urlError ?? t('dashboard.proxy.validation.urlRequired'));
-      setSaving(false);
-      return;
-    }
-
-    if (dialTimeout.error) {
-      setSaveError(t(`dashboard.proxy.validation.timeout.${dialTimeout.error}`));
-      setSaving(false);
-      return;
-    }
-
-    const body = {
-      name: trimmedName,
-      url: builtUrl,
-      dial_timeout_seconds: dialTimeout.value,
-    };
-
-    const isEdit = editingId !== null;
-    const result = isEdit
-      ? await callApi(() => api.api.proxies[':id'].$patch({ param: { id: editingId }, json: body }))
-      : await callApi(() => api.api.proxies.$post({ json: body }));
-
-    if (result.error) {
-      setSaveError(result.error.message);
-      setSaving(false);
-      return;
-    }
-
-    setDialogOpen(false);
-    await refreshProxies();
-  }, [config.host, config.port, dialTimeout, editingId, formName, refreshProxies, t, urlError, urlInput]);
-
-  const handleTest = useCallback(async () => {
-    const builtUrl = urlInput.trim();
-
-    setTesting(true);
-    setTestResult(null);
-
-    const result = await callApi(() => api.api.proxies.test.$post({
-      json: {
-        url: builtUrl,
-        ...(dialTimeout.value === null ? {} : { dial_timeout_seconds: dialTimeout.value }),
-      },
-    }));
-    setTestResult(result.error ? { ok: false, error: result.error.message } : result.data);
-    setTesting(false);
-  }, [dialTimeout, urlInput]);
 
   const handleDeleteConfirm = useCallback(async (target: ProxyRecord) => {
     setDeleting(true);
@@ -291,7 +271,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     await refreshProxies();
   }, [refreshProxies, t]);
 
-  const canTest = urlInput.trim() !== '' && urlError === null && dialTimeout.error === null && config.host.trim() !== '' && isValidPort(config.port);
   if (!user.isAdmin) {
     return (
       <section className="dashboard-page">
@@ -321,70 +300,22 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         <ResourceListToolbar
           createLabel={t('dashboard.proxy.actions.create')}
           detail={t('dashboard.proxy.count', { count: proxies.length })}
-          onCreate={openCreate}
+          onCreate={() => editorDialog.open(null)}
           onRefresh={() => void refresh()}
           refreshLabel={t('dashboard.proxy.actions.refresh')}
           refreshing={refreshing}
           title={t('dashboard.proxy.listTitle')}
         />
-        <ProxyList disabled={refreshing || deleting} proxies={proxies} onDelete={target => { setDeleteTarget(target); setDeleteOpen(true); }} onEdit={handleEdit} />
+        <ProxyList disabled={refreshing || deleting} proxies={proxies} onDelete={target => { setDeleteTarget(target); setDeleteOpen(true); }} onEdit={editorDialog.open} />
       </ResourceListPanel>
 
-      <DialogShell
-        actions={<DialogActions>
-          <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => setDialogOpen(false)} type="button">{t('common.cancel')}</Button>
-          <Button
-            className="!whitespace-nowrap"
-            disabled={!canTest || saving || testing}
-            icon={testing ? <Spinner size="tiny" /> : undefined}
-            onClick={() => void handleTest()}
-            type="button"
-          >
-            {testing ? t('dashboard.proxy.actions.testing') : t('dashboard.proxy.actions.test')}
-          </Button>
-          <Button
-            appearance="primary"
-            className="!whitespace-nowrap"
-            disabled={saving || testing}
-            icon={saving ? <Spinner size="tiny" /> : undefined}
-            type="submit"
-          >
-            {saving ? t('dashboard.proxy.actions.saving') : t('dashboard.proxy.actions.save')}
-          </Button>
-        </DialogActions>}
-        onOpenChange={(_, data) => {
-          if (saving || testing) return;
-          if (!data.open && draftDirty) return;
-          setDialogOpen(data.open);
-        }}
-        onSubmit={() => void handleSave()}
-        open={dialogOpen}
-        title={<DialogTitle>{editingId === null ? t('dashboard.proxy.addTitle') : t('dashboard.proxy.editTitle')}</DialogTitle>}
-      >
-        {editingId !== null && (
-          <ProxyBackoffPanel
-            backoffs={backoffs}
-            onReset={() => void refreshProxies()}
-            proxyId={editingId}
-          />
-        )}
-        <ProxyForm
-          config={config}
-          dialTimeoutInput={dialTimeoutInput}
-          formName={formName}
-          onConfigChange={updateStructuredConfig}
-          onDialTimeoutChange={handleDialTimeoutChange}
-          onKindChange={handleKindChange}
-          onNameChange={handleNameChange}
-          onPortChange={setPort}
-          onUrlChange={handleUrlChange}
-          showValidation={showValidation}
-          urlError={urlError}
-          urlInput={urlInput}
-        />
-        {testResult && <MessageBar intent={testResult.ok ? 'success' : 'error'}><MessageBarBody><div className="grid gap-1"><Text size={200} weight="semibold">{testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}</Text>{testResult.ok && <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</Text>}</div></MessageBarBody></MessageBar>}
-        {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
-      </DialogShell>
+      {editorDialog.invocation && <ProxyDialog
+        backoffs={backoffs}
+        key={editorDialog.invocation.key}
+        onDismiss={editorDialog.close}
+        onSaved={refreshProxies}
+        record={editorDialog.invocation.value}
+      />}
 
       {deleteOpen && deleteTarget && (
         <ConfirmDialog
