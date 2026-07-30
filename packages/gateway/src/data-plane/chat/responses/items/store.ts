@@ -351,6 +351,15 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     }
     return Promise.resolve();
   }
+
+  // Beyond `StatefulResponsesBacking`: the spec scopes eviction to the
+  // connection-local cache, so the delete path deliberately stops at this
+  // in-memory backing rather than becoming a contract every backing — the
+  // durable one included — has to answer for.
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
+  evictSnapshot(apiKeyId: string, id: string): void {
+    this.snapshots.delete(scopedResponsesKey(apiKeyId, id));
+  }
 }
 
 type ResponsesStatePolicy = Pick<ApiKey, 'id' | 'responsesRetentionSeconds'>;
@@ -380,7 +389,14 @@ export const createNonResponsesSourceStore = (apiKeyId: string): StatefulRespons
 
 export const createResponsesWsSession = (): {
   createStore(apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore;
+  evictSnapshot(apiKeyId: string, id: string): void;
 } => {
+  // "Servers SHOULD keep the most recent previous-response state in
+  // connection-local memory for the active WebSocket. […] With `store=false`,
+  // there is no persisted fallback; if the referenced response is not
+  // available from connection-local state, the server MUST fail the turn with
+  // an error whose code is `previous_response_not_found`."
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L125
   const local = new MemoryStatefulResponsesBacking();
   return {
     createStore(apiKey: ResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): StatefulResponsesStore {
@@ -393,6 +409,9 @@ export const createResponsesWsSession = (): {
         reads: durable === null ? [local] : [local, durable],
         writes,
       });
+    },
+    evictSnapshot(apiKeyId: string, id: string): void {
+      local.evictSnapshot(apiKeyId, id);
     },
   };
 };

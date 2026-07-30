@@ -7,10 +7,6 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,
   'vendor-kimi': false,
-  // Copilot occasionally serves a cyber_policy 4xx from the upstream that
-  // clears on retry; the flag defaults on for Copilot to swallow the
-  // transient class without operator intervention.
-  'retry-cyber-policy': true,
   'messages-web-search-shim': true,
   'responses-web-search-shim': true,
   'responses-image-generation-shim': true,

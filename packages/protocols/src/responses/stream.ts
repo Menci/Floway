@@ -8,17 +8,14 @@ export interface ParseResponsesStreamOptions {
 }
 
 // Deny-list: anything that is not a wrapper (`response.queued` /
-// `response.created` / `response.in_progress` / `ping`) and not terminal is treated as content-
-// bearing. `ping` is a transport-level keep-alive with no content semantics,
-// so its presence must not commit us out of the fast-path. Future Responses
-// event types fall through as structured by default, which is safer than
-// missing an allow-list entry and incorrectly triggering the fast-path
-// expansion below.
+// `response.created` / `response.in_progress`) and not terminal is treated as
+// content-bearing. Future Responses event types fall through as structured by
+// default, which is safer than missing an allow-list entry and incorrectly
+// triggering the fast-path expansion below.
 const isStructuredResponsesEvent = (event: { type: string }): boolean =>
   event.type !== 'response.queued'
   && event.type !== 'response.created'
   && event.type !== 'response.in_progress'
-  && event.type !== 'ping'
   && !isResponsesTerminalEvent(event as ResponsesStreamEvent);
 
 // Some Responses upstreams emit the event type only via the SSE `event:`
@@ -72,9 +69,15 @@ export const parseResponsesStream = (
       return;
     }
 
-    const event = projectSseJsonEvent(frame.data, frame.frame.event);
-    if (event.type === 'ping') continue;
+    // A keep-alive `ping` is neither a delta event nor a state-machine event,
+    // so the Responses event union admits no such member. Drop it off the raw
+    // body, before the body is projected into a typed event, so the union
+    // never has to name it; an upstream carries the name either in the JSON
+    // body or only in the SSE `event:` header.
+    // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L459
+    if (((frame.data as { type?: string }).type ?? frame.frame.event) === 'ping') continue;
 
+    const event = projectSseJsonEvent(frame.data, frame.frame.event);
     const structured = isStructuredResponsesEvent(event);
     const terminal = isResponsesTerminalEvent(event);
 

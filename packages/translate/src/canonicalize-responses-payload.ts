@@ -34,7 +34,6 @@ export function canonicalizeResponsesPayload(value: unknown): CanonicalResponses
           return typeof content.text === 'string' && hasValidPromptCacheBreakpoint(content);
         case 'input_image':
           return (typeof content.image_url === 'string' || typeof content.file_id === 'string')
-            && typeof content.detail === 'string'
             && hasValidPromptCacheBreakpoint(content);
         case 'input_file':
           return hasValidPromptCacheBreakpoint(content);

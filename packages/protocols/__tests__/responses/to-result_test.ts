@@ -16,8 +16,9 @@ test('collectResponsesProtocolEventsToResult reassembles synthetic Responses eve
       {
         type: 'message',
         id: 'msg_1',
+        status: 'completed',
         role: 'assistant',
-        content: [{ type: 'output_text', text: 'Hello' }],
+        content: [{ type: 'output_text', text: 'Hello', annotations: [] }],
       },
     ],
     error: null,

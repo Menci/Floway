@@ -24,13 +24,6 @@ const nullableString = (value: unknown, path: string): string | null | undefined
   return value;
 };
 
-const imageDetail = (value: unknown, path: string): ResponsesInputImage['detail'] => {
-  if (typeof value !== 'string') {
-    throw new TranslatorInputError(`Invalid type for '${path}': expected a string.`, { param: path });
-  }
-  return value as ResponsesInputImage['detail'];
-};
-
 const escapeXmlText = (value: string): string =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
@@ -99,7 +92,7 @@ export const agentMessageContent = (
         type: 'input_image',
         image_url: nullableString((part as AgentContentFields).image_url, `${path}.image_url`),
         file_id: nullableString((part as AgentContentFields).file_id, `${path}.file_id`),
-        detail: imageDetail((part as AgentContentFields).detail, `${path}.detail`),
+        detail: nullableString((part as AgentContentFields).detail, `${path}.detail`),
       });
       break;
     case 'input_file':
@@ -110,7 +103,7 @@ export const agentMessageContent = (
         type: 'input_image',
         image_url: nullableString((part as AgentContentFields).image_url, `${path}.image_url`),
         file_id: nullableString((part as AgentContentFields).file_id, `${path}.file_id`),
-        detail: imageDetail((part as AgentContentFields).detail, `${path}.detail`),
+        detail: nullableString((part as AgentContentFields).detail, `${path}.detail`),
       });
       break;
     default:

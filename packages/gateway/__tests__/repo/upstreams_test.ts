@@ -72,7 +72,7 @@ test('memory upstream repo saves, lists, updates, deletes, and clears rows', asy
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
     config: { nested: { value: 'updated' }, endpoints: { responses: {} } },
-    flagOverrides: { 'retry-cyber-policy': true },
+    flagOverrides: { 'strip-prompt-cache-key': true },
     disabledPublicModelIds: [],
   });
   await repo.save(updatedCustom);

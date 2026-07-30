@@ -1,6 +1,6 @@
 import { responsesInputErrorResult } from './errors.ts';
 import { createResponsesHttpStore } from './items/store.ts';
-import { respondResponses } from './respond.ts';
+import { respondResponses, respondResponsesFailure } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -46,7 +46,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
-  const response = await respondResponses(c, result, false, effectiveCtx);
+  const response = respondResponsesFailure(result, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
@@ -61,7 +61,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
   }
   if (error instanceof TranslatorInputError) {
     const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-    const response = await respondResponses(c, responsesInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
+    const response = respondResponsesFailure(responsesInputErrorResult(error, effectiveCtx.attempt.telemetry), effectiveCtx);
     return finalizeGatewayResponse(effectiveCtx, response);
   }
   return await respondWithInternalError(c, error, requestBody, ctx);
@@ -79,7 +79,7 @@ export const responsesHttp = {
       const wantsStream = payload.stream === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
       const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
-      const response = await respondResponses(c, result, wantsStream, ctx);
+      const response = await respondResponses(c, result, wantsStream, ctx, payload);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);
@@ -94,12 +94,14 @@ export const responsesHttp = {
       ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
-        // Compact drains the upstream stream into a single envelope with
-        // no per-token stamps; recordPerformance therefore lands in
-        // the neutral bucket (request counted, no TTFT/TPOT sample). The
-        // envelope's own `status` is authoritative for failure — a compact
-        // that surfaced as `response.failed` must be recorded as such so it
-        // shows up in the error column instead of masquerading as a success.
+        // Compact drains the upstream stream into a single compaction
+        // resource with no per-token stamps; recordPerformance therefore
+        // lands in the neutral bucket (request counted, no TTFT/TPOT sample).
+        // `status` is not a `CompactResource` key — it survives the spread
+        // from the upstream turn — and it is authoritative for failure: a
+        // compact that surfaced as `response.failed` must be recorded as such
+        // so it shows up in the error column instead of masquerading as a
+        // success.
         const failed = result.result.status === 'failed';
         if (failed) {
           ctx.dump?.failed('compact envelope status=failed');
@@ -116,7 +118,7 @@ export const responsesHttp = {
         const compactResponse = Response.json(result.result);
         return finalizeGatewayResponse(ctx, compactResponse);
       }
-      const response = await respondResponses(c, result, false, ctx);
+      const response = await respondResponses(c, result, false, ctx, payload);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);

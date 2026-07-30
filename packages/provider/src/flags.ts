@@ -47,11 +47,6 @@ export const OPTIONAL_FLAGS = [
     description: "Pick this when the upstream serves Kimi's (Moonshot) chat completions API. The gateway normalises Kimi's flat `cached_tokens` usage field back to OpenAI's `prompt_tokens_details.cached_tokens`.",
   },
   {
-    id: 'retry-cyber-policy',
-    label: 'Retry on upstream cyber-policy block',
-    description: 'Retry cyber_policy 4xx errors from the upstream (up to 10 attempts).',
-  },
-  {
     id: 'messages-web-search-shim',
     label: 'Messages web search shim',
     description: "Execute Anthropic native Messages web search through the gateway's configured search provider instead of forwarding it to the upstream. (When a client Messages request is routed to a non-Messages backend, the shim always runs regardless of this flag, because those targets cannot carry Anthropic server tools.)",
