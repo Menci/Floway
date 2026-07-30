@@ -38,7 +38,6 @@ const useStyles = makeStyles({
   // bottom, which is the room the pill occupies.
   item: {
     alignItems: 'center',
-    color: 'var(--winui-text-fill-primary)',
     cursor: 'pointer',
     display: 'inline-flex',
     fontSize: tokens.fontSizeBase300,

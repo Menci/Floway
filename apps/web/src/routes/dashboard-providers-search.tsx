@@ -268,7 +268,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
         title={t('dashboard.searchConfig.heading')}
       />
 
-      <Panel className="!p-[22px_24px] grid gap-[16px]">
+      <Panel className="!p-[22px_24px] grid">
         {loadError && (
           <MessageBar intent="error">
             <MessageBarBody>{loadError}</MessageBarBody>

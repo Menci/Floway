@@ -296,7 +296,7 @@ export default function DashboardAdminBackupRestore() {
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader eyebrow={t('dashboard.groups.admin')} title={t('dashboard.backupRestore.heading')} />
 
-      <Panel className="!p-[22px_24px] grid gap-[16px]">
+      <Panel className="!p-[22px_24px] grid">
         <Text as="h2" size={400} weight="semibold" className="m-0">
           {t('dashboard.backupRestore.export.heading')}
         </Text>
@@ -333,7 +333,7 @@ export default function DashboardAdminBackupRestore() {
         </div>
       </Panel>
 
-      <Panel className="!p-[22px_24px] grid gap-[16px]">
+      <Panel className="!p-[22px_24px] grid">
         <Text as="h2" size={400} weight="semibold" className="m-0">
           {t('dashboard.backupRestore.import.heading')}
         </Text>

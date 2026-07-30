@@ -214,7 +214,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       title={t('dashboard.nav.performance')}
     />
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-    <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
+    <Panel className="!grid min-w-0 !p-[18px]">
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
           <div className="flex items-center gap-2">
