@@ -44,7 +44,7 @@ const zhHansCN = {
     dashboard: {
       title: 'Dashboard',
       groups: {
-        console: '控制台',
+        models: '模型',
         providers: '接入',
         services: '服务',
         monitor: '监控',
