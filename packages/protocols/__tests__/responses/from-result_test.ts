@@ -190,6 +190,7 @@ test('responsesResultToEvents expands refusal content with the native refusal li
   assertEquals(added.item, {
     type: 'message',
     id: 'msg_refusal',
+    status: 'in_progress',
     role: 'assistant',
     content: [{ type: 'refusal', refusal: '' }],
   });
