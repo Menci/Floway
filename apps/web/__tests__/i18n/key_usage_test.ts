@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { resources } from '../../src/i18n/resources';
 import { BILLING_METRICS, MODEL_KINDS } from '@floway-dev/protocols/common';
+import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/model';
 
 const SOURCE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src');
@@ -60,10 +61,11 @@ describe('translation key usage', () => {
   // A template key (`t(`a.b.${x}`)`) is unresolvable from the source in
   // general, but where `x` ranges over a shared enum the whole family is
   // knowable — and those enums are exactly what grows when a provider kind,
-  // model kind, or billing metric is added.
+  // model kind, billing metric, or feature flag is added.
   it.each([
     ['dashboard.modelAliases.kind', MODEL_KINDS],
     ['dashboard.upstreamEditor.models.pricingMetrics', BILLING_METRICS],
+    ['dashboard.upstreamEditor.flags.entries', OPTIONAL_FLAG_IDS.flatMap(id => [`${id}.label`, `${id}.description`])],
     ['dashboard.upstreams.providers', ALL_PROVIDER_KINDS],
     ['provider', ALL_PROVIDER_KINDS],
   ])('covers every member of the enum behind %s.*', (prefix, members) => {
