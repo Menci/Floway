@@ -10,6 +10,7 @@ const { makeStyles, tokens } = fluentComponents;
 
 const useStyles = makeStyles({
   tag: { color: tokens.colorNeutralForeground2 },
+  tagText: { fontSize: '12px', lineHeight: '16px' },
 });
 
 const ruleBadgeText = (badge: Extract<ModelBadge, { kind: 'rule' }>, t: ReturnType<typeof useTranslation>['t']): string => {
@@ -80,7 +81,7 @@ export function ModelInfoBadges({ cap, catalog, model }: {
         <ProviderBadge key={upstream.id} color={upstream.color} kind={upstream.kind} label={upstream.name} />
       ))}
       {modelBadges(model, catalog, cap).map(badge => (
-        <Chip key={badge.key} className={styles.tag}>
+        <Chip key={badge.key} className={styles.tag} textClassName={styles.tagText}>
           {badge.kind === 'limit'
             ? <Trans
                 components={{ strong: <strong className="font-fui-semibold" /> }}
