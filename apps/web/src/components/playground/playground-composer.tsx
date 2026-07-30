@@ -71,6 +71,7 @@ const useStyles = makeStyles({
     transitionDuration: tokens.durationFaster,
     '&:hover': { backgroundImage: bingAccentGradientHover },
     '&:active': { backgroundImage: bingAccentGradientActive, transform: 'translateY(1px)' },
+    '&:disabled': { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' },
   },
   broomIcon: {
     display: 'block',
@@ -88,6 +89,7 @@ type PlaygroundComposerProps = {
   imagePlaceholder: string;
   imageUnsupportedLabel: string;
   imageUrl: string;
+  newTopicDisabled: boolean;
   newTopicLabel: string;
   onNewTopic: () => void;
   onDraftChange: (value: string) => void;
@@ -112,6 +114,7 @@ export function PlaygroundComposer({
   imagePlaceholder,
   imageUnsupportedLabel,
   imageUrl,
+  newTopicDisabled,
   newTopicLabel,
   onNewTopic,
   onDraftChange,
@@ -161,6 +164,7 @@ export function PlaygroundComposer({
         <button
           type="button"
           className={`min-h-[44px] shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 font-fui-regular text-fui-base400 ${s.newTopicButton}`}
+          disabled={newTopicDisabled}
           onClick={onNewTopic}
         >
           <img alt="" aria-hidden="true" className={s.broomIcon} src={broomUrl} />
