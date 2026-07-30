@@ -11,7 +11,6 @@ import {
   bingAccentGradient,
   bingAccentGradientActive,
   bingAccentGradientHover,
-  bingCardRaisedShadow,
   bingCardShadow,
   bingElevation4Shadow,
   bingComposerFontSize,
@@ -60,8 +59,10 @@ const useStyles = makeStyles({
     transitionProperty: 'box-shadow, border-radius',
     transitionDuration: bingComposerTransitionDuration,
     transitionTimingFunction: bingComposerTransitionEasing,
-    '&:focus-within': { boxShadow: bingCardRaisedShadow },
-    '&[data-has-text="true"]': { borderRadius: bingComposerRadiusFilled },
+    // Focus tightens the corners rather than deepening the shadow: the
+    // original lists `:focus` alongside `has-text` on the one rule that
+    // changes the corner, and changes no shadow anywhere.
+    '&:focus-within, &[data-has-text="true"]': { borderRadius: bingComposerRadiusFilled },
   },
   // Bing grew the field with no script at all. The label is an `inline-grid`
   // whose `::after` mirrors the field's text — same wrap, same metrics, hidden

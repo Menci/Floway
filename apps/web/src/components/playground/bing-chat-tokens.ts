@@ -120,16 +120,6 @@ export const bingCardShadow = [
   '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
 ].join(', ');
 
-// `shadows.defaults.cardRaised`. The original signalled focus by growing the
-// bar to 90px, which this composer does not do, so focus takes the next step of
-// the same ramp instead of inventing a shape.
-export const bingCardRaisedShadow = [
-  '0px 0px 0px 1px light-dark(transparent, rgba(255, 255, 255, 0.2))',
-  '0px 0.6px 1.8px light-dark(rgba(0, 0, 0, 0.12), transparent)',
-  '0px 3.2px 7.2px light-dark(rgba(0, 0, 0, 0.16), transparent)',
-  '0px 4px 8px light-dark(transparent, rgba(0, 0, 0, 0.28))',
-  '0px 0px 2px light-dark(transparent, rgba(0, 0, 0, 0.24))',
-].join(', ');
 
 export const bingElevation4Shadow = [
   '0px 0.3px 0.9px light-dark(rgba(0, 0, 0, 0.12), transparent)',
