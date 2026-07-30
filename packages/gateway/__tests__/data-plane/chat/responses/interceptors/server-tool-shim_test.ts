@@ -5830,7 +5830,7 @@ test('consumeTurn live-forwards indexed progress events without hardcoded event-
   assertEquals(new Set(indices).size, 1);
 });
 
-test('consumeTurn keeps swallowing keepalive/ping-shape events that lack output_index', async () => {
+test('consumeTurn swallows keepalive/ping filler frames', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
