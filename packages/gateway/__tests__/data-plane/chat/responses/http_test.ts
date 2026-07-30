@@ -546,6 +546,29 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.code, 'previous_response_not_found');
 });
 
+test('POST /v1/responses and /v1/responses/compact reject a body without `model` with the OpenAI missing-parameter 400', async () => {
+  installRepo();
+
+  // No candidates need to be queued — the wire boundary rejects before
+  // resolution binds the model id into the alias lookup.
+  for (const path of ['/v1/responses', '/v1/responses/compact']) {
+    const response = await makeApp().request(path, {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ input: 'hello' }),
+    });
+
+    assertEquals(response.status, 400);
+    const body = await response.json() as { error: { message: string; type: string; param: string; code: string } };
+    assertEquals(body.error, {
+      message: "Missing required parameter: 'model'.",
+      type: 'invalid_request_error',
+      param: 'model',
+      code: 'missing_required_parameter',
+    });
+  }
+});
+
 const queueCodexAutoReviewCandidate = (
   callResponses: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
 ): void => {

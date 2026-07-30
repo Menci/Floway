@@ -262,7 +262,7 @@ const handleClientMessage = async (
     if (error instanceof TranslatorInputError) {
       sendError(socket, 400, {
         type: 'invalid_request_error',
-        code: 'invalid_request_error',
+        code: error.code ?? 'invalid_request_error',
         message: error.message,
         param: error.param,
       }, eventId);
@@ -306,17 +306,9 @@ const validateClientMessage = (parsed: unknown): ResponsesWebSocketClientEvent =
   return parsed as ResponsesWebSocketClientEvent;
 };
 
-const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPayload => {
-  const candidate = source as { model?: unknown; input?: unknown };
-  if (typeof candidate.model !== 'string' || candidate.model.length === 0) {
-    throw new WebSocketClientMessageError('response.create requires response.model to be a non-empty string.');
-  }
-  if (typeof candidate.input !== 'string' && !Array.isArray(candidate.input)) {
-    throw new WebSocketClientMessageError('response.create requires response.input to be a string or an array.');
-  }
+const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPayload =>
   // stamp stream: true — the WS transport always streams.
-  return { ...canonicalizeResponsesPayload(source as ResponsesRequestPayload), stream: true };
-};
+  ({ ...canonicalizeResponsesPayload(source as ResponsesRequestPayload), stream: true });
 
 const respondResponsesWebSocket = async (input: {
   readonly socket: ResponsesWebSocketSocket;
