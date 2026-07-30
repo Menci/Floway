@@ -110,3 +110,12 @@ export const syntheticEventsFromResult = async function* (result: ResponsesResul
   yield* responsesResultToEvents(result, { genericOutputItems: true });
   yield doneFrame();
 };
+
+// The same path for a body answered by a native `/responses/compact` upstream.
+// `CompactResource` declares no `status`, so the terminal is stated here rather
+// than read off the body: a compaction that got this far is one the upstream
+// answered 200, and the resource has no spelling for a failed compaction.
+export const syntheticEventsFromCompaction = async function* (result: ResponsesResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+  yield* responsesResultToEvents(result, { genericOutputItems: true, terminal: 'response.completed' });
+  yield doneFrame();
+};

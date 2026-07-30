@@ -2,7 +2,7 @@ import { responsesAttempt } from './attempt.ts';
 import { responsesCreatedAt, wrapResponsesStatefulOutput } from './client-output.ts';
 import { completeResponsesCompaction } from './compaction-resource.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
-import { syntheticEventsFromResult } from './items/output.ts';
+import { syntheticEventsFromCompaction } from './items/output.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -83,7 +83,7 @@ export const responsesServe = {
     );
     if (result.type !== 'result') return result;
 
-    const stored = wrapResponsesStatefulOutput(syntheticEventsFromResult(result.result), ctx);
+    const stored = wrapResponsesStatefulOutput(syntheticEventsFromCompaction(result.result), ctx);
     const persisted = await collectResponsesProtocolEventsToResult(stored);
     return {
       ...result,
