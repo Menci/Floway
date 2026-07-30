@@ -47,10 +47,6 @@ const INDICATOR_RADIUS = 2;
 
 type Geometry = { top: number; left: number; width: number; height: number };
 
-// Every stretch is a multiple of the bar's own length, which now follows the
-// item, so the length is derived wherever a scale is.
-const barHeightIn = (item: Geometry) => item.height - 2 * INDICATOR_INSET;
-
 const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
   const containerBox = container.getBoundingClientRect();
   const itemBox = item.getBoundingClientRect();
@@ -110,7 +106,7 @@ export function NavSelectionIndicator({
     if (bar && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       bar.style.transformOrigin = otherListIs === 'below' ? 'top' : 'bottom';
       bar.animate(
-        [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / barHeightIn(geometry) + 1})` }],
+        [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / bar.offsetHeight + 1})` }],
         { duration: REACH_MS, easing: STRETCH_EASING, fill: 'forwards' },
       );
     }
@@ -163,7 +159,10 @@ export function NavSelectionIndicator({
 
     // The indicator stretches far enough to span the gap it is crossing, then
     // settles back to its own height.
-    const peak = Math.abs(distance) / barHeightIn(geometry) + 1;
+    // Every stretch is a multiple of the bar's own length. That length is the
+    // room the item leaves it, which the layout has already worked out, so it
+    // is read back off the bar rather than recomputed from the inset.
+    const peak = Math.abs(distance) / bar.offsetHeight + 1;
 
     if (previous) {
       track.animate([
