@@ -9,8 +9,8 @@ import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
+import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult, type ClientResponseResource } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
@@ -155,14 +155,38 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
   throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
 };
 
+// "Any error incurred while streaming will be followed by a `response.failed`
+// event." A stream that ended on the error frame alone left a client that
+// tracks response state with a response stuck in progress forever.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L430
+//
+// The terminal is derived from the last resource-bearing frame that went out,
+// which already carries the completed client resource, so the failure states
+// the same response the client has been watching. A failure before any such
+// frame has no response to fail — nothing was announced — and emits the error
+// alone.
+const responsesFailedFrame = (resource: ClientResponseResource, error: unknown) => {
+  const debug = toInternalDebugError(error);
+  return responsesProtocolFrameToSSEFrame(eventFrame({
+    type: 'response.failed',
+    response: { ...resource, status: 'failed', error: { code: debug.type, message: debug.message } },
+  } as ClientResponsesStreamEvent));
+};
+
 const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>, state: SourceStreamState) {
+  let announced: ClientResponseResource | undefined;
   try {
     for await (const frame of frames) {
+      if (frame.type === 'event' && 'response' in frame.event) announced = frame.event.response;
       const sse = responsesProtocolFrameToSSEFrame(frame);
       if (sse) yield sse;
     }
   } catch (error) {
     state.failed = true;
     yield internalResponsesStreamErrorFrame(error);
+    if (announced !== undefined) {
+      const failed = responsesFailedFrame(announced, error);
+      if (failed) yield failed;
+    }
   }
 };
