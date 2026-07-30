@@ -12,6 +12,7 @@ import {
   bingAccentGradient,
   bingAccentGradientActive,
   bingAccentGradientHover,
+  bingOnAccentForeground,
 } from './bing-chat-palette';
 import broomUrl from '../../assets/broom.svg';
 import { fluentComponents } from '../../fluent';
@@ -61,7 +62,7 @@ const useStyles = makeStyles({
     },
   },
   newTopicButton: {
-    color: tokens.colorNeutralForegroundOnBrand,
+    color: bingOnAccentForeground,
     backgroundImage: bingAccentGradient,
     border: 0,
     boxShadow: tokens.shadow4,

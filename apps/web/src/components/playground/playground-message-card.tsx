@@ -1,14 +1,14 @@
 import type { PropsWithChildren } from 'react';
 
-import { bingAccentGradient } from './bing-chat-palette';
+import { bingAccentGradient, bingOnAccentForeground } from './bing-chat-palette';
 import type { PlaygroundMessage } from './playground-logic';
 import { fluentComponents } from '../../fluent';
 
-const { Card, makeStyles, tokens } = fluentComponents;
+const { Card, makeStyles } = fluentComponents;
 
 const useStyles = makeStyles({
   user: {
-    color: tokens.colorNeutralForegroundOnBrand,
+    color: bingOnAccentForeground,
     backgroundImage: bingAccentGradient,
   },
 });

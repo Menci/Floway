@@ -40,3 +40,9 @@ export const bingAccentGradientActive = wash(0.2);
 // omission here.
 export const bingAccentForeground = 'light-dark(#174AE4, #A2B7F4)';
 export const bingAccentForegroundHover = 'light-dark(#1543CD, #A2B7F4)';
+
+// `foreground-on-accent-{primary,selected}` — `#FFFFFF`, in every theme and
+// every tone. Fluent's own on-brand token cannot stand in for it: WinUI's
+// accent is light in dark mode, so its "text on accent" resolves to a dark
+// foreground, and what sits under this text is Bing's accent, not WinUI's.
+export const bingOnAccentForeground = '#FFFFFF';
