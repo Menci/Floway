@@ -17,9 +17,10 @@ import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { DialogShell } from '../ui/dialog-shell';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { SettingsCard, SettingsExpander } from '../ui/settings-card';
 import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
-const { Accordion, AccordionHeader, AccordionItem, AccordionPanel, Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Option, Switch, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Option, Switch, Text } = fluentComponents;
 
 export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, record }: {
   aliases: readonly ModelAlias[];
@@ -89,6 +90,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   };
 
   return <DialogShell
+    maxWidth="720px"
     open={open}
     onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
     onSubmit={() => void handleSubmit(save)()}
@@ -107,8 +109,18 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} kind={kind} models={models} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
       {errors.targets?.message && <Text role="alert" className="text-fui-fg2">{t(errors.targets.message)}</Text>}
     </section>
-    {kind !== 'image' && <Accordion collapsible><AccordionItem value="metadata"><AccordionHeader as="h3"><div><Text weight="semibold">{t('dashboard.modelAliases.metadata.heading')}</Text><Text block size={200} className="text-fui-fg2">{t('dashboard.modelAliases.metadata.description')}</Text></div></AccordionHeader><AccordionPanel><div className="grid gap-4 pt-2"><Switch checked={values.manualMetadata} disabled={saving} label={t('dashboard.modelAliases.metadata.manual')} onChange={(_, data) => setManual(data.checked)} /><MetadataEditor disabled={saving || !values.manualMetadata} kind={kind} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} /></div></AccordionPanel></AccordionItem></Accordion>}
+    {kind !== 'image' && <SettingsExpander
+      action={<Switch checked={values.manualMetadata} disabled={saving} onChange={(_, data) => setManual(data.checked)} label={t('dashboard.modelAliases.metadata.manual')} />}
+      description={t('dashboard.modelAliases.metadata.description')}
+      expandLabel={t('dashboard.modelAliases.metadata.heading')}
+      header={t('dashboard.modelAliases.metadata.heading')}
+    >
+      <MetadataEditor disabled={saving || !values.manualMetadata} kind={kind} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
+    </SettingsExpander>}
     {aliasWarnings.length > 0 && <MessageBar intent="warning"><MessageBarBody><ul className="m-0 pl-5">{aliasWarnings.map(warning => <li key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</li>)}</ul></MessageBarBody></MessageBar>}
-    <Switch checked={values.visible} disabled={saving} label={t('dashboard.modelAliases.form.visible')} onChange={(_, data) => setValue('visible', data.checked)} />
+    <SettingsCard
+      action={<Switch checked={values.visible} disabled={saving} aria-label={t('dashboard.modelAliases.form.visible')} onChange={(_, data) => setValue('visible', data.checked)} />}
+      header={t('dashboard.modelAliases.form.visible')}
+    />
   </DialogShell>;
 }

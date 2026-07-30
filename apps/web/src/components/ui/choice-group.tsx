@@ -38,15 +38,18 @@ const useStyles = makeStyles({
     maxWidth: '100%',
     width: 'fit-content',
   },
-  // 9 above and 5 below a 20px line is 34, the height of the fields beside it,
-  // and it keeps the pill its room at the bottom edge.
+  // Seven above and below a 20px line is 34, the height of the fields beside it.
+  // SelectorBar's own padding is three pixels shallower at the bottom to leave
+  // the pill its room, but the pill here lives in a track of its own laid over
+  // the row rather than inside the item's box, so the item owes it nothing and
+  // the label sits centred instead of low.
   item: {
     alignItems: 'center',
     cursor: 'pointer',
     display: 'inline-flex',
     fontSize: tokens.fontSizeBase300,
     lineHeight: tokens.lineHeightBase300,
-    padding: '9px 12px 5px',
+    padding: '7px 12px',
     position: 'relative',
     whiteSpace: 'nowrap',
     '&:has(input:not(:disabled)):hover': { color: 'var(--winui-text-fill-secondary)' },

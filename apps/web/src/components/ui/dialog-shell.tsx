@@ -1,5 +1,5 @@
 import type { DialogProps } from '@fluentui/react-components';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 import { ScrollArea } from './scroll-area';
 import { fluentComponents } from '../../fluent';
@@ -8,6 +8,8 @@ const { Dialog, DialogBody, DialogContent, DialogSurface } = fluentComponents;
 
 interface DialogShellProps {
   open: boolean;
+  /** Overrides ContentDialogMaxWidth for a dialog whose content needs the room. */
+  maxWidth?: string;
   onOpenChange: DialogProps['onOpenChange'];
   title: ReactNode;
   actions: ReactNode;
@@ -20,10 +22,13 @@ interface DialogShellProps {
 // of the page, and it can only do that while the surface is still mounted. A
 // shell hard-coded to `open` is closed by being unmounted, which removes the
 // surface in the same commit and leaves the exit no frames to run in.
-export function DialogShell({ open, onOpenChange, title, actions, onSubmit, children, surfaceClassName }: DialogShellProps) {
+export function DialogShell({ open, onOpenChange, title, actions, onSubmit, children, maxWidth, surfaceClassName }: DialogShellProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogSurface className={`floway-dialog-shell !m-auto max-w-[min(760px,calc(100vw-32px))] ${surfaceClassName ?? ''}`}>
+      <DialogSurface
+        className={`floway-dialog-shell !m-auto ${surfaceClassName ?? ''}`}
+        style={maxWidth === undefined ? undefined : { '--floway-dialog-max-width': `min(${maxWidth}, calc(100vw - 32px))` } as CSSProperties}
+      >
         <form
           className="floway-dialog-shell__form"
           onSubmit={e => {

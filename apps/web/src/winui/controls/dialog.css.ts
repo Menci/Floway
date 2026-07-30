@@ -31,6 +31,13 @@ export const dialogCss = `
    bounded by the viewport, since 756px exceeds many of them, and is exposed as
    one variable so the body can consume exactly the same envelope. The surface
    never scrolls; DialogShell gives its middle grid row to OverlayScrollbars.
+
+   ContentDialogMaxWidth is 548 and that is the default here, but it is a
+   variable rather than a literal so a dialog can state its own. WinUI's 548 is
+   the width of a dialog that asks a question; a dialog carrying settings rows,
+   which are laid out for a full-width settings page, does not fit in it, and a
+   dialog that has to be read is worse than one a pixel wider than the
+   dictionary.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L223 */
 .fui-DialogSurface.fui-DialogSurface {
@@ -40,7 +47,7 @@ export const dialogCss = `
   border-color: var(--winui-surface-stroke-default);
   background-clip: padding-box;
   min-width: 320px;
-  max-width: 548px;
+  max-width: var(--floway-dialog-max-width, 548px);
   max-height: var(--floway-dialog-max-height);
   overflow: hidden;
 }
