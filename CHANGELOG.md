@@ -12,6 +12,12 @@ Hard and minor entries may include recommended actions; those actions do not nee
 
 ## 2026-07-30 · minor
 
+### A failed Responses WebSocket continuation drops its `previous_response_id`
+
+When a WebSocket turn that carried `previous_response_id` fails with a 4xx or 5xx error, that response id is now evicted from the connection-local state the socket keeps for `store:false` chains, as the OpenResponses 2026-04-24 continuation rules require. A chain that previously survived a failed turn — retrying the same `previous_response_id` after an upstream rejection — now fails the retry with `previous_response_not_found`. Clients recover by starting a new response without `previous_response_id` and resending the full input context. Chains with `store:true` and a non-zero API-key retention window are unaffected: they still resolve from durable state, which is never evicted.
+
+## 2026-07-30 · minor
+
 ### Responses WebSocket turns end on the terminal event, and `response.done` is gone
 
 The Responses WebSocket transport no longer sends a trailing `{ "type": "response.done" }` frame. That frame was a Floway extension outside the OpenResponses streaming-event union; the terminal event (`response.completed`, `response.failed`, or `response.incomplete`) now carries the guarantee it advertised — it is flushed only after the turn's item and snapshot writes have committed and the event stream has drained, and it is the last frame of the turn. Clients that waited for `response.done` before sending the next `response.create` must wait for the terminal event instead; its `response.id` is the id to continue from.

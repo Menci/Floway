@@ -185,6 +185,30 @@ const handleClientMessage = async (
   const signal = downstreamAbortController.signal;
   let eventId: string | undefined;
   let ctx: ChatGatewayCtx | undefined;
+  let previousResponseId: string | null | undefined;
+
+  // "If a continuation turn fails with a `4xx` or `5xx` error, the server MUST
+  // evict the referenced `previous_response_id` from the connection-local
+  // cache. A later attempt to continue from that evicted `store=false`
+  // response ID on the same connection MUST fail with
+  // `previous_response_not_found`."
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
+  //
+  // Every failing exit of the turn routes through this one helper, so the
+  // eviction cannot drift away from the error it belongs to. `fail` covers the
+  // exits that answer with an error envelope; `evict` alone covers the turn
+  // that reported its failure through a `response.failed` terminal event.
+  const turnFailure: ResponsesWsTurnFailure = {
+    evict: () => {
+      if (ctx === undefined || previousResponseId === undefined || previousResponseId === null) return;
+      session.evictSnapshot(ctx.store.apiKeyId, previousResponseId);
+    },
+    fail: (status, error) => {
+      turnFailure.evict();
+      sendError(socket, status, error, eventId, ctx?.dump);
+    },
+  };
+
   try {
     // Capture raw frame bytes up front so they're available as the dump's
     // request body when `ctx` is constructed below. Payloads that fail to
@@ -192,7 +216,7 @@ const handleClientMessage = async (
     // them — there is no api-key-scoped turn to attribute them to.
     const requestBody = { bytes: wsDataToBytes(data), streamError: null };
     if (!(await authenticateApiKey(c, authenticatedRawKey))) {
-      sendError(socket, 401, {
+      turnFailure.fail(401, {
         type: 'authentication_error',
         code: 'invalid_api_key',
         message: 'Invalid API key.',
@@ -210,11 +234,11 @@ const handleClientMessage = async (
       : undefined;
     const message = validateClientMessage(parsed);
     if (message.type !== 'response.create') {
-      sendError(socket, 400, {
+      turnFailure.fail(400, {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
         message: `Unsupported WebSocket event type '${message.type}'.`,
-      }, eventId);
+      });
       return;
     }
 
@@ -222,6 +246,10 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
+    // Remember the continuation target before `expandPreviousResponseId`
+    // strips the field off the payload: a failing turn must evict exactly the
+    // id this turn referenced.
+    previousResponseId = payload.previous_response_id;
     ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
       downstreamAbortController,
@@ -243,12 +271,12 @@ const handleClientMessage = async (
       // same body nested under the spec's WebSocket error envelope so clients
       // can still compare error.message byte-for-byte against upstream.
       if (error instanceof PreviousResponseNotFoundError) {
-        sendError(socket, 400, {
+        turnFailure.fail(400, {
           message: error.message,
           type: 'invalid_request_error',
           param: 'previous_response_id',
           code: 'previous_response_not_found',
-        }, eventId, ctx.dump);
+        });
         ctx.dump?.failed(error);
         ctx.dump?.finalize(400, []);
         return;
@@ -256,27 +284,27 @@ const handleClientMessage = async (
       throw error;
     }
 
-    await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx });
+    await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, turnFailure });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
-      sendError(socket, 400, {
+      turnFailure.fail(400, {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
         message: error.message,
         param: error.param,
-      }, eventId);
+      });
       return;
     }
     if (error instanceof WebSocketClientMessageError) {
-      sendError(socket, 400, {
+      turnFailure.fail(400, {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
         message: error.message,
-      }, eventId);
+      });
       return;
     }
-    sendError(socket, 500, serverErrorEnvelope(error), eventId, ctx?.dump);
+    turnFailure.fail(500, serverErrorEnvelope(error));
     if (ctx !== undefined) {
       // Mid-attempt throws (interceptor bug, translation error, provider-layer JS
       // exception not represented as a ChatServeFailure) never reach the
@@ -289,6 +317,11 @@ const handleClientMessage = async (
     }
   }
 };
+
+interface ResponsesWsTurnFailure {
+  evict(): void;
+  fail(status: number, error: Record<string, unknown>): void;
+}
 
 class WebSocketClientMessageError extends Error {}
 
@@ -325,12 +358,13 @@ const respondResponsesWebSocket = async (input: {
   readonly isClosed: () => boolean;
   readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
   readonly ctx: ChatGatewayCtx;
+  readonly turnFailure: ResponsesWsTurnFailure;
 }): Promise<void> => {
-  const { socket, eventId, signal, isClosed, result, ctx } = input;
+  const { socket, eventId, signal, isClosed, result, ctx, turnFailure } = input;
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId, ctx.dump);
+    turnFailure.fail(result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status));
     ctx.dump?.finalize(result.status, []);
     return;
   }
@@ -338,7 +372,7 @@ const respondResponsesWebSocket = async (input: {
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    sendError(socket, result.status, internalErrorEnvelope(result.error), eventId, ctx.dump);
+    turnFailure.fail(result.status, internalErrorEnvelope(result.error));
     ctx.dump?.finalize(result.status, []);
     return;
   }
@@ -427,12 +461,18 @@ const respondResponsesWebSocket = async (input: {
       return;
     }
     state.failed = true;
-    sendError(socket, 500, serverErrorEnvelope(error), eventId, ctx.dump);
+    turnFailure.fail(500, serverErrorEnvelope(error));
   } finally {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
-    if (failed) ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
-    else ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
+    if (failed) {
+      // A turn that ends on a `response.failed` terminal event answered the
+      // client with a streaming event rather than an error envelope, so the
+      // eviction the spec attaches to a failed continuation has to happen here
+      // instead of inside `turnFailure.fail`.
+      turnFailure.evict();
+      ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
+    } else ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
     ctx.dump?.finalize(failed ? 500 : 200, []);
     settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
   }
