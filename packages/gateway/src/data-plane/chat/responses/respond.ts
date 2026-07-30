@@ -138,6 +138,15 @@ const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<
       const sse = responsesProtocolFrameToSSEFrame(frame);
       if (sse) yield sse;
     }
+    // The SSE transport terminates on the literal `[DONE]` payload, per the
+    // OpenResponses 2026-04-24 spec, "Streaming HTTP Responses":
+    // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx?plain=1#L84
+    // The sentinel is transport-specific, so it is emitted here rather than
+    // in the frame serializer: the same Responses frame stream also feeds the
+    // WebSocket transport, which carries streaming event objects only and has
+    // no sentinel. Only the non-throwing path reaches this; a failed stream
+    // ends on the error frame below.
+    yield sseFrame('[DONE]');
   } catch (error) {
     state.failed = true;
     yield internalResponsesStreamErrorFrame(error);
