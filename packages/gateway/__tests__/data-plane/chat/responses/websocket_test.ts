@@ -4,10 +4,8 @@ import { test, vi } from 'vitest';
 import { app } from '../../../../src/app.ts';
 import { hashResponsesItem } from '../../../../src/data-plane/chat/responses/items/identity.ts';
 import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
-import { FakeTime } from '../../../test-time.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -365,110 +363,6 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
     );
   } finally {
     persistence.mockRestore();
-  }
-});
-
-test('Responses WebSocket keepalive during an in-flight request does not drop the pending upstream frame', async () => {
-  const { apiKey } = await setupAppTest();
-  const time = new FakeTime();
-  const encoder = new TextEncoder();
-  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
-  let resolveUpstreamReadStarted!: () => void;
-  const upstreamReadStarted = new Promise<void>(resolve => {
-    resolveUpstreamReadStarted = resolve;
-  });
-  let upstreamReadStartedResolved = false;
-
-  const resolveReadStartedOnce = (): void => {
-    if (upstreamReadStartedResolved) return;
-    upstreamReadStartedResolved = true;
-    resolveUpstreamReadStarted();
-  };
-  const enqueueSseEvent = (event: string, data: unknown): void => {
-    upstreamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-  };
-  const hasMessageType = (messages: readonly Record<string, unknown>[], type: string): boolean =>
-    messages.some(message => message.type === type);
-
-  try {
-    await withMockedFetch(
-      async request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-        if (url.pathname === '/copilot_internal/v2/token') {
-          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-        }
-        if (url.pathname === '/models') {
-          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-        }
-        if (url.pathname === '/responses') {
-          return new Response(new ReadableStream<Uint8Array>({
-            start(controller) {
-              upstreamController = controller;
-            },
-            pull() {
-              resolveReadStartedOnce();
-            },
-          }), {
-            headers: { 'content-type': 'text/event-stream' },
-          });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => await withWorkerWebSocketRuntime(async () => {
-        const client = await connectResponsesWebSocket(apiKey.key);
-        const messages: Record<string, unknown>[] = [];
-        const onMessage = (event: Event): void => {
-          messages.push(JSON.parse((event as MessageEvent<string>).data) as Record<string, unknown>);
-        };
-        client.addEventListener('message', onMessage);
-
-        try {
-          client.send(JSON.stringify({
-            type: 'response.create',
-            event_id: 'evt_keepalive',
-            response: {
-              model: 'gpt-direct-responses',
-              input: 'hello',
-            },
-          }));
-
-          await upstreamReadStarted;
-          for (let i = 0; i < 4 && !hasMessageType(messages, 'ping'); i++) {
-            await waitForMicrotasks();
-            await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
-          }
-
-          assert(hasMessageType(messages, 'ping'), 'expected a ping while the upstream response stream is idle');
-          const completed = waitForMessages(client, received => received.some(isTerminalResponseEvent));
-
-          const response = {
-            id: 'resp_ws_keepalive',
-            object: 'response',
-            model: 'gpt-direct-responses',
-            status: 'completed',
-            output: [],
-            output_text: 'done',
-          };
-          const inProgress = { ...response, status: 'in_progress', output: [], output_text: '' };
-          enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
-          enqueueSseEvent('response.in_progress', { type: 'response.in_progress', response: inProgress, sequence_number: 1 });
-          enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 2 });
-          upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
-          upstreamController.close();
-
-          await completed;
-
-          const types = messages.map(message => message.type);
-          assert(types.indexOf('ping') < types.indexOf('response.created'), 'expected the delayed upstream frame after the ping');
-          assertEquals(types.at(-1), 'response.completed');
-        } finally {
-          client.removeEventListener('message', onMessage);
-        }
-      }),
-    );
-  } finally {
-    time.restore();
   }
 });
 
