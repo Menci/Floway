@@ -576,10 +576,8 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
       },
     }]);
 
-    // These two cases assert the error body alone: they cover the rejection
-    // the canonical boundary produces, not the frame that carries it. The
-    // whole-frame comparisons around them already pin the error envelope's
-    // own keys.
+    // The whole-frame comparisons around these two already pin the error
+    // frame's own keys, so they assert the error body alone.
     const invalidResponse = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_response', response: {} }));
 

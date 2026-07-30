@@ -5,8 +5,7 @@
 // data-plane http handlers can return a protocol-shaped 400 envelope
 // instead of routing the failure through the generic internal-error 502
 // path. The optional `param` and `code` follow the OpenAI / Anthropic
-// error-body convention for naming the offending caller-visible field and
-// the machine-readable reason it was rejected.
+// error-body convention.
 export class TranslatorInputError extends Error {
   readonly param: string | undefined;
   readonly code: string | undefined;

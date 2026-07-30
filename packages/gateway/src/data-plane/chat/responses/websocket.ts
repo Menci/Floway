@@ -350,10 +350,7 @@ const validateClientMessage = (parsed: unknown): ResponsesWebSocketClientEvent =
   return parsed as ResponsesWebSocketClientEvent;
 };
 
-// `model` and `input` are validated where every entry validates them, at the
-// canonical boundary, so this transport reports the same error body the HTTP
-// and compact entries do rather than a WebSocket-only wording. `stream` is
-// stamped because the transport always streams, whatever the client sent.
+// The transport always streams, whatever the client sent.
 const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPayload =>
   ({ ...canonicalizeResponsesPayload(source as ResponsesRequestPayload), stream: true });
 

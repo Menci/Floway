@@ -540,8 +540,6 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
 test('POST /v1/responses and /v1/responses/compact reject a body without `model` with the OpenAI missing-parameter 400', async () => {
   installRepo();
 
-  // No candidates need to be queued — the wire boundary rejects before
-  // resolution binds the model id into the alias lookup.
   for (const path of ['/v1/responses', '/v1/responses/compact']) {
     const response = await makeApp().request(path, {
       method: 'POST',
