@@ -10,6 +10,14 @@ Impact levels:
 
 Hard and minor entries may include recommended actions; those actions do not need a separate advisory entry.
 
+## 2026-07-30 · minor
+
+### Translated Responses output items gain `status` and `annotations`
+
+Assistant `message` output items produced by the Responses-via-Chat-Completions and Responses-via-Messages paths now carry `status` (`in_progress` on `response.output_item.added`, `completed` on `response.output_item.done` and in the terminal `output`), and their `output_text` content parts now carry `annotations`. Both keys are required by the Responses item schema and were already present on the native Responses path; clients that validate items strictly were rejecting the translated ones.
+
+Responses item identity is hashed over the whole item JSON with no key filtering, so the two new keys change the hash of every translated-path assistant message. Conversations already in flight across the deploy miss their affinity / Stateful Responses item lookup for one turn and fall back to normal candidate resolution; the turn still succeeds, and new conversations are unaffected. No operator action is required.
+
 ## 2026-07-24 · advisory
 
 ### Audit dump files created before payload-file tracking
