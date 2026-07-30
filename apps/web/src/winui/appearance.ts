@@ -16,15 +16,20 @@
 // the DOM: Fluent writes `aria-pressed`, or `aria-checked` when the role is
 // checkbox-like, so nothing here has to restate it.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/utils/useToggleState.ts#L49
+import { CheckmarkCircleFilled, DismissCircleFilled, ErrorCircleFilled, InfoFilled } from '@fluentui/react-icons';
 import * as React from 'react';
 
 type FluentComponents = typeof import('@fluentui/react-components');
 
 export const winuiAppearanceAttribute = 'data-winui-appearance';
+export const winuiIntentAttribute = 'data-winui-intent';
+
 export const winuiSizeAttribute = 'data-winui-size';
 
 type SlotProps = Record<string, unknown>;
 type AppearanceCarrier = { appearance?: string } & SlotProps;
+type IntentCarrier = { intent?: string; icon?: React.ReactNode };
+
 type SizeCarrier = { size?: string } & SlotProps;
 
 // A top-level prop does not always reach the element that carries the WinUI
@@ -118,8 +123,39 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return wrapped as Component;
   };
 
+  // WinUI draws an InfoBar's severity as a filled disc with the symbol knocked
+  // out of it, and picks the disc by severity. Fluent tints one outline glyph
+  // instead and settles the choice in JavaScript, writing nothing a selector
+  // could name, so both the shape and the reachability have to be answered
+  // here. Each intent gets the filled counterpart of the glyph Fluent would
+  // have drawn, and the intent is stamped so the sheet can finally colour it.
+  // A caller that passes its own icon keeps it.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L5-L16
+  const severityIcons: Record<string, React.ComponentType> = {
+    error: DismissCircleFilled,
+    warning: ErrorCircleFilled,
+    success: CheckmarkCircleFilled,
+    info: InfoFilled,
+  };
+  const stampIntent = <Component>(component: Component): Component => {
+    const elementType = component as React.ElementType;
+    const wrapped = React.forwardRef<unknown, IntentCarrier>((props, ref) => {
+      const intent = props.intent ?? 'info';
+      const Severity = severityIcons[intent];
+      return React.createElement(elementType, {
+        ...props,
+        [winuiIntentAttribute]: intent,
+        icon: props.icon ?? (Severity ? React.createElement(Severity) : undefined),
+        ref,
+      });
+    });
+    wrapped.displayName = (component as { displayName?: string }).displayName;
+    return wrapped as Component;
+  };
+
   return {
     ...components,
+    MessageBar: stampIntent(components.MessageBar),
     Badge: stampSize(components.Badge, 'medium'),
     Button: stampAppearance(components.Button, 'secondary', rootIsPrimary),
     ToggleButton: stampAppearance(components.ToggleButton, 'secondary', rootIsPrimary),

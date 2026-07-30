@@ -74,6 +74,11 @@ export const listCss = `
    on a 3px bar. The length is not stated for a ListViewItem, but WinUI marks a
    selected NavigationViewItem with the same bar and states 16 there; one
    selection indicator, described once.
+
+   That 16 is stated against a 36px row, so it is carried here as the inset it
+   leaves -- ten pixels at each end -- rather than as a length. A list row here
+   sizes itself to its own content and runs well past 36, and a fixed 16 on a
+   tall row reads as a tick beside it instead of a mark down its edge.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L57
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L75-L78
@@ -86,10 +91,8 @@ export const listCss = `
   content: '';
   position: absolute;
   inset-inline-start: 0;
-  inset-block-start: 50%;
-  transform: translateY(-50%);
+  inset-block: 10px;
   inline-size: 3px;
-  block-size: 16px;
   border-radius: 1.5px;
   background-color: var(--winui-accent-fill-default);
 }
