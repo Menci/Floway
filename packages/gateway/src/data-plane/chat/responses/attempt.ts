@@ -227,10 +227,8 @@ const providerResponsesResultToExecuteResult = async (
   if (!providerResult.ok) {
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
   }
-  // A native compaction is a turn the model actually ran and the upstream
-  // charged for, and its body states the counts. Without `finalMetadata` the
-  // attempt priced it at nothing: the client was shown the upstream's real
-  // usage while the request recorded zero tokens against the key.
+  // A native compaction is a turn the upstream ran and charged for, and its
+  // body states the counts.
   const modelIdentity = telemetryModelIdentity(candidate, providerResult.modelKey);
   const billableUsage = billableUsageFromResponsesResult(providerResult.result);
   return eventResult(
