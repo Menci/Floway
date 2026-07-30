@@ -189,6 +189,7 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
     ...makeResponsesResult(),
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
+    usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
   };
   const observedModelIds: string[] = [];
   const callResponses = vi.fn(async (model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {

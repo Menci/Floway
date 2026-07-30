@@ -506,7 +506,7 @@ test('POST /v1/responses/compact reports the failure when the upstream reported 
   installRepo();
   const { response } = await compactTurn({ usage: null });
 
-  assertEquals(response.status, 500);
+  assertEquals(response.status, 502);
   const body = await response.json() as { error: { type: string; message: string } };
   assertEquals(body.error.type, 'internal_error');
   assert(
@@ -586,6 +586,7 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
     ...makeResponsesResult(),
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
+    usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
   };
   queueCodexAutoReviewCandidate(async (_model, body, action): Promise<ProviderResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
