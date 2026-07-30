@@ -4,9 +4,9 @@
 // Providers whose upstream exposes native /responses/compact (Azure, Codex,
 // custom) call that endpoint directly and bypass this helper entirely.
 //
-// References (codex @ ebb79803697acee75baf24073ef49af87ad7e483):
-//   codex-rs/core/src/compact_remote_v2.rs#L409-L457
-//   codex-rs/utils/string/src/truncate.rs#L71-L74
+// References:
+//   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L439-L501
+//   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/utils/string/src/truncate.rs#L71-L74
 
 import { createRandomResponsesItemId, type ResponsesCompactionTriggerItem, type ResponsesInputContent, type ResponsesInputItem, type ResponsesInputMessage, type ResponsesOutputItem, type ResponsesResult } from '@floway-dev/protocols/responses';
 
@@ -72,28 +72,31 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
     });
   }
 
-  // The trigger turn may also emit a stray assistant message, and it may segment
-  // its state across several compaction items: `gpt-5-mini-2025-08-07` returns
-  // two deterministically — independent ciphertexts of 7800 and 8968 bytes, each
-  // individually replayable, the first recovering the early turns and the second
+  // The trigger turn may also emit a stray assistant message, and it may
+  // segment its state across several compaction items: `gpt-5-mini-2025-08-07`
+  // returns two deterministically, reproduced across six probe variations
+  // spanning input size, tool items in the input, streaming, and chained
+  // re-feed. The two are independent ciphertexts of 7800 and 8968 bytes, each
+  // individually replayable — the first recovers the early turns, the second
   // the full history. Every other Responses model on the same account returns
-  // one. The compaction resource declares `output` as an unbounded array, so a
-  // segmented reply is a conformant reply and the whole array is what the client
-  // resends as the next turn's `input`:
-  //   https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L3935
+  // one. `CompactResource` declares `output` as an array with no `minItems`,
+  // no `maxItems`, and no prose cardinality rule, and the client contract is to
+  // resend the whole array as the next turn's `input`, so a segmented reply is
+  // a conformant reply:
+  //   https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L3935-L3953
   //
-  // codex hard-fails a count other than one, but that is a consumer-side
-  // invariant guarding its own single-blob history model; its own gateway-shaped
-  // /responses/compact handler installs the entire `output` array untouched.
-  // Serving the client means forwarding every segment in upstream order and
-  // failing only when the trigger turn produced no compaction state at all.
-  //
-  // References (codex @ 3d805abdf09093bfa806f359a5adc6514766c420):
-  //   codex-rs/core/src/compact_remote_v2.rs#L380-L432
-  //   codex-api/src/endpoint/compact.rs#L39-L86
+  // codex hard-fails a compaction count other than one, but that is a
+  // consumer-side invariant guarding its own single-blob history model: its
+  // client for the native /responses/compact endpoint deserializes `output`
+  // whole and returns it with no per-item inspection. We serve the client
+  // instead, and keep only the invariant that the turn produced compaction
+  // state at all — a model that ignores `compaction_trigger` answers with an
+  // ordinary completion carrying no compaction item.
+  //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L380-L428
+  //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/codex-api/src/endpoint/compact.rs#L39-L88
   const compactionItems = generated.output.filter(it => it.type === 'compaction');
   if (compactionItems.length === 0) {
-    throw new Error('Expected at least one compaction output item, got none');
+    throw new Error("Copilot's compaction trigger turn returned no compaction output item");
   }
 
   return {

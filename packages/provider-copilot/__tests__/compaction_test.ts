@@ -78,7 +78,7 @@ test('forwards every compaction item of a segmented trigger turn, in upstream or
 });
 
 test('throws when the trigger turn returned no compaction item', () => {
-  expect(() => compactionResponse([], generatedResult([]))).toThrow(/at least one compaction/);
+  expect(() => compactionResponse([], generatedResult([]))).toThrow(/no compaction output item/);
 });
 
 test('truncates retained messages newest-first to the 64k token budget', () => {
