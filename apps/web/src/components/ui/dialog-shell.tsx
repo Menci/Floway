@@ -19,17 +19,18 @@ interface DialogShellProps {
 export function DialogShell({ open, onOpenChange, title, actions, onSubmit, children, surfaceClassName }: DialogShellProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogSurface className={`!m-auto max-w-[min(760px,calc(100vw-32px))] max-h-[calc(100vh-32px)] ${surfaceClassName ?? ''}`}>
+      <DialogSurface className={`floway-dialog-shell !m-auto max-w-[min(760px,calc(100vw-32px))] ${surfaceClassName ?? ''}`}>
         <form
+          className="floway-dialog-shell__form"
           onSubmit={e => {
             e.preventDefault();
             onSubmit?.();
           }}
         >
-          <DialogBody>
+          <DialogBody className="floway-dialog-shell__body">
             {title}
-            <DialogContent className="max-h-[calc(100vh-190px)] overflow-hidden !p-0">
-              <ScrollArea axes="vertical" className="max-h-[calc(100vh-190px)]" contentClassName="grid gap-4 pr-[2px]">
+            <DialogContent className="floway-dialog-shell__content !p-0">
+              <ScrollArea axes="vertical" className="floway-dialog-shell__scroller h-full min-h-0" contentClassName="grid gap-4 pr-[2px]">
                 {children}
               </ScrollArea>
             </DialogContent>

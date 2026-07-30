@@ -27,32 +27,33 @@ export const dialogCss = `
    one, and BackgroundSizing="InnerBorderEdge", which is background-clip:
    padding-box on the web, so the translucent border reads against the smoke
    layer behind it instead of against its own fill. WinUI states a full size
-   envelope where Fluent states only a maximum width; the width bounds land
-   here and the height bounds on the body, which is the box that can absorb
-   them. The height cap stays bounded by the viewport, since 756px exceeds
-   many of them.
+   envelope where Fluent states only a maximum width. The height cap stays
+   bounded by the viewport, since 756px exceeds many of them, and is exposed as
+   one variable so the body can consume exactly the same envelope. The surface
+   never scrolls; DialogShell gives its middle grid row to OverlayScrollbars.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L6-L15
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L223 */
 .fui-DialogSurface.fui-DialogSurface {
+  --floway-dialog-max-height: min(756px, calc(100dvh - 32px));
   padding: 0;
   background-color: var(--winui-solid-background-fill-base);
   border-color: var(--winui-surface-stroke-default);
   background-clip: padding-box;
   min-width: 320px;
   max-width: 548px;
-  max-height: min(756px, 100dvh);
+  max-height: var(--floway-dialog-max-height);
+  overflow: hidden;
 }
 
-/* Too short to fit the dialog, Fluent scrolls the surface itself and reserves
-   the scrollbar a gutter by widening three of its border edges to 4px and
-   taking the same 4px off the padding. Neither half survives here: the padding
-   it thins is already gone, and a 4px edge would paint the surface stroke four
-   times over. The scrollbar instead runs against the 1px stroke, inside the
-   24px the body holds off the content -- which is where WinUI puts it too,
-   its ScrollViewer sitting within the padded content band. */
+/* Fluent moves overflow onto the whole surface below 360px and reserves that
+   browser scrollbar by widening three border edges to 4px. DialogShell keeps
+   the same three-band grid at every height, so neither the native scroll path
+   nor its compensating border survives; only the middle OverlayScrollbars
+   viewport contracts. */
 @media screen and (max-height: 359px) {
   .fui-DialogSurface.fui-DialogSurface {
     border-width: 1px;
+    overflow: hidden;
   }
 }
 
@@ -93,15 +94,28 @@ export const dialogCss = `
   gap: 0;
   background-color: var(--winui-layer-fill-alt);
   border-radius: var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0;
-  max-height: calc(min(756px, 100dvh) - 2px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: calc(var(--floway-dialog-max-height) - 2px);
+  min-height: 0;
+  overflow: hidden;
 }
 
-/* On a short screen the surface scrolls, so the body is released to its full
-   height and the cap above must not be reinstated. */
-@media screen and (max-height: 359px) {
-  .fui-DialogBody.fui-DialogBody {
-    max-height: unset;
-  }
+/* The form is a semantic wrapper around Fluent's grid root. It must transmit
+   the surface envelope without becoming a fourth sizing or scroll owner. */
+.floway-dialog-shell__form {
+  margin: 0;
+  max-height: inherit;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Fluent normally makes DialogContent the browser-scroll viewport. Here it is
+   only the minmax grid cell around ScrollArea: doubled class specificity keeps
+   Griffel's runtime-injected overflow-y:auto from winning by stylesheet order.
+   https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-dialog/library/src/components/DialogContent/useDialogContentStyles.styles.ts#L16-L31 */
+.fui-DialogContent.fui-DialogContent {
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ContentDialog_themeresources.xaml#L17 */
