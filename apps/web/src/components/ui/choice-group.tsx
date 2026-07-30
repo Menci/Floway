@@ -73,11 +73,15 @@ const useStyles = makeStyles({
     pointerEvents: 'none',
     position: 'absolute',
   },
+  // The offset below solves for a pinned edge assuming the scale grows from the
+  // leading one, so the origin is stated here rather than left at the centre it
+  // defaults to.
   pill: {
     backgroundColor: 'var(--winui-accent-fill-default)',
     borderRadius: '2px',
     display: 'block',
     height: '100%',
+    transformOrigin: 'left',
     width: '100%',
   },
   pillDisabled: { backgroundColor: 'var(--winui-accent-fill-disabled)' },
