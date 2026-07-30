@@ -668,4 +668,19 @@ test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stre
   assertEquals(data.type, 'error');
   assertEquals(data.error?.message, 'upstream exploded mid-stream');
   assert(data.message === undefined, 'expected the payload to sit under `error`, not at the top level');
+
+  // "Any error incurred while streaming will be followed by a `response.failed`
+  // event." Without it a client tracking response state is left in progress.
+  const failedChunk = body.split('\n\n').find(part => part.startsWith('event: response.failed'));
+  assert(failedChunk !== undefined, `expected a response.failed frame in ${body}`);
+  const failed = JSON.parse(failedChunk.slice(failedChunk.indexOf('data: ') + 'data: '.length)) as {
+    response: { status: string; id: string; error: { message: string } };
+  };
+  assertEquals(failed.response.status, 'failed');
+  assertEquals(failed.response.error.message, 'upstream exploded mid-stream');
+  // The failure states the response the client was already watching.
+  const created = JSON.parse(
+    body.split('\n\n').find(part => part.startsWith('event: response.created'))!.split('data: ')[1]!,
+  ) as { response: { id: string } };
+  assertEquals(failed.response.id, created.response.id);
 });
