@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { wrapNativeResponsesClientOutput } from './client-output.ts';
+import { wrapResponsesClientEgress } from './client-output.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -53,7 +53,7 @@ export const respondResponses = async (
 
   const state = new SourceStreamState();
   const observed = observeResponsesFrames(result.events, state, ctx);
-  const frames = wrapNativeResponsesClientOutput(observed, ctx, request);
+  const frames = wrapResponsesClientEgress(observed, ctx, request);
 
   if (!wantsStream) {
     try {

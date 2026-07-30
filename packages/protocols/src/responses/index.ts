@@ -1344,6 +1344,7 @@ export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 export { parseResponsesStream, type ParseResponsesStreamOptions } from './stream.ts';
 
 export type {
+  ClientResponsesCompaction,
   ClientResponsesEnvelope,
   ClientResponsesReasoning,
   ClientResponsesStreamEvent,

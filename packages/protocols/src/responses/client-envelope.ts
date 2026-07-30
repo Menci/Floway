@@ -104,3 +104,12 @@ type WithClientEnvelope<Event> = Event extends { response: ResponsesResult }
   : Event;
 
 export type ClientResponsesStreamEvent = WithClientEnvelope<ResponsesStreamEvent>;
+
+// `CompactResource` requires `id`, `object`, `output`, `created_at` and
+// `usage`, and declares none of the response resource's request echoes — so a
+// compaction body states nothing about tools, sampling or service tier. `id`,
+// `object` and `output` already arrive populated.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json  (components.schemas.CompactResource)
+export type ClientResponsesCompaction =
+  Omit<ResponsesResult, 'object' | 'created_at' | 'usage'>
+  & { object: 'response.compaction'; created_at: number; usage: ClientResponsesUsage | null };
