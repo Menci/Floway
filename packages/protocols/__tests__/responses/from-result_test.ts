@@ -15,7 +15,7 @@ const completedResponse: ResponsesResult = {
       type: 'message',
       id: 'msg_completed',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'Hello' }],
+      content: [{ type: 'output_text', text: 'Hello', annotations: [] }],
     },
   ],
   error: null,
@@ -153,7 +153,7 @@ test('responsesResultToEvents propagates the real message item id to the added i
           type: 'message',
           id: 'msg_real',
           role: 'assistant',
-          content: [{ type: 'output_text', text: 'Hello' }],
+          content: [{ type: 'output_text', text: 'Hello', annotations: [] }],
         },
       ],
     }),
@@ -187,6 +187,7 @@ test('responsesResultToEvents expands refusal content with the native refusal li
   assertEquals(added.item, {
     type: 'message',
     id: 'msg_refusal',
+    status: 'in_progress',
     role: 'assistant',
     content: [{ type: 'refusal', refusal: '' }],
   });

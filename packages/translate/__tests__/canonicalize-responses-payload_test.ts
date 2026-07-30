@@ -45,6 +45,33 @@ test('canonicalizes string and implicit-message wire inputs', () => {
   });
 });
 
+test('rejects a payload without a usable model at the canonical boundary', () => {
+  for (const payload of [
+    { input: 'hello' },
+    { model: '', input: 'hello' },
+    { model: 42, input: 'hello' },
+    { model: null, input: 'hello' },
+  ]) {
+    const error = assertThrows(
+      () => canonicalizeResponsesPayload(payload),
+      TranslatorInputError,
+      "Missing required parameter: 'model'.",
+    ) as TranslatorInputError;
+    assertEquals(error.param, 'model');
+    assertEquals(error.code, 'missing_required_parameter');
+  }
+});
+
+test('canonicalizes an untyped message carrying an image without detail', () => {
+  assertEquals(canonicalizeResponsesPayload({
+    model: 'gpt-test',
+    input: [{ role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
+  }), {
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
+  });
+});
+
 test('rejects malformed untyped input items at the canonical boundary', () => {
   for (const malformed of [
     null,

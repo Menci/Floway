@@ -66,6 +66,7 @@ test('translateChatCompletionsChunkToResponsesEvents preserves refusal output li
   assertEquals(completed?.response.output, [{
     type: 'message',
     id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+    status: 'completed',
     role: 'assistant',
     content: [{ type: 'refusal', refusal: 'Cannot help.' }],
   }]);
@@ -82,6 +83,7 @@ test('translateChatCompletionsChunkToResponsesEvents preserves an empty refusal 
   assertEquals(completed?.response.output, [{
     type: 'message',
     id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+    status: 'completed',
     role: 'assistant',
     content: [{ type: 'refusal', refusal: '' }],
   }]);
@@ -162,8 +164,9 @@ test('translateChatCompletionsChunkToResponsesEvents replaces buffered scalar re
     {
       type: 'message',
       id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+      status: 'completed',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer' }],
+      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     },
   ]);
 });
@@ -196,6 +199,7 @@ test('translateChatCompletionsChunkToResponsesEvents maps usage on incomplete le
     output_tokens: 6,
     total_tokens: 10,
     input_tokens_details: { cached_tokens: 1, cache_write_tokens: 2 },
+    output_tokens_details: { reasoning_tokens: 2 },
   });
 });
 
@@ -400,8 +404,9 @@ test('translateChatCompletionsChunkToResponsesEvents prefers reasoning_items ove
     {
       type: 'message',
       id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+      status: 'completed',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer' }],
+      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     },
   ]);
 });
@@ -497,8 +502,9 @@ test('translateChatCompletionsChunkToResponsesEvents discards scalar reasoning w
     {
       type: 'message',
       id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+      status: 'completed',
       role: 'assistant',
-      content: [{ type: 'output_text', text: 'answer' }],
+      content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     },
   ]);
 });

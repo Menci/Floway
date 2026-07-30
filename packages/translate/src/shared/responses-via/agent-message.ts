@@ -24,12 +24,8 @@ const nullableString = (value: unknown, path: string): string | null | undefined
   return value;
 };
 
-const imageDetail = (value: unknown, path: string): ResponsesInputImage['detail'] => {
-  if (typeof value !== 'string') {
-    throw new TranslatorInputError(`Invalid type for '${path}': expected a string.`, { param: path });
-  }
-  return value as ResponsesInputImage['detail'];
-};
+const imageDetail = (value: unknown, path: string): ResponsesInputImage['detail'] =>
+  nullableString(value, path) as ResponsesInputImage['detail'];
 
 const escapeXmlText = (value: string): string =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
