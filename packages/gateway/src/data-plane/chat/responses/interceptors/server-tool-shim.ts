@@ -653,11 +653,9 @@ export const consumeTurnStreaming = async function* (
       continue;
     }
 
-    // Filler a transport injects to hold a connection open, named rather than
-    // recognized by its lack of a position. `parseResponsesStream` already
-    // drops `ping` before a parsed stream reaches this stage, so this catches
-    // the frames handed to us directly, plus `keepalive` — the type openai-node
-    // models for the same purpose — which nothing upstream of here drops.
+    // Filler a transport injects to hold a connection open. It has to be named
+    // here, because the positionless fall-through below forwards whatever it
+    // does not recognize. `keepalive` is openai-node's name for the same frame.
     // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/lib/responses/ResponseAccumulator.ts#L382-L386
     if ((event.type as string) === 'ping' || (event.type as string) === 'keepalive') continue;
 
@@ -671,14 +669,10 @@ export const consumeTurnStreaming = async function* (
       continue;
     }
 
-    // What this stage rewrites is an item's position, so an event that states
-    // no position has nothing here to rewrite and is forwarded as it arrived.
-    // Every remaining event type without `output_index` today is a wrapper, a
-    // terminal, or `error`, and each is answered by a branch above, so nothing
-    // in the current protocol reaches this line. What does reach it is whatever
-    // the protocol grows: `parseResponsesStream` classifies by deny-list
-    // precisely so an unrecognized type survives parsing as structured, and a
-    // stage that dropped it would spend that guarantee.
+    // No event of the current protocol reaches here; every positionless type is
+    // answered above. This line is for what the protocol grows:
+    // `parseResponsesStream` classifies by deny-list so an unrecognized type
+    // survives as structured, and dropping it here would spend that guarantee.
     yield stamp(event);
   }
 
