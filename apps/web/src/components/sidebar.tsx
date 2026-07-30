@@ -1,3 +1,4 @@
+import type { NavItemProps } from '@fluentui/react-components';
 import {
   Chat20Color,
   Clipboard20Color,
@@ -16,7 +17,6 @@ import {
   TextEditStyle20Color,
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
-import type { NavItemProps } from '@fluentui/react-components';
 import { useId, useRef, useState } from 'react';
 import type { MouseEventHandler, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
