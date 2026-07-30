@@ -384,11 +384,11 @@ test('Responses WebSocket keep-alive waits for the first event and takes a slot 
   // cannot yield to.
   const realSetTimeout = globalThis.setTimeout;
   const time = new FakeTime();
-  // Registered as a test hook rather than run from a `finally`: the body below
-  // drives a socket whose frames arrive on the fake clock, and an assertion
-  // that never gets its frame would leave the body suspended, so a `finally`
-  // would never run and every later test in the file would inherit the fake
-  // clock.
+  // Registered as a test hook rather than run from a `finally`: the
+  // `upstreamReadStarted` await below is unbounded, so a turn that never
+  // reaches the upstream body suspends the body forever, and a `finally` that
+  // never runs would leave the fake clock installed for every later test in
+  // the file.
   onTestFinished(() => time.restore());
   const encoder = new TextEncoder();
   const reasoning = {

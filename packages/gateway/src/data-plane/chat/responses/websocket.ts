@@ -542,11 +542,13 @@ const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<
   );
 
 // The interval is the one already shared with SSE rather than a WebSocket
-// constant of its own. Probing showed intervals up to 400 s still holding a
-// dropping path open, so 15 s is far more frequent than the mechanism needs;
-// it is kept because there is nothing to buy by widening it. A keep-alive is
-// ~70 bytes, and the observed teardowns had a low tail at 61.5 s, against
-// which any interval chosen for economy would have no margin left.
+// constant of its own. Widening the gap between server data frames on a
+// dropping path put the boundary between 400 s, which still held the socket
+// open, and 500 s, which did not, so 15 s is far more frequent than the
+// mechanism needs. It is kept because widening it buys nothing: a keep-alive
+// is ~70 bytes, and the earliest unprotected idle teardown seen on that same
+// path was 215.8 s, so an interval chosen for economy would spend a real
+// margin against a stochastic teardown to save nothing.
 const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const keepAlive = new Promise<WsFrameRaceResult>(resolve => {
