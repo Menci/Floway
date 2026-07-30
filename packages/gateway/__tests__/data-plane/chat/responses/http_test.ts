@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
 import { TEST_RESPONSES_RETENTION_SECONDS } from './test-policy.ts';
-import { missingRequiredResourceKeys } from './test-required-resource-keys.ts';
+import { missingRequiredCompactionKeys, missingRequiredResourceKeys, responseOnlyKeysAdded } from './test-required-resource-keys.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
@@ -432,13 +432,19 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
   }
 });
 
-test('POST /v1/responses/compact returns a non-streaming compaction envelope', async () => {
-  const repo = installRepo();
+// One compact turn against a stubbed candidate. The upstream result is
+// returned so a test can compare the answered body against what the upstream
+// actually sent.
+const compactTurn = async (
+  upstream: Partial<ResponsesResult> = {},
+  requestFields: Record<string, unknown> = {},
+): Promise<{ upstream: ResponsesResult; response: Response }> => {
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
   const compactionResult: ResponsesResult = {
     ...makeResponsesResult(),
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
+    ...upstream,
   };
   const callResponses = vi.fn(async (_model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
@@ -453,8 +459,15 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
       model: 'test-model',
       input: [{ type: 'message', role: 'user', content: 'kept' }],
       store: false,
+      ...requestFields,
     }),
   });
+  return { upstream: compactionResult, response };
+};
+
+test('POST /v1/responses/compact returns a non-streaming compaction body', async () => {
+  const repo = installRepo();
+  const { response } = await compactTurn();
 
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
@@ -463,6 +476,42 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
   assert(body.id.length > 0 && body.id !== 'resp_test', 'expected the source boundary to replace the upstream response id');
   assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id, 0), null);
   assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id), 0), []);
+});
+
+test('POST /v1/responses/compact answers the compaction resource, not the response resource', async () => {
+  installRepo();
+  const { upstream, response } = await compactTurn(
+    { usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 } },
+    { temperature: 0.3 },
+  );
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(missingRequiredCompactionKeys(body), []);
+  assertEquals(typeof body.created_at, 'number');
+  assertEquals(body.usage, {
+    input_tokens: 12,
+    output_tokens: 3,
+    total_tokens: 15,
+    input_tokens_details: { cached_tokens: 0 },
+    output_tokens_details: { reasoning_tokens: 0 },
+  });
+  assertEquals(responseOnlyKeysAdded(upstream, body), []);
+});
+
+test('POST /v1/responses/compact states zero tokens when the upstream reported no usage', async () => {
+  installRepo();
+  const { response } = await compactTurn();
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(body.usage, {
+    input_tokens: 0,
+    output_tokens: 0,
+    total_tokens: 0,
+    input_tokens_details: { cached_tokens: 0 },
+    output_tokens_details: { reasoning_tokens: 0 },
+  });
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {

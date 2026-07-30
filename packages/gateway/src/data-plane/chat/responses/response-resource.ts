@@ -34,9 +34,11 @@ import type {
 //   ordered ids, and awaits that before the terminal frame leaves it, so no
 //   response resource is ever stored. Affinity egress runs underneath too, and
 //   billing reads `billableUsage` off the `ExecuteResult` rather than the
-//   resource. The readers that do sit above this stage — the `settle` call and
-//   the compact path's failure check — read only `status`, which rides through
-//   from the upstream and is never stated here.
+//   resource. One reader sits above this stage, the non-streaming `settle`
+//   call, and it reads only `status`, which rides through from the upstream and
+//   is never stated here. The WebSocket transport buffers the terminal event
+//   and flushes it last, branching only on the event type; it reads nothing off
+//   the resource at all.
 //
 // #125's "no tools synthesized when upstream omits it" therefore still holds:
 // the interior resource carries no `tools`, and egress states `[]` on the way
@@ -96,16 +98,17 @@ const completeReasoning = (reasoning: NonNullable<ResponsesResult['reasoning']> 
 
 // Both breakdowns are required whenever `usage` itself is an object. An absent
 // breakdown means the upstream reported no cached input tokens and no reasoning
-// output tokens.
+// output tokens. Shared with the compaction resource, whose `usage` is the same
+// `Usage` schema.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2384-L2429
-const completeUsage = (usage: NonNullable<ResponsesResult['usage']> | null): ClientResponsesUsage | null =>
-  usage === null
-    ? null
-    : {
-        ...usage,
-        input_tokens_details: usage.input_tokens_details ?? { cached_tokens: 0 },
-        output_tokens_details: usage.output_tokens_details ?? { reasoning_tokens: 0 },
-      };
+export const completeUsage = (usage: NonNullable<ResponsesResult['usage']>): ClientResponsesUsage => ({
+  ...usage,
+  input_tokens_details: usage.input_tokens_details ?? { cached_tokens: 0 },
+  output_tokens_details: usage.output_tokens_details ?? { reasoning_tokens: 0 },
+});
+
+const completeUsageOrNull = (usage: NonNullable<ResponsesResult['usage']> | null): ClientResponsesUsage | null =>
+  usage === null ? null : completeUsage(usage);
 
 export interface ResponseResourceSources {
   // The request these events answer. Every echoed value comes from here.
@@ -194,7 +197,7 @@ export const completeResponseResource = (
     prompt_cache_key: observed([upstream.prompt_cache_key, request.prompt_cache_key]),
     reasoning: completeReasoning(observed<NonNullable<ResponsesResult['reasoning']>>([upstream.reasoning, request.reasoning])),
     // The request has no counterpart: token counts are the upstream's alone.
-    usage: completeUsage(observed([upstream.usage])),
+    usage: completeUsageOrNull(observed([upstream.usage])),
   };
 };
 

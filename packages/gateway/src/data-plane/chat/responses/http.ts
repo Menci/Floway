@@ -94,12 +94,14 @@ export const responsesHttp = {
       ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, (apiKey, requestStartedAt) => createResponsesHttpStore(apiKey, requestStartedAt, payload.store ?? undefined));
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
-        // Compact drains the upstream stream into a single envelope with
-        // no per-token stamps; recordPerformance therefore lands in
-        // the neutral bucket (request counted, no TTFT/TPOT sample). The
-        // envelope's own `status` is authoritative for failure — a compact
-        // that surfaced as `response.failed` must be recorded as such so it
-        // shows up in the error column instead of masquerading as a success.
+        // Compact drains the upstream stream into a single compaction
+        // resource with no per-token stamps; recordPerformance therefore
+        // lands in the neutral bucket (request counted, no TTFT/TPOT sample).
+        // `status` is not a `CompactResource` key — it survives the spread
+        // from the upstream turn — and it is authoritative for failure: a
+        // compact that surfaced as `response.failed` must be recorded as such
+        // so it shows up in the error column instead of masquerading as a
+        // success.
         const failed = result.result.status === 'failed';
         if (failed) {
           ctx.dump?.failed('compact envelope status=failed');

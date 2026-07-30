@@ -1369,6 +1369,7 @@ export { parseResponsesStream, type ParseResponsesStreamOptions } from './stream
 
 export type {
   ClientResponseResource,
+  ClientResponsesCompaction,
   ClientResponsesReasoning,
   ClientResponsesStreamEvent,
   ClientResponsesTextField,

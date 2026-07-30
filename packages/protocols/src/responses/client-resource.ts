@@ -98,6 +98,19 @@ export type ClientResponseResource =
     usage: ClientResponsesUsage | null;
   };
 
+// `/responses/compact` answers with a resource of its own. `CompactResource`
+// requires `id`, `object`, `output`, `created_at` and `usage` — five keys, none
+// of them a request echo. `object` and `usage` are the two keys the two
+// resources spell differently: the enum value changes, and `ResponseResource`
+// gives `usage` a `null` alternative where this one does not, so a compaction
+// must state token counts. The schema forbids no extras, so keys the upstream
+// sent beyond these ride through.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L3935-L4008
+export type ClientResponsesCompaction =
+  Omit<ResponsesResult, 'object' | 'created_at' | 'usage'>
+  & Required<Pick<ResponsesResult, 'created_at'>>
+  & { object: 'response.compaction'; usage: ClientResponsesUsage };
+
 // Every resource-bearing member of the stream union, re-declared with the
 // completed resource. Distributive so each member keeps its `type` literal.
 // A `response.*` event added to `ResponsesStreamEvent` is narrowed

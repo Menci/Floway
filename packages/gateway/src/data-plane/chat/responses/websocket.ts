@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { wrapNativeResponsesClientOutput } from './client-output.ts';
+import { wrapResponsesClientEgress } from './client-output.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
@@ -349,7 +349,7 @@ const respondResponsesWebSocket = async (input: {
   try {
     let terminalEvent: ClientResponsesStreamEvent | undefined;
     const observed = observeResponsesWebSocketFrames(result.events, state, ctx);
-    const output = wrapNativeResponsesClientOutput(observed, ctx, payload);
+    const output = wrapResponsesClientEgress(observed, ctx, payload);
     const iterator = output[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
