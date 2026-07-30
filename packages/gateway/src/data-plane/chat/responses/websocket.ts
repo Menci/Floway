@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { wrapNativeResponsesClientOutput } from './client-output.ts';
+import { wrapResponsesClientEgress } from './client-output.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
@@ -9,7 +9,7 @@ import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../..
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { takeRequestBody } from '../../shared/request-body.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
+import type { StreamCompletion } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
@@ -18,7 +18,7 @@ import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
@@ -163,8 +163,8 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
           }
         })
         // WS-specific top-level: Hono's onError never runs for callbacks fired off
-        // an open socket, so we serialize the error inline as a close-frame-shaped
-        // JSON envelope. (HTTP entries let onError handle the same case.)
+        // an open socket, so we serialize the error inline as the spec's
+        // WebSocket error envelope. (HTTP entries let onError handle the same case.)
         .catch(error => {
           if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
         });
@@ -185,6 +185,30 @@ const handleClientMessage = async (
   const signal = downstreamAbortController.signal;
   let eventId: string | undefined;
   let ctx: ChatGatewayCtx | undefined;
+  let previousResponseId: string | null | undefined;
+
+  // "If a continuation turn fails with a `4xx` or `5xx` error, the server MUST
+  // evict the referenced `previous_response_id` from the connection-local
+  // cache. A later attempt to continue from that evicted `store=false`
+  // response ID on the same connection MUST fail with
+  // `previous_response_not_found`."
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L127
+  //
+  // Every failing exit of the turn routes through this one helper, so the
+  // eviction cannot drift away from the error it belongs to. `fail` covers the
+  // exits that answer with an error envelope; `evict` alone covers the turn
+  // that reported its failure through a `response.failed` terminal event.
+  const turnFailure: ResponsesWsTurnFailure = {
+    evict: () => {
+      if (ctx === undefined || previousResponseId === undefined || previousResponseId === null) return;
+      session.evictSnapshot(ctx.store.apiKeyId, previousResponseId);
+    },
+    fail: (status, error) => {
+      turnFailure.evict();
+      sendError(socket, status, error, eventId, ctx?.dump);
+    },
+  };
+
   try {
     // Capture raw frame bytes up front so they're available as the dump's
     // request body when `ctx` is constructed below. Payloads that fail to
@@ -192,7 +216,7 @@ const handleClientMessage = async (
     // them — there is no api-key-scoped turn to attribute them to.
     const requestBody = { bytes: wsDataToBytes(data), streamError: null };
     if (!(await authenticateApiKey(c, authenticatedRawKey))) {
-      sendError(socket, 401, {
+      turnFailure.fail(401, {
         type: 'authentication_error',
         code: 'invalid_api_key',
         message: 'Invalid API key.',
@@ -210,11 +234,11 @@ const handleClientMessage = async (
       : undefined;
     const message = validateClientMessage(parsed);
     if (message.type !== 'response.create') {
-      sendError(socket, 400, {
+      turnFailure.fail(400, {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
         message: `Unsupported WebSocket event type '${message.type}'.`,
-      }, eventId);
+      });
       return;
     }
 
@@ -222,6 +246,10 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
+    // Remember the continuation target before `expandPreviousResponseId`
+    // strips the field off the payload: a failing turn must evict exactly the
+    // id this turn referenced.
+    previousResponseId = payload.previous_response_id;
     ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
       downstreamAbortController,
@@ -240,15 +268,15 @@ const handleClientMessage = async (
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
-      // same body wrapped in our standard close-frame error shape so clients
+      // same body nested under the spec's WebSocket error envelope so clients
       // can still compare error.message byte-for-byte against upstream.
       if (error instanceof PreviousResponseNotFoundError) {
-        sendError(socket, 400, {
+        turnFailure.fail(400, {
           message: error.message,
           type: 'invalid_request_error',
           param: 'previous_response_id',
           code: 'previous_response_not_found',
-        }, eventId, ctx.dump);
+        });
         ctx.dump?.failed(error);
         ctx.dump?.finalize(400, []);
         return;
@@ -256,27 +284,27 @@ const handleClientMessage = async (
       throw error;
     }
 
-    await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx });
+    await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload, turnFailure });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
-      sendError(socket, 400, {
+      turnFailure.fail(400, {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
         message: error.message,
         param: error.param,
-      }, eventId);
+      });
       return;
     }
     if (error instanceof WebSocketClientMessageError) {
-      sendError(socket, 400, {
+      turnFailure.fail(400, {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
         message: error.message,
-      }, eventId);
+      });
       return;
     }
-    sendError(socket, 500, serverErrorEnvelope(error), eventId, ctx?.dump);
+    turnFailure.fail(500, serverErrorEnvelope(error));
     if (ctx !== undefined) {
       // Mid-attempt throws (interceptor bug, translation error, provider-layer JS
       // exception not represented as a ChatServeFailure) never reach the
@@ -289,6 +317,11 @@ const handleClientMessage = async (
     }
   }
 };
+
+interface ResponsesWsTurnFailure {
+  evict(): void;
+  fail(status: number, error: Record<string, unknown>): void;
+}
 
 class WebSocketClientMessageError extends Error {}
 
@@ -325,12 +358,14 @@ const respondResponsesWebSocket = async (input: {
   readonly isClosed: () => boolean;
   readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
   readonly ctx: ChatGatewayCtx;
+  readonly payload: CanonicalResponsesPayload;
+  readonly turnFailure: ResponsesWsTurnFailure;
 }): Promise<void> => {
-  const { socket, eventId, signal, isClosed, result, ctx } = input;
+  const { socket, eventId, signal, isClosed, result, ctx, payload, turnFailure } = input;
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId, ctx.dump);
+    turnFailure.fail(result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status));
     ctx.dump?.finalize(result.status, []);
     return;
   }
@@ -338,7 +373,7 @@ const respondResponsesWebSocket = async (input: {
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    sendError(socket, result.status, internalErrorEnvelope(result.error), eventId, ctx.dump);
+    turnFailure.fail(result.status, internalErrorEnvelope(result.error));
     ctx.dump?.finalize(result.status, []);
     return;
   }
@@ -346,9 +381,9 @@ const respondResponsesWebSocket = async (input: {
   const state = new SourceStreamState();
   let completion: StreamCompletion = 'error';
   try {
-    let terminalEvent: ResponsesStreamEvent | undefined;
+    let terminalEvent: ClientResponsesStreamEvent | undefined;
     const observed = observeResponsesWebSocketFrames(result.events, state, ctx);
-    const output = wrapNativeResponsesClientOutput(observed, ctx);
+    const output = wrapResponsesClientEgress(observed, ctx, payload);
     const iterator = output[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
@@ -366,15 +401,41 @@ const respondResponsesWebSocket = async (input: {
           return;
         }
 
-        const next = await nextFrameOrKeepAlive(pendingNext);
+        // An idle upstream is simply awaited: while a turn is still reasoning,
+        // nothing goes downstream. `ping` is not a member of the Responses
+        // streaming-event union, so the JSON keep-alive frame this replaces
+        // made any turn with a gap longer than the interval unvalidatable.
+        // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
+        //
+        // That keep-alive was not copied from the SSE transport; it was added
+        // (7345f2806) for a WebSocket-specific failure. Extended reasoning
+        // produces SSE `ping` events upstream, `parseResponsesStream` drops
+        // them, and the socket then carries no frames at all — at which point
+        // Cloudflare's edge, which closes a WebSocket idle in both directions
+        // and documents a client-side heartbeat as the remedy, kills it. A raw
+        // probe against a Cloudflare-proxied endpoint was torn down at TCP
+        // level at 125 s with no close frame and zero edge-originated pings; a
+        // second probe pinging every 30 s survived past 200 s.
+        // https://developers.cloudflare.com/network/websockets/
+        //
+        // The correct mechanism is a ping/pong control frame (RFC 6455 §5.5.2)
+        // and it is unreachable from a Worker. workerd's `WebSocket` exposes
+        // only accept/send/close/(de)serializeAttachment, and the kj layer
+        // beneath states the omission as a design decision: "Ping/Pong … are
+        // not exposed through this interface … The implementation is, however,
+        // expected to reply to Ping messages it receives."
+        // https://github.com/cloudflare/workerd/blob/26b5461b7dcc640bb16072f1ba6f2c6df82572ba/src/workerd/api/web-socket.h#L346-L394
+        // https://github.com/capnproto/capnproto/blob/e9fa5c7dc98192fc0dc0098ec770db68f997a938/c%2B%2B/src/kj/compat/http.h#L622-L631
+        // https://github.com/cloudflare/workerd/issues/3664
+        //
+        // So the keep-alive is delegated to the client, per Cloudflare's own
+        // guidance: a client protocol ping resets the edge's idle timer because
+        // the runtime auto-replies with a pong. What that knowingly gives up:
+        // on the Cloudflare target a long silent turn now loses its socket
+        // where it previously survived. The Node target is unaffected — nothing
+        // between the client and the process enforces an idle timeout.
+        const next = await pendingNext;
 
-        if (next.type === 'keep-alive') {
-          if (!sendJson(socket, { type: 'ping' }, eventId, ctx.dump)) {
-            stopForDownstream();
-            return;
-          }
-          continue;
-        }
         if (next.type === 'next-error') throw next.error;
         if (next.result.done) {
           completed = true;
@@ -388,22 +449,21 @@ const respondResponsesWebSocket = async (input: {
         const event = frame.event;
 
         // The wrapped terminal event arrives only after its item and snapshot
-        // writes have committed. Flush it immediately, then drain the remainder
-        // of the generator before emitting the WS-only `response.done` envelope,
-        // so `response.done` remains the stable signal that a follow-up message
-        // can reference the stored response.
+        // writes have committed, but the generator still has work to drain
+        // behind it. Buffer it here and flush it once the loop has run to
+        // completion, so the terminal event is the last frame of the turn and
+        // is itself the signal that a follow-up turn may reference this
+        // response. The spec defines no frame after it: WebSocket carries the
+        // same streaming event objects as streaming HTTP.
+        // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
         if (terminalEvent !== undefined) continue;
 
         if (isResponsesTerminalEvent(event)) {
-          if (!sendJson(socket, event, eventId, ctx.dump)) {
-            completion = 'cancel';
-            continue;
-          }
           terminalEvent = event;
           continue;
         }
 
-        if (!sendJson(socket, event, eventId, ctx.dump)) {
+        if (!sendResponsesEvent(socket, event, eventId, ctx.dump)) {
           stopForDownstream();
           return;
         }
@@ -419,24 +479,29 @@ const respondResponsesWebSocket = async (input: {
     if (terminalEvent === undefined) {
       throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
     }
-    const done = responseDoneSummary(terminalEvent);
-    if (done !== null && !sendJson(socket, { type: 'response.done', response: done }, eventId, ctx.dump)) {
+    if (!sendResponsesEvent(socket, terminalEvent, eventId, ctx.dump)) {
       completion = 'cancel';
       return;
     }
-    if (completion !== 'cancel') completion = 'eof';
+    completion = 'eof';
   } catch (error) {
     if (signal.aborted || isClosed()) {
       completion = 'cancel';
       return;
     }
     state.failed = true;
-    sendError(socket, 500, serverErrorEnvelope(error), eventId, ctx.dump);
+    turnFailure.fail(500, serverErrorEnvelope(error));
   } finally {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
-    if (failed) ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
-    else ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
+    if (failed) {
+      // A turn that ends on a `response.failed` terminal event answered the
+      // client with a streaming event rather than an error envelope, so the
+      // eviction the spec attaches to a failed continuation has to happen here
+      // instead of inside `turnFailure.fail`.
+      turnFailure.evict();
+      ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
+    } else ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
     ctx.dump?.finalize(failed ? 500 : 200, []);
     settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
   }
@@ -459,28 +524,19 @@ const observeResponsesWebSocketFrames = async function* (
   }
 };
 
-type WsFrameRaceResult =
-  | { type: 'frame'; result: IteratorResult<ProtocolFrame<ResponsesStreamEvent>> }
-  | { type: 'next-error'; error: unknown }
-  | { type: 'keep-alive' };
+type WsFrameResult =
+  | { type: 'frame'; result: IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>> }
+  | { type: 'next-error'; error: unknown };
 
-const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
+// The next frame is pulled before the current one is sent, so the pending
+// promise outlives the statement that created it; folding its rejection into a
+// value attaches a handler synchronously and keeps a mid-stream upstream
+// failure from surfacing as an unhandled rejection.
+const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>>>): Promise<WsFrameResult> =>
   pendingNext.then(
-    (result): WsFrameRaceResult => ({ type: 'frame', result }),
-    (error): WsFrameRaceResult => ({ type: 'next-error', error }),
+    (result): WsFrameResult => ({ type: 'frame', result }),
+    (error): WsFrameResult => ({ type: 'next-error', error }),
   );
-
-const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const keepAlive = new Promise<WsFrameRaceResult>(resolve => {
-    timeoutId = setTimeout(() => resolve({ type: 'keep-alive' }), DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
-  });
-  try {
-    return await Promise.race([pendingFrame, keepAlive]);
-  } finally {
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
-  }
-};
 
 const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
   const text = new TextDecoder().decode(body);
@@ -507,12 +563,6 @@ const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
   code: 'internal_error',
 });
 
-const responseDoneSummary = (event: ResponsesStreamEvent) => {
-  if (event.type !== 'response.completed' && event.type !== 'response.failed' && event.type !== 'response.incomplete') return null;
-  const { id, usage } = event.response;
-  return usage === undefined ? { id } : { id, usage };
-};
-
 const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, unknown> => {
   const source = body && typeof body === 'object' && 'error' in body && typeof (body as { error?: unknown }).error === 'object'
     ? (body as { error: Record<string, unknown> }).error
@@ -533,15 +583,30 @@ const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, u
   };
 };
 
+// "WebSocket failures MUST be sent as a JSON `error` envelope with a `status`
+// code and an `error.code`." The OpenAPI `WebSocketErrorEvent` schema pins the
+// required keys to exactly `type`, `status`, and `error`.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L166
 const sendError = (
   socket: ResponsesWebSocketSocket,
-  statusCode: number,
+  status: number,
   error: Record<string, unknown>,
   eventId?: string,
   dump?: DumpAccumulator | null,
 ): void => {
-  sendJson(socket, { type: 'error', status_code: statusCode, error }, eventId, dump);
+  sendJson(socket, { type: 'error', status, error }, eventId, dump);
 };
+
+// A turn's own frames go out through this entry, which accepts only a stream
+// event whose envelope has already passed the client-facing egress stage. The
+// WebSocket's own frames — the error envelope and the keep-alive — are not
+// stream events and keep the untyped `sendJson`.
+const sendResponsesEvent = (
+  socket: ResponsesWebSocketSocket,
+  event: ClientResponsesStreamEvent,
+  eventId?: string,
+  dump?: DumpAccumulator | null,
+): boolean => sendJson(socket, event, eventId, dump);
 
 const sendJson = (
   socket: ResponsesWebSocketSocket,

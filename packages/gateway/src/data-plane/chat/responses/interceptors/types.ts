@@ -12,11 +12,14 @@ export type { ResponsesInvocation };
 // caller's intent action was 'compact'. `modelIdentity`, `usage`, and
 // `performance` carry the per-turn attribution forward so the http layer
 // records the success path identically to streaming generate.
-export type ResponsesAttemptResult =
+// The non-streaming branch is parameterized because `/responses/compact`
+// answers with a different resource than `/responses` does, and the compact
+// route's own egress narrows it further.
+export type ResponsesAttemptResult<Result = ResponsesResult> =
   | ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>
   | {
     readonly type: 'result';
-    readonly result: ResponsesResult;
+    readonly result: Result;
     readonly modelIdentity: TelemetryModelIdentity;
     readonly usage: TokenUsage | null;
     readonly performance: EventResultMetadata['performance'];
