@@ -10,6 +10,12 @@ Impact levels:
 
 Hard and minor entries may include recommended actions; those actions do not need a separate advisory entry.
 
+## 2026-07-30 · minor
+
+### Responses no longer emits `ping` events on the Messages path
+
+The Messages-backed Responses translation no longer converts an upstream Anthropic `ping` keep-alive into a Responses `{ "type": "ping" }` event; it consumes the event and emits nothing. `ping` is not a member of the OpenResponses 2026-04-24 streaming-event union, so a client that validated the stream against the union previously failed any turn in which the upstream sent one. Clients that treated the frame as a liveness signal must stop expecting it. This affects both transports on the Messages path, SSE and WebSocket. The Responses SSE keep-alive itself is unchanged — it was always an SSE comment line, invisible to the event stream.
+
 ## 2026-07-24 · advisory
 
 ### Audit dump files created before payload-file tracking

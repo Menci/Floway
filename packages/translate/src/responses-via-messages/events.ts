@@ -403,8 +403,19 @@ export const translateMessagesEventToResponsesEvents = (event: MessagesStreamEve
 
     return responses.terminal(state, response);
   }
+  // Anthropic's `ping` is a transport keep-alive with no content semantics and
+  // no Responses counterpart; `ping` is not a member of the Responses
+  // streaming-event union:
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
+  // Dropping it in the translator rather than filtering at the gateway boundary
+  // keeps the rule with the producer — the native path already drops an
+  // upstream `ping` inside `parseResponsesStream`, so every producer of
+  // Responses events agrees, and every consumer of this translation sees the
+  // union, not only the two transports the gateway happens to serve. Consuming
+  // the event without emitting one also leaves the sequence numbering
+  // untouched, which a boundary filter could not do.
   case 'ping':
-    return responses.seq(state, [{ type: 'ping' }]);
+    return [];
   case 'error':
     return responses.seq(state, [
       {

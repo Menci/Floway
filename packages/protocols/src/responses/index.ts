@@ -1241,6 +1241,9 @@ type ResponsesStreamEventVariant =
     cause?: unknown;
     target_api?: string;
   }
+  // Ingress-only: some Responses upstreams send a keep-alive `ping`, so the
+  // parser must be able to name it, but it is not in the spec's streaming-event
+  // union and no Floway producer emits one downstream.
   | { type: 'ping' };
 
 // Either side of the Responses reasoning round trip: input echoes a prior

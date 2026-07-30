@@ -917,3 +917,31 @@ test('Messages fallback block changes the Responses serving model without becomi
   assertEquals(completed?.response.model, 'claude-opus-4-8');
   assertEquals(completed?.response.output, []);
 });
+
+test('an upstream ping is consumed without emitting a Responses event or advancing the sequence', () => {
+  const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
+
+  const before = translateMessagesEventToResponsesEvents(
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'text', text: '' },
+    } as MessagesStreamEvent,
+    state,
+  );
+  const lastBefore = before.at(-1)?.sequence_number;
+  if (typeof lastBefore !== 'number') throw new Error('expected the preceding event to carry a sequence_number');
+
+  assertEquals(translateMessagesEventToResponsesEvents({ type: 'ping' } as MessagesStreamEvent, state), []);
+
+  const after = translateMessagesEventToResponsesEvents(
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'text_delta', text: 'hi' },
+    } as MessagesStreamEvent,
+    state,
+  );
+
+  assertEquals(after[0]?.sequence_number, lastBefore + 1);
+});
