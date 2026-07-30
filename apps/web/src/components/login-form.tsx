@@ -80,7 +80,7 @@ export function LoginForm() {
 
   return (
     <Panel
-      className="w-[min(440px,100%)] !rounded-xl !p-7 max-[520px]:!p-5"
+      className="w-[min(440px,100%)] !p-7 max-[520px]:!p-5"
     >
       <header className="mb-9 grid justify-items-center gap-6 text-center">
         <FlowayLogo />
