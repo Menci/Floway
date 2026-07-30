@@ -2,7 +2,7 @@ import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
-import { billableUsageFromResponsesEvent } from './usage.ts';
+import { billableUsageFromResponsesEvent, billableUsageFromResponsesResult } from './usage.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared/telemetry/attribution.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
@@ -227,9 +227,18 @@ const providerResponsesResultToExecuteResult = async (
   if (!providerResult.ok) {
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
   }
+  // A native compaction is a turn the model actually ran and the upstream
+  // charged for, and its body states the counts. Without `finalMetadata` the
+  // attempt priced it at nothing: the client was shown the upstream's real
+  // usage while the request recorded zero tokens against the key.
+  const modelIdentity = telemetryModelIdentity(candidate, providerResult.modelKey);
+  const billableUsage = billableUsageFromResponsesResult(providerResult.result);
   return eventResult(
     syntheticEventsFromResult(providerResult.result),
-    telemetryModelIdentity(candidate, providerResult.modelKey),
-    { performance: context },
+    modelIdentity,
+    {
+      performance: context,
+      ...(billableUsage === null ? {} : { finalMetadata: Promise.resolve({ modelIdentity, billableUsage }) }),
+    },
   );
 };
