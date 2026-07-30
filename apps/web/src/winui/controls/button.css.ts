@@ -15,10 +15,13 @@
 // written on the root.
 //
 // Colour that a Fluent token already partitions the same way WinUI does stays
-// token redefinition: `--colorBrandBackground*` is read by the primary atoms
-// alone and `--colorNeutralForeground2*` by the chromeless ones, so
-// redefining those is both shorter and less likely to collide with a Griffel
-// atom than restating the property per state.
+// token redefinition: the checked ToggleButton's whole state table reads the
+// neutral selected and interactive ramps, so redefining those is both shorter
+// and less likely to collide with a Griffel atom than restating the property
+// per state. Anything a button's contents could also read is stated as the
+// property instead — the fill and the label of the appearances below reach
+// every descendant if handed over as a variable, and a caller is free to put
+// more than a label inside a button.
 //
 // The rules below stop at the boundary of a subtree that opts out of the layer:
 // the composer and transcript of the playground are designed against Fluent's
@@ -28,9 +31,15 @@
 import { notOptedOut } from '../tokens';
 
 // The two chromeless appearances, minus the checked state, which paints itself
-// from the accent family instead.
-const chromeless = ['subtle', 'transparent']
-  .map(appearance => `.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='${appearance}']:not([aria-pressed='true']):not([aria-checked='true'])`)
+// from the accent family instead, and minus the disabled one, which takes the
+// same disabled foreground every other appearance takes.
+//
+// The state is appended to each appearance rather than to the joined string.
+// A suffix on a selector list attaches to its last item alone, so appending to
+// the join silently left every `subtle` button matched by whichever rule came
+// last -- the pressed one -- in every state it has.
+const chromeless = (state = '') => ['subtle', 'transparent']
+  .map(appearance => `.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='${appearance}']:not([aria-pressed='true']):not([aria-checked='true']):not(:disabled):not([aria-disabled='true'])${state}`)
   .join(', ');
 
 export const buttonCss = `
@@ -111,13 +120,30 @@ export const buttonCss = `
 }
 
 /* The primary appearance is WinUI's AccentButtonStyle, whose interaction steps
-   are the rest accent at 90% and 80% opacity rather than separate hues. The
-   rest fill and the on-accent label already agree through the brand tokens.
+   are the rest accent at 90% and 80% opacity rather than separate hues — so
+   all three have to come from one colour, and the rest step is stated here
+   alongside them. Left to Fluent it is the product's brand fill, which is a
+   different blue from the accent the other two steps take and from the accent
+   a checked ToggleButton takes; in dark that put WinUI's on-accent label, which
+   is black against a light accent, on a dark brand fill.
+
+   Each step is a declaration rather than a redefinition of the brand token
+   Fluent reads, because a custom property handed to the button root reaches
+   everything inside it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L103-L109
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L5-L11 */
-.fui-Button.fui-Button${notOptedOut} {
-  --colorBrandBackgroundHover: var(--winui-accent-fill-secondary);
-  --colorBrandBackgroundPressed: var(--winui-accent-fill-tertiary);
+.fui-Button.fui-Button[data-winui-appearance='primary']${notOptedOut} {
+  background-color: var(--winui-accent-fill-default);
+  border-color: var(--winui-accent-control-elevation-border-color);
+}
+
+.fui-Button.fui-Button[data-winui-appearance='primary']:hover${notOptedOut} {
+  background-color: var(--winui-accent-fill-secondary);
+}
+
+.fui-Button.fui-Button[data-winui-appearance='primary']:hover:active${notOptedOut} {
+  background-color: var(--winui-accent-fill-tertiary);
+  border-color: var(--winui-control-fill-transparent);
 }
 
 /* An accent button carries the on-accent elevation stroke, and it drops to the
@@ -127,14 +153,6 @@ export const buttonCss = `
    tokens, so they are restated here rather than redefined.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L106-L114
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L8-L16 */
-.fui-Button.fui-Button[data-winui-appearance='primary']${notOptedOut} {
-  border-color: var(--winui-accent-control-elevation-border-color);
-}
-
-.fui-Button.fui-Button[data-winui-appearance='primary']:hover:active${notOptedOut} {
-  border-color: var(--winui-control-fill-transparent);
-}
-
 .fui-Button.fui-Button[data-winui-appearance='primary']:disabled${notOptedOut},
 .fui-Button.fui-Button[data-winui-appearance='primary'][aria-disabled='true']${notOptedOut} {
   background-color: var(--winui-accent-fill-disabled);
@@ -157,11 +175,11 @@ export const buttonCss = `
    naming its own wins over it, which is the distinction that was missing.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L21-L23 */
-${chromeless}, ${chromeless}:hover {
+${chromeless()}, ${chromeless(':hover')} {
   color: var(--winui-text-fill-primary);
 }
 
-${chromeless}:hover:active {
+${chromeless(':hover:active')} {
   color: var(--winui-text-fill-secondary);
 }
 
