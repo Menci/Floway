@@ -653,8 +653,6 @@ test('buildTargetRequest gives a schema-less function tool the empty object sche
     tools: [{ type: 'function', name: 'ping' }],
   });
 
-  // Forwarding an absent `parameters` verbatim put `input_schema: undefined` on
-  // the wire, which Anthropic rejects with a 400 for the whole request.
   assertEquals(result.target.tools, [
     {
       name: 'ping',

@@ -333,6 +333,18 @@ test('buildTargetRequest filters out builtin tools that have no Chat Completions
   assertEquals(result.target.tools![1].function.description, undefined);
 });
 
+test('buildTargetRequest omits parameters and strict for a schema-less function tool', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'Hi' }],
+    tools: [{ type: 'function', name: 'ping' }],
+  });
+
+  // `toEqual` treats an undefined-valued key as absent, so the keys are
+  // compared directly: emitting `parameters: undefined` is the regression.
+  assertEquals(Object.keys(result.target.tools![0].function), ['name']);
+});
+
 test('buildTargetRequest returns undefined tools when only builtin tools are present', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',

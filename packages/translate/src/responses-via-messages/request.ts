@@ -352,14 +352,15 @@ const translateTools = (
         name: tool.name,
         // Responses spells "this tool has no description" as an explicit
         // `null`; Messages has no such spelling, so the key is dropped.
-        ...(tool.description === undefined || tool.description === null ? {} : { description: tool.description }),
+        ...(tool.description == null ? {} : { description: tool.description }),
         // Messages has no spelling for "no schema" either: `input_schema` is
-        // required and must be a JSON Schema object, so an unspecified
-        // Responses `parameters` becomes the empty object schema. Forwarding
-        // `undefined` made Anthropic reject the whole request with a 400.
-        // https://docs.claude.com/en/api/messages
+        // required, and forwarding `undefined` makes Anthropic reject the whole
+        // request with a 400. The empty object schema is Anthropic's own
+        // spelling for a tool that takes no arguments.
+        // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1845-L1852
+        // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/examples/managed-agents-self-hosted-sandbox-worker.ts#L34-L41
         input_schema: tool.parameters ?? { type: 'object', properties: {} },
-        ...(tool.strict === undefined || tool.strict === null ? {} : { strict: tool.strict }),
+        ...(tool.strict == null ? {} : { strict: tool.strict }),
       });
       continue;
     }
