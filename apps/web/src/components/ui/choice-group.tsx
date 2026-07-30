@@ -63,13 +63,23 @@ const useStyles = makeStyles({
   // is 0, so the pill spans the item it marks rather than only its label. It is
   // one element for the group instead of one per item, because WinUI slides it
   // between items and a pseudo-element cannot outlive the item it belongs to.
-  pill: {
-    backgroundColor: 'var(--winui-accent-fill-default)',
-    borderRadius: '2px',
+  // Two elements, not one. CSS composes the standalone `scale` property before
+  // `transform`, so a translation written alongside a scale is multiplied by it
+  // and the pill travels the scaled distance instead of the real one. Nesting
+  // keeps each transform in its own coordinate system, which is also how the
+  // navigation indicator is built.
+  pillTrack: {
     bottom: '4px',
     height: '3px',
     pointerEvents: 'none',
     position: 'absolute',
+  },
+  pill: {
+    backgroundColor: 'var(--winui-accent-fill-default)',
+    borderRadius: '2px',
+    display: 'block',
+    height: '100%',
+    width: '100%',
   },
   pillDisabled: { backgroundColor: 'var(--winui-accent-fill-disabled)' },
   input: {
@@ -103,6 +113,7 @@ export function ChoiceGroup({
   const styles = useStyles();
   const name = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLSpanElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
   const previousRef = useRef<PillBox | null>(null);
   const [box, setBox] = useState<PillBox | null>(null);
@@ -121,10 +132,11 @@ export function ChoiceGroup({
   }, [items, value]);
 
   useEffect(() => {
+    const track = trackRef.current;
     const pill = pillRef.current;
     const previous = previousRef.current;
     previousRef.current = box;
-    if (!pill || !box || !previous) return;
+    if (!track || !pill || !box || !previous) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     const distance = box.left - previous.left;
@@ -139,16 +151,16 @@ export function ChoiceGroup({
     const forward = distance > 0;
     const peak = Math.abs(distance) / dimension + (forward ? 1 : beginScale);
 
-    pill.animate([
+    track.animate([
       { transform: `translateX(${forward ? -distance : -distance + dimension * (beginScale - 1)}px)`, easing: STEP_AT_SNAP },
       { transform: 'translateX(0px)', offset: POSITION_SNAP },
       { transform: 'translateX(0px)' },
     ], { duration: DURATION_MS });
 
     pill.animate([
-      { scale: `${beginScale} 1`, easing: STRETCH_EASING },
-      { scale: `${peak} 1`, offset: POSITION_SNAP, easing: SETTLE_EASING },
-      { scale: '1 1' },
+      { transform: `scaleX(${beginScale})`, easing: STRETCH_EASING },
+      { transform: `scaleX(${peak})`, offset: POSITION_SNAP, easing: SETTLE_EASING },
+      { transform: 'scaleX(1)' },
     ], { duration: DURATION_MS });
 
     pill.animate([
@@ -157,6 +169,9 @@ export function ChoiceGroup({
       { transformOrigin: forward ? 'right' : 'left' },
     ], { duration: DURATION_MS });
     pill.style.transformOrigin = forward ? 'right' : 'left';
+    // The stretch reaches past the track it lives in, which is only as wide as
+    // the option it lands on.
+    track.style.overflow = 'visible';
   }, [box]);
 
   return <div aria-label={ariaLabel} className={styles.root} ref={rootRef} role="radiogroup">
@@ -172,11 +187,11 @@ export function ChoiceGroup({
       />
       <span>{item.label}</span>
     </label>)}
-    {box && <span
-      aria-hidden
-      className={selected?.disabled ? `${styles.pill} ${styles.pillDisabled}` : styles.pill}
-      ref={pillRef}
-      style={{ left: box.left, width: box.width }}
-    />}
+    {box && <span aria-hidden className={styles.pillTrack} ref={trackRef} style={{ left: box.left, width: box.width }}>
+      <span
+        className={selected?.disabled ? `${styles.pill} ${styles.pillDisabled}` : styles.pill}
+        ref={pillRef}
+      />
+    </span>}
   </div>;
 }
