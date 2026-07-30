@@ -1,4 +1,4 @@
-import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
+import { AddRegular, DeleteRegular, WarningRegular } from '@fluentui/react-icons';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -24,7 +24,7 @@ import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
 
-const { Badge, Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
+const { Button, Divider, Field, List, ListItem, MessageBar, MessageBarBody, Option, Text, Toolbar, ToolbarButton, Tooltip, makeStyles } = fluentComponents;
 const TIGHT_STACK_CLASS = 'grid gap-1';
 const usePricingStyles = makeStyles({
   // Selection is drawn by the WinUI layer, which marks a selected row with the
@@ -183,7 +183,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
             <span className="grid min-w-0 gap-0.5 text-left">
               <span className="flex min-w-0 items-center gap-2">
                 <Text truncate size={300} weight="semibold" title={displayLabel}>{displayLabel}</Text>
-                {issues.some(issue => issueAffectsEntry(issue, index)) && <Badge appearance="filled" aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} color="danger">!</Badge>}
+                {issues.some(issue => issueAffectsEntry(issue, index)) && <WarningRegular aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} fontSize={16} />}
               </span>
               <Text truncate size={200} className="text-fui-fg2">
                 {index === baseIndex
