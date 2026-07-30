@@ -56,10 +56,11 @@ const responsesMessageEvents = (item: ResponsesOutputMessage, outputIndex: numbe
       item: {
         type: 'message',
         id: itemId,
+        status: 'in_progress',
         role: 'assistant',
         content: item.content.map(part =>
           part.type === 'output_text'
-            ? { type: 'output_text', text: '' }
+            ? { type: 'output_text', text: '', annotations: [] }
             : { type: 'refusal', refusal: '' }),
       },
     },
@@ -72,7 +73,7 @@ const responsesMessageEvents = (item: ResponsesOutputMessage, outputIndex: numbe
         item_id: itemId,
         output_index: outputIndex,
         content_index: contentIndex,
-        part: { type: 'output_text', text: '' },
+        part: { type: 'output_text', text: '', annotations: [] },
       });
 
       if (part.text.length > 0) {

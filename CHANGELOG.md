@@ -35,11 +35,20 @@ The Responses WebSocket transport no longer sends a trailing `{ "type": "respons
 ### Responses WebSocket error frames carry `status` instead of `status_code`
 
 The JSON error envelope sent on the Responses WebSocket transport renamed its HTTP-style status key from `status_code` to `status`, matching the OpenResponses 2026-04-24 `WebSocketErrorEvent` contract. The nested `error` object (`type`, `code`, `message`, `param`) is unchanged, so clients that only read `error.code` need no adaptation; clients that read the numeric status off the envelope must read `status`.
+
 ## 2026-07-30 · minor
 
 ### Responses SSE streams now end with the `[DONE]` sentinel
 
 Streaming `POST /v1/responses` responses now terminate with the literal `data: [DONE]` event, matching the streaming contract already followed by Chat Completions and Completions. Standard OpenAI SDKs already recognize the sentinel and stop there. A hand-written client that feeds every `data:` payload on the Responses stream straight into a JSON parser will now hit a parse failure on the final event and must skip `[DONE]` instead.
+
+## 2026-07-30 · minor
+
+### Translated Responses output items gain `status` and `annotations`
+
+Assistant `message` output items produced by the Responses-via-Chat-Completions and Responses-via-Messages paths now carry `status` (`in_progress` on `response.output_item.added`, `completed` on `response.output_item.done` and in the terminal `output`), and their `output_text` content parts now carry `annotations`. Both keys are required by the Responses item schema and were already present on the native Responses path; clients that validate items strictly were rejecting the translated ones.
+
+Responses item identity is hashed over the whole item JSON with no key filtering, so the two new keys change the hash of every translated-path assistant message. Conversations already in flight across the deploy miss their affinity / Stateful Responses item lookup for one turn and fall back to normal candidate resolution; the turn still succeeds, and new conversations are unaffected. No operator action is required.
 
 ## 2026-07-24 · advisory
 

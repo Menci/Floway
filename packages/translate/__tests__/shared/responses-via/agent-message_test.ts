@@ -14,7 +14,7 @@ const agentMessage = (content: ResponsesInputAgentMessageItem['content']): Respo
 test('agentMessageContent normalizes readable beta content into Responses input parts', () => {
   assertEquals(agentMessageContent({
     ...agentMessage([
-      { type: 'output_text', text: '<output>&' },
+      { type: 'output_text', text: '<output>&', annotations: [] },
       { type: 'text', text: 'visible' },
       { type: 'summary_text', text: 'summary' },
       { type: 'reasoning_text', text: 'reasoning' },

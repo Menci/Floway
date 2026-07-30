@@ -342,7 +342,7 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
               id: 'msg_upstream',
               role: 'assistant',
               status: 'completed',
-              content: [{ type: 'output_text', text: 'done' }],
+              content: [{ type: 'output_text', text: 'done', annotations: [] }],
             }],
             output_text: 'done',
             usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
@@ -588,7 +588,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `answer ${turn}` }],
+            content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -640,7 +640,7 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       assertEquals(secondBody.previous_response_id, undefined);
       assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
         ['message', 'user', 'first question'],
-        ['message', 'assistant', [{ type: 'output_text', text: 'answer 1' }]],
+        ['message', 'assistant', [{ type: 'output_text', text: 'answer 1', annotations: [] }]],
         ['message', 'user', 'follow-up'],
       ]);
 
@@ -798,7 +798,7 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `answer ${turn}` }],
+            content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -965,7 +965,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `turn ${turn}` }],
+            content: [{ type: 'output_text', text: `turn ${turn}`, annotations: [] }],
           }],
         });
       }
@@ -1009,7 +1009,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       // appended verbatim.
       assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
         ['message', 'user', 'turn one input'],
-        ['message', 'assistant', [{ type: 'output_text', text: 'turn 1' }]],
+        ['message', 'assistant', [{ type: 'output_text', text: 'turn 1', annotations: [] }]],
         ['message', 'user', 'turn two input'],
       ]);
 
