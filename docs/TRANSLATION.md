@@ -600,8 +600,9 @@ Known losses:
 - `input_file` message/tool-output content and assistant-side files or images
   have no Chat counterpart and are rejected.
 - File-id-only images cannot be materialized by the pure translator and are
-  rejected. Chat image detail supports only `auto`, `low`, and `high`; other
-  Responses values such as `original` are rejected.
+  rejected. Image `detail` is forwarded verbatim and the target decides what it
+  accepts; an absent or null value becomes an omitted key, which both protocols
+  read as `auto`.
 - opaque Responses reasoning state is not requested, translated, or preserved on
   Chat fallback paths.
 

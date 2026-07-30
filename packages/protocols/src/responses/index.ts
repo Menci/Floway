@@ -150,11 +150,23 @@ export interface ResponsesInputText {
 }
 
 export interface ResponsesInputImage {
-  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3947-L3979
+  // OpenAI splits this part in two: `ResponseInputImageContent` /
+  // `InputImageContentParamAutoParam` is the request-side shape and leaves
+  // `detail` optional and nullable, while `ResponseInputImage` /
+  // `InputImageContent` requires it and is the response-side echo. This
+  // interface types requests, so it follows the former. Omitting `detail`
+  // means `auto` on both Responses and Chat Completions.
+  // https://web.archive.org/web/20260730100926/https://developers.openai.com/api/docs/guides/images-vision.md
+  // Request side:
+  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4000-L4029
+  // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L67923-L67961
+  // Response side:
+  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3951-L3980
+  // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L65928-L65961
   type: 'input_image';
   image_url?: string | null;
   file_id?: string | null;
-  detail: 'auto' | 'low' | 'high' | 'original' | (string & {});
+  detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null;
   prompt_cache_breakpoint?: ResponsesPromptCacheBreakpoint | null;
 }
 
@@ -391,7 +403,7 @@ export type ResponsesAgentMessageContent =
   | ResponsesInputFile
   | { type: 'text' | 'summary_text' | 'reasoning_text'; text: string }
   | { type: 'refusal'; refusal: string }
-  | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail: 'auto' | 'low' | 'high' | 'original' | (string & {}) }
+  | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null }
   | { type: 'encrypted_content'; encrypted_content: string }
   | (Record<string, unknown> & { type: string });
 
