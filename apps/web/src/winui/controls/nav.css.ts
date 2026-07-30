@@ -100,24 +100,22 @@ export const navCss = `
   --colorNeutralForeground2: var(--winui-text-fill-disabled);
 }
 
-/* Focus. Fluent draws a single 2px ring as an outline pulled two pixels inward,
-   so it occupies the band from the border box to 2px inside it; WinUI draws two
-   concentric rings, the outer one over an inner 1px stroke. Re-pointing the
-   token Fluent's outline reads supplies the outer ring. The inner one is an
-   inset shadow rather than a second outline, since the item has no border box
-   of its own to carry it: spread to 3px it fills the first three pixels, of
-   which the outline then repaints the first two, leaving exactly the 2-3px band
-   the inner stroke occupies in WinUI. The item-shaped surfaces elsewhere in the
-   layer spread their inner ring to 1px instead, because Fluent draws their
-   outline outside the border box and leaves the first pixel unpainted; the
-   inward outline here is what makes this one three.
+/* Focus. Fluent pulls its 2px outline two pixels inward, so the ring eats the
+   first three pixels of the item and a focused item's fill reads smaller than
+   the same item's fill under the pointer. WinUI has no such difference: a
+   FocusVisualMargin puts the visual outside the control, and the fill it
+   surrounds is the one every other state paints. The offset therefore moves
+   outward, the outer ring goes with it, and the inner stroke sits against the
+   control as a 1px inset -- the same construction every other item-shaped
+   surface in this layer uses.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L258-L259 */
 .fui-NavItem.fui-NavItem[data-fui-focus-visible],
 .fui-NavSubItem.fui-NavSubItem[data-fui-focus-visible],
 .fui-NavCategoryItem.fui-NavCategoryItem[data-fui-focus-visible],
 .fui-AppItem.fui-AppItem[data-fui-focus-visible] {
   --colorStrokeFocus2: var(--winui-focus-stroke-outer);
-  box-shadow: inset 0 0 0 3px var(--winui-focus-stroke-inner);
+  box-shadow: inset 0 0 0 1px var(--winui-focus-stroke-inner);
+  outline-offset: 1px;
 }
 
 /* A selected item's icon keeps the primary text fill in WinUI instead of taking
