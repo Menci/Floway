@@ -24,6 +24,7 @@ import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
+import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { UpstreamAccessControl } from '../components/upstreams/upstream-access-control';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
@@ -94,13 +95,9 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const [data, setData] = useState<UsersPageData>(loaderData);
   const [pageError, setPageError] = useState<string | null>(loaderData.error);
   const [loading, setLoading] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<ControlPlaneUser | null>(null);
-  const [passwordOpen, setPasswordOpen] = useState(false);
-  const [passwordTarget, setPasswordTarget] = useState<ControlPlaneUser | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<ControlPlaneUser | null>(null);
+  const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; user: ControlPlaneUser }>();
+  const passwordDialog = useDialogInvocation<ControlPlaneUser>();
+  const deleteDialog = useDialogInvocation<ControlPlaneUser>();
   const [deleting, setDeleting] = useState(false);
 
   const reload = async () => {
@@ -140,7 +137,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       setPageError(result.error.message);
       return;
     }
-    setDeleteOpen(false);
+    deleteDialog.close();
     await reload();
   };
 
@@ -168,7 +165,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           createLabel={t('dashboard.users.actions.create')}
           detail={t('dashboard.users.count', { count: data.users.length })}
           disabled={deleting}
-          onCreate={() => setCreateOpen(true)}
+          onCreate={() => editorDialog.open({ kind: 'create' })}
           onRefresh={() => void reload()}
           refreshLabel={t('dashboard.users.actions.refresh')}
           refreshing={loading}
@@ -177,51 +174,51 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         <UsersTable
           actorId={actor.id}
           disabled={loading || deleting}
-          onDelete={target => { setDeleteTarget(target); setDeleteOpen(true); }}
-          onEdit={target => { setEditTarget(target); setEditOpen(true); }}
-          onResetPassword={target => { setPasswordTarget(target); setPasswordOpen(true); }}
+          onDelete={deleteDialog.open}
+          onEdit={user => editorDialog.open({ kind: 'edit', user })}
+          onResetPassword={passwordDialog.open}
           users={data.users}
         />
       </ResourceListPanel>
 
-      <UserDialog
+      {editorDialog.invocation?.value.kind === 'create' && <UserDialog
         actorId={actor.id}
+        key={editorDialog.invocation.key}
         mode="create"
         models={data.models}
-        onOpenChange={setCreateOpen}
+        onOpenChange={open => { if (!open) editorDialog.close(); }}
         onSaved={() => afterSaved()}
-        open={createOpen}
         upstreams={data.upstreams}
-      />
-      {editTarget && <UserDialog
+      />}
+      {editorDialog.invocation?.value.kind === 'edit' && <UserDialog
         actorId={actor.id}
+        key={editorDialog.invocation.key}
         mode="edit"
         models={data.models}
-        onOpenChange={setEditOpen}
+        onOpenChange={open => { if (!open) editorDialog.close(); }}
         onSaved={afterSaved}
-        open={editOpen}
         upstreams={data.upstreams}
-        user={editTarget}
+        user={editorDialog.invocation.value.user}
       />}
-      {passwordTarget && <PasswordDialog
-        onOpenChange={setPasswordOpen}
+      {passwordDialog.invocation && <PasswordDialog
+        key={passwordDialog.invocation.key}
+        onOpenChange={open => { if (!open) passwordDialog.close(); }}
         onSaved={reload}
-        open={passwordOpen}
-        user={passwordTarget}
+        user={passwordDialog.invocation.value}
       />}
-      {deleteTarget && <ConfirmDialog
+      {deleteDialog.invocation && <ConfirmDialog
         actionLabel={deleting
           ? t('dashboard.users.actions.deleting')
           : t('dashboard.users.actions.delete')}
         busy={deleting}
+        key={deleteDialog.invocation.key}
         message={t('dashboard.users.delete.message', {
-          username: deleteTarget.username,
+          username: deleteDialog.invocation.value.username,
         })}
         onConfirm={() => {
-          if (!deleting) void deleteUser(deleteTarget);
+          if (!deleting) void deleteUser(deleteDialog.invocation!.value);
         }}
-        onOpenChange={open => { if (!deleting) setDeleteOpen(open); }}
-        open={deleteOpen}
+        onOpenChange={open => { if (!deleting && !open) deleteDialog.close(); }}
         title={t('dashboard.users.delete.title')}
       />}
     </div>
