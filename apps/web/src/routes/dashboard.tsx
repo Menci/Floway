@@ -75,8 +75,8 @@ export default function Dashboard({}: Route.ComponentProps) {
           noTabIndex
         >
           <main id="dashboard-main" tabIndex={-1} className={workspace
-            ? 'h-full min-h-0 p-[22px_28px_28px] max-[680px]:p-4'
-            : 'min-h-full p-[22px_28px_28px] max-[680px]:p-4'}>
+            ? 'h-full min-h-0 p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'
+            : 'min-h-full p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'}>
             <Outlet context={{ user } satisfies DashboardOutletContext} />
           </main>
         </ScrollArea>

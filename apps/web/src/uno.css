@@ -8,6 +8,20 @@
    the leading had collapsed onto the size. Each step is paired with the
    proportional leading its size sits closest to, so a mono cell lines up with
    the ordinary text in the same row. */
+/* The inset a route's content keeps from the edge of its region. A layout that
+   puts two panels side by side separates them by the same measure, so the space
+   around the page and the space between its panels read as one rhythm rather
+   than two. */
+:root {
+  --floway-page-inset: 28px;
+}
+
+@media (max-width: 680px) {
+  :root {
+    --floway-page-inset: 16px;
+  }
+}
+
 :root {
   --floway-font-size-mono: 13px;
   --floway-line-height-mono: 20px;
