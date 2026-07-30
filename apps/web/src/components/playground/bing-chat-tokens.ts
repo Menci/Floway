@@ -47,12 +47,20 @@ export const bingAccentForegroundHover = 'light-dark(#1543CD, #A2B7F4)';
 // foreground, and what sits under this text is Bing's accent, not WinUI's.
 export const bingOnAccentForeground = '#FFFFFF';
 
-// Body2 — the type of both the composer's field and the broom button's label.
-// `--cib-type-body2-*`; the family is inherited from the SERP host, so the
-// playground keeps its own.
-export const bingBody2FontSize = '16px';
-export const bingBody2LineHeight = '24px';
-export const bingBody2FontWeight = 400;
+// The composer's field, the broom button's label and a message's body text are
+// one step of the ramp — Body2, `--cib-type-body2-*`, 16px on a 24px line. The
+// rendered answer sits one step above them at 18px/24px. What Bing was really
+// saying is that you type at the size you read at, and the answer is the one
+// thing set larger.
+//
+// Body2 was also the browser's default size: `cib-serp` sets a family and no
+// size, so 16px was simply the root. The dashboard's root is 14px, so the same
+// ramp lands one step lower here and the composer takes Body1 — 14px on a 20px
+// line, Bing's own next step down. The pixel count is not the thing being
+// preserved; the equality with the message body is.
+export const bingComposerFontSize = '14px';
+export const bingComposerLineHeight = '20px';
+export const bingComposerFontWeight = 400;
 
 // `components.actionBar.searchBorderRadius` and
 // `measurements.borderRadius.borderRadiusXLarge`. The corner is a state, not a
@@ -67,10 +75,13 @@ export const bingComposerRadiusFilled = '12px';
 export const bingComposerTransitionDuration = '187ms';
 export const bingComposerTransitionEasing = 'cubic-bezier(0, 0, 0, 1)';
 
-// `.main-container` padding, `.button-compose`/`.controls-*` geometry. One line
-// of Body2 plus this padding is exactly the 48px resting height, and a 36px
-// button in an 8px/6px gutter centres on that same 48px.
-export const bingComposerPaddingBlock = '13px 11px';
+// `.main-container` padding, `.button-compose`/`.controls-*` geometry. 48px is
+// the number the rest of the bar is built on — the compose button is 48px, and
+// a 36px control in a 6px/8px gutter fills exactly 48px — so the padding is
+// what absorbs the ramp shift: Bing's `13px 11px` around a 24px line, ours
+// around a 20px one, keeping both the height and the optical asymmetry that
+// seats a single line slightly above centre.
+export const bingComposerPaddingBlock = '15px 13px';
 export const bingComposerButtonSize = '36px';
 export const bingComposerGutterPadding = '6px 8px';
 export const bingComposeButtonSize = '48px';
