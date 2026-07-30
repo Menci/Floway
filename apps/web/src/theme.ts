@@ -16,16 +16,22 @@ export const monospaceStack = "'Maple Mono', ui-monospace, SFMono-Regular, Menlo
 // `baseFontStack` stays the only copy of it.
 export const fontFamilyCriticalCss = `:root { --fontFamilyBase: ${baseFontStack}; } body { font-family: var(--fontFamilyBase); }`;
 
+// The 200 step is Fluent's own 12/16 rather than the 14/20 this file carried in
+// from the previous dashboard. At 14/20 it was byte-identical to the 300 step,
+// so every caller that asked for the smaller size got the body size instead and
+// the distinction meant nothing. WinUI states the same pair for its caption --
+// the size a secondary line under a heading is set in.
+// https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/typography
 const fontOverrides = {
   fontFamilyBase: baseFontStack,
   fontFamilyMonospace: monospaceStack,
   fontSizeBase100: '10px',
-  fontSizeBase200: '14px',
+  fontSizeBase200: '12px',
   fontSizeBase300: '14px',
   fontSizeBase400: '16px',
   fontSizeBase500: '18px',
   fontSizeBase600: '22px',
-  lineHeightBase200: '20px',
+  lineHeightBase200: '16px',
 } as const;
 
 export const flowayLightTheme = { ...webLightTheme, ...fontOverrides };
