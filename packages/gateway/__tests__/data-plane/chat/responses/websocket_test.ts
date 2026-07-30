@@ -537,8 +537,24 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
       status_code: 400,
       error: {
         type: 'invalid_request_error',
+        code: 'missing_required_parameter',
+        message: "Missing required parameter: 'model'.",
+        param: 'model',
+      },
+    }]);
+
+    const invalidInput = waitForMessages(client, messages => messages.length === 1);
+    client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_input', response: { model: 'test-model' } }));
+
+    assertEquals(await invalidInput, [{
+      type: 'error',
+      event_id: 'evt_input',
+      status_code: 400,
+      error: {
+        type: 'invalid_request_error',
         code: 'invalid_request_error',
-        message: 'response.create requires response.model to be a non-empty string.',
+        message: 'Responses input must be a string or an array.',
+        param: 'input',
       },
     }]);
 
