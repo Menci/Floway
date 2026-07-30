@@ -350,9 +350,16 @@ const translateTools = (
     if (tool.type === 'function') {
       out.push({
         name: tool.name,
-        description: tool.description,
-        input_schema: tool.parameters,
-        strict: tool.strict,
+        // Responses spells "this tool has no description" as an explicit
+        // `null`; Messages has no such spelling, so the key is dropped.
+        ...(tool.description === undefined || tool.description === null ? {} : { description: tool.description }),
+        // Messages has no spelling for "no schema" either: `input_schema` is
+        // required and must be a JSON Schema object, so an unspecified
+        // Responses `parameters` becomes the empty object schema. Forwarding
+        // `undefined` made Anthropic reject the whole request with a 400.
+        // https://docs.claude.com/en/api/messages
+        input_schema: tool.parameters ?? { type: 'object', properties: {} },
+        ...(tool.strict === undefined || tool.strict === null ? {} : { strict: tool.strict }),
       });
       continue;
     }
