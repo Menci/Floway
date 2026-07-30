@@ -183,6 +183,8 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   const completedMatch = body.match(/"id":"(resp_[A-Za-z0-9_-]+)"/);
   assert(completedMatch !== null, 'expected a source-owned response id in the SSE body');
   assert(completedMatch[1] !== 'resp_test', 'expected the source boundary to replace the upstream response id');
+  assertEquals(body.split('data: [DONE]').length - 1, 1);
+  assert(body.endsWith('data: [DONE]\n\n'), 'expected the SSE body to terminate on the [DONE] sentinel');
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
@@ -351,6 +353,32 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
   assertEquals(body.status, 'completed');
 });
 
+// Every key `ResponseResource.required` lists.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
+const REQUIRED_ENVELOPE_KEYS = [
+  'id', 'object', 'created_at', 'completed_at', 'status', 'incomplete_details', 'model',
+  'previous_response_id', 'instructions', 'output', 'error', 'tools', 'tool_choice',
+  'truncation', 'parallel_tool_calls', 'text', 'top_p', 'presence_penalty',
+  'frequency_penalty', 'top_logprobs', 'temperature', 'reasoning', 'usage',
+  'max_output_tokens', 'max_tool_calls', 'store', 'background', 'service_tier',
+  'metadata', 'safety_identifier', 'prompt_cache_key',
+];
+
+test('POST /v1/responses answers a translated-shape upstream with a complete response resource', async () => {
+  installRepo();
+  queueCompletedResponse('resp_complete');
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello' }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(REQUIRED_ENVELOPE_KEYS.filter(key => !(key in body)), []);
+});
+
 test('POST /v1/responses returns 502 when a non-streaming output item cannot be persisted', async () => {
   const repo = installRepo();
   const persistence = vi.spyOn(repo.responsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
@@ -391,6 +419,7 @@ test('POST /v1/responses terminates an SSE stream with error when an output item
     assert(body.includes('simulated item persistence failure'));
     assert(!body.includes('event: response.output_item.done'));
     assert(!body.includes('event: response.completed'));
+    assert(!body.includes('[DONE]'), 'expected a failed stream to end on the error frame, not the sentinel');
   } finally {
     persistence.mockRestore();
   }
@@ -449,6 +478,52 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
   assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id), 0), []);
 });
 
+// `CompactResource.required` — `id`, `object`, `output`, `created_at`, `usage`,
+// with both usage breakdowns required whenever `usage` is an object. It defines
+// none of the response resource's request echoes.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json
+test('POST /v1/responses/compact answers the compaction resource, not the response resource', async () => {
+  installRepo();
+  const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
+  const compactionResult: ResponsesResult = {
+    ...makeResponsesResult(),
+    object: 'response.compaction',
+    output: [compactionItem] as unknown as ResponsesResult['output'],
+    usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
+  };
+  const callResponses = vi.fn(async (_model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+    if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+  });
+  queueResolution([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses/compact', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [{ type: 'message', role: 'user', content: 'kept' }],
+      store: false,
+      temperature: 0.3,
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(['id', 'object', 'output', 'created_at', 'usage'].filter(key => !(key in body)), []);
+  assertEquals(typeof body.created_at, 'number');
+  assertEquals(body.usage, {
+    input_tokens: 12,
+    output_tokens: 3,
+    total_tokens: 15,
+    input_tokens_details: { cached_tokens: 0 },
+    output_tokens_details: { reasoning_tokens: 0 },
+  });
+  // The response resource's echoes belong to `/responses`; a compaction states
+  // nothing about tools, sampling or service tier.
+  assertEquals(['tools', 'tool_choice', 'temperature', 'top_p', 'truncation', 'service_tier', 'store', 'text', 'metadata'].filter(key => key in body), []);
+});
+
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
   installRepo();
 
@@ -469,6 +544,29 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'previous_response_id');
   assertEquals(body.error.code, 'previous_response_not_found');
+});
+
+test('POST /v1/responses and /v1/responses/compact reject a body without `model` with the OpenAI missing-parameter 400', async () => {
+  installRepo();
+
+  // No candidates need to be queued — the wire boundary rejects before
+  // resolution binds the model id into the alias lookup.
+  for (const path of ['/v1/responses', '/v1/responses/compact']) {
+    const response = await makeApp().request(path, {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ input: 'hello' }),
+    });
+
+    assertEquals(response.status, 400);
+    const body = await response.json() as { error: { message: string; type: string; param: string; code: string } };
+    assertEquals(body.error, {
+      message: "Missing required parameter: 'model'.",
+      type: 'invalid_request_error',
+      param: 'model',
+      code: 'missing_required_parameter',
+    });
+  }
 });
 
 const queueCodexAutoReviewCandidate = (

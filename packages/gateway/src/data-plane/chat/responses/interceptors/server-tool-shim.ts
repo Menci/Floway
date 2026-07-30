@@ -214,7 +214,7 @@ const usageForWire = (state: MergeState): ResponsesResult['usage'] => {
 };
 
 const usageOf = (usage: ResponsesResult['usage']): MergeUsage => {
-  if (usage === undefined) return {};
+  if (usage === undefined || usage === null) return {};
   const out: MergeUsage = {};
   if (usage.input_tokens !== undefined) out.input_tokens = usage.input_tokens;
   if (usage.output_tokens !== undefined) out.output_tokens = usage.output_tokens;
