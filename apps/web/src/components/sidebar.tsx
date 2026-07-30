@@ -151,7 +151,7 @@ function SidebarLink({ children, icon, onNavigate, pending, to }: {
     data-nav-value={to}
     href={to}
     icon={icon}
-    onClick={handleClick as NavItemProps['onClick']}
+    onClick={handleClick}
     value={to}
   >{children}</NavItem>;
 }
