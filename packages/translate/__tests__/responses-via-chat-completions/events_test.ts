@@ -66,6 +66,7 @@ test('translateChatCompletionsChunkToResponsesEvents preserves refusal output li
   assertEquals(completed?.response.output, [{
     type: 'message',
     id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+    status: 'completed',
     role: 'assistant',
     content: [{ type: 'refusal', refusal: 'Cannot help.' }],
   }]);
@@ -82,6 +83,7 @@ test('translateChatCompletionsChunkToResponsesEvents preserves an empty refusal 
   assertEquals(completed?.response.output, [{
     type: 'message',
     id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+    status: 'completed',
     role: 'assistant',
     content: [{ type: 'refusal', refusal: '' }],
   }]);
@@ -162,6 +164,7 @@ test('translateChatCompletionsChunkToResponsesEvents replaces buffered scalar re
     {
       type: 'message',
       id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+      status: 'completed',
       role: 'assistant',
       content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     },
@@ -400,6 +403,7 @@ test('translateChatCompletionsChunkToResponsesEvents prefers reasoning_items ove
     {
       type: 'message',
       id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+      status: 'completed',
       role: 'assistant',
       content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     },
@@ -497,6 +501,7 @@ test('translateChatCompletionsChunkToResponsesEvents discards scalar reasoning w
     {
       type: 'message',
       id: expect.stringMatching(/^msg_[0-9a-f]{32}$/),
+      status: 'completed',
       role: 'assistant',
       content: [{ type: 'output_text', text: 'answer', annotations: [] }],
     },
