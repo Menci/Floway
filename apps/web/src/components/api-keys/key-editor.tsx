@@ -1,4 +1,3 @@
-import { Open16Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -16,6 +15,7 @@ import type { ApiKey, ControlPlaneModel } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
+import { OpenLinkLabel } from '../ui/open-link-label';
 import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
 const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody } = fluentComponents;
 interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: Exclude<RetentionValue, null> }
@@ -237,8 +237,8 @@ export function KeyDialog(props: KeyDialogProps) {
               <MessageBar intent="warning"><MessageBarBody>{retentionWarning}</MessageBarBody></MessageBar>
             )}
             {apiKey !== null && field.value !== null && field.value !== 'invalid' && (
-              <Link className="inline-flex items-center gap-1 text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
-                {t('dashboard.apiKeys.form.viewCapturedRequests')} <Open16Regular aria-hidden="true" />
+              <Link className="text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
+                <OpenLinkLabel>{t('dashboard.apiKeys.form.viewCapturedRequests')}</OpenLinkLabel>
               </Link>
             )}
           </RetentionField>
