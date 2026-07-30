@@ -12,7 +12,6 @@ import {
   bingAccentGradientActive,
   bingAccentGradientHover,
   bingCardShadow,
-  bingElevation4Shadow,
   bingComposerFontSize,
   bingComposerFontWeight,
   bingComposerLineHeight,
@@ -143,23 +142,46 @@ const useStyles = makeStyles({
       cursor: 'not-allowed',
     },
   },
+  // The paint is a pseudo-element filling a clipping button, as the original
+  // has it. That is what keeps the button unlifted, and it is also what the
+  // press animation acts on: the fill scales down inside the clip while the
+  // label it sits behind holds still.
   newTopicButton: {
+    position: 'relative',
     height: bingComposeButtonSize,
     fontSize: bingComposerFontSize,
     lineHeight: bingComposerLineHeight,
     fontWeight: bingComposerFontWeight,
     color: bingOnAccentForeground,
-    backgroundImage: bingAccentGradient,
+    backgroundColor: 'transparent',
     border: 0,
-    boxShadow: bingElevation4Shadow,
+    outline: '1px solid transparent',
+    overflow: 'hidden',
     cursor: 'pointer',
-    transitionProperty: 'transform',
-    transitionDuration: tokens.durationFaster,
-    '&:hover': { backgroundImage: bingAccentGradientHover },
-    '&:active': { backgroundImage: bingAccentGradientActive, transform: 'translateY(1px)' },
-    // The original dims the disabled button and leaves everything else
-    // alone; its lift lives on a pseudo-element that the state never touches.
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+      borderRadius: 'inherit',
+      backgroundImage: bingAccentGradient,
+      transitionProperty: 'transform',
+      transitionDuration: bingComposerTransitionDuration,
+      transitionTimingFunction: bingComposerTransitionEasing,
+    },
+    '&:hover::before': { backgroundImage: bingAccentGradientHover },
+    '&:active::before': {
+      backgroundImage: bingAccentGradientActive,
+      transform: 'scale3d(0.971, 0.9583, 1)',
+    },
     '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },
+  },
+  // Above the fill, which is absolutely positioned and would otherwise paint
+  // over the label and the broom.
+  newTopicContent: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
   },
   broomIcon: {
     display: 'block',
@@ -243,12 +265,14 @@ export function PlaygroundComposer({
       <div className={`flex items-start min-w-0 ${s.composerRow}`}>
         <button
           type="button"
-          className={`shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 font-fui-regular ${s.newTopicButton}`}
+          className={`shrink-0 rounded-full px-3 flex items-center justify-center font-fui-regular ${s.newTopicButton}`}
           disabled={newTopicDisabled}
           onClick={onNewTopic}
         >
-          <img alt="" aria-hidden="true" className={s.broomIcon} src={broomUrl} />
-          <span>{newTopicLabel}</span>
+          <span className={s.newTopicContent}>
+            <img alt="" aria-hidden="true" className={s.broomIcon} src={broomUrl} />
+            <span>{newTopicLabel}</span>
+          </span>
         </button>
         <div className={`min-w-0 flex-1 ${s.inputShell}`} data-has-text={draft.length > 0}>
           <label className={s.textInput} data-input={draft}>
