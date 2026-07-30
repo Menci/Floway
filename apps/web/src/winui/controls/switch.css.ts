@@ -46,12 +46,21 @@ export const switchCss = `
   display: flex;
 }
 
+/* The knob is drawn once. Fluent renders it as an SVG glyph, and this file
+   paints the element's own background instead so the shape can be a capsule
+   rather than a circle -- the pressed state stretches it to 17x14, which no
+   glyph does. The glyph itself has to go, or it shows through as a second,
+   circular knob inside the first: \`fill\` on the SVG does not reach the path
+   that draws it, so the path is named. */
+.fui-Switch__indicator.fui-Switch__indicator > * > * {
+  fill: transparent;
+}
+
 .fui-Switch__indicator.fui-Switch__indicator > * {
   background: currentColor;
   border-radius: 999px;
-  fill: transparent;
-  height: 66.667%;
-  margin-inline-start: 6.579%;
+  height: 12px;
+  margin-inline-start: 2.5px;
   /* One timing for every property the knob moves. Fluent slides the knob with a
      transform and this file resizes it, and while the two ran on different
      durations the knob finished growing before it finished travelling -- the
@@ -61,7 +70,7 @@ export const switchCss = `
   transition-duration: var(--winui-control-faster-animation-duration);
   transition-property: transform, width, height, margin-inline-start;
   transition-timing-function: var(--winui-control-fast-out-slow-in-easing);
-  width: 31.579%;
+  width: 12px;
 }
 
 @media screen and (prefers-reduced-motion: reduce) {
@@ -95,24 +104,30 @@ export const switchCss = `
   background-color: var(--winui-control-alt-fill-quarternary);
 }
 
-/* The knob swells to 14x14 under the pointer, keeping its margins, so the same
-   centring puts it 2.5px from the leading edge. Press then realigns it against
-   that edge at 3px and stretches it to 17px wide, and the checked press pins
-   the opposite end 3px from the trailing edge instead.
+/* The knob is 12x12 at rest, swells to 14x14 under the pointer and stretches to
+   17x14 while pressed -- a capsule, not a circle, which is why the shape is the
+   element's own background rather than a glyph. The template animates Width and
+   Height themselves rather than a scale, over ControlFasterAnimationDuration on
+   the fast-out-slow-in spline, and the margins keep the growth centred on the
+   track's leading edge until the press pushes it 3px along.
+
+   The state is taken from the root rather than from the input. Fluent's input
+   is visually hidden and a pixel wide, so it never sees the pointer -- the
+   track does -- and keyed off the input these rules never fired at all.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L274-L287 */
-.fui-Switch__input:enabled:not([aria-disabled='true']):hover ~ .fui-Switch__indicator.fui-Switch__indicator > * {
-  height: 77.778%;
-  margin-inline-start: 3.947%;
-  width: 36.842%;
+.fui-Switch:hover .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+  height: 14px;
+  margin-inline-start: 1.5px;
+  width: 14px;
 }
 
-.fui-Switch__input:enabled:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator > * {
-  margin-inline-start: 5.263%;
-  width: 44.737%;
+.fui-Switch:active .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+  margin-inline-start: 2px;
+  width: 17px;
 }
 
-.fui-Switch__input:enabled:checked:not([aria-disabled='true']):hover:active ~ .fui-Switch__indicator.fui-Switch__indicator > * {
-  margin-inline-start: -2.632%;
+.fui-Switch:active .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+  margin-inline-start: -1px;
 }
 
 /* On: the accent fill ramp. WinUI draws the on-state stroke at thickness 0, and
