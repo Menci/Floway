@@ -108,17 +108,32 @@ const internalResponsesErrorResponse = (status: number, error: InternalDebugErro
     },
   }, { status });
 
+// The spec's `error` event nests its payload under `error`, and both official
+// SDKs key their mid-stream throw on exactly that key — openai-node's
+// `Stream.fromSSEResponse` on `data.error`, openai-python's `_streaming` on
+// `data.get("error")`. A frame that states those fields at the top level is
+// yielded to both as an ordinary event, so a failure mid-stream reaches neither
+// client as a failure: the stream simply ends.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L170-L177
+// https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L71
+// https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/_streaming.py#L87-L98
+//
+// The fields are the ones the frame already carried, moved rather than
+// reshaped, so a client reading Floway's debug detail finds all of it one level
+// in.
 const internalResponsesStreamErrorFrame = (error: unknown) => {
   const debug = toInternalDebugError(error);
   return sseFrame(
     JSON.stringify({
       type: 'error',
-      message: debug.message,
-      code: debug.type,
-      name: debug.name,
-      stack: debug.stack,
-      cause: debug.cause,
-      target_api: debug.target_api,
+      error: {
+        message: debug.message,
+        code: debug.type,
+        name: debug.name,
+        stack: debug.stack,
+        cause: debug.cause,
+        target_api: debug.target_api,
+      },
     }),
     'error',
   );
