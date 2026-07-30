@@ -143,21 +143,6 @@ export const navCss = `
   --colorNeutralForeground2BrandSelected: var(--winui-text-fill-primary);
 }
 
-/* Two divergences from WinUI survive on the selected item, both for want of a
-   value we are willing to state here.
-   The selection pill keeps the fill the sidebar gives it. WinUI paints the
-   indicator with AccentFillColorDefault, which in the dark theme steps to a
-   LIGHTER accent (SystemAccentColorLight2) than the light theme's; our accent
-   ramp is derived from Fluent's brand background, which steps darker there, so
-   pointing the pill at it would move the dark indicator away from WinUI while
-   changing nothing in light.
-   Fluent also switches the selected label to semibold, where no NavigationView
-   visual state touches the weight at all and the one item style that states it
-   states Normal. Correcting that needs a type ramp, and ./tokens.ts is a
-   colour vocabulary.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L48
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L641 */
-
 /* Section header. Fluent styles the header's type but lets its colour inherit
    from the drawer body, so it arrives at full strength; WinUI gives the header
    a brush of its own, a step quieter than the items it introduces. Its size
@@ -178,14 +163,4 @@ export const navCss = `
 .fui-NavDrawerFooter.fui-NavDrawerFooter {
   --colorNeutralStroke2: var(--winui-divider-stroke-default);
 }
-
-/* The item's body fill is out of reach. WinUI runs it through the subtle ramp —
-   transparent at rest, SubtleFillColorSecondary under the pointer,
-   SubtleFillColorTertiary while pressed, and secondary again once selected —
-   but the sidebar declares each of those states \`!important\` with a literal
-   brand-tinted color-mix, leaving no token to re-point and no specificity above
-   it. Bringing the item onto the WinUI ramp is a change to that component, not
-   to this layer.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L9-L11
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L17 */
 `;

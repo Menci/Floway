@@ -78,18 +78,28 @@ export const textInputCss = `
 }
 
 /* Focus lifts the fill to the opaque input colour. A disabled field cannot
-   take focus, so no exclusion is needed here. The accent bottom edge of
-   TextControlElevationBorderFocusedBrush is still left to Fluent's own ::after
-   strip: its heavy stop is SystemAccentColorDark1 in light and
-   SystemAccentColorLight2 in dark, ramp steps Windows generates from the user
-   accent that appear in no theme dictionary and carry no opacity relationship
-   to a base we could substitute, so there is no value to transcribe.
+   take focus, so no exclusion is needed here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L25
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L132
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L291-L300 */
 .fui-Input.fui-Input${controlFillAppearances}:focus-within${notOptedOut},
 .fui-Textarea.fui-Textarea${controlFillAppearances}:focus-within${notOptedOut} {
   background-color: var(--winui-control-fill-input-active);
+}
+
+/* The accent edge a focused field draws. TextControlElevationBorderFocusedBrush
+   is a 2px absolute gradient, flipped, whose two stops both sit at offset 1.0:
+   a hard edge, so the accent fills the strip and the ordinary control stroke
+   holds the remaining sides. WinUI keys that stop to the same step of the ramp
+   the accent fills take -- Dark1 in light, Light2 in dark -- and states no
+   pressed counterpart, so Fluent's pressed step lands on the same colour.
+   The colour is stated on the strip rather than on the token Fluent reads for
+   it, so it cannot inherit into whatever a caller puts in the content slots.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L57-L65
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172 */
+.fui-Input.fui-Input${notOptedOut}::after,
+.fui-Textarea.fui-Textarea${notOptedOut}::after {
+  border-bottom-color: var(--winui-accent-base);
 }
 
 /* Disabled keeps a fill where Fluent empties it to the transparent background.

@@ -109,25 +109,13 @@
 // "everything under a provider" are the same elements.
 //
 // The `--winui-*` custom properties below follow from the same reasoning and
-// are declared on `:root`. They switch on `prefers-color-scheme`, never on the
-// provider's `theme` prop, so the provider element is not the scope they
-// belong to; the document root is the widest one there is, and inherits into
-// every node — mount nodes included, under either setting of the prop.
-//
-// Two blocks cannot sit on `:root`, and say so at their own comment: their
-// values substitute a Fluent brand token. A custom property's `var()` is
-// resolved on the element the declaration applies to, so a declaration reading
-// `--colorBrandBackground` is guaranteed-invalid anywhere Fluent's theme
-// variables are not in scope, `:root` included. Those two are therefore keyed
-// to the theme rather than to the provider element, as
-// `[class*='fui-FluentProvider']`: Fluent writes the theme variables to a
-// class named `useId(fluentProviderClassNames.root)`, i.e. the literal root
-// class plus a generated suffix, so the substring match names exactly the set
-// of elements the theme is declared on. The provider root carries both classes
-// and a portal mount node carries the theme class alone when
-// `applyStylesToPortals` is false, so this one selector holds under either
-// setting where the literal class alone would not.
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-provider/library/src/components/FluentProvider/useFluentProviderThemeStyleTag.ts#L58
+// are declared on `:root`, every one of them. They switch on
+// `prefers-color-scheme`, never on the provider's `theme` prop, so the provider
+// element is not the scope they belong to; the document root is the widest one
+// there is, and inherits into every node — mount nodes included, under either
+// setting of the prop. No value here reads a Fluent theme variable, so nothing
+// forces a narrower scope: the layer's vocabulary is independent of where
+// Fluent chooses to declare its theme.
 
 import { CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS } from './motion';
 
@@ -302,27 +290,14 @@ export const winuiTokenCss = `
   }
 }
 
-/* The accent. Windows generates a seven step ramp from the user's chosen accent
-   and exposes it to XAML as SystemAccentColor plus Light1-3 and Dark1-3. Those
-   steps exist only on a machine that has an accent set, so they appear in no
-   theme dictionary and there is nothing here to transcribe; a browser cannot
-   read them either. Floway's own brand ramp stands in for them, which is also
-   what keeps an accented WinUI surface on the product's colour rather than on
-   Windows'.
-
-   The substitution is why this block is keyed to the theme rather than to the
-   document root: it spends a Fluent brand variable, which resolves only where
-   Fluent declares its theme.
-
-   What the dictionaries do state is the relationship between the fills — one
-   base at 1.0, 0.9 and 0.8 opacity — and that is transcribed. Light keys its
-   base off Dark1 and dark off Light2, walking the ramp in opposite directions
-   so the accent stays legible against each theme's material; Fluent's brand
-   fill already carries that per-theme adjustment, so one substitution covers
-   both.
+/* The accent. The dictionaries state the relationship between the fills — one
+   base at 1.0, 0.9 and 0.8 opacity — and which step of the ramp that base is:
+   light keys off Dark1 and dark off Light2, walking the ramp in opposite
+   directions so the accent stays legible against each theme's material.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L125-L127
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L329-L331 */
-/* The ramp itself is not in any dictionary, and cannot be: Windows generates
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L329-L331
+
+   The ramp itself is not in any dictionary, and cannot be: Windows generates
    its seven steps per machine from the accent the user picked, and hands them
    to XAML as SystemAccentColor with Light1-3 and Dark1-3. A browser cannot read
    them. The values below are the ramp Windows 11 generates for its own default,
@@ -340,33 +315,37 @@ export const winuiTokenCss = `
 :root {
   --winui-system-accent-light-3: #99ebff;
   --winui-system-accent-light-2: #4cc2ff;
+  --winui-system-accent-light-1: #0091f8;
   --winui-system-accent: #0078d4;
   --winui-system-accent-dark-1: #0067c0;
   --winui-system-accent-dark-2: #003e92;
+  --winui-system-accent-dark-3: #001a68;
   --winui-accent-base: var(--winui-system-accent-dark-1);
   --winui-accent-fill-default: var(--winui-accent-base);
   --winui-accent-fill-secondary: color-mix(in srgb, var(--winui-accent-base) 90%, transparent);
   --winui-accent-fill-tertiary: color-mix(in srgb, var(--winui-accent-base) 80%, transparent);
   --winui-accent-text-fill-primary: var(--winui-system-accent-dark-2);
+  --winui-accent-text-fill-secondary: var(--winui-system-accent-dark-3);
+  --winui-accent-text-fill-tertiary: var(--winui-system-accent-dark-1);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --winui-accent-base: var(--winui-system-accent-light-2);
     --winui-accent-text-fill-primary: var(--winui-system-accent-light-3);
+    --winui-accent-text-fill-secondary: var(--winui-system-accent-light-3);
+    --winui-accent-text-fill-tertiary: var(--winui-system-accent-light-2);
   }
 }
 
 /* The selection highlight behind selected text. Both dictionaries key it to
    SystemAccentColor unmodified — not a step of the Dark1/Light2 ramp the accent
    fills use — so it is the one accent surface that does not flip with the
-   theme. The web has a single brand fill standing in for the whole Windows
-   ramp, so the distinction between the unmodified accent and its neighbouring
-   step collapses here and both land on the same substituted colour.
+   theme, and the ramp above states that step, so it is taken literally.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L124
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L328 */
-[class*='fui-FluentProvider'] {
-  --winui-accent-fill-selected-text-background: var(--winui-accent-base);
+:root {
+  --winui-accent-fill-selected-text-background: var(--winui-system-accent);
 }
 
 /* The disabled accent fill is a literal rather than a step of that ramp.
@@ -569,21 +548,8 @@ export const winuiTokenCss = `
   --winui-button-padding: 5px 11px 6px;
 }
 
-/* Unresolved. Two families are asked for by the controls above and are not
-   emitted, because the corpus does not carry a value to transcribe and, unlike
-   the accent fills, neither states a relationship we could restate over a
-   substituted base.
-
-   TextControlElevationBorderFocusedBrush, the outline a focused TextBox draws,
-   has SystemAccentColorDark1 as its heavy stop, and AccentTextFillColor
-   Primary/Secondary/Tertiary — the rest, hover and pressed fills of a link —
-   are brushes over SystemAccentColorLight3/Light3/Light2 in dark and
-   Dark2/Dark3/Dark1 in light. Both are stops of the Windows-generated ramp, and
-   each asks for a different step of it, which a single substituted brand fill
-   cannot express. Fluent's own brand foreground tokens remain in use for both.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L164-L172
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93-L95
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297-L299
+/* Unresolved. One family is asked for by the controls above and is not emitted,
+   because the corpus does not carry a value to transcribe.
 
    TextControlThemeMinHeight and TextControlThemePadding are referenced by the
    text control templates but defined nowhere in the theme resources; they come

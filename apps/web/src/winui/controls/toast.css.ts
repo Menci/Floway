@@ -18,12 +18,11 @@
 //
 // Some of Fluent's rows are deliberately kept. The action slot's inline
 // placement in the title's third grid column has no counterpart in TeachingTip,
-// whose button metrics describe a panel below the content; and its brand
-// foreground would want AccentTextFillColorPrimary, a step of the
-// Windows-generated accent ramp the vocabulary carries no value for. The media glyph size likewise stands, because the only glyph
-// size the dictionary states belongs to that unrendered close button. The
-// ToastBody subtitle's own 4px step stands too: TeachingTip has two text rows to
-// the toast's three, so the third row's spacing is Fluent's alone.
+// whose button metrics describe a panel below the content. The media glyph size
+// likewise stands, because the only glyph size the dictionary states belongs to
+// that unrendered close button. The ToastBody subtitle's own 4px step stands
+// too: TeachingTip has two text rows to the toast's three, so the third row's
+// spacing is Fluent's alone.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L76-L77
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L96
 //
@@ -158,5 +157,15 @@ export const toastCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/TeachingTip/TeachingTip_themeresources.xaml#L75-L77 */
 .fui-ToastFooter.fui-ToastFooter {
   gap: 4px;
+}
+
+/* The action beside the title reads as a hyperlink, and WinUI colours one with
+   the accent text ramp's primary step rather than with the accent fill a button
+   takes -- the ramp is darkened in light and lightened in dark precisely so it
+   stays legible as text.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297 */
+.fui-ToastTitle__action.fui-ToastTitle__action {
+  color: var(--winui-accent-text-fill-primary);
 }
 `;
