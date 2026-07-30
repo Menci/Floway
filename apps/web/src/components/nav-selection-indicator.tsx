@@ -12,10 +12,12 @@ import type { RefObject } from 'react';
 // and a selection crossing between them has no single element that can span
 // both. Playing WinUI's pair there puts one bar in each list and shows them
 // moving at once, which reads as two things rather than one. Only the arriving
-// the two halves are sequenced instead. The list losing the selection reaches
-// its bar out toward the other one and only then drops it; the list taking the
-// selection waits for that, then settles a bar in from the edge facing where
-// the selection came from. Played together they land in the same instant and
+// the two halves are sequenced instead, and between them they run exactly the
+// animation a move within one list runs. The list losing the selection reaches
+// its bar out toward the other one for as long as a move spends reaching, then
+// drops it; the list taking the selection waits that out and settles a bar in
+// from the edge facing where the selection came from, for as long as a move
+// spends settling. Played together instead they land in the same instant and
 // read as one switch rather than as a handover.
 //
 // Only the settle, not the stretch before it. The stretch exists to cross the
@@ -35,12 +37,15 @@ const STRETCH_EASING = 'cubic-bezier(0.9, 0.1, 1, 0.2)';
 const SETTLE_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
 
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
-// How long the list losing a selection has the stage to itself before the list
-// taking it starts its own animation.
-const HANDOVER_MS = 150;
-
 const INDICATOR_HEIGHT = 16;
 const INDICATOR_WIDTH = 3;
+
+// A crossing plays the same two phases a move within one list does, split
+// across the two lists instead of running on one bar: the reach occupies the
+// span before the position snap, the settle everything after it. Deriving both
+// from the same constants is what keeps a crossing on the timing of a move.
+const REACH_MS = Math.round(DURATION_MS * POSITION_SNAP);
+const SETTLE_MS = DURATION_MS - REACH_MS;
 const INDICATOR_RADIUS = 2;
 
 type Geometry = { top: number; left: number; height: number };
@@ -89,7 +94,7 @@ export function NavSelectionIndicator({
       setGeometry(next);
       return;
     }
-    const handover = window.setTimeout(() => setGeometry(next), HANDOVER_MS);
+    const handover = window.setTimeout(() => setGeometry(next), REACH_MS);
     return () => window.clearTimeout(handover);
   }, [containerRef, selectedValue]);
 
@@ -103,14 +108,14 @@ export function NavSelectionIndicator({
     if (bar && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       bar.style.transformOrigin = otherListIs === 'below' ? 'top' : 'bottom';
       bar.animate(
-        [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / INDICATOR_HEIGHT})` }],
-        { duration: HANDOVER_MS, easing: STRETCH_EASING, fill: 'forwards' },
+        [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / INDICATOR_HEIGHT + 1})` }],
+        { duration: REACH_MS, easing: STRETCH_EASING, fill: 'forwards' },
       );
     }
     const gone = window.setTimeout(() => {
       previousRef.current = null;
       setGeometry(null);
-    }, HANDOVER_MS);
+    }, REACH_MS);
     return () => window.clearTimeout(gone);
   }, [containerRef, geometry, otherListIs, selectedValue]);
 
@@ -176,7 +181,7 @@ export function NavSelectionIndicator({
           { transform: `scaleY(${peak})`, easing: SETTLE_EASING },
           { transform: 'scaleY(1)' },
         ],
-    { duration: previous ? DURATION_MS : Math.round(DURATION_MS * (1 - POSITION_SNAP)) });
+    { duration: previous ? DURATION_MS : SETTLE_MS });
     // The stretch grows from the edge facing the destination, so the bar reaches
     // toward the item it is travelling to rather than away from it.
     bar.style.transformOrigin = distance > 0 ? 'top' : 'bottom';
