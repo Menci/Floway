@@ -1,9 +1,10 @@
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 
-const { Text, makeStyles, mergeClasses } = fluentComponents;
+const { Switch, Text, makeStyles, mergeClasses } = fluentComponents;
 
 // The row the Windows Settings app is built out of: an icon, a header, a
 // description, and a control at the trailing edge -- and a variant of the same
@@ -16,8 +17,12 @@ const { Text, makeStyles, mergeClasses } = fluentComponents;
 // through the WinUI vocabulary the layer already carries.
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L98-L112
 const useStyles = makeStyles({
-  // MinHeight 68, Padding 16, ControlCornerRadius, a 1px card stroke. The
-  // header and the trailing control are 24 apart.
+  // MinHeight 68, Padding 16, ControlCornerRadius, a 1px card stroke.
+  //
+  // The 24 between the text and the trailing control is a margin on the text
+  // block rather than a gap on the row: a gap falls between every pair of
+  // children, so it also landed between the icon and the text, which already
+  // states its own 20 and ended up 44 away.
   card: {
     alignItems: 'center',
     backgroundColor: 'var(--winui-card-background-fill-default)',
@@ -35,7 +40,6 @@ const useStyles = makeStyles({
     borderLeftColor: 'var(--winui-card-stroke-default)',
     borderRadius: 'var(--winui-control-corner-radius)',
     boxSizing: 'border-box',
-    columnGap: '24px',
     display: 'flex',
     minHeight: '68px',
     padding: '16px',
@@ -67,7 +71,7 @@ const useStyles = makeStyles({
       borderLeftColor: 'var(--winui-control-stroke-default)',
     },
   },
-  text: { display: 'grid', minWidth: 0, marginInlineEnd: 'auto' },
+  text: { display: 'grid', minWidth: 0, marginInlineEnd: 'auto', paddingInlineEnd: '24px' },
   // SettingsCardHeaderIconMaxSize 20 with SettingsCardHeaderIconMargin 2,0,20,0.
   // The holder collapses when there is no icon, so a card without one starts
   // its text at the padding rather than at an empty column.
@@ -162,6 +166,33 @@ const useStyles = makeStyles({
   contentFrameOpen: { gridTemplateRows: '1fr' },
   contentClip: { minHeight: 0, overflow: 'hidden' },
   chevronOpen: { rotate: '180deg' },
+  // A switch in a settings row reads its own state out, and the reading sits
+  // BEFORE the track. WinUI's own ToggleSwitch template puts OnContent after it
+  // -- column 2 of a three column grid, twelve along from the track in column 0
+  // -- and a SettingsCard overrides exactly that: it pushes an implicit
+  // ToggleSwitch style into its own content scope whose retemplate keeps the
+  // same three columns and swaps what sits in them, the presenters taking
+  // column 0 and the track column 2. The ordering is structural, which is why
+  // it survives the row wrapping and the control moving below the text.
+  //
+  // That style also compacts the control: MinWidth 0 and Height 36, against the
+  // 154 and the content-sized height a standalone switch takes.
+  //
+  // Fluent's switch carries eight pixels of margin around the track for a label
+  // slot this one does not use; the trailing side is removed so the track ends
+  // where the card's padding does.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L140-L145
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L483-L492
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L1000-L1053
+  switchRow: {
+    alignItems: 'center',
+    columnGap: '12px',
+    display: 'flex',
+    height: '36px',
+    justifyContent: 'flex-end',
+    minWidth: 0,
+    '& .fui-Switch__indicator': { marginRight: 0 },
+  },
 });
 
 function CardText({ description, header, icon, id }: { description?: string; header: ReactNode; icon?: ReactNode; id?: string }) {
@@ -173,6 +204,22 @@ function CardText({ description, header, icon, id }: { description?: string; hea
       {description !== undefined && <Text block size={200} className={s.description}>{description}</Text>}
     </span>
   </>;
+}
+
+// A switch that reads its own state out, the way every toggle in a settings row
+// does.
+export function SettingsSwitch({ checked, disabled, label, onChange }: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  const s = useStyles();
+  const { t } = useTranslation();
+  return <span className={s.switchRow}>
+    <Text>{t(checked ? 'common.on' : 'common.off')}</Text>
+    <Switch aria-label={label} checked={checked} disabled={disabled} onChange={(_, data) => onChange(data.checked)} />
+  </span>;
 }
 
 export function SettingsCard({ action, description, header, icon, onClick }: {

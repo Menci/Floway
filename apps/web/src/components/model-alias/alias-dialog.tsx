@@ -17,10 +17,10 @@ import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { DialogShell } from '../ui/dialog-shell';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
-import { SettingsCard, SettingsExpander } from '../ui/settings-card';
+import { SettingsCard, SettingsExpander, SettingsSwitch } from '../ui/settings-card';
 import { MODEL_KINDS } from '@floway-dev/protocols/common';
 
-const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Option, Switch, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody, Option, Text } = fluentComponents;
 
 export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, record }: {
   aliases: readonly ModelAlias[];
@@ -110,7 +110,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       {errors.targets?.message && <Text role="alert" className="text-fui-fg2">{t(errors.targets.message)}</Text>}
     </section>
     {kind !== 'image' && <SettingsExpander
-      action={<Switch checked={values.manualMetadata} disabled={saving} onChange={(_, data) => setManual(data.checked)} label={t('dashboard.modelAliases.metadata.manual')} />}
+      action={<SettingsSwitch checked={values.manualMetadata} disabled={saving} label={t('dashboard.modelAliases.metadata.manual')} onChange={setManual} />}
       description={t('dashboard.modelAliases.metadata.description')}
       expandLabel={t('dashboard.modelAliases.metadata.heading')}
       icon={<InfoRegular />}
@@ -120,7 +120,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     </SettingsExpander>}
     {aliasWarnings.length > 0 && <MessageBar intent="warning"><MessageBarBody><ul className="m-0 pl-5">{aliasWarnings.map(warning => <li key={warning.type}>{t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)}</li>)}</ul></MessageBarBody></MessageBar>}
     <SettingsCard
-      action={<Switch checked={values.visible} disabled={saving} aria-label={t('dashboard.modelAliases.form.visible')} onChange={(_, data) => setValue('visible', data.checked)} />}
+      action={<SettingsSwitch checked={values.visible} disabled={saving} label={t('dashboard.modelAliases.form.visible')} onChange={checked => setValue('visible', checked)} />}
       header={t('dashboard.modelAliases.form.visible')}
       icon={<EyeRegular />}
     />
