@@ -77,13 +77,15 @@ export const wrapResponsesClientOutput = async function* (
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       if (store.writesState) {
-        const orderedOutputIds = event.response.output.map((_item, outputIndex) => {
-          const id = finalizedOutputIds.get(outputIndex);
-          if (id === undefined) {
-            throw new TypeError(`Responses terminal output_index ${outputIndex} arrived before output_item.done`);
-          }
-          return id;
-        });
+        // The snapshot a `previous_response_id` continuation replays is the
+        // items this turn closed, in `output_index` order. Reading the terminal
+        // envelope's `output` instead would commit whatever it happened to
+        // restate: a Codex turn closes `reasoning` and `message` and then
+        // states only `reasoning`, so the next turn would continue from a
+        // conversation in which the assistant never spoke.
+        const orderedOutputIds = [...finalizedOutputIds]
+          .sort(([left], [right]) => left - right)
+          .map(([, id]) => id);
         await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append', orderedOutputIds);
       }
       yield eventFrame({ ...event, response: clientEnvelope(event.response) });
