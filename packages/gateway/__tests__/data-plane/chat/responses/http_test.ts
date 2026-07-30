@@ -183,6 +183,8 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   const completedMatch = body.match(/"id":"(resp_[A-Za-z0-9_-]+)"/);
   assert(completedMatch !== null, 'expected a source-owned response id in the SSE body');
   assert(completedMatch[1] !== 'resp_test', 'expected the source boundary to replace the upstream response id');
+  assertEquals(body.split('data: [DONE]').length - 1, 1);
+  assert(body.endsWith('data: [DONE]\n\n'), 'expected the SSE body to terminate on the [DONE] sentinel');
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
@@ -417,6 +419,7 @@ test('POST /v1/responses terminates an SSE stream with error when an output item
     assert(body.includes('simulated item persistence failure'));
     assert(!body.includes('event: response.output_item.done'));
     assert(!body.includes('event: response.completed'));
+    assert(!body.includes('[DONE]'), 'expected a failed stream to end on the error frame, not the sentinel');
   } finally {
     persistence.mockRestore();
   }
