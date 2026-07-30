@@ -32,6 +32,21 @@ test('responsesInputErrorResult renders an OpenAI 400 invalid_request_error enve
   });
 });
 
+test('responsesInputErrorResult carries an explicit error code into the envelope', () => {
+  const result = responsesInputErrorResult(
+    new TranslatorInputError("Missing required parameter: 'model'.", { param: 'model', code: 'missing_required_parameter' }),
+  );
+
+  assertEquals(bodyOf(result), {
+    error: {
+      message: "Missing required parameter: 'model'.",
+      type: 'invalid_request_error',
+      param: 'model',
+      code: 'missing_required_parameter',
+    },
+  });
+});
+
 test('responsesInputErrorResult honors an explicit input param', () => {
   const result = responsesInputErrorResult(
     new TranslatorInputError('content block not supported', { param: 'input[1].content[0]' }),
