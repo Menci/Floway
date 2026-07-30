@@ -55,6 +55,11 @@ const useStyles = makeStyles({
     display: 'inline-grid',
     width: '100%',
     maxHeight: bingComposerMaxHeight,
+    // The mirror is hidden but still occupies its full, uncapped height. Bing
+    // never had to clip it because the shipped desktop path set no ceiling at
+    // all; capping the field without clipping the mirror lets it spill out of
+    // the bar and draw a second edge down the page.
+    overflow: 'hidden',
     '&::after': {
       content: 'attr(data-input) " "',
       visibility: 'hidden',
@@ -210,7 +215,7 @@ export function PlaygroundComposer({
           </Tooltip>
         </div>
       )}
-      <div className="flex items-end gap-3 min-w-0">
+      <div className="flex items-start gap-3 min-w-0">
         <button
           type="button"
           className={`shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 font-fui-regular ${s.newTopicButton}`}
