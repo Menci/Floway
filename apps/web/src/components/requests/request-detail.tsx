@@ -19,13 +19,13 @@ import {
   type CollectedStream,
 } from './stream-render';
 import { fluentComponents } from '../../fluent';
-import { HttpMethodBadge } from '../ui/http-method-badge';
+import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { prismTokenStyles } from '../ui/prism-token-styles';
 import { ScrollArea } from '../ui/scroll-area';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import 'prismjs/components/prism-json';
 
-const { Badge, Button, MessageBar, MessageBarBody, Tab, TabList, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+const { Button, MessageBar, MessageBarBody, Tab, TabList, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   sectionHeader: {
@@ -200,7 +200,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
         </SectionBody>
       </section>
       <section className={s.section}>
-        <SectionHeader title={t('dashboard.requests.response')} detail={<><Badge appearance="tint" color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'} size="small">{record.response.status ?? t('dashboard.requests.noStatus')}</Badge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
+        <SectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
         <SectionBody>
           {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <Text size={200} className="block !p-4 text-fui-fg3">{t('dashboard.requests.noResponseHeaders')}</Text>}
         </SectionBody>

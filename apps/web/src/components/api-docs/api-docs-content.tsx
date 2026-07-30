@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
 import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
-import { HttpMethodBadge } from '../ui/http-method-badge';
+import { HttpMethodBadge } from '../ui/http-badge';
 import { Panel } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActionsHeader } from '../ui/table-actions';
