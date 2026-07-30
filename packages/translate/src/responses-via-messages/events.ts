@@ -99,6 +99,7 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
   const hasCacheCreation = state.usage.cache_creation_input_tokens !== undefined
     || state.usage.cache_creation?.ephemeral_5m_input_tokens !== undefined
     || state.usage.cache_creation?.ephemeral_1h_input_tokens !== undefined;
+  const thinkingTokens = state.usage.output_tokens_details?.thinking_tokens;
   const serviceTier = openAIServiceTierFromMessagesUsage(state.usage);
 
   return responses.result({
@@ -124,6 +125,12 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
             },
           }
         : {}),
+      // Anthropic's `thinking_tokens` and Responses' `reasoning_tokens` are the
+      // same quantity: the reasoning share of the inclusive output-token total.
+      // An upstream that reports none says nothing here; the client-facing
+      // egress owns the schema's presence requirement.
+      // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/response_usage.py#L28-L47
+      ...(thinkingTokens === undefined ? {} : { output_tokens_details: { reasoning_tokens: thinkingTokens } }),
     },
     ...(serviceTier !== undefined ? { serviceTier } : {}),
     ...(status === 'failed' ? { error: messagesRefusalResponsesError(state.stopDetails) } : {}),

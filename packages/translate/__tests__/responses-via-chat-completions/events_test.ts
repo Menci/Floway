@@ -199,6 +199,7 @@ test('translateChatCompletionsChunkToResponsesEvents maps usage on incomplete le
     output_tokens: 6,
     total_tokens: 10,
     input_tokens_details: { cached_tokens: 1, cache_write_tokens: 2 },
+    output_tokens_details: { reasoning_tokens: 2 },
   });
 });
 
