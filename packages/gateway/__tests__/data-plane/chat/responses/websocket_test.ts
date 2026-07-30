@@ -1,9 +1,10 @@
 import type { ExecutionContext } from 'hono';
-import { test, vi } from 'vitest';
+import { onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
 import { hashResponsesItem } from '../../../../src/data-plane/chat/responses/items/identity.ts';
 import { responsesServe } from '../../../../src/data-plane/chat/responses/serve.ts';
+import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
@@ -376,10 +377,26 @@ test('Responses WebSocket reports a failed turn when an output item cannot be pe
   }
 });
 
-test('Responses WebSocket keepalive during an in-flight request does not drop the pending upstream frame', async () => {
+test('Responses WebSocket keep-alive waits for the first event and takes a slot in the stream sequence', async () => {
   const { apiKey } = await setupAppTest();
+  // Captured before the clock is faked: the turn's frames cross real event-loop
+  // turns (upstream body reads, item persistence), which a faked `setTimeout`
+  // cannot yield to.
+  const realSetTimeout = globalThis.setTimeout;
   const time = new FakeTime();
+  // Registered as a test hook rather than run from a `finally`: the body below
+  // drives a socket whose frames arrive on the fake clock, and an assertion
+  // that never gets its frame would leave the body suspended, so a `finally`
+  // would never run and every later test in the file would inherit the fake
+  // clock.
+  onTestFinished(() => time.restore());
   const encoder = new TextEncoder();
+  const reasoning = {
+    type: 'reasoning' as const,
+    id: 'rs_keepalive',
+    summary: [],
+    encrypted_content: 'opaque',
+  };
   let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
   let resolveUpstreamReadStarted!: () => void;
   const upstreamReadStarted = new Promise<void>(resolve => {
@@ -395,89 +412,117 @@ test('Responses WebSocket keepalive during an in-flight request does not drop th
   const enqueueSseEvent = (event: string, data: unknown): void => {
     upstreamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
   };
-  const hasMessageType = (messages: readonly Record<string, unknown>[], type: string): boolean =>
-    messages.some(message => message.type === type);
+  // Every wait below is bounded by a turn count, not by a clock: a frame that
+  // never comes fails an assertion instead of suspending the test body, which
+  // under a fake clock would hang until the runner's timeout and leave the
+  // fake clock installed for every test after it.
+  const drainFramesUntil = async (settled: () => boolean): Promise<boolean> => {
+    for (let i = 0; i < 200 && !settled(); i++) {
+      await new Promise<void>(resolve => { realSetTimeout(resolve, 0); });
+      await time.tickAsync(0);
+    }
+    return settled();
+  };
+  const tickKeepAliveIntervals = async (count: number): Promise<void> => {
+    for (let i = 0; i < count; i++) {
+      await waitForMicrotasks();
+      await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
+    }
+  };
 
-  try {
-    await withMockedFetch(
-      async request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-        if (url.pathname === '/copilot_internal/v2/token') {
-          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-        }
-        if (url.pathname === '/models') {
-          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-        }
-        if (url.pathname === '/responses') {
-          return new Response(new ReadableStream<Uint8Array>({
-            start(controller) {
-              upstreamController = controller;
-            },
-            pull() {
-              resolveReadStartedOnce();
-            },
-          }), {
-            headers: { 'content-type': 'text/event-stream' },
-          });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => await withWorkerWebSocketRuntime(async () => {
-        const client = await connectResponsesWebSocket(apiKey.key);
-        const messages: Record<string, unknown>[] = [];
-        const onMessage = (event: Event): void => {
-          messages.push(JSON.parse((event as MessageEvent<string>).data) as Record<string, unknown>);
-        };
-        client.addEventListener('message', onMessage);
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            upstreamController = controller;
+          },
+          pull() {
+            resolveReadStartedOnce();
+          },
+        }), {
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const messages: Record<string, unknown>[] = [];
+      const onMessage = (event: Event): void => {
+        messages.push(JSON.parse((event as MessageEvent<string>).data) as Record<string, unknown>);
+      };
+      client.addEventListener('message', onMessage);
 
-        try {
-          client.send(JSON.stringify({
-            type: 'response.create',
-            event_id: 'evt_keepalive',
-            response: {
-              model: 'gpt-direct-responses',
-              input: 'hello',
-            },
-          }));
-
-          await upstreamReadStarted;
-          for (let i = 0; i < 4 && !hasMessageType(messages, 'ping'); i++) {
-            await waitForMicrotasks();
-            await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
-          }
-
-          assert(hasMessageType(messages, 'ping'), 'expected a ping while the upstream response stream is idle');
-          const completed = waitForMessages(client, received => received.some(isTerminalResponseEvent));
-
-          const response = {
-            id: 'resp_ws_keepalive',
-            object: 'response',
+      try {
+        client.send(JSON.stringify({
+          type: 'response.create',
+          event_id: 'evt_keepalive',
+          response: {
             model: 'gpt-direct-responses',
-            status: 'completed',
-            output: [],
-            output_text: 'done',
-          };
-          const inProgress = { ...response, status: 'in_progress', output: [], output_text: '' };
-          enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
-          enqueueSseEvent('response.in_progress', { type: 'response.in_progress', response: inProgress, sequence_number: 1 });
-          enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 2 });
-          upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
-          upstreamController.close();
+            input: 'hello',
+          },
+        }));
 
-          await completed;
+        await upstreamReadStarted;
 
-          const types = messages.map(message => message.type);
-          assert(types.indexOf('ping') < types.indexOf('response.created'), 'expected the delayed upstream frame after the ping');
-          assertEquals(types.at(-1), 'response.completed');
-        } finally {
-          client.removeEventListener('message', onMessage);
-        }
-      }),
-    );
-  } finally {
-    time.restore();
-  }
+        await tickKeepAliveIntervals(4);
+        assertEquals(messages, [], 'expected no keep-alive before the turn sent its first event');
+
+        const response = {
+          id: 'resp_ws_keepalive',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output: [reasoning],
+          output_text: 'done',
+        };
+        const inProgress = { ...response, status: 'in_progress', output: [], output_text: '' };
+        enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
+        assert(
+          await drainFramesUntil(() => messages.length >= 1),
+          `expected the turn to open, got ${JSON.stringify(messages)}`,
+        );
+        assertEquals(
+          messages.map(message => message.type),
+          ['response.created'],
+          'expected the turn to open before any keep-alive',
+        );
+
+        await tickKeepAliveIntervals(1);
+
+        enqueueSseEvent('response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: reasoning, sequence_number: 1 });
+        enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 2 });
+        upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
+        upstreamController.close();
+        assert(
+          await drainFramesUntil(() => messages.some(isTerminalResponseEvent)),
+          `expected the turn to reach its terminal event, got ${JSON.stringify(messages)}`,
+        );
+
+        assertEquals(
+          messages.map(message => [message.type, message.sequence_number]),
+          [
+            ['response.created', 0],
+            [KEEP_ALIVE_EVENT_TYPE, 1],
+            ['response.output_item.done', 2],
+            ['response.completed', 3],
+          ],
+          'expected the keep-alive to take a slot and shift every later event past it',
+        );
+      } finally {
+        client.removeEventListener('message', onMessage);
+      }
+    }),
+  );
 });
 
 test('Responses WebSocket returns OpenAI-style error envelopes for unsupported client events', async () => {

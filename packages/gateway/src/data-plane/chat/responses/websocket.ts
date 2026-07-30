@@ -34,6 +34,14 @@ interface ResponsesWebSocketSocket {
 
 const UTF8_ENCODER = new TextEncoder();
 
+// Our implementor slug prefixes the keep-alive's wire type; the spec reserves
+// every unprefixed type for itself. The frame carries nothing beyond `type`
+// and `sequence_number`: a top-level `error` key in particular would be fatal,
+// since openai-node raises an `APIError` on any frame carrying one whatever
+// its type.
+// https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L70
+export const KEEP_ALIVE_EVENT_TYPE = 'floway:keep_alive';
+
 interface ResponsesWebSocketHandlers {
   onMessage(event: { readonly data: unknown }, socket: ResponsesWebSocketSocket): void;
   onClose(event: unknown, socket: ResponsesWebSocketSocket): void;
@@ -354,6 +362,8 @@ const respondResponsesWebSocket = async (input: {
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
     let stoppedByDownstream = false;
+    let streamed = false;
+    const sequence = createDownstreamSequence();
 
     const stopForDownstream = (): void => {
       stoppedByDownstream = true;
@@ -370,7 +380,41 @@ const respondResponsesWebSocket = async (input: {
         const next = await nextFrameOrKeepAlive(pendingNext);
 
         if (next.type === 'keep-alive') {
-          if (!sendJson(socket, { type: 'ping' }, eventId, ctx.dump)) {
+          // Extended reasoning turns go completely silent: upstream sends SSE
+          // `ping` events, `parseResponsesStream` drops them, and no frame at
+          // all reaches this socket for minutes. A silent Workers WebSocket is
+          // torn down — a raw probe against a Cloudflare-proxied endpoint died
+          // at TCP level around 125 s with no close frame and no
+          // edge-originated ping, and a Worker cannot answer with one of its
+          // own: workerd's `WebSocket` exposes only
+          // accept/send/close/(de)serializeAttachment, and the kj layer beneath
+          // states the omission as a design decision ("Ping/Pong … are not
+          // exposed through this interface"). RFC 6455 §5.5.2 is the right
+          // mechanism and it is unreachable here; it would also not help the
+          // client that needs it most, since Codex's frame pump swallows
+          // control frames and only a text frame rearms its 300 s idle timeout.
+          // https://github.com/cloudflare/workerd/blob/26b5461b7dcc640bb16072f1ba6f2c6df82572ba/src/workerd/api/web-socket.h#L346-L394
+          // https://github.com/capnproto/capnproto/blob/e9fa5c7dc98192fc0dc0098ec770db68f997a938/c%2B%2B/src/kj/compat/http.h#L622-L631
+          //
+          // So the keep-alive is a text frame whose `type` no client
+          // recognizes. The spec's extension section governs its shape: an
+          // implementor slug prefix plus a `sequence_number`. A keep-alive is
+          // neither a delta nor a state-machine event, so it cannot be spelled
+          // as a `response.*` event; the slug form is what makes it ignorable
+          // without loss. openai-node's SSE `responses.stream()` helper is the
+          // one client that treats a prefixed type as fatal, and it is out of
+          // reach here — Floway's SSE keep-alive is a comment line and this
+          // frame exists only on the WebSocket transport.
+          // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L758
+          //
+          // Held back until the turn's first event has gone out. Both SDK
+          // stream helpers require `response.created` to be the very first
+          // event they see and raise on anything before it, so the window
+          // before it stays unprotected by design.
+          // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/lib/responses/ResponseAccumulator.ts#L25-L31
+          // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/lib/streaming/responses/_responses.py#L369-L370
+          if (!streamed) continue;
+          if (!sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump)) {
             stopForDownstream();
             return;
           }
@@ -410,10 +454,11 @@ const respondResponsesWebSocket = async (input: {
           continue;
         }
 
-        if (!sendResponsesEvent(socket, event, eventId, ctx.dump)) {
+        if (!sendResponsesEvent(socket, sequence.renumber(event), eventId, ctx.dump)) {
           stopForDownstream();
           return;
         }
+        streamed = true;
       }
     } finally {
       if (!completed) {
@@ -426,7 +471,10 @@ const respondResponsesWebSocket = async (input: {
     if (terminalEvent === undefined) {
       throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
     }
-    if (!sendResponsesEvent(socket, terminalEvent, eventId, ctx.dump)) {
+    // Renumbered here rather than where it was buffered: keep-alives can still
+    // fire while the generator drains behind the terminal event, and each of
+    // those takes a slot that has to land before the terminal event's own.
+    if (!sendResponsesEvent(socket, sequence.renumber(terminalEvent), eventId, ctx.dump)) {
       completion = 'cancel';
       return;
     }
@@ -486,6 +534,41 @@ const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): P
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
+};
+
+interface DownstreamSequence {
+  renumber(event: ClientResponsesStreamEvent): ClientResponsesStreamEvent;
+  take(): number;
+}
+
+// A WebSocket turn shares one sequence space with the streaming-HTTP events it
+// carries, so a keep-alive cannot sit outside that numbering: it takes a real
+// slot and every later event is shifted past it. The number is always present
+// and always numeric, because a resuming openai-python client compares it with
+// `>` against its `starting_after` cursor and `None` there raises a TypeError.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
+// https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/lib/streaming/responses/_responses.py#L59
+//
+// Upstream numbering is left untouched until the first keep-alive, and a
+// keep-alive can only follow an event that already went out, so the slot it
+// takes is always known.
+const createDownstreamSequence = (): DownstreamSequence => {
+  let shift = 0;
+  let next = 0;
+  return {
+    renumber: event => {
+      if (event.sequence_number === undefined) return event;
+      const sequenceNumber = event.sequence_number + shift;
+      next = sequenceNumber + 1;
+      return { ...event, sequence_number: sequenceNumber };
+    },
+    take: () => {
+      shift += 1;
+      const taken = next;
+      next += 1;
+      return taken;
+    },
+  };
 };
 
 const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
@@ -552,8 +635,11 @@ const sendError = (
 // A turn's own frames go out through this entry, which accepts only a stream
 // event whose response resource has already passed the client-facing egress
 // stage. The two frames Floway synthesizes for the transport itself — the
-// `error` envelope and the `ping` keep-alive — carry no response resource at
-// all and are not protocol stream events, so they keep the untyped `sendJson`.
+// `error` envelope and the `floway:keep_alive` keep-alive — carry no response
+// resource at all, and neither belongs to the stream-event union: the error
+// envelope is not a streaming event, and the keep-alive is a slug-prefixed
+// extension the union deliberately does not model. Both keep the untyped
+// `sendJson`.
 const sendResponsesEvent = (
   socket: ResponsesWebSocketSocket,
   event: ClientResponsesStreamEvent,
