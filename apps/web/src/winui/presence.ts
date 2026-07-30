@@ -78,6 +78,54 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     exit: fadeOut,
   });
 
+  // MenuFlyout's open and close. WinUI reveals a menu rather than moving it:
+  // the presenter slides in from half its own height while a clip slides the
+  // other way by exactly as much, which pins the visible window to the final
+  // layout box and lets only the content travel through it. A menu below its
+  // trigger therefore starts as its own bottom half drawn in the top half of
+  // the box, and grows downward; one above its trigger starts as its top half
+  // in the bottom half, and grows upward. Nothing fades in.
+  //
+  // XAML applies this clip inside the render transform, which is also what CSS
+  // does with `clip-path`, so the pair transcribes directly onto one element and
+  // `inset()`'s percentages resolve against the box without measuring anything.
+  // The direction is the only input, and WinUI takes it from the placement --
+  // Bottom only when the flyout sits above its target, Top otherwise.
+  //
+  // The 250ms reveal is the whole of the open. Closing is a bare 83ms linear
+  // fade with no transform at all: WinUI's two directions are not a matched
+  // pair here, and the clip keyframes its close registers hold one constant
+  // value at both ends, pinning an interrupted open rather than animating.
+  //
+  // The submenu's deeper 0.67 ratio is not reproduced. Fluent renders a submenu
+  // through the same components as a menu and writes nothing that tells them
+  // apart, so there is no term in the DOM to branch on.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/MenuPopupThemeTransition_Partial.h#L24-L25
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/LayoutTransition_partial.cpp#L423-L563
+  // The slide is written to the `translate` property rather than into
+  // `transform`, because `transform` is where Fluent's positioning already
+  // lives: a popover is placed by translating it to the coordinates the
+  // positioning engine computed, and a keyframe naming `transform` replaces
+  // that outright and plays the whole reveal at the origin of the containing
+  // block. `translate` composes with it instead.
+  const MenuSurfaceMotion = components.createPresenceComponent(({ element }) => {
+    const above = element.getAttribute('data-popper-placement')?.startsWith('top') ?? false;
+    const closedOffset = above ? '0 50%' : '0 -50%';
+    const closedClip = above ? 'inset(0% 0% 50% 0%)' : 'inset(50% 0% 0% 0%)';
+
+    return {
+      enter: {
+        keyframes: [
+          { translate: closedOffset, clipPath: closedClip },
+          { translate: '0 0', clipPath: 'inset(0% 0% 0% 0%)' },
+        ],
+        duration: CONTROL_NORMAL_ANIMATION_MS,
+        easing: CONTROL_FAST_OUT_SLOW_IN_EASING,
+      },
+      exit: fadeOut,
+    };
+  });
+
   // A caller that states its own motion keeps it, the same way a caller that
   // states its own appearance does.
   const runMotion = <Component>(component: Component, slot: string, Motion: React.ElementType): Component => {
@@ -95,9 +143,16 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     return wrapped as Component;
   };
 
+  // Popover keeps Fluent's motion. Its WinUI counterpart is Flyout, whose
+  // PopupThemeTransition reads its duration and easing out of the Windows theme
+  // at runtime through uxtheme rather than declaring them; the only number the
+  // source states is a 50 DIP entrance offset. There is nothing to transcribe
+  // without reading it off a running Windows machine.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/FlyoutBase_partial.cpp#L69
   return {
     ...components,
     Dialog: runMotion(components.Dialog, 'surfaceMotion', DialogSurfaceMotion),
     DialogSurface: runMotion(components.DialogSurface, 'backdropMotion', DialogBackdropMotion),
+    Menu: runMotion(components.Menu, 'surfaceMotion', MenuSurfaceMotion),
   };
 };
