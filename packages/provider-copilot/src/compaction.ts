@@ -8,7 +8,7 @@
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L439-L501
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/utils/string/src/truncate.rs#L71-L74
 
-import { createRandomResponsesItemId, type ResponsesCompactionTriggerItem, type ResponsesInputContent, type ResponsesInputItem, type ResponsesInputMessage, type ResponsesOutputItem, type ResponsesResult } from '@floway-dev/protocols/responses';
+import { createRandomResponsesItemId, type ResponsesCompactionTriggerItem, type ResponsesInputContent, type ResponsesInputItem, type ResponsesInputMessage, type ResponsesCompactionResult, type ResponsesOutputItem, type ResponsesResult } from '@floway-dev/protocols/responses';
 
 export const COMPACTION_TRIGGER: ResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
@@ -47,7 +47,7 @@ const isRetainedMessage = (item: ResponsesInputItem): item is ResponsesInputMess
 // Retained messages are newly synthesized output items, so their client-visible
 // producer IDs are assigned here instead of inherited from input. They are
 // resent as full content; the compaction blob carries next-turn state.
-export const compactionResponse = (input: ResponsesInputItem[], generated: ResponsesResult): ResponsesResult => {
+export const compactionResponse = (input: ResponsesInputItem[], generated: ResponsesResult): ResponsesCompactionResult => {
   const kept: ResponsesInputMessage[] = [];
   let used = 0;
   for (let i = input.length - 1; i >= 0; i -= 1) {
