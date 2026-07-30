@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from 'react';
 
-import { bingAccentGradient, bingOnAccentForeground } from './bing-chat-palette';
+import { bingAccentGradient, bingOnAccentForeground } from './bing-chat-tokens';
 import type { PlaygroundMessage } from './playground-logic';
 import { fluentComponents } from '../../fluent';
 

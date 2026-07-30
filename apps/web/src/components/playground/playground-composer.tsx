@@ -4,7 +4,6 @@ import {
   SendRegular,
   StopRegular,
 } from '@fluentui/react-icons';
-import { useLayoutEffect, useRef } from 'react';
 
 import {
   bingAccentForeground,
@@ -12,42 +11,100 @@ import {
   bingAccentGradient,
   bingAccentGradientActive,
   bingAccentGradientHover,
+  bingBody2FontSize,
+  bingBody2FontWeight,
+  bingBody2LineHeight,
+  bingComposerButtonSize,
+  bingComposerGutterPadding,
+  bingComposerMaxHeight,
+  bingComposerPaddingBlock,
+  bingComposerRadiusFilled,
+  bingComposerRadiusResting,
+  bingComposerTransitionDuration,
+  bingComposerTransitionEasing,
+  bingComposeButtonSize,
   bingOnAccentForeground,
-} from './bing-chat-palette';
+} from './bing-chat-tokens';
 import broomUrl from '../../assets/broom.svg';
 import { fluentComponents } from '../../fluent';
 import { Input } from '../ui/fluent-form-controls';
-import { ScrollArea } from '../ui/scroll-area';
 
 const { Button, Tooltip, makeStyles, tokens } = fluentComponents;
 
 const useStyles = makeStyles({
   inputShell: {
+    position: 'relative',
     backgroundColor: tokens.colorNeutralBackground1,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     boxShadow: tokens.shadow4,
-    transitionProperty: 'border-color, box-shadow',
-    transitionDuration: tokens.durationFaster,
-    '&:focus-within': {
-      boxShadow: tokens.shadow8,
+    borderRadius: bingComposerRadiusResting,
+    paddingBlock: bingComposerPaddingBlock,
+    transitionProperty: 'border-color, box-shadow, border-radius',
+    transitionDuration: bingComposerTransitionDuration,
+    transitionTimingFunction: bingComposerTransitionEasing,
+    '&:focus-within': { boxShadow: tokens.shadow8 },
+    '&[data-has-text="true"]': { borderRadius: bingComposerRadiusFilled },
+  },
+  // Bing grew the field with no script at all. The label is an `inline-grid`
+  // whose `::after` mirrors the field's text — same wrap, same metrics, hidden
+  // — and both share one grid cell, so the mirror's height is the row's height
+  // and the field is stretched to it. The trailing space in the content is what
+  // reserves room for a just-typed newline.
+  textInput: {
+    position: 'relative',
+    display: 'inline-grid',
+    width: '100%',
+    maxHeight: bingComposerMaxHeight,
+    '&::after': {
+      content: 'attr(data-input) " "',
+      visibility: 'hidden',
+      whiteSpace: 'pre-wrap',
+      gridArea: '1 / 1',
+      wordBreak: 'break-word',
+      fontFamily: 'inherit',
+      fontSize: bingBody2FontSize,
+      lineHeight: bingBody2LineHeight,
+      fontWeight: bingBody2FontWeight,
     },
   },
   textarea: {
+    gridArea: '1 / 1',
+    position: 'relative',
+    maxHeight: bingComposerMaxHeight,
+    overflowX: 'hidden',
+    overflowY: 'auto',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
     color: tokens.colorNeutralForeground1,
-    fontFamily: tokens.fontFamilyBase,
-    fontSize: tokens.fontSizeBase400,
-    lineHeight: tokens.lineHeightBase400,
+    fontFamily: 'inherit',
+    fontSize: bingBody2FontSize,
+    lineHeight: bingBody2LineHeight,
+    fontWeight: bingBody2FontWeight,
     backgroundColor: 'transparent',
     border: 0,
     outlineStyle: 'none',
     resize: 'none',
+    padding: 0,
+    margin: 0,
     '&::placeholder': { color: tokens.colorNeutralForeground3 },
     '&:disabled': {
       color: tokens.colorNeutralForegroundDisabled,
       cursor: 'not-allowed',
     },
   },
+  // Pinned to the bar's top edge rather than laid out beside the field, so the
+  // controls hold their place as the bar grows downward.
+  controlsRight: {
+    position: 'absolute',
+    insetInlineEnd: 0,
+    top: 0,
+    display: 'flex',
+    padding: bingComposerGutterPadding,
+    zIndex: 2,
+  },
   imageButton: {
+    height: bingComposerButtonSize,
+    width: bingComposerButtonSize,
     color: bingAccentForeground,
     backgroundColor: 'transparent',
     border: 0,
@@ -62,6 +119,7 @@ const useStyles = makeStyles({
     },
   },
   newTopicButton: {
+    height: bingComposeButtonSize,
     color: bingOnAccentForeground,
     backgroundImage: bingAccentGradient,
     border: 0,
@@ -129,14 +187,6 @@ export function PlaygroundComposer({
   stopLabel,
 }: PlaygroundComposerProps) {
   const s = useStyles();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = '0px';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 144)}px`;
-  }, [draft]);
 
   return (
     <div className="grid gap-2">
@@ -160,22 +210,21 @@ export function PlaygroundComposer({
           </Tooltip>
         </div>
       )}
-      <div className="flex items-stretch gap-2 min-w-0">
+      <div className="flex items-end gap-3 min-w-0">
         <button
           type="button"
-          className={`min-h-[44px] shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 font-fui-regular text-fui-base400 ${s.newTopicButton}`}
+          className={`shrink-0 rounded-full px-3 flex items-center justify-center gap-1.5 font-fui-regular ${s.newTopicButton}`}
           disabled={newTopicDisabled}
           onClick={onNewTopic}
         >
           <img alt="" aria-hidden="true" className={s.broomIcon} src={broomUrl} />
           <span>{newTopicLabel}</span>
         </button>
-        <div className={`min-w-0 flex-1 min-h-[44px] rounded-full pl-5 pr-1 py-1 flex items-center gap-2 ${s.inputShell}`}>
-          <ScrollArea axes="vertical" className="min-w-0 flex-1 max-h-[144px]" noTabIndex>
+        <div className={`min-w-0 flex-1 pl-5 pr-[88px] ${s.inputShell}`} data-has-text={draft.length > 0}>
+          <label className={s.textInput} data-input={draft}>
             <textarea
-              ref={textareaRef}
               aria-label={placeholder}
-              className={`block min-w-0 w-full overflow-hidden py-[3px] ${s.textarea}`}
+              className={`block min-w-0 w-full ${s.textarea}`}
               disabled={sending}
               placeholder={placeholder}
               rows={1}
@@ -188,13 +237,13 @@ export function PlaygroundComposer({
                 }
               }}
             />
-          </ScrollArea>
-          <div className="shrink-0 flex items-center gap-0">
+          </label>
+          <div className={s.controlsRight}>
             <Tooltip content={imageEnabled ? imageLabel : imageUnsupportedLabel} relationship="label">
               <button
                 type="button"
                 aria-label={imageLabel}
-                className={`w-[34px] h-[34px] shrink-0 rounded-full grid place-items-center text-fui-base600 ${s.imageButton}`}
+                className={`shrink-0 rounded-full grid place-items-center text-fui-base600 ${s.imageButton}`}
                 disabled={!imageEnabled || sending}
                 onClick={onToggleImage}
               >
@@ -205,7 +254,7 @@ export function PlaygroundComposer({
               <button
                 type="button"
                 aria-label={sending ? stopLabel : sendLabel}
-                className={`w-[34px] h-[34px] shrink-0 rounded-full grid place-items-center text-fui-base500 ${s.imageButton}`}
+                className={`shrink-0 rounded-full grid place-items-center text-fui-base500 ${s.imageButton}`}
                 disabled={!sending && !canSend}
                 onClick={sending ? onStop : onSend}
               >

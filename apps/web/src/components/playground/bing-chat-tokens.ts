@@ -46,3 +46,38 @@ export const bingAccentForegroundHover = 'light-dark(#1543CD, #A2B7F4)';
 // accent is light in dark mode, so its "text on accent" resolves to a dark
 // foreground, and what sits under this text is Bing's accent, not WinUI's.
 export const bingOnAccentForeground = '#FFFFFF';
+
+// Body2 — the type of both the composer's field and the broom button's label.
+// `--cib-type-body2-*`; the family is inherited from the SERP host, so the
+// playground keeps its own.
+export const bingBody2FontSize = '16px';
+export const bingBody2LineHeight = '24px';
+export const bingBody2FontWeight = 400;
+
+// `components.actionBar.searchBorderRadius` and
+// `measurements.borderRadius.borderRadiusXLarge`. The corner is a state, not a
+// function of height: the bar is a pill until it holds something, and squares
+// off to 12px the moment it does. Bing keyed this on having content rather than
+// on having wrapped, which is why its corners are never caught mid-blob.
+export const bingComposerRadiusResting = '24px';
+export const bingComposerRadiusFilled = '12px';
+
+// `static.motion.duration.fast` and `easingFunction.motionIn`, the pair the
+// composer names in its own `transition-property`.
+export const bingComposerTransitionDuration = '187ms';
+export const bingComposerTransitionEasing = 'cubic-bezier(0, 0, 0, 1)';
+
+// `.main-container` padding, `.button-compose`/`.controls-*` geometry. One line
+// of Body2 plus this padding is exactly the 48px resting height, and a 36px
+// button in an 8px/6px gutter centres on that same 48px.
+export const bingComposerPaddingBlock = '13px 11px';
+export const bingComposerButtonSize = '36px';
+export const bingComposerGutterPadding = '6px 8px';
+export const bingComposeButtonSize = '48px';
+export const bingComposerColumnGap = '12px';
+
+// The only cap the bundle expresses. On the shipped desktop path it sits behind
+// a disabled flag and the field simply grows without bound, which a page-sized
+// composer can afford and a panel-sized one cannot; this is Bing's own number
+// for the same job.
+export const bingComposerMaxHeight = '50vh';

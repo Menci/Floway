@@ -18,7 +18,7 @@ import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ModelInfoBadges } from '../components/models/model-info-badges';
 import { effectiveUpstreamCap } from '../components/models/reachability';
-import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-palette';
+import { bingAccentForeground, bingAccentForegroundHover } from '../components/playground/bing-chat-tokens';
 import { PlaygroundComposer } from '../components/playground/playground-composer';
 import {
   availableModels,
