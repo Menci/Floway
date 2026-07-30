@@ -115,7 +115,7 @@
 // forces a narrower scope: the layer's vocabulary is independent of where
 // Fluent chooses to declare its theme.
 
-import { CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS } from './motion';
+import { CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS, INDICATOR_SETTLE_EASING, INDICATOR_SETTLE_MS } from './motion';
 
 // The selector half of the opt-out documented above: appended to a rule's
 // subject compound, it stops the rule at the boundary of an opted-out subtree.
@@ -554,6 +554,8 @@ export const winuiTokenCss = `
   --winui-control-normal-animation-duration: ${CONTROL_NORMAL_ANIMATION_MS}ms;
   --winui-control-faster-animation-duration: ${CONTROL_FASTER_ANIMATION_MS}ms;
   --winui-control-fast-out-slow-in-easing: ${CONTROL_FAST_OUT_SLOW_IN_EASING};
+  --winui-indicator-settle-duration: ${INDICATOR_SETTLE_MS}ms;
+  --winui-indicator-settle-easing: ${INDICATOR_SETTLE_EASING};
 }
 
 /* Button padding. XAML thicknesses read left,top,right,bottom while the CSS

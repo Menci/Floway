@@ -79,14 +79,20 @@ export const switchCss = `
      knob swelling under the pointer, and that spline leaves the knob half way
      across in a sixth of the move.
 
-     With no value to transcribe, the travel keeps Fluent's own -- an easy-ease
-     over the normal duration, which is symmetric where every WinUI curve in
-     reach is front-loaded. Left alone rather than replaced with a number chosen
-     to look right.
+     With no value to transcribe it borrows the one WinUI moves a selection
+     indicator with -- the settle half of PlayIndicatorAnimations, its own
+     400ms on its own spline. That curve is decisive at the start and unhurried
+     at the end, which is how a knob crossing a track reads; Fluent's symmetric
+     easy-ease is too soft for it, and the size animation's spline, tried here
+     first, is a lunge -- it puts the knob 46% across in 61ms.
+
+     Borrowed, not transcribed: the reposition this replaces has no numbers
+     anywhere in the corpus, and this is the nearest sourced movement of the
+     same kind in the vocabulary.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L443-L446 */
-  transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--durationNormal);
+  transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-indicator-settle-duration);
   transition-property: width, height, margin-inline-start, transform;
-  transition-timing-function: var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--curveEasyEase);
+  transition-timing-function: var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-indicator-settle-easing);
   width: 12px;
 }
 
