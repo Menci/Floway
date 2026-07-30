@@ -630,6 +630,39 @@ test('multiple citations on the same text content part get monotonic annotation_
   assertEquals((firstAnn.sequence_number ?? -1) < (secondAnn.sequence_number ?? -1), true);
 });
 
+test('accumulated citations land on the completed content part and output item', () => {
+  const state = createMessagesToResponsesStreamState('resp_cite', 'claude-test');
+  startTextBlockWithMessage(state);
+
+  pushTextDelta(state, 'First quote here.');
+  translateMessagesEventToResponsesEvents(
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: {
+        type: 'citations_delta',
+        citation: {
+          type: 'web_search_result_location',
+          url: 'https://example.com/a',
+          title: 'A',
+          encrypted_index: 'blob',
+          cited_text: 'quote here',
+        },
+      },
+    } as MessagesStreamEvent,
+    state,
+  );
+
+  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent, state);
+
+  const annotations = [{ type: 'url_citation', url: 'https://example.com/a', title: 'A', start_index: 7, end_index: 17 }];
+  const partDone = stopEvents.find(event => event.type === 'response.content_part.done') as Extract<ResponsesStreamEvent, { type: 'response.content_part.done' }>;
+  assertEquals(partDone.part, { type: 'output_text', text: 'First quote here.', annotations });
+  assertEquals(state.completedItems, [
+    { type: 'message', id: partDone.item_id, status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'First quote here.', annotations }] },
+  ]);
+});
+
 test('citation offsets reflect running text length up to the citation_delta', () => {
   const state = createMessagesToResponsesStreamState('resp_cite', 'claude-test');
   startTextBlockWithMessage(state);
@@ -752,7 +785,7 @@ test('synthesized message item carries a stable id consistent across added, chil
   assertEquals(doneId, addedId);
   assertEquals(new Set(allChildIds), new Set([addedId]));
   assertEquals(state.completedItems, [
-    { type: 'message', id: addedId, role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] },
+    { type: 'message', id: addedId, status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'hi', annotations: [] }] },
   ]);
 });
 

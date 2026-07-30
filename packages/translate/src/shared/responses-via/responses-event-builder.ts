@@ -17,12 +17,13 @@ type OutputTextPart = Extract<ResponsesOutputContentBlock, { type: 'output_text'
 type RefusalPart = Extract<ResponsesOutputContentBlock, { type: 'refusal' }>;
 type ResponsesUsage = NonNullable<ResponsesResult['usage']>;
 
-const textPart = (text: string): OutputTextPart => ({
+export const textPart = (text: string, annotations: Responses.ResponsesAnnotation[]): OutputTextPart => ({
   type: 'output_text',
   text,
+  annotations,
 });
 
-const refusalPart = (refusal: string): RefusalPart => ({
+export const refusalPart = (refusal: string): RefusalPart => ({
   type: 'refusal',
   refusal,
 });
@@ -125,19 +126,15 @@ export const result = (input: {
 });
 
 // A translated producer allocates one item ID when the lifecycle opens and
-// reuses it across added, child, done, and terminal frames.
-export const messageItem = (id: string, text: string): ResponsesOutputMessage => ({
+// reuses it across added, child, done, and terminal frames. The same builder
+// serves the `added` and `done` positions, so the lifecycle status is a
+// parameter rather than a constant.
+export const messageItem = (id: string, status: 'in_progress' | 'completed', content: ResponsesOutputContentBlock): ResponsesOutputMessage => ({
   type: 'message',
   id,
+  status,
   role: 'assistant',
-  content: [textPart(text)],
-});
-
-export const refusalItem = (id: string, refusal: string): ResponsesOutputMessage => ({
-  type: 'message',
-  id,
-  role: 'assistant',
-  content: [refusalPart(refusal)],
+  content: [content],
 });
 
 export const reasoningItem = (id: string, summaryText: string, encryptedContent?: string): ResponsesOutputReasoning => ({
@@ -203,58 +200,62 @@ export const terminal = (state: ResponsesSequenceState, response: ResponsesResul
 export const itemAdded = (state: ResponsesSequenceState, outputIndex: number, item: ResponsesOutputItem) =>
   seq(state, [outputItemEvent('added', outputIndex, item)]);
 
-export const textStart = (state: ResponsesSequenceState, outputIndex: number, itemId: string) =>
-  seq(state, [
-    outputItemEvent('added', outputIndex, messageItem(itemId, '')),
+export const textStart = (state: ResponsesSequenceState, outputIndex: number, itemId: string) => {
+  const part = textPart('', []);
+  return seq(state, [
+    outputItemEvent('added', outputIndex, messageItem(itemId, 'in_progress', part)),
     {
       type: 'response.content_part.added',
       item_id: itemId,
       output_index: outputIndex,
       content_index: 0,
-      part: textPart(''),
+      part,
     },
   ]);
+};
 
 export const textDelta = (state: ResponsesSequenceState, outputIndex: number, itemId: string, delta: string) =>
   seq(state, [outputTextEvent('delta', outputIndex, itemId, delta)]);
 
-export const textDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, text: string, item: ResponsesOutputMessage) =>
+export const textDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, part: OutputTextPart, item: ResponsesOutputMessage) =>
   seq(state, [
-    outputTextEvent('done', outputIndex, itemId, text),
+    outputTextEvent('done', outputIndex, itemId, part.text),
     {
       type: 'response.content_part.done',
       item_id: itemId,
       output_index: outputIndex,
       content_index: 0,
-      part: textPart(text),
+      part,
     },
     outputItemEvent('done', outputIndex, item),
   ]);
 
-export const refusalStart = (state: ResponsesSequenceState, outputIndex: number, itemId: string) =>
-  seq(state, [
-    outputItemEvent('added', outputIndex, refusalItem(itemId, '')),
+export const refusalStart = (state: ResponsesSequenceState, outputIndex: number, itemId: string) => {
+  const part = refusalPart('');
+  return seq(state, [
+    outputItemEvent('added', outputIndex, messageItem(itemId, 'in_progress', part)),
     {
       type: 'response.content_part.added',
       item_id: itemId,
       output_index: outputIndex,
       content_index: 0,
-      part: refusalPart(''),
+      part,
     },
   ]);
+};
 
 export const refusalDelta = (state: ResponsesSequenceState, outputIndex: number, itemId: string, delta: string) =>
   seq(state, [refusalEvent('delta', outputIndex, itemId, delta)]);
 
-export const refusalDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, refusal: string, item: ResponsesOutputMessage) =>
+export const refusalDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, part: RefusalPart, item: ResponsesOutputMessage) =>
   seq(state, [
-    refusalEvent('done', outputIndex, itemId, refusal),
+    refusalEvent('done', outputIndex, itemId, part.refusal),
     {
       type: 'response.content_part.done',
       item_id: itemId,
       output_index: outputIndex,
       content_index: 0,
-      part: refusalPart(refusal),
+      part,
     },
     outputItemEvent('done', outputIndex, item),
   ]);

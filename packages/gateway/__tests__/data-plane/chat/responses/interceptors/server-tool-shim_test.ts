@@ -153,7 +153,7 @@ const mkMessageAdded = (outputIndex: number): ProtocolFrame<ResponsesStreamEvent
     item: {
       type: 'message',
       role: 'assistant',
-      content: [{ type: 'output_text', text: '' }],
+      content: [{ type: 'output_text', text: '', annotations: [] }],
     },
   });
 
@@ -164,7 +164,7 @@ const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<Respons
     item: {
       type: 'message',
       role: 'assistant',
-      content: [{ type: 'output_text', text }],
+      content: [{ type: 'output_text', text, annotations: [] }],
     },
   });
 
@@ -2801,7 +2801,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       object: 'response',
       model: 'test-model',
       output: [
-        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'real result' }] },
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'real result', annotations: [] }] },
       ],
       status: 'completed',
       error: null,
@@ -5209,7 +5209,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
-        part: { type: 'output_text', text: '' },
+        part: { type: 'output_text', text: '', annotations: [] },
       }),
       eventFrame<ResponsesStreamEvent>({
         type: 'response.output_text.delta',
@@ -5244,7 +5244,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
-        part: { type: 'output_text', text: 'hello world' },
+        part: { type: 'output_text', text: 'hello world', annotations: [] },
       }),
       mkMessageDone(0, 'hello world'),
       mkResponseCompleted(),
@@ -5352,7 +5352,7 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
         item: {
           type: 'message',
           role: 'assistant',
-          content: [{ type: 'output_text', text: '' }],
+          content: [{ type: 'output_text', text: '', annotations: [] }],
           // Upstream-provided id.
           id: 'msg_xyz_real_id',
         } as never,
@@ -5877,9 +5877,9 @@ test('createMergeState starts with empty sparse usage accumulator and a synthesi
 
 test('materializeAccumulatedOutput returns items in output_index order regardless of insertion order', () => {
   const s = createMergeState();
-  const itemA: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A' }] };
-  const itemB: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B' }] };
-  const itemC: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'C' }] };
+  const itemA: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
+  const itemB: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemC: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
   s.accumulatedOutput.set(2, itemC);
   s.accumulatedOutput.set(0, itemA);
   s.accumulatedOutput.set(1, itemB);
@@ -5892,7 +5892,7 @@ test('materializeAccumulatedOutput returns items in output_index order regardles
 
 test('materializeAccumulatedOutput drops holes in the index sequence (defensive)', () => {
   const s = createMergeState();
-  const itemB: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B' }] };
+  const itemB: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
   s.accumulatedOutput.set(1, itemB);
   const out = materializeAccumulatedOutput(s);
   assertEquals(out.length, 1);
