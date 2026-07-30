@@ -7,7 +7,6 @@ import { fluentComponents } from '../../fluent';
 const { Dialog, DialogBody, DialogContent, DialogSurface } = fluentComponents;
 
 interface DialogShellProps {
-  open?: boolean;
   onOpenChange: DialogProps['onOpenChange'];
   title: ReactNode;
   actions: ReactNode;
@@ -16,9 +15,9 @@ interface DialogShellProps {
   surfaceClassName?: string;
 }
 
-export function DialogShell({ open = true, onOpenChange, title, actions, onSubmit, children, surfaceClassName }: DialogShellProps) {
+export function DialogShell({ onOpenChange, title, actions, onSubmit, children, surfaceClassName }: DialogShellProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogSurface className={`floway-dialog-shell !m-auto max-w-[min(760px,calc(100vw-32px))] ${surfaceClassName ?? ''}`}>
         <form
           className="floway-dialog-shell__form"
