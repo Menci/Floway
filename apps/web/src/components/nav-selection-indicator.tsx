@@ -46,14 +46,15 @@ const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
 export function NavSelectionIndicator({
   containerRef,
   inset,
-  // Where the other list sits relative to this one, so a crossing knows which
-  // way to reach. Null while the selection stays inside this list.
-  crossing,
+  // Where the other list sits relative to this one. Fixed per instance: which
+  // half of a crossing this list plays is worked out from whether it holds the
+  // selection, not passed in.
+  otherListIs,
   selectedValue,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   inset: number;
-  crossing: 'above' | 'below' | null;
+  otherListIs: 'above' | 'below';
   selectedValue: string;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -94,19 +95,20 @@ export function NavSelectionIndicator({
     const bar = barRef.current;
     const previous = previousRef.current;
     previousRef.current = geometry;
-    // The arriving half has no previous geometry of its own -- the selection was
-    // never in this list -- and animates from the crossing instead.
-    if (!track || !bar || !geometry || (!previous && !crossing)) return;
+    if (!track || !bar || !geometry) return;
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-    // A crossing has no measurable gap inside this list, so the reach is the
-    // item's own length -- enough to read as travel toward the other list.
+    // A list is arriving when it holds the selection without having held it
+    // before, and leaving when the reverse is true. Either way the crossing has
+    // no measurable gap inside this list, so the reach is the item's own length
+    // -- enough to read as travel toward the other one.
     const holds = Boolean(container?.querySelector(`[data-nav-value="${CSS.escape(selectedValue)}"]`));
-    const towardOther = crossing === 'below' ? geometry.height : -geometry.height;
+    const crossing = holds !== Boolean(previous);
+    const towardOther = otherListIs === 'below' ? geometry.height : -geometry.height;
     const distance = crossing
-      // The half that keeps the selection reaches back toward where it came
-      // from; the half that loses it reaches after where it went.
+      // The arriving half reaches back toward where it came from; the leaving
+      // half reaches after where it went.
       ? (holds ? -towardOther : towardOther)
       : geometry.top - (previous?.top ?? geometry.top);
     if (distance === 0) return;
@@ -146,7 +148,7 @@ export function NavSelectionIndicator({
       previousRef.current = null;
       setGeometry(null);
     }, () => {});
-  }, [containerRef, crossing, geometry, selectedValue]);
+  }, [containerRef, geometry, otherListIs, selectedValue]);
 
   if (!geometry) return null;
 
