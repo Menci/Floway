@@ -1,7 +1,7 @@
 The following assets are taken from lobe-icons at commit
 a88f09a2892016a74f4c20f096c167c88f6c19c1:
 
-- jina.svg
+- jina-color.svg
   https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/jina.svg
 - microsoft-color.svg
   https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/microsoft-color.svg
@@ -11,8 +11,15 @@ a88f09a2892016a74f4c20f096c167c88f6c19c1:
   https://github.com/lobehub/lobe-icons/blob/a88f09a2892016a74f4c20f096c167c88f6c19c1/packages/static-svg/icons/openai.svg
 
 microsoft-color.svg is the four-square Microsoft logo, which upstream files
-under the Azure name; its title is changed to "Microsoft". The other three
-files are verbatim.
+under the Azure name; its title is changed to "Microsoft".
+
+lobe-icons ships Jina as one `currentColor` path and no colour variant.
+jina-color.svg splits that path at its two subpaths — the dot and the J — and
+fills them with Jina's own brand colours, sampled as the two dominant opaque
+values of the 256x256 mark at https://jina.ai/favicon.ico: #EB6161 for the dot
+and #009191 for the J.
+
+tavily-color.svg and openai.svg are verbatim.
 
 MIT License
 

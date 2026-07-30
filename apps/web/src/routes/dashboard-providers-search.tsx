@@ -8,14 +8,13 @@ import type { Route } from './+types/dashboard-providers-search';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
-import jinaIconUrl from '../assets/icons/jina.svg?no-inline';
+import jinaIconUrl from '../assets/icons/jina-color.svg';
 import microsoftIconUrl from '../assets/icons/microsoft-color.svg';
 import tavilyIconUrl from '../assets/icons/tavily-color.svg';
 import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown } from '../components/ui/fluent-form-controls';
-import { MaskedIcon } from '../components/ui/masked-icon';
 import { Panel } from '../components/ui/panel';
 import { SecretInput } from '../components/ui/secret-input';
 import { fluentComponents } from '../fluent';
@@ -78,20 +77,13 @@ export const eligibleSearchUpstreams = (upstreams: readonly UpstreamRecord[], mo
     && models.some(model => model.kind === 'chat' && model.upstreams.some(binding => binding.id === upstream.id)));
 
 // A search provider is a third party the operator recognizes by its mark, so
-// the mark is shown the way that party ships it: Tavily and Microsoft in their
-// own colors, Jina — whose mark has none — as a silhouette in the surrounding
-// text color, which is also what keeps it legible in dark mode. This is the
-// opposite call from the upstream chips, where a single tone per provider is
-// the point; here nothing else in the row carries the identity.
-interface ProviderIcon {
-  paint: 'brand' | 'text';
-  url: string;
-}
-
+// each mark is shown in its owner's colors. This is the opposite call from the
+// upstream chips, where one tone per provider is itself the identity; in this
+// list nothing else in the row says who the party is.
 interface ProviderOption {
   value: SearchConfig['provider'];
   labelKey: string;
-  icon?: ProviderIcon;
+  iconUrl?: string;
   descKey?: string;
   url?: string;
   getApiKey: (config: SearchConfig) => string;
@@ -108,7 +100,7 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     value: 'tavily',
     labelKey: 'dashboard.searchConfig.provider.tavily',
-    icon: { paint: 'brand', url: tavilyIconUrl },
+    iconUrl: tavilyIconUrl,
     descKey: 'dashboard.searchConfig.providerDescTavily',
     url: 'https://app.tavily.com/',
     getApiKey: c => c.tavily.apiKey,
@@ -117,7 +109,7 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     value: 'microsoft-web-iq',
     labelKey: 'dashboard.searchConfig.provider.microsoftWebIq',
-    icon: { paint: 'brand', url: microsoftIconUrl },
+    iconUrl: microsoftIconUrl,
     descKey: 'dashboard.searchConfig.providerDescMicrosoftWebIq',
     url: 'https://webiq.microsoft.ai/profiles',
     getApiKey: c => c.microsoftWebIq.apiKey,
@@ -126,7 +118,7 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     value: 'jina',
     labelKey: 'dashboard.searchConfig.provider.jina',
-    icon: { paint: 'text', url: jinaIconUrl },
+    iconUrl: jinaIconUrl,
     descKey: 'dashboard.searchConfig.providerDescJina',
     url: 'https://jina.ai/',
     getApiKey: c => c.jina.apiKey,
@@ -292,7 +284,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
             button={{
               children: (
                 <ProviderOptionLabel
-                  icon={activeOption.icon}
+                  iconUrl={activeOption.iconUrl}
                   label={t(activeOption.labelKey)}
                 />
               ),
@@ -303,7 +295,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
           >
             {PROVIDER_OPTIONS.map(opt => (
               <Option key={opt.value} value={opt.value} text={t(opt.labelKey)}>
-                <ProviderOptionLabel icon={opt.icon} label={t(opt.labelKey)} />
+                <ProviderOptionLabel iconUrl={opt.iconUrl} label={t(opt.labelKey)} />
               </Option>
             ))}
           </Dropdown>
@@ -523,13 +515,10 @@ function DescribedOptionLabel({ description, label }: { description?: string; la
   );
 }
 
-function ProviderOptionLabel({ icon, label }: { icon?: ProviderIcon; label: string }) {
+function ProviderOptionLabel({ iconUrl, label }: { iconUrl?: string; label: string }) {
   return (
     <span className="flex items-center gap-2 min-w-0">
-      {icon && (icon.paint === 'brand'
-        ? <img alt="" className="block h-[16px] w-[16px] flex-none" src={icon.url} />
-        : <MaskedIcon className="h-[16px] w-[16px]" url={icon.url} />
-      )}
+      {iconUrl && <img alt="" className="block h-[16px] w-[16px] flex-none" src={iconUrl} />}
       <span className="truncate">{label}</span>
     </span>
   );
