@@ -41,6 +41,17 @@
 // translates by 20px — a leading gap of 3.5px against a trailing 4.5px. One
 // translated element reproduces both, since the two knobs share that offset.
 export const switchCss = `
+/* The whole control is the drag surface, not the knob: XAML lays a transparent
+   Thumb across all three rows and columns, so the caption drags the switch too.
+   ManipulationMode="System,TranslateX" claims the horizontal axis for the
+   control and leaves the vertical one to the scroller above it, which is what
+   touch-action: pan-y says here.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L197
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L524-L528 */
+.fui-Switch.fui-Switch {
+  touch-action: pan-y;
+}
+
 /* The knob is centered in the track by laying the indicator out as a flex row.
    The indicator itself paints nothing and animates nothing: the fill and stroke
    belong to the two capsules below it and the knob paints its own.
@@ -77,9 +88,39 @@ export const switchCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L440-L466 */
 .fui-Switch__indicator.fui-Switch__indicator {
   --winui-switch-crossfade-duration: 0s;
+  --winui-switch-travel-duration: var(--winui-reposition-animation-duration);
 }
 
 .fui-Switch__input:checked ~ .fui-Switch__indicator.fui-Switch__indicator {
+  --winui-switch-crossfade-duration: var(--winui-control-faster-animation-duration);
+}
+
+/* Dragging. The knob is glued to the pointer -- XAML writes KnobTranslateTransform.X
+   on every DragDelta with no storyboard behind it -- so the travel transition is
+   switched off for the length of the gesture and the position comes in as a
+   custom property the drag writes.
+
+   Nothing about the fill moves either. Entering the empty Dragging state would
+   let the On storyboard's opacities revert, and OnToDraggingTransition re-asserts
+   them at KeyTime 0 to stop exactly that; the control holds the appearance of
+   the state it started from until the pointer is released. Here that falls out
+   for free, because the checkbox does not flip until the gesture commits.
+
+   Settling out of a drag does fade, in both directions. That is the one place
+   the off direction is not instant: DraggingToOffTransition carries the same
+   four 83ms opacity keyframes DraggingToOnTransition does, where OnToOffTransition
+   -- the click path -- carries none.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L391-L403
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L404-L417 */
+.fui-Switch[data-winui-switch-dragging] .fui-Switch__indicator.fui-Switch__indicator {
+  --winui-switch-travel-duration: 0s;
+}
+
+.fui-Switch[data-winui-switch-dragging].fui-Switch .fui-Switch__indicator.fui-Switch__indicator > * {
+  transform: translateX(var(--winui-switch-drag-x));
+}
+
+.fui-Switch[data-winui-switch-settling] .fui-Switch__indicator.fui-Switch__indicator {
   --winui-switch-crossfade-duration: var(--winui-control-faster-animation-duration);
 }
 
@@ -177,7 +218,7 @@ export const switchCss = `
      pointer, and the colour under it, are accents that have already finished.
      Matching their durations, tried here first, reads as the knob lunging.
      https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L443-L446 */
-  transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-reposition-animation-duration), var(--winui-switch-crossfade-duration);
+  transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-switch-travel-duration), var(--winui-switch-crossfade-duration);
   transition-property: width, height, margin-inline-start, transform, background-color;
   transition-timing-function: var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-reposition-easing), linear;
   width: 12px;
@@ -239,20 +280,27 @@ export const switchCss = `
 
    The state is taken from the root rather than from the input. Fluent's input
    is visually hidden and a pixel wide, so it never sees the pointer -- the
-   track does -- and keyed off the input these rules never fired at all.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L274-L287 */
-.fui-Switch:hover .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+   track does -- and keyed off the input these rules never fired at all. A drag
+   selects the same geometry outright, because ChangeVisualState answers Pressed
+   for the whole gesture and :active alone would not survive the pointer leaving
+   the control.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L274-L287
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L58-L70 */
+.fui-Switch:hover .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
+.fui-Switch[data-winui-switch-dragging] .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
   height: 14px;
   margin-inline-start: 1.5px;
   width: 14px;
 }
 
-.fui-Switch:active .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+.fui-Switch:active .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
+.fui-Switch[data-winui-switch-dragging] .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
   margin-inline-start: 2px;
   width: 17px;
 }
 
-.fui-Switch:active .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
+.fui-Switch:active .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
+.fui-Switch[data-winui-switch-dragging] .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
   margin-inline-start: -1px;
 }
 
