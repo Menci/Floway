@@ -555,7 +555,6 @@ const zhHansCN = {
             apiCompatibility: 'API 功能兼容',
             sanitization: '请求净化',
             retry: '重试策略',
-            other: '其他',
           },
           entries: {
             'vendor-deepseek': {

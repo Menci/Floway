@@ -28,7 +28,6 @@ import { Input } from '../ui/fluent-form-controls';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import type { Flag } from '@floway-dev/provider/flags';
 
 const {
   Button,
@@ -63,14 +62,12 @@ const ModelsYamlEditor = lazy(() => import('./models-yaml-editor'));
 
 export function UpstreamWorkspace({
   discovered,
-  flags,
   loadingModels,
   modelsError,
   onRefreshModels,
   record,
 }: {
   discovered: UpstreamModelConfig[];
-  flags: Flag[];
   loadingModels: boolean;
   modelsError: string | null;
   onRefreshModels: () => void;
@@ -91,7 +88,7 @@ export function UpstreamWorkspace({
   useLayoutEffect(() => {
     workspaceScrollRef.current?.scrollTo({ left: 0, top: 0 });
   }, [modelDetailTab, modelView, tab]);
-  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} flags={flags} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
+  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} discovered={discovered} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
@@ -115,18 +112,17 @@ export function UpstreamWorkspace({
               <Text size={300} className="text-fui-fg2 leading-[1.45]">
                 {t('dashboard.upstreamEditor.flags.intro')}
               </Text>
-              <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} flags={flags} value={field.value} onChange={field.onChange} />} />
+              <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} value={field.value} onChange={field.onChange} />} />
             </div>}
           </div>}
     </ScrollArea>
   </section>;
 }
 
-function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onRefresh, onViewChange, onYamlChange, onYamlErrorChange, record, view, yaml, yamlError }: {
+function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh, onViewChange, onYamlChange, onYamlErrorChange, record, view, yaml, yamlError }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
   error: string | null;
-  flags: Flag[];
   loading: boolean;
   onRefresh: () => void;
   onViewChange: (view: ModelView) => void;
@@ -259,7 +255,7 @@ function ModelsWorkspace({ detailSection, discovered, error, flags, loading, onR
       shouldDirty: true,
       shouldTouch: true,
     });
-  }} record={record} flags={flags} upstreamFlags={upstreamFlags} />{deleteDialog}</>;
+  }} record={record} upstreamFlags={upstreamFlags} />{deleteDialog}</>;
 
   return <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
     <div className="flex flex-wrap items-center gap-3">

@@ -72,9 +72,9 @@ export {
   httpResponseToResponse,
 } from './models-fetch.ts';
 
-export type { Flag, FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
+export type { FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
 export {
-  OPTIONAL_FLAGS,
+  OPTIONAL_FLAG_IDS,
   parseFlagOverridesWire,
   resolveEffectiveFlags,
 } from './flags.ts';

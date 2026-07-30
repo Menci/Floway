@@ -195,7 +195,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
           />
         </Panel>
         <Panel className="min-h-0 min-w-0 overflow-hidden !p-0">
-          <UpstreamWorkspace record={record} flags={data.flags} discovered={discovered} loadingModels={modelsLoading} modelsError={modelsError} onRefreshModels={() => void refreshModels()} />
+          <UpstreamWorkspace record={record} discovered={discovered} loadingModels={modelsLoading} modelsError={modelsError} onRefreshModels={() => void refreshModels()} />
         </Panel>
       </div>
     </div>

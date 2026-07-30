@@ -578,7 +578,6 @@ const en = {
             apiCompatibility: 'API Feature Compatibility',
             sanitization: 'Request Sanitization',
             retry: 'Retry Policies',
-            other: 'Other',
           },
           entries: {
             'vendor-deepseek': {

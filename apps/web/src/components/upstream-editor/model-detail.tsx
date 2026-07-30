@@ -15,7 +15,6 @@ import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
-import type { Flag } from '@floway-dev/provider/flags';
 
 const {
   Button,
@@ -47,7 +46,6 @@ export interface ModelDetailRow {
 const reasoningPresets = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export function ModelDetail({
-  flags,
   onDelete,
   onSourceChange,
   onUpdate,
@@ -57,7 +55,6 @@ export function ModelDetail({
   section,
   upstreamFlags,
 }: {
-  flags: Flag[];
   onDelete: () => void;
   onSourceChange: (source: 'auto' | 'manual') => void;
   onUpdate: (value: UpstreamModelConfig) => void;
@@ -129,7 +126,6 @@ export function ModelDetail({
       {section === 'flags' ? <FeatureFlagsEditor
         defaults={record.flag_defaults}
         inherited={upstreamFlags}
-        flags={flags}
         readOnly={!editable}
         value={row.config.flagOverrides ?? {}}
         onChange={flagOverrides => patch({ flagOverrides: Object.keys(flagOverrides).length === 0 ? undefined : flagOverrides })}

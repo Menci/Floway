@@ -431,20 +431,6 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   });
 });
 
-test('GET /api/upstreams/flags returns the flag catalog and requires admin auth', async () => {
-  const { adminSession, apiKey } = await setupAppTest();
-
-  const resp = await requestApp('/api/upstreams/flags', { method: 'GET', headers: { 'x-floway-session': adminSession } });
-  assertEquals(resp.status, 200);
-  const catalog = (await resp.json()) as Array<Record<string, unknown>>;
-  const sample = catalog.find(e => e.id === 'vendor-kimi');
-  assertEquals(typeof sample?.label, 'string');
-  assertEquals(typeof sample?.description, 'string');
-
-  const forbidden = await requestApp('/api/upstreams/flags', { method: 'GET', headers: { 'x-api-key': apiKey.key } });
-  assertEquals(forbidden.status, 403);
-});
-
 test('GET /api/upstream-options returns the minimal picker shape to admin and non-admin callers', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   await repo.upstreams.save({

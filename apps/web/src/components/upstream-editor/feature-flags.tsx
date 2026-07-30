@@ -3,92 +3,73 @@ import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 import { Dropdown } from '../ui/fluent-form-controls';
-import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
+import { OPTIONAL_FLAG_IDS, type FlagDefaults, type FlagId, type FlagOverrides } from '@floway-dev/provider/flags';
 
 const { Option, Text } = fluentComponents;
 
 type FlagGroupId = 'vendor' | 'shims' | 'apiCompatibility' | 'sanitization' | 'retry';
 
-const flagGroups: readonly { id: FlagGroupId; flagIds: readonly string[] }[] = [
-  {
-    id: 'vendor',
-    flagIds: ['vendor-deepseek', 'vendor-qwen', 'vendor-kimi'],
-  },
-  {
-    id: 'shims',
-    flagIds: [
-      'messages-web-search-shim',
-      'responses-web-search-shim',
-      'responses-image-generation-shim',
-      'responses-compact-shim',
-    ],
-  },
-  {
-    id: 'apiCompatibility',
-    flagIds: [
-      'disable-reasoning-on-forced-tool-choice',
-      'demote-interleaved-system-to-user',
-      'demote-developer-to-system',
-      'promote-system-to-developer',
-    ],
-  },
-  {
-    id: 'sanitization',
-    flagIds: ['strip-billing-attribution', 'strip-prompt-cache-key'],
-  },
-  {
-    id: 'retry',
-    flagIds: ['retry-cyber-policy'],
-  },
-];
+const flagGroupOrder: readonly FlagGroupId[] = ['vendor', 'shims', 'apiCompatibility', 'sanitization', 'retry'];
+
+const flagGroupById = {
+  'vendor-deepseek': 'vendor',
+  'vendor-qwen': 'vendor',
+  'vendor-kimi': 'vendor',
+  'retry-cyber-policy': 'retry',
+  'messages-web-search-shim': 'shims',
+  'responses-web-search-shim': 'shims',
+  'responses-image-generation-shim': 'shims',
+  'responses-compact-shim': 'shims',
+  'disable-reasoning-on-forced-tool-choice': 'apiCompatibility',
+  'demote-interleaved-system-to-user': 'apiCompatibility',
+  'demote-developer-to-system': 'apiCompatibility',
+  'promote-system-to-developer': 'apiCompatibility',
+  'strip-billing-attribution': 'sanitization',
+  'strip-prompt-cache-key': 'sanitization',
+} as const satisfies Record<FlagId, FlagGroupId>;
 
 export function FeatureFlagsEditor({
   defaults,
-  flags,
   inherited,
   onChange,
   readOnly = false,
   value,
 }: {
   defaults: FlagDefaults;
-  flags: Flag[];
   inherited?: FlagOverrides;
   onChange: (value: FlagOverrides) => void;
   readOnly?: boolean;
   value: FlagOverrides;
 }) {
-  const { i18n, t } = useTranslation();
+  const { t } = useTranslation();
   const setState = (id: string, state: 'inherit' | 'on' | 'off') => {
     const next = { ...value } as Record<string, boolean>;
     if (state === 'inherit') delete next[id]; else next[id] = state === 'on';
     onChange(next);
   };
   const inheritedValue = (id: string) => inherited?.[id as keyof FlagOverrides] ?? defaults[id as keyof FlagDefaults] ?? false;
-  const knownIds = new Set(flagGroups.flatMap(group => group.flagIds));
-  const groupedFlags = flagGroups.map(group => ({
-    ...group,
-    flags: flags.filter(flag => group.flagIds.includes(flag.id)),
+  const groupedFlags = flagGroupOrder.map(id => ({
+    id,
+    flags: OPTIONAL_FLAG_IDS.filter(flagId => flagGroupById[flagId] === id),
   }));
-  const otherFlags = flags.filter(flag => !knownIds.has(flag.id));
 
-  const renderFlag = (flag: Flag) => {
-    const state = flag.id in value ? (value[flag.id as keyof FlagOverrides] ? 'on' : 'off') : 'inherit';
-    const inheritedState = inheritedValue(flag.id) ? 'on' : 'off';
+  const renderFlag = (flagId: FlagId) => {
+    const state = flagId in value ? (value[flagId] ? 'on' : 'off') : 'inherit';
+    const inheritedState = inheritedValue(flagId) ? 'on' : 'off';
     const stateLabel = state === 'inherit'
       ? t('dashboard.upstreamEditor.flags.inheritResolved', {
           state: t(`dashboard.upstreamEditor.flags.${inheritedState}`),
         })
       : t(`dashboard.upstreamEditor.flags.${state}`);
-    const labelKey = `dashboard.upstreamEditor.flags.entries.${flag.id}.label`;
-    const descKey = `dashboard.upstreamEditor.flags.entries.${flag.id}.description`;
-    const desc = i18n.exists(descKey) ? t(descKey) : flag.description;
-    return <section className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-t-solid border-fui-stroke1 py-3 first:border-t-0" key={flag.id}>
+    const label = t(`dashboard.upstreamEditor.flags.entries.${flagId}.label`);
+    const description = t(`dashboard.upstreamEditor.flags.entries.${flagId}.description`);
+    return <section className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-t-solid border-fui-stroke1 py-3 first:border-t-0" key={flagId}>
       <div className="grid gap-1 min-w-0">
         <Text weight="semibold">
-          <InlineMarkdown>{i18n.exists(labelKey) ? t(labelKey) : flag.label}</InlineMarkdown>
+          <InlineMarkdown>{label}</InlineMarkdown>
         </Text>
         <div className="grid gap-1">
-          {desc.split('\n').map((line, i) => (
+          {description.split('\n').map((line, i) => (
             <Text key={i} size={200} className="text-fui-fg2 leading-[1.4]">
               <InlineMarkdown>{line}</InlineMarkdown>
             </Text>
@@ -96,13 +77,13 @@ export function FeatureFlagsEditor({
         </div>
       </div>
       <Dropdown
-        aria-label={flag.label}
+        aria-label={label}
         className="w-[140px] !min-w-[140px]"
         disabled={readOnly}
         selectedOptions={[state]}
         value={stateLabel}
         onOptionSelect={(_, data) => {
-          if (data.optionValue) setState(flag.id, data.optionValue as 'inherit' | 'on' | 'off');
+          if (data.optionValue) setState(flagId, data.optionValue as 'inherit' | 'on' | 'off');
         }}
       >
         <Option value="inherit">
@@ -117,7 +98,7 @@ export function FeatureFlagsEditor({
   };
 
   return <div className="grid gap-5 min-w-0">
-    {groupedFlags.filter(group => group.flags.length > 0).map(group => (
+    {groupedFlags.map(group => (
       <section className="grid gap-2" key={group.id}>
         <Text as="h3" size={400} weight="semibold" className="!m-0">
           {t(`dashboard.upstreamEditor.flags.groups.${group.id}`)}
@@ -127,16 +108,6 @@ export function FeatureFlagsEditor({
         </div>
       </section>
     ))}
-    {otherFlags.length > 0 && (
-      <section className="grid gap-2">
-        <Text as="h3" size={400} weight="semibold" className="!m-0">
-          {t('dashboard.upstreamEditor.flags.groups.other')}
-        </Text>
-        <div>
-          {otherFlags.map(renderFlag)}
-        </div>
-      </section>
-    )}
   </div>;
 }
 

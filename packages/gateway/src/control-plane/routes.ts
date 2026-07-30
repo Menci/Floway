@@ -17,7 +17,7 @@ import { claudeCodeOAuthAuthorizeUrl, claudeCodeOAuthExchange, claudeCodeOAuthRe
 import { codexOAuthAuthorizeUrl, codexOAuthExchange, codexOAuthRefresh } from './upstreams/codex.ts';
 import { copilotOAuthDeviceLoginPoll, copilotOAuthDeviceLoginStart, copilotQuota } from './upstreams/copilot.ts';
 import { listModels } from './upstreams/models.ts';
-import { createUpstream, deleteUpstream, getUpstream, getUpstreamBlueprint, listOptionalFlags, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
+import { createUpstream, deleteUpstream, getUpstream, getUpstreamBlueprint, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
 import { type AuthedContext, type AuthVars, userFromContext } from '../middleware/auth.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
@@ -76,7 +76,6 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .delete('/users/:id', deleteUser)
     .get('/upstreams', listUpstreams)
     .get('/upstreams/blueprint', getUpstreamBlueprint)
-    .get('/upstreams/flags', listOptionalFlags)
     .post('/upstreams/copilot/oauth/device-login/start', copilotOAuthDeviceLoginStart)
     .post('/upstreams/copilot/oauth/device-login/poll', zValidator('json', copilotOAuthDeviceLoginPollBody), copilotOAuthDeviceLoginPoll)
     .post('/upstreams/copilot/quota', zValidator('json', copilotQuotaBody), copilotQuota)

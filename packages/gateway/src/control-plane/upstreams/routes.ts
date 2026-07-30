@@ -14,7 +14,6 @@ import { nextSortOrder } from '../shared/sort-order.ts';
 import { warmModelsCache } from '../shared/warm-models-cache.ts';
 import {
   normalizeModelPrefix,
-  OPTIONAL_FLAGS,
   ALL_PROVIDER_KINDS,
   type ModelPrefixConfig,
   type ProxyFallbackEntry,
@@ -187,8 +186,6 @@ export const listUpstreamOptions = async (c: Context) => {
       color: upstream.color,
     })));
 };
-
-export const listOptionalFlags = (c: Context) => c.json(OPTIONAL_FLAGS);
 
 // Supply every shared editor field for an unpersisted record. The empty cache
 // projection avoids querying storage, while persisted-only projections remain

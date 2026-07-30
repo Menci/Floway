@@ -1,10 +1,8 @@
-// Flag catalog. Single source of truth for every admin-toggleable
-// per-upstream behavior flag.
-//
-// The catalog only describes flags. Interceptor code references a flag by
-// id; the dependency goes interceptor → flag, never the other way. This
-// makes "one flag drives multiple interceptors" trivial and keeps the
-// catalog free of runtime closures.
+// Stable identities for every admin-toggleable per-upstream behavior flag.
+// Interceptor code references a flag by id; the dependency goes interceptor
+// → flag, never the other way. The dashboard owns presentation and translated
+// copy, while this package owns the ids shared by providers and persisted
+// overrides.
 //
 // Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`) are
 // mutually exclusive per model: a vendor interceptor translates the
@@ -15,97 +13,32 @@
 // Defaults are NOT declared in this catalog. Each provider owns the
 // decision of which flags default on for its own upstream (and, when
 // per-model differentiation matters, per model). Vendor-specific
-// knowledge lives inside the provider package that talks to that
-// vendor — the central catalog only describes identity, label, and
-// UI copy. See `ProviderModule.defaultFlags` in `provider.ts` for the
-// module surface, and each provider package's `defaults.ts` for the
-// per-kind constants themselves. Per-model deltas — where the same
-// provider forms a different opinion for individual models — are
-// provider-internal: `createXxxProvider` computes them once and
-// stakes the result into `ProviderModel.enabledFlags`.
+// knowledge lives inside the provider package that talks to that vendor. See
+// `ProviderModule.defaultFlags` in `provider.ts` for the module surface, and
+// each provider package's `defaults.ts` for the per-kind constants themselves.
+// Per-model deltas are provider-internal: `createXxxProvider` computes them
+// once and stakes the result into `ProviderModel.enabledFlags`.
 
-export interface Flag {
-  id: string;
-  label: string;
-  description: string;
-}
+export const OPTIONAL_FLAG_IDS = [
+  'vendor-deepseek',
+  'vendor-qwen',
+  'vendor-kimi',
+  'retry-cyber-policy',
+  'messages-web-search-shim',
+  'responses-web-search-shim',
+  'responses-image-generation-shim',
+  'responses-compact-shim',
+  'disable-reasoning-on-forced-tool-choice',
+  'demote-interleaved-system-to-user',
+  'demote-developer-to-system',
+  'promote-system-to-developer',
+  'strip-billing-attribution',
+  'strip-prompt-cache-key',
+] as const;
 
-export const OPTIONAL_FLAGS = [
-  {
-    id: 'vendor-deepseek',
-    label: 'Vendor: DeepSeek',
-    description: "Pick this when the upstream serves DeepSeek's chat completions API. The gateway translates between OpenAI canonical and DeepSeek's dialect: assistant reasoning rides on `reasoning_content` instead of `reasoning_text`; disabling reasoning uses a top-level `thinking: { type: 'disabled' }` instead of `reasoning_effort: 'none'`; cache hit/miss tokens normalise to OpenAI's `prompt_tokens_details.cached_tokens`; and structured-output `json_schema` requests are downgraded to `json_object` because DeepSeek doesn't accept schemas.",
-  },
-  {
-    id: 'vendor-qwen',
-    label: 'Vendor: Qwen',
-    description: "Pick this when the upstream serves Qwen's (Alibaba Model Studio) chat completions API. The gateway rewrites a 'no reasoning' request to Qwen's top-level `enable_thinking: false` field instead of `reasoning_effort`.",
-  },
-  {
-    id: 'vendor-kimi',
-    label: 'Vendor: Kimi',
-    description: "Pick this when the upstream serves Kimi's (Moonshot) chat completions API. The gateway normalises Kimi's flat `cached_tokens` usage field back to OpenAI's `prompt_tokens_details.cached_tokens`.",
-  },
-  {
-    id: 'retry-cyber-policy',
-    label: 'Retry on upstream cyber-policy block',
-    description: 'Retry cyber_policy 4xx errors from the upstream (up to 10 attempts).',
-  },
-  {
-    id: 'messages-web-search-shim',
-    label: 'Messages web search shim',
-    description: "Execute Anthropic native Messages web search through the gateway's configured search provider instead of forwarding it to the upstream. (When a client Messages request is routed to a non-Messages backend, the shim always runs regardless of this flag, because those targets cannot carry Anthropic server tools.)",
-  },
-  {
-    id: 'responses-web-search-shim',
-    label: 'Responses web search shim',
-    description: "Execute the Responses `web_search` hosted tool through the gateway's configured search provider instead of forwarding it to a Responses upstream. (When a Responses request is routed to a non-Responses backend, the shim always runs regardless of this flag, because those targets cannot carry hosted web_search.)",
-  },
-  {
-    id: 'responses-image-generation-shim',
-    label: 'Responses image generation shim',
-    description: "Execute the Responses `image_generation` hosted tool through the gateway's image-capable upstream (gpt-image-*) instead of forwarding it to a Responses upstream. The orchestrator model calls a generated function tool; the shim drives the standalone /images/{generations,edits} backend and synthesizes the native image_generation_call lifecycle. (When a Responses request is routed to a non-Responses backend, the shim always runs regardless of this flag, because those targets cannot carry the hosted image_generation tool.)",
-  },
-  {
-    id: 'responses-compact-shim',
-    label: 'Responses compact shim',
-    description: "Simulate `response.compaction` against upstreams that don't expose a native compact wire. The shim swaps a compact request's instructions for the Codex SUMMARIZATION_PROMPT, runs a normal generate turn, and packs the upstream's summary back into a synthetic compaction envelope.",
-  },
-  {
-    id: 'disable-reasoning-on-forced-tool-choice',
-    label: 'Disable reasoning when caller forces a tool',
-    description: "Disable reasoning in the outbound request when the caller forces a specific tool. Emits the gateway's canonical 'no reasoning' sentinel; the active Vendor flag (if any) translates that into the vendor's wire form.",
-  },
-  {
-    id: 'demote-interleaved-system-to-user',
-    label: 'Demote interleaved system messages to user',
-    description: "Pick this when the upstream rejects `role: 'system'` after the first non-system message (e.g. DeepSeek-R1). The leading contiguous run of system messages is preserved; any later inline system message has its role rewritten to `user`, with content kept verbatim. For Anthropic Messages — where `payload.system` is conceptually the only first-position system slot — every inline `role: 'system'` message is demoted unconditionally.",
-  },
-  {
-    id: 'demote-developer-to-system',
-    label: 'Demote developer role to system',
-    description: "Rewrite messages with role 'developer' to role 'system' for upstreams that do not recognise the developer role.",
-  },
-  {
-    id: 'promote-system-to-developer',
-    label: 'Promote system role to developer',
-    description: "Rewrite message inputs with role 'system' to role 'developer' for upstreams that reject system-role input while accepting the developer role.",
-  },
-  {
-    id: 'strip-billing-attribution',
-    label: 'Strip Claude Code billing attribution from system prompt',
-    description: "Remove `x-anthropic-billing-header:` lines from the request's system prompt before forwarding upstream. The block is irrelevant to non-Anthropic upstreams and only pollutes their prompt-cache key. On `claude-code`, the same block is the input Anthropic uses to bill the request against the user's plan and must be preserved.",
-  },
-  {
-    id: 'strip-prompt-cache-key',
-    label: 'Strip prompt_cache_key from request',
-    description: 'Drop the top-level `prompt_cache_key` field from Chat Completions and Responses requests before forwarding upstream. Pick this when the upstream rejects `prompt_cache_key` as an unknown argument (e.g. Azure DeepSeek). OpenAI-native and truly OpenAI-compatible upstreams accept the field for prefix-cache attribution, so this stays off by default.',
-  },
-] as const satisfies readonly Flag[];
+export type FlagId = (typeof OPTIONAL_FLAG_IDS)[number];
 
-export type FlagId = (typeof OPTIONAL_FLAGS)[number]['id'];
-
-const KNOWN_IDS = new Set<string>(OPTIONAL_FLAGS.map(f => f.id));
+const KNOWN_IDS = new Set<string>(OPTIONAL_FLAG_IDS);
 
 export const isKnownFlagId = (id: string): id is FlagId => KNOWN_IDS.has(id);
 

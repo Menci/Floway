@@ -15,7 +15,6 @@ import type {
   UpstreamRecordEnvelope,
 } from '../../api/types';
 import { useAuthStore } from '../../stores/auth-store';
-import type { Flag } from '@floway-dev/provider/flags';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];
@@ -26,7 +25,6 @@ export interface RuntimeInfo {
 }
 
 export interface EditorAuxData {
-  flags: Flag[];
   proxies: ProxyRecord[];
   backoffs: BackoffRow[];
   runtime: RuntimeInfo;
@@ -71,17 +69,15 @@ export async function requireAdmin() {
 }
 
 export async function loadEditorAux(): Promise<EditorAuxData> {
-  const [flags, proxies, backoffs, runtime, upstreams] = await Promise.all([
-    callApi(() => api.api.upstreams.flags.$get()),
+  const [proxies, backoffs, runtime, upstreams] = await Promise.all([
     callApi(() => api.api.proxies.$get()),
     callApi(() => api.api.proxies.backoffs.$get()),
     callApi(() => api.api['runtime-info'].$get()),
     callApi(() => api.api.upstreams.$get()),
   ]);
-  const error = flags.error ?? proxies.error ?? backoffs.error ?? runtime.error ?? upstreams.error;
+  const error = proxies.error ?? backoffs.error ?? runtime.error ?? upstreams.error;
   if (error) throw new Error(error.message);
   return {
-    flags: [...flags.data!],
     proxies: proxies.data!,
     backoffs: backoffs.data!,
     runtime: runtime.data!,
