@@ -277,6 +277,26 @@ upstream color metadata and the owning Fluent components. Generic primitives
 live in `components/ui/`, and ESLint keeps them from importing Floway domain
 modules.
 
+`apps/web/src/winui/` restyles Fluent 2 for Web onto WinUI 3, so the dashboard
+reads as a Windows 11 app rather than as a Fluent web app. It is a layer, not a
+fork: `tokens.ts` transcribes the WinUI theme dictionaries into `--winui-*`
+custom properties on `:root`, `motion.ts` carries the durations and easings as
+values so the same numbers reach both CSS and the Web Animations API,
+`theme.ts` re-points the Fluent tokens that have a direct WinUI counterpart,
+and `controls/*.css.ts` restates per control what a token substitution cannot
+say. Every value carries a permalink into microsoft-ui-xaml, and a departure
+from WinUI is written down at the rule that departs.
+
+Fluent resolves `appearance`, `size`, `shape` and `intent` in JavaScript and
+writes nothing a selector can name, so `appearance.ts` stamps the resolved
+value back onto the DOM as `data-winui-*`; `presence.ts` replaces the entrance
+and exit motion of the overlays whose WinUI counterpart states its own
+keyframes. Both wrap Fluent at `fluent.ts`, the app's only value import of
+`@fluentui/react-components`. The selector convention, the `--winui-*` scoping
+rules and the `data-winui-card-restyle="off"` subtree opt-out — which the
+hand-designed playground transcript and composer rely on — are documented in
+`tokens.ts`.
+
 React Router client loaders are resource barriers: authentication and every
 initial route resource resolve before the target location and component tree
 are committed. An in-flight navigation leaves the current URL and route fully
