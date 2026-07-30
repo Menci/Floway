@@ -2,11 +2,11 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import { fluentComponents } from '../../fluent';
 import {
-  DURATION_MS,
-  POSITION_SNAP,
-  SETTLE_EASING,
-  STRETCH_EASING,
-} from '../../lib/winui-motion';
+  INDICATOR_DURATION_MS,
+  INDICATOR_POSITION_SNAP,
+  INDICATOR_SETTLE_EASING,
+  INDICATOR_STRETCH_EASING,
+} from '../../winui/motion';
 
 const { makeStyles, tokens } = fluentComponents;
 
@@ -168,10 +168,10 @@ export function ChoiceGroup({
     // phase's curve exactly.
     const from = -distance;
     pill.animate([
-      { transform: `translateX(${from}px) scaleX(${beginScale})`, easing: STRETCH_EASING },
-      { transform: `translateX(${forward ? from : 0}px) scaleX(${peak})`, offset: POSITION_SNAP, easing: SETTLE_EASING },
+      { transform: `translateX(${from}px) scaleX(${beginScale})`, easing: INDICATOR_STRETCH_EASING },
+      { transform: `translateX(${forward ? from : 0}px) scaleX(${peak})`, offset: INDICATOR_POSITION_SNAP, easing: INDICATOR_SETTLE_EASING },
       { transform: 'translateX(0px) scaleX(1)' },
-    ], { duration: DURATION_MS });
+    ], { duration: INDICATOR_DURATION_MS });
   }, [box]);
 
   return <div aria-label={ariaLabel} className={styles.root} ref={rootRef} role="radiogroup">

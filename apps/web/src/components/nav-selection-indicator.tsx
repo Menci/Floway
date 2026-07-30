@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
-import { DURATION_MS, POSITION_SNAP, REACH_MS, SETTLE_EASING, SETTLE_MS, STRETCH_EASING } from '../lib/winui-motion';
+import { INDICATOR_DURATION_MS, INDICATOR_POSITION_SNAP, INDICATOR_REACH_MS, INDICATOR_SETTLE_EASING, INDICATOR_SETTLE_MS, INDICATOR_STRETCH_EASING } from '../winui/motion';
 
 // WinUI's NavigationView does not move one indicator between items. It keeps a
 // separate indicator per item and, on a selection change, plays a matched pair
@@ -92,7 +92,7 @@ export function NavSelectionIndicator({
       setGeometry(next);
       return;
     }
-    const handover = window.setTimeout(() => setGeometry(next), REACH_MS);
+    const handover = window.setTimeout(() => setGeometry(next), INDICATOR_REACH_MS);
     return () => window.clearTimeout(handover);
   }, [containerRef, selectedValue]);
 
@@ -107,13 +107,13 @@ export function NavSelectionIndicator({
       bar.style.transformOrigin = otherListIs === 'below' ? 'top' : 'bottom';
       bar.animate(
         [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / bar.offsetHeight + 1})` }],
-        { duration: REACH_MS, easing: STRETCH_EASING, fill: 'forwards' },
+        { duration: INDICATOR_REACH_MS, easing: INDICATOR_STRETCH_EASING, fill: 'forwards' },
       );
     }
     const gone = window.setTimeout(() => {
       previousRef.current = null;
       setGeometry(null);
-    }, REACH_MS);
+    }, INDICATOR_REACH_MS);
     return () => window.clearTimeout(gone);
   }, [containerRef, geometry, otherListIs, selectedValue]);
 
@@ -167,22 +167,22 @@ export function NavSelectionIndicator({
     if (previous) {
       track.animate([
         { transform: `translateY(${previous.top - geometry.top}px)`, easing: 'steps(1, end)' },
-        { transform: 'translateY(0px)', offset: POSITION_SNAP },
+        { transform: 'translateY(0px)', offset: INDICATOR_POSITION_SNAP },
         { transform: 'translateY(0px)' },
-      ], { duration: DURATION_MS });
+      ], { duration: INDICATOR_DURATION_MS });
     }
 
     bar.animate(previous
       ? [
-          { transform: 'scaleY(1)', easing: STRETCH_EASING },
-          { transform: `scaleY(${peak})`, offset: POSITION_SNAP, easing: SETTLE_EASING },
+          { transform: 'scaleY(1)', easing: INDICATOR_STRETCH_EASING },
+          { transform: `scaleY(${peak})`, offset: INDICATOR_POSITION_SNAP, easing: INDICATOR_SETTLE_EASING },
           { transform: 'scaleY(1)' },
         ]
       : [
-          { transform: `scaleY(${peak})`, easing: SETTLE_EASING },
+          { transform: `scaleY(${peak})`, easing: INDICATOR_SETTLE_EASING },
           { transform: 'scaleY(1)' },
         ],
-    { duration: previous ? DURATION_MS : SETTLE_MS });
+    { duration: previous ? INDICATOR_DURATION_MS : INDICATOR_SETTLE_MS });
 
     // The origin flips at the snap, which is what keeps the bar from
     // overshooting. Anchored at the leading edge it grows out of the item it is
@@ -193,9 +193,9 @@ export function NavSelectionIndicator({
     if (previous) {
       bar.animate([
         { transformOrigin: leadingEdge, easing: 'steps(1, end)' },
-        { transformOrigin: trailingEdge, offset: POSITION_SNAP },
+        { transformOrigin: trailingEdge, offset: INDICATOR_POSITION_SNAP },
         { transformOrigin: trailingEdge },
-      ], { duration: DURATION_MS });
+      ], { duration: INDICATOR_DURATION_MS });
     }
     bar.style.transformOrigin = previous ? trailingEdge : leadingEdge;
   }, [geometry, otherListIs]);

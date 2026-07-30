@@ -6,6 +6,7 @@
 import * as fluentNamespace from '@fluentui/react-components';
 
 import { withWinuiAppearance } from './winui/appearance';
+import { withWinuiMotion } from './winui/presence';
 
 type FluentComponents = typeof import('@fluentui/react-components');
 type FluentComponentsInterop = Partial<FluentComponents> & {
@@ -26,6 +27,6 @@ if (!resolvedNamespace?.FluentProvider) {
 const normalizedNamespace = resolvedNamespace as FluentComponents;
 
 // This is the app's only value import of Fluent — everything else imports types
-// — so it is also the one place where the appearance stamping can be applied to
-// every rendered instance at once.
-export const fluentComponents = withWinuiAppearance(normalizedNamespace);
+// — so it is also the one place where the appearance stamping and the motion
+// substitution can be applied to every rendered instance at once.
+export const fluentComponents = withWinuiMotion(withWinuiAppearance(normalizedNamespace));

@@ -129,6 +129,8 @@
 // setting where the literal class alone would not.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-provider/library/src/components/FluentProvider/useFluentProviderThemeStyleTag.ts#L58
 
+import { CONTROL_FASTER_ANIMATION_MS, CONTROL_FAST_OUT_SLOW_IN_EASING, CONTROL_NORMAL_ANIMATION_MS } from './motion';
+
 // The selector half of the opt-out documented above: appended to a rule's
 // subject compound, it stops the rule at the boundary of an opted-out subtree.
 // Rules that spend a token instead go through a `:root` indirection reset to
@@ -550,15 +552,13 @@ export const winuiTokenCss = `
     inset 0 -1px 0 0 var(--winui-control-stroke-secondary);
 }
 
-/* Motion. WinUI states durations as XAML timespans and easings as a KeySpline,
-   whose four numbers are exactly the two control points of a CSS cubic-bezier.
-   Both are declared outside the theme dictionaries and so do not vary by theme.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L602-L603
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L606 */
+/* Motion. The values are declared in ./motion.ts, because the presence
+   animations and the measured indicators need them as numbers, and a custom
+   property is a string the Web Animations API will not resolve. */
 :root {
-  --winui-control-normal-animation-duration: 250ms;
-  --winui-control-faster-animation-duration: 83ms;
-  --winui-control-fast-out-slow-in-easing: cubic-bezier(0, 0, 0, 1);
+  --winui-control-normal-animation-duration: ${CONTROL_NORMAL_ANIMATION_MS}ms;
+  --winui-control-faster-animation-duration: ${CONTROL_FASTER_ANIMATION_MS}ms;
+  --winui-control-fast-out-slow-in-easing: ${CONTROL_FAST_OUT_SLOW_IN_EASING};
 }
 
 /* Button padding. XAML thicknesses read left,top,right,bottom while the CSS
