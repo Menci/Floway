@@ -193,7 +193,15 @@ test('Responses WebSocket forwards stream events, echoes event_id, and ends the 
       assertEquals(typeof responseId, 'string');
       assert(responseId !== 'resp_ws', 'expected the source boundary to replace the upstream response id');
       assertEquals(completed.type, 'response.completed');
-      assertEquals((completed.response as { usage?: unknown }).usage, { input_tokens: 3, output_tokens: 5, total_tokens: 8 });
+      // The egress stage completes the envelope, so the terminal event's usage
+      // carries both token breakdowns.
+      assertEquals((completed.response as { usage?: unknown }).usage, {
+        input_tokens: 3,
+        output_tokens: 5,
+        total_tokens: 8,
+        input_tokens_details: { cached_tokens: 0 },
+        output_tokens_details: { reasoning_tokens: 0 },
+      });
     }),
   );
 });
