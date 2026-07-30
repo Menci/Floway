@@ -560,12 +560,12 @@ const zhHansCN = {
             'vendor-deepseek': {
               label: 'DeepSeek 兼容',
               description:
-                  'DeepSeek 的“OpenAI 兼容 API”在思考字段和结构化输出等方面采用了非标准格式。\n开启此开关，以在 OpenAI 规范格式与 DeepSeek 非标准格式之间双向转换请求和响应，包括转换思考开关 (`thinking`) 与思考内容 (`reasoning_text`)、归一化缓存 Token 用量，以及将不支持的 `json_schema` 格式化模式降级为 `json_object`。\n当上游为 **DeepSeek chat completions API** 时应开启。',
+                  'DeepSeek 的“OpenAI 兼容 API”在推理字段和结构化输出等方面采用了非标准格式。\n开启此开关，以在 OpenAI 规范格式与 DeepSeek 非标准格式之间双向转换请求和响应，包括转换推理开关 (`thinking`) 与推理内容 (`reasoning_text`)、归一化缓存 Token 用量，以及将不支持的 `json_schema` 格式化模式降级为 `json_object`。\n当上游为 **DeepSeek chat completions API** 时应开启。',
             },
             'vendor-qwen': {
               label: '阿里云百炼兼容',
               description:
-                  '阿里云百炼的“OpenAI 兼容 - Chat API”在禁用思考的控制方式上采用了非标准格式。\n开启此开关，以将 OpenAI 规范格式中的“禁用思考”请求 (`reasoning_effort: "none"`) 转换为 Qwen 使用的顶层字段 (`enable_thinking: false`)。\n当上游为**阿里云百炼（Qwen）chat completions API** 时应开启。',
+                  '阿里云百炼的“OpenAI 兼容 - Chat API”在禁用推理的控制方式上采用了非标准格式。\n开启此开关，以将 OpenAI 规范格式中的“禁用推理”请求 (`reasoning_effort: "none"`) 转换为 Qwen 使用的顶层字段 (`enable_thinking: false`)。\n当上游为**阿里云百炼（Qwen）chat completions API** 时应开启。',
             },
             'vendor-kimi': {
               label: 'Kimi 兼容',
@@ -598,9 +598,9 @@ const zhHansCN = {
                   'Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 Responses API 时，此开关被视为开启。',
             },
             'disable-reasoning-on-forced-tool-choice': {
-              label: '强制工具调用时禁用思考',
+              label: '强制工具调用时禁用推理',
               description:
-                  '部分上游不支持同时开启“强制工具调用”和思考模式，会直接拒绝此类请求。\n开启此开关后，当调用方通过 `tool_choice` 强制指定某个工具时，Floway 会在转发请求时**关闭思考模式**。',
+                  '部分上游不支持同时开启“强制工具调用”和推理模式，会直接拒绝此类请求。\n开启此开关后，当调用方通过 `tool_choice` 强制指定某个工具时，Floway 会在转发请求时**关闭推理模式**。',
             },
             'demote-interleaved-system-to-user': {
               label: '改写行内 system 角色',
@@ -608,9 +608,9 @@ const zhHansCN = {
                   '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Messages API 上游，由于系统提示词只能放在顶层 `system` 字段中，此开关被视为开启。',
             },
             'demote-developer-to-system': {
-              label: '将 developer 角色降级为 system',
+              label: '改写 developer 角色',
               description:
-                  '对不支持 developer 角色的上游，将 `developer` 角色消息改写为 `system`。',
+                  'OpenAI 的新版 API 规范中包含了 `developer` 这一角色（`role`)，但部分上游并不支持。\n开启此开关，以在请求上游时，把 `developer` 改写为 `system`。\n例如，Codex 的系统提示词会使用 `developer` 角色，但 DeepSeek 不支持，此时就应开启。',
             },
             'promote-system-to-developer': {
               label: '将 system 角色提升为 developer',
