@@ -12,14 +12,20 @@ const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
 // in this dashboard is -- the subtle fill it would take under the pointer, held,
 // with an accent bar down its leading edge.
 //
-// The fill and the bar are stated here rather than left to the layer, because
-// the layer paints a ToggleButton as WinUI paints one and is right to. Undoing
-// that paint is what needs `!important`: the layer names the checked state at a
-// specificity a call site cannot reach, which is correct for a rule meant to
-// hold across the dashboard and is exactly the case the escape hatch is for.
-// The accent border goes with the fill -- it is the accent's own elevation
-// stroke, and against a subtle fill its heavier bottom edge reads as a rule
-// under the tile.
+// The fill, the bar and the label are stated here rather than left to the
+// layer, because the layer paints a ToggleButton as WinUI paints one and is
+// right to. Undoing that paint is what needs `!important` on the fill: the
+// layer names the checked state at a specificity a call site cannot reach,
+// which is correct for a rule meant to hold across the dashboard and is exactly
+// the case the escape hatch is for. The accent border goes with it -- it is the
+// accent's own elevation stroke, and against a subtle fill its heavier bottom
+// edge reads as a rule under the tile.
+//
+// The label is restated for the pointer and the press as well as for rest. A
+// checked ToggleButton's foreground is the on-accent one in every state, which
+// is white here, and Fluent's own hover and pressed atoms outrank a rule that
+// names the checked state alone -- so stating it once left the tile's value
+// white on a pale fill the moment the pointer arrived.
 const useStyles = makeStyles({
   tile: {
     '&[aria-pressed="true"]': {
@@ -31,8 +37,14 @@ const useStyles = makeStyles({
       color: 'var(--winui-text-fill-primary)',
       position: 'relative',
     },
-    '&[aria-pressed="true"]:hover': { backgroundColor: 'var(--winui-subtle-fill-tertiary) !important' },
-    '&[aria-pressed="true"]:hover:active': { backgroundColor: 'var(--winui-subtle-fill-secondary) !important' },
+    '&[aria-pressed="true"]:hover': {
+      backgroundColor: 'var(--winui-subtle-fill-tertiary) !important',
+      color: 'var(--winui-text-fill-primary)',
+    },
+    '&[aria-pressed="true"]:hover:active': {
+      backgroundColor: 'var(--winui-subtle-fill-secondary) !important',
+      color: 'var(--winui-text-fill-secondary)',
+    },
     // The indicator's 16px is stated against a 36px row, so it is carried as the
     // inset it leaves; a tile is taller and the bar grows with it.
     '&[aria-pressed="true"]::after': {
