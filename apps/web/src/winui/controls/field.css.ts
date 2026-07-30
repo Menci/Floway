@@ -24,6 +24,13 @@
 export const fieldHorizontalRootAtom = 'f1645dqt';
 
 export const fieldCss = `
+/* Auto-sized Field tracks otherwise share surplus height when a parent grid
+   stretches the Field to match a taller sibling. Keep the header and control
+   at their intrinsic sizes so mixed controls retain the same 8px header gap. */
+.fui-Field.fui-Field:not(.${fieldHorizontalRootAtom}) {
+  align-content: start;
+}
+
 /* WinUI gives a text control's header no vertical padding and separates it
    from the control by a flat 8px, where Fluent uses 2px of padding on each
    side plus a 2px margin and then rescales all three with the field size. The
