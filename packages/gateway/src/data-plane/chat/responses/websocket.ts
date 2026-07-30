@@ -400,11 +400,39 @@ const respondResponsesWebSocket = async (input: {
           return;
         }
 
-        // An idle upstream is simply awaited. WebSocket carries its own
-        // protocol-level ping/pong control frames (RFC 6455 §5.5.2), so the
-        // transport needs no in-band keep-alive, and a JSON `{"type":"ping"}`
-        // frame is not a member of the Responses streaming-event union.
+        // An idle upstream is simply awaited: while a turn is still reasoning,
+        // nothing goes downstream. `ping` is not a member of the Responses
+        // streaming-event union, so the JSON keep-alive frame this replaces
+        // made any turn with a gap longer than the interval unvalidatable.
         // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
+        //
+        // That keep-alive was not copied from the SSE transport; it was added
+        // (7345f2806) for a WebSocket-specific failure. Extended reasoning
+        // produces SSE `ping` events upstream, `parseResponsesStream` drops
+        // them, and the socket then carries no frames at all — at which point
+        // Cloudflare's edge, which closes a WebSocket idle in both directions
+        // and documents a client-side heartbeat as the remedy, kills it. A raw
+        // probe against a Cloudflare-proxied endpoint was torn down at TCP
+        // level at 125 s with no close frame and zero edge-originated pings; a
+        // second probe pinging every 30 s survived past 200 s.
+        // https://developers.cloudflare.com/network/websockets/
+        //
+        // The correct mechanism is a ping/pong control frame (RFC 6455 §5.5.2)
+        // and it is unreachable from a Worker. workerd's `WebSocket` exposes
+        // only accept/send/close/(de)serializeAttachment, and the kj layer
+        // beneath states the omission as a design decision: "Ping/Pong … are
+        // not exposed through this interface … The implementation is, however,
+        // expected to reply to Ping messages it receives."
+        // https://github.com/cloudflare/workerd/blob/26b5461b7dcc640bb16072f1ba6f2c6df82572ba/src/workerd/api/web-socket.h#L346-L394
+        // https://github.com/capnproto/capnproto/blob/e9fa5c7dc98192fc0dc0098ec770db68f997a938/c%2B%2B/src/kj/compat/http.h#L622-L631
+        // https://github.com/cloudflare/workerd/issues/3664
+        //
+        // So the keep-alive is delegated to the client, per Cloudflare's own
+        // guidance: a client protocol ping resets the edge's idle timer because
+        // the runtime auto-replies with a pong. What that knowingly gives up:
+        // on the Cloudflare target a long silent turn now loses its socket
+        // where it previously survived. The Node target is unaffected — nothing
+        // between the client and the process enforces an idle timeout.
         const next = await pendingNext;
 
         if (next.type === 'next-error') throw next.error;
