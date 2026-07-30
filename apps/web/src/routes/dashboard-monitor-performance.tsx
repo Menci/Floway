@@ -215,18 +215,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     />
     {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     <Panel className="!grid gap-[16px] min-w-0 !p-[18px]">
-      <div className="flex items-center justify-between gap-4 min-w-0 flex-wrap">
-        <div className="flex items-center gap-4 min-w-0 flex-wrap">
-          <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
-            { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
-            { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
-          ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
-          <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
-        </div>
-        <div className="ml-auto"><ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
-          { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
-        ]} onChange={value => setRange(value as PerformanceRange)} value={range} /></div>
-      </div>
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         <Field className="w-[160px] flex-none" label={t('dashboard.performance.groupBy.label')}>
           <div className="flex items-center gap-2">
@@ -259,6 +247,16 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           <Text size={200} weight="semibold" className="text-fui-fg2 leading-[1.2]">{t(`dashboard.performance.summary.${label}`)}</Text>
           <Text size={500} weight="semibold" className="tabular-nums overflow-wrap-anywhere">{value}</Text>
         </div>)}
+      </div>
+      <div className="flex items-center justify-center gap-4 min-w-0 flex-wrap">
+        <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
+          { value: 'ttft', label: t('dashboard.performance.metric.ttft') },
+          { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed') },
+        ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
+        <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={(['p50', 'p95', 'p99'] as const).map(value => ({ value, label: value }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+        <ChoiceGroup ariaLabel={t('dashboard.performance.range.label')} items={[
+          { value: 'today', label: t('dashboard.performance.range.today') }, { value: '7d', label: t('dashboard.performance.range.sevenDays') }, { value: '30d', label: t('dashboard.performance.range.thirtyDays') },
+        ]} onChange={value => setRange(value as PerformanceRange)} value={range} />
       </div>
     </Panel>
     <Panel className="!grid gap-[18px] min-w-0 !p-[18px]">
