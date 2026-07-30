@@ -634,3 +634,18 @@ test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no
   assertEquals(body.error.type, 'invalid_request_error');
   assert(body.error.message.includes('does not support'));
 });
+
+test('POST /v1/responses/compact answers a body that states no status, as a native compact upstream sends', async () => {
+  // `CompactResource` declares exactly `id`, `object`, `output`, `created_at`
+  // and `usage`, so a conformant compaction carries no `status` for the
+  // synthetic-event round trip to read. Azure's and Codex's native compact
+  // endpoints both answer those five keys and nothing else.
+  installRepo();
+  const { response } = await compactTurn({ status: undefined as unknown as ResponsesResult['status'] });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(body.object, 'response.compaction');
+  assertEquals(missingRequiredCompactionKeys(body), []);
+  assertEquals((body.output as Array<{ type: string }>).map(item => item.type), ['compaction']);
+});
