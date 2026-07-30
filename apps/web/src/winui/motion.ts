@@ -16,6 +16,28 @@ export const CONTROL_FAST_ANIMATION_MS = 167;
 export const CONTROL_FASTER_ANIMATION_MS = 83;
 export const CONTROL_FAST_OUT_SLOW_IN_EASING = 'cubic-bezier(0, 0, 0, 1)';
 
+// RepositionThemeAnimation, the Windows animation library's move-an-element
+// primitive. A XAML template invokes it by name and states no timing, because
+// the timing is not the template's: it lives in the PVL table of the OS visual
+// style under TAS_REPOSITION / TA_REPOSITION_TARGET and is read at runtime. The
+// numbers appear in no source file, so they are transcribed from the shipped
+// style itself -- aero.msstyles decodes to a Translate2D starting at 0ms over
+// 367ms on cubic-bezier(0.1, 0.9, 0.2, 1), byte-identical in the Windows 8.1,
+// Windows 10 21H2 and Windows 11 styles -- and corroborated twice over:
+//
+// WinJS drives the same animation library through CSS and writes the pair out
+// in the clear.
+// https://github.com/winjs/winjs/blob/b9e0b33f76c57caac941c9b1885bf69443320b1c/src/js/WinJS/Animations.js#L349-L367
+//
+// And SwipeHintThemeAnimation, which cannot reach PVL, hardcodes these same
+// control points rather than invent its own, comment and all.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/SwipeHintThemeAnimation_Partial.h#L18-L32
+//
+// The table also carries a 33ms stagger capped at 250ms, which spaces the items
+// of a list repositioning together and says nothing about a lone element.
+export const REPOSITION_ANIMATION_MS = 367;
+export const REPOSITION_EASING = 'cubic-bezier(0.1, 0.9, 0.2, 1)';
+
 // The timing WinUI moves a selection indicator with, shared by every control
 // that has one.
 //
