@@ -207,6 +207,12 @@ export function NavSelectionIndicator({
     style={{
       alignItems: 'center',
       display: 'flex',
+      // The clip box is the item, corners included: WinUI's indicator is cut by
+      // the item's rounded rect, so the stretch that escapes the item is taken
+      // off at the curve rather than ending in a square corner. A box this
+      // narrow clamps the radius to half its width, which is the part of the
+      // curve the leading edge actually crosses.
+      borderRadius: 'var(--borderRadiusMedium)',
       height: geometry.height,
       left: geometry.left + inset,
       overflow: 'hidden',
