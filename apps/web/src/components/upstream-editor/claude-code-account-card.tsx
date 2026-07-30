@@ -146,7 +146,7 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
 
 const EntryList = ({ entries }: { entries: [string, string][] }) => <dl className="grid gap-1 m-0">
   {entries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-3">
-    <dt className="truncate font-mono text-xs text-fui-fg3" title={key}>{key}</dt>
-    <dd className="truncate font-mono text-xs text-fui-fg2 m-0" title={value}>{value}</dd>
+    <dt className="truncate font-mono mono-size-xs text-xs text-fui-fg3" title={key}>{key}</dt>
+    <dd className="truncate font-mono mono-size-xs text-xs text-fui-fg2 m-0" title={value}>{value}</dd>
   </div>)}
 </dl>;

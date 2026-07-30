@@ -1045,7 +1045,7 @@ function TextSection() {
       <Text italic>Italic</Text>
       <Text strikethrough>Strikethrough</Text>
       <Text underline>Underline</Text>
-      <Text font="monospace">gpt-5-codex</Text>
+      <Text className="font-mono" font="monospace">gpt-5-codex</Text>
       <Text font="numeric">1 842 tokens</Text>
     </Row>
     <Row label="link">

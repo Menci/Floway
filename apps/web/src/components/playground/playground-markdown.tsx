@@ -80,7 +80,6 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground3,
     borderRadius: tokens.borderRadiusSmall,
     fontFamily: tokens.fontFamilyMonospace,
-    fontSize: 'var(--floway-font-size-mono)',
     padding: `1px ${tokens.spacingHorizontalXS}`,
   },
   blockquote: {

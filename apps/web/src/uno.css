@@ -1,7 +1,10 @@
 @unocss;
 
 :root {
-  --floway-font-size-mono: 13px;
+  --floway-font-size-mono: calc(var(--fontSizeBase300) - 1px);
+  --floway-font-size-mono-base100: calc(var(--fontSizeBase100) - 1px);
+  --floway-font-size-mono-base500: calc(var(--fontSizeBase500) - 1px);
+  --floway-font-size-mono-xs: 11px;
 }
 
 button,
@@ -18,13 +21,30 @@ samp {
   font-family: var(--fontFamilyMonospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 }
 
-:where(code, kbd, pre, samp, .font-mono),
-:where(.font-mono button, .font-mono input, .font-mono select, .font-mono textarea) {
+:where(code, kbd, samp) {
+  font-size: calc(1em - 1px) !important;
+}
+
+pre,
+.font-mono {
   font-size: var(--floway-font-size-mono) !important;
 }
 
+.font-mono :where(button, input, select, textarea, code, kbd, pre, samp),
+pre :where(code, kbd, samp) {
+  font-size: inherit !important;
+}
+
+.mono-size-100 {
+  --floway-font-size-mono: var(--floway-font-size-mono-base100);
+}
+
+.mono-size-xs {
+  --floway-font-size-mono: var(--floway-font-size-mono-xs);
+}
+
 .mono-display {
-  font-size: var(--fontSizeBase500) !important;
+  font-size: var(--floway-font-size-mono-base500) !important;
 }
 
 .font-mono,

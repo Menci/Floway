@@ -241,7 +241,7 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
           )}
           {record.response.body.type === 'stream' && streamView === 'events' && renderedEvents.map((event, index) => (
             <div className={s.section} key={index}>
-              <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={s.error}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
+              <div className="flex items-center gap-2 px-4 pt-3"><Text size={100} className="font-mono mono-size-100 text-fui-fg2">{event.event ?? t('dashboard.requests.unlabeled')}</Text>{event.parseError && <Text size={100} className={s.error}>{t('dashboard.requests.jsonParseFailed')}</Text>}<Text size={100} className="ml-auto font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text></div>
               <CodeView body={{ text: event.text, copyText: event.text, decodeError: event.parseError, isJson: !event.parseError }} />
             </div>
           ))}

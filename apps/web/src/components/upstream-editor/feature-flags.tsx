@@ -150,7 +150,7 @@ function parseInlineMarkdown(text: string): ReactNode[] {
     if (token.startsWith('`') && token.endsWith('`')) {
       return (
         <code
-          className="rounded bg-fui-bg1 px-1 py-0.5 font-mono text-[0.92em] text-fui-fg1"
+          className="rounded bg-fui-bg1 px-1 py-0.5 font-mono text-fui-fg1"
           key={index}
         >
           {token.slice(1, -1)}
