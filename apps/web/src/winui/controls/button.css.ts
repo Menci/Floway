@@ -141,16 +141,26 @@ export const buttonCss = `
    foreground: WinUI keeps a chromeless button's label and icon at the full
    primary text fill and dims them to the secondary fill only while pressed,
    where Fluent runs them at the secondary fill throughout and tints them
-   toward the brand on hover. These Foreground2 tokens are read only by the
-   chromeless variants.
+   toward the brand on hover.
+
+   Stated as a colour rather than as a redefinition of the token Fluent reads.
+   A custom property handed to the root reaches every descendant, and a button
+   is free to hold more than a label -- the usage summary puts a two-line tile
+   inside one, and its caption, which asks for the secondary fill by name, was
+   being answered with the primary. A colour inherits too, but a descendant
+   naming its own wins over it, which is the distinction that was missing.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L119-L121
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Button_themeresources.xaml#L21-L23 */
-.fui-Button.fui-Button${notOptedOut} {
-  --colorNeutralForeground2: var(--winui-text-fill-primary);
-  --colorNeutralForeground2Hover: var(--winui-text-fill-primary);
-  --colorNeutralForeground2Pressed: var(--winui-text-fill-secondary);
-  --colorNeutralForeground2BrandHover: var(--winui-text-fill-primary);
-  --colorNeutralForeground2BrandPressed: var(--winui-text-fill-secondary);
+.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='subtle'],
+.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='transparent'],
+.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='subtle']:hover,
+.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='transparent']:hover {
+  color: var(--winui-text-fill-primary);
+}
+
+.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='subtle']:hover:active,
+.fui-Button.fui-Button${notOptedOut}[data-winui-appearance='transparent']:hover:active {
+  color: var(--winui-text-fill-secondary);
 }
 
 /* The focus visual. WinUI draws two concentric rings, FocusStrokeColorInner
