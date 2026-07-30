@@ -79,6 +79,26 @@ export const accordionCss = `
    declares is preserved, only moved outside the painted box. Its 8px is the
    same measure as the trailing term of the WinUI chevron margin.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L81 */
+/* The chevron turns instead of being swapped. WinUI points it down when the
+   Expander is collapsed and up when it is open; Fluent computes that rotation
+   itself, but only while it is the one creating the glyph, and the runtime
+   chokepoint now supplies a 12px cut in place of the 20px artwork Fluent scales
+   down. The timing is Fluent's own, kept as it was -- the WinUI chevron is an
+   AnimatedIcon whose curve is not in the dictionaries, so there is nothing to
+   transcribe and no reason to invent one.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L281 */
+.fui-AccordionHeader__button[aria-expanded='true'] .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+  rotate: 180deg;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+    transition-property: rotate;
+    transition-duration: var(--durationNormal);
+    transition-timing-function: ease-out;
+  }
+}
+
 .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon:first-child {
   margin-inline-end: 8px;
 }

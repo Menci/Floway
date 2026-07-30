@@ -16,7 +16,7 @@
 // the DOM: Fluent writes `aria-pressed`, or `aria-checked` when the role is
 // checkbox-like, so nothing here has to restate it.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-button/library/src/utils/useToggleState.ts#L49
-import { CheckmarkCircleFilled, DismissCircleFilled, ErrorCircleFilled, InfoFilled } from '@fluentui/react-icons';
+import { CheckmarkCircleFilled, ChevronDown12Regular, DismissCircleFilled, ErrorCircleFilled, InfoFilled } from '@fluentui/react-icons';
 import * as React from 'react';
 
 type FluentComponents = typeof import('@fluentui/react-components');
@@ -148,8 +148,29 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return wrapped as Component;
   };
 
+  // Expander puts its chevron at the end of the header row and points it down
+  // when collapsed, where Fluent leads with it and points it right. Fluent also
+  // hands the 20px chevron artwork to a 12px box, which is what makes the arrow
+  // read thin -- the icon set has a 12px cut, and WinUI states 12 for this glyph
+  // too. Supplying the children ourselves means Fluent no longer applies its
+  // rotation, so ./controls/accordion.css turns it instead.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L84-L85
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L281
+  const winuiChevron = <Component>(component: Component): Component => {
+    const elementType = component as React.ElementType;
+    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => React.createElement(elementType, {
+      expandIconPosition: 'end',
+      ...props,
+      expandIcon: props.expandIcon ?? { children: React.createElement(ChevronDown12Regular) },
+      ref,
+    }));
+    wrapped.displayName = (component as { displayName?: string }).displayName;
+    return wrapped as Component;
+  };
+
   return {
     ...components,
+    AccordionHeader: winuiChevron(components.AccordionHeader),
     MessageBar: stampIntent(components.MessageBar),
     Badge: stamp(components.Badge, size('medium')),
     Button: stamp(components.Button, appearance('secondary', rootIsPrimary)),
