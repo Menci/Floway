@@ -145,6 +145,7 @@ function SidebarLink({ children, icon, onNavigate, pending, to }: {
     if (followsInThisView) onNavigate?.();
   };
   return <NavItem
+    as="a"
     className={styles.item}
     data-nav-pending={pending || undefined}
     data-nav-value={to}
