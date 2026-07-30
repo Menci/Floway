@@ -194,7 +194,15 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
         event_id: 'evt_1',
         response: {
           id: responseId,
-          usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
+          // The summary reads the terminal response resource, which the egress
+          // stage has already completed, so the usage breakdowns are present.
+          usage: {
+            input_tokens: 3,
+            output_tokens: 5,
+            total_tokens: 8,
+            input_tokens_details: { cached_tokens: 0 },
+            output_tokens_details: { reasoning_tokens: 0 },
+          },
         },
       });
     }),

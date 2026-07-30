@@ -82,7 +82,7 @@ export const responsesServe = {
     );
     if (result.type !== 'result') return result;
 
-    const stored = wrapNativeResponsesClientOutput(syntheticEventsFromResult(result.result), ctx);
+    const stored = wrapNativeResponsesClientOutput(syntheticEventsFromResult(result.result), ctx, payload);
     const clientResult = await collectResponsesProtocolEventsToResult(stored);
     return {
       ...result,

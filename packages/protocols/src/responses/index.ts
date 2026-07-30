@@ -58,6 +58,26 @@ export interface ResponsesPayload {
   prompt_cache_retention?: ResponsesPromptCacheRetention | null;
   safety_identifier?: string | null;
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
+  // Request knobs Floway itself never acts on. On a Responses-native target
+  // they ride to the upstream in the forwarded body and come back echoed; no
+  // translate pair carries them, so on a translated target the client-facing
+  // echo can only come from the request. Declaring them keeps that echo honest
+  // instead of hard-coding the spec default for a client that sent its own
+  // value.
+  // https://github.com/openai/openai-openapi/blob/db14b6e1712aaf5265cf5a6871adff7a9c61d31c/openapi.yaml#L35856-L35873
+  truncation?: 'auto' | 'disabled' | (string & {}) | null;
+  // https://github.com/openai/openai-openapi/blob/db14b6e1712aaf5265cf5a6871adff7a9c61d31c/openapi.yaml#L59062-L59068
+  background?: boolean | null;
+  // https://github.com/openai/openai-openapi/blob/db14b6e1712aaf5265cf5a6871adff7a9c61d31c/openapi.yaml#L44064-L44080
+  top_logprobs?: number | null;
+  // Chat Completions sampling penalties. OpenAI's Responses request schema
+  // does not carry them, but the OpenResponses request and response schemas
+  // both do, so a client may send them and expects them echoed.
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
+  // https://github.com/openai/openai-openapi/blob/db14b6e1712aaf5265cf5a6871adff7a9c61d31c/openapi.yaml#L32766-L32771
+  presence_penalty?: number | null;
+  // https://github.com/openai/openai-openapi/blob/db14b6e1712aaf5265cf5a6871adff7a9c61d31c/openapi.yaml#L32752-L32757
+  frequency_penalty?: number | null;
 }
 
 export type ResponsesInputItem =
@@ -867,6 +887,51 @@ export interface ResponsesResult {
     input_tokens_details?: { cached_tokens: number; cache_write_tokens?: number };
     output_tokens_details?: { reasoning_tokens: number };
   } | null;
+  // ── Further fields the response resource declares required ──
+  //
+  // Every key below is listed in `ResponseResource.required` — as are `tools`,
+  // `tool_choice`, `usage` and `service_tier` above — so a spec-conforming
+  // client-facing body must carry all of them:
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
+  // They stay optional here because this interface also models what an
+  // arbitrary upstream sends and what a translator assembles mid-stream.
+  // Presence on the client-facing body is carried by `ClientResponseResource`
+  // in `./client-resource.ts`, which derives from this interface rather than
+  // restating it.
+  //
+  // Unix seconds, not milliseconds.
+  created_at?: number;
+  // Null until the response reaches a terminal status.
+  completed_at?: number | null;
+  previous_response_id?: string | null;
+  instructions?: string | null;
+  truncation?: 'auto' | 'disabled' | (string & {}) | null;
+  parallel_tool_calls?: boolean;
+  text?: { format?: Record<string, unknown> | null; verbosity?: string | null } | null;
+  top_p?: number | null;
+  presence_penalty?: number | null;
+  frequency_penalty?: number | null;
+  top_logprobs?: number | null;
+  temperature?: number | null;
+  // `effort` and `summary` are themselves required whenever `reasoning` is an
+  // object; other keys upstreams add (`context`, `mode`) ride along untouched.
+  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2320-L2359
+  reasoning?: {
+    effort?: string | null;
+    summary?: 'detailed' | 'auto' | 'concise' | (string & {}) | null;
+    context?: 'auto' | 'current_turn' | 'all_turns' | (string & {}) | null;
+    [key: string]: unknown;
+  } | null;
+  max_output_tokens?: number | null;
+  max_tool_calls?: number | null;
+  // Whether the response was stored so it can be retrieved later — the wording
+  // of the schema's own description, which is why the gateway answers it from
+  // its store rather than from the request's `store` flag.
+  store?: boolean;
+  background?: boolean;
+  metadata?: Record<string, unknown> | null;
+  safety_identifier?: string | null;
+  prompt_cache_key?: string | null;
 }
 
 // Stored/output additional-tools roles are wider than the input-only
@@ -1302,6 +1367,14 @@ export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 export { parseResponsesStream, type ParseResponsesStreamOptions } from './stream.ts';
 
+export type {
+  ClientResponseResource,
+  ClientResponsesReasoning,
+  ClientResponsesStreamEvent,
+  ClientResponsesTextField,
+  ClientResponsesTool,
+  ClientResponsesUsage,
+} from './client-resource.ts';
 export { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from './to-result.ts';
 export { createRandomResponsesItemId, type GeneratedResponsesItemType } from './item-id.ts';
 export { reassembleResponsesEvents } from './reassemble.ts';

@@ -18,7 +18,7 @@ import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
@@ -256,7 +256,7 @@ const handleClientMessage = async (
       throw error;
     }
 
-    await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx });
+    await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof TranslatorInputError) {
@@ -325,8 +325,9 @@ const respondResponsesWebSocket = async (input: {
   readonly isClosed: () => boolean;
   readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
   readonly ctx: ChatGatewayCtx;
+  readonly payload: CanonicalResponsesPayload;
 }): Promise<void> => {
-  const { socket, eventId, signal, isClosed, result, ctx } = input;
+  const { socket, eventId, signal, isClosed, result, ctx, payload } = input;
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
@@ -346,9 +347,9 @@ const respondResponsesWebSocket = async (input: {
   const state = new SourceStreamState();
   let completion: StreamCompletion = 'error';
   try {
-    let terminalEvent: ResponsesStreamEvent | undefined;
+    let terminalEvent: ClientResponsesStreamEvent | undefined;
     const observed = observeResponsesWebSocketFrames(result.events, state, ctx);
-    const output = wrapNativeResponsesClientOutput(observed, ctx);
+    const output = wrapNativeResponsesClientOutput(observed, ctx, payload);
     const iterator = output[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
@@ -395,7 +396,7 @@ const respondResponsesWebSocket = async (input: {
         if (terminalEvent !== undefined) continue;
 
         if (isResponsesTerminalEvent(event)) {
-          if (!sendJson(socket, event, eventId, ctx.dump)) {
+          if (!sendResponsesEvent(socket, event, eventId, ctx.dump)) {
             completion = 'cancel';
             continue;
           }
@@ -403,7 +404,7 @@ const respondResponsesWebSocket = async (input: {
           continue;
         }
 
-        if (!sendJson(socket, event, eventId, ctx.dump)) {
+        if (!sendResponsesEvent(socket, event, eventId, ctx.dump)) {
           stopForDownstream();
           return;
         }
@@ -460,11 +461,11 @@ const observeResponsesWebSocketFrames = async function* (
 };
 
 type WsFrameRaceResult =
-  | { type: 'frame'; result: IteratorResult<ProtocolFrame<ResponsesStreamEvent>> }
+  | { type: 'frame'; result: IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>> }
   | { type: 'next-error'; error: unknown }
   | { type: 'keep-alive' };
 
-const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
+const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ClientResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
   pendingNext.then(
     (result): WsFrameRaceResult => ({ type: 'frame', result }),
     (error): WsFrameRaceResult => ({ type: 'next-error', error }),
@@ -548,6 +549,19 @@ const sendError = (
 ): void => {
   sendJson(socket, { type: 'error', status, error }, eventId, dump);
 };
+
+// A turn's own frames go out through this entry, which accepts only a stream
+// event whose response resource has already passed the client-facing egress
+// stage. The frames Floway synthesizes for the transport itself — the error
+// envelope, the keep-alive, and the `response.done` summary, which projects a
+// couple of fields off the completed resource rather than carrying it — are not
+// protocol stream events and keep the untyped `sendJson`.
+const sendResponsesEvent = (
+  socket: ResponsesWebSocketSocket,
+  event: ClientResponsesStreamEvent,
+  eventId?: string,
+  dump?: DumpAccumulator | null,
+): boolean => sendJson(socket, event, eventId, dump);
 
 const sendJson = (
   socket: ResponsesWebSocketSocket,

@@ -11,20 +11,17 @@ import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../sha
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
 
-// Renders an upstream Responses result into the client HTTP/SSE response. An
-// error-typed result is a pre-stream failure and always answers as HTTP; an
-// events result drains to one JSON body (non-streaming) or is proxied frame by
-// frame (streaming).
-export const respondResponses = async (
-  c: Context,
-  result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | PlainResult,
-  wantsStream: boolean,
+// Renders a Responses failure that never opened a stream. Separate entry
+// because a request that fails before its payload parses has no payload to
+// answer with, and the events path below requires one.
+export const respondResponsesFailure = (
+  result: Exclude<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>, { type: 'events' }> | PlainResult,
   ctx: GatewayCtx,
-): Promise<Response> => {
+): Response => {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
@@ -37,16 +34,27 @@ export const respondResponses = async (
     return internalResponsesErrorResponse(result.status, result.error);
   }
 
-  if (result.type === 'plain') {
-    if (result.status >= 400) {
-      ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
-    }
-    return plainResultToResponse(result);
+  if (result.status >= 400) {
+    ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
   }
+  return plainResultToResponse(result);
+};
+
+// Renders an upstream Responses result into the client HTTP/SSE response. An
+// events result drains to one JSON body (non-streaming) or is proxied frame by
+// frame (streaming); anything else is a pre-stream failure.
+export const respondResponses = async (
+  c: Context,
+  result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | PlainResult,
+  wantsStream: boolean,
+  ctx: GatewayCtx,
+  request: CanonicalResponsesPayload,
+): Promise<Response> => {
+  if (result.type !== 'events') return respondResponsesFailure(result, ctx);
 
   const state = new SourceStreamState();
   const observed = observeResponsesFrames(result.events, state, ctx);
-  const frames = wrapNativeResponsesClientOutput(observed, ctx);
+  const frames = wrapNativeResponsesClientOutput(observed, ctx, request);
 
   if (!wantsStream) {
     try {
@@ -132,7 +140,7 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
   throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
 };
 
-const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState) {
+const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ClientResponsesStreamEvent>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
       const sse = responsesProtocolFrameToSSEFrame(frame);

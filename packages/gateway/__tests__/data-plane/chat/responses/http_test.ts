@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
 import { TEST_RESPONSES_RETENTION_SECONDS } from './test-policy.ts';
+import { missingRequiredResourceKeys } from './test-required-resource-keys.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
@@ -349,6 +350,21 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
   const body = await response.json() as ResponsesResult;
   assert(body.id.length > 0 && body.id !== 'resp_nonstream', 'expected the source boundary to replace the upstream response id');
   assertEquals(body.status, 'completed');
+});
+
+test('POST /v1/responses answers a translated-shape upstream with a complete response resource', async () => {
+  installRepo();
+  queueCompletedResponse('resp_complete');
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello' }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(missingRequiredResourceKeys(body), []);
 });
 
 test('POST /v1/responses returns 502 when a non-streaming output item cannot be persisted', async () => {
