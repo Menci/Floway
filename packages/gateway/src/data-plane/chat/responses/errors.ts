@@ -10,10 +10,10 @@ export type ResponsesServeFailure = ChatServeFailure | { readonly kind: 'item-no
 // membrane share the Responses 400 envelope. `performance` retains candidate
 // attribution when validation fires after attempt dispatch.
 export const responsesInputErrorResult = (
-  error: { readonly message: string; readonly param?: string },
+  error: { readonly message: string; readonly param?: string; readonly code?: string },
   performance?: PerformanceTelemetryContext,
 ): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> =>
-  openAiErrorResult(400, error.message, { param: error.param ?? 'input', code: null }, performance);
+  openAiErrorResult(400, error.message, { param: error.param ?? 'input', code: error.code ?? null }, performance);
 
 export const renderResponsesFailure = (
   failure: ResponsesServeFailure,
