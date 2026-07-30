@@ -48,7 +48,7 @@ const REACH_MS = Math.round(DURATION_MS * POSITION_SNAP);
 const SETTLE_MS = DURATION_MS - REACH_MS;
 const INDICATOR_RADIUS = 2;
 
-type Geometry = { top: number; left: number; height: number };
+type Geometry = { top: number; left: number; width: number; height: number };
 
 const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
   const containerBox = container.getBoundingClientRect();
@@ -59,6 +59,7 @@ const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
     // item rather than pinning it to a fixed inset.
     top: itemBox.top - containerBox.top + container.scrollTop,
     left: itemBox.left - containerBox.left + container.scrollLeft,
+    width: itemBox.width,
     height: itemBox.height,
   };
 };
@@ -207,19 +208,20 @@ export function NavSelectionIndicator({
     style={{
       alignItems: 'center',
       display: 'flex',
-      // The clip box is the item, corners included: WinUI's indicator is cut by
-      // the item's rounded rect, so the stretch that escapes the item is taken
-      // off at the curve rather than ending in a square corner. A box this
-      // narrow clamps the radius to half its width, which is the part of the
-      // curve the leading edge actually crosses.
+      // The clip box is the item itself, corners included. WinUI cuts the
+      // indicator against the item's rounded rect, and over the three pixels the
+      // bar occupies that boundary is a curve rather than a straight edge, so a
+      // box only as wide as the bar cannot stand in for it however it is
+      // rounded -- it would round its own corners instead of following the
+      // item's.
       borderRadius: 'var(--borderRadiusMedium)',
       height: geometry.height,
-      left: geometry.left + inset,
+      left: geometry.left,
       overflow: 'hidden',
       pointerEvents: 'none',
       position: 'absolute',
       top: geometry.top,
-      width: INDICATOR_WIDTH,
+      width: geometry.width,
     }}
   >
     <div
@@ -228,7 +230,8 @@ export function NavSelectionIndicator({
         backgroundColor: 'var(--winui-accent-fill-default)',
         borderRadius: INDICATOR_RADIUS,
         height: INDICATOR_HEIGHT,
-        width: '100%',
+        marginInlineStart: inset,
+        width: INDICATOR_WIDTH,
       }}
     />
   </div>;
