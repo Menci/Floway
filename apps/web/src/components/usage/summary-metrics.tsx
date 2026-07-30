@@ -13,16 +13,26 @@ const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
 // with an accent bar down its leading edge.
 //
 // The fill and the bar are stated here rather than left to the layer, because
-// the layer paints a ToggleButton as WinUI paints one and is right to.
+// the layer paints a ToggleButton as WinUI paints one and is right to. Undoing
+// that paint is what needs `!important`: the layer names the checked state at a
+// specificity a call site cannot reach, which is correct for a rule meant to
+// hold across the dashboard and is exactly the case the escape hatch is for.
+// The accent border goes with the fill -- it is the accent's own elevation
+// stroke, and against a subtle fill its heavier bottom edge reads as a rule
+// under the tile.
 const useStyles = makeStyles({
   tile: {
     '&[aria-pressed="true"]': {
-      backgroundColor: 'var(--winui-subtle-fill-secondary)',
-      color: 'var(--winui-text-fill-primary)',
+      backgroundColor: 'var(--winui-subtle-fill-secondary) !important',
+      borderTopColor: 'transparent !important',
+      borderRightColor: 'transparent !important',
+      borderBottomColor: 'transparent !important',
+      borderLeftColor: 'transparent !important',
+      color: 'var(--winui-text-fill-primary) !important',
       position: 'relative',
     },
-    '&[aria-pressed="true"]:hover': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
-    '&[aria-pressed="true"]:hover:active': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
+    '&[aria-pressed="true"]:hover': { backgroundColor: 'var(--winui-subtle-fill-tertiary) !important' },
+    '&[aria-pressed="true"]:hover:active': { backgroundColor: 'var(--winui-subtle-fill-secondary) !important' },
     // The indicator's 16px is stated against a 36px row, so it is carried as the
     // inset it leaves; a tile is taller and the bar grows with it.
     '&[aria-pressed="true"]::after': {
