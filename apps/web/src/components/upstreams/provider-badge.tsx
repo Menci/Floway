@@ -11,6 +11,7 @@ import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
 import { Chip } from '../ui/chip';
+import { MaskedIcon } from '../ui/masked-icon';
 
 const { makeStyles, tokens } = fluentComponents;
 
@@ -167,18 +168,6 @@ const providerIconMaskSizes: Record<Exclude<UpstreamProviderKind, 'custom'>, str
   ollama: '86% 86%',
 };
 
-const maskedIconStyle = (url: string, size: string): React.CSSProperties => ({
-  backgroundColor: 'currentColor',
-  maskImage: `url(${url})`,
-  WebkitMaskImage: `url(${url})`,
-  maskSize: size,
-  WebkitMaskSize: size,
-  maskRepeat: 'no-repeat',
-  WebkitMaskRepeat: 'no-repeat',
-  maskPosition: 'center',
-  WebkitMaskPosition: 'center',
-});
-
 export function ProviderIcon({
   kind,
   className,
@@ -191,5 +180,5 @@ export function ProviderIcon({
   if (kind === 'custom') return <ServerRegular className={baseClassName} />;
   const iconUrl = providerIconUrls[kind];
   if (iconUrl === null) return null;
-  return <span aria-hidden className={baseClassName} style={maskedIconStyle(iconUrl, providerIconMaskSizes[kind])} />;
+  return <MaskedIcon className={className} maskSize={providerIconMaskSizes[kind]} url={iconUrl} />;
 }

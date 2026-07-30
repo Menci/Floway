@@ -15,6 +15,7 @@ import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown } from '../components/ui/fluent-form-controls';
+import { MaskedIcon } from '../components/ui/masked-icon';
 import { Panel } from '../components/ui/panel';
 import { SecretInput } from '../components/ui/secret-input';
 import { fluentComponents } from '../fluent';
@@ -515,13 +516,7 @@ function ProviderOptionLabel({ iconUrl, label }: { iconUrl?: string; label: stri
   return (
     <span className="flex items-center gap-2 min-w-0">
       {iconUrl && (
-        <img
-          alt=""
-          aria-hidden="true"
-          className="block flex-none h-[16px] w-[16px]"
-          src={iconUrl}
-          style={{ filter: 'light-dark(none, invert(1))' }}
-        />
+        <MaskedIcon className="h-[16px] w-[16px]" url={iconUrl} />
       )}
       <span className="truncate">{label}</span>
     </span>
