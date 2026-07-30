@@ -386,7 +386,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
       </DialogShell>
 
-      {deleteTarget && (
+      {deleteOpen && deleteTarget && (
         <ConfirmDialog
           actionLabel={
             deleting
@@ -401,7 +401,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           onOpenChange={open => {
             if (!deleting) setDeleteOpen(open);
           }}
-          open={deleteOpen}
           title={t('dashboard.proxy.delete.title')}
         />
       )}
