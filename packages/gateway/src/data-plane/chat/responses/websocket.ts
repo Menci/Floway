@@ -415,6 +415,9 @@ const respondResponsesWebSocket = async (input: {
           // idle timeout.
           // https://github.com/cloudflare/workerd/blob/26b5461b7dcc640bb16072f1ba6f2c6df82572ba/src/workerd/api/web-socket.h#L346-L394
           // https://github.com/capnproto/capnproto/blob/e9fa5c7dc98192fc0dc0098ec770db68f997a938/c%2B%2B/src/kj/compat/http.h#L622-L631
+          // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L91-L101
+          // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L695-L699
+          // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/model-provider-info/src/lib.rs#L26
           //
           // So the keep-alive is a text frame whose `type` no client
           // recognizes. The spec's extension section governs its shape: an
@@ -422,17 +425,27 @@ const respondResponsesWebSocket = async (input: {
           // neither a delta nor a state-machine event, so it cannot be spelled
           // as a `response.*` event; the slug form is what makes it ignorable
           // without loss. openai-node's SSE `responses.stream()` helper is the
-          // one client that treats a prefixed type as fatal, and it is out of
-          // reach here — Floway's SSE keep-alive is a comment line and this
-          // frame exists only on the WebSocket transport.
+          // one client that treats a prefixed type as fatal — its accumulator
+          // closes its `switch` on `assertNever` — and it is out of reach here:
+          // Floway's SSE keep-alive is a comment line, and this frame exists
+          // only on the WebSocket transport.
           // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L758
+          // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/lib/responses/ResponseAccumulator.ts#L387-L389
           //
-          // Held back until the turn's first event has gone out. Both SDK
-          // stream helpers require `response.created` to be the very first
-          // event they see and raise on anything before it, so the window
-          // before it stays unprotected by design.
+          // Held back until the turn's first event has gone out. That gate is
+          // parity with the stricter transport, not a demand of this one: both
+          // SDKs' SSE stream helpers refuse anything before `response.created`
+          // — openai-node rejects even its own `keepalive` type there — while
+          // every WebSocket reader we can inspect tolerates an unknown type at
+          // any position, openai-node emitting it under a name nothing listens
+          // on, openai-python constructing it unchecked, and Codex tracing and
+          // discarding it. The window before the first event therefore stays
+          // unprotected, and closing it is a behavior question rather than a
+          // client-compatibility one.
           // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/lib/responses/ResponseAccumulator.ts#L25-L31
           // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/lib/streaming/responses/_responses.py#L369-L370
+          // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/resources/responses/responses.py#L4493-L4502
+          // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/sse/responses.rs#L466-L472
           if (!streamed) continue;
           if (!sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump)) {
             stopForDownstream();
