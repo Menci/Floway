@@ -84,6 +84,28 @@ export const fieldCss = `
   color: var(--winui-system-fill-caution);
 }
 
+/* A link's three enabled steps. WinUI walks a HyperlinkButton down the accent
+   TEXT ramp -- primary at rest, secondary on pointer, tertiary while pressed --
+   which is a different ramp from the accent FILL an accent button takes: it is
+   darkened in light and lightened in dark so it stays legible as type rather
+   than as a surface. Fluent runs a link on the brand foreground instead, which
+   put two link colours on one screen once the toast's action took the WinUI
+   step. Scoped to the default appearance, like the disabled step below, because
+   Fluent's subtle link is neutral by design.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297-L299
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93-L95 */
+.fui-Link.fui-Link[data-winui-appearance='default']:not([aria-disabled='true']) {
+  color: var(--winui-accent-text-fill-primary);
+}
+
+.fui-Link.fui-Link[data-winui-appearance='default']:not([aria-disabled='true']):hover {
+  color: var(--winui-accent-text-fill-secondary);
+}
+
+.fui-Link.fui-Link[data-winui-appearance='default']:not([aria-disabled='true']):active {
+  color: var(--winui-accent-text-fill-tertiary);
+}
+
 /* A disabled link stays in the accent family in WinUI and is only faded;
    Fluent moves it onto the neutral disabled foreground, which erases the fact
    that it was a link at all. AccentTextFillColorDisabled is the one member of

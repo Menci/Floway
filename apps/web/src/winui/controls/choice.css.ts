@@ -24,16 +24,26 @@ export const choiceCss = `
 /* Check box geometry. WinUI draws one box at CheckBoxSize with a
    CheckBoxGlyphSize glyph inside it and has no second size, so both Fluent
    sizes are pulled onto those two numbers — the medium box grows from 16px and
-   the large glyph shrinks from 16px. The box's corner radius is already
-   ControlCornerRadius through the themed \`borderRadiusSmall\` Fluent's
-   indicator reset reads, so restating it here would only cost \`shape="circular"\`
-   its circle.
+   the large glyph shrinks from 16px.
+
+   The corner radius has to be stated. CheckBox binds it to ControlCornerRadius
+   and binds the check rectangle to the same value, while Fluent's indicator
+   reset reads \`borderRadiusSmall\`, which the theme layer leaves on Fluent's
+   own 2px because no WinUI radius is that small. Stating it means naming the
+   square shape: \`shape="circular"\` reads the same property, and the shape is
+   on the DOM because the runtime chokepoint stamps it.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L270-L271
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L603 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L294
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CheckBox_themeresources.xaml#L603
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L13-L15 */
 .fui-Checkbox__indicator.fui-Checkbox__indicator {
   width: 20px;
   height: 20px;
   font-size: 12px;
+}
+
+.fui-Checkbox[data-winui-shape='square'] > .fui-Checkbox__indicator.fui-Checkbox__indicator {
+  border-radius: var(--winui-control-corner-radius);
 }
 
 /* The input is the hit target and the label's optical centring is a function

@@ -23,14 +23,12 @@ type FluentComponents = typeof import('@fluentui/react-components');
 
 export const winuiAppearanceAttribute = 'data-winui-appearance';
 export const winuiIntentAttribute = 'data-winui-intent';
-
 export const winuiSizeAttribute = 'data-winui-size';
+export const winuiShapeAttribute = 'data-winui-shape';
 
 type SlotProps = Record<string, unknown>;
-type AppearanceCarrier = { appearance?: string } & SlotProps;
+type PropCarrier = Record<string, unknown>;
 type IntentCarrier = { intent?: string; icon?: React.ReactNode };
-
-type SizeCarrier = { size?: string } & SlotProps;
 
 // A top-level prop does not always reach the element that carries the WinUI
 // trait, so each component also names the slots that must be stamped. When the
@@ -89,22 +87,24 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-utilities/src/compose/slot.ts#L82-L93
   const resolveSlotProps = components.slot.resolveShorthand as (value: unknown) => SlotProps | undefined;
 
-  const stampAppearance = <Component>(
+  // One axis of one component: the prop Fluent resolves in JavaScript, the
+  // attribute the sheets read it back through, the default Fluent would have
+  // applied, and the slots that need it in addition to the root.
+  const stamp = <Component>(
     component: Component,
-    defaultAppearance: string,
-    stampedSlots: readonly string[],
+    axis: { prop: string; attribute: string; fallback: string; slots?: readonly string[] },
   ): Component => {
     const elementType = component as React.ElementType;
 
-    const wrapped = React.forwardRef<unknown, AppearanceCarrier>((props, ref) => {
-      const stamp = { [winuiAppearanceAttribute]: props.appearance ?? defaultAppearance };
+    const wrapped = React.forwardRef<unknown, PropCarrier>((props, ref) => {
+      const mark = { [axis.attribute]: props[axis.prop] ?? axis.fallback };
       const stampedSlotProps = Object.fromEntries(
-        stampedSlots
+        (axis.slots ?? [])
           .filter(name => props[name] !== null)
-          .map(name => [name, { ...resolveSlotProps(props[name]), ...stamp }]),
+          .map(name => [name, { ...resolveSlotProps(props[name]), ...mark }]),
       );
 
-      return React.createElement(elementType, { ...props, ...stamp, ...stampedSlotProps, ref });
+      return React.createElement(elementType, { ...props, ...mark, ...stampedSlotProps, ref });
     });
 
     wrapped.displayName = (component as { displayName?: string }).displayName;
@@ -112,16 +112,11 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return wrapped as Component;
   };
 
-  const stampSize = <Component>(component: Component, defaultSize: string): Component => {
-    const elementType = component as React.ElementType;
-    const wrapped = React.forwardRef<unknown, SizeCarrier>((props, ref) => React.createElement(elementType, {
-      ...props,
-      [winuiSizeAttribute]: props.size ?? defaultSize,
-      ref,
-    }));
-    wrapped.displayName = (component as { displayName?: string }).displayName;
-    return wrapped as Component;
-  };
+  const appearance = (fallback: string, slots?: readonly string[]) =>
+    ({ prop: 'appearance', attribute: winuiAppearanceAttribute, fallback, slots });
+  const size = (fallback: string) => ({ prop: 'size', attribute: winuiSizeAttribute, fallback });
+  const shape = (fallback: string, slots?: readonly string[]) =>
+    ({ prop: 'shape', attribute: winuiShapeAttribute, fallback, slots });
 
   // WinUI draws an InfoBar's severity as a filled disc with the symbol knocked
   // out of it, and picks the disc by severity. Fluent tints one outline glyph
@@ -156,21 +151,22 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
   return {
     ...components,
     MessageBar: stampIntent(components.MessageBar),
-    Badge: stampSize(components.Badge, 'medium'),
-    Button: stampAppearance(components.Button, 'secondary', rootIsPrimary),
-    ToggleButton: stampAppearance(components.ToggleButton, 'secondary', rootIsPrimary),
-    CompoundButton: stampAppearance(components.CompoundButton, 'secondary', rootIsPrimary),
-    MenuButton: stampAppearance(components.MenuButton, 'secondary', rootIsPrimary),
-    SplitButton: stampAppearance(components.SplitButton, 'secondary', splitButtonSlots),
-    ToolbarButton: stampAppearance(components.ToolbarButton, 'subtle', rootIsPrimary),
-    ToolbarToggleButton: stampAppearance(components.ToolbarToggleButton, 'subtle', rootIsPrimary),
-    ToolbarRadioButton: stampAppearance(components.ToolbarRadioButton, 'subtle', rootIsPrimary),
-    Link: stampAppearance(components.Link, 'default', rootIsPrimary),
-    Input: stampAppearance(components.Input, 'outline', rootAndPrimary),
-    Textarea: stampAppearance(components.Textarea, 'outline', rootAndPrimary),
-    Select: stampAppearance(components.Select, 'outline', rootAndPrimary),
-    Combobox: stampAppearance(components.Combobox, 'outline', rootAndPrimary),
-    Dropdown: stampAppearance(components.Dropdown, 'outline', rootAndPrimary),
-    Card: stampAppearance(components.Card, 'filled', rootIsPrimary),
+    Badge: stamp(components.Badge, size('medium')),
+    Button: stamp(components.Button, appearance('secondary', rootIsPrimary)),
+    ToggleButton: stamp(components.ToggleButton, appearance('secondary', rootIsPrimary)),
+    CompoundButton: stamp(components.CompoundButton, appearance('secondary', rootIsPrimary)),
+    MenuButton: stamp(components.MenuButton, appearance('secondary', rootIsPrimary)),
+    SplitButton: stamp(components.SplitButton, appearance('secondary', splitButtonSlots)),
+    ToolbarButton: stamp(components.ToolbarButton, appearance('subtle', rootIsPrimary)),
+    ToolbarToggleButton: stamp(components.ToolbarToggleButton, appearance('subtle', rootIsPrimary)),
+    ToolbarRadioButton: stamp(components.ToolbarRadioButton, appearance('subtle', rootIsPrimary)),
+    Link: stamp(components.Link, appearance('default', rootIsPrimary)),
+    Input: stamp(components.Input, appearance('outline', rootAndPrimary)),
+    Textarea: stamp(components.Textarea, appearance('outline', rootAndPrimary)),
+    Select: stamp(components.Select, appearance('outline', rootAndPrimary)),
+    Combobox: stamp(components.Combobox, appearance('outline', rootAndPrimary)),
+    Dropdown: stamp(components.Dropdown, appearance('outline', rootAndPrimary)),
+    Card: stamp(components.Card, appearance('filled', rootIsPrimary)),
+    Checkbox: stamp(components.Checkbox, shape('square', rootAndPrimary)),
   };
 };

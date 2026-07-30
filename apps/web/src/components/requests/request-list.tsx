@@ -39,7 +39,10 @@ const useStyles = makeStyles({
     borderRight: '0 !important',
     borderBottom: '1px solid var(--colorNeutralStroke1) !important',
     borderLeft: '0 !important',
-    borderRadius: '7px 7px 0 0 !important',
+    // The selector heads a card, so its top corners follow the card's own
+    // OverlayCornerRadius rather than a value of their own; the bottom pair is
+    // squared off because the list continues underneath it.
+    borderRadius: 'var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0 !important',
     boxShadow: 'none !important',
     width: '100%',
     '&:hover': { backgroundColor: 'var(--colorSubtleBackgroundHover) !important' },
@@ -49,7 +52,10 @@ const useStyles = makeStyles({
   list: { outlineStyle: 'none' },
   row: {
     backgroundColor: 'transparent',
-    borderBottom: '1px solid var(--colorNeutralStroke2)',
+    // The rule between rows is a divider, which is the family every other row
+    // separator in the dashboard reads. The neutral stroke this used to name
+    // maps onto the CARD stroke, black at 10% -- invisible against a dark page.
+    borderBottom: '1px solid var(--winui-divider-stroke-default)',
     cursor: 'pointer',
     display: 'grid',
     gridTemplateRows: 'repeat(3, minmax(0, 1fr))',
