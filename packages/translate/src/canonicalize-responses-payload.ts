@@ -48,6 +48,9 @@ export function canonicalizeResponsesPayload(value: unknown): CanonicalResponses
     throw new TranslatorInputError('Responses payload must be an object.');
   }
   const payload = value as ResponsesRequestPayload;
+  if (typeof payload.model !== 'string') {
+    throw new TranslatorInputError('Responses model must be a string.', { param: 'model' });
+  }
   const input: unknown = payload.input;
   if (typeof input !== 'string' && !Array.isArray(input)) {
     throw new TranslatorInputError('Responses input must be a string or an array.', { param: 'input' });

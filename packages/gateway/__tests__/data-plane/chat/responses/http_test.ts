@@ -416,6 +416,23 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
   }
 });
 
+test('POST /v1/responses/compact rejects a missing model before resolution', async () => {
+  installRepo();
+  lastSeenModel.value = null;
+
+  const response = await makeApp().request('/v1/responses/compact', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ input: 'hello' }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { message: string; param: string } };
+  assertEquals(body.error.message, 'Responses model must be a string.');
+  assertEquals(body.error.param, 'model');
+  assertEquals(lastSeenModel.value, null);
+});
+
 test('POST /v1/responses/compact returns a non-streaming compaction envelope', async () => {
   const repo = installRepo();
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };

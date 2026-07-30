@@ -45,6 +45,21 @@ test('canonicalizes string and implicit-message wire inputs', () => {
   });
 });
 
+test('rejects a missing or non-string model at the canonical boundary', () => {
+  for (const payload of [
+    { input: 'hello' },
+    { model: null, input: 'hello' },
+    { model: 42, input: 'hello' },
+  ]) {
+    const error = assertThrows(
+      () => canonicalizeResponsesPayload(payload),
+      TranslatorInputError,
+      'model must be a string',
+    ) as TranslatorInputError;
+    assertEquals(error.param, 'model');
+  }
+});
+
 test('rejects malformed untyped input items at the canonical boundary', () => {
   for (const malformed of [
     null,
