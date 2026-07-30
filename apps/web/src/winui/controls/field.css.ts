@@ -6,12 +6,11 @@
 // Hyperlink paints; the rules below take their values from those roles.
 // InfoLabel contributes only layout plumbing and needs nothing.
 //
-// One WinUI family stays out of reach: the accent *text* ramp above its
-// disabled member. AccentTextFillColorPrimary, Secondary and Tertiary resolve
-// to SystemAccentColorDark2/Light3 and their neighbours, which Windows derives
-// at runtime from the user's accent colour and which therefore appear in no
-// theme dictionary as a literal. The rest, hover and pressed Link colors stay
-// on Fluent's brand ramp because the WinUI values do not exist to copy.
+// The accent text ramp a Link walks -- AccentTextFillColorPrimary, Secondary
+// and Tertiary -- resolves to steps of the ramp Windows derives from the user's
+// accent colour, which appear in no theme dictionary as a literal. ../tokens.ts
+// transcribes the ramp Windows generates for its own default and the Link rules
+// below spend it, at the cost that one assumption.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297
 
 // Fluent's only DOM marker for a Field's horizontal orientation is the hashed
