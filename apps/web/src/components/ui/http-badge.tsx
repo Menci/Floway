@@ -23,6 +23,7 @@ function HttpBadge({ children, color }: { children: ReactNode; color: HttpBadgeC
     className={styles.root}
     color={color}
     size="medium"
+    style={{ fontSize: '13px', lineHeight: '20px' }}
     translate="no"
   >{children}</Badge>;
 }

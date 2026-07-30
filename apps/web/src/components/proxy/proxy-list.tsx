@@ -11,6 +11,7 @@ import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 
 const {
+  Badge,
   Table,
   TableBody,
   TableCell,
@@ -59,12 +60,15 @@ export function ProxyList({
               <TableRow key={proxy.id}>
                 <TableCell className="!overflow-hidden">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="text-fui-base200 font-fui-semibold uppercase px-[6px] py-[2px] rounded-[3px] flex-none"
+                    <Badge
+                      appearance="tint"
+                      className="uppercase flex-none"
+                      shape="rounded"
+                      size="large"
                       style={{ backgroundColor: colors.bg, color: colors.fg }}
                     >
                       {t(`dashboard.proxy.kind.${kind}` as never, kind)}
-                    </span>
+                    </Badge>
                     <Text className="truncate" title={proxy.name}>{proxy.name}</Text>
                   </div>
                 </TableCell>

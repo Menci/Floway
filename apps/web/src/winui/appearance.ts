@@ -21,9 +21,11 @@ import * as React from 'react';
 type FluentComponents = typeof import('@fluentui/react-components');
 
 export const winuiAppearanceAttribute = 'data-winui-appearance';
+export const winuiSizeAttribute = 'data-winui-size';
 
 type SlotProps = Record<string, unknown>;
 type AppearanceCarrier = { appearance?: string } & SlotProps;
+type SizeCarrier = { size?: string } & SlotProps;
 
 // A top-level prop does not always reach the element that carries the WinUI
 // trait, so each component also names the slots that must be stamped. When the
@@ -105,8 +107,20 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return wrapped as Component;
   };
 
+  const stampSize = <Component>(component: Component, defaultSize: string): Component => {
+    const elementType = component as React.ElementType;
+    const wrapped = React.forwardRef<unknown, SizeCarrier>((props, ref) => React.createElement(elementType, {
+      ...props,
+      [winuiSizeAttribute]: props.size ?? defaultSize,
+      ref,
+    }));
+    wrapped.displayName = (component as { displayName?: string }).displayName;
+    return wrapped as Component;
+  };
+
   return {
     ...components,
+    Badge: stampSize(components.Badge, 'medium'),
     Button: stampAppearance(components.Button, 'secondary', rootIsPrimary),
     ToggleButton: stampAppearance(components.ToggleButton, 'secondary', rootIsPrimary),
     CompoundButton: stampAppearance(components.CompoundButton, 'secondary', rootIsPrimary),

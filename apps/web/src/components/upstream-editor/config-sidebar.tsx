@@ -164,7 +164,7 @@ function DisabledModelsCombobox({ catalogAvailable, discovered }: { catalogAvail
       {filtered.map(option => <Option key={option.id} text={option.id} value={option.id}>
         <span className="flex items-center justify-between gap-3 min-w-0 w-full">
           <span className="font-mono min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{option.id}</span>
-          {option.missing && <Badge appearance="tint" color="warning" size="small">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</Badge>}
+          {option.missing && <Badge appearance="tint" color="warning">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</Badge>}
         </span>
       </Option>)}
     </Combobox>
@@ -233,7 +233,7 @@ function ColoCombobox({ current, onChange, value }: { current: string; onChange:
     value={open ? query : value.length === 0 ? '' : value.join(', ')}
   >
     {options.map(location => <Option key={location} text={location} value={location}>
-      <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <Badge appearance="tint" color="informative" size="small">{t('dashboard.upstreamEditor.proxy.currentColo')}</Badge>}</span>
+      <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <Badge appearance="tint" color="informative">{t('dashboard.upstreamEditor.proxy.currentColo')}</Badge>}</span>
     </Option>)}
   </Combobox>;
 }

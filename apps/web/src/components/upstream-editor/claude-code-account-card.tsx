@@ -56,10 +56,10 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
       <div className="grid gap-1 min-w-0 flex-1">
         <Text weight="semibold" truncate>{account.email ?? accountUuidShort}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          {credential?.tokenKind === 'setup-token' && <Badge appearance="tint" color="important" size="small" title={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')}>
+          {credential?.tokenKind === 'setup-token' && <Badge appearance="tint" color="important" title={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')}>
             {t('dashboard.upstreamEditor.claudeCode.setupToken')}
           </Badge>}
-          {subscription && <Badge appearance="tint" color="brand" size="small">{subscription}</Badge>}
+          {subscription && <Badge appearance="tint" color="brand">{subscription}</Badge>}
           <Text size={200} className="text-fui-fg3 font-mono" title={account.accountUuid}>{accountUuidShort}</Text>
           {account.email === null && <Text size={200} className="text-fui-fg3" title={t('dashboard.upstreamEditor.claudeCode.noEmailScopeHint')}>
             {t('dashboard.upstreamEditor.claudeCode.noEmailScope')}
@@ -105,16 +105,16 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
     </div>}
 
     <div className="flex flex-wrap items-center gap-2 empty:hidden">
-      {quota?.representativeClaim && <Badge appearance="outline" size="small">
+      {quota?.representativeClaim && <Badge appearance="outline">
         {t('dashboard.upstreamEditor.claudeCode.representative', { claim: quota.representativeClaim })}
       </Badge>}
-      {quota?.overage?.status === 'allowed' && <Badge appearance="tint" color="success" size="small">
+      {quota?.overage?.status === 'allowed' && <Badge appearance="tint" color="success">
         {t('dashboard.upstreamEditor.claudeCode.overageAllowed')}
       </Badge>}
-      {disabledReason && <Badge appearance="tint" color="danger" size="small">
+      {disabledReason && <Badge appearance="tint" color="danger">
         {t('dashboard.upstreamEditor.claudeCode.disabledReason', { reason: disabledReason })}
       </Badge>}
-      {quota?.fallbackAvailable === false && <Badge appearance="tint" color="warning" size="small">
+      {quota?.fallbackAvailable === false && <Badge appearance="tint" color="warning">
         {t('dashboard.upstreamEditor.claudeCode.fallbackUnavailable')}
       </Badge>}
     </div>

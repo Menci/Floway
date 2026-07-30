@@ -428,7 +428,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
           </Text>
 
           <div className="flex items-center gap-[8px] flex-wrap">
-            <Badge appearance="tint" color={testResult.ok ? 'success' : 'danger'} size="small">
+            <Badge appearance="tint" color={testResult.ok ? 'success' : 'danger'}>
               {testResult.ok ? 'OK' : 'Error'}
             </Badge>
             <Text size={200} className="text-fui-fg3">

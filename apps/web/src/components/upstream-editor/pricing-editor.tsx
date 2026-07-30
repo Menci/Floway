@@ -185,7 +185,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
             <span className="grid min-w-0 gap-0.5 text-left">
               <span className="flex min-w-0 items-center gap-2">
                 <Text truncate size={300} weight="semibold" title={displayLabel}>{displayLabel}</Text>
-                {issues.some(issue => issueAffectsEntry(issue, index)) && <Badge appearance="filled" aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} color="danger" size="tiny">!</Badge>}
+                {issues.some(issue => issueAffectsEntry(issue, index)) && <Badge appearance="filled" aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} color="danger">!</Badge>}
               </span>
               <Text truncate size={200} className="text-fui-fg2">
                 {index === baseIndex

@@ -37,10 +37,10 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
       <div className="grid gap-1 min-w-0 flex-1">
         <Text weight="semibold" truncate>{account.email}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge appearance="tint" color="brand" size="small">{account.planType}</Badge>
+          <Badge appearance="tint" color="brand">{account.planType}</Badge>
           {credits?.credits_has_credits === false
-            ? <Badge appearance="tint" color="danger" size="small">{t('dashboard.upstreamEditor.codex.noCredits')}</Badge>
-            : credits?.credits_balance !== undefined && <Badge appearance="outline" size="small">
+            ? <Badge appearance="tint" color="danger">{t('dashboard.upstreamEditor.codex.noCredits')}</Badge>
+            : credits?.credits_balance !== undefined && <Badge appearance="outline">
               {t('dashboard.upstreamEditor.codex.credits', { balance: credits.credits_balance })}
             </Badge>}
           <Text size={200} className="text-fui-fg3 font-mono" title={account.chatgptAccountId}>{shortAccountId(account.chatgptAccountId)}</Text>

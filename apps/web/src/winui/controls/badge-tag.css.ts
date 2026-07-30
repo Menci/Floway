@@ -18,14 +18,14 @@
 // takes below.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/SplitButton/SplitButton_themeresources.xaml#L28-L30
 //
-// Every component here composes `appearance`, `color`, `shape` and `size` in
-// JavaScript and writes no attribute, so no selector can name one variant.
-// Everything below therefore either applies to every variant — because WinUI
-// states one value for the whole control — or is written as a redefinition of
-// a Fluent token that only the intended variant's atoms read, the technique
-// controls/button.css.ts establishes. The states that survive into the DOM on
-// their own are Fluent's: `:hover`, `:active`, `:disabled`, `aria-pressed` /
-// `aria-selected` for the selected chip, and `[data-fui-focus-visible]`.
+// These components compose `appearance`, `color`, `shape` and `size` in
+// JavaScript. The runtime chokepoint stamps Badge's resolved size so its text
+// ramp can be addressed without touching the tiny dot or large label; Tag
+// variants remain unnamed. Everything else below either applies to every
+// variant or redefines a Fluent token read only by the intended atoms. The
+// states that survive into the DOM on their own are Fluent's: `:hover`,
+// `:active`, `:disabled`, `aria-pressed` / `aria-selected` for the selected
+// chip, and `[data-fui-focus-visible]`.
 export const badgeTagCss = `
 /* Badge weight. The InfoBadge style sets a FontSize on its value TextBlock and
    no FontWeight, so the badge reads at the same weight as the text around it
@@ -43,6 +43,14 @@ export const badgeTagCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBadge/InfoBadge_themeresources.xaml#L8-L15 */
 .fui-Badge.fui-Badge {
   font-weight: var(--fontWeightRegular);
+}
+
+/* Product text badges use the medium 20px shell with WinUI's 12/16 caption.
+   Large badges retain the 14px body label that scales with their 24px shell;
+   tiny and small remain available only to the component gallery's size ramp. */
+.fui-Badge.fui-Badge[data-winui-size='medium'] {
+  font-size: 12px;
+  line-height: 16px;
 }
 
 /* The chip body, shared by the plain Tag and by both halves of an
