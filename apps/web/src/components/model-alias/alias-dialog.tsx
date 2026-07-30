@@ -1,4 +1,4 @@
-import { AddRegular, EyeRegular, InfoRegular } from '@fluentui/react-icons';
+import { AddRegular, Eye24Regular, Info24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
@@ -113,7 +113,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       action={<SettingsSwitch checked={values.manualMetadata} disabled={saving} label={t('dashboard.modelAliases.metadata.manual')} onChange={setManual} />}
       description={t('dashboard.modelAliases.metadata.description')}
       expandLabel={t('dashboard.modelAliases.metadata.heading')}
-      icon={<InfoRegular />}
+      icon={<Info24Regular />}
       header={t('dashboard.modelAliases.metadata.heading')}
     >
       <MetadataEditor disabled={saving || !values.manualMetadata} kind={kind} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
@@ -122,7 +122,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     <SettingsCard
       action={<SettingsSwitch checked={values.visible} disabled={saving} label={t('dashboard.modelAliases.form.visible')} onChange={checked => setValue('visible', checked)} />}
       header={t('dashboard.modelAliases.form.visible')}
-      icon={<EyeRegular />}
+      icon={<Eye24Regular />}
     />
   </DialogShell>;
 }

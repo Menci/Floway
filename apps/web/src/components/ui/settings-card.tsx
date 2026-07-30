@@ -75,7 +75,14 @@ const useStyles = makeStyles({
   // SettingsCardHeaderIconMaxSize 20 with SettingsCardHeaderIconMargin 2,0,20,0.
   // The holder collapses when there is no icon, so a card without one starts
   // its text at the padding rather than at an empty column.
-  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L23-L26
+  //
+  // The 20 is what the glyph's INK fills, not the box it is laid out in. WinUI
+  // holds the icon in a Viewbox, which scales the drawing until it meets that
+  // bound; a Fluent icon cut for 20 carries its ink in the middle 16 of a 20
+  // unit box and would come out a quarter small. The 24 cut carries 20 units of
+  // ink, which is the same drawing at the size the Viewbox would have produced.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L103-L106
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L398-L402
   icon: {
     alignItems: 'center',
     color: 'var(--winui-text-fill-primary)',
@@ -83,11 +90,15 @@ const useStyles = makeStyles({
     flexGrow: 0,
     flexShrink: 0,
     flexBasis: 'auto',
-    fontSize: '20px',
+    fontSize: '24px',
     justifyContent: 'center',
+    // A Viewbox bounds the drawing, not the box it is laid out in. The 24 cut
+    // carries 20 units of ink in a 24 unit box, so rendering it at 24 puts 20
+    // pixels of ink on screen -- which is the bound.
+    '& svg': { height: '24px', width: '24px' },
     marginInlineEnd: '20px',
     marginInlineStart: '2px',
-    width: '20px',
+    width: '24px',
   },
   // The header takes no TextBlock style in the toolkit: it inherits the control
   // content size, which is the body step at the regular weight. The description
@@ -135,8 +146,13 @@ const useStyles = makeStyles({
   // pointer states of its own, because the whole header row is the button and
   // the chevron only shows which way that button is pointing.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml#L540-L574
+  // The chevron sits eight pixels clear of whatever precedes it, which with the
+  // header's four of trailing padding is the twelve the toolkit leaves between
+  // the content and the card edge.
+  // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
   chevron: {
     alignItems: 'center',
+    marginInlineStart: '8px',
     color: 'var(--winui-text-fill-primary)',
     display: 'flex',
     flexGrow: 0,
@@ -191,7 +207,11 @@ const useStyles = makeStyles({
     height: '36px',
     justifyContent: 'flex-end',
     minWidth: 0,
-    '& .fui-Switch__indicator': { marginRight: 0 },
+    // Fluent pads its track with eight pixels either side for a label slot this
+    // switch does not use. Both sides go: the leading one would widen the
+    // template's twelve, and the trailing one would stand the track off the
+    // chevron beside it.
+    '& .fui-Switch__indicator': { marginLeft: 0, marginRight: 0 },
   },
 });
 
