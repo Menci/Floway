@@ -1,6 +1,7 @@
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   CanonicalResponsesPayload,
+  ClientResponsesCompaction,
   ClientResponsesEnvelope,
   ClientResponsesReasoning,
   ClientResponsesStreamEvent,
@@ -215,3 +216,25 @@ export const wrapResponsesEnvelopeCompletion = async function* (
     }
   }
 };
+
+// `/responses/compact` answers with `CompactResource`, which requires `id`,
+// `object`, `output`, `created_at` and `usage` and declares none of the
+// response resource's request echoes. Running the response resource's
+// completion over it would decorate a compaction with `temperature`, `tools`
+// and twenty other keys its own resource does not define, so the compact route
+// gets its own short completion instead.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json  (components.schemas.CompactResource)
+//
+// `model`, `status`, `error` and `incomplete_details` ride through from the
+// trigger turn. `CompactResource` does not define them and the spec does not
+// forbid extras, so they are kept: dropping a field a client may already read
+// is a user-visible removal, and there is nothing to gain from it.
+export const completeResponsesCompaction = (
+  upstream: ResponsesResult,
+  createdAt: number,
+): ClientResponsesCompaction => ({
+  ...upstream,
+  object: 'response.compaction',
+  created_at: createdAt,
+  usage: completeUsage(observed([upstream.usage])),
+});

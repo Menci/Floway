@@ -475,6 +475,52 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
   assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id), 0), []);
 });
 
+// `CompactResource.required` — `id`, `object`, `output`, `created_at`, `usage`,
+// with both usage breakdowns required whenever `usage` is an object. It defines
+// none of the response resource's request echoes.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json
+test('POST /v1/responses/compact answers the compaction resource, not the response resource', async () => {
+  installRepo();
+  const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
+  const compactionResult: ResponsesResult = {
+    ...makeResponsesResult(),
+    object: 'response.compaction',
+    output: [compactionItem] as unknown as ResponsesResult['output'],
+    usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
+  };
+  const callResponses = vi.fn(async (_model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+    if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+  });
+  queueResolution([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses/compact', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [{ type: 'message', role: 'user', content: 'kept' }],
+      store: false,
+      temperature: 0.3,
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(['id', 'object', 'output', 'created_at', 'usage'].filter(key => !(key in body)), []);
+  assertEquals(typeof body.created_at, 'number');
+  assertEquals(body.usage, {
+    input_tokens: 12,
+    output_tokens: 3,
+    total_tokens: 15,
+    input_tokens_details: { cached_tokens: 0 },
+    output_tokens_details: { reasoning_tokens: 0 },
+  });
+  // The response resource's echoes belong to `/responses`; a compaction states
+  // nothing about tools, sampling or service tier.
+  assertEquals(['tools', 'tool_choice', 'temperature', 'top_p', 'truncation', 'service_tier', 'store', 'text', 'metadata'].filter(key => key in body), []);
+});
+
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
   installRepo();
 
