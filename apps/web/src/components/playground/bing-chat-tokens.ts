@@ -103,3 +103,37 @@ export const bingComposerLeadingInset = '16px';
 // composer can afford and a panel-sized one cannot; this is Bing's own number
 // for the same job.
 export const bingComposerMaxHeight = '50vh';
+
+// `shadows.defaults.card`, the bar's edge, and `shadows.elevations.elevation4`,
+// the broom button's. In light the two tokens resolve to the same value, so the
+// bar and the button are lifted identically. In dark they part company: the
+// card stops being a shadow at all and becomes a 1px white ring, which is the
+// entire dark-mode edge mechanism, while elevation4 becomes a real drop. A
+// heavier shadow on the bar than on the button is backwards in both themes.
+//
+// `light-dark()` only takes colours, so each theme's layers are written out and
+// the ones that do not apply are made transparent. The layer geometry is the
+// source's; only the switching is ours.
+export const bingCardShadow = [
+  '0px 0px 0px 1px light-dark(transparent, rgba(255, 255, 255, 0.2))',
+  '0px 0.3px 0.9px light-dark(rgba(0, 0, 0, 0.12), transparent)',
+  '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
+].join(', ');
+
+// `shadows.defaults.cardRaised`. The original signalled focus by growing the
+// bar to 90px, which this composer does not do, so focus takes the next step of
+// the same ramp instead of inventing a shape.
+export const bingCardRaisedShadow = [
+  '0px 0px 0px 1px light-dark(transparent, rgba(255, 255, 255, 0.2))',
+  '0px 0.6px 1.8px light-dark(rgba(0, 0, 0, 0.12), transparent)',
+  '0px 3.2px 7.2px light-dark(rgba(0, 0, 0, 0.16), transparent)',
+  '0px 4px 8px light-dark(transparent, rgba(0, 0, 0, 0.28))',
+  '0px 0px 2px light-dark(transparent, rgba(0, 0, 0, 0.24))',
+].join(', ');
+
+export const bingElevation4Shadow = [
+  '0px 0.3px 0.9px light-dark(rgba(0, 0, 0, 0.12), transparent)',
+  '0px 1.6px 3.6px light-dark(rgba(0, 0, 0, 0.16), transparent)',
+  '0px 2px 4px light-dark(transparent, rgba(0, 0, 0, 0.28))',
+  '0px 0px 2px light-dark(transparent, rgba(0, 0, 0, 0.24))',
+].join(', ');
