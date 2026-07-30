@@ -15,6 +15,12 @@ Hard and minor entries may include recommended actions; those actions do not nee
 ### Responses SSE streams now end with the `[DONE]` sentinel
 
 Streaming `POST /v1/responses` responses now terminate with the literal `data: [DONE]` event, matching the streaming contract already followed by Chat Completions and Completions. Standard OpenAI SDKs already recognize the sentinel and stop there. A hand-written client that feeds every `data:` payload on the Responses stream straight into a JSON parser will now hit a parse failure on the final event and must skip `[DONE]` instead.
+### A failed Responses WebSocket continuation drops its `previous_response_id`
+
+When a WebSocket turn that carried `previous_response_id` fails with a 4xx or 5xx error, that response id is now evicted from the connection-local state the socket keeps for `store:false` chains, as the OpenResponses 2026-04-24 continuation rules require. A chain that previously survived a failed turn — retrying the same `previous_response_id` after an upstream rejection — now fails the retry with `previous_response_not_found`. Clients recover by starting a new response without `previous_response_id` and resending the full input context. Chains with `store:true` and a non-zero API-key retention window are unaffected: they still resolve from durable state, which is never evicted.
+
+## 2026-07-30 · minor
+
 ### Responses WebSocket no longer sends `ping` keep-alive frames, and long turns need a client heartbeat
 
 The Responses WebSocket transport no longer synthesizes a `{ "type": "ping" }` frame every 15 s while a turn is idle. `ping` is not a member of the OpenResponses 2026-04-24 streaming-event union, so a client that validated the stream against the union previously failed any turn long enough to produce one; clients that treated the frame as a liveness signal must stop expecting it. The Responses SSE transport is unchanged — its keep-alive was always an SSE comment line, invisible to the event stream.
