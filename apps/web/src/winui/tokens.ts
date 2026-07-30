@@ -447,21 +447,40 @@ export const winuiTokenCss = `
   }
 }
 
-/* Status fills — the color of a validation or severity glyph. These are the
-   only opaque hues in the vocabulary besides the background ramp, and the two
-   dictionaries carry genuinely different hues rather than one hue at two
-   opacities, because each is tuned for contrast against its own background.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L281-L282 */
+/* Status fills — the colour of a validation or severity glyph, and the wash a
+   severity puts behind a whole bar. These are the only opaque hues in the
+   vocabulary besides the background ramp, and the two dictionaries carry
+   genuinely different hues rather than one hue at two opacities, because each
+   is tuned for contrast against its own background.
+
+   Attention is the exception: it is a step of the accent ramp rather than a
+   literal, and not the same step the accent fills take — the unmodified accent
+   in light, Light2 in dark.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L280-L291
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L369 */
 :root {
+  --winui-system-fill-success: #0f7b0f;
   --winui-system-fill-caution: #9d5d00;
   --winui-system-fill-critical: #c42b1c;
+  --winui-system-fill-attention: var(--winui-system-accent);
+  --winui-system-fill-success-background: #dff6dd;
+  --winui-system-fill-caution-background: #fff4ce;
+  --winui-system-fill-critical-background: #fde7e9;
+  --winui-system-fill-attention-background: #f6f6f680;
 }
 
-/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L77-L78 */
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L76-L87
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L165 */
 @media (prefers-color-scheme: dark) {
   :root {
+    --winui-system-fill-success: #6ccb5f;
     --winui-system-fill-caution: #fce100;
     --winui-system-fill-critical: #ff99a4;
+    --winui-system-fill-attention: var(--winui-system-accent-light-2);
+    --winui-system-fill-success-background: #393d1b;
+    --winui-system-fill-caution-background: #433519;
+    --winui-system-fill-critical-background: #442726;
+    --winui-system-fill-attention-background: #ffffff08;
   }
 }
 

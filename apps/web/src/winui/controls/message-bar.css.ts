@@ -16,15 +16,21 @@
 // names it structurally. The vertical-orientation metrics are transcribed in
 // the last section of this file.
 //
-// What the file cannot do is the severity fill, which is the most visible thing
-// InfoBar has. It is blocked twice. Fluent composes `rootIntentStyles[state
-// .intent]` and `iconIntentStyles[state.intent]` in JavaScript and writes no
-// data attribute, so no selector names one intent; and the four
-// SystemFillColor*Background hues plus the success and attention glyph hues
-// have no --winui-* property to spend. Beyond both, WinUI's severity glyph is
-// two layers — a filled disc in the severity colour with the symbol knocked out
-// of it in TextFillColorInverseBrush — where Fluent draws one tinted glyph, so
-// even a reachable, transcribed colour would not reproduce it.
+// The severity fill is the most visible thing InfoBar has, and it is reached
+// through `data-winui-intent`, which the runtime chokepoint stamps with the
+// resolved intent. Fluent composes `rootIntentStyles[state.intent]` and
+// `iconIntentStyles[state.intent]` in JavaScript and writes nothing a selector
+// could name, so the stamp is what makes the four severities addressable at
+// all; the same chokepoint swaps in the filled counterpart of each glyph.
+//
+// That filled glyph is how the two-layer construction is answered. WinUI draws
+// a disc in the severity colour with the symbol knocked out of it, and a Fluent
+// `*Filled` circle icon is exactly that shape — one path, symbol as negative
+// space. The one departure is what shows through the knock-out: WinUI paints
+// TextFillColorInverse there, while a hole shows the bar's own severity wash.
+// The two differ by a few percent of lightness in each theme, and closing it
+// would mean stacking a second element behind a glyph that is already the right
+// silhouette.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L5-L16
 //
 // Two vertical-orientation terms stay unspent for a structural reason rather
@@ -76,6 +82,44 @@ export const messageBarCss = `
   font-size: 16px;
   margin-block: 16px;
   margin-inline-end: 14px;
+}
+
+/* Severity. Each of the four maps onto one SystemFillColor family: the bar
+   takes its Background step and the glyph takes the plain one. Fluent's own
+   intent styles tint a pale wash of the brand ramp and stroke the bar to match,
+   so the stroke is held at the card stroke every severity shares.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L5-L12
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/InfoBar/InfoBar_themeresources.xaml#L20 */
+.fui-MessageBar.fui-MessageBar[data-winui-intent='error'] {
+  background-color: var(--winui-system-fill-critical-background);
+}
+
+.fui-MessageBar[data-winui-intent='error'] .fui-MessageBar__icon.fui-MessageBar__icon {
+  color: var(--winui-system-fill-critical);
+}
+
+.fui-MessageBar.fui-MessageBar[data-winui-intent='warning'] {
+  background-color: var(--winui-system-fill-caution-background);
+}
+
+.fui-MessageBar[data-winui-intent='warning'] .fui-MessageBar__icon.fui-MessageBar__icon {
+  color: var(--winui-system-fill-caution);
+}
+
+.fui-MessageBar.fui-MessageBar[data-winui-intent='success'] {
+  background-color: var(--winui-system-fill-success-background);
+}
+
+.fui-MessageBar[data-winui-intent='success'] .fui-MessageBar__icon.fui-MessageBar__icon {
+  color: var(--winui-system-fill-success);
+}
+
+.fui-MessageBar.fui-MessageBar[data-winui-intent='info'] {
+  background-color: var(--winui-system-fill-attention-background);
+}
+
+.fui-MessageBar[data-winui-intent='info'] .fui-MessageBar__icon.fui-MessageBar__icon {
+  color: var(--winui-system-fill-attention);
 }
 
 /* InfoBarPanelMargin, the thickness 0,0,16,0, holds the text off whatever
