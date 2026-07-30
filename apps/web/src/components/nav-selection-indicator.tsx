@@ -9,9 +9,11 @@ import type { RefObject } from 'react';
 // element reproduces them there.
 //
 // The drawer is two lists, though -- a scrolling body and a pinned footer --
-// and a selection that crosses between them has no single element that can span
-// both. Each list owns an indicator, and on a crossing the pair plays for real:
-// the leaving list runs the outgoing half, the arriving list the incoming half.
+// and a selection crossing between them has no single element that can span
+// both. Neither does the pair help: superimposed it reads as one bar, and in
+// two separate lists it cannot be, so playing it there shows two bars moving at
+// once. A crossing therefore just switches, and only travel within one list is
+// animated.
 //
 // The offset and the scale are separate animations there and stay separate
 // here, because they carry different easings and only a nested element can give
@@ -46,15 +48,10 @@ const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
 export function NavSelectionIndicator({
   containerRef,
   inset,
-  // Where the other list sits relative to this one. Fixed per instance: which
-  // half of a crossing this list plays is worked out from whether it holds the
-  // selection, not passed in.
-  otherListIs,
   selectedValue,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   inset: number;
-  otherListIs: 'above' | 'below';
   selectedValue: string;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -65,10 +62,7 @@ export function NavSelectionIndicator({
   useLayoutEffect(() => {
     const container = containerRef.current;
     const item = container?.querySelector<HTMLElement>(`[data-nav-value="${CSS.escape(selectedValue)}"]`);
-    // On a crossing the item is in the other list, and the bar has to stay put
-    // long enough to play its exit; it is cleared when that finishes.
-    if (container && item) setGeometry(geometryOf(container, item));
-    else if (!previousRef.current) setGeometry(null);
+    setGeometry(container && item ? geometryOf(container, item) : null);
   }, [containerRef, selectedValue]);
 
   // The item can move without the selection changing -- a group appearing above
@@ -90,36 +84,24 @@ export function NavSelectionIndicator({
   }, [containerRef, selectedValue]);
 
   useEffect(() => {
-    const container = containerRef.current;
     const track = trackRef.current;
     const bar = barRef.current;
     const previous = previousRef.current;
     previousRef.current = geometry;
-    if (!track || !bar || !geometry) return;
+    // No previous geometry means the selection arrived from the other list, and
+    // there is nothing in this one to travel from.
+    if (!track || !bar || !geometry || !previous) return;
 
+    const distance = geometry.top - previous.top;
+    if (distance === 0) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-    // A list is arriving when it holds the selection without having held it
-    // before, and leaving when the reverse is true. Either way the crossing has
-    // no measurable gap inside this list, so the reach is the item's own length
-    // -- enough to read as travel toward the other one.
-    const holds = Boolean(container?.querySelector(`[data-nav-value="${CSS.escape(selectedValue)}"]`));
-    const crossing = holds !== Boolean(previous);
-    const towardOther = otherListIs === 'below' ? geometry.height : -geometry.height;
-    const distance = crossing
-      // The arriving half reaches back toward where it came from; the leaving
-      // half reaches after where it went.
-      ? (holds ? -towardOther : towardOther)
-      : geometry.top - (previous?.top ?? geometry.top);
-    if (distance === 0) return;
-
-    const from = crossing ? 0 : (previous?.top ?? geometry.top) - geometry.top;
     // The indicator stretches far enough to span the gap it is crossing, then
     // settles back to its own height.
     const peak = Math.abs(distance) / INDICATOR_HEIGHT + 1;
 
     track.animate([
-      { transform: `translateY(${from}px)`, easing: 'steps(1, end)' },
+      { transform: `translateY(${previous.top - geometry.top}px)`, easing: 'steps(1, end)' },
       { transform: 'translateY(0px)', offset: POSITION_SNAP },
       { transform: 'translateY(0px)' },
     ], { duration: DURATION_MS });
@@ -128,27 +110,11 @@ export function NavSelectionIndicator({
       { transform: 'scaleY(1)', easing: STRETCH_EASING },
       { transform: `scaleY(${peak})`, offset: POSITION_SNAP, easing: SETTLE_EASING },
       { transform: 'scaleY(1)' },
-    ], {
-      duration: DURATION_MS,
-      // The stretch grows from the edge facing the destination, so the bar
-      // reaches toward the item it is travelling to rather than away from it.
-      composite: 'replace',
-    });
+    ], { duration: DURATION_MS });
+    // The stretch grows from the edge facing the destination, so the bar reaches
+    // toward the item it is travelling to rather than away from it.
     bar.style.transformOrigin = distance > 0 ? 'top' : 'bottom';
-
-    // The outgoing half fades where the incoming half does not. WinUI holds it
-    // opaque for the stretch and clears it over the settle.
-    if (!crossing || holds) return;
-    const exit = bar.animate([
-      { opacity: 1, easing: 'steps(1, end)' },
-      { opacity: 1, offset: POSITION_SNAP, easing: SETTLE_EASING },
-      { opacity: 0 },
-    ], { duration: DURATION_MS, fill: 'forwards' });
-    exit.finished.then(() => {
-      previousRef.current = null;
-      setGeometry(null);
-    }, () => {});
-  }, [containerRef, geometry, otherListIs, selectedValue]);
+  }, [geometry]);
 
   if (!geometry) return null;
 
