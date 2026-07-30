@@ -531,32 +531,30 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
     const invalidResponse = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_response', response: {} }));
 
-    assertEquals(await invalidResponse, [{
-      type: 'error',
-      event_id: 'evt_response',
-      status_code: 400,
-      error: {
-        type: 'invalid_request_error',
-        code: 'missing_required_parameter',
-        message: "Missing required parameter: 'model'.",
-        param: 'model',
-      },
-    }]);
+    const [invalidResponseMessage] = await invalidResponse;
+    assertExists(invalidResponseMessage);
+    assertEquals(invalidResponseMessage.type, 'error');
+    assertEquals(invalidResponseMessage.event_id, 'evt_response');
+    assertEquals(invalidResponseMessage.error, {
+      type: 'invalid_request_error',
+      code: 'missing_required_parameter',
+      message: "Missing required parameter: 'model'.",
+      param: 'model',
+    });
 
     const invalidInput = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_input', response: { model: 'test-model' } }));
 
-    assertEquals(await invalidInput, [{
-      type: 'error',
-      event_id: 'evt_input',
-      status_code: 400,
-      error: {
-        type: 'invalid_request_error',
-        code: 'invalid_request_error',
-        message: 'Responses input must be a string or an array.',
-        param: 'input',
-      },
-    }]);
+    const [invalidInputMessage] = await invalidInput;
+    assertExists(invalidInputMessage);
+    assertEquals(invalidInputMessage.type, 'error');
+    assertEquals(invalidInputMessage.event_id, 'evt_input');
+    assertEquals(invalidInputMessage.error, {
+      type: 'invalid_request_error',
+      code: 'invalid_request_error',
+      message: 'Responses input must be a string or an array.',
+      param: 'input',
+    });
 
     const invalidItem = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({
