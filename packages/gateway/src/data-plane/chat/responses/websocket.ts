@@ -18,7 +18,7 @@ import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
 import { canonicalizeResponsesPayload, TranslatorInputError } from '@floway-dev/translate';
@@ -221,7 +221,8 @@ const handleClientMessage = async (
     const source = message.response && typeof message.response === 'object'
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
-    const payload = responsesPayloadFromClientSource(source);
+    // The WS transport always streams, whatever the client sent.
+    const payload = { ...canonicalizeResponsesPayload(source), stream: true };
     ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
       downstreamAbortController,
@@ -262,7 +263,7 @@ const handleClientMessage = async (
     if (error instanceof TranslatorInputError) {
       sendError(socket, 400, {
         type: 'invalid_request_error',
-        code: 'invalid_request_error',
+        code: error.code ?? 'invalid_request_error',
         message: error.message,
         param: error.param,
       }, eventId);
@@ -304,18 +305,6 @@ const validateClientMessage = (parsed: unknown): ResponsesWebSocketClientEvent =
     throw new WebSocketClientMessageError('WebSocket message must be a JSON object with a string type.');
   }
   return parsed as ResponsesWebSocketClientEvent;
-};
-
-const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPayload => {
-  const candidate = source as { model?: unknown; input?: unknown };
-  if (typeof candidate.model !== 'string' || candidate.model.length === 0) {
-    throw new WebSocketClientMessageError('response.create requires response.model to be a non-empty string.');
-  }
-  if (typeof candidate.input !== 'string' && !Array.isArray(candidate.input)) {
-    throw new WebSocketClientMessageError('response.create requires response.input to be a string or an array.');
-  }
-  // stamp stream: true — the WS transport always streams.
-  return { ...canonicalizeResponsesPayload(source as ResponsesRequestPayload), stream: true };
 };
 
 const respondResponsesWebSocket = async (input: {
