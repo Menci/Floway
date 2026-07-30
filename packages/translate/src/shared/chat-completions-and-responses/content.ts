@@ -1,6 +1,6 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { ChatCompletionsContentPart } from '@floway-dev/protocols/chat-completions';
-import type { ResponsesInputContent } from '@floway-dev/protocols/responses';
+import type { ResponsesInputContent, ResponsesInputImage } from '@floway-dev/protocols/responses';
 
 // Chat and Responses text arrays are transport fragments of one message, not
 // paragraph blocks. Preserve the existing no-separator flattening.
@@ -38,6 +38,23 @@ export const chatCompletionsContentToResponsesInputContent = (content: string | 
 
 export const responsesContentToText = (content: string | ResponsesInputContent[]): string => (typeof content === 'string' ? content : contentPartsToText(content));
 
+// Chat Completions accepts a narrower `image_url.detail` enum than Responses and
+// carries no null member, while both protocols default an absent value to
+// `auto` — so an absent or null Responses detail translates to an omitted key
+// rather than a synthesized one.
+// https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L31089-L31097
+// https://web.archive.org/web/20260730100926/https://developers.openai.com/api/docs/guides/images-vision.md
+const CHAT_COMPLETIONS_IMAGE_DETAILS = ['auto', 'low', 'high'] as const;
+
+const chatCompletionsImageDetail = (detail: ResponsesInputImage['detail']): typeof CHAT_COMPLETIONS_IMAGE_DETAILS[number] | undefined => {
+  if (detail === undefined || detail === null) return undefined;
+  const translated = CHAT_COMPLETIONS_IMAGE_DETAILS.find(candidate => candidate === detail);
+  if (translated === undefined) {
+    throw new TranslatorInputError(`Cannot translate image detail '${detail}' to Chat Completions.`);
+  }
+  return translated;
+};
+
 export const responsesContentToChatCompletionsContent = (content: string | ResponsesInputContent[]): string | ChatCompletionsContentPart[] => {
   if (typeof content === 'string') return content;
   if (!content.every((part): part is Exclude<ResponsesInputContent, { type: 'input_file' }> => part.type !== 'input_file')) {
@@ -51,19 +68,12 @@ export const responsesContentToChatCompletionsContent = (content: string | Respo
             if (typeof part.image_url !== 'string') {
               throw new TranslatorInputError('Cannot translate file_id-only image content to Chat Completions.');
             }
-            // Both protocols default an absent `detail` to `auto`, so dropping the
-            // key is lossless. Forwarding `null` is not an option: the Chat
-            // Completions `image_url.detail` enum has no null member.
-            // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L31089-L31097
-            // https://web.archive.org/web/20260730100926/https://developers.openai.com/api/docs/guides/images-vision.md
-            if (part.detail !== undefined && part.detail !== null && part.detail !== 'auto' && part.detail !== 'low' && part.detail !== 'high') {
-              throw new TranslatorInputError(`Cannot translate image detail '${part.detail}' to Chat Completions.`);
-            }
+            const detail = chatCompletionsImageDetail(part.detail);
             return {
               type: 'image_url',
               image_url: {
                 url: part.image_url,
-                ...(part.detail === undefined || part.detail === null ? {} : { detail: part.detail }),
+                ...(detail === undefined ? {} : { detail }),
               },
             };
           }
