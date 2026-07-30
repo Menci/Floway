@@ -344,15 +344,15 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   return (
     <>
       <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_320px] gap-[18px] max-[1100px]:grid-cols-1">
-        <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto]">
-          <div className={`min-w-0 px-4 py-3 flex items-center gap-3 ${s.toolbar}`}>
+        <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-3">
+          <div className={`min-w-0 pb-3 flex items-center gap-3 ${s.toolbar}`}>
             <div className="grid gap-[6px] min-w-0">
-              <Text as="h1" block size={700} weight="semibold" className="m-0">{t('dashboard.nav.playground')}</Text>
-              <Text block size={200} className={`text-fui-fg2 truncate ${s.code}`}>{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
+              <Text as="h1" block size={700} weight="semibold" className="m-0">Floway</Text>
+              <Text block size={200} className="text-fui-fg2 truncate font-mono mono-size-xs">{selectedModel?.id ?? t('dashboard.playground.noModel')}</Text>
             </div>
             {narrow && <Button appearance="subtle" aria-label={t('dashboard.playground.settings.title')} className="!ml-auto" icon={<SettingsRegular />} onClick={() => setSettingsOpen(true)} />}
           </div>
-          <div className="px-4 py-2 grid gap-2">
+          <div className="grid gap-2">
             <Button
               appearance="subtle"
               aria-expanded={showSystem}
@@ -374,7 +374,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               />
             )}
           </div>
-          <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0" contentClassName="px-4 py-3 flex min-h-full flex-col" noTabIndex>
+          <ScrollArea ref={scrollRef} axes="vertical" className="min-h-0" contentClassName="flex min-h-full flex-col" noTabIndex>
             {loaderData.error && <MessageBar intent="error" className="!mb-3"><MessageBarBody>{loaderData.error}</MessageBarBody></MessageBar>}
             {requestError && <MessageBar intent="error" className="!mb-3"><MessageBarBody>{requestError}</MessageBarBody></MessageBar>}
             {!selectedKey ? <EmptyState text={t('dashboard.playground.noKey')} />
@@ -412,7 +412,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               ))}
             </div>
           </ScrollArea>
-          <div className="p-3" data-winui-card-restyle="off">
+          <div data-winui-card-restyle="off">
             <PlaygroundComposer
               canSend={canSend}
               cancelLabel={t('common.cancel')}
