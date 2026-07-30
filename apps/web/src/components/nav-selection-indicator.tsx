@@ -13,8 +13,8 @@ import { DURATION_MS, POSITION_SNAP, REACH_MS, SETTLE_EASING, SETTLE_MS, STRETCH
 // The drawer is two lists, though -- a scrolling body and a pinned footer --
 // and a selection crossing between them has no single element that can span
 // both. Playing WinUI's pair there puts one bar in each list and shows them
-// moving at once, which reads as two things rather than one. Only the arriving
-// the two halves are sequenced instead, and between them they run exactly the
+// moving at once, which reads as two things rather than one. The two halves are
+// sequenced instead, and between them they run exactly the
 // animation a move within one list runs. The list losing the selection reaches
 // its bar out toward the other one for as long as a move spends reaching, then
 // drops it; the list taking the selection waits that out and settles a bar in
@@ -34,25 +34,30 @@ import { DURATION_MS, POSITION_SNAP, REACH_MS, SETTLE_EASING, SETTLE_MS, STRETCH
 //
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView.cpp#L2176-L2233
 
+// The bar's width and corner radius are stated outright. Its 16px length is
+// stated against a 36px item, so it is carried here as the inset it leaves at
+// each end rather than as a length, and the bar spans whatever room its item
+// gives it -- the same way every other selection indicator in the dashboard is
+// described. See the list row's in ../winui/controls/list.css.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L217
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
-const INDICATOR_HEIGHT = 16;
+const INDICATOR_INSET = 10;
 const INDICATOR_WIDTH = 3;
-
-// A crossing plays the same two phases a move within one list does, split
-// across the two lists instead of running on one bar: the reach occupies the
-// span before the position snap, the settle everything after it. Deriving both
-// from the same constants is what keeps a crossing on the timing of a move.
 const INDICATOR_RADIUS = 2;
 
 type Geometry = { top: number; left: number; width: number; height: number };
+
+// Every stretch is a multiple of the bar's own length, which now follows the
+// item, so the length is derived wherever a scale is.
+const barHeightIn = (item: Geometry) => item.height - 2 * INDICATOR_INSET;
 
 const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
   const containerBox = container.getBoundingClientRect();
   const itemBox = item.getBoundingClientRect();
   return {
     // The clip box is the item, so the pill can stretch without ever painting
-    // outside the fill the item already occupies. WinUI centres the pill in the
-    // item rather than pinning it to a fixed inset.
+    // outside the fill the item already occupies, and so the inset that gives
+    // the pill its length is measured against the item's own box.
     top: itemBox.top - containerBox.top + container.scrollTop,
     left: itemBox.left - containerBox.left + container.scrollLeft,
     width: itemBox.width,
@@ -105,7 +110,7 @@ export function NavSelectionIndicator({
     if (bar && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       bar.style.transformOrigin = otherListIs === 'below' ? 'top' : 'bottom';
       bar.animate(
-        [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / INDICATOR_HEIGHT + 1})` }],
+        [{ transform: 'scaleY(1)' }, { transform: `scaleY(${geometry.height / barHeightIn(geometry) + 1})` }],
         { duration: REACH_MS, easing: STRETCH_EASING, fill: 'forwards' },
       );
     }
@@ -158,7 +163,7 @@ export function NavSelectionIndicator({
 
     // The indicator stretches far enough to span the gap it is crossing, then
     // settles back to its own height.
-    const peak = Math.abs(distance) / INDICATOR_HEIGHT + 1;
+    const peak = Math.abs(distance) / barHeightIn(geometry) + 1;
 
     if (previous) {
       track.animate([
@@ -202,7 +207,6 @@ export function NavSelectionIndicator({
     aria-hidden
     ref={trackRef}
     style={{
-      alignItems: 'center',
       display: 'flex',
       // The clip box is the item itself, corners included. WinUI cuts the
       // indicator against the item's rounded rect, and over the three pixels the
@@ -225,7 +229,7 @@ export function NavSelectionIndicator({
       style={{
         backgroundColor: 'var(--winui-accent-fill-default)',
         borderRadius: INDICATOR_RADIUS,
-        height: INDICATOR_HEIGHT,
+        marginBlock: INDICATOR_INSET,
         marginInlineStart: inset,
         width: INDICATOR_WIDTH,
       }}
