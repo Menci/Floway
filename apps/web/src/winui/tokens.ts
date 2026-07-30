@@ -68,9 +68,7 @@
 // A `[class*='fui-FluentProvider']` ancestor prefix would repair the reach,
 // since it also matches the bare theme class, but it buys that back at the
 // price of a substring match in front of every rule in the layer, for a
-// specificity floor the doubled subject already provides. It is out as a
-// scoping form; it appears below only as a declaration site, on the two token
-// blocks that have to be declared where the theme is.
+// specificity floor the doubled subject already provides.
 //
 // Two kinds of subject cannot take that form, and both are deliberate. A rule
 // about an element Fluent does not render — the OverlayScrollbars parts, and
@@ -315,7 +313,6 @@ export const winuiTokenCss = `
 :root {
   --winui-system-accent-light-3: #99ebff;
   --winui-system-accent-light-2: #4cc2ff;
-  --winui-system-accent-light-1: #0091f8;
   --winui-system-accent: #0078d4;
   --winui-system-accent-dark-1: #0067c0;
   --winui-system-accent-dark-2: #003e92;
