@@ -71,12 +71,21 @@ declare const WebSocketPair: {
   };
 };
 
-interface ResponsesWebSocketClientEvent {
+// The spec puts the creation body's fields at the top level of
+// `response.create` — "The remaining fields follow the standard response
+// creation request body" — so that is the shape this type states.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L99-L115
+//
+// `response` is an accepted extension rather than the declared form: clients
+// built against the Realtime-style nested envelope reach us with it, and it is
+// read in preference when present so such a client is not silently handed a
+// turn assembled from the wrong level.
+type ResponsesWebSocketClientEvent = Partial<ResponsesRequestPayload> & {
   type: string;
   event_id?: string;
   response?: Partial<ResponsesRequestPayload>;
   [key: string]: unknown;
-}
+};
 
 export const responsesWebSocket = async (c: AuthedContext): Promise<Response> => {
   if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
