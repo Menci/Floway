@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { fluentComponents } from '../../fluent';
 
 const { Text } = fluentComponents;
+const headerTextStyle = { fontSize: '12px', lineHeight: '16px' } as const;
 const bodyTextStyle = { fontSize: '11px', lineHeight: '14px' } as const;
 
 export interface ChartCalloutColumn {
@@ -21,8 +22,8 @@ export function ChartCalloutTable({ columns, rows, title }: { columns: ChartCall
   return <table className="border-collapse leading-[1.15] whitespace-nowrap [&_td]:!py-0">
     <thead>
       <tr>
-        <th className="max-w-[180px] min-w-[120px] pb-1 pl-0 text-left"><Text size={200} weight="semibold" className="text-fui-fg2">{title}</Text></th>
-        {columns.map(column => <th className="px-1.5 pb-1 text-right" key={column.key}><Text size={200} weight="semibold" className="text-fui-fg2">{column.label}</Text></th>)}
+        <th className="max-w-[180px] min-w-[120px] pb-1 pl-0 text-left"><Text weight="semibold" className="text-fui-fg2" style={headerTextStyle}>{title}</Text></th>
+        {columns.map(column => <th className="px-1.5 pb-1 text-right" key={column.key}><Text weight="semibold" className="text-fui-fg2" style={headerTextStyle}>{column.label}</Text></th>)}
       </tr>
     </thead>
     <tbody>
