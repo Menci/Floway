@@ -17,8 +17,9 @@ import {
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
 import { useId, useRef, useState } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation, useNavigate, useNavigation } from 'react-router';
+import { useLinkClickHandler, useLocation, useNavigation } from 'react-router';
 
 import type { AuthUser } from '../api/auth';
 import { fluentComponents } from '../fluent';
@@ -128,10 +129,34 @@ const navGroups: NavGroup[] = [
   },
 ];
 
+function SidebarLink({ children, icon, onNavigate, pending, to }: {
+  children: ReactNode;
+  icon: ReactNode;
+  onNavigate?: () => void;
+  pending: boolean;
+  to: string;
+}) {
+  const styles = useStyles();
+  const handleLinkClick = useLinkClickHandler(to);
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    const followsInThisView = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+    handleLinkClick(event);
+    if (followsInThisView) onNavigate?.();
+  };
+  return <NavItem
+    className={styles.item}
+    data-nav-pending={pending || undefined}
+    data-nav-value={to}
+    href={to}
+    icon={icon}
+    onClick={event => handleClick(event as MouseEvent<HTMLAnchorElement>)}
+    value={to}
+  >{children}</NavItem>;
+}
+
 export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: AuthUser }) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const navigate = useNavigate();
   const navigation = useNavigation();
   const logout = useAuthStore(state => state.logout);
   const styles = useStyles();
@@ -162,10 +187,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       onNavItemSelect={(_, data) => {
         if (data.value === 'logout') {
           setLogoutOpen(true);
-          return;
         }
-        void navigate(data.value);
-        onNavigate?.();
       }}
       open
       selectedValue={selectedValue}
@@ -191,14 +213,13 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
                 <div className="grid gap-1">
                   {items.map(item => {
                     const Icon = item.icon;
-                    return <NavItem
-                      className={styles.item}
-                      data-nav-pending={pendingValue === item.to || undefined}
-                      data-nav-value={item.to}
+                    return <SidebarLink
                       icon={<Icon idPrefix={iconIdPrefix} />}
                       key={item.to}
-                      value={item.to}
-                    >{t(item.labelKey)}</NavItem>;
+                      onNavigate={onNavigate}
+                      pending={pendingValue === item.to}
+                      to={item.to}
+                    >{t(item.labelKey)}</SidebarLink>;
                   })}
                 </div>
               </div>;
@@ -209,13 +230,12 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       <NavDrawerFooter className="!bg-transparent !border-t !border-t-solid !gap-y-1 !px-[10px] !py-3" style={{ borderTopColor: 'var(--colorNeutralStroke2)' }}>
         <div className="grid gap-y-1 relative w-full" ref={footerRef}>
           <NavSelectionIndicator containerRef={footerRef} inset={NAV_INDICATOR_INSET} otherListIs="above" selectedValue={selectedValue} />
-          <NavItem
-            className={styles.item}
-            data-nav-pending={pendingValue === '/dashboard/settings' || undefined}
-            data-nav-value="/dashboard/settings"
+          <SidebarLink
             icon={<Person20Color idPrefix={iconIdPrefix} />}
-            value="/dashboard/settings"
-          >{user.username}</NavItem>
+            onNavigate={onNavigate}
+            pending={pendingValue === '/dashboard/settings'}
+            to="/dashboard/settings"
+          >{user.username}</SidebarLink>
           <NavItem className={styles.item} icon={<ShareIos20Color className={styles.signOutIcon} idPrefix={iconIdPrefix} />} value="logout">{t('dashboard.logout.label')}</NavItem>
         </div>
       </NavDrawerFooter>
