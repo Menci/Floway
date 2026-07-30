@@ -55,6 +55,26 @@ const controlFillAppearances = `:is(\
 [data-winui-appearance='filled-lighter-shadow'])`;
 
 export const textInputCss = `
+/* Height. The dictionaries state a text control's through
+   TextControlThemeMinHeight and TextControlThemePadding, and define neither --
+   they come from the framework's own generic dictionary, which is not part of
+   this corpus -- so Fluent's 32px floor stood while the ComboBox beside it
+   computed to 34 from values that ARE stated: ComboBoxPadding 12,5,0,7 over a
+   20px line inside a 1px border. Two fields in one row do not agree, and the
+   one that can be derived is the one to agree with.
+
+   Stated on the root rather than on the inner control, because that is where
+   Fluent's own floor sits and border-box makes it the whole of the field. The
+   Combobox takes it here too: it is a ComboBox by every other reading in
+   ./select.css, and its editable form is the one that computes from a text
+   control's floor rather than from the button's padding.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L341
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L192-L194 */
+.fui-Input.fui-Input${notOptedOut},
+.fui-Combobox.fui-Combobox${notOptedOut} {
+  min-height: 34px;
+}
+
 /* Rest fill. Fluent leaves the control on the opaque neutral ramp; WinUI puts
    it on the translucent control fill. Redefining Background1 reaches exactly
    the appearances the state rules below name, because those are the ones whose

@@ -38,7 +38,7 @@ const useStyles = makeStyles({
     maxWidth: '100%',
     width: 'fit-content',
   },
-  // 8 above and 4 below a 20px line is 32, the height of the input beside it,
+  // 9 above and 5 below a 20px line is 34, the height of the fields beside it,
   // and it keeps the pill its room at the bottom edge.
   item: {
     alignItems: 'center',
@@ -46,7 +46,7 @@ const useStyles = makeStyles({
     display: 'inline-flex',
     fontSize: tokens.fontSizeBase300,
     lineHeight: tokens.lineHeightBase300,
-    padding: '8px 12px 4px',
+    padding: '9px 12px 5px',
     position: 'relative',
     whiteSpace: 'nowrap',
     '&:has(input:not(:disabled)):hover': { color: 'var(--winui-text-fill-secondary)' },
