@@ -388,17 +388,16 @@ const respondResponsesWebSocket = async (input: {
         const event = frame.event;
 
         // The wrapped terminal event arrives only after its item and snapshot
-        // writes have committed. Flush it immediately, then drain the remainder
-        // of the generator before emitting the WS-only `response.done` envelope,
-        // so `response.done` remains the stable signal that a follow-up message
-        // can reference the stored response.
+        // writes have committed, but the generator still has work to drain
+        // behind it. Buffer it here and flush it once the loop has run to
+        // completion, so the terminal event is the last frame of the turn and
+        // is itself the signal that a follow-up turn may reference this
+        // response. The spec defines no frame after it: WebSocket carries the
+        // same streaming event objects as streaming HTTP.
+        // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
         if (terminalEvent !== undefined) continue;
 
         if (isResponsesTerminalEvent(event)) {
-          if (!sendJson(socket, event, eventId, ctx.dump)) {
-            completion = 'cancel';
-            continue;
-          }
           terminalEvent = event;
           continue;
         }
@@ -419,12 +418,11 @@ const respondResponsesWebSocket = async (input: {
     if (terminalEvent === undefined) {
       throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
     }
-    const done = responseDoneSummary(terminalEvent);
-    if (done !== null && !sendJson(socket, { type: 'response.done', response: done }, eventId, ctx.dump)) {
+    if (!sendJson(socket, terminalEvent, eventId, ctx.dump)) {
       completion = 'cancel';
       return;
     }
-    if (completion !== 'cancel') completion = 'eof';
+    completion = 'eof';
   } catch (error) {
     if (signal.aborted || isClosed()) {
       completion = 'cancel';
@@ -506,12 +504,6 @@ const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
   ...toInternalDebugError(error),
   code: 'internal_error',
 });
-
-const responseDoneSummary = (event: ResponsesStreamEvent) => {
-  if (event.type !== 'response.completed' && event.type !== 'response.failed' && event.type !== 'response.incomplete') return null;
-  const { id, usage } = event.response;
-  return usage === undefined ? { id } : { id, usage };
-};
 
 const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, unknown> => {
   const source = body && typeof body === 'object' && 'error' in body && typeof (body as { error?: unknown }).error === 'object'
