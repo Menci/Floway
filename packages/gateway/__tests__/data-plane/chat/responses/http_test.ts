@@ -434,7 +434,9 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
 
 // One compact turn against a stubbed candidate. The upstream result is
 // returned so a test can compare the answered body against what the upstream
-// actually sent.
+// actually sent. Token counts are part of the default because every real
+// compaction is a turn a model ran; a test that wants the reported-nothing
+// case passes `usage: null`.
 const compactTurn = async (
   upstream: Partial<ResponsesResult> = {},
   requestFields: Record<string, unknown> = {},
@@ -444,6 +446,7 @@ const compactTurn = async (
     ...makeResponsesResult(),
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
+    usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
     ...upstream,
   };
   const callResponses = vi.fn(async (_model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
@@ -499,19 +502,17 @@ test('POST /v1/responses/compact answers the compaction resource, not the respon
   assertEquals(responseOnlyKeysAdded(upstream, body), []);
 });
 
-test('POST /v1/responses/compact states zero tokens when the upstream reported no usage', async () => {
+test('POST /v1/responses/compact reports the failure when the upstream reported no usage', async () => {
   installRepo();
-  const { response } = await compactTurn();
+  const { response } = await compactTurn({ usage: null });
 
-  assertEquals(response.status, 200);
-  const body = await response.json() as Record<string, unknown>;
-  assertEquals(body.usage, {
-    input_tokens: 0,
-    output_tokens: 0,
-    total_tokens: 0,
-    input_tokens_details: { cached_tokens: 0 },
-    output_tokens_details: { reasoning_tokens: 0 },
-  });
+  assertEquals(response.status, 500);
+  const body = await response.json() as { error: { type: string; message: string } };
+  assertEquals(body.error.type, 'internal_error');
+  assert(
+    body.error.message.includes('reported no token usage'),
+    `expected the missing-usage condition to be named, got ${body.error.message}`,
+  );
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
