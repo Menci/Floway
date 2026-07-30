@@ -12,6 +12,7 @@ import {
 import { useState } from 'react';
 
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { Combobox, Dropdown } from '../components/ui/fluent-form-controls';
 import { fluentComponents } from '../fluent';
 
 const {
@@ -29,7 +30,6 @@ const {
   ColorPicker,
   ColorSlider,
   ColorSwatch,
-  Combobox,
   CounterBadge,
   Dialog,
   DialogActions,
@@ -39,7 +39,6 @@ const {
   DialogTitle,
   DialogTrigger,
   Divider,
-  Dropdown,
   EmptySwatch,
   Field,
   InlineDrawer,
