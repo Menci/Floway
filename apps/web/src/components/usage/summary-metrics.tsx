@@ -63,7 +63,7 @@ function SummaryMetricButton({
     <ToggleButton
       appearance="subtle"
       checked={active}
-      className={mergeClasses('!h-auto !justify-start !min-h-[62px] !text-left min-w-0 !pl-3 !pr-2 !py-2', s.tile)}
+      className={mergeClasses('!justify-start !min-h-[62px] !text-left min-w-0 !pl-3 !pr-2 !py-2', s.tile)}
       onClick={onClick}
     >
       <span className="grid gap-1 min-w-0">

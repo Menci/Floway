@@ -43,7 +43,6 @@ const useStyles = makeStyles({
     // OverlayCornerRadius rather than a value of their own; the bottom pair is
     // squared off because the list continues underneath it.
     borderRadius: 'var(--winui-overlay-corner-radius) var(--winui-overlay-corner-radius) 0 0 !important',
-    boxShadow: 'none !important',
     width: '100%',
     '&:hover': { backgroundColor: 'var(--colorSubtleBackgroundHover) !important' },
     '&:active, &:has(.fui-Dropdown__button[aria-expanded="true"])': { backgroundColor: 'var(--colorSubtleBackgroundPressed) !important' },

@@ -54,7 +54,6 @@ const useStyles = makeStyles({
     // borderRadiusMedium -- restated only because Fluent's own nav radius has
     // to be outranked here alongside the rest of this block.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/CornerRadius_themeresources.xaml#L13
-    borderRadius: '4px !important',
     gap: '12px !important',
     height: '36px !important',
     minHeight: '36px !important',
