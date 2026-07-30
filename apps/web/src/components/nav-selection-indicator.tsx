@@ -182,9 +182,21 @@ export function NavSelectionIndicator({
           { transform: 'scaleY(1)' },
         ],
     { duration: previous ? DURATION_MS : SETTLE_MS });
-    // The stretch grows from the edge facing the destination, so the bar reaches
-    // toward the item it is travelling to rather than away from it.
-    bar.style.transformOrigin = distance > 0 ? 'top' : 'bottom';
+
+    // The origin flips at the snap, which is what keeps the bar from
+    // overshooting. Anchored at the leading edge it grows out of the item it is
+    // leaving; at the snap the anchor moves to the trailing edge, so the bar is
+    // held at the item it has reached and contracts back into it.
+    const leadingEdge = distance > 0 ? 'top' : 'bottom';
+    const trailingEdge = distance > 0 ? 'bottom' : 'top';
+    if (previous) {
+      bar.animate([
+        { transformOrigin: leadingEdge, easing: 'steps(1, end)' },
+        { transformOrigin: trailingEdge, offset: POSITION_SNAP },
+        { transformOrigin: trailingEdge },
+      ], { duration: DURATION_MS });
+    }
+    bar.style.transformOrigin = previous ? trailingEdge : leadingEdge;
   }, [geometry, otherListIs]);
 
   if (!geometry) return null;
