@@ -43,6 +43,9 @@ The JSON error envelope sent on the Responses WebSocket transport renamed its HT
 Assistant `message` output items produced by the Responses-via-Chat-Completions and Responses-via-Messages paths now carry `status` (`in_progress` on `response.output_item.added`, `completed` on `response.output_item.done` and in the terminal `output`), and their `output_text` content parts now carry `annotations`. Both keys are required by the Responses item schema and were already present on the native Responses path; clients that validate items strictly were rejecting the translated ones.
 
 Responses item identity is hashed over the whole item JSON with no key filtering, so the two new keys change the hash of every translated-path assistant message. Conversations already in flight across the deploy miss their affinity / Stateful Responses item lookup for one turn and fall back to normal candidate resolution; the turn still succeeds, and new conversations are unaffected. No operator action is required.
+### Responses no longer emits `ping` events on the Messages path
+
+The Messages-backed Responses translation no longer converts an upstream Anthropic `ping` keep-alive into a Responses `{ "type": "ping" }` event; it consumes the event and emits nothing. `ping` is not a member of the OpenResponses 2026-04-24 streaming-event union, so a client that validated the stream against the union previously failed any turn in which the upstream sent one. Clients that treated the frame as a liveness signal must stop expecting it. This affects both transports on the Messages path, SSE and WebSocket. The Responses SSE keep-alive itself is unchanged — it was always an SSE comment line, invisible to the event stream.
 
 ## 2026-07-24 · advisory
 
