@@ -331,31 +331,27 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       </ResourceListPanel>
 
       <DialogShell
-        actions={<div className="grid gap-2">
-          {testResult && <MessageBar intent={testResult.ok ? 'success' : 'error'}><MessageBarBody><div className="grid gap-1"><Text size={200} weight="semibold">{testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}</Text>{testResult.ok && <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</Text>}</div></MessageBarBody></MessageBar>}
-          {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
-          <DialogActions>
-            <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => setDialogOpen(false)} type="button">{t('common.cancel')}</Button>
-            <Button
-              className="!whitespace-nowrap"
-              disabled={!canTest || saving || testing}
-              icon={testing ? <Spinner size="tiny" /> : undefined}
-              onClick={() => void handleTest()}
-              type="button"
-            >
-              {testing ? t('dashboard.proxy.actions.testing') : t('dashboard.proxy.actions.test')}
-            </Button>
-            <Button
-              appearance="primary"
-              className="!whitespace-nowrap"
-              disabled={saving || testing}
-              icon={saving ? <Spinner size="tiny" /> : undefined}
-              type="submit"
-            >
-              {saving ? t('dashboard.proxy.actions.saving') : t('dashboard.proxy.actions.save')}
-            </Button>
-          </DialogActions>
-        </div>}
+        actions={<DialogActions>
+          <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => setDialogOpen(false)} type="button">{t('common.cancel')}</Button>
+          <Button
+            className="!whitespace-nowrap"
+            disabled={!canTest || saving || testing}
+            icon={testing ? <Spinner size="tiny" /> : undefined}
+            onClick={() => void handleTest()}
+            type="button"
+          >
+            {testing ? t('dashboard.proxy.actions.testing') : t('dashboard.proxy.actions.test')}
+          </Button>
+          <Button
+            appearance="primary"
+            className="!whitespace-nowrap"
+            disabled={saving || testing}
+            icon={saving ? <Spinner size="tiny" /> : undefined}
+            type="submit"
+          >
+            {saving ? t('dashboard.proxy.actions.saving') : t('dashboard.proxy.actions.save')}
+          </Button>
+        </DialogActions>}
         onOpenChange={(_, data) => {
           if (saving || testing) return;
           if (!data.open && draftDirty) return;
@@ -386,6 +382,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
           urlError={urlError}
           urlInput={urlInput}
         />
+        {testResult && <MessageBar intent={testResult.ok ? 'success' : 'error'}><MessageBarBody><div className="grid gap-1"><Text size={200} weight="semibold">{testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed', { error: testResult.error })}</Text>{testResult.ok && <Text size={200} className="text-fui-fg3">{t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip })}</Text>}</div></MessageBarBody></MessageBar>}
+        {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
       </DialogShell>
 
       {deleteTarget && (
