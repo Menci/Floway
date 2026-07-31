@@ -45,23 +45,23 @@ type SettingsActionData =
   | { ok: true }
   | { ok: false; error: string };
 
+const submittedField = (formData: FormData, name: string): string => {
+  const value = formData.get(name);
+  if (typeof value !== 'string') throw new TypeError(`Password form submitted without ${name}`);
+  return value;
+};
+
+// The schema is the resolver's, and the resolver has already run: the form
+// cannot reach here holding a value it refuses. What is left for the action is
+// the call, and what comes back from it is the only thing this page has to
+// report that a field could not.
 export async function clientAction({
   request,
 }: Route.ClientActionArgs): Promise<SettingsActionData> {
   const formData = await request.formData();
-  const values = passwordSchema.safeParse({
-    currentPassword: String(formData.get('currentPassword') ?? ''),
-    newPassword: String(formData.get('newPassword') ?? ''),
-    confirmPassword: String(formData.get('confirmPassword') ?? ''),
-  });
-
-  if (!values.success) {
-    return { ok: false, error: values.error.issues[0]!.message };
-  }
-
   const result = await changeOwnPassword({
-    currentPassword: values.data.currentPassword,
-    newPassword: values.data.newPassword,
+    currentPassword: submittedField(formData, 'currentPassword'),
+    newPassword: submittedField(formData, 'newPassword'),
   });
 
   if (result.error) return { ok: false, error: result.error.message };
@@ -93,9 +93,12 @@ export default function DashboardSettings() {
   });
 
   // A dismissal names the result it dismissed rather than clearing a copy of
-  // it, so the next submission's failure appears on its own account.
+  // it, so the next submission's failure appears on its own account. What the
+  // gateway said is prose, not a message key -- running it through `t` would
+  // have i18next read the first colon in it as a namespace separator and hand
+  // back the tail.
   const error = fetcher.data && !fetcher.data.ok && fetcher.data !== dismissed
-    ? t(fetcher.data.error)
+    ? fetcher.data.error
     : null;
 
   useEffect(() => {
