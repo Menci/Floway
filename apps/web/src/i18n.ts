@@ -25,5 +25,3 @@ void i18n.on('languageChanged', language => {
 });
 
 export { i18n };
-export * from './i18n/languages';
-export { resources } from './i18n/resources';

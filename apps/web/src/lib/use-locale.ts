@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { localeForLanguage } from '../i18n';
+import { localeForLanguage } from '../i18n/languages';
 
 // One answer to "which locale does this render in". The app locale, not the
 // browser's: a `zh-Hans` dashboard read in an `en-US` browser is still a
