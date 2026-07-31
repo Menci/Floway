@@ -16,5 +16,5 @@ export function MaskedIcon({ className = '', maskSize = 'contain', url }: { clas
     maskPosition: 'center',
     WebkitMaskPosition: 'center',
   };
-  return <span aria-hidden="true" className={mergeClasses('block flex-none', className)} style={style} />;
+  return <span aria-hidden className={mergeClasses('block flex-none', className)} style={style} />;
 }

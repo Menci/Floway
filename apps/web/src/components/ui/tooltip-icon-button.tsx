@@ -14,7 +14,7 @@ const useStyles = makeStyles({
   },
 });
 
-export function TooltipIconButton({ className, danger = false, disabled, icon, label, onClick }: {
+export function TooltipIconButton({ className, danger = false, disabled = false, icon, label, onClick }: {
   className?: string;
   danger?: boolean;
   disabled?: boolean;
