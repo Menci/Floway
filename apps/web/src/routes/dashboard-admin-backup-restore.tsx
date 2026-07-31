@@ -12,6 +12,8 @@ import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
+import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 import { useDashboardOutletContext } from './dashboard';
@@ -131,9 +133,27 @@ function countRecords(data: BackupFileData): Record<string, number> {
   return counts;
 }
 
+// What the server says it took, in the same vocabulary as the preview the
+// operator read before pressing Import. Empty entities are dropped: a backup
+// rarely carries all seven, and naming the ones it did not carry buries the
+// ones it did.
+function importedSummary(
+  counts: BackupImportCounts,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  return PREVIEW_LABEL_KEYS
+    .filter(key => counts[key] > 0)
+    .map(key => t('dashboard.backupRestore.import.summaryItem', {
+      n: counts[key],
+      label: t(`dashboard.backupRestore.import.previewLabel.${key}`),
+    }))
+    .join(', ');
+}
+
 export default function DashboardAdminBackupRestore() {
   const { t } = useTranslation();
   const { user } = useDashboardOutletContext();
+  const toasts = useOutcomeToasts();
 
   const [includePerformance, setIncludePerformance] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -144,7 +164,6 @@ export default function DashboardAdminBackupRestore() {
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const [importSuccess, setImportSuccess] = useState<BackupImportCounts | null>(null);
 
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -157,11 +176,13 @@ export default function DashboardAdminBackupRestore() {
     setExporting(true);
     setExportError(null);
 
+    const handle = toasts.start(t('dashboard.backupRestore.export.pending'));
     const result = await callApi(() => api.api.export.$get({
       query: includePerformance ? { include_performance: '1' } : {},
     }));
 
     if (result.error) {
+      handle.settle();
       setExportError(result.error.message);
       setExporting(false);
       return;
@@ -180,18 +201,18 @@ export default function DashboardAdminBackupRestore() {
     URL.revokeObjectURL(url);
 
     setExporting(false);
-  }, [includePerformance]);
+    handle.succeed(t('dashboard.backupRestore.export.success', { name: anchor.download }));
+  }, [includePerformance, t, toasts]);
 
   const handleFile = useCallback(
     (file: File) => {
       setImportError(null);
-      setImportSuccess(null);
 
       const reader = new FileReader();
       reader.onload = () => {
         const result = typeof reader.result === 'string' ? parseBackupFile(reader.result) : { ok: false as const };
         if (!result.ok) {
-          setImportError('dashboard.backupRestore.import.errorInvalidFile');
+          setImportError(t('dashboard.backupRestore.import.errorInvalidFile'));
           setImportFile(null);
           setImportParsedData(null);
           return;
@@ -200,11 +221,11 @@ export default function DashboardAdminBackupRestore() {
         setImportParsedData(result.payload);
       };
       reader.onerror = () => {
-        setImportError('dashboard.backupRestore.import.errorReadFile');
+        setImportError(t('dashboard.backupRestore.import.errorReadFile'));
       };
       reader.readAsText(file);
     },
-    [],
+    [t],
   );
 
   const handleFileSelect = useCallback(
@@ -242,7 +263,6 @@ export default function DashboardAdminBackupRestore() {
     setImportFile(null);
     setImportParsedData(null);
     setImportError(null);
-    setImportSuccess(null);
     fileInputRef.current?.click();
   }, []);
 
@@ -250,8 +270,8 @@ export default function DashboardAdminBackupRestore() {
     if (!importParsedData) return;
     setImporting(true);
     setImportError(null);
-    setImportSuccess(null);
 
+    const handle = toasts.start(t('dashboard.backupRestore.import.pending'));
     const result = await callApi(() => api.api.import.$post({
       json: {
         version: BACKUP_FILE_VERSION,
@@ -261,16 +281,20 @@ export default function DashboardAdminBackupRestore() {
     }));
 
     if (result.error) {
+      handle.settle();
       setImportError(result.error.message);
       setImporting(false);
       return;
     }
 
-    setImportSuccess(result.data.imported);
     setImportFile(null);
     setImportParsedData(null);
     setImporting(false);
-  }, [importMode, importParsedData]);
+    const summary = importedSummary(result.data.imported, t);
+    handle.succeed(summary
+      ? t('dashboard.backupRestore.import.success', { summary })
+      : t('dashboard.backupRestore.import.successEmpty'));
+  }, [importMode, importParsedData, t, toasts]);
 
   const handleImportClick = useCallback(() => {
     if (!importParsedData) return;
@@ -314,9 +338,7 @@ export default function DashboardAdminBackupRestore() {
         </Text>
 
         {exportError && (
-          <MessageBar intent="error">
-            <MessageBarBody>{exportError}</MessageBarBody>
-          </MessageBar>
+          <OutcomeMessageBar onDismiss={() => setExportError(null)}>{exportError}</OutcomeMessageBar>
         )}
 
         <div>
@@ -434,19 +456,12 @@ export default function DashboardAdminBackupRestore() {
         )}
 
         {importError && (
-          <MessageBar intent="error">
-            <MessageBarBody>
-              {t(importError)}
-            </MessageBarBody>
-          </MessageBar>
-        )}
-
-        {importSuccess && (
-          <MessageBar intent="success">
-            <MessageBarBody>
-              {t('dashboard.backupRestore.import.success')}
-            </MessageBarBody>
-          </MessageBar>
+          <OutcomeMessageBar
+            onDismiss={() => setImportError(null)}
+            title={t('dashboard.backupRestore.import.error')}
+          >
+            {importError}
+          </OutcomeMessageBar>
         )}
       </Panel>
 

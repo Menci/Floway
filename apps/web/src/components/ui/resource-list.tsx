@@ -27,12 +27,27 @@ const ROW_HEIGHT = '--floway-resource-row-height';
 // is where this started; it is wider than that on purpose, because the card's
 // edge is the page's boundary where a row's line is only the next row.
 const EDGE_INSET = '16px';
+// A selection cell holds one control and nothing else. Fluent gives it a fixed
+// 44 and centres the radio's 20px indicator in it, which leaves twelve either
+// side -- and the cell after it states its own leading padding on top of that,
+// so the control ends up further from the column it selects than from the edge
+// of the card. Narrowed to the indicator and aligned to the start, the only
+// distance left between them is the one that column asked for.
+const SELECTION_CELL_WIDTH = '20px';
 
 const useStyles = makeStyles({
   table: {
     '& .fui-TableRow': { height: `var(${ROW_HEIGHT})` },
-    '& .fui-TableRow > :first-child': { paddingInlineStart: EDGE_INSET },
-    '& .fui-TableRow > :last-child': { paddingInlineEnd: EDGE_INSET },
+    // By type rather than by position, and naming every type a cell is drawn
+    // as: a plain table's rows hold th and td, a DataGrid's hold div, and a
+    // DataGrid row additionally carries Tabster's focus dummies, which are `i`
+    // elements the first and last child selectors would land on instead. Those
+    // sit outside layout, so the inset disappeared on the body while the
+    // header -- which has no leading dummy -- still took it, and the two rows'
+    // columns drifted apart by it.
+    '& .fui-TableRow > :is(th, td, div):first-of-type': { paddingInlineStart: EDGE_INSET },
+    '& .fui-TableSelectionCell': { justifyContent: 'flex-start', width: SELECTION_CELL_WIDTH },
+    '& .fui-TableRow > :is(th, td, div):last-of-type': { paddingInlineEnd: EDGE_INSET },
     // The last row's edge and the card's own would otherwise stack into one
     // heavier line a pixel above the corner.
     '& .fui-TableBody .fui-TableRow:last-child': { borderBottomStyle: 'none' },

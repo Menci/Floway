@@ -1022,6 +1022,8 @@ const en = {
               'When enabled, the export will include recorded performance metrics alongside configuration data. Performance data can significantly increase file size.',
           button: 'Export JSON',
           buttonExporting: 'Exporting…',
+          pending: 'Preparing the export',
+          success: 'Downloaded {{name}}',
         },
         import: {
           heading: 'Import',
@@ -1044,7 +1046,10 @@ const en = {
               'Replace mode will permanently delete all existing data before importing. This action cannot be undone.',
           button: 'Import Data',
           buttonImporting: 'Importing…',
-          success: 'Import completed successfully.',
+          pending: 'Importing the backup file',
+          success: 'Import completed: {{summary}}.',
+          successEmpty: 'Import completed. The backup file carried no records.',
+          summaryItem: '{{n}} × {{label}}',
           error: 'Import failed.',
           errorInvalidFile:
               'The selected file is not a valid Floway backup file.',

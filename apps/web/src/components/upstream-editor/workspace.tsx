@@ -288,7 +288,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
         <TableHeader><TableRow><TableHeaderCell>{t('dashboard.upstreamEditor.models.enabled')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.kind')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableHeaderCell>{t('dashboard.upstreamEditor.models.source')}</TableHeaderCell><TableActionsHeader>{t('dashboard.upstreamEditor.models.actions')}</TableActionsHeader></TableRow></TableHeader>
         <TableBody>{filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
-            <TableCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} size="small" /></TableCell>
+            <TableCell><Switch checked={!disabled.includes(id)} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCell>
             <TableCell className="overflow-hidden">
               <button
                 className="block bg-transparent border-0 cursor-pointer min-w-0 max-w-full overflow-hidden p-0 text-ellipsis text-fui-base300 text-fui-fg1 text-left whitespace-nowrap hover:underline"
