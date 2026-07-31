@@ -27,7 +27,6 @@ const en = {
           'Sign in as the default administrator with a blank username and <adminKey>ADMIN_KEY</adminKey> as the password.',
       login: {
         title: 'Sign in',
-        subtitle: 'Sign in to Floway.',
         username: 'Username',
         usernamePlaceholder: 'Username',
         password: 'Password',
@@ -1140,7 +1139,6 @@ const en = {
           sni: 'SNI (optional override)',
           sniPlaceholder: 'defaults to host',
           allowInsecure: 'Allow insecure',
-          skipCertVerify: 'Skip cert verification',
           uuid: 'UUID',
           uuidPlaceholder: '00000000-0000-0000-0000-000000000000',
           wsPath: 'WebSocket path',

@@ -27,7 +27,6 @@ const zhHansCN = {
           '使用空用户名和 <adminKey>ADMIN_KEY</adminKey> 作为密码来登录默认管理员。',
       login: {
         title: '登录',
-        subtitle: '登录到 Floway。',
         username: '用户名',
         usernamePlaceholder: '用户名',
         password: '密码',
@@ -1084,7 +1083,6 @@ const zhHansCN = {
           sni: 'SNI（可选覆盖）',
           sniPlaceholder: '默认使用主机名',
           allowInsecure: '跳过证书验证',
-          skipCertVerify: '跳过证书验证',
           uuid: 'UUID',
           uuidPlaceholder: '00000000-0000-0000-0000-000000000000',
           wsPath: 'WebSocket 路径',
