@@ -138,9 +138,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }
 
   return (
-    <ErrorShell>
-      <h1>{message}</h1>
-      <p>{details}</p>
+    <ErrorShell message={details} title={message}>
       {stack && <ErrorStack>{stack}</ErrorStack>}
     </ErrorShell>
   );
