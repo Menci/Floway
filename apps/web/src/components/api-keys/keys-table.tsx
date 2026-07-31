@@ -60,6 +60,18 @@ export function KeysTable({
     [upstreams],
   );
 
+  // Every cell is a flex item, so without a basis they divide the row evenly and
+  // the column carrying a fifty-character secret gets the same room as the one
+  // reading "All". Griffel injects after the utilities and Fluent states its own
+  // `flex: 1 1 0`, so each basis has to be important to reach the cell.
+  const columnWidth: Partial<Record<string, string>> = {
+    name: '!basis-[180px]',
+    key: '!basis-[240px]',
+    upstreams: '!grow-0 !basis-[120px]',
+    created: '!grow-0 !basis-[132px]',
+    lastUsed: '!grow-0 !basis-[148px]',
+  };
+
   const columns = useMemo(
     () => [
       createTableColumn<ApiKey>({
@@ -77,7 +89,7 @@ export function KeysTable({
           const copyTag = `key-${key.id}`;
           return (
             <span className="flex items-center gap-1 min-w-0">
-              <code className="min-w-0 truncate" title={key.key}>{key.key}</code>
+              <code className="w-[144px] flex-none truncate" title={key.key}>{key.key}</code>
               <TooltipIconButton
                 className="flex-none"
                 disabled={disabled}
@@ -197,7 +209,7 @@ export function KeysTable({
         <DataGridHeader>
           <DataGridRow selectionCell={{ 'aria-label': t('dashboard.apiKeys.table.select') }}>
             {({ renderHeaderCell, columnId }) => (
-              <DataGridHeaderCell className={columnId === 'actions' ? trailingCell : undefined}>
+              <DataGridHeaderCell className={columnId === 'actions' ? trailingCell : columnWidth[columnId]}>
                 {renderHeaderCell()}
               </DataGridHeaderCell>
             )}
@@ -211,7 +223,7 @@ export function KeysTable({
             >
               {({ renderCell, columnId }) => (
                 <DataGridCell
-                  className={columnId === 'actions' ? trailingCell : undefined}
+                  className={columnId === 'actions' ? trailingCell : columnWidth[columnId]}
                   focusMode={columnId === 'actions' ? 'group' : 'cell'}
                 >
                   {renderCell(item)}
