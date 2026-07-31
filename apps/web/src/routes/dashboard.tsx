@@ -72,18 +72,17 @@ export default function Dashboard({}: Route.ComponentProps) {
         <ScrollArea
           axes="vertical"
           className="min-h-0"
-          contentClassName="h-full"
+          contentClassName={workspace ? 'h-full' : 'min-h-full'}
           noTabIndex
         >
-          {/* The page fills the scroller by taking its height, not by a
-              percentage minimum: the content box is height-by-content, so a
-              minimum stated as a percentage has nothing to resolve against and
-              collapses to the page. A workspace page is confined to that
-              height and scrolls inside itself; every other page keeps its own
-              content as a minimum and scrolls the whole page. */}
+          {/* Only a workspace page is confined to the scroller's height. Every
+              other page is height-by-content and scrolls; the scroller's own
+              content box already carries the minimum that fills the viewport,
+              and it is the one box in this chain whose parent has a height for
+              a percentage to resolve against. */}
           <main id="dashboard-main" tabIndex={-1} className={workspace
             ? 'h-full min-h-0 p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'
-            : 'h-full min-h-max p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'}>
+            : 'p-[22px_var(--floway-page-inset)_var(--floway-page-inset)] max-[680px]:p-4'}>
             <Outlet context={{ user } satisfies DashboardOutletContext} />
           </main>
         </ScrollArea>
