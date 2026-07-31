@@ -1,3 +1,4 @@
+import { errorMessage } from '../../lib/error-message';
 import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { parseProxyUri } from '@floway-dev/proxy/url';
@@ -92,7 +93,7 @@ export const parseProxyInput = (url: string): ProxyUrlParseResult => {
   try {
     return { config: parseProxyUri(url), error: null };
   } catch (cause) {
-    return { config: null, error: cause instanceof Error ? cause.message : String(cause) };
+    return { config: null, error: errorMessage(cause) };
   }
 };
 

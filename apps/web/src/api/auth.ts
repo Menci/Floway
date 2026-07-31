@@ -3,6 +3,7 @@ import {
   getSessionToken,
   invalidateSession,
 } from '../auth/session';
+import { errorMessage } from '../lib/error-message';
 
 export interface AuthUser {
   id: number;
@@ -68,7 +69,7 @@ const requestResponse = async (
     return {
       error: {
         status: 0,
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage(error),
       },
     };
   }

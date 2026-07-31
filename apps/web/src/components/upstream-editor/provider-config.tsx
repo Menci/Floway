@@ -24,6 +24,7 @@ import type {
   UpstreamRecord,
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
@@ -154,7 +155,7 @@ function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
         <Text id={`${idPrefix}-label`}>
           {t('dashboard.upstreamEditor.fields.pathOverrides')}
         </Text>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-3">
+        <div className="grid grid-cols-2 gap-3">
           {pathOverrideKeys.map(path => (
             <Controller
               control={control}
@@ -453,7 +454,7 @@ function OAuthConfig({ record, onPatch }: {
               }));
       }
     } catch (cause) {
-      setBusy(false); setError(cause instanceof Error ? cause.message : String(cause)); return;
+      setBusy(false); setError(errorMessage(cause)); return;
     }
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }

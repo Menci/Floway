@@ -1,3 +1,4 @@
+import { errorMessage } from '../../lib/error-message';
 import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import {
   chatCompletionsProtocolFrameToSSEFrame,
@@ -79,7 +80,7 @@ export async function collectStream(kind: CollectKind, events: DumpStreamEvent[]
     }
     }
   } catch (cause) {
-    return { result: null, error: cause instanceof Error ? cause.message : String(cause), truncated: true };
+    return { result: null, error: errorMessage(cause), truncated: true };
   }
 }
 
@@ -90,7 +91,7 @@ export function renderStreamEvents(kind: CollectKind | null, events: DumpStreamE
     try {
       return { event: sse.event ?? null, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts };
     } catch (cause) {
-      return { event: sse.event ?? null, text: sse.data, parseError: cause instanceof Error ? cause.message : String(cause), timestamp: ts };
+      return { event: sse.event ?? null, text: sse.data, parseError: errorMessage(cause), timestamp: ts };
     }
   });
 }
@@ -117,6 +118,6 @@ function frameToSse(kind: CollectKind | null, frame: ProtocolFrame<unknown>): Ss
     default: return null;
     }
   } catch (cause) {
-    return { type: 'sse', event: 'serialize_error', data: cause instanceof Error ? cause.message : String(cause) };
+    return { type: 'sse', event: 'serialize_error', data: errorMessage(cause) };
   }
 }

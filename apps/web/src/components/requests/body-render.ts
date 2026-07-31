@@ -1,3 +1,4 @@
+import { errorMessage } from '../../lib/error-message';
 import type { DumpBody } from '@floway-dev/gateway/dump-types';
 
 export interface RenderedBody {
@@ -32,7 +33,7 @@ export function renderBody(body: DumpBody, contentType: string): RenderedBody {
       return {
         text: body.data,
         copyText: body.data,
-        decodeError: error instanceof Error ? error.message : String(error),
+        decodeError: errorMessage(error),
         isJson: false,
       };
     }

@@ -1,5 +1,6 @@
 import { parse, stringify } from 'yaml';
 
+import { errorMessage } from '../../lib/error-message';
 import { modelsField, type UpstreamModelConfig } from '@floway-dev/provider';
 
 // Bulk paste of a manual model list — migrating from another gateway's export,
@@ -19,13 +20,13 @@ export const parseModels = (text: string, { allowRerank }: { allowRerank: boolea
   try {
     raw = parse(text);
   } catch (cause) {
-    return { ok: false, message: cause instanceof Error ? cause.message : String(cause) };
+    return { ok: false, message: errorMessage(cause) };
   }
   let models: UpstreamModelConfig[];
   try {
     models = modelsField(raw, 'dashboard');
   } catch (cause) {
-    return { ok: false, message: cause instanceof Error ? cause.message : String(cause) };
+    return { ok: false, message: errorMessage(cause) };
   }
   if (!allowRerank && models.some(model => model.kind === 'rerank')) {
     return { ok: false, message: 'Rerank models require a custom upstream' };

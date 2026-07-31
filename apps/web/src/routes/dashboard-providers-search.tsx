@@ -22,6 +22,7 @@ import { Panel } from '../components/ui/panel';
 import { SecretInput } from '../components/ui/secret-input';
 import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card';
 import { fluentComponents } from '../fluent';
+import { errorMessage } from '../lib/error-message';
 import { useAuthStore } from '../stores/auth-store';
 
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
@@ -252,7 +253,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
       // The probe never ran, so there is no result to report -- this is the
       // Test button's own failure and belongs beside it.
       setTestError(t('dashboard.searchConfig.testFailed', {
-        message: e instanceof Error ? e.message : String(e),
+        message: errorMessage(e),
       }));
     } finally {
       setTesting(false);

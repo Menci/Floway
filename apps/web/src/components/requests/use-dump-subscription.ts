@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import { getSessionToken } from '../../auth/session';
+import { errorMessage } from '../../lib/error-message';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 const PAGE_LIMIT = 100;
@@ -87,7 +88,7 @@ export function useDumpSubscription(keyId: string | null, initialRecords: DumpMe
       if (page.length < PAGE_LIMIT) setHasOlder(false);
       if (fresh.length) setRecords(current => [...current, ...fresh]);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorMessage(cause));
     } finally {
       loadingOlderRef.current = false;
     }

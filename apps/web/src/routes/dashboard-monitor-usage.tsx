@@ -17,6 +17,7 @@ import type { UsageMetric, UsageRange, UsageView } from '../components/usage/typ
 import { loadUsagePageData } from '../components/usage/usage-data';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
+import { errorMessage } from '../lib/error-message';
 import { useAuthStore } from '../stores/auth-store';
 
 const { Button, MessageBar, MessageBarBody, Tooltip } = fluentComponents;
@@ -116,7 +117,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       setError(next.error);
     } catch (caught) {
       if (requestId !== requestIdRef.current) return;
-      setError(caught instanceof Error ? caught.message : String(caught));
+      setError(errorMessage(caught));
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
