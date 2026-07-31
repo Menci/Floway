@@ -1,11 +1,12 @@
 import { ArrowResetRegular } from '@fluentui/react-icons';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type { BackoffRow } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { useNow } from '../../lib/use-now';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 
@@ -27,13 +28,8 @@ export const ProxyBackoffPanel = ({ backoffs, onReset, proxyId }: {
 }) => {
   const { t } = useTranslation();
   const toasts = useOutcomeToasts();
-  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
+  const nowSeconds = useNow(1000) / 1000;
   const [resetError, setResetError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNowSeconds(Math.floor(Date.now() / 1000)), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // `>=` keeps a row visible through its expiry second, so the countdown's
   // last tick can render the expiring label instead of the row vanishing
