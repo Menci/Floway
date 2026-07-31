@@ -16,7 +16,9 @@ import type {
   VlessTcpTlsProxyConfig,
   VlessWsTlsProxyConfig,
 } from '@floway-dev/proxy/proxy-config';
+
 const { Field, Option, Switch } = fluentComponents;
+
 export type ProxyTestResult =
   | { ok: true; egress_ip: string }
   | { ok: false; error: string };

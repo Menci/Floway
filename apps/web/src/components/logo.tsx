@@ -3,7 +3,6 @@ import { fluentComponents } from '../fluent';
 const { makeStyles } = fluentComponents;
 
 // makeStyles types are overly strict for CSS features like light-dark().
-
 const useMarkStyles = makeStyles({
   root: {
     alignItems: 'center',
@@ -25,11 +24,7 @@ const useMarkStyles = makeStyles({
   } as any,
 });
 
-interface FlowayLogoProps {
-  size?: 'default' | 'compact';
-}
-
-export function FlowayLogo({ size = 'default' }: FlowayLogoProps) {
+export function FlowayLogo({ size = 'default' }: { size?: 'default' | 'compact' }) {
   const compact = size === 'compact';
   const ms = useMarkStyles();
 

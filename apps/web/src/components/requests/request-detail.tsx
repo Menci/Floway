@@ -66,13 +66,6 @@ const useStyles = makeStyles({
   error: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
-interface DetailProps {
-  collected: CollectedStream | null;
-  error: string | null;
-  record: DumpRecord | null;
-  recordId: string | null;
-}
-
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation();
   const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
@@ -144,7 +137,12 @@ function HeaderSectionBody({ children }: PropsWithChildren) {
   return <ScrollArea axes="horizontal" className="min-w-0" contentClassName="min-w-full" noTabIndex>{children}</ScrollArea>;
 }
 
-export function RequestDetailPanel({ collected: loadedCollected, error, record, recordId }: DetailProps) {
+export function RequestDetailPanel({ collected: loadedCollected, error, record, recordId }: {
+  collected: CollectedStream | null;
+  error: string | null;
+  record: DumpRecord | null;
+  recordId: string | null;
+}) {
   const { t } = useTranslation();
   const s = useStyles();
   const [streamView, setStreamView] = useState<'collected' | 'events'>('collected');
