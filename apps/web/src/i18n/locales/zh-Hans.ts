@@ -13,6 +13,11 @@ const zhHansCN = {
       off: '关',
       cancel: '取消',
       dismiss: '关闭',
+      copy: {
+        action: '复制',
+        copied: '已复制',
+        failed: '复制失败',
+      },
       errors: {
         refresh: '刷新',
         back: '返回',

@@ -1,7 +1,4 @@
 import {
-  CheckmarkRegular,
-  CopyRegular,
-  DismissRegular,
   EyeOffRegular,
   EyeRegular,
 } from '@fluentui/react-icons';
@@ -25,7 +22,7 @@ import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { prismTokenStyles } from '../ui/prism-token-styles';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
+import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import 'prismjs/components/prism-json';
 
@@ -68,13 +65,12 @@ const useStyles = makeStyles({
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation();
-  const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
-  const label = copyFailedTag !== null
-    ? t('dashboard.apiKeys.copy.failed')
-    : copiedTag !== null ? t('dashboard.requests.copied') : t('dashboard.requests.copy');
+  const { copy, outcomeFor } = useCopyToClipboard();
+  const copyLabel = useCopyLabel();
+  const label = copyLabel(outcomeFor(), t('dashboard.requests.copy'));
   return (
     <TooltipIconButton
-      icon={copyFailedTag !== null ? <DismissRegular /> : copiedTag !== null ? <CheckmarkRegular /> : <CopyRegular />}
+      icon={copyOutcomeIcon(outcomeFor())}
       label={label}
       onClick={() => copy(text)}
     />

@@ -13,6 +13,11 @@ const en = {
       off: 'Off',
       cancel: 'Cancel',
       dismiss: 'Dismiss',
+      copy: {
+        action: 'Copy',
+        copied: 'Copied',
+        failed: 'Copy failed',
+      },
       errors: {
         refresh: 'Refresh',
         back: 'Back',

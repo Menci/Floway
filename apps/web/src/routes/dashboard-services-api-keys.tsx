@@ -84,7 +84,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const rotateDialog = useDialogInvocation<ApiKey>();
   const deleteDialog = useDialogInvocation<ApiKey>();
   const [deletingKey, setDeletingKey] = useState(false);
-  const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
+  const { copy, outcomeFor } = useCopyToClipboard();
 
   const selectedKey = data.keys?.find(key => key.id === selectedKeyId) ?? null;
   const agentSetupModels = selectedKey && data.models
@@ -148,8 +148,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       {!loaded ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
         <ResourceListPanel>
           <KeysTable
-            copiedTag={copiedTag}
-            copyFailedTag={copyFailedTag}
             disabled={refreshing || deletingKey}
             keys={keys}
             onCopy={copy}
@@ -157,6 +155,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
             onEdit={apiKey => editorDialog.open({ kind: 'edit', apiKey })}
             onRotate={rotateDialog.open}
             onSelect={setSelectedKeyId}
+            outcomeFor={outcomeFor}
             selectedKeyId={selectedKey?.id ?? ''}
             upstreams={upstreams}
           />
@@ -164,13 +163,12 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
 
         <Panel className="!grid !gap-[14px] min-w-0">
           <AgentSetupCard
-            copiedTag={copiedTag}
-            copyFailedTag={copyFailedTag}
             initialApiKeyId={loaderData.selectedKeyId || null}
             initialError={loaderData.setupError}
             initialLease={loaderData.setupLease}
             models={agentSetupModels}
             onCopy={copy}
+            outcomeFor={outcomeFor}
             selectedKey={selectedKey}
           />
         </Panel>

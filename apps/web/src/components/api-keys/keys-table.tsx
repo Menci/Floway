@@ -1,4 +1,4 @@
-import { ArrowClockwiseRegular, CheckmarkRegular, CopyRegular, DeleteRegular, DismissRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
+import { ArrowClockwiseRegular, DeleteRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -14,6 +14,7 @@ import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, useTrailingCellClass } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { copyOutcomeIcon, useCopyLabel, type ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
 const {
   Button,
@@ -38,15 +39,16 @@ const useStyles = makeStyles({
 const RELATIVE_REFRESH_MS = 30_000;
 
 export function KeysTable({
-  copiedTag, copyFailedTag, disabled, keys, onCopy, onDelete, onEdit, onRotate, onSelect, selectedKeyId, upstreams,
+  disabled, keys, onCopy, onDelete, onEdit, onRotate, onSelect, outcomeFor, selectedKeyId, upstreams,
 }: {
-  copiedTag: string | null; copyFailedTag: string | null; keys: ApiKey[];
+  keys: ApiKey[]; outcomeFor: ClipboardCopy['outcomeFor'];
   disabled: boolean;
   onCopy: (text: string, tag: string) => void; onDelete: (key: ApiKey) => void;
   onEdit: (key: ApiKey) => void; onRotate: (key: ApiKey) => void;
   onSelect: (id: string) => void; selectedKeyId: string; upstreams: UpstreamOption[];
 }) {
   const { t } = useTranslation();
+  const copyLabel = useCopyLabel();
   const s = useStyles();
   const dangerClasses = useDangerActionClasses();
   const trailingCell = useTrailingCellClass();
@@ -93,8 +95,8 @@ export function KeysTable({
               <TooltipIconButton
                 className="flex-none"
                 disabled={disabled}
-                icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />}
-                label={copyFailedTag === copyTag ? t('dashboard.apiKeys.copy.failed') : copiedTag === copyTag ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
+                icon={copyOutcomeIcon(outcomeFor(copyTag))}
+                label={copyLabel(outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}
                 onClick={() => onCopy(key.key, copyTag)}
               />
             </span>
@@ -143,7 +145,7 @@ export function KeysTable({
         },
       }),
     ],
-    [copiedTag, copyFailedTag, disabled, locale, now, onCopy, onDelete, onEdit, onRotate, s, t, upstreamById],
+    [copyLabel, disabled, locale, now, onCopy, onDelete, onEdit, onRotate, outcomeFor, s, t, upstreamById],
   );
 
   if (keys.length === 0) {
@@ -178,7 +180,7 @@ export function KeysTable({
               <Button appearance="subtle" aria-label={t('dashboard.apiKeys.table.actions')} disabled={disabled} icon={<MoreHorizontalRegular />} />
             </MenuTrigger>
             <MenuPopover><MenuList>
-              <MenuItem icon={copyFailedTag === copyTag ? <DismissRegular /> : copiedTag === copyTag ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => onCopy(key.key, copyTag)}>{t('dashboard.apiKeys.actions.copy')}</MenuItem>
+              <MenuItem icon={copyOutcomeIcon(outcomeFor(copyTag))} onClick={() => onCopy(key.key, copyTag)}>{t('dashboard.apiKeys.actions.copy')}</MenuItem>
               <MenuItem icon={<EditRegular />} onClick={() => onEdit(key)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
               <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
               <MenuItem className={dangerClasses.menuItem} icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>

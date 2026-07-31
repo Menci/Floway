@@ -1,4 +1,3 @@
-import { CheckmarkRegular, CopyRegular, DismissRegular } from '@fluentui/react-icons';
 import Prism from 'prismjs';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
@@ -10,6 +9,7 @@ import 'prismjs/components/prism-toml';
 
 import { prismTokenStyles } from './prism-token-styles';
 import { ScrollArea } from './scroll-area';
+import { copyOutcomeIcon, useCopyLabel, type CopyOutcome } from './use-copy-to-clipboard';
 import { fluentComponents } from '../../fluent';
 
 const { Button, makeStyles, mergeClasses } = fluentComponents;
@@ -56,10 +56,9 @@ const useStyles = makeStyles({
   },
 });
 
-export function CodeBlock({ code, copied, copyFailed, disabled = false, header, language, onCopy }: {
+export function CodeBlock({ code, copyOutcome, disabled = false, header, language, onCopy }: {
   code: string;
-  copied: boolean;
-  copyFailed: boolean;
+  copyOutcome: CopyOutcome;
   disabled?: boolean;
   /** Replaces the language caption in the header bar, for switchers that pick which code this block shows. */
   header?: ReactNode;
@@ -68,6 +67,7 @@ export function CodeBlock({ code, copied, copyFailed, disabled = false, header, 
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
+  const copyLabel = useCopyLabel();
   const highlighted = useMemo(() => {
     const grammar = Prism.languages[language] ?? Prism.languages.plain;
     return grammar ? Prism.highlight(code, grammar, language) : escapeHtml(code);
@@ -80,11 +80,11 @@ export function CodeBlock({ code, copied, copyFailed, disabled = false, header, 
         <Button
           appearance="subtle"
           disabled={disabled}
-          icon={copyFailed ? <DismissRegular /> : copied ? <CheckmarkRegular /> : <CopyRegular />}
+          icon={copyOutcomeIcon(copyOutcome)}
           onClick={onCopy}
           size="small"
         >
-          {copyFailed ? t('dashboard.apiKeys.copy.failed') : copied ? t('dashboard.apiKeys.copy.copied') : t('dashboard.apiKeys.actions.copy')}
+          {copyLabel(copyOutcome, t('common.copy.action'))}
         </Button>
       </div>
       <ScrollArea axes="both" className="max-h-[340px]">

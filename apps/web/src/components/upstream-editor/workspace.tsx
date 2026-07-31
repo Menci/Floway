@@ -2,11 +2,8 @@ import {
   AddRegular,
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
-  CheckmarkRegular,
   CodeRegular,
-  CopyRegular,
   DeleteRegular,
-  DismissRegular,
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
@@ -34,7 +31,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { SectionHeader } from '../ui/section-header';
 import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
+import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
 
 const {
@@ -198,7 +195,8 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
   const [pendingManualUpstreamModelId, setPendingManualUpstreamModelId] = useState<string | null>(null);
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
   const [search, setSearch] = useState('');
-  const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
+  const { copy, outcomeFor } = useCopyToClipboard();
+  const copyLabel = useCopyLabel();
   const readOnly = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
   const autoFetchEnabled = record.kind !== 'custom'
     || (config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled;
@@ -354,7 +352,7 @@ function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading
               </button>
             </TableCell>
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCentredCell>
-            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" title={id}>{id}</code><TooltipIconButton className="flex-none" icon={copyFailedTag === id ? <DismissRegular /> : copiedTag === id ? <CheckmarkRegular /> : <CopyRegular />} label={copyFailedTag === id ? t('dashboard.apiKeys.copy.failed') : copiedTag === id ? t('dashboard.apiKeys.copy.copied') : t('dashboard.upstreamEditor.models.copy')} onClick={() => copy(id, id)} /></span></TableCell>
+            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" title={id}>{id}</code><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('dashboard.upstreamEditor.models.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCentredCell>
             <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectUpstreamModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
           </TableRow>;

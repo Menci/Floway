@@ -17,6 +17,7 @@ import { infoLabelSlot } from '../ui/info-label';
 import { PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
+import type { ClipboardCopy } from '../ui/use-copy-to-clipboard';
 
 const { Button, Field, Option, Switch, Tab, TabList, Text } = fluentComponents;
 type Agent = 'claude' | 'codex';
@@ -37,14 +38,13 @@ const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNu
 // Ref: https://code.claude.com/docs/en/settings#attribution-settings
 const claudeAttributionOptOut = { commit: '', pr: '', sessionUrl: false } as const;
 
-export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, initialError, initialLease, models, onCopy, selectedKey }: {
-  copiedTag: string | null;
-  copyFailedTag: string | null;
+export function AgentSetupCard({ initialApiKeyId, initialError, initialLease, models, onCopy, outcomeFor, selectedKey }: {
   initialApiKeyId: string | null;
   initialError: string | null;
   initialLease: AgentSetupLease | null;
   models: ControlPlaneModel[];
   onCopy: (text: string, tag: string) => void;
+  outcomeFor: ClipboardCopy['outcomeFor'];
   selectedKey: ApiKey | null;
 }) {
   const { t } = useTranslation();
@@ -114,14 +114,13 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
         </section>
 
         {view === 'snippets' && selectedKey
-          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={activeDraft} copiedTag={copiedTag} copyFailedTag={copyFailedTag} onCopy={onCopy} onPlatformChange={setPlatform} platform={platform} />
+          ? <AgentConfigSnippets agent={agent} apiKey={selectedKey.key} configuration={activeDraft} onCopy={onCopy} outcomeFor={outcomeFor} onPlatformChange={setPlatform} platform={platform} />
           : view === 'snippets'
             ? <OutcomeMessageBar intent="info">{t('dashboard.apiKeys.agentSetup.selectKey')}</OutcomeMessageBar>
             : <div className="border-t border-t-solid border-fui-stroke1 pt-4">
                 <CodeBlock
                   code={command}
-                  copied={copiedTag === `agent-setup-${agent}-${platform}`}
-                  copyFailed={copyFailedTag === `agent-setup-${agent}-${platform}`}
+                  copyOutcome={outcomeFor(`agent-setup-${agent}-${platform}`)}
                   disabled={!setup.canCopy}
                   header={<PlatformTabs onChange={setPlatform} platform={platform} />}
                   language={platform === 'unix' ? 'bash' : 'powershell'}
@@ -160,14 +159,13 @@ function PlatformTabs({ onChange, platform }: { onChange: (platform: Platform) =
   </TabList>;
 }
 
-function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, copyFailedTag, onCopy, onPlatformChange, platform }: {
+function AgentConfigSnippets({ agent, apiKey, configuration, onCopy, onPlatformChange, outcomeFor, platform }: {
   agent: Agent;
   apiKey: string;
   configuration: AgentSetupConfiguration;
-  copiedTag: string | null;
-  copyFailedTag: string | null;
   onCopy: (text: string, tag: string) => void;
   onPlatformChange: (platform: Platform) => void;
+  outcomeFor: ClipboardCopy['outcomeFor'];
   platform: Platform;
 }) {
   const { t } = useTranslation();
@@ -176,7 +174,7 @@ function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, copyFail
     const snippet = buildAgentClaudeSnippet(origin, apiKey, configuration.claudeCode);
     return <div className="grid gap-2 border-t border-t-solid border-fui-stroke1 pt-4">
       <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.claudeHint')}</Text>
-      <CodeBlock code={snippet} copied={copiedTag === 'agent-snippet-claude'} copyFailed={copyFailedTag === 'agent-snippet-claude'} language="json" onCopy={() => onCopy(snippet, 'agent-snippet-claude')} />
+      <CodeBlock code={snippet} copyOutcome={outcomeFor('agent-snippet-claude')} language="json" onCopy={() => onCopy(snippet, 'agent-snippet-claude')} />
     </div>;
   }
   const config = buildAgentCodexSnippet(origin, configuration.codex);
@@ -186,11 +184,11 @@ function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, copyFail
   const credentialTag = platform === 'windows' ? 'agent-snippet-codex-windows' : 'agent-snippet-codex-unix';
   return <div className="grid gap-3 border-t border-t-solid border-fui-stroke1 pt-4">
     <Text size={200} className="text-fui-fg2">{t('dashboard.apiKeys.configuration.codexConfigHint')}</Text>
-    <CodeBlock code={config} copied={copiedTag === 'agent-snippet-codex'} copyFailed={copyFailedTag === 'agent-snippet-codex'} language="toml" onCopy={() => onCopy(config, 'agent-snippet-codex')} />
+    <CodeBlock code={config} copyOutcome={outcomeFor('agent-snippet-codex')} language="toml" onCopy={() => onCopy(config, 'agent-snippet-codex')} />
     <Text size={200} className="text-fui-fg2">
       {t(platform === 'windows' ? 'dashboard.apiKeys.configuration.codexWindowsAuthHint' : 'dashboard.apiKeys.configuration.codexAuthHint')}
     </Text>
-    <CodeBlock code={credential} copied={copiedTag === credentialTag} copyFailed={copyFailedTag === credentialTag} header={<PlatformTabs onChange={onPlatformChange} platform={platform} />} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => onCopy(credential, credentialTag)} />
+    <CodeBlock code={credential} copyOutcome={outcomeFor(credentialTag)} header={<PlatformTabs onChange={onPlatformChange} platform={platform} />} language={platform === 'windows' ? 'powershell' : 'bash'} onCopy={() => onCopy(credential, credentialTag)} />
   </div>;
 }
 

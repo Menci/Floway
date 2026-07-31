@@ -26,7 +26,7 @@ const {
 
 export function ApiDocsContent() {
   const { t } = useTranslation();
-  const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
+  const { copy, outcomeFor } = useCopyToClipboard();
   const trailingCell = useTrailingCellClass();
   const authExample = authCurlExample(window.location.origin);
 
@@ -37,7 +37,7 @@ export function ApiDocsContent() {
         <Text><strong>{t('dashboard.apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
       </div>
       <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiDocs.authentication.warning')}</MessageBarBody></MessageBar>
-      <CodeBlock code={authExample} copied={copiedTag === 'auth'} copyFailed={copyFailedTag === 'auth'} language="bash" onCopy={() => copy(authExample, 'auth')} />
+      <CodeBlock code={authExample} copyOutcome={outcomeFor('auth')} language="bash" onCopy={() => copy(authExample, 'auth')} />
     </Panel>
 
     <Panel className="!grid !gap-5">
