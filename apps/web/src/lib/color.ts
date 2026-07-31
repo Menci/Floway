@@ -79,6 +79,8 @@ export const blendHex = (hex: string, alpha: number, backdrop: string): string =
 };
 
 const TEXT_CONTRAST_FLOOR = 4.5;
+const BLACK: [number, number, number] = [0, 0, 0];
+const WHITE: [number, number, number] = [255, 255, 255];
 
 /**
  * The nearest tone of `hex` that reads as text on `surface`, found by moving
@@ -104,18 +106,22 @@ export const readableTone = (hex: string, surface: string): string => {
   if (contrastRatio(rgb, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return hex;
 
   const [h, s, v] = rgbToHsv(...rgb);
-  const darken = relativeLuminance(surfaceRgb) > 0.5;
+  // Which way to move is decided by which extreme actually clears the floor,
+  // not by whether the surface is light. A mid surface can be too dark for
+  // black and too light for white; between luminance 0.183 and 0.5 white misses
+  // the floor while black clears it, so a lightness test would search the one
+  // direction that cannot arrive.
+  const darken = contrastRatio(BLACK, surfaceRgb) > contrastRatio(WHITE, surfaceRgb);
   const STEPS = 100;
 
-  for (let saturation = s; ; saturation -= 0.1) {
+  for (let saturation = s; saturation >= 0; saturation -= 0.1) {
     for (let step = 1; step <= STEPS; step += 1) {
       const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
-      const candidate = hsvToRgb(h, saturation, value);
+      const candidate = hsvToRgb(h, Math.max(0, saturation), value);
       if (contrastRatio(candidate, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return rgbToHex(...candidate);
     }
-    // Value is exhausted in the useful direction. Below zero saturation the
-    // colour is grey and further loops cannot help, so the extreme is the
-    // answer: black on a light surface, white on a dark one.
-    if (saturation <= 0) return darken ? '#000000' : '#FFFFFF';
   }
+  // Value is exhausted in the useful direction at every saturation, so the
+  // extreme is the answer. Reached only for a surface no foreground clears.
+  return rgbToHex(...(darken ? BLACK : WHITE));
 };

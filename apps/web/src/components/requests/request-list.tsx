@@ -59,17 +59,25 @@ const useStyles = makeStyles({
     padding: '6px 10px',
     // The row is a listbox option that selects a record when clicked, so it
     // takes the subtle ramp every other list surface here takes; without it the
-    // row claimed the pointer cursor and then answered nothing. The selected
-    // fill is stated after this one and keeps its own colour under the pointer.
+    // row claimed the pointer cursor and then answered nothing.
     // ../../winui/controls/list.css.ts
     ':hover': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
     ':active': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
     ':focus-visible': { boxShadow: 'inset 0 0 0 2px var(--colorCompoundBrandStroke)' },
   },
+  // Stated per state rather than once, because the row carries both classes and
+  // the hover rule above is a pseudo-class: it outranks a bare declaration on
+  // the same element, so a selected row under the pointer would take the subtle
+  // wash in place of its brand fill and read as deselected. mergeClasses puts
+  // this class last, so matching the pseudo-classes is what wins the property.
   selected: {
     backgroundColor: 'var(--colorBrandBackgroundInvertedHover)',
+    ':hover': { backgroundColor: 'var(--colorBrandBackgroundInvertedHover)' },
+    ':active': { backgroundColor: 'var(--colorBrandBackgroundInvertedHover)' },
     '@media (prefers-color-scheme: dark)': {
       backgroundColor: 'var(--colorBrandBackground2)',
+      ':hover': { backgroundColor: 'var(--colorBrandBackground2)' },
+      ':active': { backgroundColor: 'var(--colorBrandBackground2)' },
     },
   },
   // One of three severities the row indexes by name, so it stays with its

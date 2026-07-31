@@ -89,14 +89,20 @@ ${host} .os-scrollbar-horizontal:not(:hover) .os-scrollbar-handle {
 /* The track is drawn only while the scrollbar is expanded, which is what makes
    the rest state read as a hairline against the content rather than as a
    channel cut into it. It arrives on the fill's own duration, which is what
-   WinUI gives the track and buttons either side of the thumb's travel. */
+   WinUI gives the track and buttons either side of the thumb's travel, and it
+   waits out the same delays: WinUI begins the track's opacity at
+   ScrollBarExpandBeginTime and ScrollBarContractBeginTime, the same instants it
+   begins the thumb's size. A channel that appeared while the pill was still
+   waiting would defeat the delay for half the control. */
 ${host} .os-scrollbar .os-scrollbar-track {
   transition-property: background-color;
   transition-duration: var(--winui-control-faster-animation-duration);
+  transition-delay: 500ms;
 }
 
 ${host} .os-scrollbar:hover .os-scrollbar-track {
   background-color: var(--winui-layer-fill-default);
+  transition-delay: 400ms;
 }
 
 /* The thumb changes size, which is motion rather than a state colour, so it

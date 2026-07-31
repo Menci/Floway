@@ -228,3 +228,27 @@ describe('blendHex', () => {
     expect(blendHex('nope', 0.5, '#FFFFFF')).toBe('#FFFFFF');
   });
 });
+
+describe('readableTone on a mid surface', () => {
+  const contrastWith = contrast;
+
+  it('never returns a malformed hex when saturation runs out', () => {
+    // The loop used to test its terminal condition after the body, so the last
+    // pass ran at a negative saturation and overflowed a channel past 255.
+    for (const surface of ['#787878', '#808080', '#6E6E6E', '#949494']) {
+      for (const hue of ['#0000FF', '#00FF00', '#FF0000', '#FFFF00']) {
+        expect(readableTone(hue, surface)).toMatch(/^#[0-9A-F]{6}$/);
+      }
+    }
+  });
+
+  it('moves toward whichever extreme clears the floor, not toward the darker one', () => {
+    // Between luminance 0.183 and 0.5 white misses 4.5 and black clears it, so
+    // a light-versus-dark test would search the direction that cannot arrive.
+    const surface = '#787878';
+    expect(contrastWith('#FFFFFF', surface)).toBeLessThan(4.5);
+    expect(contrastWith('#000000', surface)).toBeGreaterThanOrEqual(4.5);
+    const result = readableTone('#0000FF', surface);
+    expect(contrastWith(result, surface)).toBeGreaterThanOrEqual(4.5);
+  });
+});

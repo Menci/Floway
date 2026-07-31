@@ -358,9 +358,13 @@ export const selectCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L517-L528
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/SplitOpenThemeAnimation_Partial.h#L16-L17
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ThemeAnimations.cpp#L596-L721 */
+/* The final inset is negative rather than zero because clip-path clips every
+   painted thing, the popup's own elevation shadow included, and the shadow is
+   declared on this element. Ending at the border box would hold it suppressed
+   for the whole reveal and snap it in on the frame the clip is dropped. */
 @keyframes floway-combobox-listbox-reveal {
-  from { clip-path: inset(25% 0% 25% 0%); }
-  to { clip-path: inset(0% 0% 0% 0%); }
+  from { clip-path: inset(25% -32px 25% -32px); }
+  to { clip-path: inset(-32px); }
 }
 
 .floway-combobox-listbox {
