@@ -23,6 +23,7 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
 import { useCopyToClipboard } from '../components/ui/use-copy-to-clipboard';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
+import { useRefresh } from '../components/ui/use-refresh';
 
 const selectedKeyStorageKey = 'floway-agent-setup-selected-key';
 interface LoaderData extends ApiKeysPageData {
@@ -72,7 +73,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const [data, setData] = useState<ApiKeysPageData>(loaderData);
   const [selectedKeyId, setSelectedKeyId] = useState(loaderData.selectedKeyId);
   const [pageError, setPageError] = useState(loaderData.error);
-  const [refreshing, setRefreshing] = useState(false);
   const editorDialog = useDialogInvocation<{ kind: 'create' } | { kind: 'edit'; apiKey: ApiKey }>();
   const rotateDialog = useDialogInvocation<ApiKey>();
   const deleteDialog = useDialogInvocation<ApiKey>();
@@ -117,11 +117,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       next.keys.some(key => key.id === current) ? current : '');
   };
 
-  const refresh = async () => {
-    setRefreshing(true);
-    await reload();
-    setRefreshing(false);
-  };
+  const { refresh, refreshing } = useRefresh(reload);
 
   const deleteKey = async (key: ApiKey) => {
     setDeleteError(null);

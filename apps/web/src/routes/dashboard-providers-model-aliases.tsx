@@ -22,6 +22,7 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
+import { useRefresh } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 
 const { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Tooltip } = fluentComponents;
@@ -74,7 +75,6 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     setDeleteError(null);
     deleteDialog.open(target);
   };
-  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     const next = await loadPageData(catalog);
@@ -83,11 +83,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     setModelsError(next.modelsError);
   }, [catalog]);
 
-  const refresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
+  const { refresh, refreshing } = useRefresh(load);
 
   const header = <DashboardPageHeader
     actions={user.isAdmin ? <ResourceListActions

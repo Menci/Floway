@@ -86,16 +86,20 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   };
   const save = async (form: AliasFormValues) => {
     setSaving(true); setServerError(null);
-    const name = form.name.trim();
-    const body = aliasBody(form, record);
-    const handle = toasts.start(t('dashboard.modelAliases.toast.save.pending', { name }));
-    const result = record
-      ? await callApi(() => api.api.aliases[':id'].$put({ param: { id: record.id }, json: body }))
-      : await callApi(() => api.api.aliases.$post({ json: body }));
-    if (result.error) { setSaving(false); handle.settle(); setServerError(result.error.message); return; }
-    onOpenChange(false);
-    handle.succeed(t('dashboard.modelAliases.toast.save.success', { name }));
-    await onSaved();
+    try {
+      const name = form.name.trim();
+      const body = aliasBody(form, record);
+      const handle = toasts.start(t('dashboard.modelAliases.toast.save.pending', { name }));
+      const result = record
+        ? await callApi(() => api.api.aliases[':id'].$put({ param: { id: record.id }, json: body }))
+        : await callApi(() => api.api.aliases.$post({ json: body }));
+      if (result.error) { handle.settle(); setServerError(result.error.message); return; }
+      onOpenChange(false);
+      handle.succeed(t('dashboard.modelAliases.toast.save.success', { name }));
+      await onSaved();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return <DialogShell

@@ -22,6 +22,7 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
+import { useRefresh } from '../components/ui/use-refresh';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri } from '@floway-dev/proxy/url';
 
@@ -221,7 +222,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   const deleteDialog = useDialogInvocation<ProxyRecord>();
   const [mutating, setMutating] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
 
   // The error belongs to the attempt that produced it. Opening the dialog for
   // another proxy starts a new attempt, so the previous one's failure is
@@ -242,11 +242,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setLoadError(proxiesRes.error?.message ?? backoffsRes.error?.message ?? null);
   }, []);
 
-  const refresh = useCallback(async () => {
-    setRefreshing(true);
-    await refreshProxies();
-    setRefreshing(false);
-  }, [refreshProxies]);
+  const { refresh, refreshing } = useRefresh(refreshProxies);
 
   const handleDeleteConfirm = useCallback(async (target: ProxyRecord) => {
     setMutating(true);

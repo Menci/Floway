@@ -377,34 +377,37 @@ function UserDialog(props: UserDialogProps) {
   const save = async (form: UserFormValues) => {
     setSaving(true);
     setError(null);
-    const username = form.username.trim();
-    const upstreamIds = form.upstreamOverride ? form.upstreamIds : null;
-    const handle = toasts.start(t(`dashboard.users.toast.${mode}.pending`, { username }));
-    const result = props.mode === 'create'
-      ? await callApi(() => api.api.users.$post({
-          json: {
-            username,
-            password: form.password,
-            isAdmin: form.isAdmin,
-            upstreamIds,
-          },
-        }))
-      : await callApi(() => api.api.users[':id'].$patch({
-          param: { id: String(props.user.id) }, json: {
-            username,
-            ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
-            upstreamIds,
-          },
-        }));
-    if (result.error) {
+    try {
+      const username = form.username.trim();
+      const upstreamIds = form.upstreamOverride ? form.upstreamIds : null;
+      const handle = toasts.start(t(`dashboard.users.toast.${mode}.pending`, { username }));
+      const result = props.mode === 'create'
+        ? await callApi(() => api.api.users.$post({
+            json: {
+              username,
+              password: form.password,
+              isAdmin: form.isAdmin,
+              upstreamIds,
+            },
+          }))
+        : await callApi(() => api.api.users[':id'].$patch({
+            param: { id: String(props.user.id) }, json: {
+              username,
+              ...(!adminLocked ? { isAdmin: form.isAdmin } : {}),
+              upstreamIds,
+            },
+          }));
+      if (result.error) {
+        handle.settle();
+        setError(result.error.message);
+        return;
+      }
+      onOpenChange(false);
+      handle.succeed(t(`dashboard.users.toast.${mode}.success`, { username }));
+      await onSaved(props.mode === 'edit' ? props.user.id : undefined);
+    } finally {
       setSaving(false);
-      handle.settle();
-      setError(result.error.message);
-      return;
     }
-    onOpenChange(false);
-    handle.succeed(t(`dashboard.users.toast.${mode}.success`, { username }));
-    await onSaved(props.mode === 'edit' ? props.user.id : undefined);
   };
 
   return (
@@ -512,20 +515,23 @@ function PasswordDialog({ onOpenChange, open, onSaved, user }: {
   const save = async (values: PasswordFormValues) => {
     setSaving(true);
     setError(null);
-    const handle = toasts.start(t('dashboard.users.toast.password.pending', { username: user.username }));
-    const result = await callApi(() => api.api.users[':id'].$patch({
-      param: { id: String(user.id) },
-      json: { password: values.password },
-    }));
-    if (result.error) {
+    try {
+      const handle = toasts.start(t('dashboard.users.toast.password.pending', { username: user.username }));
+      const result = await callApi(() => api.api.users[':id'].$patch({
+        param: { id: String(user.id) },
+        json: { password: values.password },
+      }));
+      if (result.error) {
+        handle.settle();
+        setError(result.error.message);
+        return;
+      }
+      onOpenChange(false);
+      handle.succeed(t('dashboard.users.toast.password.success', { username: user.username }));
+      await onSaved();
+    } finally {
       setSaving(false);
-      handle.settle();
-      setError(result.error.message);
-      return;
     }
-    onOpenChange(false);
-    handle.succeed(t('dashboard.users.toast.password.success', { username: user.username }));
-    await onSaved();
   };
 
   return (

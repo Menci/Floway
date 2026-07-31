@@ -144,31 +144,34 @@ export function KeyDialog(props: KeyDialogProps) {
 
     setSaving(true);
     setError(null);
-    const common = {
-      name: values.name.trim(),
-      upstream_ids: values.upstreamOverride ? values.upstreamIds : null,
-      dump_retention_seconds: values.dumpRetention,
-      responses_retention_seconds: values.responsesRetention,
-    };
-    const mutationKind = isCreate ? 'create' : 'edit';
-    const handle = toasts.start(t(`dashboard.apiKeys.toast.${mutationKind}.pending`, { name: common.name }));
-    const result = props.mode === 'create'
-      ? await callApi(() => api.api.keys.$post({
-          json: { ...common, ...keyWriteBody(values.keySource, values.customKey) },
-        }))
-      : await callApi(() => api.api.keys[':id'].$patch({
-          param: { id: props.apiKey.id },
-          json: common,
-        }));
-    if (result.error) {
+    try {
+      const common = {
+        name: values.name.trim(),
+        upstream_ids: values.upstreamOverride ? values.upstreamIds : null,
+        dump_retention_seconds: values.dumpRetention,
+        responses_retention_seconds: values.responsesRetention,
+      };
+      const mutationKind = isCreate ? 'create' : 'edit';
+      const handle = toasts.start(t(`dashboard.apiKeys.toast.${mutationKind}.pending`, { name: common.name }));
+      const result = props.mode === 'create'
+        ? await callApi(() => api.api.keys.$post({
+            json: { ...common, ...keyWriteBody(values.keySource, values.customKey) },
+          }))
+        : await callApi(() => api.api.keys[':id'].$patch({
+            param: { id: props.apiKey.id },
+            json: common,
+          }));
+      if (result.error) {
+        handle.settle();
+        setError(result.error.message);
+        return;
+      }
+      onOpenChange(false);
+      handle.succeed(t(`dashboard.apiKeys.toast.${mutationKind}.success`, { name: common.name }));
+      await onSaved(result.data);
+    } finally {
       setSaving(false);
-      handle.settle();
-      setError(result.error.message);
-      return;
     }
-    onOpenChange(false);
-    handle.succeed(t(`dashboard.apiKeys.toast.${mutationKind}.success`, { name: common.name }));
-    await onSaved(result.data);
   };
 
   return (

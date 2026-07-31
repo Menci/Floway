@@ -38,20 +38,23 @@ export function RotateKeyDialog({
     }
     setSaving(true);
     setError(null);
-    const handle = toasts.start(t('dashboard.apiKeys.toast.rotate.pending', { name: snapName }));
-    const result = await callApi(() => api.api.keys[':id'].rotate.$post({
-      param: { id: apiKey.id },
-      json: keyWriteBody(keySource, trimmed),
-    }));
-    if (result.error) {
+    try {
+      const handle = toasts.start(t('dashboard.apiKeys.toast.rotate.pending', { name: snapName }));
+      const result = await callApi(() => api.api.keys[':id'].rotate.$post({
+        param: { id: apiKey.id },
+        json: keyWriteBody(keySource, trimmed),
+      }));
+      if (result.error) {
+        handle.settle();
+        setError(result.error.message);
+        return;
+      }
+      onOpenChange(false);
+      handle.succeed(t('dashboard.apiKeys.toast.rotate.success', { name: snapName }));
+      await onSaved();
+    } finally {
       setSaving(false);
-      handle.settle();
-      setError(result.error.message);
-      return;
     }
-    onOpenChange(false);
-    handle.succeed(t('dashboard.apiKeys.toast.rotate.success', { name: snapName }));
-    await onSaved();
   };
 
   return (
