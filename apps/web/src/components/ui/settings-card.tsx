@@ -182,11 +182,16 @@ const useStyles = makeStyles({
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L432-L444
     '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
-  // Expander opens with a framework ExpandDownThemeAnimation, which states no
-  // numbers in any dictionary, so the control's own normal duration and curve
-  // stand in rather than a value invented for it. The region is a grid whose
-  // single row runs from zero to `1fr`, which animates to the content's own
-  // height without anything having to measure it first.
+  // Expander's open and close, which are asymmetric in both terms: 333ms on the
+  // fast-out-slow-in spline opening, 167ms on a spline that leaves at once and
+  // arrives slowly closing. CSS states one duration per transitioned property
+  // rather than one per direction, so each direction's values sit on the rule
+  // that is becoming active -- the closed base here, the open modifier below.
+  //
+  // WinUI translates the content by its own measured height under a static
+  // clip. The region is a grid whose single row runs from zero to `1fr`
+  // instead, which reaches the content's own height without anything having to
+  // measure it first and reads the same.
   //
   // The reduce branch departs from shipped WinUI, which keeps sliding: the
   // Expander authors its motion as a VisualState storyboard rather than a
@@ -196,17 +201,23 @@ const useStyles = makeStyles({
   // WinUI PM called the general case a framework bug -- not a design, and a
   // region that grows from nothing to its full height is motion animation by
   // WCAG's own definition, which turns on perceived size and position.
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L62-L90
   // https://github.com/microsoft/microsoft-ui-xaml/issues/3279
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609
   contentFrame: {
     display: 'grid',
     gridTemplateRows: '0fr',
-    transitionDuration: 'var(--winui-control-normal-animation-duration)',
+    transitionDuration: 'var(--winui-collapse-animation-duration)',
     transitionProperty: 'grid-template-rows',
+    transitionTimingFunction: 'var(--winui-collapse-easing)',
+    '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
+  },
+  contentFrameOpen: {
+    gridTemplateRows: '1fr',
+    transitionDuration: 'var(--winui-expand-animation-duration)',
     transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
     '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
-  contentFrameOpen: { gridTemplateRows: '1fr' },
   contentClip: { minHeight: 0, overflow: 'hidden' },
   chevronOpen: { rotate: '180deg' },
   // A switch in a settings row reads its own state out, and the reading sits
