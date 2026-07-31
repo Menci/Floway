@@ -7,6 +7,7 @@ import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDe
 import {
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,
+  pad2,
 } from '../charts/dashboard-time';
 import { colorForSlot } from '../charts/palette';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
@@ -44,8 +45,6 @@ export const summaryMetrics: UsageMetric[][] = [
   ['cached', 'cachedRate'],
   ['cacheCreation', 'cacheHitRate'],
 ];
-
-const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 const shortMonthDay = (date: Date, locale: string): string =>
   date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
@@ -483,16 +482,10 @@ export function formatCompactDecimalCount(value: DecimalString, locale: string):
   return new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(decimalStringToPlottableNumber(value));
 }
 
-export function formatInputRate(cached: DecimalString, input: DecimalString): string {
-  const denominator = decimalStringToPlottableNumber(input);
-  if (denominator <= 0) return '-';
-  return `${((decimalStringToPlottableNumber(cached) / denominator) * 100).toFixed(1)}%`;
-}
-
-export function formatHitRate(cached: DecimalString, created: DecimalString): string {
-  const denominator = decimalStringToPlottableNumber(sumDecimalStrings(cached, created));
-  if (denominator <= 0) return '-';
-  return `${((decimalStringToPlottableNumber(cached) / denominator) * 100).toFixed(1)}%`;
+export function formatRatePercent(numerator: DecimalString, denominator: DecimalString): string {
+  const total = decimalStringToPlottableNumber(denominator);
+  if (total <= 0) return '-';
+  return `${((decimalStringToPlottableNumber(numerator) / total) * 100).toFixed(1)}%`;
 }
 
 export function formatSummaryMetric(
@@ -518,9 +511,9 @@ export function formatSummaryMetric(
   case 'cacheCreation':
     return formatDecimalCount(summary.cacheCreation);
   case 'cachedRate':
-    return formatInputRate(summary.cacheRead, summary.prompt);
+    return formatRatePercent(summary.cacheRead, summary.prompt);
   case 'cacheHitRate':
-    return formatHitRate(summary.cacheRead, summary.cacheCreation);
+    return formatRatePercent(summary.cacheRead, sumDecimalStrings(summary.cacheRead, summary.cacheCreation));
   }
 }
 
