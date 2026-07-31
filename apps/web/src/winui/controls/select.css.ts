@@ -356,7 +356,8 @@ export const selectCss = `
    matrix translate, and a keyframe naming transform would replace it and play
    the reveal at the origin of the containing block.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L517-L528
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/SplitOpenThemeAnimation_Partial.h#L16-L17 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/SplitOpenThemeAnimation_Partial.h#L16-L17
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ThemeAnimations.cpp#L596-L721 */
 @keyframes floway-combobox-listbox-reveal {
   from { clip-path: inset(25% 0% 25% 0%); }
   to { clip-path: inset(0% 0% 0% 0%); }
@@ -369,8 +370,12 @@ export const selectCss = `
 }
 
 /* The reveal grows the popup out of a band, which alters its perceived size, so
-   it goes when the OS says motion goes. WinUI reaches the same end differently:
-   the storyboard is a Transition, which the VSM seeks to its last frame. */
+   it goes when the OS says motion goes. WinUI reaches the same end by a third
+   route, neither of the two the rest of this layer cites: the popup's storyboard
+   is a VisualState's own, but SplitOpenThemeAnimation is a DynamicTimeline, and
+   with animations disabled the VSM generates it in SteadyState rather than
+   Transition mode, which emits the end values and no motion.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L383-L400 */
 @media (prefers-reduced-motion: reduce) {
   .floway-combobox-listbox {
     animation-duration: 0.01ms;

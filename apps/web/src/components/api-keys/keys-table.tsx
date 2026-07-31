@@ -38,11 +38,10 @@ const useStyles = makeStyles({
 const RELATIVE_REFRESH_MS = 30_000;
 
 export function KeysTable({
-  disabled, keys, onCopy, onDelete, onEdit, onRotate, onSelect, outcomeFor, selectedKeyId, upstreams,
+  clipboard, disabled, keys, onDelete, onEdit, onRotate, onSelect, selectedKeyId, upstreams,
 }: {
-  keys: ApiKey[]; outcomeFor: ClipboardCopy['outcomeFor'];
-  disabled: boolean;
-  onCopy: (text: string, tag: string) => void; onDelete: (key: ApiKey) => void;
+  clipboard: ClipboardCopy; keys: ApiKey[];
+  disabled: boolean; onDelete: (key: ApiKey) => void;
   onEdit: (key: ApiKey) => void; onRotate: (key: ApiKey) => void;
   onSelect: (id: string) => void; selectedKeyId: string; upstreams: UpstreamOption[];
 }) {
@@ -95,9 +94,9 @@ export function KeysTable({
               <TooltipIconButton
                 className="flex-none"
                 disabled={disabled}
-                icon={copyOutcomeIcon(outcomeFor(copyTag))}
-                label={copyLabel(outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}
-                onClick={() => onCopy(key.key, copyTag)}
+                icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))}
+                label={copyLabel(clipboard.outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}
+                onClick={() => clipboard.copy(key.key, copyTag)}
               />
             </span>
           );
@@ -145,7 +144,7 @@ export function KeysTable({
         },
       }),
     ],
-    [copyLabel, dangerText, disabled, locale, now, onCopy, onDelete, onEdit, onRotate, outcomeFor, s, t, upstreamById],
+    [clipboard, copyLabel, dangerText, disabled, locale, now, onDelete, onEdit, onRotate, s, t, upstreamById],
   );
 
   if (keys.length === 0) {
@@ -180,7 +179,7 @@ export function KeysTable({
               <Button appearance="subtle" aria-label={t('dashboard.apiKeys.table.actions')} disabled={disabled} icon={<MoreHorizontalRegular />} />
             </MenuTrigger>
             <MenuPopover><MenuList>
-              <MenuItem icon={copyOutcomeIcon(outcomeFor(copyTag))} onClick={() => onCopy(key.key, copyTag)}>{t('dashboard.apiKeys.actions.copy')}</MenuItem>
+              <MenuItem icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))} onClick={() => clipboard.copy(key.key, copyTag)}>{t('dashboard.apiKeys.actions.copy')}</MenuItem>
               <MenuItem icon={<EditRegular />} onClick={() => onEdit(key)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
               <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
               <MenuItem className={dangerClasses.menuItem} icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>

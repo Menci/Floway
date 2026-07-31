@@ -84,7 +84,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const rotateDialog = useDialogInvocation<ApiKey>();
   const deleteDialog = useDialogInvocation<ApiKey>();
   const [deletingKey, setDeletingKey] = useState(false);
-  const { copy, outcomeFor } = useCopyToClipboard();
+  const clipboard = useCopyToClipboard();
 
   const selectedKey = data.keys?.find(key => key.id === selectedKeyId) ?? null;
   const agentSetupModels = selectedKey && data.models
@@ -150,12 +150,11 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           <KeysTable
             disabled={refreshing || deletingKey}
             keys={keys}
-            onCopy={copy}
             onDelete={openDeleteDialog}
             onEdit={apiKey => editorDialog.open({ kind: 'edit', apiKey })}
             onRotate={rotateDialog.open}
             onSelect={setSelectedKeyId}
-            outcomeFor={outcomeFor}
+            clipboard={clipboard}
             selectedKeyId={selectedKey?.id ?? ''}
             upstreams={upstreams}
           />
@@ -167,8 +166,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
             initialError={loaderData.setupError}
             initialLease={loaderData.setupLease}
             models={agentSetupModels}
-            onCopy={copy}
-            outcomeFor={outcomeFor}
+            clipboard={clipboard}
             selectedKey={selectedKey}
           />
         </Panel>

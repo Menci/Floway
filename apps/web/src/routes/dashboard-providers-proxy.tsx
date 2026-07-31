@@ -190,7 +190,7 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
       <Button appearance="primary" className="!whitespace-nowrap" disabled={saving || testing} icon={saving ? <Spinner size="tiny" /> : undefined} type="submit">{saving ? t('dashboard.proxy.actions.saving') : t('dashboard.proxy.actions.save')}</Button>
     </DialogActions>}
     onOpenChange={(_, data) => {
-      if (!data.open && !saving && !testing && !draftDirty) onOpenChange(false);
+      if (!data.open && !saving && !testing && !draftDirty) onOpenChange(data.open);
     }}
     onSubmit={() => void handleSave()}
     title={<DialogTitle>{editingId === null ? t('dashboard.proxy.addTitle') : t('dashboard.proxy.editTitle')}</DialogTitle>}

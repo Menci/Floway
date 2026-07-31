@@ -99,19 +99,19 @@ export const providerLabel = (kind: ProviderBadgeKind) =>
 // A preset tone states a foreground per scheme; a colour the operator typed
 // states one literal for both, and that literal was picked against whichever
 // scheme they were in. Used raw it labels a chip on a near-white card and on a
-// near-black one alike -- a mid magenta reads 4.03:1 in light and 2.42:1 in
-// dark. The fill needs no such treatment: it is 10% of the hue, so it composites
-// over whichever surface is beneath and follows the scheme on its own.
+// near-black one alike. The fill needs no such treatment: it is 10% of the hue,
+// so it composites over whichever surface is beneath and follows the scheme on
+// its own.
 //
 // The label is resolved against that composited fill rather than against the
 // card, because the fill is the colour actually behind the glyph and a 10% wash
-// of the hue moves the reading by enough to matter -- that same magenta clears
-// the floor against bare white and does not clear it against its own chip.
+// of the hue moves the reading by enough to change the answer: a mid magenta
+// clears the floor against bare white at 4.64:1, and against its own chip reads
+// 4.03:1 in light and 2.41:1 in dark.
 //
-// The card is `--winui-solid-background-fill-quarternary` with the layer fill
-// composited on top, which is what the badge actually sits on: #ffffff and
-// #373737 as measured off the rendered dashboard, rather than the #2c2c2c the
-// token states on its own.
+// The card is `--winui-solid-background-fill-quarternary` under the card fill
+// the surface paints over it: in dark that is #ffffff0d over #2c2c2c, which
+// composites to #373737, and in light both resolve to #ffffff.
 const CARD_SURFACE = { light: '#FFFFFF', dark: '#373737' } as const;
 const FILL_ALPHA = 0.1;
 

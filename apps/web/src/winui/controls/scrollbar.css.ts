@@ -51,8 +51,9 @@ ${host} .os-scrollbar {
 }
 
 /* The thumb widens under the pointer, and the widening is a motion of its own:
-   WinUI runs it over ControlFastAnimationDuration on the fast-out-slow-in
-   spline, and holds it off for 400ms on the way out and 500ms on the way back.
+   WinUI runs it over ScrollBarExpandDuration and ScrollBarContractDuration,
+   both the same 167ms this layer already carries as its fast duration, on the
+   fast-out-slow-in spline, and holds it off for 400ms on the way out and 500ms on the way back.
    The delays are the point of the effect -- without them a pointer crossing the
    edge of the content on its way somewhere else pumps every scrollbar it
    passes. The delay belongs to whichever rule is becoming active, so the
@@ -99,10 +100,16 @@ ${host} .os-scrollbar:hover .os-scrollbar-track {
 }
 
 /* The thumb changes size, which is motion rather than a state colour, so it
-   goes when the OS says motion goes -- WinUI reaches the same end by seeking
-   its VisualTransition to the last frame. The delays stay: they are timing
-   rather than travel, and without them the bar still pumps on every passing
-   pointer, only instantly. */
+   goes when the OS says motion goes -- in both directions, which is one more
+   than WinUI. Its dictionary holds a single VisualTransition, Expanded to
+   Collapsed, so the contract is gated and seeks to its last frame while the
+   expansion, authored as the Expanded state's own storyboard, keeps running.
+   Suppressing only the half WinUI suppresses would leave a bar that grows
+   smoothly and vanishes instantly.
+
+   The delays stay either way: they are timing rather than travel, and without
+   them the bar still pumps on every passing pointer, only instantly.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ScrollBar_themeresources.xaml#L530-L555 */
 @media (prefers-reduced-motion: reduce) {
   ${host} .os-scrollbar .os-scrollbar-handle,
   ${host} .os-scrollbar .os-scrollbar-track {

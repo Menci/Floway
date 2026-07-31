@@ -20,7 +20,7 @@ const useStyles = makeStyles({
   //
   // Not DangerForegroundInverted either: that is the danger hue for use ON an
   // inverted surface, not the label to place on a danger fill; over
-  // DangerBackground3 it reads at roughly 1.9:1.
+  // DangerBackground3 it reads at 1.74:1 in light and 1.17:1 in dark.
   danger: {
     backgroundColor: 'var(--colorStatusDangerBackground3) !important',
     color: 'var(--colorNeutralForegroundStaticInverted) !important',

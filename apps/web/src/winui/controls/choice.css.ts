@@ -238,12 +238,19 @@ export const choiceCss = `
 }
 
 /* The dot grows and shrinks, which alters its perceived size, so it is motion
-   rather than a state colour and it goes when the OS says motion goes. WinUI
-   reaches the same end by a different route: the growth is a VisualTransition,
-   which the VSM seeks to its last frame with animations disabled, applying both
-   endpoints so the dot still lands at its checked size. 0.01ms rather than
-   none for the same reason WinUI runs its disabled ConnectedAnimation for 1ms
-   instead of zero -- the completion still has to fire.
+   rather than a state colour and it goes when the OS says motion goes.
+
+   That is a departure from shipped WinUI, which keeps growing it: the growth is
+   authored as a VisualState storyboard rather than a VisualTransition -- the
+   RadioButton dictionary contains no VisualTransition at all -- and the
+   animations-disabled gate reaches only Transition and Dynamic storyboards.
+   Same shape as the Expander's, and the same reasoning: a control that changes
+   size is motion animation by WCAG's own definition, and the gap in WinUI is an
+   unactioned bug rather than a design.
+
+   0.01ms rather than none, for the reason WinUI runs a disabled
+   ConnectedAnimation for 1ms instead of zero: the completion still has to fire.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L255-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/animation/ConnectedAnimationService.cpp#L313-L327 */
 @media (prefers-reduced-motion: reduce) {

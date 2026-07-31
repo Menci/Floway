@@ -110,11 +110,15 @@ export const listCss = `
    layer's own motion and is declared only where motion is welcome — see
    ../index.ts for the two shapes reduced motion takes here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/ListViewBaseItemPresenter_Partial.cpp#L891-L1022 */
-@media (prefers-reduced-motion: no-preference) {
+.fui-ListItem.fui-ListItem[aria-selected='true']::before {
+  animation:
+    winui-selection-indicator-fade 83ms linear,
+    winui-selection-indicator-grow 167ms cubic-bezier(0.167, 0.167, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
   .fui-ListItem.fui-ListItem[aria-selected='true']::before {
-    animation:
-      winui-selection-indicator-fade 83ms linear,
-      winui-selection-indicator-grow 167ms cubic-bezier(0.167, 0.167, 0, 1);
+    animation-duration: 0.01ms;
   }
 }
 

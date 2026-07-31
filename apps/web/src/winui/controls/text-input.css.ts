@@ -55,28 +55,30 @@ const controlFillAppearances = `:is(\
 [data-winui-appearance='filled-lighter-shadow'])`;
 
 export const textInputCss = `
-/* Height. Both controls declare a 32px floor -- TextControlThemeMinHeight for
-   the text controls, ComboBoxMinHeight for the ComboBox -- and neither renders
-   at it. The ComboBox's own stated padding, 12,5,0,7 over a 20px line inside
-   its 1px border, computes to 34 and so clears its own floor; a text control's
-   3,6 vertical padding over the same line computes below it, and the floor is
-   what it renders at. WinUI therefore puts two adjacent fields at 32 and 34.
+/* Height. WinUI puts the two side by side at 33 and 34, and both numbers come
+   out of stated values rather than out of either control's floor. A text
+   control is 1px of border over 5 and 6 of padding around a 20px line, which is
+   33 and clears its own TextControlThemeMinHeight of 32; a ComboBox is the same
+   border over ComboBoxPadding's 5 and 7, which is 34 and clears its identical
+   floor. The padding and border are the WinUI 3 values from the controls
+   dictionary, which overrides the framework's legacy generic.xaml on both --
+   10,5,6,6 rather than 10,3,6,6, and 1 rather than 2.
 
    34 for both is a departure, and this is it: a row that mixes an Input with a
    Combobox is the common case in this app, and two fields in one row that
-   disagree by 2px read as a defect rather than as fidelity. The taller is the
-   one to unify on, because it is the one that comes from a computation rather
-   than from a floor.
+   disagree read as a defect rather than as fidelity. The taller is the one to
+   unify on, because growing a field keeps its content on the same baseline as
+   its neighbour where shrinking one would not.
 
    Stated on the root rather than on the inner control, because that is where
    Fluent's own floor sits and border-box makes it the whole of the field. The
    Combobox takes it here too: it is a ComboBox by every other reading in
    ./select.css, and its editable form is the one that computes from a text
    control's floor rather than from the button's padding.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L10-L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L327
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L341
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L96
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L175 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L96 */
 .fui-Input.fui-Input${notOptedOut},
 .fui-Combobox.fui-Combobox${notOptedOut} {
   min-height: 34px;

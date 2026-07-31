@@ -97,7 +97,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
   const [ownDrafts, setOwnDrafts] = useState<PricingEntryDraft[]>(() => pricingEntryDraftsFor(value));
   const [selectedId, setSelectedId] = useState<number | null>(() => ownDrafts[0]?.id ?? null);
   // Read-only is a view of the record; an editable one owns its drafts,
-  // because re-seeding from the prop mid-edit would fight the user's typing.
+  // because re-seeding from the prop mid-edit would fight the operator's typing.
   const mirrored = useMemo(() => (readOnly ? pricingEntryDraftsFor(value) : null), [readOnly, value]);
   const drafts = mirrored ?? ownDrafts;
   const conditionsHeadingId = useId();

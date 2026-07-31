@@ -15,8 +15,8 @@ export const TIGHT_STACK_CLASS = 'grid gap-1';
 // presenter with no panel or spacing opinion, so the 900px at which the actions
 // drop under the title is ours. So is the gap, which each caller states rather
 // than taking from here: a page header stands its actions off by 18px and a
-// section header by 12px, and that difference is the only thing separating the
-// two rows.
+// section header by 12px, and that is the only spacing the two rows do not
+// share.
 export const HEADER_ROW_CLASS = 'flex items-center justify-between min-w-0 max-[900px]:flex-col max-[900px]:items-stretch';
 
 // The width at which a two-column form falls to one column. WinUI declares no

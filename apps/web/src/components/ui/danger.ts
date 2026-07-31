@@ -34,9 +34,10 @@ const useStyles = makeStyles({
 
 export const useDangerActionClasses = (): ReturnType<typeof useStyles> => useStyles();
 
-// Eight components declared this same one-property rule under five names --
-// `error`, `danger`, `dangerText`, `fieldError` -- for the one job of saying
-// something went wrong.
+// Seven components gave up the same one-property rule, which they had been
+// declaring under four names -- `error`, `danger`, `dangerText`, `fieldError`
+// -- for the one job of saying something went wrong. An eighth kept its own,
+// because there the red is one of three severities a row indexes by name.
 const useTextStyles = makeStyles({
   danger: { color: 'var(--colorPaletteRedForeground1)' },
 });

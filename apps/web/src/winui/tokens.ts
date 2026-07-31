@@ -623,14 +623,15 @@ export const winuiTokenCss = `
 /* Unresolved. One family is asked for by the controls above and is not emitted,
    because there is no single element for it to land on.
 
-   TextControlThemePadding is 10,3,6,6, and it is stated -- in the framework's
-   own generic dictionary rather than in the control theme resources every other
-   citation here points at. Fluent splits the inset it describes across two
-   elements, the horizontal half on the field's root and the vertical handled by
-   centring the content, so there is no element whose padding this thickness is.
-   The metric beside it that does have a counterpart, the 32px floor, is
-   transcribed at the rule that uses it in ./controls/text-input.css.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L175
+   TextControlThemePadding is 10,5,6,6, stated in the controls dictionary
+   alongside a 1px border -- both of which override the framework's legacy
+   generic.xaml, where the same keys read 10,3,6,6 and 2. Fluent splits the
+   inset that thickness describes across two elements, the horizontal half on
+   the field's root and the vertical handled by centring the content, so there
+   is no element whose padding it is. What the pair does determine is the
+   control's height, and that is derived and departed from at the rule that
+   spends it in ./controls/text-input.css.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources.xaml#L10-L12
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L192-L194
 
    There is likewise no spacing or type scale to lift: WinUI states each metric

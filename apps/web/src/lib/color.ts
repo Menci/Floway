@@ -64,7 +64,7 @@ const relativeLuminance = ([r, g, b]: [number, number, number]): number => {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 };
 
-export const contrastRatio = (a: [number, number, number], b: [number, number, number]): number => {
+const contrastRatio = (a: [number, number, number], b: [number, number, number]): number => {
   const [x, y] = [relativeLuminance(a) + 0.05, relativeLuminance(b) + 0.05];
   return x > y ? x / y : y / x;
 };
@@ -89,8 +89,13 @@ const TEXT_CONTRAST_FLOOR = 4.5;
  * same literal then has to label a chip on a near-white card and on a near-black
  * one. Hue is what carries the identity, so hue is what this holds fixed; value
  * moves first because it costs the least recognition, and saturation gives way
- * only for the hues where value alone cannot get there — a saturated yellow
- * cannot reach 4.5 against white at any value.
+ * only where value alone cannot get there.
+ *
+ * Which hues those are depends on the direction. Darkening always works — every
+ * hue reaches black — so on a light surface value alone suffices, a saturated
+ * yellow included. Brightening does not: a fully saturated blue is 1.39:1
+ * against the dark card at full value and cannot be made lighter without losing
+ * saturation, because its own channels are already at their limit.
  */
 export const readableTone = (hex: string, surface: string): string => {
   const rgb = hexToRgb(hex);

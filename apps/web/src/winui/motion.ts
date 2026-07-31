@@ -17,13 +17,14 @@ export const CONTROL_FASTER_ANIMATION_MS = 83;
 export const CONTROL_FAST_OUT_SLOW_IN_EASING = 'cubic-bezier(0, 0, 0, 1)';
 
 // Expander's own open and close, which are not the control durations above and
-// are not symmetric. The content travels by its own height under a static clip:
-// down from NegativeContentHeight to 0 opening, out to ContentHeight closing,
+// are not symmetric. The content travels by its own height under a static clip,
 // with a different spline in each direction -- the close curve leaves
 // immediately and arrives slowly, where every other motion here does the
-// reverse. The closing content is also hidden at 0.2s, after its 0.167s
-// travel, rather than at the end of it.
-// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L62-L90
+// reverse. Which end of the height it travels from depends on the expand
+// direction, so the durations and splines are what carries over rather than the
+// offsets: the four states in ExpandStates state the same 333 and 167 whichever
+// way the content opens.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander.xaml#L33-L90
 export const EXPAND_ANIMATION_MS = 333;
 export const COLLAPSE_ANIMATION_MS = 167;
 export const COLLAPSE_EASING = 'cubic-bezier(1, 1, 0, 1)';

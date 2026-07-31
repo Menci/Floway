@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { HEX_RE, blendHex, contrastRatio, hexToRgb, hsvToRgb, readableTone, rgbToHex, rgbToHsv } from '../../src/lib/color';
+import { HEX_RE, blendHex, hexToRgb, hsvToRgb, readableTone, rgbToHex, rgbToHsv } from '../../src/lib/color';
+
+// The subject decides by contrast, so the assertions compute it independently
+// rather than borrowing the function under test.
+const contrast = (a: string, b: string) => {
+  const luminance = (hex: string) => {
+    const [r, g, b2] = hexToRgb(hex)!;
+    const channel = (value: number) => {
+      const s = value / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b2);
+  };
+  const [x, y] = [luminance(a) + 0.05, luminance(b) + 0.05];
+  return x > y ? x / y : y / x;
+};
 
 describe('HEX_RE', () => {
   it('accepts 6-digit hex in either case', () => {
@@ -139,8 +154,7 @@ describe('readableTone', () => {
   const chip = (hue: string, card: string) => blendHex(hue, 0.1, card);
   const CARD_LIGHT = '#FFFFFF';
   const CARD_DARK = '#373737';
-  const ratio = (hex: string, surface: string) =>
-    contrastRatio(hexToRgb(hex)!, hexToRgb(surface)!);
+  const ratio = contrast;
   const toned = (hue: string, card: string) => readableTone(hue, chip(hue, card));
 
   it('returns the colour untouched when it already reads', () => {
@@ -165,12 +179,23 @@ describe('readableTone', () => {
     expect(Math.abs(tonedHue - sourceHue)).toBeLessThan(1);
   });
 
-  it('gives up saturation for the hues value alone cannot carry', () => {
-    // A saturated yellow cannot reach 4.5 against a near-white surface at any
-    // value, so the search has to desaturate rather than return the floor miss.
+  it('reaches the floor on a light surface without giving up saturation', () => {
+    // Darkening always works, because every hue reaches black. Even a saturated
+    // yellow, which looks like the hard case, is solved by value alone.
     const result = toned('#FFD740', CARD_LIGHT);
     expect(ratio(result, chip('#FFD740', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
     const [, sourceSaturation] = rgbToHsv(...hexToRgb('#FFD740')!);
+    const [, resultSaturation] = rgbToHsv(...hexToRgb(result)!);
+    expect(resultSaturation).toBeCloseTo(sourceSaturation, 1);
+  });
+
+  it('gives up saturation for the hue brightening cannot carry', () => {
+    // A fully saturated blue is 1.39:1 on the dark card at full value, and its
+    // channels are already at their limit, so the search has to desaturate.
+    const result = toned('#0000FF', CARD_DARK);
+    expect(ratio('#0000FF', chip('#0000FF', CARD_DARK))).toBeLessThan(1.5);
+    expect(ratio(result, chip('#0000FF', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
+    const [, sourceSaturation] = rgbToHsv(...hexToRgb('#0000FF')!);
     const [, resultSaturation] = rgbToHsv(...hexToRgb(result)!);
     expect(resultSaturation).toBeLessThan(sourceSaturation);
   });

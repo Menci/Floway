@@ -89,11 +89,15 @@ export const accordionCss = `
   rotate: 180deg;
 }
 
-@media (prefers-reduced-motion: no-preference) {
+.fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
+  transition-property: rotate;
+  transition-duration: var(--durationNormal);
+  transition-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
   .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
-    transition-property: rotate;
-    transition-duration: var(--durationNormal);
-    transition-timing-function: ease-out;
+    transition-duration: 0.01ms;
   }
 }
 
