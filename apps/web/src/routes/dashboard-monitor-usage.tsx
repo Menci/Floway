@@ -246,6 +246,10 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     view === 'all-by-user'
       ? t('dashboard.usage.charts.byUser')
       : t('dashboard.usage.charts.byKey');
+  const redactLabel =
+    view === 'all-by-user'
+      ? t('dashboard.usage.actions.redactUsers')
+      : t('dashboard.usage.actions.redactKeys');
 
   return (
     <section className="dashboard-page">
@@ -282,16 +286,10 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
                 value={view}
               />
             )}
-            <Tooltip
-              content={
-                view === 'all-by-user'
-                  ? t('dashboard.usage.actions.redactUsers')
-                  : t('dashboard.usage.actions.redactKeys')
-              }
-              relationship="label"
-            >
+            <Tooltip content={redactLabel} relationship="label">
               <Button
                 appearance={redactKeys ? 'primary' : 'subtle'}
+                aria-label={redactLabel}
                 icon={redactKeys ? <EyeOffRegular /> : <EyeRegular />}
                 onClick={() => setRedactKeys(value => !value)}
               />

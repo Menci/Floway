@@ -50,19 +50,22 @@ export function AliasTargetRow({
   const warningFor = (field: string) => ruleWarnings.find(warning => warning.field === field);
   const adaptive = target.rules.reasoning?.adaptive === true ? 'on' : target.rules.reasoning?.adaptive === false ? 'off' : 'auto';
   const adaptiveLabel = t(`dashboard.modelAliases.rules.${adaptive === 'auto' ? 'adaptiveAuto' : adaptive === 'on' ? 'adaptiveOn' : 'adaptiveOff'}`);
+  const toggleLabel = t('dashboard.modelAliases.target.toggle');
 
   return (
     <div className="border-0 border-t border-solid border-fui-stroke1 pt-2" role="group" aria-label={t('dashboard.modelAliases.target.label', { number: index + 1 })}>
       <div className="grid grid-cols-[32px_minmax(180px,1fr)_134px] gap-2 items-center py-2 max-[620px]:grid-cols-[32px_minmax(0,1fr)]">
-        <Button
-          appearance="subtle"
-          aria-expanded={expanded}
-          aria-label={t('dashboard.modelAliases.target.toggle')}
-          disabled={disabled || kind !== 'chat'}
-          icon={<ChevronDownRegular className={expanded ? 'rotate-180' : ''} fontSize={20} />}
-          onClick={() => setExpanded(value => !value)}
-          size="small"
-        />
+        <Tooltip content={toggleLabel} relationship="label">
+          <Button
+            appearance="subtle"
+            aria-expanded={expanded}
+            aria-label={toggleLabel}
+            disabled={disabled || kind !== 'chat'}
+            icon={<ChevronDownRegular className={expanded ? 'rotate-180' : ''} fontSize={20} />}
+            onClick={() => setExpanded(value => !value)}
+            size="small"
+          />
+        </Tooltip>
         <Combobox
           aria-label={t('dashboard.modelAliases.target.modelId')}
           className="font-mono"

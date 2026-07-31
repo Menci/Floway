@@ -23,11 +23,12 @@ import { fluentComponents } from '../../fluent';
 import { HttpMethodBadge, HttpStatusBadge } from '../ui/http-badge';
 import { prismTokenStyles } from '../ui/prism-token-styles';
 import { ScrollArea } from '../ui/scroll-area';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import type { DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import 'prismjs/components/prism-json';
 
-const { Button, MessageBar, MessageBarBody, Tab, TabList, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+const { MessageBar, MessageBarBody, Tab, TabList, Text, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   sectionHeader: {
@@ -80,15 +81,11 @@ function CopyButton({ text }: { text: string }) {
     ? t('dashboard.apiKeys.copy.failed')
     : copiedTag !== null ? t('dashboard.requests.copied') : t('dashboard.requests.copy');
   return (
-    <Tooltip content={label} relationship="label">
-      <Button
-        appearance="subtle"
-        aria-label={label}
-        icon={copyFailedTag !== null ? <DismissRegular /> : copiedTag !== null ? <CheckmarkRegular /> : <CopyRegular />}
-        onClick={() => copy(text)}
-        size="small"
-      />
-    </Tooltip>
+    <TooltipIconButton
+      icon={copyFailedTag !== null ? <DismissRegular /> : copiedTag !== null ? <CheckmarkRegular /> : <CopyRegular />}
+      label={label}
+      onClick={() => copy(text)}
+    />
   );
 }
 
@@ -116,19 +113,16 @@ function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
             <td className={s.headerValue}>
               {sensitive && !visible ? redactHeaderValue(value) : value}
               {sensitive && (
-                <Tooltip content={visible ? t('dashboard.requests.hideValue') : t('dashboard.requests.revealValue')} relationship="label">
-                  <Button
-                    appearance="subtle"
-                    icon={visible ? <EyeOffRegular /> : <EyeRegular />}
-                    onClick={() => setRevealed(current => {
-                      const next = new Set(current);
-                      if (next.has(index)) next.delete(index); else next.add(index);
-                      return next;
-                    })}
-                    size="small"
-                    className="!ml-1"
-                  />
-                </Tooltip>
+                <TooltipIconButton
+                  className="!ml-1"
+                  icon={visible ? <EyeOffRegular /> : <EyeRegular />}
+                  label={visible ? t('dashboard.requests.hideValue') : t('dashboard.requests.revealValue')}
+                  onClick={() => setRevealed(current => {
+                    const next = new Set(current);
+                    if (next.has(index)) next.delete(index); else next.add(index);
+                    return next;
+                  })}
+                />
               )}
             </td>
           </tr>

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 
-const { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle } = fluentComponents;
+const { Button, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Tooltip } = fluentComponents;
 
 // The surface a failure is reported on. It stays until the operator closes it,
 // because what it carries is a server's own words: `callApi` never throws, so
@@ -43,6 +43,7 @@ export function OutcomeMessageBar({
   title?: string;
 }) {
   const { t } = useTranslation();
+  const dismissLabel = t('common.dismiss');
 
   return (
     <MessageBar className={className} icon={icon} intent={intent}>
@@ -51,12 +52,14 @@ export function OutcomeMessageBar({
         {children}
       </MessageBarBody>
       {(action ?? onDismiss) && <MessageBarActions
-        containerAction={onDismiss && <Button
-          appearance="transparent"
-          aria-label={t('common.dismiss')}
-          icon={<DismissRegular />}
-          onClick={onDismiss}
-        />}
+        containerAction={onDismiss && <Tooltip content={dismissLabel} relationship="label">
+          <Button
+            appearance="transparent"
+            aria-label={dismissLabel}
+            icon={<DismissRegular />}
+            onClick={onDismiss}
+          />
+        </Tooltip>}
       >{action}</MessageBarActions>}
     </MessageBar>
   );

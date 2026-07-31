@@ -243,6 +243,7 @@ export function PlaygroundComposer({
   stopLabel,
 }: PlaygroundComposerProps) {
   const s = useStyles();
+  const imageActionLabel = imageEnabled ? imageLabel : imageUnsupportedLabel;
 
   return (
     <div className="grid gap-2">
@@ -297,10 +298,10 @@ export function PlaygroundComposer({
             />
           </label>
           <div className={s.controlsRight}>
-            <Tooltip content={imageEnabled ? imageLabel : imageUnsupportedLabel} relationship="label">
+            <Tooltip content={imageActionLabel} relationship="label">
               <button
                 type="button"
-                aria-label={imageLabel}
+                aria-label={imageActionLabel}
                 className={`shrink-0 rounded-full grid place-items-center text-fui-base600 ${s.imageButton}`}
                 disabled={!imageEnabled || sending}
                 onClick={onToggleImage}
