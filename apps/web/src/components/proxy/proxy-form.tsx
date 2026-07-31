@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, isValidPort, isValidUuid, orUndef, proxyUrlPlaceholder, type DialTimeoutResult } from './proxy-config';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { SecretInput } from '../ui/secret-input';
 import type {
   HttpProxyConfig,
   ProxyConfig,
@@ -135,14 +136,13 @@ export function ProxyForm({
             />
           </Field>
           <Field label={t('dashboard.proxy.form.password')}>
-            <Input
+            <SecretInput
               onChange={(_, d) =>
                 setConfig(prev => ({
                   ...prev,
                   password: orUndef(d.value),
                 } as HttpProxyConfig))
               }
-              type="password"
               value={(config as HttpProxyConfig).password ?? ''}
             />
           </Field>
@@ -163,14 +163,13 @@ export function ProxyForm({
             />
           </Field>
           <Field label={t('dashboard.proxy.form.password')}>
-            <Input
+            <SecretInput
               onChange={(_, d) =>
                 setConfig(prev => ({
                   ...prev,
                   password: orUndef(d.value),
                 } as Socks5ProxyConfig))
               }
-              type="password"
               value={(config as Socks5ProxyConfig).password ?? ''}
             />
           </Field>
@@ -206,14 +205,13 @@ export function ProxyForm({
                 : undefined
             }
           >
-            <Input
+            <SecretInput
               onChange={(_, d) =>
                 setConfig(prev => ({
                   ...prev,
                   password: d.value,
                 } as ShadowsocksProxyConfig))
               }
-              type="password"
               value={(config as ShadowsocksProxyConfig).password}
             />
           </Field>
@@ -251,14 +249,13 @@ export function ProxyForm({
                 : undefined
             }
           >
-            <Input
+            <SecretInput
               onChange={(_, d) =>
                 setConfig(prev => ({
                   ...prev,
                   passwordBase64: d.value,
                 } as Shadowsocks2022ProxyConfig))
               }
-              type="password"
               value={
                 (config as Shadowsocks2022ProxyConfig).passwordBase64
               }
@@ -278,14 +275,13 @@ export function ProxyForm({
                 : undefined
             }
           >
-            <Input
+            <SecretInput
               onChange={(_, d) =>
                 setConfig(prev => ({
                   ...prev,
                   password: d.value,
                 } as TrojanProxyConfig))
               }
-              type="password"
               value={(config as TrojanProxyConfig).password}
             />
           </Field>
