@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useFetcher } from 'react-router';
@@ -9,14 +9,14 @@ import type { Route } from './+types/dashboard-settings';
 import { changeOwnPassword } from '../api/client';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Input } from '../components/ui/fluent-form-controls';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
+import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
 
 const {
   Button,
   Field,
-  MessageBar,
-  MessageBarBody,
   Spinner,
   Text,
 } = fluentComponents;
@@ -74,6 +74,8 @@ export function meta() {
 export default function DashboardSettings() {
   const { t } = useTranslation();
   const fetcher = useFetcher<SettingsActionData>();
+  const toasts = useOutcomeToasts();
+  const [error, setError] = useState<string | null>(null);
   const saving = fetcher.state !== 'idle';
   const {
     control,
@@ -89,9 +91,19 @@ export default function DashboardSettings() {
     },
   });
 
+  // The action's result is the only record of what happened, and it survives
+  // the render that consumed it; reading it into state here is what lets the
+  // failure be dismissed and the success be a toast that leaves on its own.
   useEffect(() => {
-    if (fetcher.data?.ok) reset();
-  }, [fetcher.data, reset]);
+    if (!fetcher.data) return;
+    if (!fetcher.data.ok) {
+      setError(t(fetcher.data.error));
+      return;
+    }
+    setError(null);
+    reset();
+    toasts.succeed(t('dashboard.settings.passwordUpdated'));
+  }, [fetcher.data, reset, t, toasts]);
 
   const submit = (values: PasswordFormValues) => {
     void fetcher.submit(values, { method: 'post' });
@@ -156,15 +168,8 @@ export default function DashboardSettings() {
             {t('dashboard.settings.otherDevices')}
           </Text>
 
-          {fetcher.data?.ok === false && (
-            <MessageBar intent="error">
-              <MessageBarBody>{t(fetcher.data.error)}</MessageBarBody>
-            </MessageBar>
-          )}
-          {fetcher.data?.ok === true && (
-            <MessageBar intent="success">
-              <MessageBarBody>{t('dashboard.settings.passwordUpdated')}</MessageBarBody>
-            </MessageBar>
+          {error && (
+            <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>
           )}
 
           <div className="flex justify-end pt-1">
