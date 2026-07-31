@@ -5,10 +5,10 @@ import { useEffect } from 'react';
 // while hidden and the return to the tab pays for it with one foreground
 // refresh: foreground, because the operator is looking now and a failure they
 // caused by coming back is one they should see.
-export function usePollWhileVisible(
+export const usePollWhileVisible = (
   refresh: (options: { background: boolean }) => Promise<void>,
   intervalMs: number,
-) {
+) => {
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void refresh({ background: false });
@@ -22,4 +22,4 @@ export function usePollWhileVisible(
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [intervalMs, refresh]);
-}
+};

@@ -15,7 +15,7 @@ export interface DialogInvocation<Value> {
 // the monotonic key, not on the unmount: every `open` mints a new one, so the
 // caller's `key` changes and React replaces the subtree whether or not the
 // previous instance was still mounted.
-export function useDialogInvocation<Value>() {
+export const useDialogInvocation = <Value>() => {
   const nextKey = useRef(0);
   const [invocation, setInvocation] = useState<DialogInvocation<Value> | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -27,4 +27,4 @@ export function useDialogInvocation<Value>() {
   // Memoised so a caller can depend on the invocation itself rather than on
   // its parts: the identity then changes exactly when the dialog does.
   return useMemo(() => ({ close, invocation, isOpen, open }), [close, invocation, isOpen, open]);
-}
+};

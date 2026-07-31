@@ -16,7 +16,7 @@ export interface ClipboardCopy {
   copy: (text: string, tag?: string) => void;
 }
 
-export function useCopyToClipboard(): ClipboardCopy {
+export const useCopyToClipboard = (): ClipboardCopy => {
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [copyFailedTag, setCopyFailedTag] = useState<string | null>(null);
 
@@ -34,4 +34,4 @@ export function useCopyToClipboard(): ClipboardCopy {
   }, []);
 
   return { copiedTag, copy, copyFailedTag };
-}
+};

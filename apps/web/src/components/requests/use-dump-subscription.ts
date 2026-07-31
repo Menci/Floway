@@ -7,7 +7,7 @@ import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 const PAGE_LIMIT = 100;
 
-export function useDumpSubscription(keyId: string | null, initialRecords: DumpMetadata[]) {
+export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMetadata[]) => {
   const [records, setRecords] = useState(initialRecords);
   const [hasOlder, setHasOlder] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,4 +96,4 @@ export function useDumpSubscription(keyId: string | null, initialRecords: DumpMe
   const dismissError = useCallback(() => setError(null), []);
 
   return { records, hasOlder, error, dismissError, loadOlder };
-}
+};

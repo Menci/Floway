@@ -43,12 +43,12 @@ export const agentSetupCommand = (origin: string, path: string, platform: 'unix'
   ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash`
   : `$SetupEndpoint = '${origin.replaceAll("'", "''")}'; irm "$SetupEndpoint${path}" | iex`;
 
-export function useAgentSetup(
+export const useAgentSetup = (
   apiKeyId: string | null,
   initialLease: AgentSetupLease | null = null,
   initialCreateError: string | null = null,
   initialApiKeyId: string | null = null,
-) {
+) => {
   const initialResource = initialApiKeyId === apiKeyId
     ? { apiKeyId: initialApiKeyId, error: initialCreateError, lease: initialLease }
     : null;
@@ -354,4 +354,4 @@ export function useAgentSetup(
     updateDraft,
     retryCreate,
   }), [canCopy, createError, dismissError, draft, error, lease, noSelectableKey, retryCreate, syncing, terminated, updateDraft]);
-}
+};

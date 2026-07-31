@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // `reload` receives the signal and threads it into its calls
 // (`$get(query, { init: { signal } })`); after awaiting it must return without
 // writing state if the signal aborted. Unmounting aborts too.
-export function useRefresh(reload: (signal: AbortSignal) => Promise<void>) {
+export const useRefresh = (reload: (signal: AbortSignal) => Promise<void>) => {
   const [refreshing, setRefreshing] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -36,4 +36,4 @@ export function useRefresh(reload: (signal: AbortSignal) => Promise<void>) {
   }, [reload]);
 
   return { refresh, refreshing };
-}
+};
