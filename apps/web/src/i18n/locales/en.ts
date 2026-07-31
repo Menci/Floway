@@ -681,7 +681,7 @@ const en = {
           cacheFetchedNow: 'Fetched just now',
           cacheFetched: 'Fetched {{time}}',
           cacheFailed: 'Last fetch failed',
-          cacheErrorDetail: '{{time}} — {{message}}',
+          cacheErrorDetail: '{{time}} - {{message}}',
           listingFailed: 'Could not fetch the model list from the upstream.',
           listingFailedWithDetail:
               'Could not fetch the model list from the upstream: {{message}}',
@@ -802,7 +802,7 @@ const en = {
           activeLimit: 'active limit',
           credits: 'credits: {{balance}}',
           noCredits: 'no credits',
-          noSnapshot: 'No quota snapshots yet — Codex calls populate them.',
+          noSnapshot: 'No quota snapshots yet - Codex calls populate them.',
           observed: 'Observed {{time}}',
           rateLimitedUntil: 'Rate-limited until {{time}}',
           resetsAt: 'Resets at {{time}}',
@@ -813,9 +813,9 @@ const en = {
             active: 'Active',
             heavy: 'Heavy usage ({{percent}}%)',
             rateLimited: 'Rate-limited until {{time}}',
-            'account-id-mismatch': 'Configured account is missing — re-import to recover',
-            'session-terminated': 'Session terminated — re-import to recover',
-            'refresh-failed': 'Refresh failed — re-import to recover',
+            'account-id-mismatch': 'Configured account is missing - re-import to recover',
+            'session-terminated': 'Session terminated - re-import to recover',
+            'refresh-failed': 'Refresh failed - re-import to recover',
           },
         },
         claudeCode: {
@@ -825,7 +825,7 @@ const en = {
           noEmailScopeHint: 'The OAuth token does not carry the user:profile scope.',
           uuidMismatch: 'Configured account {{accountUuid}} is not present in the stored state. Re-import the credential to re-link the account.',
           windows: 'Rate-limit windows',
-          noSnapshot: 'No quota snapshot yet — refresh, or wait for the next Claude Code call to populate headers.',
+          noSnapshot: 'No quota snapshot yet - refresh, or wait for the next Claude Code call to populate headers.',
           refreshQuota: 'Refresh quota',
           probing: 'Probing…',
           window: {
@@ -848,10 +848,10 @@ const en = {
           status: {
             active: 'Active',
             heavy: 'Heavy usage ({{percent}}%)',
-            exhausted: 'Plan window exhausted — wait for reset',
-            'session-terminated': 'Session terminated — re-import to recover',
-            'refresh-failed': 'Refresh failed — re-import to recover',
-            'uuid-mismatch': 'Configured account missing from state — re-import to recover',
+            exhausted: 'Plan window exhausted - wait for reset',
+            'session-terminated': 'Session terminated - re-import to recover',
+            'refresh-failed': 'Refresh failed - re-import to recover',
+            'uuid-mismatch': 'Configured account missing from state - re-import to recover',
           },
         },
         oauth: {
@@ -1092,7 +1092,7 @@ const en = {
         testedProvider: 'Provider: {{provider}}',
         testedQuery: 'Query: {{query}}',
         testSuccess:
-            'Connection test successful — {{count}} results returned.',
+            'Connection test successful - {{count}} results returned.',
         testFailed: 'Test failed: {{message}}',
         pageAge: '{{age}} ago',
       },

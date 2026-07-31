@@ -171,7 +171,7 @@ function ButtonSection() {
         <Button appearance={appearance} disabledFocusable>Save upstream</Button>
       </StateLabel>
     </Row>)}
-    <Row label="toggle button — checked and unchecked">
+    <Row label="toggle button - checked and unchecked">
       <StateLabel state="unchecked"><ToggleButton checked={false}>Streaming</ToggleButton></StateLabel>
       <StateLabel state="checked"><ToggleButton checked>Streaming</ToggleButton></StateLabel>
       <StateLabel state="checked, primary"><ToggleButton appearance="primary" checked>Streaming</ToggleButton></StateLabel>
@@ -189,13 +189,13 @@ function ButtonSection() {
 function TextInputSection() {
   return <Section id="text-input" title="Text input">
     <Hint>Hover, click into and tab through each field to reach hover, focus-visible and the focused underline.</Hint>
-    <Row label="input — appearances">
+    <Row label="input - appearances">
       <StateLabel state="outline (rest)"><Input defaultValue="https://api.githubcopilot.com" /></StateLabel>
       <StateLabel state="underline"><Input appearance="underline" defaultValue="gpt-5-codex" /></StateLabel>
       <StateLabel state="filled-darker"><Input appearance="filled-darker" defaultValue="gpt-5-codex" /></StateLabel>
       <StateLabel state="filled-lighter"><Input appearance="filled-lighter" defaultValue="gpt-5-codex" /></StateLabel>
     </Row>
-    <Row label="input — states">
+    <Row label="input - states">
       <StateLabel state="placeholder"><Input placeholder="Upstream display name" /></StateLabel>
       <StateLabel state="disabled"><Input defaultValue="gpt-5-codex" disabled /></StateLabel>
       <StateLabel state="read-only"><Input defaultValue="gpt-5-codex" readOnly /></StateLabel>
@@ -206,7 +206,7 @@ function TextInputSection() {
       </StateLabel>
       <StateLabel state="with contentBefore"><Input contentBefore={<KeyRegular />} defaultValue="sk-floway-…" /></StateLabel>
     </Row>
-    <Row label="input — sizes">
+    <Row label="input - sizes">
       <StateLabel state="small"><Input defaultValue="1024" size="small" /></StateLabel>
       <StateLabel state="medium"><Input defaultValue="1024" size="medium" /></StateLabel>
       <StateLabel state="large"><Input defaultValue="1024" size="large" /></StateLabel>
@@ -227,7 +227,7 @@ function TextInputSection() {
 function ChoiceSection() {
   return <Section id="choice" title="Checkbox and radio">
     <Hint>Hover, press and tab through the controls to reach hover, pressed and focus-visible.</Hint>
-    <Row label="checkbox — circular and square">
+    <Row label="checkbox - circular and square">
       <Checkbox defaultChecked={false} label="Unchecked" />
       <Checkbox defaultChecked label="Checked" />
       <Checkbox checked="mixed" label="Mixed" />
@@ -237,24 +237,24 @@ function ChoiceSection() {
       <Checkbox label="Circular" shape="circular" />
       <Checkbox defaultChecked label="Circular, checked" shape="circular" />
     </Row>
-    <Row label="checkbox — sizes and label position">
+    <Row label="checkbox - sizes and label position">
       <Checkbox defaultChecked label="Medium" size="medium" />
       <Checkbox defaultChecked label="Large" size="large" />
       <Checkbox defaultChecked label="Label before" labelPosition="before" />
     </Row>
-    <Row label="checkbox — invalid">
+    <Row label="checkbox - invalid">
       <Field validationMessage="Accept the key rotation policy to continue." validationState="error">
         <Checkbox label="Rotate this API key every 90 days" />
       </Field>
     </Row>
-    <Row label="radio group — vertical">
+    <Row label="radio group - vertical">
       <RadioGroup defaultValue="copilot">
         <Radio label="GitHub Copilot" value="copilot" />
         <Radio label="Azure AI Foundry" value="azure" />
         <Radio disabled label="Ollama (disabled)" value="ollama" />
       </RadioGroup>
     </Row>
-    <Row label="radio group — horizontal, and disabled while checked">
+    <Row label="radio group - horizontal, and disabled while checked">
       <RadioGroup defaultValue="stream" layout="horizontal">
         <Radio label="Stream" value="stream" />
         <Radio label="Buffer" value="buffer" />
@@ -263,7 +263,7 @@ function ChoiceSection() {
         <Radio checked disabled label="Disabled, checked" value="checked" />
       </RadioGroup>
     </Row>
-    <Row label="radio group — invalid">
+    <Row label="radio group - invalid">
       <Field validationMessage="Pick the protocol this upstream speaks." validationState="error">
         <RadioGroup layout="horizontal">
           <Radio label="Chat Completions" value="chat" />
@@ -323,7 +323,7 @@ function SelectSection() {
         </Field>
       </StateLabel>
     </Row>
-    <Row label="dropdown — appearances and multiselect">
+    <Row label="dropdown - appearances and multiselect">
       <Dropdown appearance="underline" placeholder="underline">
         <Option text="gpt-5-codex" value="gpt-5-codex">gpt-5-codex</Option>
       </Dropdown>
@@ -443,7 +443,7 @@ function CardSection() {
       <Card className="w-[200px]" size="large"><Text>Large</Text></Card>
       <Card className="w-[260px]" orientation="horizontal">
         <ServerRegular fontSize={24} />
-        <Text>Horizontal — 4 upstreams online</Text>
+        <Text>Horizontal - 4 upstreams online</Text>
       </Card>
     </Row>
   </Section>;
@@ -660,7 +660,7 @@ function DrawerSection() {
 
   return <Section id="drawer" title="Drawer">
     <Hint>The overlay drawer opens over a scrim; the inline drawer below shares the same surface without one.</Hint>
-    <Row label="overlay drawer — both sides">
+    <Row label="overlay drawer - both sides">
       <Button onClick={() => setOpen(true)}>Open overlay drawer</Button>
       <OverlayDrawer open={open} position="end" onOpenChange={(_, data) => setOpen(data.open)}>
         <DrawerHeader>
@@ -673,7 +673,7 @@ function DrawerSection() {
         </DrawerBody>
       </OverlayDrawer>
     </Row>
-    <Row label="inline drawer — open and closed">
+    <Row label="inline drawer - open and closed">
       <div className="relative flex h-[180px] w-full overflow-hidden rounded-lg border border-solid" style={{ borderColor: 'var(--colorNeutralStroke2)' }}>
         <InlineDrawer open position="start" separator>
           <DrawerHeader><DrawerHeaderTitle>Filters</DrawerHeaderTitle></DrawerHeader>
@@ -718,7 +718,7 @@ function NavSection() {
 function TabsSection() {
   return <Section id="tabs" title="Tabs">
     <Hint>Hover and tab across each list; the selected tab carries the WinUI indicator, and one tab is disabled.</Hint>
-    <Row label="horizontal — sizes">
+    <Row label="horizontal - sizes">
       <TabList defaultSelectedValue="request" size="small">
         <Tab value="request">Request</Tab>
         <Tab value="response">Response</Tab>
@@ -827,7 +827,7 @@ function MessageBarSection() {
 function ProgressSection() {
   return <Section id="progress" title="Progress">
     <Hint>The indeterminate bar and the spinners animate on their own; no state here needs the pointer.</Hint>
-    <Row label="progress bar — determinate values">
+    <Row label="progress bar - determinate values">
       <div className="grid w-[240px] gap-3">
         <ProgressBar value={0} />
         <ProgressBar value={0.35} />
@@ -836,7 +836,7 @@ function ProgressSection() {
       </div>
       <Text size={200} className="text-fui-fg2">0 %, 35 %, 100 %, indeterminate</Text>
     </Row>
-    <Row label="progress bar — thickness and intent">
+    <Row label="progress bar - thickness and intent">
       <div className="grid w-[240px] gap-3">
         <ProgressBar thickness="medium" value={0.6} />
         <ProgressBar thickness="large" value={0.6} />
@@ -845,7 +845,7 @@ function ProgressSection() {
         <ProgressBar color="error" value={0.6} />
       </div>
     </Row>
-    <Row label="spinner — sizes">
+    <Row label="spinner - sizes">
       <Spinner size="tiny" />
       <Spinner size="extra-small" />
       <Spinner size="small" />
@@ -853,7 +853,7 @@ function ProgressSection() {
       <Spinner size="large" />
       <Spinner size="huge" />
     </Row>
-    <Row label="spinner — appearance and label">
+    <Row label="spinner - appearance and label">
       <Spinner label="Refreshing the model catalog…" />
       <Spinner labelPosition="after" label="Saving" />
       <div className="rounded-md p-3" style={{ background: 'var(--colorNeutralBackgroundInverted)' }}>
@@ -983,10 +983,10 @@ const badgeAppearances = ['filled', 'ghost', 'outline', 'tint'] as const;
 function BadgeTagSection() {
   return <Section id="badge-tag" title="Badge and tag">
     <Hint>Badges are static; hover, press and tab across the interaction tags for their own states.</Hint>
-    {badgeAppearances.map(appearance => <Row key={appearance} label={`badge — ${appearance}`}>
+    {badgeAppearances.map(appearance => <Row key={appearance} label={`badge - ${appearance}`}>
       {badgeColors.map(color => <Badge key={color} appearance={appearance} color={color}>{color}</Badge>)}
     </Row>)}
-    <Row label="badge — sizes and shapes">
+    <Row label="badge - sizes and shapes">
       <Badge size="tiny">tiny</Badge>
       <Badge size="small">small</Badge>
       <Badge size="medium">medium</Badge>
@@ -997,7 +997,7 @@ function BadgeTagSection() {
       <CounterBadge count={0} showZero />
       <CounterBadge dot />
     </Row>
-    <Row label="tag — rest, dismissible and disabled">
+    <Row label="tag - rest, dismissible and disabled">
       <Tag>copilot</Tag>
       <Tag appearance="brand">responses</Tag>
       <Tag appearance="outline">embeddings</Tag>
@@ -1007,7 +1007,7 @@ function BadgeTagSection() {
       <Tag shape="circular" icon={<ServerRegular />}>Copilot (work)</Tag>
       <Tag size="extra-small">small</Tag>
     </Row>
-    <Row label="interaction tag — selectable primary with a secondary dismiss">
+    <Row label="interaction tag - selectable primary with a secondary dismiss">
       <InteractionTag>
         <InteractionTagPrimary hasSecondaryAction>gpt-5-codex</InteractionTagPrimary>
         <InteractionTagSecondary aria-label="Remove gpt-5-codex" />
@@ -1034,7 +1034,7 @@ function TextSection() {
     <Hint>Hover and tab onto the links for their hover, pressed and focus-visible states.</Hint>
     <Row label="ramp">
       <div className="grid gap-1">
-        {textSizes.map(size => <Text key={size} size={size}>{size} — Requests routed through Floway</Text>)}
+        {textSizes.map(size => <Text key={size} size={size}>{size} - Requests routed through Floway</Text>)}
       </div>
     </Row>
     <Row label="weights, italic, strikethrough, underline">
@@ -1107,14 +1107,14 @@ function ColorPickerSection() {
 
   return <Section id="color-picker" title="Color picker">
     <Hint>Drag the area and the sliders, and tab onto the swatches, to reach their hover, pressed and focus-visible states.</Hint>
-    <Row label="picker — area, hue slider and alpha slider">
+    <Row label="picker - area, hue slider and alpha slider">
       <ColorPicker color={{ h: 206, s: 0.87, v: 0.74 }} onColorChange={() => {}}>
         <ColorArea inputX={{ 'aria-label': 'Saturation' }} inputY={{ 'aria-label': 'Brightness' }} />
         <ColorSlider aria-label="Hue" />
         <AlphaSlider aria-label="Alpha" />
       </ColorPicker>
     </Row>
-    <Row label="swatch picker — unselected, selected, disabled">
+    <Row label="swatch picker - unselected, selected, disabled">
       <SwatchPicker selectedValue={color} onSelectionChange={(_, data) => setColor(data.selectedValue)}>
         <ColorSwatch color="#0F6CBD" value="#0F6CBD" aria-label="Floway blue" />
         <ColorSwatch color="#107C10" value="#107C10" aria-label="Success green" />
@@ -1130,7 +1130,7 @@ function ColorPickerSection() {
 export default function DashboardWinuiGallery() {
   return <section className="grid gap-7 min-w-0">
     <DashboardPageHeader
-      description="Every control the WinUI override layer restyles, with each appearance variant and the states that props can force. This page follows the operating system colour scheme like the rest of Floway does, so switch light and dark in your OS or browser appearance settings to review the other theme — there is no in-app toggle to build against."
+      description="Every control the WinUI override layer restyles, with each appearance variant and the states that props can force. This page follows the operating system colour scheme like the rest of Floway does, so switch light and dark in your OS or browser appearance settings to review the other theme - there is no in-app toggle to build against."
       title="WinUI gallery"
     />
     <ButtonSection />
