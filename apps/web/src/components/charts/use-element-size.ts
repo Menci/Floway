@@ -1,6 +1,11 @@
 import { useLayoutEffect, useState } from 'react';
 
-export const useElementSize = (element: HTMLElement | null) => {
+export interface ElementSize {
+  width: number;
+  height: number;
+}
+
+export const useElementSize = (element: HTMLElement | null): ElementSize => {
   const [size, setSize] = useState({ width: 0, height: 320 });
   useLayoutEffect(() => {
     if (!element) return;

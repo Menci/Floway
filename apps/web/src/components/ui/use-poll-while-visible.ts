@@ -8,7 +8,7 @@ import { useEffect } from 'react';
 export const usePollWhileVisible = (
   refresh: (options: { background: boolean }) => Promise<void>,
   intervalMs: number,
-) => {
+): void => {
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void refresh({ background: false });

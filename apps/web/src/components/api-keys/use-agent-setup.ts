@@ -39,16 +39,30 @@ const configurationsEqual = (left: unknown, right: unknown): boolean => {
     && keys.every(key => configurationsEqual(leftRecord[key], rightRecord[key]));
 };
 
-export const agentSetupCommand = (origin: string, path: string, platform: 'unix' | 'windows') => platform === 'unix'
+export const agentSetupCommand = (origin: string, path: string, platform: 'unix' | 'windows'): string => platform === 'unix'
   ? `export SETUP_ENDPOINT='${origin.replaceAll("'", "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${path}" | bash`
   : `$SetupEndpoint = '${origin.replaceAll("'", "''")}'; irm "$SetupEndpoint${path}" | iex`;
+
+export interface AgentSetupSession {
+  lease: AgentSetupLease | null;
+  draft: AgentSetupConfiguration | null;
+  error: string | null;
+  createError: string | null;
+  dismissError: () => void;
+  terminated: boolean;
+  noSelectableKey: boolean;
+  syncing: boolean;
+  canCopy: boolean;
+  updateDraft: (update: (current: AgentSetupConfiguration) => AgentSetupConfiguration) => void;
+  retryCreate: () => void;
+}
 
 export const useAgentSetup = (
   apiKeyId: string | null,
   initialLease: AgentSetupLease | null = null,
   initialCreateError: string | null = null,
   initialApiKeyId: string | null = null,
-) => {
+): AgentSetupSession => {
   const initialResource = initialApiKeyId === apiKeyId
     ? { apiKeyId: initialApiKeyId, error: initialCreateError, lease: initialLease }
     : null;

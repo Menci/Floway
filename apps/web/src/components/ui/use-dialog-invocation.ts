@@ -15,7 +15,14 @@ export interface DialogInvocation<Value> {
 // the monotonic key, not on the unmount: every `open` mints a new one, so the
 // caller's `key` changes and React replaces the subtree whether or not the
 // previous instance was still mounted.
-export const useDialogInvocation = <Value>() => {
+export interface DialogControl<Value> {
+  close: () => void;
+  invocation: DialogInvocation<Value> | null;
+  isOpen: boolean;
+  open: (value: Value) => void;
+}
+
+export const useDialogInvocation = <Value>(): DialogControl<Value> => {
   const nextKey = useRef(0);
   const [invocation, setInvocation] = useState<DialogInvocation<Value> | null>(null);
   const [isOpen, setIsOpen] = useState(false);
