@@ -17,6 +17,7 @@ import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { DialogShell } from '../ui/dialog-shell';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { SectionHeader } from '../ui/section-header';
@@ -105,7 +106,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     title={<DialogTitle>{record ? t('dashboard.modelAliases.dialog.editTitle', { name: record.name }) : t('dashboard.modelAliases.dialog.createTitle')}</DialogTitle>}
     actions={<DialogActions><Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button><Button appearance="primary" disabled={saving} type="submit">{saving ? t('dashboard.modelAliases.actions.saving') : t('dashboard.modelAliases.actions.save')}</Button></DialogActions>}
   >
-    <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
+    <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
       <Controller control={control} name="name" render={({ field }) => <Field required label={t('dashboard.modelAliases.form.name')} validationMessage={errors.name?.message ? t(errors.name.message) : undefined} validationState={errors.name ? 'error' : undefined}><Input {...field} className="font-mono" disabled={saving} placeholder={t('dashboard.modelAliases.form.namePlaceholder')} /></Field>} />
       <Controller control={control} name="displayName" render={({ field }) => <Field label={t('dashboard.modelAliases.form.displayName')}><Input {...field} disabled={saving} placeholder={values.name || t('dashboard.modelAliases.form.displayPlaceholder')} /></Field>} />
       <Controller control={control} name="kind" render={({ field }) => <Field label={t('dashboard.modelAliases.form.kind')}><Dropdown disabled={saving} selectedOptions={[field.value]} value={t(`dashboard.modelAliases.kind.${field.value}`)} onOptionSelect={(_, data) => data.optionValue !== undefined && changeKind(data.optionValue as ModelKind)}>{MODEL_KINDS.map(modelKind => <Option key={modelKind} value={modelKind}>{t(`dashboard.modelAliases.kind.${modelKind}`)}</Option>)}</Dropdown></Field>} />

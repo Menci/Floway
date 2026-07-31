@@ -15,6 +15,7 @@ import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
+import { TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';
 import { OpenLinkLabel } from '../components/ui/open-link-label';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
@@ -333,7 +334,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
         toggledOn={draft.passthroughOpenAiSearch.enabled}
       >
         <div className="grid gap-3">
-          <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
+          <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
             <Field label={t('dashboard.searchConfig.passthrough.upstream')}>
               <Dropdown
                 disabled={!draft.passthroughOpenAiSearch.enabled}

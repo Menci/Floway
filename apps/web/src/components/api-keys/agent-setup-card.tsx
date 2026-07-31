@@ -14,6 +14,7 @@ import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Combobox, Dropdown } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
+import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 
@@ -25,8 +26,8 @@ const NONE = '__floway_none__';
 // cannot collide with an opaque model id.
 const MODEL_DEFAULT = '\u0000default';
 const NO_MODEL_MATCHES = '\u0000no-matches';
-const FIELD_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(2,minmax(0,1fr))] max-[720px]:grid-cols-[minmax(0,1fr)]';
-const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[720px]:grid-cols-[minmax(0,1fr)]';
+const FIELD_GRID_CLASS = `${TWO_COLUMN_FORM_CLASS} gap-3`;
+const CLAUDE_MODEL_GRID_CLASS = 'grid gap-3 grid-cols-[repeat(5,minmax(0,1fr))] max-[1680px]:grid-cols-[repeat(3,minmax(0,1fr))] max-[1180px]:grid-cols-[repeat(2,minmax(0,1fr))] max-[680px]:grid-cols-[minmax(0,1fr)]';
 // cleanupPeriodDays is a numeric top-level Claude Code setting.
 // https://code.claude.com/docs/en/settings#available-settings
 const claudeCleanupPeriods = [180, 365, 99999] as const satisfies readonly NonNullable<AgentSetupConfiguration['claudeCode']['cleanupPeriodDays']>[];
@@ -91,7 +92,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
       </TabList>
     } />
 
-    <div className="grid gap-5 min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[720px]:grid-cols-1">
+    <div className="grid gap-5 min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[680px]:grid-cols-1">
       <nav className="grid content-start">
         <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value === 'codex' ? 'codex' : 'claude')} selectedValue={agent} vertical>
           <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />

@@ -28,6 +28,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
+import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
@@ -159,7 +160,7 @@ function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
         <Text id={`${idPrefix}-label`}>
           {t('dashboard.upstreamEditor.fields.pathOverrides')}
         </Text>
-        <div className="grid grid-cols-2 gap-3">
+        <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
           {pathOverrideKeys.map(path => (
             <Controller
               control={control}

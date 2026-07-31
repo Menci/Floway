@@ -6,6 +6,7 @@ import { computeModelWarning, computeRuleWarnings, findCatalogModel } from './wa
 import type { AliasTarget, ControlPlaneModel, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
+import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
@@ -83,7 +84,7 @@ export function AliasTargetRow({
         </div>
       </div>
       {expanded && kind === 'chat' && (
-        <div className="grid grid-cols-2 gap-3 ml-10 py-3 max-[620px]:grid-cols-1">
+        <div className={`${TWO_COLUMN_FORM_CLASS} gap-3 ml-10 py-3`}>
           <RuleCombobox label={t('dashboard.modelAliases.rules.effort')} value={target.rules.reasoning?.effort ?? ''} items={suggestions.effort} disabled={disabled} warning={warningFor('reasoning.effort')} onChange={value => patchReasoning({ effort: value || undefined })} />
           <Field label={t('dashboard.modelAliases.rules.budget')} validationMessage={warningFor('reasoning.budget_tokens') ? t(`dashboard.modelAliases.warnings.${warningFor('reasoning.budget_tokens')!.key}`, warningFor('reasoning.budget_tokens')!.values) : undefined} validationState={warningFor('reasoning.budget_tokens') ? 'warning' : undefined}>
             <Input disabled={disabled} inputMode="numeric" min={0} type="number" value={target.rules.reasoning?.budget_tokens?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: data.value === '' ? undefined : Number(data.value) })} />
@@ -101,7 +102,7 @@ export function AliasTargetRow({
           <RuleCombobox label={t('dashboard.modelAliases.rules.summary')} value={target.rules.reasoning?.summary ?? ''} items={suggestions.summary} disabled={disabled} onChange={value => patchReasoning({ summary: value || undefined })} />
           <RuleCombobox label={t('dashboard.modelAliases.rules.verbosity')} value={target.rules.verbosity ?? ''} items={suggestions.verbosity} disabled={disabled} onChange={value => patchRules({ verbosity: value || undefined })} />
           <RuleCombobox label={t('dashboard.modelAliases.rules.serviceTier')} value={target.rules.serviceTier ?? ''} items={suggestions.tier} disabled={disabled} onChange={value => patchRules({ serviceTier: value || undefined })} />
-          {ruleWarnings.length > 0 && <MessageBar className="col-span-2 max-[620px]:col-span-1" intent="warning"><MessageBarBody>{t('dashboard.modelAliases.warnings.ruleAdvisory')}</MessageBarBody></MessageBar>}
+          {ruleWarnings.length > 0 && <MessageBar className="col-span-2 max-[680px]:col-span-1" intent="warning"><MessageBarBody>{t('dashboard.modelAliases.warnings.ruleAdvisory')}</MessageBarBody></MessageBar>}
         </div>
       )}
     </div>

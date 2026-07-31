@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { AnnouncedMetadata, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 
 const { Field, Option, Switch, Text } = fluentComponents;
 
@@ -54,17 +55,17 @@ export function MetadataEditor({ disabled, kind, onChange, value }: {
         </section>
         <section className="grid gap-3">
           <Text size={300} weight="semibold">{t('dashboard.modelAliases.metadata.reasoning')}</Text>
-          <div className="grid grid-cols-2 gap-3 max-[680px]:grid-cols-1">
+          <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
             <Switch checked={effort !== undefined} disabled={disabled || value.chat?.reasoning?.mandatory === true} label={t('dashboard.modelAliases.metadata.effortEnabled')} onChange={(_, data) => patchReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
             <Switch checked={budget !== undefined} disabled={disabled || value.chat?.reasoning?.mandatory === true} label={t('dashboard.modelAliases.metadata.budgetEnabled')} onChange={(_, data) => patchReasoning({ budget_tokens: data.checked ? {} : undefined })} />
             <Switch checked={value.chat?.reasoning?.adaptive === true} disabled={disabled || value.chat?.reasoning?.mandatory === true} label={t('dashboard.modelAliases.metadata.adaptive')} onChange={(_, data) => patchReasoning({ adaptive: data.checked ? true : undefined })} />
             <Switch checked={value.chat?.reasoning?.mandatory === true} disabled={disabled || effort !== undefined || budget !== undefined || value.chat?.reasoning?.adaptive === true} label={t('dashboard.modelAliases.metadata.mandatory')} onChange={(_, data) => patchReasoning({ mandatory: data.checked ? true : undefined })} />
           </div>
-          {effort && <div className="grid grid-cols-2 gap-3 max-[680px]:grid-cols-1">
+          {effort && <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
             <Field hint={t('dashboard.modelAliases.metadata.effortsHint')} label={t('dashboard.modelAliases.metadata.efforts')}><Input disabled={disabled} value={effort.supported.join(', ')} onChange={(_, data) => { const supported = data.value.split(',').map(item => item.trim()).filter(Boolean); patchReasoning({ effort: { supported, default: supported.includes(effort.default) ? effort.default : supported[0] ?? '' } }); }} /></Field>
             <Field label={t('dashboard.modelAliases.metadata.defaultEffort')}><Dropdown disabled={disabled} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && patchReasoning({ effort: { supported: effort.supported, default: data.optionValue } })}>{effort.supported.map(item => <Option key={item} value={item}>{item}</Option>)}</Dropdown></Field>
           </div>}
-          {budget && <div className="grid grid-cols-2 gap-3 max-[680px]:grid-cols-1">
+          {budget && <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
             <Field label={t('dashboard.modelAliases.metadata.minBudget')}><Input disabled={disabled} min={0} type="number" value={budget.min?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: { ...budget, min: numberValue(data.value) } })} /></Field>
             <Field label={t('dashboard.modelAliases.metadata.maxBudget')} validationMessage={budget.min !== undefined && budget.max !== undefined && budget.max < budget.min ? t('dashboard.modelAliases.validation.metadataRange') : undefined} validationState={budget.min !== undefined && budget.max !== undefined && budget.max < budget.min ? 'error' : undefined}><Input disabled={disabled} min={0} type="number" value={budget.max?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: { ...budget, max: numberValue(data.value) } })} /></Field>
           </div>}

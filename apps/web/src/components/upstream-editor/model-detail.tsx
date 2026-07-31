@@ -14,6 +14,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
+import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
@@ -157,7 +158,7 @@ export function ModelDetail({
         {/* Embedding, transcription, and rerank each address exactly one
           endpoint, so there is nothing for the operator to choose. */}
         {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <ModelEditorSection title={t('dashboard.upstreamEditor.models.endpoints')}>
-          <div className="grid grid-cols-2 gap-2 max-[680px]:grid-cols-1">
+          <div className={`${TWO_COLUMN_FORM_CLASS} gap-2`}>
             {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
               checked={key in row.config.endpoints}
               readOnly={!editable}
@@ -198,7 +199,7 @@ export function ModelDetail({
                 <Switch checked={mandatory} disabled={controlledReasoning} readOnly={!editable} label={t('dashboard.upstreamEditor.models.mandatory')} onChange={(_, data) => updateReasoning(data.checked ? { mandatory: true } : { mandatory: undefined })} />
               </div>
               {effort && <EffortEditor editable={editable} effort={effort} onChange={next => updateReasoning({ effort: next })} t={t} />}
-              {budget && <div className="grid grid-cols-2 gap-4 max-w-[420px]">
+              {budget && <div className={`${TWO_COLUMN_FORM_CLASS} gap-4 max-w-[420px]`}>
                 <NumberField label={t('dashboard.upstreamEditor.models.minimum')} placeholder="e.g. 1024" readOnly={!editable} value={budget.min} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'min', raw) })} />
                 <NumberField label={t('dashboard.upstreamEditor.models.maximum')} placeholder="e.g. 32000" readOnly={!editable} value={budget.max} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'max', raw) })} />
               </div>}

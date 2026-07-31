@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import type { RerankProtocol, RerankTarget } from '@floway-dev/protocols/common';
 import { DEFAULT_RERANK_PATHS } from '@floway-dev/protocols/rerank';
 
@@ -25,7 +26,7 @@ export const RerankTargetEditor = ({ onChange, readOnly, value }: {
 }) => {
   const { t } = useTranslation();
 
-  return <div className="grid gap-3 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[560px]:grid-cols-1">
+  return <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
     <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.rerankProtocol')}>
       <Dropdown
         readOnly={readOnly}
