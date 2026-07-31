@@ -5830,7 +5830,7 @@ test('consumeTurn live-forwards indexed progress events without hardcoded event-
   assertEquals(new Set(indices).size, 1);
 });
 
-test('consumeTurn keeps swallowing keepalive/ping-shape events that lack output_index', async () => {
+test('consumeTurn swallows keepalive/ping filler frames', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -6258,4 +6258,22 @@ test('the shim carries the upstream turn cost onto the metadata pricing reads', 
   assert(result.type === 'events');
   await collectFrames(result.events);
   assertEquals((await result.finalMetadata!).billableUsage, billableUsage);
+});
+
+test('consumeTurn forwards an event carrying no output_index instead of dropping it', async () => {
+  const unrecognized = eventFrame({
+    type: 'response.some_future_event',
+    detail: 'carried through',
+  } as unknown as ResponsesStreamEvent);
+
+  const result = await consumeTurn(
+    framesOf(mkResponseCreated(), unrecognized, mkResponseCompleted()),
+    createMergeState(),
+    true,
+  );
+
+  assertEquals(eventTypesOf(result.downstreamFrames), ['response.created', 'response.some_future_event']);
+  const forwarded = result.downstreamFrames[1];
+  assert(forwarded.type === 'event');
+  assertEquals((forwarded.event as unknown as { detail: string }).detail, 'carried through');
 });

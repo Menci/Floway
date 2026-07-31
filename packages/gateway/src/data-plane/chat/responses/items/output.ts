@@ -117,6 +117,5 @@ export const syntheticEventsFromResult = async function* (result: ResponsesResul
 // back to `ResponsesResult` is safe because the expansion reads no
 // response-only field — it spreads whatever the body carried.
 export const syntheticEventsFromCompaction = async function* (result: ResponsesCompactionResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
-  yield* responsesResultToEvents(result as unknown as ResponsesResult, { genericOutputItems: true, terminal: 'response.completed' });
-  yield doneFrame();
+  yield* responsesResultToEvents(result as unknown as ResponsesResult, { genericOutputItems: true, terminal: 'response.completed' });  yield doneFrame();
 };
