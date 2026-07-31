@@ -21,6 +21,7 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
+import { useCopyToClipboard } from '../components/ui/use-copy-to-clipboard';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 
 const selectedKeyStorageKey = 'floway-agent-setup-selected-key';
@@ -68,8 +69,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const rotateDialog = useDialogInvocation<ApiKey>();
   const deleteDialog = useDialogInvocation<ApiKey>();
   const [deletingKey, setDeletingKey] = useState(false);
-  const [copiedTag, setCopiedTag] = useState<string | null>(null);
-  const [copyFailedTag, setCopyFailedTag] = useState<string | null>(null);
+  const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
 
   const selectedKey = data.keys.find(key => key.id === selectedKeyId) ?? null;
   const agentSetupModels = selectedKey
@@ -115,23 +115,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     setRefreshing(false);
   };
 
-  const copyToClipboard = async (text: string, tag: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyFailedTag(null);
-      setCopiedTag(tag);
-      window.setTimeout(() => {
-        setCopiedTag(current => (current === tag ? null : current));
-      }, 1500);
-    } catch {
-      setCopiedTag(null);
-      setCopyFailedTag(tag);
-      window.setTimeout(() => {
-        setCopyFailedTag(current => (current === tag ? null : current));
-      }, 2000);
-    }
-  };
-
   const deleteKey = async (key: ApiKey) => {
     setDeleteError(null);
     setDeletingKey(true);
@@ -173,7 +156,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           copyFailedTag={copyFailedTag}
           disabled={refreshing || deletingKey}
           keys={data.keys}
-          onCopy={(text, tag) => void copyToClipboard(text, tag)}
+          onCopy={copy}
           onDelete={deleteDialog.open}
           onEdit={apiKey => editorDialog.open({ kind: 'edit', apiKey })}
           onRotate={rotateDialog.open}
@@ -191,7 +174,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           initialError={loaderData.setupError}
           initialLease={loaderData.setupLease}
           models={agentSetupModels}
-          onCopy={(text, tag) => void copyToClipboard(text, tag)}
+          onCopy={copy}
           selectedKey={selectedKey}
         />
       </Panel>

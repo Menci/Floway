@@ -1,7 +1,9 @@
 import {
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
+  CheckmarkRegular,
   CopyRegular,
+  DismissRegular,
   EyeOffRegular,
   EyeRegular,
   PlugConnectedRegular,
@@ -28,6 +30,8 @@ import { errorMessage } from '../../lib/error-message';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
+import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 import { ProviderIcon, providerLabel } from '../upstreams/provider-badge';
 
 const {
@@ -402,6 +406,7 @@ function OAuthConfig({ record, onPatch }: {
   const [json, setJson] = useState('');
   const [callback, setCallback] = useState('');
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
+  const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const flowKind = tab === 'setup' ? 'setup-token' : 'oauth';
@@ -484,7 +489,7 @@ function OAuthConfig({ record, onPatch }: {
         {record.kind === 'codex' ? <><Tab value="json">auth.json</Tab><Tab value="oauth">OAuth</Tab></> : <><Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab></>}
       </TabList>
       {tab === 'json' ? <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea rows={8} value={json} onChange={(_, data) => setJson(data.value)} className="font-mono" /></Field> : <div className="grid gap-3">
-        {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" className="truncate">{t('dashboard.upstreamEditor.oauth.openAuthorize')}</Link><Button appearance="subtle" icon={<CopyRegular />} aria-label={t('dashboard.upstreamEditor.oauth.copy')} onClick={() => void navigator.clipboard.writeText(authorizeUrl)} /></div>}
+        {busy && !authorizeUrl ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} /> : authorizeUrl && <div className="flex items-center gap-2 min-w-0"><Link href={authorizeUrl} target="_blank" className="truncate">{t('dashboard.upstreamEditor.oauth.openAuthorize')}</Link><TooltipIconButton icon={copyFailedTag !== null ? <DismissRegular /> : copiedTag !== null ? <CheckmarkRegular /> : <CopyRegular />} label={copyFailedTag !== null ? t('dashboard.apiKeys.copy.failed') : copiedTag !== null ? t('dashboard.apiKeys.copy.copied') : t('dashboard.upstreamEditor.oauth.copy')} onClick={() => copy(authorizeUrl)} /></div>}
         <Field label={t('dashboard.upstreamEditor.oauth.callback')}><Textarea rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} className="font-mono" /></Field>
       </div>}
       <Button appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>{hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}</Button>

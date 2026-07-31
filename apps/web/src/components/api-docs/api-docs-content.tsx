@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { apiDocsEndpoints, apiDocsGroups, authCurlExample } from './api-docs-data';
@@ -9,6 +8,7 @@ import { OpenLinkLabel } from '../ui/open-link-label';
 import { Panel } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActionsHeader } from '../ui/table-actions';
+import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 
 const {
   Link,
@@ -25,18 +25,7 @@ const {
 
 export function ApiDocsContent() {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState<string | null>(null);
-  const [copyFailed, setCopyFailed] = useState<string | null>(null);
-  const copy = async (id: string, code: string) => {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopyFailed(null);
-      setCopied(id);
-    } catch {
-      setCopied(null);
-      setCopyFailed(id);
-    }
-  };
+  const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
   const authExample = authCurlExample(window.location.origin);
 
   return <>
@@ -47,7 +36,7 @@ export function ApiDocsContent() {
         <Text><strong>{t('dashboard.apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
       </div>
       <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiDocs.authentication.warning')}</MessageBarBody></MessageBar>
-      <CodeBlock code={authExample} copied={copied === 'auth'} copyFailed={copyFailed === 'auth'} language="bash" onCopy={() => void copy('auth', authExample)} />
+      <CodeBlock code={authExample} copied={copiedTag === 'auth'} copyFailed={copyFailedTag === 'auth'} language="bash" onCopy={() => copy(authExample, 'auth')} />
     </Panel>
 
     <Panel className="grid gap-5 !p-[22px_24px] max-[680px]:!p-[18px]">
