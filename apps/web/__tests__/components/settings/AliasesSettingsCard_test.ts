@@ -16,7 +16,10 @@ vi.mock('../../../src/composables/useModelAliases.ts', () => ({
 vi.mock('../../../src/composables/useModels.ts', () => ({
   useRawModelsStore: () => ({ models: modelsRef, loading: ref(false), error: ref<string | null>(null), load: async () => {} }),
 }));
-vi.mock('../../../src/api/client.ts', () => ({
+// Only the Hono client is stubbed; the real callApi* helpers run so the
+// delete path is exercised against an actual 204 response.
+vi.mock('../../../src/api/client.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../src/api/client.ts')>(),
   useApi: () => ({
     api: {
       aliases: {
@@ -24,11 +27,6 @@ vi.mock('../../../src/api/client.ts', () => ({
       },
     },
   }),
-  callApi: async <T>(fn: () => Promise<Response>) => {
-    const res = await fn();
-    if (!res.ok && res.status !== 204) return { error: { status: res.status, message: 'mock-error' } };
-    return { data: undefined as T };
-  },
   authFetch: vi.fn(),
 }));
 
