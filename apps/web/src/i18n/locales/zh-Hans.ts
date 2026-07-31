@@ -14,6 +14,9 @@ const zhHansCN = {
       cancel: '取消',
       dismiss: '关闭',
       errors: {
+        refresh: '刷新',
+        back: '返回',
+        stack: '调用栈',
         title: '错误',
         unexpectedTitle: '出现错误',
         unexpectedDescription: '发生了意外错误。',
@@ -456,6 +459,7 @@ const zhHansCN = {
           delete: '正在删除上游',
         },
         errors: {
+          missing: '该上游已不存在',
           models: '模型数量不可用：{{message}}',
           toggle: '无法更新可用状态：{{message}}',
           reorder: '无法更新路由优先级：{{message}} {{sync}}',
@@ -467,7 +471,6 @@ const zhHansCN = {
           message: '删除上游 {{name}}？此操作无法撤销。',
         },
         toast: {
-          missing: '该上游已被删除。',
           deleted: '已删除上游 {{name}}。',
         },
       },

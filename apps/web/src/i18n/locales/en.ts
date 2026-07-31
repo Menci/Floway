@@ -14,6 +14,9 @@ const en = {
       cancel: 'Cancel',
       dismiss: 'Dismiss',
       errors: {
+        refresh: 'Refresh',
+        back: 'Back',
+        stack: 'Stack trace',
         title: 'Error',
         unexpectedTitle: 'Something went wrong',
         unexpectedDescription: 'An unexpected error occurred.',
@@ -478,6 +481,7 @@ const en = {
           delete: 'Deleting upstream',
         },
         errors: {
+          missing: 'That upstream no longer exists',
           models: 'Model counts are unavailable: {{message}}',
           toggle: 'Could not update availability: {{message}}',
           reorder: 'Could not update routing priority: {{message}} {{sync}}',
@@ -489,7 +493,6 @@ const en = {
           message: 'Delete upstream {{name}}? This cannot be undone.',
         },
         toast: {
-          missing: 'This upstream has been deleted.',
           deleted: 'Upstream {{name}} deleted.',
         },
       },

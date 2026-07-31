@@ -32,7 +32,7 @@ import '@fontsource/maple-mono/700.css';
 import './segoe-ui-variable.css';
 import './uno.css';
 
-const { FluentProvider } = fluentComponents;
+const { Button, FluentProvider } = fluentComponents;
 
 // The base typeface is the one third-party fetch the first paint waits on, so
 // it is preloaded rather than discovered when the stylesheet resolves. Fonts
@@ -132,14 +132,29 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
       error.status === 404
         ? t('common.errors.notFound')
         : error.statusText || details;
-  } else if (import.meta.env.DEV && error && error instanceof Error) {
+  } else if (error instanceof Error) {
     details = error.message;
     stack = error.stack;
   }
 
   return (
-    <ErrorShell message={details} title={message}>
-      {stack && <ErrorStack>{stack}</ErrorStack>}
+    <ErrorShell
+      action={
+        <div className="flex flex-wrap justify-center gap-2">
+          {/* A reload, not a re-render: whatever failed may have left the app's
+              own state or its modules in a shape a router navigation would
+              keep, and the browser's own back is the one exit that does not
+              depend on this page working. */}
+          <Button appearance="primary" onClick={() => window.location.reload()}>
+            {t('common.errors.refresh')}
+          </Button>
+          <Button onClick={() => window.history.back()}>{t('common.errors.back')}</Button>
+        </div>
+      }
+      message={details}
+      title={message}
+    >
+      {stack && <ErrorStack label={t('common.errors.stack')}>{stack}</ErrorStack>}
     </ErrorShell>
   );
 }

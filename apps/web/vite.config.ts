@@ -102,6 +102,11 @@ export default defineConfig({
   environments: {
     client: {
       build: {
+        // A stack trace is only worth showing if it names our own source, so the
+        // maps ship with the bundle. They cost bytes a browser fetches only when
+        // a devtools pane is open, and the alternative is a failure page whose
+        // trace points at minified chunk names.
+        sourcemap: true,
         rolldownOptions: {
           output: {
             codeSplitting: {
