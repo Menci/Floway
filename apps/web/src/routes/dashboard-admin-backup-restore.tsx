@@ -15,6 +15,7 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
+import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { fluentComponents } from '../fluent';
 import { useDashboardOutletContext } from './dashboard';
 
@@ -166,7 +167,7 @@ export default function DashboardAdminBackupRestore() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const confirmDialog = useDialogInvocation<void>();
   const dz = useDropzoneStyles();
   const pg = usePreviewGridStyles();
 
@@ -297,11 +298,11 @@ export default function DashboardAdminBackupRestore() {
   const handleImportClick = useCallback(() => {
     if (!importParsedData) return;
     if (importMode === 'replace') {
-      setConfirmOpen(true);
+      confirmDialog.open();
       return;
     }
     void doImport();
-  }, [doImport, importMode, importParsedData]);
+  }, [confirmDialog, doImport, importMode, importParsedData]);
 
   const previewCounts = importParsedData ? countRecords(importParsedData.data) : null;
 
@@ -461,20 +462,21 @@ export default function DashboardAdminBackupRestore() {
         )}
       </Panel>
 
-      <ConfirmDialog
-        open={confirmOpen}
+      {confirmDialog.invocation && <ConfirmDialog
+        open={confirmDialog.isOpen}
         actionLabel={t('dashboard.backupRestore.import.button')}
         actionIntent="primary"
         busy={importing}
         cancelLabel={t('common.cancel')}
+        key={confirmDialog.invocation.key}
         message={t('dashboard.backupRestore.confirmMessage')}
         onConfirm={() => {
-          setConfirmOpen(false);
+          confirmDialog.close();
           void doImport();
         }}
-        onOpenChange={setConfirmOpen}
+        onOpenChange={open => { if (!open) confirmDialog.close(); }}
         title={t('dashboard.backupRestore.confirmTitle')}
-      />
+      />}
     </section>
   );
 }

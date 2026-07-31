@@ -17,7 +17,7 @@ import {
   TextEditStyle20Color,
 } from '@fluentui/react-icons';
 import type { FluentIcon } from '@fluentui/react-icons';
-import { useId, useRef, useState } from 'react';
+import { useId, useRef } from 'react';
 import type { MouseEventHandler, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLinkClickHandler, useLocation, useNavigation } from 'react-router';
@@ -29,6 +29,7 @@ import { NavSelectionIndicator } from './nav-selection-indicator';
 import { useAuthStore } from '../stores/auth-store';
 import { ConfirmDialog } from './ui/confirm-dialog';
 import { ScrollArea } from './ui/scroll-area';
+import { useDialogInvocation } from './ui/use-dialog-invocation';
 
 const {
   Button,
@@ -161,7 +162,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
   const navigation = useNavigation();
   const logout = useAuthStore(state => state.logout);
   const styles = useStyles();
-  const [logoutOpen, setLogoutOpen] = useState(false);
+  const logoutDialog = useDialogInvocation<void>();
   const bodyRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   // Color icons carry hardcoded gradient ids, so two mounted drawers would
@@ -187,7 +188,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       density="medium"
       onNavItemSelect={(_, data) => {
         if (data.value === 'logout') {
-          setLogoutOpen(true);
+          logoutDialog.open();
         }
       }}
       open
@@ -248,14 +249,15 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
         </div>
       </NavDrawerFooter>
     </NavDrawer>
-    <ConfirmDialog
-      open={logoutOpen}
+    {logoutDialog.invocation && <ConfirmDialog
+      open={logoutDialog.isOpen}
       actionLabel={t('dashboard.logout.action')}
       actionIntent="primary"
+      key={logoutDialog.invocation.key}
       message={t('dashboard.logout.message')}
       onConfirm={() => void logout()}
-      onOpenChange={setLogoutOpen}
+      onOpenChange={open => { if (!open) logoutDialog.close(); }}
       title={t('dashboard.logout.title')}
-    />
+    />}
   </>;
 }

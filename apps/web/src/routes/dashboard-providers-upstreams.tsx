@@ -29,6 +29,7 @@ import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
+import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
@@ -98,11 +99,18 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const [data, setData] = useState(loaderData);
   const [pageError, setPageError] = useState(loaderData.loadError);
   const [mutation, setMutation] = useState<Mutation | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<UpstreamRecord | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const deleteDialog = useDialogInvocation<UpstreamRecord>();
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const busy = mutation !== null;
+  const mutating = mutation !== null;
+
+  // The error belongs to the attempt that produced it. Opening the dialog for
+  // another upstream starts a new attempt, so the previous one's failure is
+  // cleared here rather than waiting for a dismissal that may never come.
+  const openDeleteDialog = (record: UpstreamRecord) => {
+    setDeleteError(null);
+    deleteDialog.open(record);
+  };
 
   useEffect(() => {
     const search = new URLSearchParams(location.search);
@@ -201,7 +209,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       setMutation(null);
       return;
     }
-    setDeleteOpen(false);
+    deleteDialog.close();
     await reload();
     setMutation(null);
     toasts.succeed(t('dashboard.upstreams.toast.deleted', { name: record.name }));
@@ -239,7 +247,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
               </MenuPopover>
             </Menu>
           )}
-          disabled={busy}
+          disabled={mutating}
           onRefresh={() => void handleReload()}
           refreshLabel={t('dashboard.upstreams.actions.refresh')}
           refreshing={mutation?.kind === 'reload'}
@@ -250,7 +258,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
       {pageError && (
         <OutcomeMessageBar
-          action={<Button appearance="transparent" disabled={busy} onClick={() => void handleReload()}>
+          action={<Button appearance="transparent" disabled={mutating} onClick={() => void handleReload()}>
             {t('dashboard.upstreams.actions.retry')}
           </Button>}
           onDismiss={() => setPageError(null)}
@@ -265,18 +273,18 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
       <ResourceListPanel rowHeight="56px">
         <UpstreamsTable
-          busy={busy}
           data={data}
+          mutating={mutating}
           mutation={mutation}
-          onDelete={record => { setDeleteTarget(record); setDeleteOpen(true); }}
+          onDelete={openDeleteDialog}
           onEdit={record => void navigate(`/dashboard/providers/upstreams/${encodeURIComponent(record.id)}`)}
           onMove={(record, direction) => void move(record, direction)}
           onToggle={(record, enabled) => void setEnabled(record, enabled)}
         />
       </ResourceListPanel>
 
-      {deleteTarget && <ConfirmDialog
-        open={deleteOpen}
+      {deleteDialog.invocation && <ConfirmDialog
+        open={deleteDialog.isOpen}
         actionLabel={
           mutation?.kind === 'delete'
             ? t('dashboard.upstreams.actions.deleting')
@@ -285,12 +293,13 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         busy={mutation?.kind === 'delete'}
         error={deleteError}
         onDismissError={() => setDeleteError(null)}
-        message={t('dashboard.upstreams.delete.message', { name: deleteTarget.name })}
+        key={deleteDialog.invocation.key}
+        message={t('dashboard.upstreams.delete.message', { name: deleteDialog.invocation.value.name })}
         onConfirm={() => {
-          if (!busy) void deleteUpstream(deleteTarget);
+          if (!mutating) void deleteUpstream(deleteDialog.invocation!.value);
         }}
         onOpenChange={open => {
-          if (mutation?.kind !== 'delete') setDeleteOpen(open);
+          if (mutation?.kind !== 'delete' && !open) deleteDialog.close();
         }}
         title={t('dashboard.upstreams.delete.title')}
       />}
@@ -299,16 +308,16 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 }
 
 function UpstreamsTable({
-  busy,
   data,
+  mutating,
   mutation,
   onDelete,
   onEdit,
   onMove,
   onToggle,
 }: {
-  busy: boolean;
   data: UpstreamsPageData;
+  mutating: boolean;
   mutation: Mutation | null;
   onDelete: (record: UpstreamRecord) => void;
   onEdit: (record: UpstreamRecord) => void;
@@ -343,13 +352,13 @@ function UpstreamsTable({
                 <div className="inline-flex items-center gap-1">
                   <Text size={300} className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>
                   <TooltipIconButton
-                    disabled={busy || index === 0}
+                    disabled={mutating || index === 0}
                     icon={<ArrowUpRegular />}
                     label={t('dashboard.upstreams.actions.moveUp', { name: record.name })}
                     onClick={() => onMove(record, -1)}
                   />
                   <TooltipIconButton
-                    disabled={busy || index === data.upstreams.length - 1}
+                    disabled={mutating || index === data.upstreams.length - 1}
                     icon={<ArrowDownRegular />}
                     label={t('dashboard.upstreams.actions.moveDown', { name: record.name })}
                     onClick={() => onMove(record, 1)}
@@ -378,21 +387,21 @@ function UpstreamsTable({
                 <Switch
                   aria-label={t('dashboard.upstreams.actions.toggle', { name: record.name })}
                   checked={record.enabled}
-                  disabled={busy}
+                  disabled={mutating}
                   onChange={(_, detail) => onToggle(record, detail.checked)}
                 />
               </TableCentredCell>
               <TableCell>
                 <TableActions>
                   <TooltipIconButton
-                    disabled={busy}
+                    disabled={mutating}
                     icon={<EditRegular />}
                     label={t('dashboard.upstreams.actions.editNamed', { name: record.name })}
                     onClick={() => onEdit(record)}
                   />
                   <TooltipIconButton
                     danger
-                    disabled={busy}
+                    disabled={mutating}
                     icon={mutation?.kind === 'delete' && mutation.id === record.id ? <Spinner size="tiny" /> : <DeleteRegular />}
                     label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })}
                     onClick={() => onDelete(record)}

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 export interface DialogInvocation<Value> {
   key: number;
@@ -24,5 +24,7 @@ export function useDialogInvocation<Value>() {
     setIsOpen(true);
   }, []);
   const close = useCallback(() => setIsOpen(false), []);
-  return { close, invocation, isOpen, open };
+  // Memoised so a caller can depend on the invocation itself rather than on
+  // its parts: the identity then changes exactly when the dialog does.
+  return useMemo(() => ({ close, invocation, isOpen, open }), [close, invocation, isOpen, open]);
 }

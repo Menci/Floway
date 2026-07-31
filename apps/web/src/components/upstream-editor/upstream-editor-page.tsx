@@ -24,6 +24,7 @@ import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { Panel } from '../ui/panel';
+import { useDialogInvocation } from '../ui/use-dialog-invocation';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 
 const {
@@ -69,6 +70,18 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     () => hasUnsavedChanges && !allowNavigation.current,
     [hasUnsavedChanges],
   ));
+
+  // The blocker owns whether the navigation is held; the dialog only follows
+  // it. Following rather than rendering on `blocker.state` directly is what
+  // keeps the surface mounted once the blocker has resolved, which is the only
+  // way it gets to play its exit.
+  const leaveDialog = useDialogInvocation<void>();
+  const blocked = blocker.state === 'blocked';
+  const [dialogFollowsBlocked, setDialogFollowsBlocked] = useState(blocked);
+  if (dialogFollowsBlocked !== blocked) {
+    setDialogFollowsBlocked(blocked);
+    if (blocked) leaveDialog.open(); else leaveDialog.close();
+  }
 
   const showSavedToast = useCallback(() => {
     dispatchToast(
@@ -204,10 +217,11 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         </Panel>
       </div>
     </div>
-    {blocker.state === 'blocked' && <ConfirmDialog
-      open
+    {leaveDialog.invocation && <ConfirmDialog
+      open={leaveDialog.isOpen}
       actionLabel={t('dashboard.upstreamEditor.leave.leave')}
       cancelLabel={t('dashboard.upstreamEditor.leave.stay')}
+      key={leaveDialog.invocation.key}
       message={t('dashboard.upstreamEditor.leave.message')}
       onCancel={() => blocker.state === 'blocked' && blocker.reset()}
       onConfirm={() => blocker.state === 'blocked' && blocker.proceed()}

@@ -218,11 +218,18 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
   const [backoffs, setBackoffs] = useState(loaderData.backoffs);
   const editorDialog = useDialogInvocation<ProxyRecord | null>();
-  const [deleteTarget, setDeleteTarget] = useState<ProxyRecord | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const deleteDialog = useDialogInvocation<ProxyRecord>();
+  const [mutating, setMutating] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // The error belongs to the attempt that produced it. Opening the dialog for
+  // another proxy starts a new attempt, so the previous one's failure is
+  // cleared here rather than waiting for a dismissal that may never come.
+  const openDeleteDialog = (target: ProxyRecord) => {
+    setDeleteError(null);
+    deleteDialog.open(target);
+  };
 
   const refreshProxies = useCallback(async () => {
     setLoadError(null);
@@ -242,13 +249,13 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
   }, [refreshProxies]);
 
   const handleDeleteConfirm = useCallback(async (target: ProxyRecord) => {
-    setDeleting(true);
+    setMutating(true);
     setDeleteError(null);
 
     const handle = toasts.start(t('dashboard.proxy.toast.delete.pending', { name: target.name }));
     const result = await callApiNoContent(() => api.api.proxies[':id'].$delete({ param: { id: target.id } }));
 
-    setDeleting(false);
+    setMutating(false);
     if (result.error) {
       handle.settle();
       const raw = result.error.raw as ProxyConflictBody | undefined;
@@ -265,10 +272,10 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       return;
     }
 
-    setDeleteOpen(false);
+    deleteDialog.close();
     handle.succeed(t('dashboard.proxy.toast.delete.success', { name: target.name }));
     await refreshProxies();
-  }, [refreshProxies, t, toasts]);
+  }, [deleteDialog, refreshProxies, t, toasts]);
 
   if (!user.isAdmin) {
     return (
@@ -298,7 +305,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       )}
 
       <ResourceListPanel>
-        <ProxyList disabled={refreshing || deleting} proxies={proxies} onDelete={target => { setDeleteTarget(target); setDeleteOpen(true); }} onEdit={editorDialog.open} />
+        <ProxyList disabled={refreshing || mutating} proxies={proxies} onDelete={openDeleteDialog} onEdit={editorDialog.open} />
       </ResourceListPanel>
 
       {editorDialog.invocation && <ProxyDialog
@@ -310,23 +317,24 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         record={editorDialog.invocation.value}
       />}
 
-      {deleteTarget && (
+      {deleteDialog.invocation && (
         <ConfirmDialog
-          open={deleteOpen}
+          open={deleteDialog.isOpen}
           actionLabel={
-            deleting
+            mutating
               ? t('dashboard.proxy.actions.deleting')
               : t('dashboard.proxy.actions.delete')
           }
-          busy={deleting}
+          busy={mutating}
           error={deleteError}
+          key={deleteDialog.invocation.key}
           message={t('dashboard.proxy.delete.message', {
-            name: deleteTarget.name,
+            name: deleteDialog.invocation.value.name,
           })}
-          onConfirm={() => void handleDeleteConfirm(deleteTarget)}
+          onConfirm={() => void handleDeleteConfirm(deleteDialog.invocation!.value)}
           onDismissError={() => setDeleteError(null)}
           onOpenChange={open => {
-            if (!deleting) setDeleteOpen(open);
+            if (!mutating && !open) deleteDialog.close();
           }}
           title={t('dashboard.proxy.delete.title')}
         />

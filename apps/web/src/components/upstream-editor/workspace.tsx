@@ -2,9 +2,11 @@ import {
   AddRegular,
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
+  CheckmarkRegular,
   CodeRegular,
   CopyRegular,
   DeleteRegular,
+  DismissRegular,
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
@@ -30,6 +32,8 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { ScrollArea } from '../ui/scroll-area';
 import { TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../ui/table-actions';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
+import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
+import { useDialogInvocation } from '../ui/use-dialog-invocation';
 
 const {
   Button,
@@ -184,11 +188,11 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
   const config = useWatch({ control, name: 'config' });
   const disabled = useWatch({ control, name: 'disabledPublicModelIds' });
   const upstreamFlags = useWatch({ control, name: 'flagOverrides' });
-  const [deleteTarget, setDeleteTarget] = useState<ModelRow | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const deleteDialog = useDialogInvocation<ModelRow>();
   const [pendingManualId, setPendingManualId] = useState<string | null>(null);
   const [pendingManualConfig, setPendingManualConfig] = useState<UpstreamModelConfig | null>(null);
   const [search, setSearch] = useState('');
+  const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
   const readOnly = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
   const autoFetchEnabled = record.kind !== 'custom'
     || (config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled;
@@ -244,18 +248,20 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
   const deleteModel = (target: ModelRow & { manualIndex: number }) => {
     remove(target.manualIndex);
     if (selectedRow?.key === target.key) onSelectModel(null);
-    setDeleteOpen(false);
+    deleteDialog.close();
   };
 
-  const manualDeleteTarget = deleteTarget?.manualIndex === null || deleteTarget === null
+  const deleteTarget = deleteDialog.invocation?.value;
+  const manualDeleteTarget = deleteTarget?.manualIndex == null
     ? null
     : { ...deleteTarget, manualIndex: deleteTarget.manualIndex };
-  const deleteDialog = manualDeleteTarget && <ConfirmDialog
-    open={deleteOpen}
+  const deleteConfirmation = manualDeleteTarget && <ConfirmDialog
+    open={deleteDialog.isOpen}
     actionLabel={t('dashboard.upstreamEditor.models.deleteConfirm')}
+    key={deleteDialog.invocation!.key}
     message={t('dashboard.upstreamEditor.models.deleteMessage', { name: manualDeleteTarget.config.display_name ?? publicModelId(manualDeleteTarget.config) })}
     onConfirm={() => deleteModel(manualDeleteTarget)}
-    onOpenChange={setDeleteOpen}
+    onOpenChange={open => { if (!open) deleteDialog.close(); }}
     title={t('dashboard.upstreamEditor.models.deleteTitle')}
   />;
 
@@ -288,13 +294,13 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
     </div>;
   }
 
-  if (view === 'detail' && activeDetailRow) return <><ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} onDelete={() => { setDeleteTarget(activeDetailRow); setDeleteOpen(true); }} onSourceChange={source => setModelSource(activeDetailRow, source)} onUpdate={value => {
+  if (view === 'detail' && activeDetailRow) return <><ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} onDelete={() => deleteDialog.open(activeDetailRow)} onSourceChange={source => setModelSource(activeDetailRow, source)} onUpdate={value => {
     if (activeDetailRow.manualIndex === null) return;
     setValue(`manualModels.${activeDetailRow.manualIndex}`, value, {
       shouldDirty: true,
       shouldTouch: true,
     });
-  }} record={record} upstreamFlags={upstreamFlags} />{deleteDialog}</>;
+  }} record={record} upstreamFlags={upstreamFlags} />{deleteConfirmation}</>;
 
   return <div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
     <div className="flex flex-wrap items-center gap-3">
@@ -337,14 +343,14 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
               </button>
             </TableCell>
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</Text></TableCentredCell>
-            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 truncate leading-[var(--lineHeightBase300)]" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><Tooltip content={t('dashboard.upstreamEditor.models.copy')} relationship="label"><Button appearance="subtle" className="flex-none" icon={<CopyRegular />} size="small" onClick={() => void navigator.clipboard.writeText(id)} /></Tooltip></span></TableCell>
+            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full overflow-hidden"><code className="block min-w-0 truncate leading-[var(--lineHeightBase300)]" style={{ maxWidth: 'calc(100% - 36px)' }} title={id}>{id}</code><TooltipIconButton className="flex-none" icon={copyFailedTag === id ? <DismissRegular /> : copiedTag === id ? <CheckmarkRegular /> : <CopyRegular />} label={copyFailedTag === id ? t('dashboard.apiKeys.copy.failed') : copiedTag === id ? t('dashboard.apiKeys.copy.copied') : t('dashboard.upstreamEditor.models.copy')} onClick={() => copy(id, id)} /></span></TableCell>
             <TableCentredCell><Text size={300}>{t(`dashboard.upstreamEditor.models.${row.source}`)}</Text></TableCentredCell>
-            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => { setDeleteTarget(row); setDeleteOpen(true); }} />}</TableActions></TableCell>
+            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.edit')} onClick={() => onSelectModel(row.config.upstreamModelId)} />{row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.delete')} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>
     </ScrollArea>
-    {deleteDialog}
+    {deleteConfirmation}
   </div>;
 }
 
