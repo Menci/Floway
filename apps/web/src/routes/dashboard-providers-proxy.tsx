@@ -52,7 +52,10 @@ export async function clientLoader(): Promise<LoaderData> {
   if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   return await loadPageData();
 }
-export function meta({}: Route.MetaArgs) { return [{ title: 'Proxy | Floway' }]; }
+
+export function meta({}: Route.MetaArgs) {
+  return [{ title: 'Proxy | Floway' }];
+}
 
 const proxyDialogDraft = (record: ProxyRecord | null) => {
   if (record === null) {

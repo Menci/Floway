@@ -63,7 +63,11 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     view,
   };
 }
-export function meta({}: Route.MetaArgs) { return [{ title: 'Usage | Floway' }]; }
+
+export function meta({}: Route.MetaArgs) {
+  return [{ title: 'Usage | Floway' }];
+}
+
 export const shouldRevalidate = ({ currentUrl, defaultShouldRevalidate, nextUrl }: ShouldRevalidateFunctionArgs) =>
   currentUrl.pathname === nextUrl.pathname ? false : defaultShouldRevalidate;
 

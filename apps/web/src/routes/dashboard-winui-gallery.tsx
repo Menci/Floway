@@ -11,6 +11,7 @@ import {
 } from '@fluentui/react-icons';
 import { useState } from 'react';
 
+import type { Route } from './+types/dashboard-winui-gallery';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Combobox, Dropdown } from '../components/ui/fluent-form-controls';
 import { SectionHeader } from '../components/ui/section-header';
@@ -117,7 +118,7 @@ const {
   useToastController,
 } = fluentComponents;
 
-export function meta() {
+export function meta({}: Route.MetaArgs) {
   return [{ title: 'WinUI gallery | Floway' }];
 }
 

@@ -68,7 +68,7 @@ export async function clientAction({
   return { ok: true };
 }
 
-export function meta() {
+export function meta({}: Route.MetaArgs) {
   return [{ title: 'Settings | Floway' }];
 }
 
