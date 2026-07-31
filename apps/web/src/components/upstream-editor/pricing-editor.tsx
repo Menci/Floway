@@ -45,10 +45,10 @@ const usePricingStyles = makeStyles({
 // would round sub-cent rates before they ever reached the protocol.
 const RATE_DRAFT_PATTERN = /^\d*(?:\.\d*)?$/;
 
-function RateInput({ editable, label, onCommit, value }: {
-  editable: boolean;
+function RateInput({ label, onChange, readOnly, value }: {
   label: string;
-  onCommit: (raw: string) => void;
+  onChange: (raw: string) => void;
+  readOnly: boolean;
   value: string | undefined;
 }) {
   const [draft, setDraft] = useState(value ?? '');
@@ -62,7 +62,7 @@ function RateInput({ editable, label, onCommit, value }: {
     <Input
       className="!w-full"
       inputMode="decimal"
-      readOnly={!editable}
+      readOnly={readOnly}
       size="medium"
       value={draft}
       onBlur={() => {
@@ -72,8 +72,8 @@ function RateInput({ editable, label, onCommit, value }: {
       onChange={(_, data) => {
         if (!RATE_DRAFT_PATTERN.test(data.value)) return;
         setDraft(data.value);
-        if (data.value === '' || data.value === '.') onCommit('');
-        else onCommit(data.value);
+        if (data.value === '' || data.value === '.') onChange('');
+        else onChange(data.value);
       }}
       onFocus={() => { editing.current = true; }}
     />
@@ -86,19 +86,19 @@ const issueAffectsEntry = (issue: ModelPricingIssue, index: number): boolean => 
   return true;
 };
 
-export function PricingEditor({ editable, kind, onChange, value }: {
-  editable: boolean;
+export function PricingEditor({ kind, onChange, readOnly, value }: {
   kind: ModelKind;
   onChange: (value: ModelPricing | undefined) => void;
+  readOnly: boolean;
   value: ModelPricing | undefined;
 }) {
   const { t } = useTranslation();
   const styles = usePricingStyles();
   const [ownDrafts, setOwnDrafts] = useState<PricingEntryDraft[]>(() => pricingEntryDraftsFor(value));
   const [selectedId, setSelectedId] = useState<number | null>(() => ownDrafts[0]?.id ?? null);
-  // Read-only is a view of the record; editable owns its drafts, because
-  // re-seeding from the prop mid-edit would fight the user's typing.
-  const mirrored = useMemo(() => (editable ? null : pricingEntryDraftsFor(value)), [editable, value]);
+  // Read-only is a view of the record; an editable one owns its drafts,
+  // because re-seeding from the prop mid-edit would fight the user's typing.
+  const mirrored = useMemo(() => (readOnly ? pricingEntryDraftsFor(value) : null), [readOnly, value]);
   const drafts = mirrored ?? ownDrafts;
   const conditionsHeadingId = useId();
   const ratesHeadingId = useId();
@@ -113,7 +113,7 @@ export function PricingEditor({ editable, kind, onChange, value }: {
   const metricName = (metric: BillingMetric): string => t(`dashboard.upstreamEditor.models.pricingMetrics.${metric}`);
 
   const commit = (next: PricingEntryDraft[]) => {
-    if (!editable) return;
+    if (readOnly) return;
     setOwnDrafts(next);
     onChange(pricingFromDrafts(next));
   };
@@ -151,7 +151,7 @@ export function PricingEditor({ editable, kind, onChange, value }: {
 
   if (drafts.length === 0) {
     return <EmptyState
-      action={editable && <Button appearance="primary" icon={<AddRegular />} onClick={addEntry}>
+      action={!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={addEntry}>
         {t('dashboard.upstreamEditor.models.setupPricing')}
       </Button>}
       align="start"
@@ -164,7 +164,7 @@ export function PricingEditor({ editable, kind, onChange, value }: {
 
   return <div className={`grid min-w-0 grid-cols-[240px_minmax(0,1fr)] items-stretch ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <aside className="grid h-full min-w-0 content-start gap-2 border-0 border-r border-solid border-fui-stroke1 pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
-      {editable && <Toolbar aria-label={t('dashboard.upstreamEditor.models.pricingRules')} className="!justify-end !min-h-8 !p-0" size="small">
+      {!readOnly && <Toolbar aria-label={t('dashboard.upstreamEditor.models.pricingRules')} className="!justify-end !min-h-8 !p-0" size="small">
         <Tooltip content={t('dashboard.upstreamEditor.models.addPricingOverride')} relationship="label">
           <ToolbarButton aria-label={t('dashboard.upstreamEditor.models.addPricingOverride')} icon={<AddRegular />} onClick={addEntry} />
         </Tooltip>
@@ -205,7 +205,7 @@ export function PricingEditor({ editable, kind, onChange, value }: {
           level={4}
           title={t('dashboard.upstreamEditor.models.pricingConditions')}
           titleId={conditionsHeadingId}
-          actions={editable && selectedIndex !== baseIndex
+          actions={!readOnly && selectedIndex !== baseIndex
             ? <TooltipIconButton icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.removePricingEntry')} onClick={removeActive} />
             : undefined}
         />
@@ -217,7 +217,7 @@ export function PricingEditor({ editable, kind, onChange, value }: {
                 <Input
                   className="!w-full"
                   placeholder={t('dashboard.upstreamEditor.models.serviceTierPlaceholder')}
-                  readOnly={!editable}
+                  readOnly={readOnly}
                   size="medium"
                   value={typeof current === 'string' ? current : ''}
                   onChange={(_, data) => patchActive(draft => withEqualityCoordinate(draft, axis.id, data.value))}
@@ -229,7 +229,7 @@ export function PricingEditor({ editable, kind, onChange, value }: {
               <div className="flex min-w-0 items-center gap-2">
                 <Dropdown
                   aria-label={t('dashboard.upstreamEditor.models.operator')}
-                  disabled={!editable}
+                  disabled={readOnly}
                   className="!w-[76px] flex-none"
                   selectedOptions={[threshold?.operator ?? 'gt']}
                   value={threshold?.operator === 'gte' ? '≥' : '>'}
@@ -241,7 +241,7 @@ export function PricingEditor({ editable, kind, onChange, value }: {
                 <Input
                   className="!w-full"
                   inputMode="numeric"
-                  readOnly={!editable}
+                  readOnly={readOnly}
                   size="medium"
                   value={threshold?.value === undefined ? '' : String(threshold.value)}
                   onChange={(_, data) => {
@@ -267,11 +267,11 @@ export function PricingEditor({ editable, kind, onChange, value }: {
         />
         <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
           {fields.map((field: PricingField) => <RateInput
-            editable={editable}
             key={field.metric}
             label={pricingFieldLabel(metricName(field.metric), field)}
+            readOnly={readOnly}
             value={pricingFieldRate(active, field)}
-            onCommit={raw => patchActive(draft => withRate(draft, field, raw))}
+            onChange={raw => patchActive(draft => withRate(draft, field, raw))}
           />)}
         </div>
       </section>

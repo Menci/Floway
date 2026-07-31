@@ -15,9 +15,9 @@ describe('read-only pricing editor', () => {
     const view = render(
       <FluentProvider theme={flowayLightTheme}>
         <PricingEditor
-          editable={false}
           kind="chat"
           onChange={vi.fn()}
+          readOnly
           value={{
             entries: [
               { rates: { input_tokens: '0.000001' } },
