@@ -16,9 +16,9 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
-import { ChartSection } from '../components/usage/chart-section';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
 import type { UsageMetric, UsageRange, UsageView } from '../components/usage/types';
+import { UsageChartSection } from '../components/usage/usage-chart-section';
 import { loadUsagePageData } from '../components/usage/usage-data';
 import { fluentComponents } from '../fluent';
 import { errorMessage } from '../lib/error-message';
@@ -301,7 +301,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine>
         ) : (
           <>
-            <ChartSection
+            <UsageChartSection
               chart={byKeyChart}
               detailsLabel={chartTitle}
               hidden={hiddenKeys}
@@ -310,7 +310,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
               valueFormatter={value => formatMetricValue(value, metric, locale)}
             />
 
-            <ChartSection
+            <UsageChartSection
               chart={byModelChart}
               detailsLabel={t('dashboard.usage.charts.byModel')}
               hidden={hiddenModels}
@@ -330,7 +330,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           {searchChart === null ? (
             <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine>
           ) : (
-            <ChartSection
+            <UsageChartSection
               chart={searchChart}
               detailsLabel={t('dashboard.usage.charts.search')}
               hidden={hiddenKeys}

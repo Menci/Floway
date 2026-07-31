@@ -2,9 +2,9 @@ import { useTranslation } from 'react-i18next';
 
 import type { UsageChartModel } from './types';
 import { UsageChart } from './usage-chart';
-import { ChartSection as SharedChartSection } from '../charts/chart-section';
+import { ChartSection } from '../charts/chart-section';
 
-export function ChartSection({
+export function UsageChartSection({
   chart,
   detailsLabel,
   hidden,
@@ -25,7 +25,7 @@ export function ChartSection({
     .map(entry => entry.legend);
 
   return (
-    <SharedChartSection
+    <ChartSection
       controlsLabel={detailsLabel}
       emptyText={t('dashboard.usage.empty')}
       entries={chart.entries}
@@ -34,6 +34,6 @@ export function ChartSection({
       title={title}
     >
       <UsageChart chart={chart} valueFormatter={valueFormatter} visibleLegends={visibleLegends} />
-    </SharedChartSection>
+    </ChartSection>
   );
 }
