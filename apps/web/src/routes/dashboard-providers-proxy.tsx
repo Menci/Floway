@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import { useDashboardOutletContext } from './dashboard';
-import { callApi } from '../api/auth';
+import { callApi, callApiNoContent } from '../api/auth';
 import { api } from '../api/client';
 import type { ProxyConflictBody, ProxyRecord, BackoffRow } from '../api/types';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
@@ -246,7 +246,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setDeleteError(null);
 
     const handle = toasts.start(t('dashboard.proxy.toast.delete.pending', { name: target.name }));
-    const result = await callApi(() => api.api.proxies[':id'].$delete({ param: { id: target.id } }));
+    const result = await callApiNoContent(() => api.api.proxies[':id'].$delete({ param: { id: target.id } }));
 
     setDeleting(false);
     if (result.error) {

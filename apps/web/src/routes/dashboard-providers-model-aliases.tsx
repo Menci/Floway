@@ -5,7 +5,7 @@ import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-model-aliases';
 import { useDashboardOutletContext } from './dashboard';
-import { callApi } from '../api/auth';
+import { callApi, callApiNoContent } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, ModelAlias } from '../api/types';
 import { getSessionToken } from '../auth/session';
@@ -98,7 +98,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     setMutating(true);
     setDeleteError(null);
     const handle = toasts.start(t('dashboard.modelAliases.toast.delete.pending', { name: target.name }));
-    const result = await callApi(() => api.api.aliases[':id'].$delete({ param: { id: target.id } }));
+    const result = await callApiNoContent(() => api.api.aliases[':id'].$delete({ param: { id: target.id } }));
     setMutating(false);
     if (result.error) {
       handle.settle();
