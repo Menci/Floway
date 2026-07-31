@@ -37,6 +37,7 @@ export const menuCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L267 */
 .fui-MenuPopover.fui-MenuPopover {
   background-clip: padding-box;
+  background-color: var(--winui-acrylic-in-app-fill-default);
   border-radius: var(--winui-overlay-corner-radius);
   border-color: var(--winui-surface-stroke-flyout);
   padding-block: 2px;

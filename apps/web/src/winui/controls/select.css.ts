@@ -185,8 +185,10 @@ export const selectCss = `
 
 /* The drop-down surface. WinUI gives the popup the overlay radius and a real
    flyout stroke, against Fluent's control radius and transparent outline.
-   The WinUI fill is AcrylicInAppFillColorDefaultBrush, which the token
-   vocabulary does not carry, so the surface keeps Fluent's neutral background.
+   The WinUI fill is AcrylicInAppFillColorDefaultBrush, taken as the flat colour
+   that brush declares for itself where there is no acrylic to composite --
+   which is every surface on the web, and is why Fluent's flat white was a full
+   step brighter than the drop-down WinUI draws.
    BackgroundSizing is InnerBorderEdge, which is background-clip: padding-box on
    the web: the fill stops at the border so the translucent stroke reads against
    whatever the drop-down floats over, as on every other flyout in the layer.
@@ -197,6 +199,7 @@ export const selectCss = `
 .fui-Dropdown__listbox.fui-Dropdown__listbox,
 .fui-Combobox__listbox.fui-Combobox__listbox {
   background-clip: padding-box;
+  background-color: var(--winui-acrylic-in-app-fill-default);
   border-color: var(--winui-surface-stroke-flyout);
   border-radius: var(--winui-overlay-corner-radius);
   gap: 0;

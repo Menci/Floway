@@ -6,9 +6,10 @@
 // — that being the WinUI surface that likewise carries a title block over
 // scrolling content.
 //
-// FlyoutPresenter fills itself with AcrylicInAppFillColorDefaultBrush, which no
-// theme dictionary resolves to a literal, so ContentDialogBackground's solid
-// base is the fill we transcribe.
+// FlyoutPresenter fills itself with AcrylicInAppFillColorDefaultBrush, whose
+// flat fallback ../tokens.ts carries. A drawer is not a flyout though: it is
+// the full-height surface a title block sits on, which is a ContentDialog's
+// job, so ContentDialogBackground's solid base is the fill we transcribe.
 export const drawerCss = `
 /* Surface fill and foreground, taken from the ContentDialog keys rather than
    Fluent's neutral background and foreground pair. Both flavours share the pair

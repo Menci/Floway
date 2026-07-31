@@ -226,6 +226,23 @@ export const winuiTokenCss = `
   }
 }
 
+/* The in-app acrylic material, as the flat colour it declares for itself when
+   acrylic is unavailable. Every AcrylicBrush carries a FallbackColor for
+   exactly that case, and the web is that case: there is no backdrop material
+   here to tint. So a flyout that XAML fills with AcrylicInAppFillColorDefault
+   takes this rather than staying Fluent's flat white.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96 */
+:root {
+  --winui-acrylic-in-app-fill-default: #f9f9f9;
+}
+
+/* https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L44 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --winui-acrylic-in-app-fill-default: #2c2c2c;
+  }
+}
+
 /* Solid backgrounds — the opaque ramp everything translucent is composited on.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L272-L279 */
 :root {

@@ -18,10 +18,12 @@
 // ScrollBarCornerRadius confirms the expanded reading — a 3px radius is a full
 // round-off only on a 6px pill.
 //
-// The expanded track is AcrylicInAppFillColorDefaultBrush, an acrylic material
-// the theme dictionaries reference but never declare, and which the web has no
-// equivalent of. The layer fill stands in for it: it is the declared resource
-// closest in role, a translucent sheet meant to sit over content.
+// The expanded track is AcrylicInAppFillColorDefaultBrush. That brush declares
+// a flat FallbackColor for where acrylic cannot be composited, and ../tokens.ts
+// carries it -- but the fallback is opaque, and a scrollbar track sits over the
+// content it scrolls. The layer fill stands in instead: it is the declared
+// resource closest in role, a translucent sheet meant to sit over content.
+// https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Materials/Acrylic/AcrylicBrush_themeresources.xaml#L96
 //
 // Every rule here excludes the opted-out subtree in its selector rather than
 // through a token indirection, because what it states is geometry Fluent never

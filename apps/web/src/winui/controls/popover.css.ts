@@ -25,9 +25,9 @@
 // and Fluent's unconstrained surface stands.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L30-L33
 //
-// Fill and foreground are also Fluent's: FlyoutPresenterBackground is
-// AcrylicInAppFillColorDefaultBrush, which the token layer has no acrylic
-// vocabulary for.
+// FlyoutPresenterBackground is AcrylicInAppFillColorDefaultBrush, taken as the
+// flat colour that brush declares for itself where there is no acrylic to
+// composite. The foreground stays Fluent's.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/FlyoutPresenter_themeresources.xaml#L5
 export const popoverCss = `
 /* The surface. WinUI gives a flyout the overlay corner rather than the control
@@ -42,5 +42,6 @@ export const popoverCss = `
   border-radius: var(--winui-overlay-corner-radius);
   border-color: var(--winui-surface-stroke-flyout);
   background-clip: padding-box;
+  background-color: var(--winui-acrylic-in-app-fill-default);
 }
 `;
