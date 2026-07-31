@@ -28,11 +28,7 @@ export interface GlobalError {
 
 export type ApiResult<T> = { data: T; error?: undefined } | { data?: undefined; error: GlobalError };
 
-// Transport and failure handling, shared by both entry points: what differs
-// between them is only what a successful response is expected to carry.
-const runRequest = async (
-  fn: () => Promise<Response>,
-): Promise<{ response: Response; error?: undefined } | { response?: undefined; error: GlobalError }> => {
+const runRequest = async (fn: () => Promise<Response>): Promise<ApiResult<Response>> => {
   let response: Response;
   try {
     response = await fn();
@@ -40,7 +36,7 @@ const runRequest = async (
     return { error: { status: 0, message: e instanceof Error ? e.message : String(e) } };
   }
 
-  if (response.ok) return { response };
+  if (response.ok) return { data: response };
 
   let body: unknown;
   try {
@@ -61,22 +57,20 @@ export const callApi = async <T>(
   fn: () => Promise<Response>,
 ): Promise<ApiResult<T>> => {
   const result = await runRequest(fn);
-  if (result.error) return { error: result.error };
+  if (result.error) return result;
 
   let data: T;
   try {
-    data = (await result.response.json()) as T;
+    data = (await result.data.json()) as T;
   } catch (e: unknown) {
-    return { error: { status: result.response.status, message: e instanceof Error ? e.message : 'Invalid JSON response' } };
+    return { error: { status: result.data.status, message: e instanceof Error ? e.message : 'Invalid JSON response' } };
   }
   return { data };
 };
 
 // For a route that answers 204, which carries no body at all
-// (https://www.rfc-editor.org/rfc/rfc9110#section-15.3.5) — the gateway's
-// `DELETE /api/aliases/:id` and `DELETE /api/proxies/:id`. Success is the
-// absence of an error, so nothing is parsed and `data` is `void`; asking
-// `callApi<T>` for one of these would report a real success as a JSON error.
+// (https://www.rfc-editor.org/rfc/rfc9110#section-15.3.5): success is the
+// absence of an error, and nothing is parsed.
 export const callApiNoContent = async (
   fn: () => Promise<Response>,
 ): Promise<ApiResult<void>> => {

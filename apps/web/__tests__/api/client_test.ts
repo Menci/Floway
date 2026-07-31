@@ -28,6 +28,12 @@ describe('callApi', () => {
     expect(result.data).toBeUndefined();
   });
 
+  it('reports a body-less 204 as an error, which is what callApiNoContent exists to avoid', async () => {
+    const result = await callApi(respond(new Response(null, { status: 204 })));
+    expect(result.data).toBeUndefined();
+    expect(result.error?.status).toBe(204);
+  });
+
   it('reports a transport failure as status 0', async () => {
     const result = await callApi(() => Promise.reject(new Error('network down')));
     expect(result.error).toEqual({ status: 0, message: 'network down' });
