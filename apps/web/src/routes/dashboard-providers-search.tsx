@@ -1,4 +1,4 @@
-import { EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
+import { ArrowRouting24Regular, EyeOffRegular, EyeRegular, GlobeSearch24Regular } from '@fluentui/react-icons';
 import type { InferResponseType } from 'hono/client';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +17,7 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { SecretInput } from '../components/ui/secret-input';
+import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card';
 import { fluentComponents } from '../fluent';
 import { useAuthStore } from '../stores/auth-store';
 
@@ -32,7 +33,6 @@ const {
   MessageBarTitle,
   Option,
   Spinner,
-  Switch,
   Text,
   Tooltip,
 } = fluentComponents;
@@ -272,14 +272,14 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
         title={t('dashboard.searchConfig.heading')}
       />
 
-      <Panel className="!p-[22px_24px] grid">
-        {loadError && (
-          <MessageBar intent="error">
-            <MessageBarBody>{loadError}</MessageBarBody>
-          </MessageBar>
-        )}
+      {loadError && (
+        <MessageBar intent="error">
+          <MessageBarBody>{loadError}</MessageBarBody>
+        </MessageBar>
+      )}
 
-        <Field label={t('dashboard.searchConfig.providerLabel')}>
+      <SettingsExpander
+        action={<div className="w-[240px] flex-none">
           <Dropdown
             button={{
               children: (
@@ -289,6 +289,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
                 />
               ),
             }}
+            className="!w-full"
             onOptionSelect={handleProviderChange}
             selectedOptions={[draft.provider]}
             value={t(activeOption.labelKey)}
@@ -299,51 +300,50 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
               </Option>
             ))}
           </Dropdown>
-        </Field>
-
-        {activeOption.descKey && (
-          <div className="grid gap-[4px]">
-            <Text size={200} className="text-fui-fg3">
-              {t(activeOption.descKey)}
-            </Text>
-            {activeOption.url && (
-              <Link href={activeOption.url} target="_blank" rel="noopener noreferrer">
-                {t('dashboard.searchConfig.getKeyLink')}
-              </Link>
-            )}
-          </div>
-        )}
-
-        {draft.provider === 'disabled'
-          ? <MessageBar intent="info"><MessageBarBody>{t('dashboard.searchConfig.noCredentialNeeded')}</MessageBarBody></MessageBar>
-          : (
-              <Field label={t('dashboard.searchConfig.apiKeyLabel')}>
-                <SecretInput
-                  contentAfter={<Tooltip content={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} relationship="label"><Button appearance="subtle" aria-label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} icon={secretVisible ? <EyeOffRegular /> : <EyeRegular />} onClick={() => setSecretVisible(value => !value)} size="small" /></Tooltip>}
-                  onChange={handleApiKeyChange}
-                  placeholder={t('dashboard.searchConfig.apiKeyPlaceholder')}
-                  revealed={secretVisible}
-                  value={activeOption.getApiKey(draft)}
-                />
-              </Field>
-            )}
-
-        <section className="grid gap-3 border-t border-t-solid border-fui-stroke1 pt-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="grid gap-1 min-w-0">
-              <Text weight="semibold">{t('dashboard.searchConfig.passthrough.title')}</Text>
-              <Text size={200} className="text-fui-fg2">{t('dashboard.searchConfig.passthrough.description')}</Text>
-            </div>
-            <Switch
-              aria-label={t('dashboard.searchConfig.passthrough.title')}
-              checked={draft.passthroughOpenAiSearch.enabled}
-              disabled={eligibleUpstreams.length === 0}
-              onChange={(_, data) => togglePassthrough(data.checked)}
+        </div>}
+        defaultOpen={draft.provider !== 'disabled'}
+        description={activeOption.descKey ? t(activeOption.descKey) : undefined}
+        expandLabel={t('dashboard.searchConfig.providerLabel')}
+        header={t('dashboard.searchConfig.providerLabel')}
+        icon={<GlobeSearch24Regular />}
+      >
+        <div className="grid gap-3">
+          <Field label={t('dashboard.searchConfig.apiKeyLabel')}>
+            <SecretInput
+              contentAfter={<Tooltip content={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} relationship="label"><Button appearance="subtle" aria-label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')} icon={secretVisible ? <EyeOffRegular /> : <EyeRegular />} onClick={() => setSecretVisible(value => !value)} size="small" /></Tooltip>}
+              disabled={draft.provider === 'disabled'}
+              onChange={handleApiKeyChange}
+              placeholder={t('dashboard.searchConfig.apiKeyPlaceholder')}
+              revealed={secretVisible}
+              value={activeOption.getApiKey(draft)}
             />
-          </div>
-          {draft.passthroughOpenAiSearch.enabled && <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
+          </Field>
+          {activeOption.url && (
+            <Link href={activeOption.url} target="_blank" rel="noopener noreferrer">
+              {t('dashboard.searchConfig.getKeyLink')}
+            </Link>
+          )}
+        </div>
+      </SettingsExpander>
+
+      <SettingsExpander
+        action={<SettingsSwitch
+          checked={draft.passthroughOpenAiSearch.enabled}
+          disabled={eligibleUpstreams.length === 0}
+          label={t('dashboard.searchConfig.passthrough.title')}
+          onChange={togglePassthrough}
+        />}
+        defaultOpen={draft.passthroughOpenAiSearch.enabled}
+        description={t('dashboard.searchConfig.passthrough.description')}
+        expandLabel={t('dashboard.searchConfig.passthrough.title')}
+        header={t('dashboard.searchConfig.passthrough.title')}
+        icon={<ArrowRouting24Regular />}
+      >
+        <div className="grid gap-3">
+          <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">
             <Field label={t('dashboard.searchConfig.passthrough.upstream')}>
               <Dropdown
+                disabled={!draft.passthroughOpenAiSearch.enabled}
                 onOptionSelect={(_, data) => data.optionValue && setPassthroughUpstream(data.optionValue)}
                 selectedOptions={[draft.passthroughOpenAiSearch.upstreamId]}
                 value={selectedUpstream?.name ?? ''}
@@ -360,6 +360,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
             </Field>
             <Field label={t('dashboard.searchConfig.passthrough.model')}>
               <Dropdown
+                disabled={!draft.passthroughOpenAiSearch.enabled}
                 onOptionSelect={(_, data) => {
                   const model = data.optionValue;
                   if (!model) return;
@@ -379,51 +380,45 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
                 ))}
               </Dropdown>
             </Field>
-          </div>}
+          </div>
           {eligibleUpstreams.length === 0 && <Text size={200} className="text-fui-fg3">{t('dashboard.searchConfig.passthrough.empty')}</Text>}
-        </section>
-
-        <div className="flex flex-col gap-[10px] sm:flex-row sm:items-center">
-          <Button
-            appearance="primary"
-            disabled={saving}
-            icon={saving ? <Spinner size="tiny" /> : undefined}
-            onClick={() => void handleSave()}
-          >
-            {saving
-              ? t('dashboard.searchConfig.saving')
-              : t('dashboard.searchConfig.save')}
-          </Button>
-          <Button
-            disabled={draft.provider === 'disabled' || testing}
-            icon={testing ? <Spinner size="tiny" /> : undefined}
-            onClick={() => void handleTest()}
-          >
-            {testing
-              ? t('dashboard.searchConfig.testing')
-              : t('dashboard.searchConfig.test')}
-          </Button>
         </div>
+      </SettingsExpander>
 
-        {draft.provider === 'disabled' && (
-          <Text size={200} className="text-fui-fg3">
-            {t('dashboard.searchConfig.testDisabledHint')}
-          </Text>
-        )}
+      <div className="flex flex-col gap-[10px] sm:flex-row sm:items-center">
+        <Button
+          appearance="primary"
+          disabled={saving}
+          icon={saving ? <Spinner size="tiny" /> : undefined}
+          onClick={() => void handleSave()}
+        >
+          {saving
+            ? t('dashboard.searchConfig.saving')
+            : t('dashboard.searchConfig.save')}
+        </Button>
+        <Button
+          disabled={draft.provider === 'disabled' || testing}
+          icon={testing ? <Spinner size="tiny" /> : undefined}
+          onClick={() => void handleTest()}
+        >
+          {testing
+            ? t('dashboard.searchConfig.testing')
+            : t('dashboard.searchConfig.test')}
+        </Button>
+      </div>
 
-        {saveError && (
-          <MessageBar intent="error">
-            <MessageBarBody>{saveError}</MessageBarBody>
-          </MessageBar>
-        )}
-        {saveSuccess && (
-          <MessageBar intent="success">
-            <MessageBarBody>
-              {t('dashboard.searchConfig.saveSuccess')}
-            </MessageBarBody>
-          </MessageBar>
-        )}
-      </Panel>
+      {saveError && (
+        <MessageBar intent="error">
+          <MessageBarBody>{saveError}</MessageBarBody>
+        </MessageBar>
+      )}
+      {saveSuccess && (
+        <MessageBar intent="success">
+          <MessageBarBody>
+            {t('dashboard.searchConfig.saveSuccess')}
+          </MessageBarBody>
+        </MessageBar>
+      )}
 
       {testResult && (
         <Panel className="!p-[22px_24px] grid gap-[14px]">

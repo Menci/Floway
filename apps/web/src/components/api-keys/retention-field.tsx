@@ -1,11 +1,15 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 import { parseDuration } from '../../lib/parse-duration';
-import { Dropdown, Input } from '../ui/fluent-form-controls';
+import { Combobox } from '../ui/fluent-form-controls';
+import { SettingsCard } from '../ui/settings-card';
 
-const { Field, Option, Text } = fluentComponents;
+const { Option, Text, makeStyles } = fluentComponents;
+
+const useStyles = makeStyles({ error: { color: 'var(--colorPaletteRedForeground1)' } });
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
 
@@ -53,10 +57,20 @@ const editorStateFor = (
     : '',
 });
 
+// A settings row whose trailing control is the period itself, so the row needs
+// no label of its own -- the header already names what is being retained.
+//
+// The list holds off and the presets, and a period outside them is typed into
+// the same control rather than into a second field beside it. That is what a
+// freeform combobox is for, and it also keeps the control inside the 240 a
+// settings row gives its action, where a two-column pair of fields had to take
+// half the dialog.
+// https://github.com/microsoft/PowerToys/blob/70e0fc22952c79c6e12dce4096f4b0692ded9d90/src/settings-ui/Settings.UI/SettingsXAML/App.xaml#L68
 export const RetentionField = ({
   children,
   customInputUnit = 'duration',
   description,
+  icon,
   label,
   maximumSeconds,
   minimumSeconds = 1,
@@ -66,9 +80,10 @@ export const RetentionField = ({
   presets,
   value,
 }: {
-  children?: React.ReactNode;
+  children?: ReactNode;
   customInputUnit?: 'duration' | 'days';
   description: string;
+  icon: ReactNode;
   label: string;
   maximumSeconds?: number;
   minimumSeconds?: number;
@@ -79,7 +94,7 @@ export const RetentionField = ({
   value: RetentionValue;
 }) => {
   const { t } = useTranslation();
-  const fieldId = useId();
+  const styles = useStyles();
   const [editor, setEditor] = useState(() => editorStateFor(value, offValue, presets, customInputUnit));
   if (editor.value !== value) {
     setEditor(editorStateFor(value, offValue, presets, customInputUnit));
@@ -96,16 +111,10 @@ export const RetentionField = ({
     return seconds;
   };
 
-  const selectChoice = (next: Choice) => {
+  const selectChoice = (next: Exclude<Choice, 'custom'>) => {
     if (next === 'off') {
       setEditor({ value: offValue, choice: next, custom: '' });
       onChange(offValue);
-      return;
-    }
-    if (next === 'custom') {
-      const parsed = parseCustom(custom) ?? 'invalid';
-      setEditor({ value: parsed, choice: next, custom });
-      onChange(parsed);
       return;
     }
     const seconds = Number(next.slice('seconds:'.length));
@@ -113,43 +122,41 @@ export const RetentionField = ({
     onChange(seconds);
   };
 
+  const typeCustom = (text: string) => {
+    const parsed = parseCustom(text) ?? 'invalid';
+    setEditor({ value: parsed, choice: 'custom', custom: text });
+    onChange(parsed);
+  };
+
   const invalid = choice === 'custom' && parseCustom(custom) === null;
-  const choiceLabel = choice === 'off'
+  const displayValue = choice === 'off'
     ? offLabel
     : choice === 'custom'
-      ? t('dashboard.apiKeys.retention.custom')
+      ? custom
       : presets.find(preset => `seconds:${preset.seconds}` === choice)!.label;
 
-  return <div aria-describedby={`${fieldId}-description`} aria-labelledby={`${fieldId}-label`} className="grid gap-2" role="group">
-    <div className="grid gap-1">
-      <Text id={`${fieldId}-label`} weight="semibold">{label}</Text>
-      <Text id={`${fieldId}-description`} size={200} className="text-fui-fg2">{description}</Text>
-    </div>
-    <div className="grid gap-2 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[560px]:grid-cols-1">
-      <Field label={t('dashboard.apiKeys.retention.preset')}>
-        <Dropdown id={`${fieldId}-preset`} selectedOptions={[choice]} value={choiceLabel} onOptionSelect={(_, data) => data.optionValue !== undefined && selectChoice(data.optionValue as Choice)}>
+  return <>
+    <SettingsCard
+      action={<div className="w-[240px] flex-none">
+        <Combobox
+          aria-label={label}
+          className="!w-full"
+          freeform
+          onChange={event => typeCustom(event.target.value)}
+          onOptionSelect={(_, data) => data.optionValue !== undefined && selectChoice(data.optionValue as Exclude<Choice, 'custom'>)}
+          placeholder={customInputUnit === 'days' ? t('dashboard.apiKeys.retention.daysPlaceholder') : t('dashboard.apiKeys.retention.durationPlaceholder')}
+          selectedOptions={choice === 'custom' ? [] : [choice]}
+          value={displayValue}
+        >
           <Option value="off">{offLabel}</Option>
           {presets.map(preset => <Option key={preset.seconds} value={`seconds:${preset.seconds}`}>{preset.label}</Option>)}
-          <Option value="custom">{t('dashboard.apiKeys.retention.custom')}</Option>
-        </Dropdown>
-      </Field>
-      {choice === 'custom' && <Field
-        label={t('dashboard.apiKeys.retention.customValue')}
-        validationMessage={invalid ? t('dashboard.apiKeys.retention.invalid') : undefined}
-        validationState={invalid ? 'error' : 'none'}
-      >
-        <Input
-          id={`${fieldId}-custom`}
-          placeholder={customInputUnit === 'days' ? t('dashboard.apiKeys.retention.daysPlaceholder') : t('dashboard.apiKeys.retention.durationPlaceholder')}
-          value={custom}
-          onChange={(_, data) => {
-            const parsed = parseCustom(data.value) ?? 'invalid';
-            setEditor({ value: parsed, choice: 'custom', custom: data.value });
-            onChange(parsed);
-          }}
-        />
-      </Field>}
-    </div>
-    {children !== undefined && <div className="grid gap-1">{children}</div>}
-  </div>;
+        </Combobox>
+      </div>}
+      description={description}
+      header={label}
+      icon={icon}
+    />
+    {invalid && <Text className={styles.error} role="alert" size={200}>{t('dashboard.apiKeys.retention.invalid')}</Text>}
+    {children}
+  </>;
 };

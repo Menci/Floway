@@ -1,3 +1,4 @@
+import { Database24Regular, History24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -228,6 +229,7 @@ export function KeyDialog(props: KeyDialogProps) {
         render={({ field }) => (
           <RetentionField
             description={t('dashboard.apiKeys.form.retentionHint')}
+            icon={<History24Regular />}
             label={t('dashboard.apiKeys.form.retention')}
             offLabel={t('dashboard.apiKeys.retention.offCapture')}
             offValue={null}
@@ -254,6 +256,7 @@ export function KeyDialog(props: KeyDialogProps) {
           <RetentionField
             customInputUnit="days"
             description={t('dashboard.apiKeys.form.responsesRetentionHint')}
+            icon={<Database24Regular />}
             label={t('dashboard.apiKeys.form.responsesRetention')}
             maximumSeconds={RESPONSES_RETENTION_MAX_SECONDS}
             minimumSeconds={86400}

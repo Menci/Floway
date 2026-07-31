@@ -1,4 +1,4 @@
-import { ArrowDownRegular, ArrowUpRegular } from '@fluentui/react-icons';
+import { ArrowDownRegular, ArrowUpRegular, ShieldKeyhole24Regular } from '@fluentui/react-icons';
 import { useCallback, useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,11 +6,11 @@ import { ProviderBadge } from './provider-badge';
 import type { ControlPlaneModel, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ScrollArea } from '../ui/scroll-area';
+import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {
   Checkbox,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -83,19 +83,17 @@ export function UpstreamAccessControl({
   }, [ids, onChange]);
 
   return <section className="grid gap-3 min-w-0" aria-describedby={error ? errorId : undefined}>
-    <div className="flex items-start justify-between gap-4 min-w-0 py-1">
-      <div className="grid gap-1 min-w-0">
-        <Text weight="semibold">{t('dashboard.upstreamAccess.title')}</Text>
-        <Text size={200} className="text-fui-fg2 leading-[1.4]">{t('dashboard.upstreamAccess.description')}</Text>
-      </div>
-      <Switch
-        aria-label={t('dashboard.upstreamAccess.title')}
+    <SettingsCard
+      action={<SettingsSwitch
         checked={override}
-        className="flex-none"
         disabled={disabled}
-        onChange={(_, data) => toggleOverride(!!data.checked)}
-      />
-    </div>
+        label={t('dashboard.upstreamAccess.title')}
+        onChange={toggleOverride}
+      />}
+      description={t('dashboard.upstreamAccess.description')}
+      header={t('dashboard.upstreamAccess.title')}
+      icon={<ShieldKeyhole24Regular />}
+    />
     {error && <Text className={styles.error} id={errorId} role="alert" size={200}>{error}</Text>}
     {override && <ScrollArea axes="horizontal" className="min-w-0">
       {/* Fluent's Table is already `width: 100%; table-layout: fixed`, so the

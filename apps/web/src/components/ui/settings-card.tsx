@@ -310,7 +310,13 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
     </button>
     <div className={mergeClasses(s.contentFrame, open && s.contentFrameOpen)}>
       <div className={s.contentClip}>
-        <div aria-labelledby={headerId} className={s.content} hidden={!open} id={contentId} role="group">{children}</div>
+        {/* Closed, the region is inert rather than hidden. `hidden` is
+            `display: none`, which takes the content out of flow in the same
+            frame the row starts collapsing, leaving the row nothing to
+            animate towards -- it just vanished. `inert` takes it out of the
+            tab order and away from assistive technology without touching
+            layout, so the row can close over its own duration. */}
+        <div aria-labelledby={headerId} className={s.content} id={contentId} inert={!open} role="group">{children}</div>
       </div>
     </div>
   </div>;
