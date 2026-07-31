@@ -89,27 +89,6 @@ const useDropzoneStyles = makeStyles({
   },
 });
 
-const usePreviewGridStyles = makeStyles({
-  grid: {
-    display: 'grid',
-    gap: '10px',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-  },
-  // One tile per counted entity. It is the Expander's content region -- the
-  // secondary step of the card ramp -- at the control corner rather than the
-  // overlay one, because these sit inside a card rather than being one.
-  cell: {
-    alignItems: 'center',
-    backgroundColor: 'var(--winui-card-background-fill-secondary)',
-    ...shorthands.borderRadius('var(--winui-control-corner-radius)'),
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-    padding: '12px 10px',
-    textAlign: 'center',
-  },
-});
-
 const PREVIEW_LABEL_KEYS = [
   'users',
   'apiKeys',
@@ -165,7 +144,6 @@ export default function DashboardAdminBackupRestore() {
 
   const confirmDialog = useDialogInvocation<void>();
   const dz = useDropzoneStyles();
-  const pg = usePreviewGridStyles();
 
   const handleExport = useCallback(async () => {
     setExporting(true);
@@ -387,9 +365,16 @@ export default function DashboardAdminBackupRestore() {
               <Text size={300} weight="semibold">
                 {t('dashboard.backupRestore.import.preview')}
               </Text>
-              <div className={`${pg.grid} mt-[8px]`}>
+              <div className="mt-[8px] grid gap-[10px] grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
                 {PREVIEW_LABEL_KEYS.map(key => (
-                  <div key={key} className={pg.cell}>
+                  // One tile per counted entity. It is the Expander's content
+                  // region -- the secondary step of the card ramp -- at the
+                  // control corner rather than the overlay one, because these
+                  // sit inside a card rather than being one.
+                  <div
+                    key={key}
+                    className="flex flex-col items-center gap-[2px] rounded-[var(--winui-control-corner-radius)] bg-[var(--winui-card-background-fill-secondary)] p-[12px_10px] text-center"
+                  >
                     <Text size={500} weight="semibold">
                       {previewCounts?.[key] ?? 0}
                     </Text>

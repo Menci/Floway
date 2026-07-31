@@ -49,7 +49,6 @@ const {
   TableRow,
   Text,
   Tooltip,
-  makeStyles,
 } = fluentComponents;
 
 interface LoaderData {
@@ -74,11 +73,6 @@ const providers: readonly UpstreamProviderKind[] = [
   'claude-code',
   'ollama',
 ];
-
-const useStyles = makeStyles({
-  ready: { color: 'var(--colorPaletteGreenForeground1)' },
-  warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
-});
 
 const loadPageData = async (): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
@@ -440,7 +434,6 @@ function ModelStatus({
 }) {
   const { t } = useTranslation();
   const locale = useLocale();
-  const s = useStyles();
   const cacheStatus = record.modelsCache.lastError
     ? 'failed'
     : record.modelsCache.fetchedAt === null ? 'empty' : 'ready';
@@ -463,8 +456,8 @@ function ModelStatus({
             : t('dashboard.upstreams.models.unavailable')}
         </Text>
         {healthy
-          ? <CheckmarkCircleRegular className={`${s.ready} block flex-none`} fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
-          : <WarningRegular className={`${s.warning} block flex-none`} fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
+          ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
+          : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
       </span>
     </Tooltip>
   );
