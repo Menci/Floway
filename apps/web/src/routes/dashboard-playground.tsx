@@ -34,6 +34,7 @@ import {
 import { PlaygroundMarkdown } from '../components/playground/playground-markdown';
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
+import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyState } from '../components/ui/empty-state';
 import { Combobox, Dropdown, Input, Textarea } from '../components/ui/fluent-form-controls';
 import { PANE_GAP_CLASS } from '../components/ui/layout';
@@ -355,13 +356,12 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     <>
       <section className={`h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_320px] ${PANE_GAP_CLASS} max-[1100px]:grid-cols-1`}>
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-3">
-          <div className={`min-w-0 pb-3 flex items-center gap-3 ${s.toolbar}`}>
-            <div className="grid gap-1.5 min-w-0">
-              <Text as="h1" block size={700} weight="semibold" className="m-0">{t('dashboard.nav.playground')}</Text>
-              <Text block size={200} className="text-fui-fg2">{t('dashboard.pages.playground')}</Text>
-            </div>
-            {narrow && <Button appearance="subtle" aria-label={t('dashboard.playground.settings.title')} className="!ml-auto" icon={<SettingsRegular />} onClick={() => setSettingsOpen(true)} />}
-          </div>
+          <DashboardPageHeader
+            actions={narrow ? <Button appearance="subtle" aria-label={t('dashboard.playground.settings.title')} icon={<SettingsRegular />} onClick={() => setSettingsOpen(true)} /> : undefined}
+            className={`pb-3 ${s.toolbar}`}
+            description={t('dashboard.pages.playground')}
+            title={t('dashboard.nav.playground')}
+          />
           <div className="grid gap-2">
             <Button
               appearance="subtle"
