@@ -21,11 +21,14 @@
 // indicator's own fill and stroke are handed over to them.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ToggleSwitch_themeresources.xaml#L507-L508
 //
-// Knob sizes and gaps are expressed as a share of the indicator's content box
-// — 38x18 at Fluent's medium size — so Fluent's small track, which WinUI has no
-// counterpart for, scales the same proportions instead of overflowing. Every
-// offset below is stated relative to the track's outer edge and then reduced
-// by the 1px border the content box is inset by.
+// Knob sizes and gaps are written as multiples of a unit the size sets, so
+// Fluent's small track — which WinUI has no counterpart for — carries the same
+// proportions instead of the medium size's pixels. The unit is the ratio of the
+// two content boxes, 14 over 18, which is what keeps the knob's travel landing
+// inside the track: at medium's literal 12px the small knob finished half a
+// pixel past the track's inner edge. Every offset below is stated relative to
+// the track's outer edge and then reduced by the 1px border the content box is
+// inset by.
 //
 // The knob is also the one subject in the layer that the doubling convention
 // cannot be applied to. Fluent renders it as the indicator's only child and
@@ -89,6 +92,12 @@ export const switchCss = `
 .fui-Switch__indicator.fui-Switch__indicator {
   --winui-switch-crossfade-duration: 0s;
   --winui-switch-travel-duration: var(--winui-reposition-animation-duration);
+  --winui-switch-unit: 1px;
+}
+
+/* 14 over 18: the small track's content box against the medium one's. */
+.fui-Switch[data-winui-size='small'] .fui-Switch__indicator.fui-Switch__indicator {
+  --winui-switch-unit: 0.7778px;
 }
 
 .fui-Switch__input:checked ~ .fui-Switch__indicator.fui-Switch__indicator {
@@ -194,8 +203,8 @@ export const switchCss = `
 
 .fui-Switch__indicator.fui-Switch__indicator > * {
   border-radius: 999px;
-  height: 12px;
-  margin-inline-start: 2.5px;
+  height: calc(12 * var(--winui-switch-unit));
+  margin-inline-start: calc(2.5 * var(--winui-switch-unit));
   /* Above both capsules. Positioned children paint in tree order against a
      positioned sibling, which would put the accent one over the knob. */
   position: relative;
@@ -221,7 +230,7 @@ export const switchCss = `
   transition-duration: var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-control-faster-animation-duration), var(--winui-switch-travel-duration), var(--winui-switch-crossfade-duration);
   transition-property: width, height, margin-inline-start, transform, background-color;
   transition-timing-function: var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-control-fast-out-slow-in-easing), var(--winui-reposition-easing), linear;
-  width: 12px;
+  width: calc(12 * var(--winui-switch-unit));
 }
 
 @media screen and (prefers-reduced-motion: reduce) {
@@ -288,20 +297,20 @@ export const switchCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/src/dxaml/xcp/dxaml/lib/ToggleSwitch_Partial.cpp#L58-L70 */
 .fui-Switch:hover .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
 .fui-Switch[data-winui-switch-dragging] .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
-  height: 14px;
-  margin-inline-start: 1.5px;
-  width: 14px;
+  height: calc(14 * var(--winui-switch-unit));
+  margin-inline-start: calc(1.5 * var(--winui-switch-unit));
+  width: calc(14 * var(--winui-switch-unit));
 }
 
 .fui-Switch:active .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
 .fui-Switch[data-winui-switch-dragging] .fui-Switch__input:enabled:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
-  margin-inline-start: 2px;
-  width: 17px;
+  margin-inline-start: calc(2 * var(--winui-switch-unit));
+  width: calc(17 * var(--winui-switch-unit));
 }
 
 .fui-Switch:active .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > *,
 .fui-Switch[data-winui-switch-dragging] .fui-Switch__input:enabled:checked:not([aria-disabled='true']) ~ .fui-Switch__indicator.fui-Switch__indicator > * {
-  margin-inline-start: -1px;
+  margin-inline-start: calc(-1 * var(--winui-switch-unit));
 }
 
 /* On: the accent fill ramp, on the capsule that carries it. */

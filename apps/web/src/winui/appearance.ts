@@ -114,7 +114,8 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
 
   const appearance = (fallback: string, slots?: readonly string[]) =>
     ({ prop: 'appearance', attribute: winuiAppearanceAttribute, fallback, slots });
-  const size = (fallback: string) => ({ prop: 'size', attribute: winuiSizeAttribute, fallback });
+  const size = (fallback: string, slots?: readonly string[]) =>
+    ({ prop: 'size', attribute: winuiSizeAttribute, fallback, slots });
   const shape = (fallback: string, slots?: readonly string[]) =>
     ({ prop: 'shape', attribute: winuiShapeAttribute, fallback, slots });
 
@@ -189,5 +190,9 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     Dropdown: stamp(components.Dropdown, appearance('outline', rootAndPrimary)),
     Card: stamp(components.Card, appearance('filled', rootIsPrimary)),
     Checkbox: stamp(components.Checkbox, shape('square', rootAndPrimary)),
+    // A Switch is an input, so Fluent sends whatever it does not recognize to
+    // the input rather than to the root. The stamp has to name the root slot to
+    // land where the sheets read it.
+    Switch: stamp(components.Switch, size('medium', rootAndPrimary)),
   };
 };
