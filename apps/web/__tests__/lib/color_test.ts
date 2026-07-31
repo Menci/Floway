@@ -190,7 +190,7 @@ describe('readableTone', () => {
   });
 
   it('gives up saturation for the hue brightening cannot carry', () => {
-    // A fully saturated blue is 1.39:1 on the dark card at full value, and its
+    // A fully saturated blue reads 1.44:1 on its own chip at full value, and its
     // channels are already at their limit, so the search has to desaturate.
     const result = toned('#0000FF', CARD_DARK);
     expect(ratio('#0000FF', chip('#0000FF', CARD_DARK))).toBeLessThan(1.5);

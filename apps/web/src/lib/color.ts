@@ -95,9 +95,9 @@ const WHITE: [number, number, number] = [255, 255, 255];
  *
  * Which hues those are depends on the direction. Darkening always works — every
  * hue reaches black — so on a light surface value alone suffices, a saturated
- * yellow included. Brightening does not: a fully saturated blue is 1.39:1
- * against the dark card at full value and cannot be made lighter without losing
- * saturation, because its own channels are already at their limit.
+ * yellow included. Brightening does not: a fully saturated blue reads 1.44:1 on
+ * its own chip over the dark card at full value, and cannot be made lighter
+ * without losing saturation, because its channels are already at their limit.
  */
 export const readableTone = (hex: string, surface: string): string => {
   const rgb = hexToRgb(hex);
@@ -117,11 +117,15 @@ export const readableTone = (hex: string, surface: string): string => {
   for (let saturation = s; saturation >= 0; saturation -= 0.1) {
     for (let step = 1; step <= STEPS; step += 1) {
       const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
-      const candidate = hsvToRgb(h, Math.max(0, saturation), value);
+      const candidate = hsvToRgb(h, saturation, value);
       if (contrastRatio(candidate, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return rgbToHex(...candidate);
     }
   }
-  // Value is exhausted in the useful direction at every saturation, so the
-  // extreme is the answer. Reached only for a surface no foreground clears.
+  // The saturation ladder steps by a tenth and only lands on zero when the
+  // colour's own saturation is a multiple of one, so for most hues it goes
+  // negative with the last candidate still short. The extreme is the answer
+  // there, and it always clears: the two ratios a surface gives black and white
+  // multiply to exactly 21, so the larger of them is never below sqrt(21), or
+  // about 4.58. No surface exists that neither extreme reads on.
   return rgbToHex(...(darken ? BLACK : WHITE));
 };
