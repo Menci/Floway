@@ -8,8 +8,9 @@ import { api } from '../../api/client';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
-const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, Text } = fluentComponents;
+const { Button, DialogActions, DialogTitle, Text } = fluentComponents;
 
 export function RotateKeyDialog({
   apiKey,
@@ -80,7 +81,7 @@ export function RotateKeyDialog({
         onSourceChange={value => { setKeySource(value); setError(null); }}
         source={keySource}
       />
-      {error && keySource !== 'custom' && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+      {error && keySource !== 'custom' && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     </DialogShell>
   );
 }

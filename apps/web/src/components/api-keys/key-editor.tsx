@@ -17,6 +17,7 @@ import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OpenLinkLabel } from '../ui/open-link-label';
+import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
 const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody } = fluentComponents;
@@ -293,9 +294,7 @@ export function KeyDialog(props: KeyDialogProps) {
       />
 
       {error && (
-        <MessageBar intent="error">
-          <MessageBarBody>{error}</MessageBarBody>
-        </MessageBar>
+        <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>
       )}
     </DialogShell>
   );
