@@ -64,7 +64,17 @@ export const choiceCss = `
    against the indicator instead. */
 .fui-Checkbox__label.fui-Checkbox__label,
 .fui-Radio__label.fui-Radio__label {
-  padding-block: 0;
+  padding: 0;
+}
+
+/* A control that carries a label is a field, and stands in a row beside inputs
+   and combo boxes; one that does not is a mark in a cell, and is only itself.
+   So the field floor lands on the labelled form alone, and the centring above
+   puts the indicator in the middle of it.
+   ./text-input.css.ts derives the 34 and says where from. */
+.fui-Checkbox.fui-Checkbox:has(> .fui-Checkbox__label),
+.fui-Radio.fui-Radio:has(> .fui-Radio__label) {
+  min-height: 34px;
 }
 
 .fui-Checkbox[data-winui-shape='square'] > .fui-Checkbox__indicator.fui-Checkbox__indicator {

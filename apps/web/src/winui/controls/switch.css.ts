@@ -88,7 +88,14 @@ export const switchCss = `
    the control, which is the last thing holding the root taller than the track
    it draws. */
 .fui-Switch__label.fui-Switch__label {
-  padding-block: 0;
+  padding: 0;
+}
+
+/* A switch that carries a label is a field standing beside inputs and combo
+   boxes; one that does not is a control in a cell, and is only itself.
+   ./text-input.css.ts derives the 34 and says where from. */
+.fui-Switch.fui-Switch:has(> .fui-Switch__label) {
+  min-height: 34px;
 }
 
 /* Turning on cross-fades the two capsules over ControlFasterAnimationDuration,
