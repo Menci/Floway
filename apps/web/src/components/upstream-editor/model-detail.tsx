@@ -133,7 +133,12 @@ export function ModelDetail({
         {validationError && <MessageBar intent="error"><MessageBarBody>{validationError}</MessageBarBody></MessageBar>}
 
         <ModelEditorSection title={t('dashboard.upstreamEditor.models.identity')}>
-          <div className="grid grid-cols-2 gap-4 max-[760px]:grid-cols-1">
+          {/* Column count follows the room there is rather than the viewport:
+              this sits beside a 380px sidebar, so the width here and the width
+              a media query can see are two different numbers. Four fields fit
+              on one line when they can, and fall to two and then one as the
+              track minimum stops being met. */}
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
             <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.displayName')}>
               <Input className="!w-full" placeholder={t('dashboard.upstreamEditor.models.displayNamePlaceholder')} readOnly={!editable} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
             </Field>

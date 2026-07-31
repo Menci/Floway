@@ -58,7 +58,6 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     mode: 'onBlur',
   });
   const { control, getValues, handleSubmit, reset, setValue, formState: { errors } } = form;
-  const name = useWatch({ control, name: 'name' });
   const currentValues = useWatch({ control }) as UpstreamEditorValues;
   const hasUnsavedChanges = comparableValues(currentValues) !== savedBaseline || errors.color !== undefined;
 
@@ -172,17 +171,19 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
 
   return <FormProvider {...form}>
     <Toaster toasterId={toasterId} position="top-end" />
-    <div className="grid grid-rows-[auto_auto_minmax(0,1fr)] gap-[14px] h-full min-h-0">
+    {/* A column rather than a row template: the error bar is only sometimes
+        there, and a template that names a row for it leaves an empty one and a
+        gap under everything else when it is not. */}
+    <div className="flex flex-col gap-[14px] h-full min-h-0">
       <header className="flex items-center gap-3 min-w-0 px-1">
         <BackNavigationButton onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
-        <Text size={500} weight="semibold" truncate className="min-w-0">{name || t('dashboard.upstreamEditor.new')}</Text>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
         <div className="ml-auto flex items-center gap-2">
           <Button appearance="primary" disabled={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
         </div>
       </header>
-      <div>{saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}</div>
-      <div className="grid grid-cols-[380px_minmax(0,1fr)] gap-[18px] min-h-0 min-w-0 max-[1050px]:grid-cols-1">
+      {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
+      <div className="grid grid-cols-[380px_minmax(0,1fr)] gap-[18px] min-h-0 min-w-0 flex-1 max-[1050px]:grid-cols-1">
         <Panel className="min-h-0 min-w-0 overflow-hidden !p-0">
           <UpstreamConfigSidebar
             catalogAvailable={modelsError === null}
