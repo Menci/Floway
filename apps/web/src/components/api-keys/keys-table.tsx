@@ -145,7 +145,7 @@ export function KeysTable({
         },
       }),
     ],
-    [copyLabel, disabled, locale, now, onCopy, onDelete, onEdit, onRotate, outcomeFor, s, t, upstreamById],
+    [copyLabel, dangerText, disabled, locale, now, onCopy, onDelete, onEdit, onRotate, outcomeFor, s, t, upstreamById],
   );
 
   if (keys.length === 0) {
