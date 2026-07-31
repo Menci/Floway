@@ -40,12 +40,17 @@ export function UsageChart({ chart, valueFormatter, visibleLegends }: { chart: U
     <UsageChartCallout chart={chart} labelByTime={labelByTime} point={point} valueFormatter={valueFormatter} />
   ), [chart, labelByTime, valueFormatter]);
 
+  // A callout can outlive the data it described: the chart keeps its own hover
+  // state across a range or view switch and asks for a callout carrying legends
+  // from the dataset that has just been replaced. Such a row no longer exists,
+  // so it is dropped rather than substituted -- a table describing the data
+  // must not name a series the data does not have -- and a callout left with no
+  // rows renders nothing.
   const lineCallout = useCallback((data?: CustomizedCalloutData) => renderCallout(data ? {
     x: data.x,
-    rows: data.values.map(value => {
+    rows: data.values.flatMap(value => {
       const entry = entryByLegend.get(value.legend);
-      if (!entry) throw new Error(`Chart callout references unknown series: ${value.legend}`);
-      return { id: entry.id, label: entry.label, color: value.color, value: Number(value.y) };
+      return entry ? [{ id: entry.id, label: entry.label, color: value.color, value: Number(value.y) }] : [];
     }),
   } : null), [entryByLegend, renderCallout]);
 

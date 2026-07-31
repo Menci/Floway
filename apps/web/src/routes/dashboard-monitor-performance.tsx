@@ -346,20 +346,27 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
   title: string;
 }) {
   const { t } = useTranslation();
+  // A callout can outlive the data it described: the chart keeps its own hover
+  // state across a range or metric switch and asks for a callout carrying
+  // legends from the dataset that has just been replaced. Such a row no longer
+  // exists, so it is dropped rather than substituted -- a table describing the
+  // data must not name a series the data does not have.
   const rows = data.values
     .filter(item => item.y > 0)
     .toSorted((left, right) => right.y - left.y)
-    .map(item => {
+    .flatMap(item => {
       const entry = entryByLegend.get(item.legend);
-      if (!entry) throw new Error(`Performance callout references unknown series: ${item.legend}`);
+      if (!entry) return [];
       const point = details?.get(entry.id);
-      return {
+      return [{
         color: item.color,
         key: entry.id,
         label: entry.label,
         values: [formatDuration(point?.ttft ?? null), formatRate(point?.outputSpeed ?? null)],
-      };
+      }];
     });
+
+  if (rows.length === 0) return null;
 
   return (
     <ScrollArea axes="horizontal" className="max-w-[min(420px,calc(100vw-48px))] min-w-[300px]" contentClassName="grid gap-1">
