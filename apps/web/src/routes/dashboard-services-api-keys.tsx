@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect, useOutletContext } from 'react-router';
 
@@ -14,17 +14,15 @@ import { KeyDialog } from '../components/api-keys/key-editor';
 import { KeysTable } from '../components/api-keys/keys-table';
 import { modelsForAgentSetup } from '../components/api-keys/model-reachability';
 import { RotateKeyDialog } from '../components/api-keys/rotate-key-dialog';
-import type { ApiKeysPageData, MutationToastController } from '../components/api-keys/types';
+import type { ApiKeysPageData } from '../components/api-keys/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
+import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
-import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
-import { useOutcomeToasts } from '../components/ui/outcome-toast';
-import { fluentComponents } from '../fluent';
 
-const { Spinner } = fluentComponents;
 const selectedKeyStorageKey = 'floway-agent-setup-selected-key';
 interface LoaderData extends ApiKeysPageData {
   selectedKeyId: string;
@@ -83,11 +81,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   }, [selectedKeyId]);
 
   const toasts = useOutcomeToasts();
-  const mutationToasts: MutationToastController = {
-    start: (kind, name) => toasts.start(t(`dashboard.apiKeys.toast.${kind}.pending`, { name })),
-    succeed: (handle, kind, name) => handle.succeed(t(`dashboard.apiKeys.toast.${kind}.success`, { name })),
-    fail: handle => handle.settle(),
-  };
 
   const reload = async () => {
     setPageError(null);
@@ -142,16 +135,16 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const deleteKey = async (key: ApiKey) => {
     setDeleteError(null);
     setDeletingKey(true);
-    const handle = mutationToasts.start('delete', key.name);
+    const handle = toasts.start(t('dashboard.apiKeys.toast.delete.pending', { name: key.name }));
     const result = await callApi(() => api.api.keys[':id'].$delete({ param: { id: key.id } }));
     setDeletingKey(false);
     if (result.error) {
-      mutationToasts.fail(handle, 'delete', key.name, result.error.message);
+      handle.settle();
       setDeleteError(result.error.message);
       return;
     }
     deleteDialog.close();
-    mutationToasts.succeed(handle, 'delete', key.name);
+    handle.succeed(t('dashboard.apiKeys.toast.delete.success', { name: key.name }));
     await reload();
   };
 
@@ -211,7 +204,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         mode="create"
         onOpenChange={open => { if (!open) editorDialog.close(); }}
         onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
-        mutationToasts={mutationToasts}
         upstreams={data.upstreams}
         userUpstreamIds={user.upstreamIds}
       />}
@@ -223,7 +215,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         mode="edit"
         onOpenChange={open => { if (!open) editorDialog.close(); }}
         onSaved={async () => { await reload(); }}
-        mutationToasts={mutationToasts}
         upstreams={data.upstreams}
         userUpstreamIds={user.upstreamIds}
       />}
@@ -233,7 +224,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         key={rotateDialog.invocation.key}
         onOpenChange={open => { if (!open) rotateDialog.close(); }}
         onSaved={reload}
-        mutationToasts={mutationToasts}
       />}
       {deleteDialog.invocation && <ConfirmDialog
         open={deleteDialog.isOpen}

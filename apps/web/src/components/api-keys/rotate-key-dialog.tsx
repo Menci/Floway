@@ -3,28 +3,27 @@ import { useTranslation } from 'react-i18next';
 
 import { keyWriteBody, type KeySource } from './key-source';
 import { KeySourceControl } from './key-source-control';
-import type { MutationToastController } from './types';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
+import { useOutcomeToasts } from '../ui/outcome-toast';
 const { Button, DialogActions, DialogTitle, MessageBar, MessageBarBody, Text } = fluentComponents;
 
 export function RotateKeyDialog({
   apiKey,
-  mutationToasts,
   onOpenChange,
   open,
   onSaved,
 }: {
   apiKey: ApiKey;
-  mutationToasts: MutationToastController;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   onSaved: () => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
   const [keySource, setKeySource] = useState<KeySource>('generate');
   const [customKey, setCustomKey] = useState('');
   const [saving, setSaving] = useState(false);
@@ -38,19 +37,19 @@ export function RotateKeyDialog({
     }
     setSaving(true);
     setError(null);
-    const toastId = mutationToasts.start('rotate', snapName);
+    const handle = toasts.start(t('dashboard.apiKeys.toast.rotate.pending', { name: snapName }));
     const result = await callApi(() => api.api.keys[':id'].rotate.$post({
       param: { id: apiKey.id },
       json: keyWriteBody(keySource, trimmed),
     }));
     if (result.error) {
       setSaving(false);
-      mutationToasts.fail(toastId, 'rotate', snapName, result.error.message);
+      handle.settle();
       setError(result.error.message);
       return;
     }
     onOpenChange(false);
-    mutationToasts.succeed(toastId, 'rotate', snapName);
+    handle.succeed(t('dashboard.apiKeys.toast.rotate.success', { name: snapName }));
     await onSaved();
   };
 

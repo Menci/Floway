@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { keyWriteBody, type KeySource } from './key-source';
 import { KeySourceControl } from './key-source-control';
 import { RetentionField, type RetentionValue } from './retention-field';
-import type { MutationToastController, UpstreamOption } from './types';
+import type { UpstreamOption } from './types';
 import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type { ApiKey, ControlPlaneModel } from '../../api/types';
@@ -17,6 +17,7 @@ import { fluentComponents } from '../../fluent';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OpenLinkLabel } from '../ui/open-link-label';
+import { useOutcomeToasts } from '../ui/outcome-toast';
 import { UpstreamAccessControl } from '../upstreams/upstream-access-control';
 const { Button, DialogActions, DialogTitle, Field, MessageBar, MessageBarBody } = fluentComponents;
 interface KeyFormValues { name: string; keySource: KeySource; customKey: string; upstreamOverride: boolean; upstreamIds: string[]; dumpRetention: RetentionValue; responsesRetention: Exclude<RetentionValue, null> }
@@ -34,7 +35,6 @@ const RESPONSES_RETENTION_PRESETS = [
   { seconds: 30 * 86400, labelKey: 'thirtyDays' },
 ] as const;
 interface KeyDialogCommonProps {
-  mutationToasts: MutationToastController;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   onSaved: (key: ApiKey) => Promise<void>;
@@ -49,8 +49,9 @@ type KeyDialogProps = KeyDialogCommonProps & (
 );
 
 export function KeyDialog(props: KeyDialogProps) {
-  const { mode, models, mutationToasts, onOpenChange, onSaved, upstreams, userUpstreamIds } = props;
+  const { mode, models, onOpenChange, onSaved, upstreams, userUpstreamIds } = props;
   const { t } = useTranslation();
+  const toasts = useOutcomeToasts();
   const isCreate = mode === 'create';
   const apiKey = props.mode === 'edit' ? props.apiKey : null;
   const [saving, setSaving] = useState(false);
@@ -149,7 +150,7 @@ export function KeyDialog(props: KeyDialogProps) {
       responses_retention_seconds: values.responsesRetention,
     };
     const mutationKind = isCreate ? 'create' : 'edit';
-    const toastId = mutationToasts.start(mutationKind, common.name);
+    const handle = toasts.start(t(`dashboard.apiKeys.toast.${mutationKind}.pending`, { name: common.name }));
     const result = props.mode === 'create'
       ? await callApi(() => api.api.keys.$post({
           json: { ...common, ...keyWriteBody(values.keySource, values.customKey) },
@@ -160,12 +161,12 @@ export function KeyDialog(props: KeyDialogProps) {
         }));
     if (result.error) {
       setSaving(false);
-      mutationToasts.fail(toastId, mutationKind, common.name, result.error.message);
+      handle.settle();
       setError(result.error.message);
       return;
     }
     onOpenChange(false);
-    mutationToasts.succeed(toastId, mutationKind, common.name);
+    handle.succeed(t(`dashboard.apiKeys.toast.${mutationKind}.success`, { name: common.name }));
     await onSaved(result.data);
   };
 

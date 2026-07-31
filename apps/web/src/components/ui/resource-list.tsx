@@ -12,11 +12,11 @@ const { Button, Spinner, Text, Tooltip, makeStyles, mergeClasses } = fluentCompo
 // A table anywhere else — inside the upstream editor, inside a dialog — sits in
 // a container that still states its own padding and wants none of this.
 const ROW_MIN_HEIGHT = '44px';
-// The users table's own rows put twelve pixels between a username and the lines
-// above and below it. The leading and trailing cells take the same twelve, so
-// the first column reads the same distance from the card's edge as from its
-// row's, and the reading is square.
-const EDGE_INSET = '12px';
+// What the leading and trailing cells hold off the card's edge. The rows put
+// twelve pixels between a username and the lines above and below it, which is
+// where this started; it is wider than that on purpose, because the card's edge
+// is the page's boundary where a row's line is only the next row.
+const EDGE_INSET = '16px';
 
 const useStyles = makeStyles({
   table: {
@@ -95,5 +95,5 @@ export function ResourceListActions(props: ResourceListActionsProps) {
 // An empty list has no rows to reach the panel's edge, so this one thing inside
 // it carries the inset the panel no longer states.
 export function ResourceListEmptyState({ children }: { children: ReactNode }) {
-  return <Text block size={300} className="text-fui-fg2 p-[12px]">{children}</Text>;
+  return <Text block size={300} className="text-fui-fg2 p-[16px]">{children}</Text>;
 }
