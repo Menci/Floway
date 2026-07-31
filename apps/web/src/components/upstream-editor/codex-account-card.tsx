@@ -15,7 +15,7 @@ const { Badge, ProgressBar, Text } = fluentComponents;
 
 const QUOTA_REFRESH_MS = 60_000;
 
-export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
+export function CodexAccountCard({ record }: { record: CodexRecord }) {
   const { t } = useTranslation();
   // `ratelimited_until` expires on the wall clock rather than on any state
   // change, so the badge has to re-evaluate on its own.
@@ -89,4 +89,4 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
       {t('dashboard.upstreamEditor.codex.stateUpdated', { time: dateTime(credential.state_updated_at, locale) })}
     </Text>}
   </section>;
-};
+}

@@ -59,7 +59,7 @@ const editorStateFor = (
 // settings row gives its action, where a two-column pair of fields had to take
 // half the dialog.
 // https://github.com/microsoft/PowerToys/blob/70e0fc22952c79c6e12dce4096f4b0692ded9d90/src/settings-ui/Settings.UI/SettingsXAML/App.xaml#L68
-export const RetentionField = ({
+export function RetentionField({
   children,
   customInputUnit = 'duration',
   description,
@@ -85,7 +85,7 @@ export const RetentionField = ({
   onChange: (value: RetentionValue) => void;
   presets: readonly RetentionPreset[];
   value: RetentionValue;
-}) => {
+}) {
   const { t } = useTranslation();
   const styles = useStyles();
   const [editor, setEditor] = useState(() => editorStateFor(value, offValue, presets, customInputUnit));
@@ -160,4 +160,4 @@ export const RetentionField = ({
       : <SettingsExpander action={action} description={description} expandLabel={label} header={label} icon={icon}>{children}</SettingsExpander>}
     {invalid && <Text className={styles.error} role="alert" size={200}>{t('dashboard.apiKeys.retention.invalid')}</Text>}
   </>;
-};
+}

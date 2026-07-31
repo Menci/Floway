@@ -77,14 +77,14 @@ const useStyles = makeStyles({
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L220-L222
 const NAV_INDICATOR_INSET = 0;
 
-type NavItemDefinition = {
+interface NavItemDefinition {
   to: string;
   labelKey: string;
   icon: FluentIcon;
   adminOnly?: boolean;
 };
 
-type NavGroup = {
+interface NavGroup {
   labelKey?: string;
   adminOnly?: boolean;
   items: NavItemDefinition[];

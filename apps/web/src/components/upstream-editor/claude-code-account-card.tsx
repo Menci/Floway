@@ -28,11 +28,11 @@ const {
 
 const TOKEN_EXPIRY_REFRESH_MS = 60_000;
 
-export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
+export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
   onRefreshQuota: () => void;
   probing: boolean;
   record: ClaudeCodeRecord;
-}) => {
+}) {
   const { t } = useTranslation();
   const locale = useLocale();
   // The access token expires on the wall clock rather than on any state
@@ -151,11 +151,13 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
       </Text>}
     </div>
   </section>;
-};
+}
 
-const EntryList = ({ entries }: { entries: [string, string][] }) => <dl className="grid gap-1 m-0">
-  {entries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-3">
-    <dt className="truncate font-mono mono-size-xs text-xs text-fui-fg3" title={key}>{key}</dt>
-    <dd className="truncate font-mono mono-size-xs text-xs text-fui-fg2 m-0" title={value}>{value}</dd>
-  </div>)}
-</dl>;
+function EntryList({ entries }: { entries: [string, string][] }) {
+  return <dl className="grid gap-1 m-0">
+    {entries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-3">
+      <dt className="truncate font-mono mono-size-xs text-xs text-fui-fg3" title={key}>{key}</dt>
+      <dd className="truncate font-mono mono-size-xs text-xs text-fui-fg2 m-0" title={value}>{value}</dd>
+    </div>)}
+  </dl>;
+}

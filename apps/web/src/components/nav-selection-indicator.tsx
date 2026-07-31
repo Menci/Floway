@@ -45,7 +45,7 @@ const INDICATOR_INSET = 10;
 const INDICATOR_WIDTH = 3;
 const INDICATOR_RADIUS = 2;
 
-type Geometry = { top: number; left: number; width: number; height: number };
+interface Geometry { top: number; left: number; width: number; height: number }
 
 const geometryOf = (container: HTMLElement, item: HTMLElement): Geometry => {
   const containerBox = container.getBoundingClientRect();

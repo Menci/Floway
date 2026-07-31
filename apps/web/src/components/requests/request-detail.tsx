@@ -242,6 +242,6 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
   );
 }
 
-function escapeHtml(value: string): string {
+const escapeHtml = (value: string): string => {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+};

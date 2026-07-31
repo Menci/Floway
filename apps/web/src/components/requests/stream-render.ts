@@ -41,14 +41,14 @@ export interface RenderedStreamEvent {
   timestamp: number;
 }
 
-export function detectCollectKind(path: string): CollectKind | null {
+export const detectCollectKind = (path: string): CollectKind | null => {
   if (path.includes('/messages')) return 'messages';
   if (path.includes('/responses')) return 'responses';
   if (path.includes('/chat/completions')) return 'chat-completions';
   if (path.includes('/completions')) return 'completions';
   if (path.includes('/v1beta/') || path.includes(':generateContent')) return 'gemini';
   return null;
-}
+};
 
 // A dump that never recorded a terminal frame was cut short, whatever the
 // reassembler managed to fold out of what it did record.
@@ -58,7 +58,7 @@ export const streamEndedCleanly = (events: DumpStreamEvent[]): boolean =>
 const complete = (result: unknown, events: DumpStreamEvent[]): CollectedStream =>
   ({ result, error: null, truncated: !streamEndedCleanly(events) });
 
-export async function collectStream(kind: CollectKind, events: DumpStreamEvent[]): Promise<CollectedStream> {
+export const collectStream = async (kind: CollectKind, events: DumpStreamEvent[]): Promise<CollectedStream> => {
   try {
     switch (kind) {
     case 'chat-completions':
@@ -79,35 +79,35 @@ export async function collectStream(kind: CollectKind, events: DumpStreamEvent[]
       return complete(await reassembleCompletionsEvents(stream), events);
     }
     }
-  } catch (cause) {
-    return { result: null, error: errorMessage(cause), truncated: true };
+  } catch (error) {
+    return { result: null, error: errorMessage(error), truncated: true };
   }
-}
+};
 
-export function renderStreamEvents(kind: CollectKind | null, events: DumpStreamEvent[]): RenderedStreamEvent[] {
+export const renderStreamEvents = (kind: CollectKind | null, events: DumpStreamEvent[]): RenderedStreamEvent[] => {
   return events.map(({ frame, ts }) => {
     const sse = frameToSse(kind, frame);
     if (!sse) return { event: null, text: '', parseError: null, timestamp: ts };
     try {
       return { event: sse.event ?? null, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts };
-    } catch (cause) {
-      return { event: sse.event ?? null, text: sse.data, parseError: errorMessage(cause), timestamp: ts };
+    } catch (error) {
+      return { event: sse.event ?? null, text: sse.data, parseError: errorMessage(error), timestamp: ts };
     }
   });
-}
+};
 
-export function streamEventsCopyText(kind: CollectKind | null, events: DumpStreamEvent[]): string {
+export const streamEventsCopyText = (kind: CollectKind | null, events: DumpStreamEvent[]): string => {
   return events.map(({ frame }) => {
     const sse = frameToSse(kind, frame);
     return sse ? `${sse.event ? `event: ${sse.event}\n` : ''}data: ${sse.data}\n` : '';
   }).filter(Boolean).join('\n');
-}
+};
 
 async function* frames(events: DumpStreamEvent[]) {
   for (const event of events) yield event.frame;
 }
 
-function frameToSse(kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | null {
+const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | null => {
   try {
     switch (kind) {
     case 'chat-completions': return chatCompletionsProtocolFrameToSSEFrame(frame as never, { includeUsageChunk: true });
@@ -117,7 +117,7 @@ function frameToSse(kind: CollectKind | null, frame: ProtocolFrame<unknown>): Ss
     case 'gemini': return geminiProtocolFrameToSSEFrame(frame as never);
     default: return null;
     }
-  } catch (cause) {
-    return { type: 'sse', event: 'serialize_error', data: errorMessage(cause) };
+  } catch (error) {
+    return { type: 'sse', event: 'serialize_error', data: errorMessage(error) };
   }
-}
+};

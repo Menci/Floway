@@ -123,13 +123,13 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   },
 ];
 
-function findProviderOption(
+const findProviderOption = (
   provider: SearchConfig['provider'],
-): ProviderOption {
+): ProviderOption => {
   return (
     PROVIDER_OPTIONS.find(o => o.value === provider) ?? PROVIDER_OPTIONS[0]
   );
-}
+};
 
 export default function DashboardProvidersSearch({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
@@ -231,11 +231,11 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       const result = await response.json();
       if (!('ok' in result)) throw new Error(result.error);
       setTestResult(result);
-    } catch (e) {
+    } catch (error) {
       // The probe never ran, so there is no result to report -- this is the
       // Test button's own failure and belongs beside it.
       setTestError(t('dashboard.searchConfig.testFailed', {
-        message: errorMessage(e),
+        message: errorMessage(error),
       }));
     } finally {
       setTesting(false);

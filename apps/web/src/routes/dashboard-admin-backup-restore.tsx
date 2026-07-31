@@ -120,23 +120,23 @@ const PREVIEW_LABEL_KEYS = [
   'searchUsage',
   'performance',
 ] as const;
-function countRecords(data: BackupFileData): Record<string, number> {
+const countRecords = (data: BackupFileData): Record<string, number> => {
   const counts: Record<string, number> = {};
   for (const key of PREVIEW_LABEL_KEYS) {
     const value = data[key];
     counts[key] = Array.isArray(value) ? value.length : 0;
   }
   return counts;
-}
+};
 
 // What the server says it took, in the same vocabulary as the preview the
 // operator read before pressing Import. Empty entities are dropped: a backup
 // rarely carries all seven, and naming the ones it did not carry buries the
 // ones it did.
-function importedSummary(
+const importedSummary = (
   counts: BackupImportCounts,
   t: ReturnType<typeof useTranslation>['t'],
-): string {
+): string => {
   return PREVIEW_LABEL_KEYS
     .filter(key => counts[key] > 0)
     .map(key => t('dashboard.backupRestore.import.summaryItem', {
@@ -144,7 +144,7 @@ function importedSummary(
       label: t(`dashboard.backupRestore.import.previewLabel.${key}`),
     }))
     .join(', ');
-}
+};
 
 export default function DashboardAdminBackupRestore() {
   const { t } = useTranslation();

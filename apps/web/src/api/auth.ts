@@ -66,7 +66,7 @@ const requestResponse = async (
   let response: Response;
   try {
     response = await fn();
-  } catch (error: unknown) {
+  } catch (error) {
     return {
       error: {
         status: 0,
@@ -101,7 +101,7 @@ const callResponse = async <T>(fn: () => Promise<Response>): Promise<ApiResult<T
 
   try {
     return { data: (await result.data.json()) as T };
-  } catch (error: unknown) {
+  } catch (error) {
     return {
       error: {
         status: result.data.status,

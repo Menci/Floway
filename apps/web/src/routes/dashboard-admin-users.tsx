@@ -80,10 +80,10 @@ interface PasswordFormValues {
   confirmation: string;
 }
 
-async function loadPageData(
+const loadPageData = async (
   current: Pick<UsersPageData, 'users' | 'upstreams' | 'models'>,
   signal?: AbortSignal,
-): Promise<UsersPageData> {
+): Promise<UsersPageData> => {
   const [usersResult, upstreamsResult, modelsResult] = await Promise.all([
     callApi(() => api.api.users.$get(undefined, { init: { signal } })),
     callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
@@ -95,7 +95,7 @@ async function loadPageData(
     models: modelsResult.data?.data ?? current.models,
     error: usersResult.error?.message ?? upstreamsResult.error?.message ?? modelsResult.error?.message ?? null,
   };
-}
+};
 
 const unloadedPageData: Pick<UsersPageData, 'users' | 'upstreams' | 'models'> = { users: null, upstreams: null, models: null };
 
@@ -584,7 +584,7 @@ function PasswordDialog({ onOpenChange, open, onSaved, user }: {
   );
 }
 
-function userFormDefaults(user: ControlPlaneUser | null): UserFormValues {
+const userFormDefaults = (user: ControlPlaneUser | null): UserFormValues => {
   return {
     username: user?.username ?? '',
     password: '',
@@ -592,4 +592,4 @@ function userFormDefaults(user: ControlPlaneUser | null): UserFormValues {
     upstreamOverride: user?.upstreamIds !== null && user?.upstreamIds !== undefined,
     upstreamIds: user?.upstreamIds ?? [],
   };
-}
+};

@@ -288,7 +288,7 @@ function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; ef
   </div>;
 }
 
-function modelKindLabel(kind: UpstreamModelConfig['kind']): string {
+const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   switch (kind) {
   case 'chat': return 'Chat';
   case 'embedding': return 'Embedding';
@@ -296,9 +296,9 @@ function modelKindLabel(kind: UpstreamModelConfig['kind']): string {
   case 'transcription': return 'Transcription';
   case 'rerank': return 'Rerank';
   }
-}
+};
 
-export function modelValidationError(model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null {
+export const modelValidationError = (model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null => {
   const effort = model.chat?.reasoning?.effort;
   if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return t('dashboard.upstreamEditor.models.invalidEffort');
   const budget = model.chat?.reasoning?.budget_tokens;
@@ -310,7 +310,7 @@ export function modelValidationError(model: UpstreamModelConfig, t: ReturnType<t
     return t('dashboard.upstreamEditor.models.invalidContract');
   }
   return null;
-}
+};
 
 export const modelsAreValid = (models: readonly UpstreamModelConfig[]) => {
   const hasInvalidEditorFields = models.some(model => {

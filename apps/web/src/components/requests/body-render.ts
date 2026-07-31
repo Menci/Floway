@@ -10,11 +10,11 @@ export interface RenderedBody {
 
 export const EMPTY_BODY: RenderedBody = { text: '', copyText: '', decodeError: null, isJson: false };
 
-export function contentTypeOf(headers: Array<[string, string]>): string {
+export const contentTypeOf = (headers: Array<[string, string]>): string => {
   return headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
-}
+};
 
-export function renderBody(body: DumpBody, contentType: string): RenderedBody {
+export const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
   if (!body.data) return EMPTY_BODY;
   if (contentType.toLowerCase().startsWith('multipart/') && body.encoding === 'base64') {
     const multipart = renderMultipart(body.data, contentType);
@@ -45,9 +45,9 @@ export function renderBody(body: DumpBody, contentType: string): RenderedBody {
   } catch {
     return { text, copyText: text, decodeError: null, isJson: false };
   }
-}
+};
 
-function renderMultipart(base64: string, contentType: string): string | null {
+const renderMultipart = (base64: string, contentType: string): string | null => {
   const boundaryMatch = /;\s*boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(contentType);
   const boundary = boundaryMatch?.[1] ?? boundaryMatch?.[2];
   if (!boundary) return null;
@@ -75,4 +75,4 @@ function renderMultipart(base64: string, contentType: string): string | null {
   } catch {
     return null;
   }
-}
+};

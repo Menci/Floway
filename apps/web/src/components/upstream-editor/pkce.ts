@@ -9,19 +9,19 @@ const random = (length: number) => {
   return base64url(bytes);
 };
 
-export async function generatePkce() {
+export const generatePkce = async () => {
   const verifier = random(48);
   const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(verifier))));
   return { verifier, challenge, state: random(24) };
-}
+};
 
 const storageKey = (provider: string, kind = 'oauth') => `floway-pkce:${provider}:${kind}`;
 
-export function stashPkce(provider: string, kind: string, value: { verifier: string; state: string }) {
+export const stashPkce = (provider: string, kind: string, value: { verifier: string; state: string }) => {
   sessionStorage.setItem(storageKey(provider, kind), JSON.stringify(value));
-}
+};
 
-export function recallPkce(provider: string, kind: string, state: string) {
+export const recallPkce = (provider: string, kind: string, state: string) => {
   const raw = sessionStorage.getItem(storageKey(provider, kind));
   if (!raw) return null;
   const value = JSON.parse(raw) as unknown;
@@ -33,13 +33,13 @@ export function recallPkce(provider: string, kind: string, state: string) {
   return record.state === state
     ? { verifier: record.verifier, state: record.state }
     : null;
-}
+};
 
-export function clearPkce(provider: string, kind: string) {
+export const clearPkce = (provider: string, kind: string) => {
   sessionStorage.removeItem(storageKey(provider, kind));
-}
+};
 
-export function parseCallbackPaste(text: string) {
+export const parseCallbackPaste = (text: string) => {
   const value = text.trim();
   if (/^[^#\s]+#[^#\s]+$/.test(value) && !value.includes('://')) {
     const [code, state] = value.split('#');
@@ -50,4 +50,4 @@ export function parseCallbackPaste(text: string) {
   const state = url.searchParams.get('state');
   if (!code || !state) throw new Error('Callback must include code and state');
   return { code, state };
-}
+};

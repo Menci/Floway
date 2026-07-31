@@ -15,27 +15,27 @@ export interface PlaygroundMessage {
 
 export const playgroundApis: PlaygroundApi[] = ['responses', 'chatCompletions', 'messages'];
 
-export function availableModels(
+export const availableModels = (
   catalog: readonly ControlPlaneModel[],
   cap: readonly string[] | null,
-): ControlPlaneModel[] {
+): ControlPlaneModel[] => {
   const index = indexCatalog(catalog);
   return catalog.filter(
     model => model.kind === 'chat' && isModelReachable(model, index, cap),
   );
-}
+};
 
-export function supportsImageInput(model: ControlPlaneModel | null): boolean {
+export const supportsImageInput = (model: ControlPlaneModel | null): boolean => {
   const modalities = model?.chat?.modalities?.input;
   return modalities === undefined || modalities.includes('image');
-}
+};
 
-export function defaultMaxOutputTokens(model: ControlPlaneModel | null): number {
+export const defaultMaxOutputTokens = (model: ControlPlaneModel | null): number => {
   const advertised = model?.limits.max_output_tokens;
   return advertised === undefined
     ? MESSAGES_FALLBACK_MAX_TOKENS
     : Math.min(advertised, MESSAGES_FALLBACK_MAX_TOKENS);
-}
+};
 
 const reservedFields: Record<PlaygroundApi, readonly string[]> = {
   chatCompletions: ['model', 'messages', 'stream'],
@@ -48,7 +48,7 @@ export type CustomJsonResult =
   | { value: null; error: 'invalid' | 'object' }
   | { value: null; error: 'reserved'; fields: string[] };
 
-export function parseCustomJson(api: PlaygroundApi, source: string): CustomJsonResult {
+export const parseCustomJson = (api: PlaygroundApi, source: string): CustomJsonResult => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(source);
@@ -61,18 +61,18 @@ export function parseCustomJson(api: PlaygroundApi, source: string): CustomJsonR
   const fields = reservedFields[api].filter(field => Object.hasOwn(parsed, field));
   if (fields.length) return { value: null, error: 'reserved', fields };
   return { value: parsed as Record<string, unknown>, error: null };
-}
+};
 
-export function mergeWireBody(body: BodyInit | null | undefined, custom: Record<string, unknown>): string {
+export const mergeWireBody = (body: BodyInit | null | undefined, custom: Record<string, unknown>): string => {
   if (typeof body !== 'string') throw new Error('Playground provider produced a non-JSON request body.');
   const generated = JSON.parse(body) as unknown;
   if (!generated || typeof generated !== 'object' || Array.isArray(generated)) {
     throw new Error('Playground provider produced an invalid request body.');
   }
   return JSON.stringify({ ...(generated as Record<string, unknown>), ...custom });
-}
+};
 
-function normalizeMessagesSseLine(line: string): string {
+const normalizeMessagesSseLine = (line: string): string => {
   if (!line.startsWith('data:')) return line;
   const source = line.slice(5).trimStart();
   try {
@@ -89,9 +89,9 @@ function normalizeMessagesSseLine(line: string): string {
   } catch {
     return line;
   }
-}
+};
 
-function normalizeMessagesStream(response: Response): Response {
+const normalizeMessagesStream = (response: Response): Response => {
   if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) return response;
   let pending = '';
   const stream = response.body
@@ -113,9 +113,9 @@ function normalizeMessagesStream(response: Response): Response {
     statusText: response.statusText,
     headers: response.headers,
   });
-}
+};
 
-function normalizeResponsesBody(body: BodyInit | null | undefined): BodyInit | null | undefined {
+const normalizeResponsesBody = (body: BodyInit | null | undefined): BodyInit | null | undefined => {
   if (typeof body !== 'string') return body;
   try {
     const parsed = JSON.parse(body) as unknown;
@@ -132,24 +132,24 @@ function normalizeResponsesBody(body: BodyInit | null | undefined): BodyInit | n
   } catch {
     return body;
   }
-}
+};
 
-export function createWireFetch(custom: Record<string, unknown>, api?: PlaygroundApi): typeof fetch {
+export const createWireFetch = (custom: Record<string, unknown>, api?: PlaygroundApi): typeof fetch => {
   return async (input, init) => {
     const normalized = api === 'responses' ? normalizeResponsesBody(init?.body) : init?.body;
     const response = await fetch(input, { ...init, body: mergeWireBody(normalized, custom) });
     return api === 'messages' ? normalizeMessagesStream(response) : response;
   };
-}
+};
 
 // Wire-native generation options per protocol. Naming them the way each
 // protocol names them keeps reasoning effort and the Messages token cap
 // visible on the request instead of behind a client abstraction.
-export function generationOptions(
+export const generationOptions = (
   api: PlaygroundApi,
   reasoningEffort: string | undefined,
   messagesMaxTokens = MESSAGES_FALLBACK_MAX_TOKENS,
-): Record<string, unknown> {
+): Record<string, unknown> => {
   if (api === 'messages') {
     return {
       max_tokens: messagesMaxTokens,
@@ -165,4 +165,4 @@ export function generationOptions(
   }
 
   return { ...(reasoningEffort && { reasoning_effort: reasoningEffort }) };
-}
+};

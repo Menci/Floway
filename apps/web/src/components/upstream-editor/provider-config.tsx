@@ -301,7 +301,7 @@ function EndpointPicker() {
 // An upstream that has just been authorised but not yet saved has no id, and
 // the catalog endpoint keys off one — so the panel says what the next step is
 // rather than leaving an empty model list to be interpreted.
-const ReadyToSaveHint = ({ kind }: { kind: UpstreamProviderKind }) => {
+function ReadyToSaveHint({ kind }: { kind: UpstreamProviderKind }) {
   const { t } = useTranslation();
   return <MessageBar intent="info">
     <MessageBarBody>
@@ -309,7 +309,7 @@ const ReadyToSaveHint = ({ kind }: { kind: UpstreamProviderKind }) => {
       {t('dashboard.upstreamEditor.readyToSave.description', { provider: providerLabel(kind) })}
     </MessageBarBody>
   </MessageBar>;
-};
+}
 
 function CopilotConfig({ record, onPatch }: {
   record: Extract<UpstreamRecord, { kind: 'copilot' }>;
@@ -459,8 +459,8 @@ function OAuthConfig({ record, onPatch }: {
                 json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } },
               }));
       }
-    } catch (cause) {
-      setBusy(false); setError(errorMessage(cause)); return;
+    } catch (error) {
+      setBusy(false); setError(errorMessage(error)); return;
     }
     setBusy(false);
     if (result.error) { setError(result.error.message); return; }

@@ -34,12 +34,12 @@ const PRESET_HEX: Record<UpstreamColorPreset, string> = {
 const DEFAULT_CUSTOM_HEX = '#00e5ff';
 const isHex = (value: UpstreamColor | null): value is `#${string}` => value?.startsWith('#') ?? false;
 
-export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }: {
+export function UpstreamColorPicker({ kind, onChange, onValidityChange, value }: {
   kind: UpstreamProviderKind;
   onChange: (color: UpstreamColor | null) => void;
   onValidityChange: (invalid: boolean) => void;
   value: UpstreamColor | null;
-}) => {
+}) {
   const { t } = useTranslation();
   const [hexDraft, setHexDraft] = useState<string>(() => (isHex(value) ? value : DEFAULT_CUSTOM_HEX));
   const rgb = hexToRgb(hexDraft) ?? hexToRgb(DEFAULT_CUSTOM_HEX)!;
@@ -127,4 +127,4 @@ export const UpstreamColorPicker = ({ kind, onChange, onValidityChange, value }:
       </Popover>
     </div>
   );
-};
+}

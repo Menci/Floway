@@ -14,7 +14,7 @@ const { ProgressBar, Text } = fluentComponents;
 // Copilot's own client derives premium-interaction usage from the on-demand
 // `copilot_internal/user` snapshot:
 // https://github.com/microsoft/vscode-copilot-chat/blob/5863f5a7088958050792b5dccbe8b46c6e13eccc/src/platform/chat/common/chatQuotaServiceImpl.ts#L83-L120
-export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, { kind: 'copilot' }> }) => {
+export function CopilotQuotaCard({ record }: { record: Extract<UpstreamRecord, { kind: 'copilot' }> }) {
   const { t } = useTranslation();
   const [quota, setQuota] = useState<CopilotQuotaSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,4 +64,4 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
 
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
   </section>;
-};
+}

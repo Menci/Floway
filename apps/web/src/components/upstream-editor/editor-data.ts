@@ -62,7 +62,7 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
   ollama: 'Ollama',
 };
 
-export async function loadEditorAux(): Promise<EditorAuxData> {
+export const loadEditorAux = async (): Promise<EditorAuxData> => {
   const [proxies, backoffs, runtime, upstreams] = await Promise.all([
     callApi(() => api.api.proxies.$get()),
     callApi(() => api.api.proxies.backoffs.$get()),
@@ -77,9 +77,9 @@ export async function loadEditorAux(): Promise<EditorAuxData> {
     runtime: runtime.data!,
     upstreams: upstreams.data!,
   };
-}
+};
 
-export async function loadInitialModelCatalog(record: UpstreamRecord) {
+export const loadInitialModelCatalog = async (record: UpstreamRecord) => {
   const values = valuesFromRecord(record);
   const canFetch = record.kind === 'custom'
     ? Boolean(record.config.baseUrl) && record.config.modelsFetch.enabled
@@ -99,9 +99,9 @@ export async function loadInitialModelCatalog(record: UpstreamRecord) {
   return refreshed.error
     ? { discovered, modelsError: refreshed.error.message, record }
     : { discovered, modelsError: null, record: refreshed.data };
-}
+};
 
-export function valuesFromRecord(record: UpstreamRecord): UpstreamEditorValues {
+export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues => {
   const config: UpstreamRecord['config'] = record.kind === 'custom'
     ? {
         ...structuredClone(record.config),
@@ -132,16 +132,16 @@ export function valuesFromRecord(record: UpstreamRecord): UpstreamEditorValues {
     state: structuredClone(record.state),
     manualModels,
   };
-}
+};
 
 // The editor holds one flat form model for every provider kind, so the config
 // is assembled structurally and only becomes a specific union member here.
 // This is the single point where the two representations meet.
-export function configFromValues(
+export const configFromValues = (
   record: UpstreamRecord,
   values: UpstreamEditorValues,
   options: { preserveStoredSecret?: boolean } = {},
-): UpstreamRecord['config'] {
+): UpstreamRecord['config'] => {
   const config = structuredClone(values.config) as unknown as Record<string, unknown>;
   if (record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama') {
     config.models = structuredClone(values.manualModels);
@@ -163,9 +163,9 @@ export function configFromValues(
     }
   }
   return config as unknown as UpstreamRecord['config'];
-}
+};
 
-export function previewRecord(record: UpstreamRecord, values: UpstreamEditorValues): UpstreamRecordEnvelope {
+export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValues): UpstreamRecordEnvelope => {
   return {
     ...record,
     name: values.name.trim(),
@@ -178,11 +178,11 @@ export function previewRecord(record: UpstreamRecord, values: UpstreamEditorValu
     disabled_public_model_ids: values.disabledPublicModelIds,
     flag_overrides: values.flagOverrides,
   };
-}
+};
 
 // `sort_order` is left out: the server appends a new upstream after the last
 // one when the field is absent, and the list page owns reordering afterwards.
-export function createBody(record: UpstreamRecord, values: UpstreamEditorValues): CreateUpstreamBody {
+export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues): CreateUpstreamBody => {
   return {
     kind: record.kind,
     name: values.name.trim(),
@@ -201,9 +201,9 @@ export function createBody(record: UpstreamRecord, values: UpstreamEditorValues)
     // from a structurally assembled object. Field names, method and path stay
     // checked against the route — only this correlation is asserted.
   } as CreateUpstreamBody;
-}
+};
 
-export function updateBody(record: UpstreamRecord, values: UpstreamEditorValues): UpdateUpstreamBody {
+export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues): UpdateUpstreamBody => {
   return {
     name: values.name.trim(),
     enabled: values.enabled,
@@ -216,7 +216,7 @@ export function updateBody(record: UpstreamRecord, values: UpstreamEditorValues)
       ? { config: configFromValues(record, values) }
       : {}),
   } as UpdateUpstreamBody;
-}
+};
 
 const discoveredCustomModelEndpoints = (
   kind: CustomRawModel['kind'],
@@ -229,10 +229,10 @@ const discoveredCustomModelEndpoints = (
   return Object.keys(configured).length ? structuredClone(configured) : { chatCompletions: {} };
 };
 
-export function discoveredModelsFromResponse(
+export const discoveredModelsFromResponse = (
   response: ListUpstreamModelsResponse,
   endpoints: ModelEndpoints,
-): UpstreamModelConfig[] {
+): UpstreamModelConfig[] => {
   if (response.kind !== 'custom') return response.data;
   return response.data.map(model => {
     const modelEndpoints = discoveredCustomModelEndpoints(model.kind, endpoints);
@@ -246,7 +246,7 @@ export function discoveredModelsFromResponse(
       ...(model.pricing ? { pricing: model.pricing } : {}),
     };
   });
-}
+};
 
 export const publicModelId = (model: UpstreamModelConfig) => {
   const publicId = typeof model.publicModelId === 'string' ? model.publicModelId.trim() : '';

@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 import YamlWorker from './models-yaml.worker.ts?worker';
 import { monospaceStack } from '../../theme';
 
-type MonacoEnvironment = {
+interface MonacoEnvironment {
   getWorker: (moduleId: string, label: string) => Worker;
 };
 

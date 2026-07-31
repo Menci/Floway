@@ -106,7 +106,7 @@ export interface ChoiceGroupItem {
   disabled?: boolean;
 }
 
-type PillBox = { left: number; width: number };
+interface PillBox { left: number; width: number }
 
 export function ChoiceGroup({
   ariaLabel,

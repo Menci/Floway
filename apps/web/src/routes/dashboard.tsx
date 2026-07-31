@@ -22,7 +22,7 @@ import { useAuthStore } from '../stores/auth-store';
 
 const { Button, DrawerBody, OverlayDrawer } = fluentComponents;
 
-export type DashboardOutletContext = {
+export interface DashboardOutletContext {
   user: AuthUser;
 };
 

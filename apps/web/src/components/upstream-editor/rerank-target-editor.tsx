@@ -19,11 +19,11 @@ const PROTOCOL_LABELS: Record<RerankProtocol, string> = {
   'dashscope-native': 'DashScope native',
 };
 
-export const RerankTargetEditor = ({ onChange, readOnly, value }: {
+export function RerankTargetEditor({ onChange, readOnly, value }: {
   readOnly: boolean;
   onChange: (target: RerankTarget) => void;
   value: RerankTarget;
-}) => {
+}) {
   const { t } = useTranslation();
 
   return <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
@@ -55,4 +55,4 @@ export const RerankTargetEditor = ({ onChange, readOnly, value }: {
       />
     </Field>
   </div>;
-};
+}

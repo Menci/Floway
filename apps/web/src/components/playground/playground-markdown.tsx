@@ -155,7 +155,7 @@ function MarkdownPre({ children }: ComponentProps<'pre'>) {
   return <ScrollArea axes="both" className={s.codeBlock}><pre>{children}</pre></ScrollArea>;
 }
 
-type PlaygroundMarkdownProps = {
+interface PlaygroundMarkdownProps {
   content: string;
   streaming: boolean;
 };

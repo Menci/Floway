@@ -8,7 +8,7 @@
 // fallback unable to work.
 // https://developer.mozilla.org/en-US/docs/Web/API/Document/execCommand
 // https://stackoverflow.com/questions/400212/how-do-i-copy-to-the-clipboard-in-javascript
-export async function copyToClipboard(text: string): Promise<boolean> {
+export const copyToClipboard = async (text: string): Promise<boolean> => {
   if (copyWithExecCommand(text)) return true;
   try {
     await navigator.clipboard.writeText(text);
@@ -16,7 +16,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
+};
 
 const copyWithExecCommand = (text: string): boolean => {
   const previousFocus = document.activeElement;

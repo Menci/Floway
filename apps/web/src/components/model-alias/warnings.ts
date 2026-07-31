@@ -1,11 +1,11 @@
 import type { AliasTarget, ChatAliasRules, ControlPlaneModel, ModelKind } from '../../api/types';
 import type { CatalogIndex } from '../models/catalog-index';
 
-export function realModelIdsOfKind(models: readonly ControlPlaneModel[] | null | undefined, kind: ModelKind) {
+export const realModelIdsOfKind = (models: readonly ControlPlaneModel[] | null | undefined, kind: ModelKind) => {
   return (models ?? [])
     .filter(model => model.aliasedFrom === undefined && model.kind === kind)
     .map(model => model.id);
-}
+};
 
 export type RuleWarningField =
   | 'reasoning.effort'
@@ -18,7 +18,7 @@ export interface RuleWarning {
   values?: Record<string, string | number>;
 }
 
-export function computeRuleWarnings(rules: ChatAliasRules, model: ControlPlaneModel | undefined): RuleWarning[] {
+export const computeRuleWarnings = (rules: ChatAliasRules, model: ControlPlaneModel | undefined): RuleWarning[] => {
   const warnings: RuleWarning[] = [];
   const reasoning = model?.chat?.reasoning;
   const effort = rules.reasoning?.effort;
@@ -43,23 +43,23 @@ export function computeRuleWarnings(rules: ChatAliasRules, model: ControlPlaneMo
     warnings.push({ field: 'reasoning.adaptive', key: 'notAdvertisedAdaptive' });
   }
   return warnings;
-}
+};
 
-export function computeModelWarning(id: string, model: ControlPlaneModel | undefined, kind: ModelKind) {
+export const computeModelWarning = (id: string, model: ControlPlaneModel | undefined, kind: ModelKind) => {
   if (!id) return null;
   if (!model) return { key: 'unknownTarget', values: { id } };
   if (model.kind !== kind) return { key: 'wrongKind', values: { id, actual: model.kind, expected: kind } };
   return null;
-}
+};
 
 export type AliasWarning =
   | { type: 'shadow'; key: 'shadow'; values: { id: string; display: string } }
   | { type: 'no-target'; key: 'noTarget'; values?: undefined };
 
-export function computeAliasWarnings(
+export const computeAliasWarnings = (
   alias: { name: string; targets: readonly Pick<AliasTarget, 'target_model_id'>[] },
   catalog: CatalogIndex | null,
-): AliasWarning[] {
+): AliasWarning[] => {
   const warnings: AliasWarning[] = [];
   const named = catalog?.get(alias.name);
   const shadowed = named?.unlisted !== true ? named : undefined;
@@ -70,4 +70,4 @@ export function computeAliasWarnings(
     warnings.push({ type: 'no-target', key: 'noTarget' });
   }
   return warnings;
-}
+};

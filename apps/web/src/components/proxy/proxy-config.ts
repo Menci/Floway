@@ -92,8 +92,8 @@ export type ProxyUrlParseResult =
 export const parseProxyInput = (url: string): ProxyUrlParseResult => {
   try {
     return { config: parseProxyUri(url), error: null };
-  } catch (cause) {
-    return { config: null, error: errorMessage(cause) };
+  } catch (error) {
+    return { config: null, error: errorMessage(error) };
   }
 };
 

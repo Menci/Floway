@@ -19,14 +19,14 @@ export const parseModels = (text: string, { allowRerank }: { allowRerank: boolea
   let raw: unknown;
   try {
     raw = parse(text);
-  } catch (cause) {
-    return { ok: false, message: errorMessage(cause) };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
   }
   let models: UpstreamModelConfig[];
   try {
     models = modelsField(raw, 'dashboard');
-  } catch (cause) {
-    return { ok: false, message: errorMessage(cause) };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error) };
   }
   if (!allowRerank && models.some(model => model.kind === 'rerank')) {
     return { ok: false, message: 'Rerank models require a custom upstream' };

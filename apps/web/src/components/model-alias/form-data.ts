@@ -25,7 +25,7 @@ export const metadataForKind = (
   ? metadata
   : metadata.limits ? { limits: structuredClone(metadata.limits) } : {};
 
-export function aliasDefaults(alias: ModelAlias | null): AliasFormValues {
+export const aliasDefaults = (alias: ModelAlias | null): AliasFormValues => {
   return alias ? {
     name: alias.name,
     displayName: alias.display_name ?? '',
@@ -39,12 +39,12 @@ export function aliasDefaults(alias: ModelAlias | null): AliasFormValues {
     name: '', displayName: '', kind: 'chat', selection: 'first-available', visible: true,
     targets: [blankTarget()], manualMetadata: false, announcedMetadata: {},
   };
-}
+};
 
 // `sort_order` is left out in both directions: the server appends a new alias
 // after the last one and preserves an existing one's place when the field is
 // absent, and the dialog never reorders.
-export function aliasBody(values: AliasFormValues): AliasWriteBody {
+export const aliasBody = (values: AliasFormValues): AliasWriteBody => {
   const trimRules = (rules: AliasTarget['rules']): AliasTarget['rules'] => {
     const reasoning = rules.reasoning ? Object.fromEntries(Object.entries(rules.reasoning).filter(([, value]) => value !== undefined && value !== '')) : undefined;
     return {
@@ -65,4 +65,4 @@ export function aliasBody(values: AliasFormValues): AliasWriteBody {
       ? structuredClone(values.announcedMetadata) as AliasWriteBody['announced_metadata']
       : null,
   };
-}
+};

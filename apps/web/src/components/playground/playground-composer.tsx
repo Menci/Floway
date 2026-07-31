@@ -195,7 +195,7 @@ const useStyles = makeStyles({
   },
 });
 
-type PlaygroundComposerProps = {
+interface PlaygroundComposerProps {
   canSend: boolean;
   draft: string;
   imageEnabled: boolean;

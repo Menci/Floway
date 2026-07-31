@@ -26,7 +26,7 @@ export interface PerformanceChartModel {
   metric: PerformanceMetric;
 }
 
-export function buildPerformanceChart(
+export const buildPerformanceChart = (
   records: PerformanceDisplayRecord[],
   metric: PerformanceMetric,
   percentile: PerformancePercentile,
@@ -34,7 +34,7 @@ export function buildPerformanceChart(
   labels: PerformanceLabels,
   buckets: PerformanceBucket[],
   range: PerformanceRange,
-): PerformanceChartModel {
+): PerformanceChartModel => {
   const groups = [...new Set(records.map(record => record.group))].sort();
   const entries = withUniqueSeriesLegends(groups.map((group, colorSlot) => ({
     id: group,
@@ -76,4 +76,4 @@ export function buildPerformanceChart(
       }),
     },
   };
-}
+};

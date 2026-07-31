@@ -21,7 +21,7 @@ export const metricsFromWire = (
 // Each half answers `null` when its fetch failed. A fetch that failed did not
 // report zero usage, and a zeroed chart beside a dismissible bar reads as a
 // quiet gateway.
-async function fetchUsageForView(view: UsageView, start: string, end: string, signal?: AbortSignal) {
+const fetchUsageForView = async (view: UsageView, start: string, end: string, signal?: AbortSignal) => {
   if (view === 'all-by-user') {
     const [usageRes, searchRes] = await Promise.all([
       callApi(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view } }, { init: { signal } })),
@@ -71,14 +71,14 @@ async function fetchUsageForView(view: UsageView, start: string, end: string, si
     search: searchData ? { records: searchData.records, keys: searchData.keys } : null,
     error: usageRes.error ?? searchRes.error ?? null,
   };
-}
+};
 
-export async function loadUsagePageData(
+export const loadUsagePageData = async (
   view: UsageView,
   range: UsageRange,
   loadedAt: number,
   signal?: AbortSignal,
-) {
+) => {
   const { start, end } = dashboardRangeQuery(range, loadedAt);
   const [usageData, modelsResult] = await Promise.all([
     fetchUsageForView(view, start, end, signal),
@@ -89,4 +89,4 @@ export async function loadUsagePageData(
     models: modelsResult.data?.data ?? null,
     error: usageData.error ?? modelsResult.error ?? null,
   };
-}
+};

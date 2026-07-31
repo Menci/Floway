@@ -68,7 +68,7 @@ export const dashboardBuckets = (
     .map(({ date, key }) => ({ key, label: bucketLabel(date, range, locale), date }));
 };
 
-export function buildTokenChart({
+export const buildTokenChart = ({
   records,
   metadata,
   models,
@@ -90,7 +90,7 @@ export function buildTokenChart({
   metric: UsageMetric;
   range: UsageRange;
   buckets: UsageBucket[];
-}): TokenChartModel {
+}): TokenChartModel => {
   const otherKey = groupKey === 'keyId' ? 'model' : 'keyId';
   const valueRecords = records.filter(record => !hiddenOther.has(record[otherKey]));
   const { values, details } = aggregateTokenRecords(valueRecords, groupKey, metric, range, buckets);
@@ -142,12 +142,12 @@ export function buildTokenChart({
         }
       : { form: 'area', data: areaChartData(buckets, series) },
   };
-}
+};
 
-function areaChartData(
+const areaChartData = (
   buckets: UsageBucket[],
   series: Array<{ entry: ChartEntry; data: Array<number | null> }>,
-): ChartProps {
+): ChartProps => {
   return {
     chartTitle: '',
     pointOptions: { r: 2, strokeWidth: 1.25 },
@@ -163,9 +163,9 @@ function areaChartData(
       }]),
     })),
   };
-}
+};
 
-export function buildSearchChart({
+export const buildSearchChart = ({
   search,
   hiddenKeys,
   redactKeys,
@@ -177,7 +177,7 @@ export function buildSearchChart({
   redactKeys: boolean;
   range: UsageRange;
   buckets: UsageBucket[];
-}): SearchChartModel {
+}): SearchChartModel => {
   const groups = new Map<string, Map<string, number>>();
   const presentGroups = new Set<string>();
   const providers = new Set<string>();
@@ -235,15 +235,15 @@ export function buildSearchChart({
       }))),
     },
   };
-}
+};
 
-function aggregateTokenRecords(
+const aggregateTokenRecords = (
   records: DisplayUsageRecord[],
   groupKey: 'keyId' | 'model',
   metric: UsageMetric,
   range: UsageRange,
   buckets: UsageBucket[],
-) {
+) => {
   const values = new Map<string, Map<string, number | null>>();
   const details = new Map<string, Map<string, TokenCounters>>();
   for (const bucket of buckets) {
@@ -283,14 +283,14 @@ function aggregateTokenRecords(
   }
 
   return { values, details };
-}
+};
 
-function keyChartEntries(
+const keyChartEntries = (
   presentKeyIds: string[],
   metadata: UsageResponse['keys'],
   records: DisplayUsageRecord[],
   redactKeys: boolean,
-): ChartEntry[] {
+): ChartEntry[] => {
   const meta = new Map<string, { name?: string; createdAt?: string }>();
   for (const key of metadata) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
   for (const record of records) {
@@ -318,29 +318,29 @@ function keyChartEntries(
       };
     })
     .sort((a, b) => a.colorSlot - b.colorSlot));
-}
+};
 
-function modelChartEntries(
+const modelChartEntries = (
   presentModelIds: string[],
   models: ControlPlaneModel[],
-): ChartEntry[] {
+): ChartEntry[] => {
   const present = new Set(presentModelIds);
   return withUniqueSeriesLegends([...new Set([...models.map(model => model.id), ...presentModelIds])]
     .sort()
     .map((id, colorSlot) => ({ id, label: id, colorSlot }))
     .filter(entry => present.has(entry.id)));
-}
+};
 
-export function summarizeUsage(records: DisplayUsageRecord[]): TokenSummary {
+export const summarizeUsage = (records: DisplayUsageRecord[]): TokenSummary => {
   const counters = emptyCounters();
   for (const record of records) addRecordToCounters(counters, record);
   return summarizeCounters(counters);
-}
+};
 
 // The single derivation from disjoint counters to displayed figures. The
 // summary tiles and the chart callout both read it, so a bucket row and the
 // page total can never disagree about what "total" or "prefill" means.
-export function summarizeCounters(counters: TokenCounters): TokenSummary {
+export const summarizeCounters = (counters: TokenCounters): TokenSummary => {
   return {
     requests: counters.requests,
     cost: counters.cost,
@@ -351,9 +351,9 @@ export function summarizeCounters(counters: TokenCounters): TokenSummary {
     total: sumDecimalStrings(counters.input, counters.output, counters.cacheRead, counters.cacheCreation, counters.inputImage, counters.outputImage),
     prefill: sumDecimalStrings(counters.input, counters.cacheCreation, counters.inputImage),
   };
-}
+};
 
-function addRecordToCounters(counters: TokenCounters, record: DisplayUsageRecord) {
+const addRecordToCounters = (counters: TokenCounters, record: DisplayUsageRecord) => {
   counters.requests += record.requests;
   if (record.cost !== null) counters.cost = sumDecimalStrings(counters.cost ?? '0', record.cost);
   counters.input = sumDecimalStrings(counters.input, dim(record, 'input_tokens'));
@@ -362,9 +362,9 @@ function addRecordToCounters(counters: TokenCounters, record: DisplayUsageRecord
   counters.cacheCreation = sumDecimalStrings(counters.cacheCreation, dim(record, 'input_cache_write_tokens'), dim(record, 'input_cache_write_1h_tokens'));
   counters.inputImage = sumDecimalStrings(counters.inputImage, dim(record, 'input_image_tokens'));
   counters.outputImage = sumDecimalStrings(counters.outputImage, dim(record, 'output_image_tokens'));
-}
+};
 
-function emptyCounters(): TokenCounters {
+const emptyCounters = (): TokenCounters => {
   return {
     requests: 0,
     cost: null,
@@ -375,16 +375,16 @@ function emptyCounters(): TokenCounters {
     inputImage: '0',
     outputImage: '0',
   };
-}
+};
 
 // Aggregate token counts routinely exceed the safe integer range, and cost is
 // billed to sub-cent precision, so both stay decimal strings until they reach a
 // chart axis or a formatted label.
-function dim(record: DisplayUsageRecord, key: BillingMetric): DecimalString {
+const dim = (record: DisplayUsageRecord, key: BillingMetric): DecimalString => {
   return record.metrics[key] ?? '0';
-}
+};
 
-function metricValue(record: DisplayUsageRecord, metric: UsageMetric): DecimalString | number | null {
+const metricValue = (record: DisplayUsageRecord, metric: UsageMetric): DecimalString | number | null => {
   switch (metric) {
   case 'requests':
     return record.requests;
@@ -420,18 +420,18 @@ function metricValue(record: DisplayUsageRecord, metric: UsageMetric): DecimalSt
   case 'cacheHitRate':
     return null;
   }
-}
+};
 
 // Plot values cross into floating point exactly here, at the axis boundary.
-function plottableMetricValue(record: DisplayUsageRecord, metric: UsageMetric): number | null {
+const plottableMetricValue = (record: DisplayUsageRecord, metric: UsageMetric): number | null => {
   const value = metricValue(record, metric);
   if (value === null) return null;
   return typeof value === 'number' ? value : decimalStringToPlottableNumber(value);
-}
+};
 
 // Ratios are percentages of one aggregate over another, so both sides convert
 // to plottable numbers first; the division itself has no precision to protect.
-function tokenCountersMetricValue(counters: TokenCounters, metric: UsageMetric): number | null {
+const tokenCountersMetricValue = (counters: TokenCounters, metric: UsageMetric): number | null => {
   const ratio = (numerator: DecimalString, denominator: DecimalString): number | null => {
     const bottom = decimalStringToPlottableNumber(denominator);
     return bottom > 0 ? (decimalStringToPlottableNumber(numerator) / bottom) * 100 : null;
@@ -439,19 +439,19 @@ function tokenCountersMetricValue(counters: TokenCounters, metric: UsageMetric):
   if (metric === 'cacheHitRate') return ratio(counters.cacheRead, sumDecimalStrings(counters.cacheRead, counters.cacheCreation));
   if (metric === 'cachedRate') return ratio(counters.cacheRead, summarizeCounters(counters).prompt);
   return null;
-}
+};
 
-function hasRequests(details: Map<string, Map<string, TokenCounters>>, id: string): boolean {
+const hasRequests = (details: Map<string, Map<string, TokenCounters>>, id: string): boolean => {
   for (const bucket of details.values()) {
     if ((bucket.get(id)?.requests ?? 0) > 0) return true;
   }
   return false;
-}
+};
 
-export function bucketKeyForCallout(
+export const bucketKeyForCallout = (
   value: Date | number | string,
   buckets: UsageBucket[],
-): string | null {
+): string | null => {
   if (value instanceof Date) {
     return (
       buckets.find(bucket => bucket.date.getTime() === value.getTime())?.key ??
@@ -459,31 +459,31 @@ export function bucketKeyForCallout(
     );
   }
   return null;
-}
+};
 
 // Aggregate token totals are decimal strings; grouping them digit-wise keeps
 // counts past the safe integer range exact in the label.
 export const formatUsdCost = formatUsd;
 
-export function formatDecimalCount(value: DecimalString): string {
+export const formatDecimalCount = (value: DecimalString): string => {
   return formatDecimalQuantity(value);
-}
+};
 
-export function formatCompactDecimalCount(value: DecimalString, locale: string): string {
+export const formatCompactDecimalCount = (value: DecimalString, locale: string): string => {
   return formatCompactCount(decimalStringToPlottableNumber(value), locale);
-}
+};
 
-export function formatRatePercent(numerator: DecimalString, denominator: DecimalString): string {
+export const formatRatePercent = (numerator: DecimalString, denominator: DecimalString): string => {
   const total = decimalStringToPlottableNumber(denominator);
   if (total <= 0) return '-';
   return `${((decimalStringToPlottableNumber(numerator) / total) * 100).toFixed(1)}%`;
-}
+};
 
-export function formatSummaryMetric(
+export const formatSummaryMetric = (
   summary: TokenSummary,
   metric: UsageMetric,
   locale: string,
-): string {
+): string => {
   switch (metric) {
   case 'requests':
     return formatCount(summary.requests, locale);
@@ -506,29 +506,29 @@ export function formatSummaryMetric(
   case 'cacheHitRate':
     return formatRatePercent(summary.cacheRead, sumDecimalStrings(summary.cacheRead, summary.cacheCreation));
   }
-}
+};
 
 // Axis-side formatter: the value here is a plotted point, so it has already
 // crossed into floating point and there is no exact decimal left to preserve.
 // Summary tiles use formatUsd and formatDecimalCount on the decimal values.
-export function formatMetricValue(value: number, metric: UsageMetric, locale: string): string {
+export const formatMetricValue = (value: number, metric: UsageMetric, locale: string): string => {
   const kind = metricConfig[metric].kind;
   if (kind === 'percent') return `${value.toFixed(0)}%`;
   if (kind === 'cost') return formatPlottedCost(value);
   if (kind === 'count') return formatCount(value, locale);
   return formatCompactCount(value, locale);
-}
+};
 
-function formatPlottedCost(value: number): string {
+const formatPlottedCost = (value: number): string => {
   if (value >= 1) return `$${value.toFixed(2)}`;
   if (value >= 0.01) return `$${value.toFixed(3)}`;
   if (value > 0) return `$${value.toFixed(4)}`;
   return '$0';
-}
+};
 
-export function formatProvider(provider: string): string {
+export const formatProvider = (provider: string): string => {
   if (provider === 'microsoft-web-iq') return 'Microsoft Web IQ';
   if (provider === 'tavily') return 'Tavily';
   if (provider === 'jina') return 'Jina';
   return provider;
-}
+};

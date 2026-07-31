@@ -6,16 +6,16 @@ const intersectArrays = <T>(arrays: readonly (readonly T[])[]) => {
   return arrays[0]!.filter(value => arrays.slice(1).every(array => array.includes(value)));
 };
 
-function effectiveChat(chat: ChatModelInfo | undefined, rules: ChatAliasRules): ChatModelInfo | undefined {
+const effectiveChat = (chat: ChatModelInfo | undefined, rules: ChatAliasRules): ChatModelInfo | undefined => {
   if (!chat?.reasoning || !rules.reasoning) return chat;
   const reasoning = { ...chat.reasoning };
   if (rules.reasoning.effort !== undefined) delete reasoning.effort;
   if (rules.reasoning.budget_tokens !== undefined) delete reasoning.budget_tokens;
   if (rules.reasoning.adaptive === true) delete reasoning.adaptive;
   return { ...chat, reasoning };
-}
+};
 
-function intersectChat(chats: readonly ChatModelInfo[]): ChatModelInfo | undefined {
+const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefined => {
   const result: ChatModelInfo = {};
   if (chats.every(chat => chat.modalities)) {
     const input = intersectArrays(chats.map(chat => chat.modalities!.input));
@@ -48,13 +48,13 @@ function intersectChat(chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
     if (Object.keys(reasoning).length) result.reasoning = reasoning;
   }
   return Object.keys(result).length ? result : undefined;
-}
+};
 
-export function computeAnnouncedMetadata(
+export const computeAnnouncedMetadata = (
   targets: readonly AliasTarget[],
   kind: ModelKind,
   catalog: CatalogIndex,
-): AnnouncedMetadata {
+): AnnouncedMetadata => {
   const available = targets
     .map(target => ({ target, model: catalog.get(target.target_model_id) }))
     .filter((entry): entry is { target: AliasTarget; model: ControlPlaneModel } => entry.model?.kind === kind);
@@ -69,4 +69,4 @@ export function computeAnnouncedMetadata(
   const chats = available.map(({ target, model }) => effectiveChat(model.chat, target.rules));
   if (chats.every((chat): chat is ChatModelInfo => chat !== undefined)) out.chat = intersectChat(chats);
   return out;
-}
+};

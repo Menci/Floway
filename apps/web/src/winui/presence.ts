@@ -22,7 +22,7 @@ import {
 
 type FluentComponents = typeof import('@fluentui/react-components');
 
-type MotionSlotProps = { children?: unknown };
+interface MotionSlotProps { children?: unknown }
 type MotionCarrier = Record<string, unknown>;
 
 // WinUI's opacity legs are all the same animation: 83ms, linear, and filled in

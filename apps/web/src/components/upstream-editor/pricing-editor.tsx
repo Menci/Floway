@@ -45,12 +45,12 @@ const usePricingStyles = makeStyles({
 // would round sub-cent rates before they ever reached the protocol.
 const RATE_DRAFT_PATTERN = /^\d*(?:\.\d*)?$/;
 
-const RateInput = ({ editable, label, onCommit, value }: {
+function RateInput({ editable, label, onCommit, value }: {
   editable: boolean;
   label: string;
   onCommit: (raw: string) => void;
   value: string | undefined;
-}) => {
+}) {
   const [draft, setDraft] = useState(value ?? '');
   const editing = useRef(false);
 
@@ -78,7 +78,7 @@ const RateInput = ({ editable, label, onCommit, value }: {
       onFocus={() => { editing.current = true; }}
     />
   </Field>;
-};
+}
 
 const issueAffectsEntry = (issue: ModelPricingIssue, index: number): boolean => {
   if ('entryIndex' in issue) return issue.entryIndex === index;
@@ -86,12 +86,12 @@ const issueAffectsEntry = (issue: ModelPricingIssue, index: number): boolean => 
   return true;
 };
 
-export const PricingEditor = ({ editable, kind, onChange, value }: {
+export function PricingEditor({ editable, kind, onChange, value }: {
   editable: boolean;
   kind: ModelKind;
   onChange: (value: ModelPricing | undefined) => void;
   value: ModelPricing | undefined;
-}) => {
+}) {
   const { t } = useTranslation();
   const styles = usePricingStyles();
   const [ownDrafts, setOwnDrafts] = useState<PricingEntryDraft[]>(() => pricingEntryDraftsFor(value));
@@ -285,4 +285,4 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
       </MessageBar>}
     </div>}
   </div>;
-};
+}

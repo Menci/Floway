@@ -13,15 +13,15 @@ export interface ModelAliasesPageData {
   modelsError: string | null;
 }
 
-export function mergeModelAliasesPageData(
+export const mergeModelAliasesPageData = (
   current: Pick<ModelAliasesPageData, 'aliases' | 'models'>,
   aliasResult: ApiResult<ModelAlias[]>,
   modelsResult: ApiResult<ModelsResponse>,
-): ModelAliasesPageData {
+): ModelAliasesPageData => {
   return {
     aliases: aliasResult.data ?? current.aliases,
     models: modelsResult.data?.data ?? current.models,
     aliasError: aliasResult.error?.message ?? null,
     modelsError: modelsResult.error?.message ?? null,
   };
-}
+};

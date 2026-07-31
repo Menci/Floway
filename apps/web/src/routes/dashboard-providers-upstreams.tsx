@@ -457,7 +457,7 @@ function ModelStatus({
   );
 }
 
-async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
+const loadUpstreamsPageData = async (): Promise<UpstreamsPageData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
     callApi(() => api.api.upstreams.$get()),
     callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
@@ -468,7 +468,7 @@ async function loadUpstreamsPageData(): Promise<UpstreamsPageData> {
     loadError: upstreamsResult.error?.message ?? null,
     modelsError: modelsResult.error?.message ?? null,
   };
-}
+};
 
 const patchUpstream = (id: string, body: { enabled?: boolean; sort_order?: number }) =>
   callApi(() => api.api.upstreams[':id'].$patch({ param: { id }, json: body }));

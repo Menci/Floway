@@ -113,7 +113,7 @@ function InlineMarkdown({ children }: { children: string }) {
   return <>{parseInlineMarkdown(children)}</>;
 }
 
-function parseInlineMarkdown(text: string): ReactNode[] {
+const parseInlineMarkdown = (text: string): ReactNode[] => {
   const tokens = text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g);
   return tokens.filter(Boolean).map((token, index) => {
     if (token.startsWith('`') && token.endsWith('`')) {
@@ -131,4 +131,4 @@ function parseInlineMarkdown(text: string): ReactNode[] {
     }
     return token;
   });
-}
+};

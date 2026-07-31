@@ -87,8 +87,8 @@ export function useDumpSubscription(keyId: string | null, initialRecords: DumpMe
       fresh.forEach(record => seenRef.current.add(record.id));
       if (page.length < PAGE_LIMIT) setHasOlder(false);
       if (fresh.length) setRecords(current => [...current, ...fresh]);
-    } catch (cause) {
-      setError(errorMessage(cause));
+    } catch (error) {
+      setError(errorMessage(error));
     } finally {
       loadingOlderRef.current = false;
     }

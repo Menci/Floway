@@ -21,11 +21,11 @@ const formatCountdown = (seconds: number): string => {
 // A proxy that has entered backoff is not routing, and the operator's first
 // question is how long that lasts. The countdown ticks locally so the panel
 // does not have to refetch once a second.
-export const ProxyBackoffPanel = ({ backoffs, onReset, proxyId }: {
+export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   backoffs: readonly BackoffRow[];
   onReset: () => void;
   proxyId: string;
-}) => {
+}) {
   const { t } = useTranslation();
   const toasts = useOutcomeToasts();
   const nowSeconds = useNow(1000) / 1000;
@@ -87,4 +87,4 @@ export const ProxyBackoffPanel = ({ backoffs, onReset, proxyId }: {
 
     {resetError && <OutcomeMessageBar onDismiss={() => setResetError(null)}>{resetError}</OutcomeMessageBar>}
   </section>;
-};
+}

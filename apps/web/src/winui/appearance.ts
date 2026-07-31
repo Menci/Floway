@@ -28,7 +28,7 @@ export const winuiShapeAttribute = 'data-winui-shape';
 
 type SlotProps = Record<string, unknown>;
 type PropCarrier = Record<string, unknown>;
-type IntentCarrier = { intent?: string; icon?: React.ReactNode };
+interface IntentCarrier { intent?: string; icon?: React.ReactNode }
 
 // A top-level prop does not always reach the element that carries the WinUI
 // trait, so each component also names the slots that must be stamped. When the
