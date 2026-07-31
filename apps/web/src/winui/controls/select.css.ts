@@ -363,9 +363,10 @@ export const selectCss = `
    declared on this element. Ending at the border box would hold it suppressed
    for the whole reveal and snap it in on the frame the clip is dropped.
 
-   32px is clearance for shadow16, whose key term paints 28px below the border
-   box and whose ambient reaches 20px to either side; a deeper elevation would
-   need more.
+   32px is headroom over what shadow16 actually needs: its key term,
+   0 8px 16px, reaches 16px below the border box and 8px to either side, and its
+   ambient term, 0 0 2px, reaches 1px all round. A deeper elevation would need
+   more -- shadow28's key term alone reaches 28px.
    https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts */
 @keyframes floway-combobox-listbox-reveal {
   from { clip-path: inset(25% -32px 25% -32px); }

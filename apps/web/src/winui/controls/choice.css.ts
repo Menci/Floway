@@ -251,6 +251,7 @@ export const choiceCss = `
 
    0.01ms rather than none, for the reason WinUI runs a disabled
    ConnectedAnimation for 1ms instead of zero: the completion still has to fire.
+   https://www.w3.org/TR/WCAG21/#dfn-motion-animation
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/RadioButton_themeresources.xaml#L255-L259
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/animation/ConnectedAnimationService.cpp#L313-L327 */

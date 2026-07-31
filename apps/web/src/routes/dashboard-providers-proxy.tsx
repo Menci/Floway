@@ -164,7 +164,7 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     onOpenChange(false);
     handle.succeed(t('dashboard.proxy.actions.saveSuccess'));
     await onSaved();
-  }, [config, dialTimeout, editingId, formName, onOpenChange, onSaved, t, toasts, urlError, urlInput]);
+  }, [config, dialTimeout.error, dialTimeout.value, editingId, formName, onOpenChange, onSaved, t, toasts, urlError, urlInput]);
   const handleTest = useCallback(async () => {
     setTesting(true);
     setTestResult(null);

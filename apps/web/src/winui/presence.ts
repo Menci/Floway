@@ -118,9 +118,9 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     // clip cannot tell from shadow, and a negative value there lets the surface
     // overshoot its final position mid-flight.
     //
-    // 32px is clearance for `shadow16`, whose key term paints 28px below the
-    // border box and whose ambient reaches 20px to either side. A deeper
-    // elevation would need more.
+    // 32px is headroom over what shadow16 actually needs: its key term,
+    // 0 8px 16px, reaches 16px below the border box and 8px to either side,
+    // and its ambient term, 0 0 2px, reaches 1px all round.
     // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/tokens/src/utils/shadows.ts
     const closedClip = above ? 'inset(-32px -32px 50% -32px)' : 'inset(50% -32px -32px -32px)';
     const openClip = above ? 'inset(-32px -32px 0% -32px)' : 'inset(0% -32px -32px -32px)';
