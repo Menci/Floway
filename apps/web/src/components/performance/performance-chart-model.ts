@@ -11,11 +11,12 @@ import {
   type PerformancePercentile,
   type PerformanceRange,
 } from './performance-data';
+import type { ChartBucket } from '../charts/dashboard-time';
 import { colorForSlot } from '../charts/palette';
-import { withUniqueSeriesLegends } from '../charts/series-legends';
+import { withUniqueSeriesLegends, type ChartSeries } from '../charts/series-legends';
 
-export interface PerformanceBucket { key: string; label: string; date: Date }
-export interface PerformanceChartEntry { id: string; label: string; legend: string; colorSlot: number }
+export type PerformanceBucket = ChartBucket;
+export type PerformanceChartEntry = ChartSeries;
 export interface PerformanceChartPointDetails { outputSpeed: number | null; ttft: number | null }
 export interface PerformanceChartModel {
   data: ChartProps;

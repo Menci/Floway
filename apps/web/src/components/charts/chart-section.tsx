@@ -2,6 +2,7 @@ import { SelectAllOffRegular, SelectAllOnRegular, SquareMultipleRegular } from '
 import { useTranslation } from 'react-i18next';
 
 import { colorForSlot } from './palette';
+import type { SeriesLegendEntry } from './series-legends';
 import { SeriesMarker } from './series-marker';
 import { invertedSeries, isolatedSeries, toggledSeries } from './series-selection';
 import { fluentComponents } from '../../fluent';
@@ -10,19 +11,12 @@ import { SectionHeader } from '../ui/section-header';
 
 const { InteractionTag, InteractionTagPrimary, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
 
-export interface SeriesLegendEntry {
-  id: string;
-  label: string;
-  colorSlot: number;
-}
-
 // The header controls, the legend, and the plot frame are the same in every
 // chart the dashboard draws; only the plot itself differs, so it arrives as
 // children.
 export function ChartSection({
   children,
   controlsLabel,
-  colorForEntry = colorForSlot,
   emptyText,
   entries,
   hidden,
@@ -31,7 +25,6 @@ export function ChartSection({
 }: {
   children: React.ReactNode;
   controlsLabel: string;
-  colorForEntry?: (slot: number) => string;
   emptyText: string;
   entries: readonly SeriesLegendEntry[];
   hidden: Set<string>;
@@ -64,7 +57,7 @@ export function ChartSection({
               <InteractionTag appearance="outline" key={entry.id} shape="circular" size="small">
                 <InteractionTagPrimary
                   className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
-                  icon={<SeriesMarker className="mx-[4px]" color={colorForEntry(entry.colorSlot)} shape="line" />}
+                  icon={<SeriesMarker className="mx-[4px]" color={colorForSlot(entry.colorSlot)} shape="line" />}
                   title={t('dashboard.charts.series.toggleHint')}
                   // A double-click delivers its two clicks first; both land on
                   // this same series and cancel out, so the isolate that follows

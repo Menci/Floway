@@ -1,7 +1,8 @@
 import type { ChartProps } from '@fluentui/react-charts';
 
 import type { BillingMetric } from '../../api/types';
-import type { DashboardRange } from '../charts/dashboard-time';
+import type { ChartBucket, DashboardRange } from '../charts/dashboard-time';
+import type { ChartSeries } from '../charts/series-legends';
 import type { DecimalString } from '@floway-dev/protocols/common';
 
 export type UsageView = 'all-by-user' | 'self-by-key';
@@ -40,7 +41,7 @@ export interface SearchUsageResponse {
   keys: Array<{ id: string; name: string; createdAt?: string }>;
 }
 
-export interface UsageBucket { key: string; label: string; date: Date }
+export type UsageBucket = ChartBucket;
 // Requests are a plain count; everything else is a decimal string, because
 // aggregate token totals exceed the safe integer range and cost is billed to
 // sub-cent precision.
@@ -72,7 +73,7 @@ export interface TokenSummary {
   cacheRead: DecimalString;
   cacheCreation: DecimalString;
 }
-export interface ChartEntry { id: string; label: string; legend: string; colorSlot: number }
+export type ChartEntry = ChartSeries;
 
 // Token, request and cost figures use stacked areas; percentage rates stay
 // lines so their shared 0–100 scale remains readable.

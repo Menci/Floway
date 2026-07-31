@@ -5,6 +5,11 @@ export interface DashboardBucketFrame {
   key: string;
 }
 
+// A frame is the bucket the range defines; a bucket is that frame once a chart
+// has named it for its reader. The label is locale- and page-dependent, so it is
+// added by the consumer rather than derived here.
+export interface ChartBucket extends DashboardBucketFrame { label: string }
+
 export const pad2 = (value: number) => String(value).padStart(2, '0');
 const localHourKey = (date: Date) =>
   `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}`;
