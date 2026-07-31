@@ -80,11 +80,14 @@ interface PasswordFormValues {
   confirmation: string;
 }
 
-async function loadPageData(current: Pick<UsersPageData, 'users' | 'upstreams' | 'models'>): Promise<UsersPageData> {
+async function loadPageData(
+  current: Pick<UsersPageData, 'users' | 'upstreams' | 'models'>,
+  signal?: AbortSignal,
+): Promise<UsersPageData> {
   const [usersResult, upstreamsResult, modelsResult] = await Promise.all([
-    callApi(() => api.api.users.$get()),
-    callApi(() => api.api['upstream-options'].$get()),
-    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
+    callApi(() => api.api.users.$get(undefined, { init: { signal } })),
+    callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
   ]);
   return {
     users: usersResult.data ?? current.users,
@@ -120,8 +123,9 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    const next = await loadPageData(data);
+  const reload = useCallback(async (signal: AbortSignal) => {
+    const next = await loadPageData(data, signal);
+    if (signal.aborted) return;
     setData(next);
     setPageError(next.error);
   }, [data]);

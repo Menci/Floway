@@ -33,11 +33,14 @@ interface LoaderData extends ApiKeysPageData {
   setupLease: AgentSetupLease | null;
 }
 
-const loadPageData = async (current: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'>): Promise<ApiKeysPageData> => {
+const loadPageData = async (
+  current: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'>,
+  signal?: AbortSignal,
+): Promise<ApiKeysPageData> => {
   const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
-    callApi(() => api.api.keys.$get()),
-    callApi(() => api.api['upstream-options'].$get()),
-    callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
+    callApi(() => api.api.keys.$get(undefined, { init: { signal } })),
+    callApi(() => api.api['upstream-options'].$get(undefined, { init: { signal } })),
+    callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } }, { init: { signal } })),
   ]);
   return {
     keys: keysRes.data ?? current.keys,
@@ -92,8 +95,9 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
 
   const toasts = useOutcomeToasts();
 
-  const reload = async () => {
-    const next = await loadPageData(data);
+  const reload = async (signal: AbortSignal) => {
+    const next = await loadPageData(data, signal);
+    if (signal.aborted) return;
     setData(next);
     setPageError(next.error);
     setSelectedKeyId(current => next.keys?.some(key => key.id === current) ? current : '');
@@ -114,7 +118,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     }
     deleteDialog.close();
     handle.succeed(t('dashboard.apiKeys.toast.delete.success', { name: key.name }));
-    await reload();
+    await refresh();
   };
 
   const { keys, models, upstreams } = data;
@@ -175,7 +179,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           models={models}
           mode="create"
           onOpenChange={open => { if (!open) editorDialog.close(); }}
-          onSaved={async key => { await reload(); setSelectedKeyId(key.id); }}
+          onSaved={async key => { await refresh(); setSelectedKeyId(key.id); }}
           upstreams={upstreams}
           userUpstreamIds={user.upstreamIds}
         />}
@@ -186,7 +190,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           models={models}
           mode="edit"
           onOpenChange={open => { if (!open) editorDialog.close(); }}
-          onSaved={async () => { await reload(); }}
+          onSaved={refresh}
           upstreams={upstreams}
           userUpstreamIds={user.upstreamIds}
         />}
@@ -195,7 +199,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           apiKey={rotateDialog.invocation.value}
           key={rotateDialog.invocation.key}
           onOpenChange={open => { if (!open) rotateDialog.close(); }}
-          onSaved={reload}
+          onSaved={refresh}
         />}
         {deleteDialog.invocation && <ConfirmDialog
           open={deleteDialog.isOpen}

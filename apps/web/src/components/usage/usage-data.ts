@@ -21,11 +21,11 @@ export const metricsFromWire = (
 // Each half answers `null` when its fetch failed. A fetch that failed did not
 // report zero usage, and a zeroed chart beside a dismissible bar reads as a
 // quiet gateway.
-async function fetchUsageForView(view: UsageView, start: string, end: string) {
+async function fetchUsageForView(view: UsageView, start: string, end: string, signal?: AbortSignal) {
   if (view === 'all-by-user') {
     const [usageRes, searchRes] = await Promise.all([
-      callApi(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
-      callApi(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view } })),
+      callApi(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view } }, { init: { signal } })),
+      callApi(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view } }, { init: { signal } })),
     ]);
     const usageData = usageRes.error ? null : usageRes.data;
     const searchData = searchRes.error ? null : searchRes.data;
@@ -52,8 +52,8 @@ async function fetchUsageForView(view: UsageView, start: string, end: string) {
     };
   }
   const [usageRes, searchRes] = await Promise.all([
-    callApi(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view } })),
-    callApi(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view } })),
+    callApi(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view } }, { init: { signal } })),
+    callApi(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view } }, { init: { signal } })),
   ]);
   const usageData = usageRes.error ? null : usageRes.data;
   const searchData = searchRes.error ? null : searchRes.data;
@@ -77,11 +77,12 @@ export async function loadUsagePageData(
   view: UsageView,
   range: UsageRange,
   loadedAt: number,
+  signal?: AbortSignal,
 ) {
   const { start, end } = dashboardRangeQuery(range, loadedAt);
   const [usageData, modelsResult] = await Promise.all([
-    fetchUsageForView(view, start, end),
-    callApi(() => api.api.models.$get({ query: {} })),
+    fetchUsageForView(view, start, end, signal),
+    callApi(() => api.api.models.$get({ query: {} }, { init: { signal } })),
   ]);
   return {
     ...usageData,

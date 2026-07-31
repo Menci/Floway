@@ -230,12 +230,15 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     deleteDialog.open(target);
   };
 
-  const refreshProxies = useCallback(async () => {
+  const refreshProxies = useCallback(async (signal: AbortSignal) => {
     setLoadError(null);
     const [proxiesRes, backoffsRes] = await Promise.all([
-      callApi(() => api.api.proxies.$get()),
-      callApi(() => api.api.proxies.backoffs.$get()),
+      callApi(() => api.api.proxies.$get(undefined, { init: { signal } })),
+      callApi(() => api.api.proxies.backoffs.$get(undefined, { init: { signal } })),
     ]);
+    // The two lists are set together or not at all: a torn pair shows proxies
+    // from one round trip beside backoffs from another.
+    if (signal.aborted) return;
     if (proxiesRes.data) setProxies(proxiesRes.data);
     if (backoffsRes.data) setBackoffs(backoffsRes.data);
     setLoadError(proxiesRes.error?.message ?? backoffsRes.error?.message ?? null);
@@ -269,8 +272,8 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
     deleteDialog.close();
     handle.succeed(t('dashboard.proxy.toast.delete.success', { name: target.name }));
-    await refreshProxies();
-  }, [deleteDialog, refreshProxies, t, toasts]);
+    await refresh();
+  }, [deleteDialog, refresh, t, toasts]);
 
   return (
     <section className="dashboard-page">
@@ -299,7 +302,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         backoffs={backoffs}
         key={editorDialog.invocation.key}
         onDismiss={editorDialog.close}
-        onSaved={refreshProxies}
+        onSaved={refresh}
         record={editorDialog.invocation.value}
       />}
 

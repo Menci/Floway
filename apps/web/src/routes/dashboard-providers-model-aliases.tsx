@@ -32,10 +32,10 @@ interface LoaderData {
   modelsError: string | null;
 }
 
-const loadPageData = async (current: LoaderData['catalog']): Promise<LoaderData> => {
+const loadPageData = async (current: LoaderData['catalog'], signal?: AbortSignal): Promise<LoaderData> => {
   const [aliasResult, modelResult] = await Promise.all([
-    callApi(() => api.api.aliases.$get()),
-    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } })),
+    callApi(() => api.api.aliases.$get(undefined, { init: { signal } })),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
   ]);
   const catalog = mergeModelAliasesPageData(current, aliasResult, modelResult);
   return {
@@ -75,8 +75,9 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     deleteDialog.open(target);
   };
 
-  const load = useCallback(async () => {
-    const next = await loadPageData(catalog);
+  const load = useCallback(async (signal: AbortSignal) => {
+    const next = await loadPageData(catalog, signal);
+    if (signal.aborted) return;
     setCatalog(next.catalog);
     setError(next.error);
     setModelsError(next.modelsError);
@@ -109,7 +110,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     }
     deleteDialog.close();
     handle.succeed(t('dashboard.modelAliases.toast.delete.success', { name: target.name }));
-    await load();
+    await refresh();
   };
 
   return <section className="dashboard-page">
@@ -122,7 +123,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
         return <TableRow key={alias.name}><TableCell className="overflow-hidden"><div className="flex items-center gap-2 min-w-0 max-w-full"><div className="grid gap-[3px] min-w-0 flex-1 overflow-hidden"><Text block className="overflow-hidden text-ellipsis whitespace-nowrap" title={alias.display_name ?? alias.name} wrap={false}>{alias.display_name ?? alias.name}</Text><Text block size={200} className="font-mono text-fui-fg2 overflow-hidden text-ellipsis whitespace-nowrap" title={alias.name} wrap={false}>{alias.name}</Text></div>{warnings.length > 0 && <Tooltip content={warnings.map(warning => t(`dashboard.modelAliases.warnings.${warning.key}`, warning.values)).join('\n')} relationship="description"><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} className="flex-none" /></Tooltip>}</div></TableCell><TableCentredCell>{t(`dashboard.modelAliases.kind.${alias.kind}`)}</TableCentredCell><TableCentredCell>{t('dashboard.modelAliases.target.count', { count: alias.targets.length })}</TableCentredCell><TableCentredCell>{t(`dashboard.modelAliases.selection.${alias.selection === 'first-available' ? 'first' : 'random'}`)}</TableCentredCell><TableCentredCell>{alias.visible_in_models_list ? t('dashboard.modelAliases.visibility.visible') : t('dashboard.modelAliases.visibility.hidden')}</TableCentredCell><TableCell><TableActions><TooltipIconButton disabled={refreshing || mutating} icon={<EditRegular />} label={t('dashboard.modelAliases.actions.editNamed', { name: alias.name })} onClick={() => editorDialog.open(alias)} /><TooltipIconButton danger disabled={refreshing || mutating} icon={<DeleteRegular />} label={t('dashboard.modelAliases.actions.deleteNamed', { name: alias.name })} onClick={() => openDeleteDialog(alias)} /></TableActions></TableCell></TableRow>;
       })}</TableBody></Table></ScrollArea>}
     </ResourceListPanel>
-    {editorDialog.invocation && <AliasDialog open={editorDialog.isOpen} aliases={aliases} key={editorDialog.invocation.key} models={models} onOpenChange={open => { if (!open) editorDialog.close(); }} onSaved={load} record={editorDialog.invocation.value} />}
+    {editorDialog.invocation && <AliasDialog open={editorDialog.isOpen} aliases={aliases} key={editorDialog.invocation.key} models={models} onOpenChange={open => { if (!open) editorDialog.close(); }} onSaved={refresh} record={editorDialog.invocation.value} />}
     {deleteDialog.invocation && <ConfirmDialog open={deleteDialog.isOpen} busy={mutating} error={deleteError} key={deleteDialog.invocation.key} onDismissError={() => setDeleteError(null)} onOpenChange={open => { if (!mutating && !open) deleteDialog.close(); }} title={t('dashboard.modelAliases.delete.title')} message={t('dashboard.modelAliases.delete.message', { name: deleteDialog.invocation.value.name })} actionLabel={mutating ? t('dashboard.modelAliases.actions.deleting') : t('dashboard.modelAliases.actions.delete')} onConfirm={() => void deleteAlias(deleteDialog.invocation!.value)} />}
   </section>;
 }

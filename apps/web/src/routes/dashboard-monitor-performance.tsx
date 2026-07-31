@@ -143,7 +143,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [upstreamNames] = useState(() => new Map(loaderData.upstreamNames.map(item => [item.id, item.name])));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  const requestIdRef = useRef(0);
+  const requestRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(false);
   const locale = useLocale();
 
@@ -151,13 +151,19 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   // these pages reload themselves every minute, and wiping the bar on the way
   // in meant a server's own words could appear and vanish unseen.
   const refresh = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
-    const requestId = ++requestIdRef.current;
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     const requestedAt = Date.now();
     setLoading(true);
     if (!background) setError(null);
     const search = buildPerformanceQuery(view, range, groupBy, filters, requestedAt);
-    const result = await callApi(() => api.api.performance.overview.$get({ query: Object.fromEntries(search) }));
-    if (requestId !== requestIdRef.current) return;
+    const result = await callApi(() => api.api.performance.overview.$get(
+      { query: Object.fromEntries(search) },
+      { init: { signal: controller.signal } },
+    ));
+    if (requestRef.current !== controller) return;
+    requestRef.current = null;
     if (result.error) setError(result.error);
     else {
       setOverview(result.data);
@@ -173,7 +179,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       return;
     }
     void refresh();
-    return () => { requestIdRef.current += 1; };
+    return () => { requestRef.current?.abort(); };
   }, [refresh]);
 
   usePollWhileVisible(refresh, 60_000);

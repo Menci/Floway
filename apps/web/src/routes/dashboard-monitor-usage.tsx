@@ -85,7 +85,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(() => new Set(loaderData.hiddenModels));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  const requestIdRef = useRef(0);
+  const requestRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(false);
 
   const canSwitchView = user.isAdmin;
@@ -95,37 +95,28 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   // these pages reload themselves every minute, and wiping the bar on the way
   // in meant a server's own words could appear and vanish unseen.
   const refresh = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
-    const requestId = ++requestIdRef.current;
-    const requestedView = view;
-    const requestedRange = range;
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     const requestedAt = Date.now();
     setLoading(true);
     if (!background) setError(null);
 
     try {
-      const next = await loadUsagePageData(
-        requestedView,
-        requestedRange,
-        requestedAt,
-      );
-      if (
-        requestId !== requestIdRef.current ||
-        requestedView !== view ||
-        requestedRange !== range
-      ) {
-        return;
-      }
+      const next = await loadUsagePageData(view, range, requestedAt, controller.signal);
+      if (requestRef.current !== controller) return;
       setUsage(next.usage);
       setSearch(next.search);
       setModels(next.models);
-      setLoadedRange(requestedRange);
+      setLoadedRange(range);
       setLoadedAt(requestedAt);
       setError(next.error);
-    } catch (caught) {
-      if (requestId !== requestIdRef.current) return;
-      setError({ status: 0, message: errorMessage(caught) });
+    } catch (error) {
+      if (requestRef.current !== controller) return;
+      setError({ status: 0, message: errorMessage(error) });
     } finally {
-      if (requestId === requestIdRef.current) {
+      if (requestRef.current === controller) {
+        requestRef.current = null;
         setLoading(false);
       }
     }
@@ -138,7 +129,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     }
     void refresh();
     return () => {
-      requestIdRef.current += 1;
+      requestRef.current?.abort();
     };
   }, [refresh]);
 
