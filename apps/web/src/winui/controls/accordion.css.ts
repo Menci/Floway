@@ -74,11 +74,6 @@ export const accordionCss = `
   border-radius: var(--winui-control-corner-radius);
 }
 
-/* Fluent's leading chevron has no WinUI counterpart to take spacing from — the
-   Expander always ends its row with the chevron — so the gap Fluent already
-   declares is preserved, only moved outside the painted box. Its 8px is the
-   same measure as the trailing term of the WinUI chevron margin.
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L81 */
 /* The chevron turns instead of being swapped. WinUI points it down when the
    Expander is collapsed and up when it is open; Fluent computes that rotation
    itself, but only while it is the one creating the glyph, and the runtime
@@ -102,6 +97,11 @@ export const accordionCss = `
   }
 }
 
+/* Fluent's leading chevron has no WinUI counterpart to take spacing from — the
+   Expander always ends its row with the chevron — so the gap Fluent already
+   declares is preserved, only moved outside the painted box. Its 8px is the
+   same measure as the trailing term of the WinUI chevron margin.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L81 */
 .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon:first-child {
   margin-inline-end: 8px;
 }
@@ -121,15 +121,12 @@ export const accordionCss = `
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L80 */
 .fui-AccordionHeader__button.fui-AccordionHeader__button:has(> .fui-AccordionHeader__expandIcon:last-child) {
   column-gap: 20px;
+  padding-inline-end: 0;
 }
 
 .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon:last-child {
   margin-inline-start: auto;
   margin-inline-end: 8px;
-}
-
-.fui-AccordionHeader__button.fui-AccordionHeader__button:has(> .fui-AccordionHeader__expandIcon:last-child) {
-  padding-inline-end: 0;
 }
 
 /* Pointer feedback lives entirely on the chevron, and it answers the whole
