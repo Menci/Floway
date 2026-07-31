@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { fluentComponents } from '../../fluent';
 import { parseDuration } from '../../lib/parse-duration';
-import { Combobox } from '../ui/fluent-form-controls';
+import { Combobox, LISTBOX_POSITIONING } from '../ui/fluent-form-controls';
 import { SettingsCard } from '../ui/settings-card';
 
 const { Option, Text, makeStyles } = fluentComponents;
@@ -137,21 +137,26 @@ export const RetentionField = ({
 
   return <>
     <SettingsCard
-      action={<div className="w-[240px] flex-none">
-        <Combobox
-          aria-label={label}
-          className="!w-full"
-          freeform
-          onChange={event => typeCustom(event.target.value)}
-          onOptionSelect={(_, data) => data.optionValue !== undefined && selectChoice(data.optionValue as Exclude<Choice, 'custom'>)}
-          placeholder={customInputUnit === 'days' ? t('dashboard.apiKeys.retention.daysPlaceholder') : t('dashboard.apiKeys.retention.durationPlaceholder')}
-          selectedOptions={choice === 'custom' ? [] : [choice]}
-          value={displayValue}
-        >
-          <Option value="off">{offLabel}</Option>
-          {presets.map(preset => <Option key={preset.seconds} value={`seconds:${preset.seconds}`}>{preset.label}</Option>)}
-        </Combobox>
-      </div>}
+      action={<Combobox
+        aria-label={label}
+        className="!w-auto flex-none"
+        freeform
+        // The row's action is as wide as what it currently reads, not as wide
+        // as its widest option -- a settings row sizes its control to its
+        // value. An input has no intrinsic content width, so the character
+        // count is what states it, and the list is free to be wider: it hangs
+        // off the trailing edge and grows the other way.
+        input={{ size: displayValue.length + 1 }}
+        onChange={event => typeCustom(event.target.value)}
+        onOptionSelect={(_, data) => data.optionValue !== undefined && selectChoice(data.optionValue as Exclude<Choice, 'custom'>)}
+        placeholder={customInputUnit === 'days' ? t('dashboard.apiKeys.retention.daysPlaceholder') : t('dashboard.apiKeys.retention.durationPlaceholder')}
+        positioning={{ ...LISTBOX_POSITIONING, align: 'end' }}
+        selectedOptions={choice === 'custom' ? [] : [choice]}
+        value={displayValue}
+      >
+        <Option value="off">{offLabel}</Option>
+        {presets.map(preset => <Option key={preset.seconds} value={`seconds:${preset.seconds}`}>{preset.label}</Option>)}
+      </Combobox>}
       description={description}
       header={label}
       icon={icon}

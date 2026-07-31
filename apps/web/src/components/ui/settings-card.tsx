@@ -275,7 +275,7 @@ export function SettingsCard({ action, description, header, icon, onClick }: {
 // gets there -- which the DOM does not do on its own, so the chevron is its own
 // button rather than the header being one.
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
-export function SettingsExpander({ action, children, defaultOpen = false, description, expandLabel, header, icon }: {
+export function SettingsExpander({ action, children, defaultOpen = false, description, expandLabel, header, icon, toggledOn }: {
   action?: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
@@ -283,9 +283,23 @@ export function SettingsExpander({ action, children, defaultOpen = false, descri
   expandLabel: string;
   header: ReactNode;
   icon?: ReactNode;
+  /**
+   * The state of the switch in `action`, when there is one. Throwing it opens
+   * the row, and turning it off closes the row again -- what the switch admits
+   * is what the region configures, so there is nothing to read while it is off
+   * and nothing to hide once it is on. The disclosure stays independent either
+   * way: the row can still be opened and closed by hand without touching the
+   * switch, and this only moves it when the switch itself changes.
+   */
+  toggledOn?: boolean;
 }) {
   const s = useStyles();
   const [open, setOpen] = useState(defaultOpen);
+  const [toggleWas, setToggleWas] = useState(toggledOn);
+  if (toggledOn !== undefined && toggledOn !== toggleWas) {
+    setToggleWas(toggledOn);
+    setOpen(toggledOn);
+  }
   const contentId = useId();
   const headerId = useId();
   return <div>

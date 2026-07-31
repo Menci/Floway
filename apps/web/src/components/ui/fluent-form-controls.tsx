@@ -28,13 +28,13 @@ const MIN_WIDTH_CLASS = '!min-w-[0px] [&_input]:!min-w-[0px]';
 // the list attached to its control, and `autoSize` then trims it to the space
 // that edge actually has instead of moving it.
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-positioning/library/src/types.ts#L244-L264
-const LISTBOX_POSITIONING: ComponentProps<typeof FluentCombobox>['positioning'] = {
+export const LISTBOX_POSITIONING = {
   position: 'below',
   align: 'start',
   autoSize: 'height',
   fallbackPositions: ['above'],
   overflowBoundaryPadding: 8,
-};
+} satisfies NonNullable<ComponentProps<typeof FluentCombobox>['positioning']>;
 
 // The chevron is drawn at 12px, and Fluent's default is the 20px artwork scaled
 // down to fit. Its stroke is one unit in a twenty-unit box, so at 12px it is

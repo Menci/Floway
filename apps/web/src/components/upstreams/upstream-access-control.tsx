@@ -6,7 +6,7 @@ import { ProviderBadge } from './provider-badge';
 import type { ControlPlaneModel, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ScrollArea } from '../ui/scroll-area';
-import { SettingsCard, SettingsSwitch } from '../ui/settings-card';
+import { SettingsExpander, SettingsSwitch } from '../ui/settings-card';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
 const {
@@ -83,7 +83,7 @@ export function UpstreamAccessControl({
   }, [ids, onChange]);
 
   return <section className="grid gap-3 min-w-0" aria-describedby={error ? errorId : undefined}>
-    <SettingsCard
+    <SettingsExpander
       action={<SettingsSwitch
         checked={override}
         disabled={disabled}
@@ -91,35 +91,40 @@ export function UpstreamAccessControl({
         onChange={toggleOverride}
       />}
       description={t('dashboard.upstreamAccess.description')}
+      expandLabel={t('dashboard.upstreamAccess.title')}
       header={t('dashboard.upstreamAccess.title')}
       icon={<ShieldKeyhole24Regular />}
-    />
-    {error && <Text className={styles.error} id={errorId} role="alert" size={200}>{error}</Text>}
-    {override && <ScrollArea axes="horizontal" className="min-w-0">
-      {/* Fluent's Table is already `width: 100%; table-layout: fixed`, so the
-          only thing this minimum decides is when the region starts scrolling.
-          It is the three sized columns plus enough room for a provider chip to
-          stay readable — a dialog wide enough to show that much never scrolls,
-          and a chip narrower than its column truncates on its own. */}
-      <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[440px]">
-        <colgroup><col className="w-[80px]" /><col className="w-[96px]" /><col /><col className="w-[120px]" /></colgroup>
-        <TableHeader><TableRow>
-          <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
-          <TableHeaderCell>{t('dashboard.upstreamAccess.order')}</TableHeaderCell>
-          <TableHeaderCell>{t('dashboard.upstreamAccess.upstream')}</TableHeaderCell>
-          <TableHeaderCell>{t('dashboard.upstreamAccess.models')}</TableHeaderCell>
-        </TableRow></TableHeader>
-        <TableBody>{rows.map(row => {
-          const index = ids.indexOf(row.id);
-          return <TableRow key={row.id}>
-            <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.enabled} disabled={disabled} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
-            <TableCell><div className="inline-flex items-center gap-1"><TooltipIconButton disabled={disabled || index <= 0} icon={<ArrowUpRegular />} label={t('dashboard.upstreamAccess.moveUp')} onClick={() => moveUpstream(row.id, -1)} /><TooltipIconButton disabled={disabled || index === -1 || index >= ids.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.upstreamAccess.moveDown')} onClick={() => moveUpstream(row.id, 1)} /></div></TableCell>
-            <TableCell><ProviderBadge color={row.color} kind={row.kind} label={row.name} /></TableCell>
-            <TableCell><Text>{t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}</Text></TableCell>
-          </TableRow>;
-        })}</TableBody>
-      </Table>
-    </ScrollArea>}
+      toggledOn={override}
+    >
+      <div className="grid gap-3 min-w-0">
+        {error && <Text className={styles.error} id={errorId} role="alert" size={200}>{error}</Text>}
+        <ScrollArea axes="horizontal" className="min-w-0">
+          {/* Fluent's Table is already `width: 100%; table-layout: fixed`, so the
+              only thing this minimum decides is when the region starts scrolling.
+              It is the three sized columns plus enough room for a provider chip to
+              stay readable — a dialog wide enough to show that much never scrolls,
+              and a chip narrower than its column truncates on its own. */}
+          <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[440px]">
+            <colgroup><col className="w-[80px]" /><col className="w-[96px]" /><col /><col className="w-[120px]" /></colgroup>
+            <TableHeader><TableRow>
+              <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
+              <TableHeaderCell>{t('dashboard.upstreamAccess.order')}</TableHeaderCell>
+              <TableHeaderCell>{t('dashboard.upstreamAccess.upstream')}</TableHeaderCell>
+              <TableHeaderCell>{t('dashboard.upstreamAccess.models')}</TableHeaderCell>
+            </TableRow></TableHeader>
+            <TableBody>{rows.map(row => {
+              const index = ids.indexOf(row.id);
+              return <TableRow key={row.id}>
+                <TableCell><Checkbox aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`} checked={row.enabled} disabled={disabled || !override} onChange={(_, data) => toggleUpstream(row.id, !!data.checked)} /></TableCell>
+                <TableCell><div className="inline-flex items-center gap-1"><TooltipIconButton disabled={disabled || !override || index <= 0} icon={<ArrowUpRegular />} label={t('dashboard.upstreamAccess.moveUp')} onClick={() => moveUpstream(row.id, -1)} /><TooltipIconButton disabled={disabled || !override || index === -1 || index >= ids.length - 1} icon={<ArrowDownRegular />} label={t('dashboard.upstreamAccess.moveDown')} onClick={() => moveUpstream(row.id, 1)} /></div></TableCell>
+                <TableCell><ProviderBadge color={row.color} kind={row.kind} label={row.name} /></TableCell>
+                <TableCell><Text>{t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}</Text></TableCell>
+              </TableRow>;
+            })}</TableBody>
+          </Table>
+        </ScrollArea>
+      </div>
+    </SettingsExpander>
   </section>;
 }
 

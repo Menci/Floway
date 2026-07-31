@@ -84,7 +84,6 @@ interface ProviderOption {
   value: SearchConfig['provider'];
   labelKey: string;
   iconUrl?: string;
-  descKey?: string;
   url?: string;
   getApiKey: (config: SearchConfig) => string;
   setApiKey: (config: SearchConfig, key: string) => SearchConfig;
@@ -101,7 +100,6 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     value: 'tavily',
     labelKey: 'dashboard.searchConfig.provider.tavily',
     iconUrl: tavilyIconUrl,
-    descKey: 'dashboard.searchConfig.providerDescTavily',
     url: 'https://app.tavily.com/',
     getApiKey: c => c.tavily.apiKey,
     setApiKey: (c, k) => ({ ...c, tavily: { apiKey: k } }),
@@ -110,7 +108,6 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     value: 'microsoft-web-iq',
     labelKey: 'dashboard.searchConfig.provider.microsoftWebIq',
     iconUrl: microsoftIconUrl,
-    descKey: 'dashboard.searchConfig.providerDescMicrosoftWebIq',
     url: 'https://webiq.microsoft.ai/profiles',
     getApiKey: c => c.microsoftWebIq.apiKey,
     setApiKey: (c, k) => ({ ...c, microsoftWebIq: { apiKey: k } }),
@@ -119,7 +116,6 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     value: 'jina',
     labelKey: 'dashboard.searchConfig.provider.jina',
     iconUrl: jinaIconUrl,
-    descKey: 'dashboard.searchConfig.providerDescJina',
     url: 'https://jina.ai/',
     getApiKey: c => c.jina.apiKey,
     setApiKey: (c, k) => ({ ...c, jina: { apiKey: k } }),
@@ -302,7 +298,6 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
           </Dropdown>
         </div>}
         defaultOpen={draft.provider !== 'disabled'}
-        description={activeOption.descKey ? t(activeOption.descKey) : undefined}
         expandLabel={t('dashboard.searchConfig.providerLabel')}
         header={t('dashboard.searchConfig.providerLabel')}
         icon={<GlobeSearch24Regular />}
@@ -338,6 +333,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
         expandLabel={t('dashboard.searchConfig.passthrough.title')}
         header={t('dashboard.searchConfig.passthrough.title')}
         icon={<ArrowRouting24Regular />}
+        toggledOn={draft.passthroughOpenAiSearch.enabled}
       >
         <div className="grid gap-3">
           <div className="grid grid-cols-2 gap-3 max-[620px]:grid-cols-1">

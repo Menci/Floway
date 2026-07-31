@@ -316,7 +316,13 @@ export const selectCss = `
   width: 3px;
 }
 
-.fui-Option[aria-selected='true'] .fui-Option__checkIcon.fui-Option__checkIcon {
-  visibility: hidden;
+/* The pill is WinUI's whole single-select indicator, so the check glyph Fluent
+   shows in the same role goes -- and so does the column it sat in. WinUI's item
+   is a label against the item's own padding with the pill drawn inside that
+   inset, not beside it, so keeping the glyph's space would indent every label
+   in the list past where the template puts it.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L759 */
+.fui-Option .fui-Option__checkIcon.fui-Option__checkIcon {
+  display: none;
 }
 `;

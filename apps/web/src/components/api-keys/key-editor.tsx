@@ -160,6 +160,7 @@ export function KeyDialog(props: KeyDialogProps) {
 
   return (
     <DialogShell
+      maxWidth="720px"
       open={props.open}
       onOpenChange={(_, data) => !saving && onOpenChange(data.open)}
       onSubmit={() => void handleSubmit(save)()}

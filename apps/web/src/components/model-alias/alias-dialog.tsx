@@ -115,6 +115,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
       expandLabel={t('dashboard.modelAliases.metadata.heading')}
       icon={<Info24Regular />}
       header={t('dashboard.modelAliases.metadata.heading')}
+      toggledOn={values.manualMetadata}
     >
       <MetadataEditor disabled={saving || !values.manualMetadata} kind={kind} value={values.manualMetadata ? values.announcedMetadata : automaticMetadata} onChange={value => setValue('announcedMetadata', value, { shouldValidate: true })} />
     </SettingsExpander>}

@@ -264,7 +264,7 @@ const en = {
       },
       upstreamAccess: {
         title: 'Limit available upstreams',
-        description: 'When off, access inherits every upstream from its parent scope.',
+        description: 'When off, access inherits every upstream from its parent scope',
         tableLabel: 'Available upstreams',
         enabled: 'Enabled',
         order: 'Order',
@@ -344,9 +344,9 @@ const en = {
           retention: 'Request dump retention',
           viewCapturedRequests: 'View captured requests',
           responsesRetention: 'Stateful Responses retention',
-          responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id. Off means nothing is persisted.',
+          responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id — off persists nothing',
           retentionHint:
-              'When enabled, model-invoking requests through this key are captured for the configured window.',
+              'When enabled, model-invoking requests through this key are captured for the configured window',
           retentionCustom: 'Custom retention',
           retentionPlaceholder: 'e.g. 30m, 2h, 3d, 1800',
         },
@@ -1064,12 +1064,6 @@ const en = {
           model: 'Search model',
           empty: 'Add an enabled Codex or Custom upstream with a chat model to use passthrough search.',
         },
-        providerDescTavily:
-            'Tavily is a search engine optimized for LLMs and RAG workflows.',
-        providerDescMicrosoftWebIq:
-            'Microsoft Web IQ provides web search and page retrieval APIs built for AI agents.',
-        providerDescJina:
-            'Jina AI provides web search and content extraction APIs.',
         getKeyLink: 'Get API key →',
         apiKeyLabel: 'API Key',
         apiKeyPlaceholder: 'Enter API key…',
