@@ -22,14 +22,14 @@ import type { MouseEventHandler, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLinkClickHandler, useLocation, useNavigation } from 'react-router';
 
-import type { AuthUser } from '../api/auth';
-import { fluentComponents } from '../fluent';
-import { FlowayLogo } from './logo';
+import type { AuthUser } from '../../api/auth';
+import { fluentComponents } from '../../fluent';
+import { FlowayLogo } from '../logo';
 import { NavSelectionIndicator } from './nav-selection-indicator';
-import { useAuthStore } from '../stores/auth-store';
-import { ConfirmDialog } from './ui/confirm-dialog';
-import { ScrollArea } from './ui/scroll-area';
-import { useDialogInvocation } from './ui/use-dialog-invocation';
+import { useAuthStore } from '../../stores/auth-store';
+import { ConfirmDialog } from '../ui/confirm-dialog';
+import { ScrollArea } from '../ui/scroll-area';
+import { useDialogInvocation } from '../ui/use-dialog-invocation';
 
 const {
   Button,

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
-import { INDICATOR_DURATION_MS, INDICATOR_POSITION_SNAP, INDICATOR_REACH_MS, INDICATOR_SETTLE_EASING, INDICATOR_SETTLE_MS, INDICATOR_STRETCH_EASING } from '../winui/motion';
+import { INDICATOR_DURATION_MS, INDICATOR_POSITION_SNAP, INDICATOR_REACH_MS, INDICATOR_SETTLE_EASING, INDICATOR_SETTLE_MS, INDICATOR_STRETCH_EASING } from '../../winui/motion';
 
 // WinUI's NavigationView does not move one indicator between items. It keeps a
 // separate indicator per item and, on a selection change, plays a matched pair

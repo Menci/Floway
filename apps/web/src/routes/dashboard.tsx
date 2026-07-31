@@ -13,7 +13,7 @@ import type { Route } from './+types/dashboard';
 import type { AuthUser } from '../api/auth';
 import { getSessionToken } from '../auth/session';
 import { FlowayLogo } from '../components/logo';
-import { Sidebar } from '../components/sidebar';
+import { Sidebar } from '../components/sidebar/sidebar';
 import { OutcomeToastProvider } from '../components/ui/outcome-toast';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
