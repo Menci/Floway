@@ -2,6 +2,7 @@ import { SelectAllOffRegular, SelectAllOnRegular, SquareMultipleRegular } from '
 import { useTranslation } from 'react-i18next';
 
 import { colorForSlot } from './palette';
+import { SeriesMarker } from './series-marker';
 import { invertedSeries, isolatedSeries, toggledSeries } from './series-selection';
 import { fluentComponents } from '../../fluent';
 import { EmptyStateLine } from '../ui/empty-state';
@@ -63,11 +64,7 @@ export function ChartSection({
               <InteractionTag appearance="outline" key={entry.id} shape="circular" size="small">
                 <InteractionTagPrimary
                   className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
-                  icon={<span
-                    aria-hidden="true"
-                    className="rounded-full h-[8px] w-[8px] mx-[4px] flex-shrink-0"
-                    style={{ backgroundColor: colorForEntry(entry.colorSlot) }}
-                  />}
+                  icon={<SeriesMarker className="mx-[4px]" color={colorForEntry(entry.colorSlot)} shape="line" />}
                   title={t('dashboard.charts.series.toggleHint')}
                   // A double-click delivers its two clicks first; both land on
                   // this same series and cancel out, so the isolate that follows
