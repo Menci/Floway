@@ -270,7 +270,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         </MessageBar>
       )}
 
-      <ResourceListPanel>
+      <ResourceListPanel rowHeight="56px">
         <UpstreamsTable
           busy={busy}
           data={data}
@@ -345,7 +345,7 @@ function UpstreamsTable({
         </TableHeader>
         <TableBody>
           {data.upstreams.map((record, index) => (
-            <TableRow className="h-14" key={record.id}>
+            <TableRow key={record.id}>
               <TableCell>
                 <div className="inline-flex items-center gap-1">
                   <Text size={300} className="text-fui-fg3 min-w-[22px] text-center">{index + 1}</Text>

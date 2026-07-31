@@ -1,5 +1,5 @@
 import { AddRegular, ArrowClockwiseRegular } from '@fluentui/react-icons';
-import type { ReactElement, ReactNode } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
 import { Panel, type PanelProps } from './panel';
 import { fluentComponents } from '../../fluent';
@@ -11,19 +11,26 @@ const { Button, Spinner, Text, Tooltip, makeStyles, mergeClasses } = fluentCompo
 // table, so the table has to reach the card's edges and carry the inset itself.
 // A table anywhere else — inside the upstream editor, inside a dialog — sits in
 // a container that still states its own padding and wants none of this.
-const ROW_MIN_HEIGHT = '44px';
+// The row height is the panel's to state, and each list passes the height its
+// own rows want: a single line of text takes the default, a row carrying a
+// second line under the first takes more. The header takes the same number, so
+// it never sits shorter than the rows under it.
+//
+// It is `height` rather than a minimum because these rows lay out as table
+// rows, and a table row ignores min-height outright -- height is already the
+// minimum there, since a row still grows to whatever its cells need.
+// https://drafts.csswg.org/css-tables-3/#row-layout
+const DEFAULT_ROW_HEIGHT = '44px';
+const ROW_HEIGHT = '--floway-resource-row-height';
 // What the leading and trailing cells hold off the card's edge. The rows put
-// twelve pixels between a username and the lines above and below it, which is
-// where this started; it is wider than that on purpose, because the card's edge
-// is the page's boundary where a row's line is only the next row.
+// twelve pixels between their content and the lines above and below it, which
+// is where this started; it is wider than that on purpose, because the card's
+// edge is the page's boundary where a row's line is only the next row.
 const EDGE_INSET = '16px';
 
 const useStyles = makeStyles({
   table: {
-    '& .fui-TableRow': { minHeight: ROW_MIN_HEIGHT },
-    // A header cell sizes itself, so the row's minimum alone would leave the
-    // header text sitting in a short box inside a tall row.
-    '& .fui-TableHeaderCell': { height: ROW_MIN_HEIGHT },
+    '& .fui-TableRow': { height: `var(${ROW_HEIGHT})` },
     '& .fui-TableRow > :first-child': { paddingInlineStart: EDGE_INSET },
     '& .fui-TableRow > :last-child': { paddingInlineEnd: EDGE_INSET },
     // The last row's edge and the card's own would otherwise stack into one
@@ -36,12 +43,13 @@ const useStyles = makeStyles({
 // it states no padding: the table's own cells already inset their contents, and
 // a second inset around them only pushes the rows away from the edge the rows
 // are meant to reach.
-export function ResourceListPanel({ className, ...props }: PanelProps) {
+export function ResourceListPanel({ className, rowHeight = DEFAULT_ROW_HEIGHT, style, ...props }: PanelProps & { rowHeight?: string }) {
   const styles = useStyles();
   return (
     <Panel
       {...props}
       className={mergeClasses('grid min-w-0 !gap-0 !p-0 overflow-hidden', styles.table, className)}
+      style={{ ...style, [ROW_HEIGHT]: rowHeight } as CSSProperties}
     />
   );
 }

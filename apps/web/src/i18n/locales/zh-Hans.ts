@@ -1059,7 +1059,9 @@ const zhHansCN = {
         metadata: { heading: '手动声明元数据', description: '/v1/models 为此别名报告的能力', manual: '手动声明元数据', limits: 'Token 限制', context: '上下文窗口', prompt: '提示 token', output: '输出 token', modalities: '模态', imageInput: '图像输入', reasoning: '思考', effortEnabled: '强度级别', budgetEnabled: '预算 token', adaptive: '自适应', mandatory: '强制思考', efforts: '支持的强度', effortsHint: '使用逗号分隔；保留顺序。', defaultEffort: '默认强度', minBudget: '最小预算', maxBudget: '最大预算' },
         warnings: { label: '别名警告', shadow: '别名 ID 会遮蔽真实模型 {{id}} {{display}}。', noTarget: '当前没有目标可解析到此 gateway 上的模型。', unknownTarget: '{{id}} 当前无法解析到已启用模型。', wrongKind: '{{id}} 是 {{actual}} 模型，但此别名类型为 {{expected}}。', notAdvertisedEffort: '目标未声明思考强度能力。', unsupportedEffort: '目标声明的强度为：{{values}}。', adaptiveBudgetConflict: '自适应思考不能与固定预算同时使用。', notAdvertisedBudget: '目标未声明思考预算能力。', budgetBelow: '低于目标最小值（{{value}}）。', budgetAbove: '高于目标最大值（{{value}}）。', notAdvertisedAdaptive: '目标未声明自适应思考能力。', ruleAdvisory: '一项或多项规则可能不受此目标支持。' },
         validation: { nameRequired: '请输入别名 ID。', duplicate: '已存在使用此 ID 的别名。', targetRequired: '每个目标都需要模型 ID。', budget: '思考预算必须是非负整数。', adaptiveBudget: '自适应思考不能与固定预算同时使用。', metadataNumber: '元数据 token 值必须是非负整数。', metadataRange: '最大预算必须大于或等于最小预算。' },
-        delete: { title: '删除别名', message: '删除别名 {{name}}？此操作无法撤销。' }, errors: { load: '无法加载别名。', message: '无法完成别名操作：{{message}}', models: '模型目录不可用：{{message}}' },
+        delete: { title: '删除别名', message: '删除别名 {{name}}？此操作无法撤销。' },
+        toast: { save: { pending: '正在保存别名 {{name}}', success: '已保存别名 {{name}}' }, delete: { pending: '正在删除别名 {{name}}', success: '已删除别名 {{name}}' } },
+        errors: { load: '无法加载别名。', message: '无法完成别名操作：{{message}}', models: '模型目录不可用：{{message}}' },
       },
       proxy: {
         heading: '代理',
