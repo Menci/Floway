@@ -243,6 +243,39 @@ export const winuiTokenCss = `
   }
 }
 
+/* The drop shadow under a tooltip, which is the one overlay whose depth WinUI
+   states in code rather than in a dictionary. ToolTip applies
+   ApplyElevationEffect(presenter, 0, 16) under IsDropShadowMode(), which
+   returns true unconditionally in WinUI 3, so 16 is the live elevation where a
+   flyout's is the 32 of s_elevationBaseDepth.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ToolTip_Partial.cpp#L634-L653
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/graphics/ThemeShadow.cpp#L221-L228
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/ElevationHelper.cpp#L19-L21
+
+   The recipe turns that elevation into the shadow itself: Elevation is
+   min(64, 16/2) = 8, which falls inside the 2..16 band where the ambient term
+   is zero, leaving one directional shadow of blur 8, Y offset Elevation * 0.5
+   = 4 and opacity min(8/100 + 0.06, 0.14) in light against a flat 0.26 in
+   dark, truncated to a byte as 0x23 and 0x42 over pure black. The compositor
+   is handed the blur radius plus one, so the geometry the rule writes is
+   0 4px 9px.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/graphics/inc/DropShadowRecipe.h#L108-L162
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/comptree/HWCompNodeWinRT.cpp#L1675
+
+   Sourced, but not from a dictionary, and it carries one assumption: that
+   CompositionDropShadow's BlurRadius and the CSS blur radius describe the same
+   Gaussian. Nothing in that corpus states the equivalence, so the colour and
+   the offset are transcribed and the blur is that assumption. */
+:root {
+  --winui-tooltip-shadow-color: #00000023;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --winui-tooltip-shadow-color: #00000042;
+  }
+}
+
 /* Solid backgrounds — the opaque ramp everything translucent is composited on.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L272-L279 */
 :root {

@@ -22,6 +22,7 @@ import { textInputCss } from './controls/text-input.css';
 import { textCss } from './controls/text.css';
 import { toastCss } from './controls/toast.css';
 import { toolbarCss } from './controls/toolbar.css';
+import { tooltipCss } from './controls/tooltip.css';
 import { winuiResetCss } from './reset.css';
 import { winuiTokenCss } from './tokens';
 
@@ -59,4 +60,5 @@ export const winuiCss = [
   textCss,
   toastCss,
   toolbarCss,
+  tooltipCss,
 ].join('\n');
