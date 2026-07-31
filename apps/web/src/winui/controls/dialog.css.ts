@@ -57,7 +57,7 @@ export const dialogCss = `
    the same three-band grid at every height, so neither the native scroll path
    nor its compensating border survives; only the middle OverlayScrollbars
    viewport contracts. */
-@media screen and (max-height: 359px) {
+@media (max-height: 359px) {
   .fui-DialogSurface.fui-DialogSurface {
     border-width: 1px;
     overflow: hidden;
@@ -169,7 +169,7 @@ export const dialogCss = `
    break is restated as a row flow. Equal columns become equal rows, and the
    lone button gives up its half of the band because no second column is left
    for it to yield to. */
-@media screen and (max-width: 480px) {
+@media (max-width: 480px) {
   .fui-DialogActions.fui-DialogActions {
     grid-auto-flow: row;
   }

@@ -260,7 +260,12 @@ export const switchCss = `
   width: calc(12 * var(--winui-switch-unit));
 }
 
-@media screen and (prefers-reduced-motion: reduce) {
+/* Fluent clamps its own switch transitions under reduced motion, but at a
+   single class, so every timing declared above outranks it. The clamp is
+   restated here at the weight those rules carry. 0.01ms rather than none for
+   the reason ./choice.css.ts records at the same construction: the transition
+   still has to complete. */
+@media (prefers-reduced-motion: reduce) {
   .fui-Switch__indicator.fui-Switch__indicator::before,
   .fui-Switch__indicator.fui-Switch__indicator::after,
   .fui-Switch__indicator.fui-Switch__indicator > * {

@@ -105,6 +105,10 @@ export const listCss = `
    Only the arrival is reproduced. WinUI fades a deselected bar out over 83ms
    and then destroys the rectangle, which needs the element to outlive the
    state that selects it -- a pseudo-element cannot.
+
+   Fluent draws no indicator on a list item at all, so this is entirely the
+   layer's own motion and is declared only where motion is welcome — see
+   ../index.ts for the two shapes reduced motion takes here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/ListViewBaseItemPresenter_Partial.cpp#L891-L1022 */
 @media (prefers-reduced-motion: no-preference) {
   .fui-ListItem.fui-ListItem[aria-selected='true']::before {

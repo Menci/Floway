@@ -33,6 +33,21 @@ import { winuiTokenCss } from './tokens';
 // order. See ./tokens.ts for the selector convention every rule here follows.
 // The document head is where this lands, next to the app's other critical
 // stylesheets in ../root.tsx.
+//
+// Reduced motion is answered in one of two shapes, and which one a rule takes
+// follows from whether Fluent already answers it for the same element. Where
+// Fluent declares the transition and its own reduced-motion rule beside it, we
+// state our timing under `@media (prefers-reduced-motion: no-preference)`
+// alone: a media query carries no specificity, so an unconditional rule of ours
+// would outrank Fluent's answer and we would have to restate it, where the
+// complementary query simply stands aside and leaves that answer whole. Where
+// the motion is this layer's own — a transition on a pseudo-element Fluent does
+// not style, or one whose declaration has to outrank a Fluent rule for an
+// unrelated reason — the timing is unconditional and
+// `@media (prefers-reduced-motion: reduce)` clamps it to 0.01ms rather than to
+// nothing, so the transition still completes and fires. Neither form spells the
+// `screen` media type: this layer has no print branch to distinguish itself
+// from, and `prefers-color-scheme` in ./tokens.ts states none either.
 export const winuiCss = [
   winuiResetCss,
   winuiTokenCss,

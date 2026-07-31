@@ -85,7 +85,10 @@ export const accordionCss = `
    chokepoint now supplies a 12px cut in place of the 20px artwork Fluent scales
    down. The timing is Fluent's own, kept as it was -- the WinUI chevron is an
    AnimatedIcon whose curve is not in the dictionaries, so there is nothing to
-   transcribe and no reason to invent one.
+   transcribe and no reason to invent one. Fluent stops rotating the chevron
+   once it is no longer the one creating the glyph, so the turn below is this
+   layer's own motion and is declared only where motion is welcome — see
+   ../index.ts for the two shapes reduced motion takes here.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/Expander/Expander_themeresources.xaml#L280-L281 */
 .fui-AccordionHeader__button[aria-expanded='true'] .fui-AccordionHeader__expandIcon.fui-AccordionHeader__expandIcon {
   rotate: 180deg;
