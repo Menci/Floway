@@ -18,8 +18,8 @@ const en = {
         back: 'Back',
         title: 'Error',
         unexpectedTitle: 'Something went wrong',
-        unexpectedDescription: 'An unexpected error occurred',
-        notFound: 'The requested page could not be found',
+        unexpectedDescription: 'An unexpected error occurred.',
+        notFound: 'The requested page could not be found.',
       },
     },
     auth: {
@@ -259,8 +259,8 @@ const en = {
           administrator: 'Administrator',
           administratorDescription:
               'Can manage users, upstreams, search configuration, and data transfer',
-          userOneLocked: 'The seed administrator cannot be demoted',
-          selfLocked: 'You cannot demote your own account',
+          userOneLocked: 'The seed administrator cannot be demoted.',
+          selfLocked: 'You cannot demote your own account.',
         },
         validation: {
           username: 'Use 1-64 letters, numbers, underscores, dots, or hyphens.',
@@ -277,7 +277,7 @@ const en = {
       },
       upstreamAccess: {
         title: 'Limit available upstreams',
-        description: 'When off, access inherits every upstream from its parent scope',
+        description: 'When off, access inherits every upstream from its parent scope.',
         tableLabel: 'Available upstreams',
         enabled: 'Enabled',
         order: 'Order',
@@ -357,7 +357,7 @@ const en = {
           responsesRetention: 'Stateful Responses retention',
           responsesRetentionHint: 'How long this key\'s Responses items stay available for a follow-up request to reference by id (off persists nothing)',
           retentionHint:
-              'When enabled, model-invoking requests through this key are captured for the configured window',
+              'When enabled, model-invoking requests through this key are captured for the configured window.',
           retentionCustom: 'Custom retention',
           retentionPlaceholder: 'e.g. 30m, 2h, 3d, 1800',
         },
@@ -406,7 +406,7 @@ const en = {
           codexWindowsAuthHint: 'Windows PowerShell: store the same provider token without changing the official account login.',
         },
         agentSetup: {
-          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links', unavailable: '{{id}} (unavailable)',
+          agent: 'Agent', accessMethod: 'Connection method', setupTab: 'Setup script', snippetsTab: 'Config snippet', platform: 'Platform', commandPending: 'Preparing setup command…', modelSelection: 'Model selection', miscSettings: 'Miscellaneous settings', selectKey: 'Select an API key above to prepare a setup command.', noKey: 'Create an API key to use Agent Setup.', expired: 'This setup link has expired. Retry to create a fresh link.', retry: 'Retry', expires: 'The setup link stays alive while this page is visible and expires after you leave.', defaultModel: 'Default model', fableModel: 'Fable model', opusModel: 'Opus model', sonnetModel: 'Sonnet model', haikuModel: 'Haiku model', reasoningEffort: 'Reasoning effort', modelDefault: 'Default', noModelMatches: 'No matching models', modelDiscovery: 'Gateway model discovery', modelDiscoveryHint: 'Let Claude Code discover available models from this Floway gateway.', cleanupRetention: 'Cleanup retention', cleanupRetentionHint: 'Set how long Claude Code retains local session data before cleanup.', cleanupDays: '{{count}} days', optOutAiAttribution: 'Opt out of Claude Code AI attribution', optOutAiAttributionHint: 'Remove Claude Code attribution ("Co-Authored-By") from commits and pull requests, and hide session links.', unavailable: '{{id}} (unavailable)',
         },
         rotate: {
           title: 'Rotate API Key',
@@ -478,7 +478,7 @@ const en = {
           delete: 'Deleting upstream',
         },
         errors: {
-          missing: 'That upstream no longer exists',
+          missing: 'That upstream no longer exists.',
           models: 'Model counts are unavailable: {{message}}',
           toggle: 'Could not update availability: {{message}}',
           reorder: 'Could not update routing priority: {{message}} {{sync}}',
@@ -507,7 +507,7 @@ const en = {
         pathOverridesHint:
             'Leave an entry blank to use its default /v1 path.',
         disabledModelsHint:
-            'Disabled models stay hidden from the catalog and routing while their metadata remains editable',
+            'Disabled models stay hidden from the catalog and routing while their metadata remains editable.',
         disabledModelsPlaceholder: 'Search models…',
         disabledModelsSelected_one: '{{count}} model disabled',
         disabledModelsSelected_other: '{{count}} models disabled',
@@ -536,7 +536,7 @@ const en = {
           disabledModels: 'Disabled models',
         },
         color: {
-          description: 'Choose how this upstream is distinguished across the console',
+          description: 'Choose how this upstream is distinguished across the console.',
           inherit: 'Provider default',
           custom: 'Custom hex',
           label: 'Badge color',
@@ -564,7 +564,7 @@ const en = {
           direct: 'Direct',
           directFetch: 'Direct (Fetch)',
           directConnect: 'Direct (TCP connect)',
-          empty: 'Without a fallback entry, traffic uses direct Fetch',
+          empty: 'Without a fallback entry, traffic uses direct Fetch.',
           add: 'Add fallback entry',
           colo: 'Current Cloudflare colo: {{colo}}',
           colos: 'Colo whitelist',
@@ -721,7 +721,7 @@ const en = {
           maximum: 'Maximum',
           pricing: 'Pricing',
           pricingHint:
-              'Used only for Floway usage statistics and estimated cost reporting on the Usage page. This does not change upstream billing or request parameters. Prices are in USD per million tokens',
+              'Used only for Floway usage statistics and estimated cost reporting on the Usage page. This does not change upstream billing or request parameters. Prices are in USD per million tokens.',
           pricingRules: 'Pricing rules',
           pricingEmptyHint: 'Start with a Base price. You can add conditional overrides afterward.',
           setupPricing: 'Set up Base pricing',
@@ -902,7 +902,7 @@ const en = {
         response: 'Response',
         responseBody: 'Response body',
         noRequestBody: 'No request body',
-        noResponseBody: 'The request did not produce a response body',
+        noResponseBody: 'The request did not produce a response body.',
         noResponseHeaders: 'No response headers',
         emptyBody: 'Empty body',
         truncatedStream: 'This recording was cut short; the response below is what could be reassembled from it.',
@@ -1071,7 +1071,7 @@ const en = {
         },
         passthrough: {
           title: 'Passthrough OpenAI search',
-          description: 'Route /alpha/search and Responses hosted search through a selected Codex or OpenAI-compatible upstream',
+          description: 'Route /alpha/search and Responses hosted search through a selected Codex or OpenAI-compatible upstream.',
           upstream: 'Search upstream',
           model: 'Search model',
           empty: 'Add an enabled Codex or Custom upstream with a chat model to use passthrough search.',
@@ -1100,7 +1100,7 @@ const en = {
         columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
         actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', saving: 'Saving…', delete: 'Delete', deleting: 'Deleting…', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
         dialog: { createTitle: 'Create alias', editTitle: 'Edit alias: {{name}}' },
-        form: { name: 'Alias ID', namePlaceholder: 'my-alias-id', displayName: 'Display name', displayPlaceholder: 'Optional display name', kind: 'Kind', selection: 'Selection', visible: 'Visible in /v1/models', visibleHint: 'A hidden alias stays out of the listing but can still be requested by name' },
+        form: { name: 'Alias ID', namePlaceholder: 'my-alias-id', displayName: 'Display name', displayPlaceholder: 'Optional display name', kind: 'Kind', selection: 'Selection', visible: 'Visible in /v1/models', visibleHint: 'A hidden alias stays out of the listing but can still be requested by name.' },
         kind: { chat: 'Chat', embedding: 'Embedding', image: 'Image', rerank: 'Rerank', transcription: 'Transcription' },
         selection: { first: 'First available', random: 'Random' },
         visibility: { visible: 'Visible', hidden: 'Hidden' },

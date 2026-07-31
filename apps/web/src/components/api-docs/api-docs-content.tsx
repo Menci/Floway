@@ -8,7 +8,7 @@ import { OpenLinkLabel } from '../ui/open-link-label';
 import { Panel } from '../ui/panel';
 import { ScrollArea } from '../ui/scroll-area';
 import { SectionHeader } from '../ui/section-header';
-import { TableActionsHeader } from '../ui/table-actions';
+import { TableActionsHeader, useTrailingCellClass } from '../ui/table-actions';
 import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 
 const {
@@ -27,6 +27,7 @@ const {
 export function ApiDocsContent() {
   const { t } = useTranslation();
   const { copiedTag, copy, copyFailedTag } = useCopyToClipboard();
+  const trailingCell = useTrailingCellClass();
   const authExample = authCurlExample(window.location.origin);
 
   return <>
@@ -58,7 +59,7 @@ export function ApiDocsContent() {
                 <TableCell><HttpMethodBadge method={endpoint.method} /></TableCell>
                 <TableCell><code translate="no">{endpoint.path}</code></TableCell>
                 <TableCell><Text size={300}>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</Text></TableCell>
-                <TableCell className="text-right"><Link href={endpoint.docs} target="_blank"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableCell>
+                <TableCell className={trailingCell}><Link href={endpoint.docs} target="_blank"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableCell>
               </TableRow>)}</TableBody>
             </Table>
           </ScrollArea>
