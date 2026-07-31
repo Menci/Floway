@@ -73,11 +73,12 @@ export const listCss = `
    corner radius, and the radius fixes the width -- a full round-off is one only
    on a 3px bar.
 
-   The length is the presenter's own formula rather than the navigation pane's:
-   MAX(16, itemHeight - 40), centred. A NavigationViewItem states a flat 16
-   because its row is pinned at 36; a list row sizes itself to its content, and
-   the chrome answers that by holding 16 until the row passes 56 and then
-   growing with it.
+   The length is a quarter inset at each end, which is the same reading
+   ./select.css.ts takes for a ComboBoxItem: the standard 32px item's 16px pill,
+   stated as the proportion it is so that a taller row grows one to match. The
+   presenter's own formula is MAX(16, itemHeight - 40), which agrees at 32 and
+   then holds flat until the row passes 56 -- a step this layer does not want in
+   two places and a proportion in a third.
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L57
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/ListViewItem_themeresources.xaml#L60
    https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L1750-L1758 */
@@ -89,9 +90,7 @@ export const listCss = `
   content: '';
   position: absolute;
   inset-inline-start: 0;
-  inset-block-start: 50%;
-  translate: 0 -50%;
-  block-size: max(16px, calc(100% - 40px));
+  inset-block: 25%;
   inline-size: 3px;
   border-radius: 1.5px;
   background-color: var(--winui-accent-fill-default);

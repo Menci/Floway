@@ -78,21 +78,21 @@ const zhHansCN = {
         action: '退出登录',
       },
       pages: {
-        playground: '在控制台中运行模型对话，并检查请求行为。',
+        playground: '在控制台中运行模型对话，并检查请求行为',
         upstreams:
-            '管理模型提供商的路由优先级、可用状态、模型目录和连接配置。',
-        proxy: '管理代理路由、传输方式和 gateway 级代理配置。',
-        apiKeys: '创建和管理客户端调用 Floway 时使用的 API 密钥。',
-        apiDocs: '阅读 Floway 网关的 API 参考和接入说明。',
-        requests: '查看请求记录、状态、路由结果和错误详情。',
-        usage: '按用户、API 密钥、模型和上游查看 token 用量与流量。',
-        performance: '观察延迟、吞吐和上游性能信号。',
-        users: '管理控制台用户、权限、观测访问和上游范围。',
-        backupRestore: '导出或恢复 gateway 配置和控制平面数据。',
-        readonly: '当前是普通用户身份，此区域为只读。',
-        adminOnly: '需要管理员权限。',
+            '管理模型提供商的路由优先级、可用状态、模型目录和连接配置',
+        proxy: '管理代理路由、传输方式和 gateway 级代理配置',
+        apiKeys: '创建和管理客户端调用 Floway 时使用的 API 密钥',
+        apiDocs: '阅读 Floway 网关的 API 参考和接入说明',
+        requests: '查看请求记录、状态、路由结果和错误详情',
+        usage: '按用户、API 密钥、模型和上游查看 token 用量与流量',
+        performance: '观察延迟、吞吐和上游性能信号',
+        users: '管理控制台用户、权限、观测访问和上游范围',
+        backupRestore: '导出或恢复 gateway 配置和控制平面数据',
+        readonly: '当前是普通用户身份，此区域为只读',
+        adminOnly: '需要管理员权限',
         adminOnlyDescription:
-            '该路由仅管理员可用，并且会对普通用户从侧边栏隐藏。',
+            '该路由仅管理员可用，并且会对普通用户从侧边栏隐藏',
       },
       playground: {
         system: '自定义系统提示词',
@@ -153,8 +153,7 @@ const zhHansCN = {
         },
       },
       settings: {
-        eyebrow: '账户',
-        description: '管理你的 Floway 账户安全设置。',
+        description: '管理你的 Floway 账户安全设置',
         changePassword: '修改密码',
         currentPassword: '当前密码',
         newPassword: '新密码',
@@ -970,7 +969,7 @@ const zhHansCN = {
       },
       backupRestore: {
         heading: '备份 / 恢复',
-        description: '导出或恢复 gateway 配置和控制平面数据。',
+        description: '导出或恢复 gateway 配置和控制平面数据',
         export: {
           heading: '导出',
           description:
@@ -1026,7 +1025,7 @@ const zhHansCN = {
       searchConfig: {
         heading: '搜索提供商',
         description:
-            '配置 Anthropic Messages / Responses API 网络搜索工具调用的提供商。',
+            '配置 Anthropic Messages / Responses API 网络搜索工具调用的提供商',
         providerLabel: '提供商',
         providerHint: '响应网络搜索工具调用的服务',
         provider: {
@@ -1070,7 +1069,7 @@ const zhHansCN = {
       },
       proxy: {
         heading: '代理',
-        description: '上游回退列表引用的出口代理。',
+        description: '上游回退列表引用的出口代理',
         listTitle: '代理列表',
         columns: { actions: '操作' },
         empty: '暂无代理。添加代理后即可路由出口流量。',

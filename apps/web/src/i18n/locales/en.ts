@@ -79,29 +79,29 @@ const en = {
       },
       pages: {
         playground:
-            'Run model conversations and inspect request behavior from the control plane.',
+            'Run model conversations and inspect request behavior from the control plane',
         upstreams:
-            'Manage provider routing priority, availability, model catalogs, and connection settings.',
+            'Manage provider routing priority, availability, model catalogs, and connection settings',
         proxy:
-            'Manage proxy routing, transport, and gateway-level proxy configuration.',
+            'Manage proxy routing, transport, and gateway-level proxy configuration',
         apiKeys:
-            'Create and manage API keys used by clients that call Floway.',
+            'Create and manage API keys used by clients that call Floway',
         apiDocs:
-            'Read API references and integration guidance for the Floway gateway.',
+            'Read API references and integration guidance for the Floway gateway',
         requests:
-            'Inspect request records, status, routing results, and error details.',
+            'Inspect request records, status, routing results, and error details',
         usage:
-            'Track token usage and traffic volume across users, keys, models, and upstreams.',
+            'Track token usage and traffic volume across users, keys, models, and upstreams',
         performance:
-            'Monitor latency, throughput, and upstream performance signals.',
+            'Monitor latency, throughput, and upstream performance signals',
         users:
-            'Manage console users, permissions, telemetry access, and upstream scopes.',
+            'Manage console users, permissions, telemetry access, and upstream scopes',
         backupRestore:
-            'Export or restore gateway configuration and control plane data.',
-        readonly: 'Signed in as an operator. This area is read-only.',
-        adminOnly: 'Administrator access required.',
+            'Export or restore gateway configuration and control plane data',
+        readonly: 'Signed in as an operator. This area is read-only',
+        adminOnly: 'Administrator access required',
         adminOnlyDescription:
-            'This route is reserved for admin users and is hidden from the sidebar for operators.',
+            'This route is reserved for admin users and is hidden from the sidebar for operators',
       },
       playground: {
         system: 'Custom system prompt',
@@ -163,8 +163,7 @@ const en = {
         },
       },
       settings: {
-        eyebrow: 'Account',
-        description: 'Manage your Floway account security.',
+        description: 'Manage your Floway account security',
         changePassword: 'Change password',
         currentPassword: 'Current password',
         newPassword: 'New password',
@@ -1011,7 +1010,7 @@ const en = {
       backupRestore: {
         heading: 'Backup / Restore',
         description:
-            'Export or restore gateway configuration and control plane data.',
+            'Export or restore gateway configuration and control plane data',
         export: {
           heading: 'Export',
           description:
@@ -1070,7 +1069,7 @@ const en = {
       searchConfig: {
         heading: 'Search Provider',
         description:
-            'Configure web search providers for Anthropic Messages / Responses API tool calling.',
+            'Configure web search providers for Anthropic Messages / Responses API tool calling',
         providerLabel: 'Provider',
         providerHint: 'The service that answers web search tool calls',
         provider: {
@@ -1105,7 +1104,7 @@ const en = {
       },
       modelAliases: {
         heading: 'Model Aliases',
-        description: 'Create virtual model IDs that route to one or more target models with optional locked request rules.',
+        description: 'Create virtual model IDs that route to one or more target models with optional locked request rules',
         listTitle: 'Aliases', empty: 'No aliases configured. Create one to expose a virtual model ID.',
         columns: { alias: 'Alias', kind: 'Kind', targets: 'Targets', selection: 'Selection', visibility: 'Models list', actions: 'Actions' },
         actions: { create: 'New alias', refresh: 'Refresh aliases', save: 'Save', saving: 'Saving…', delete: 'Delete', deleting: 'Deleting…', addTarget: 'Add target', editNamed: 'Edit alias {{name}}', deleteNamed: 'Delete alias {{name}}' },
@@ -1126,7 +1125,7 @@ const en = {
       proxy: {
         heading: 'Proxy',
         description:
-            'Outbound proxies referenced by per-upstream fallback lists.',
+            'Outbound proxies referenced by per-upstream fallback lists',
         listTitle: 'Proxies',
         columns: { actions: 'Actions' },
         empty: 'No proxies configured. Add a proxy to route outbound traffic.',

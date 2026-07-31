@@ -112,11 +112,10 @@ export function ModelDetail({
           <ChoiceGroup
             ariaLabel={t('dashboard.upstreamEditor.models.source')}
             items={[
-              { value: 'auto', label: t('dashboard.upstreamEditor.models.auto'), disabled: !row.hasAuto },
-              { value: 'manual', label: t('dashboard.upstreamEditor.models.manual') },
+              { value: 'auto', label: t('dashboard.upstreamEditor.models.auto'), disabled: readOnly || !row.hasAuto },
+              { value: 'manual', label: t('dashboard.upstreamEditor.models.manual'), disabled: readOnly },
             ]}
             onChange={value => onSourceChange(value as 'auto' | 'manual')}
-            readOnly={readOnly}
             value={row.source}
           />
         </div>

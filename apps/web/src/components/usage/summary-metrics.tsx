@@ -45,22 +45,21 @@ const useStyles = makeStyles({
       backgroundColor: 'var(--winui-subtle-fill-secondary) !important',
       color: 'var(--winui-text-fill-secondary)',
     },
-    // The bar is a ListViewItem's, so it takes that presenter's length -- MAX(16,
-    // height - 40), centred -- and that presenter's arrival: a fade over 83ms
-    // while it grows from nothing over 167ms, from its own centre. It does not
-    // travel from the tile that lost the selection; only NavigationView has a
-    // moving indicator.
+    // The bar is a ListViewItem's, so it takes that presenter's arrival: a fade
+    // over 83ms while it grows from nothing over 167ms, from its own centre. It
+    // does not travel from the tile that lost the selection; only NavigationView
+    // has a moving indicator. Its length is the quarter inset the rest of the
+    // layer uses -- see winui/controls/list.css.ts, where the choice between
+    // that and the presenter's stepped formula is written down.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/core/core/elements/ListViewBaseItemChrome.cpp#L1750-L1758
     // https://github.com/microsoft/microsoft-ui-xaml/blob/543310634592831f8f2638301ece05d2d2dbea39/src/dxaml/xcp/dxaml/lib/ListViewBaseItemPresenter_Partial.cpp#L891-L1022
     '&[aria-pressed="true"]::after': {
       backgroundColor: 'var(--winui-accent-fill-default)',
       borderRadius: '1.5px',
       content: '""',
-      height: 'max(16px, calc(100% - 40px))',
-      insetBlockStart: '50%',
+      insetBlock: '25%',
       insetInlineStart: 0,
       position: 'absolute',
-      translate: '0 -50%',
       width: '3px',
       '@media (prefers-reduced-motion: no-preference)': {
         animation: 'winui-selection-indicator-fade 83ms linear, winui-selection-indicator-grow 167ms cubic-bezier(0.167, 0.167, 0, 1)',
