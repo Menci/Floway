@@ -461,17 +461,13 @@ export const bucketKeyForCallout = (
   return null;
 };
 
-// Aggregate token totals are decimal strings; grouping them digit-wise keeps
-// counts past the safe integer range exact in the label.
-export const formatUsdCost = formatUsd;
-
-export const formatDecimalCount = (value: DecimalString): string => {
-  return formatDecimalQuantity(value);
-};
-
-export const formatCompactDecimalCount = (value: DecimalString, locale: string): string => {
-  return formatCompactCount(decimalStringToPlottableNumber(value), locale);
-};
+// The exact labels stay in decimal-string arithmetic right up to the string, so
+// a count past the safe integer range is grouped digit-wise rather than rounded.
+// A compact spelling has no such exactness to keep -- `1.2M` is three
+// significant figures by construction -- so that one crosses into floating point
+// here.
+export const formatCompactDecimalCount = (value: DecimalString, locale: string): string =>
+  formatCompactCount(decimalStringToPlottableNumber(value), locale);
 
 export const formatRatePercent = (numerator: DecimalString, denominator: DecimalString): string => {
   const total = decimalStringToPlottableNumber(denominator);
@@ -490,17 +486,17 @@ export const formatSummaryMetric = (
   case 'cost':
     return formatUsd(summary.cost);
   case 'total':
-    return formatDecimalCount(summary.total);
+    return formatDecimalQuantity(summary.total);
   case 'input':
-    return formatDecimalCount(summary.prompt);
+    return formatDecimalQuantity(summary.prompt);
   case 'output':
-    return formatDecimalCount(summary.output);
+    return formatDecimalQuantity(summary.output);
   case 'prefill':
-    return formatDecimalCount(summary.prefill);
+    return formatDecimalQuantity(summary.prefill);
   case 'cached':
-    return formatDecimalCount(summary.cacheRead);
+    return formatDecimalQuantity(summary.cacheRead);
   case 'cacheCreation':
-    return formatDecimalCount(summary.cacheCreation);
+    return formatDecimalQuantity(summary.cacheCreation);
   case 'cachedRate':
     return formatRatePercent(summary.cacheRead, summary.prompt);
   case 'cacheHitRate':
@@ -510,7 +506,7 @@ export const formatSummaryMetric = (
 
 // Axis-side formatter: the value here is a plotted point, so it has already
 // crossed into floating point and there is no exact decimal left to preserve.
-// Summary tiles use formatUsd and formatDecimalCount on the decimal values.
+// Summary tiles use formatUsd and formatDecimalQuantity on the decimal values.
 export const formatMetricValue = (value: number, metric: UsageMetric, locale: string): string => {
   const kind = metricConfig[metric].kind;
   if (kind === 'percent') return `${value.toFixed(0)}%`;

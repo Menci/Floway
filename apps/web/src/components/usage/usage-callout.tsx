@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 
-import { bucketKeyForCallout, formatCompactDecimalCount, formatRatePercent, formatUsdCost, summarizeCounters } from './chart-model';
+import { bucketKeyForCallout, formatCompactDecimalCount, formatRatePercent, summarizeCounters } from './chart-model';
 import type { CalloutPoint, UsageChartModel } from './types';
-import { sumDecimalStrings } from '../../lib/decimal-display';
+import { formatUsd, sumDecimalStrings } from '../../lib/decimal-display';
 import { formatCount } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';
 import { ChartCalloutTable } from '../charts/chart-callout-table';
@@ -37,7 +37,7 @@ export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }:
               color: item.color,
               key: item.id,
               label: item.label,
-              values: [formatCount(summary.requests, locale), formatUsdCost(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatRatePercent(summary.cacheRead, summary.prompt), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale), formatRatePercent(summary.cacheRead, sumDecimalStrings(summary.cacheRead, summary.cacheCreation))],
+              values: [formatCount(summary.requests, locale), formatUsd(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatRatePercent(summary.cacheRead, summary.prompt), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale), formatRatePercent(summary.cacheRead, sumDecimalStrings(summary.cacheRead, summary.cacheCreation))],
             }];
           })}
           title={title}
