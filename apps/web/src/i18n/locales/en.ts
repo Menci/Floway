@@ -1079,7 +1079,7 @@ const en = {
           model: 'Search model',
           empty: 'Add an enabled Codex or Custom upstream with a chat model to use passthrough search.',
         },
-        getKeyLink: 'Get API key →',
+        getKeyLink: 'Get API key',
         apiKeyLabel: 'API Key',
         apiKeyPlaceholder: 'Enter API key…',
         save: 'Save Search Config',

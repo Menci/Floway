@@ -1029,7 +1029,7 @@ const zhHansCN = {
           jina: 'Jina',
         },
         passthrough: { title: '透传 OpenAI 搜索', description: '将 /alpha/search 和 Responses 托管搜索转发到指定的 Codex 或 OpenAI 兼容上游', upstream: '搜索上游', model: '搜索模型', empty: '请添加一个已启用且包含聊天模型的 Codex 或自定义上游。' },
-        getKeyLink: '获取 API 密钥 →',
+        getKeyLink: '获取 API 密钥',
         apiKeyLabel: 'API 密钥',
         apiKeyPlaceholder: '输入 API 密钥…',
         save: '保存搜索配置',

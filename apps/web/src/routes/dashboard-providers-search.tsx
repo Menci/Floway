@@ -15,6 +15,7 @@ import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
+import { OpenLinkLabel } from '../components/ui/open-link-label';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { Panel } from '../components/ui/panel';
@@ -312,7 +313,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
           </Field>
           {activeOption.url && (
             <Link href={activeOption.url} target="_blank" rel="noopener noreferrer">
-              {t('dashboard.searchConfig.getKeyLink')}
+              <OpenLinkLabel>{t('dashboard.searchConfig.getKeyLink')}</OpenLinkLabel>
             </Link>
           )}
         </div>
