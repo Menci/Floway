@@ -41,7 +41,6 @@ export interface SearchUsageResponse {
   keys: Array<{ id: string; name: string; createdAt?: string }>;
 }
 
-export type UsageBucket = ChartBucket;
 // Requests are a plain count; everything else is a decimal string, because
 // aggregate token totals exceed the safe integer range and cost is billed to
 // sub-cent precision.
@@ -73,7 +72,6 @@ export interface TokenSummary {
   cacheRead: DecimalString;
   cacheCreation: DecimalString;
 }
-export type ChartEntry = ChartSeries;
 
 // Token, request and cost figures use stacked areas; percentage rates stay
 // lines so their shared 0–100 scale remains readable.
@@ -82,9 +80,9 @@ export type ChartPlot =
   | { form: 'line'; data: ChartProps };
 
 interface ChartModelBase {
-  entries: ChartEntry[];
+  entries: ChartSeries[];
   plot: ChartPlot;
-  buckets: UsageBucket[];
+  buckets: ChartBucket[];
   range: UsageRange;
 }
 export type TokenChartModel = ChartModelBase & { kind: 'token'; details: Map<string, Map<string, TokenCounters>> };

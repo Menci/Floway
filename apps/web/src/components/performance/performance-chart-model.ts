@@ -15,14 +15,12 @@ import type { ChartBucket } from '../charts/dashboard-time';
 import { colorForSlot } from '../charts/palette';
 import { withUniqueSeriesLegends, type ChartSeries } from '../charts/series-legends';
 
-export type PerformanceBucket = ChartBucket;
-export type PerformanceChartEntry = ChartSeries;
 export interface PerformanceChartPointDetails { outputSpeed: number | null; ttft: number | null }
 export interface PerformanceChartModel {
   data: ChartProps;
   details: Map<number, Map<string, PerformanceChartPointDetails>>;
-  entries: PerformanceChartEntry[];
-  buckets: PerformanceBucket[];
+  entries: ChartSeries[];
+  buckets: ChartBucket[];
   range: PerformanceRange;
   metric: PerformanceMetric;
 }
@@ -33,7 +31,7 @@ export const buildPerformanceChart = (
   percentile: PerformancePercentile,
   groupBy: PerformanceGroupBy,
   labels: PerformanceLabels,
-  buckets: PerformanceBucket[],
+  buckets: ChartBucket[],
   range: PerformanceRange,
 ): PerformanceChartModel => {
   const groups = [...new Set(records.map(record => record.group))].sort();

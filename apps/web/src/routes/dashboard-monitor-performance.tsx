@@ -12,9 +12,11 @@ import { ChartCalloutTable } from '../components/charts/chart-callout-table';
 import { useUnclippedChartFrame } from '../components/charts/chart-frame-styles';
 import { ChartSection } from '../components/charts/chart-section';
 import { useChartStateStyles } from '../components/charts/chart-state-styles';
+import type { ChartBucket } from '../components/charts/dashboard-time';
 import { chartTickValues, dashboardBucketFrames, formatAxisDate, formatCalloutTitle } from '../components/charts/dashboard-time';
+import type { ChartSeries } from '../components/charts/series-legends';
 import { useElementSize } from '../components/charts/use-element-size';
-import { buildPerformanceChart, type PerformanceBucket, type PerformanceChartEntry, type PerformanceChartModel, type PerformanceChartPointDetails } from '../components/performance/performance-chart-model';
+import { buildPerformanceChart, type PerformanceChartModel, type PerformanceChartPointDetails } from '../components/performance/performance-chart-model';
 import {
   buildPerformanceQuery,
   clearGroupedFilter,
@@ -355,7 +357,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformanceChartModel; hid
 function PerformanceChartCallout({ data, details, entryByLegend, title }: {
   data: CustomizedCalloutData;
   details: ReadonlyMap<string, PerformanceChartPointDetails> | undefined;
-  entryByLegend: ReadonlyMap<string, PerformanceChartEntry>;
+  entryByLegend: ReadonlyMap<string, ChartSeries>;
   title: string;
 }) {
   const { t } = useTranslation();
@@ -436,7 +438,7 @@ const performanceTableSortValue = (row: PerformanceDisplayRecord, key: Performan
   return row.tpotUsP95 !== null && row.tpotUsP95 > 0 ? 1_000_000 / row.tpotUsP95 : Number.NEGATIVE_INFINITY;
 };
 
-const performanceBuckets = (range: PerformanceRange, now: number, locale: string): PerformanceBucket[] =>
+const performanceBuckets = (range: PerformanceRange, now: number, locale: string): ChartBucket[] =>
   dashboardBucketFrames(range, now).map(({ date, key }) => ({
     key,
     date,

@@ -1,16 +1,18 @@
 import type { ChartProps } from '@fluentui/react-charts';
 import { curveMonotoneX } from 'd3-shape';
 
-import type { ChartEntry, DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageBucket, UsageMetric, UsageRange, UsageResponse } from './types';
+import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange, UsageResponse } from './types';
 import type { ControlPlaneModel, BillingMetric } from '../../api/types';
 import { decimalStringToPlottableNumber, formatDecimalQuantity, formatUsd, sumDecimalStrings } from '../../lib/decimal-display';
 import { formatCompactCount, formatCount } from '../../lib/format-number';
+import type { ChartBucket } from '../charts/dashboard-time';
 import {
   dashboardBucketFrames,
   dashboardBucketKeyForUtcHour,
   pad2,
 } from '../charts/dashboard-time';
 import { colorForSlot } from '../charts/palette';
+import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import type { DecimalString } from '@floway-dev/protocols/common';
 
@@ -63,7 +65,7 @@ export const dashboardBuckets = (
   range: UsageRange,
   nowMs: number,
   locale: string,
-): UsageBucket[] => {
+): ChartBucket[] => {
   return dashboardBucketFrames(range, nowMs)
     .map(({ date, key }) => ({ key, label: bucketLabel(date, range, locale), date }));
 };
@@ -89,7 +91,7 @@ export const buildTokenChart = ({
   redactKeys: boolean;
   metric: UsageMetric;
   range: UsageRange;
-  buckets: UsageBucket[];
+  buckets: ChartBucket[];
 }): TokenChartModel => {
   const otherKey = groupKey === 'keyId' ? 'model' : 'keyId';
   const valueRecords = records.filter(record => !hiddenOther.has(record[otherKey]));
@@ -127,14 +129,14 @@ export const buildTokenChart = ({
   };
 };
 
-type PlottedSeries = Array<{ entry: ChartEntry; data: Array<number | null> }>;
+type PlottedSeries = Array<{ entry: ChartSeries; data: Array<number | null> }>;
 
 // A null is a bucket the metric was not defined in, which is not the reading
 // zero: the point is left out so the curve bridges the gap instead of dipping
 // through it. `markerSize` is per point rather than per chart because the area
 // form states its point radius once, in `pointOptions`.
 const seriesPoints = (
-  buckets: UsageBucket[],
+  buckets: ChartBucket[],
   values: Array<number | null>,
   marker?: { markerSize: number },
 ) => values.flatMap((value, index) => value === null ? [] : [{
@@ -145,7 +147,7 @@ const seriesPoints = (
   yAxisCalloutData: String(value),
 }]);
 
-const lineChartData = (buckets: UsageBucket[], series: PlottedSeries): ChartProps => ({
+const lineChartData = (buckets: ChartBucket[], series: PlottedSeries): ChartProps => ({
   chartTitle: '',
   lineChartData: series.map(({ entry, data }) => ({
     legend: entry.legend,
@@ -155,7 +157,7 @@ const lineChartData = (buckets: UsageBucket[], series: PlottedSeries): ChartProp
   })),
 });
 
-const areaChartData = (buckets: UsageBucket[], series: PlottedSeries): ChartProps => ({
+const areaChartData = (buckets: ChartBucket[], series: PlottedSeries): ChartProps => ({
   chartTitle: '',
   pointOptions: { r: 2, strokeWidth: 1.25 },
   lineChartData: series.map(({ entry, data }) => ({
@@ -177,7 +179,7 @@ export const buildSearchChart = ({
   hiddenKeys: Set<string>;
   redactKeys: boolean;
   range: UsageRange;
-  buckets: UsageBucket[];
+  buckets: ChartBucket[];
 }): SearchChartModel => {
   const groups = new Map<string, Map<string, number>>();
   const presentGroups = new Set<string>();
@@ -243,7 +245,7 @@ const aggregateTokenRecords = (
   groupKey: 'keyId' | 'model',
   metric: UsageMetric,
   range: UsageRange,
-  buckets: UsageBucket[],
+  buckets: ChartBucket[],
 ) => {
   const values = new Map<string, Map<string, number | null>>();
   const details = new Map<string, Map<string, TokenCounters>>();
@@ -291,7 +293,7 @@ const keyChartEntries = (
   metadata: UsageResponse['keys'],
   records: DisplayUsageRecord[],
   redactKeys: boolean,
-): ChartEntry[] => {
+): ChartSeries[] => {
   const meta = new Map<string, { name?: string; createdAt?: string }>();
   for (const key of metadata) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
   for (const record of records) {
@@ -324,7 +326,7 @@ const keyChartEntries = (
 const modelChartEntries = (
   presentModelIds: string[],
   models: ControlPlaneModel[],
-): ChartEntry[] => {
+): ChartSeries[] => {
   const present = new Set(presentModelIds);
   return withUniqueSeriesLegends([...new Set([...models.map(model => model.id), ...presentModelIds])]
     .sort()
@@ -451,7 +453,7 @@ const hasRequests = (details: Map<string, Map<string, TokenCounters>>, id: strin
 
 export const bucketKeyForCallout = (
   value: Date | number | string,
-  buckets: UsageBucket[],
+  buckets: ChartBucket[],
 ): string | null => {
   if (value instanceof Date) {
     return (
