@@ -10,6 +10,7 @@ import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
 import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
+import { blendHex, readableTone } from '../../lib/color';
 import { Chip } from '../ui/chip';
 import { MaskedIcon } from '../ui/masked-icon';
 
@@ -95,12 +96,34 @@ const useStyles = makeStyles({
 export const providerLabel = (kind: ProviderBadgeKind) =>
   kind === null ? 'Unknown' : providerLabels[kind];
 
-const customColorStyle = (color: `#${string}`) => ({
-  '--provider-color': color,
-  backgroundColor: 'color-mix(in srgb, var(--provider-color) 10%, transparent)',
-  borderColor: 'color-mix(in srgb, var(--provider-color) 35%, transparent)',
-  color: 'var(--provider-color)',
-} as React.CSSProperties);
+// A preset tone states a foreground per scheme; a colour the operator typed
+// states one literal for both, and that literal was picked against whichever
+// scheme they were in. Used raw it labels a chip on a near-white card and on a
+// near-black one alike -- a mid magenta reads 4.03:1 in light and 2.42:1 in
+// dark. The fill needs no such treatment: it is 10% of the hue, so it composites
+// over whichever surface is beneath and follows the scheme on its own.
+//
+// The label is resolved against that composited fill rather than against the
+// card, because the fill is the colour actually behind the glyph and a 10% wash
+// of the hue moves the reading by enough to matter -- that same magenta clears
+// the floor against bare white and does not clear it against its own chip.
+//
+// The card is `--winui-solid-background-fill-quarternary` with the layer fill
+// composited on top, which is what the badge actually sits on: #ffffff and
+// #373737 as measured off the rendered dashboard, rather than the #2c2c2c the
+// token states on its own.
+const CARD_SURFACE = { light: '#FFFFFF', dark: '#373737' } as const;
+const FILL_ALPHA = 0.1;
+
+const customColorStyle = (color: `#${string}`) => {
+  const label = (surface: string) => readableTone(color, blendHex(color, FILL_ALPHA, surface));
+  return {
+    '--provider-color': color,
+    backgroundColor: `color-mix(in srgb, var(--provider-color) ${FILL_ALPHA * 100}%, transparent)`,
+    borderColor: 'color-mix(in srgb, var(--provider-color) 35%, transparent)',
+    color: `light-dark(${label(CARD_SURFACE.light)}, ${label(CARD_SURFACE.dark)})`,
+  } as React.CSSProperties;
+};
 
 const isHexColor = (color: UpstreamColor | null): color is `#${string}` =>
   color?.startsWith('#') === true;

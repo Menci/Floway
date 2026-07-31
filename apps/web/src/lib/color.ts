@@ -1,6 +1,8 @@
-// Pure HSV / RGB / HEX conversions for the upstream colour picker. Kept
-// out of the component so the math is unit-testable without rendering, and so
-// a future picker (highlighter, tag, etc.) can share the same primitives.
+// Colour math the dashboard needs outside a component: the HSV / RGB / HEX
+// conversions the upstream colour picker edits in, and the WCAG contrast the
+// provider badge resolves an operator-chosen hue against. Kept here so the math
+// is unit-testable without rendering, and so any later surface that has to
+// place text on a colour a person picked can share the same primitives.
 //
 // HSV coordinates: hue in [0, 360), saturation/value in [0, 1]. HEX is
 // the canonical wire form (`#RRGGBB`, upper-or-lower case accepted).
@@ -51,4 +53,64 @@ export const rgbToHsv = (r: number, g: number, b: number): [number, number, numb
     else h = ((rf - gf) / d + 4) * 60;
   }
   return [h, s, v];
+};
+
+// WCAG 2.x relative luminance and contrast, over sRGB.
+const relativeLuminance = ([r, g, b]: [number, number, number]): number => {
+  const channel = (value: number) => {
+    const s = value / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+};
+
+export const contrastRatio = (a: [number, number, number], b: [number, number, number]): number => {
+  const [x, y] = [relativeLuminance(a) + 0.05, relativeLuminance(b) + 0.05];
+  return x > y ? x / y : y / x;
+};
+
+/** `hex` at `alpha` composited over `backdrop`, both opaque, as a new hex. */
+export const blendHex = (hex: string, alpha: number, backdrop: string): string => {
+  const top = hexToRgb(hex);
+  const bottom = hexToRgb(backdrop);
+  if (!top || !bottom) return backdrop;
+  return rgbToHex(...(top.map((channel, index) =>
+    Math.round(channel * alpha + bottom[index]! * (1 - alpha))) as [number, number, number]));
+};
+
+const TEXT_CONTRAST_FLOOR = 4.5;
+
+/**
+ * The nearest tone of `hex` that reads as text on `surface`, found by moving
+ * HSV value toward or away from the surface and only then desaturating.
+ *
+ * A colour a person picked for an upstream is an identity, not a foreground:
+ * it is chosen against whichever scheme that person happened to be in, and the
+ * same literal then has to label a chip on a near-white card and on a near-black
+ * one. Hue is what carries the identity, so hue is what this holds fixed; value
+ * moves first because it costs the least recognition, and saturation gives way
+ * only for the hues where value alone cannot get there — a saturated yellow
+ * cannot reach 4.5 against white at any value.
+ */
+export const readableTone = (hex: string, surface: string): string => {
+  const rgb = hexToRgb(hex);
+  const surfaceRgb = hexToRgb(surface);
+  if (!rgb || !surfaceRgb) return hex;
+  if (contrastRatio(rgb, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return hex;
+
+  const [h, s, v] = rgbToHsv(...rgb);
+  const darken = relativeLuminance(surfaceRgb) > 0.5;
+  const STEPS = 100;
+
+  for (let saturation = s; ; saturation -= 0.1) {
+    for (let step = 1; step <= STEPS; step += 1) {
+      const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
+      const candidate = hsvToRgb(h, saturation, value);
+      if (contrastRatio(candidate, surfaceRgb) >= TEXT_CONTRAST_FLOOR) return rgbToHex(...candidate);
+    }
+    // Value is exhausted in the useful direction. Below zero saturation the
+    // colour is grey and further loops cannot help, so the extreme is the
+    // answer: black on a light surface, white on a dark one.
+    if (saturation <= 0) return darken ? '#000000' : '#FFFFFF';
+  }
 };

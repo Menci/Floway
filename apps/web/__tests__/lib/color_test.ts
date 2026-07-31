@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../src/lib/color';
+import { HEX_RE, blendHex, contrastRatio, hexToRgb, hsvToRgb, readableTone, rgbToHex, rgbToHsv } from '../../src/lib/color';
 
 describe('HEX_RE', () => {
   it('accepts 6-digit hex in either case', () => {
@@ -130,5 +130,76 @@ describe('HSV/RGB/HEX round-trip', () => {
       expect(rgb).not.toBeNull();
       expect(rgbToHex(...rgb!)).toBe(hex);
     }
+  });
+});
+
+describe('readableTone', () => {
+  // The component resolves the label against the chip's own fill -- 10% of the
+  // hue over the card -- so the tests ask the same question it does.
+  const chip = (hue: string, card: string) => blendHex(hue, 0.1, card);
+  const CARD_LIGHT = '#FFFFFF';
+  const CARD_DARK = '#373737';
+  const ratio = (hex: string, surface: string) =>
+    contrastRatio(hexToRgb(hex)!, hexToRgb(surface)!);
+  const toned = (hue: string, card: string) => readableTone(hue, chip(hue, card));
+
+  it('returns the colour untouched when it already reads', () => {
+    // A deep blue is already well past the floor on its own chip.
+    expect(toned('#00306E', CARD_LIGHT)).toBe('#00306E');
+  });
+
+  it('darkens a mid hue for a light surface and lightens it for a dark one', () => {
+    const light = toned('#C239B3', CARD_LIGHT);
+    const dark = toned('#C239B3', CARD_DARK);
+    expect(ratio('#C239B3', chip('#C239B3', CARD_LIGHT))).toBeLessThan(4.5);
+    expect(ratio('#C239B3', chip('#C239B3', CARD_DARK))).toBeLessThan(4.5);
+    expect(ratio(light, chip('#C239B3', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(dark, chip('#C239B3', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
+    expect(hexToRgb(light)![0]).toBeLessThan(hexToRgb('#C239B3')![0]);
+    expect(hexToRgb(dark)![0]).toBeGreaterThan(hexToRgb('#C239B3')![0]);
+  });
+
+  it('holds the hue while it moves value', () => {
+    const [sourceHue] = rgbToHsv(...hexToRgb('#00E5FF')!);
+    const [tonedHue] = rgbToHsv(...hexToRgb(toned('#00E5FF', CARD_LIGHT))!);
+    expect(Math.abs(tonedHue - sourceHue)).toBeLessThan(1);
+  });
+
+  it('gives up saturation for the hues value alone cannot carry', () => {
+    // A saturated yellow cannot reach 4.5 against a near-white surface at any
+    // value, so the search has to desaturate rather than return the floor miss.
+    const result = toned('#FFD740', CARD_LIGHT);
+    expect(ratio(result, chip('#FFD740', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
+    const [, sourceSaturation] = rgbToHsv(...hexToRgb('#FFD740')!);
+    const [, resultSaturation] = rgbToHsv(...hexToRgb(result)!);
+    expect(resultSaturation).toBeLessThan(sourceSaturation);
+  });
+
+  it('reaches the floor for every preset the picker offers, in both schemes', () => {
+    for (const preset of ['#FFD740', '#00E676', '#00E5FF', '#A78BFA', '#FF5252', '#FF9800']) {
+      for (const card of [CARD_LIGHT, CARD_DARK]) {
+        expect(ratio(toned(preset, card), chip(preset, card))).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it('leaves a value it cannot parse alone', () => {
+    expect(readableTone('not a colour', CARD_LIGHT)).toBe('not a colour');
+  });
+});
+
+describe('blendHex', () => {
+  it('returns the backdrop at zero alpha and the top colour at one', () => {
+    expect(blendHex('#FF0000', 0, '#FFFFFF')).toBe('#FFFFFF');
+    expect(blendHex('#FF0000', 1, '#FFFFFF')).toBe('#FF0000');
+  });
+
+  it('composites a tenth of the hue onto both cards', () => {
+    expect(blendHex('#C239B3', 0.1, '#FFFFFF')).toBe('#F9EBF7');
+    expect(blendHex('#C239B3', 0.1, '#373737')).toBe('#453743');
+  });
+
+  it('falls back to the backdrop when either side is unparseable', () => {
+    expect(blendHex('nope', 0.5, '#FFFFFF')).toBe('#FFFFFF');
   });
 });
