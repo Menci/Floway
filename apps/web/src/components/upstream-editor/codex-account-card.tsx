@@ -5,7 +5,7 @@ import { accountStatus, type CodexRecord, findCredential, latestCredits, quotaEn
 import { quotaBarColor } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime } from '../../lib/format-time';
-import { clampPercent } from '../../lib/percent';
+import { clampPercent, percentText } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { StatusBadge } from '../ui/status-badge';
@@ -61,19 +61,22 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
             <Text truncate weight="semibold" title={entry.label}>{entry.label}</Text>
             <Text size={200} className="text-fui-fg3 shrink-0 uppercase tracking-wide">{t('dashboard.upstreamEditor.codex.activeLimit')}</Text>
           </div>
-          {entry.windows.map(item => <div className="grid gap-1" key={item.key}>
-            <div className="flex items-baseline justify-between gap-3">
-              <Text size={200}>{t(`dashboard.upstreamEditor.codex.window.${item.key}`)}</Text>
-              <Text size={200} className="text-fui-fg2">
-                {clampPercent(item.percent)}%
-                {item.windowMinutes !== null ? ` · ${t('dashboard.upstreamEditor.codex.windowMinutes', { minutes: item.windowMinutes })}` : ''}
-              </Text>
-            </div>
-            <ProgressBar color={quotaBarColor(item.percent)} max={100} thickness="large" value={clampPercent(item.percent)} />
-            {item.resetAt && <Text size={200} className="text-fui-fg3">
-              {t('dashboard.upstreamEditor.codex.resetsAt', { time: dateTime(item.resetAt, locale) })}
-            </Text>}
-          </div>)}
+          {entry.windows.map(item => {
+            const percent = clampPercent(item.percent);
+            return <div className="grid gap-1" key={item.key}>
+              <div className="flex items-baseline justify-between gap-3">
+                <Text size={200}>{t(`dashboard.upstreamEditor.codex.window.${item.key}`)}</Text>
+                <Text size={200} className="text-fui-fg2">
+                  {percentText(percent)}
+                  {item.windowMinutes !== null ? ` · ${t('dashboard.upstreamEditor.codex.windowMinutes', { minutes: item.windowMinutes })}` : ''}
+                </Text>
+              </div>
+              <ProgressBar color={quotaBarColor(percent)} max={100} thickness="large" value={percent ?? undefined} />
+              {item.resetAt && <Text size={200} className="text-fui-fg3">
+                {t('dashboard.upstreamEditor.codex.resetsAt', { time: dateTime(item.resetAt, locale) })}
+              </Text>}
+            </div>;
+          })}
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             {entry.rateLimitedUntil && <Text size={200} className="text-fui-fg3">
               {t('dashboard.upstreamEditor.codex.rateLimitedUntil', { time: dateTime(entry.rateLimitedUntil, locale) })}

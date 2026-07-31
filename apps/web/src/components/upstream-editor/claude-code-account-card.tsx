@@ -15,7 +15,7 @@ import {
 import { quotaBarColor } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
-import { clampPercent } from '../../lib/percent';
+import { clampPercent, percentText } from '../../lib/percent';
 import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { StatusBadge } from '../ui/status-badge';
@@ -91,23 +91,26 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
     </div>
 
     {windows.length > 0 && <div className="grid gap-3">
-      {windows.map(row => <div key={row.key} className="grid gap-1">
-        <div className="flex items-baseline justify-between gap-3">
-          <Text size={200}>
-            {t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}
-            <span className="ml-1.5 text-fui-fg3 uppercase text-[10px] tracking-wide" title={t('dashboard.upstreamEditor.claudeCode.fetchedAt', { time: dateTime(row.fetchedAt, locale) })}>
-              {t(`dashboard.upstreamEditor.claudeCode.source.${row.source}`)}
-            </span>
-          </Text>
-          <Text size={200} className="text-fui-fg2">
-            {clampPercent(row.percent)}%{row.status ? ` · ${row.status}` : ''}
-          </Text>
-        </div>
-        <ProgressBar color={quotaBarColor(row.percent)} max={100} thickness="large" value={clampPercent(row.percent)} />
-        {row.resetAt && <Text size={200} className="text-fui-fg3">
-          {t('dashboard.upstreamEditor.claudeCode.resetsAt', { time: dateTime(row.resetAt, locale) })}
-        </Text>}
-      </div>)}
+      {windows.map(row => {
+        const percent = clampPercent(row.percent);
+        return <div key={row.key} className="grid gap-1">
+          <div className="flex items-baseline justify-between gap-3">
+            <Text size={200}>
+              {t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}
+              <span className="ml-1.5 text-fui-fg3 uppercase text-[10px] tracking-wide" title={t('dashboard.upstreamEditor.claudeCode.fetchedAt', { time: dateTime(row.fetchedAt, locale) })}>
+                {t(`dashboard.upstreamEditor.claudeCode.source.${row.source}`)}
+              </span>
+            </Text>
+            <Text size={200} className="text-fui-fg2">
+              {percentText(percent)}{row.status ? ` · ${row.status}` : ''}
+            </Text>
+          </div>
+          <ProgressBar color={quotaBarColor(percent)} max={100} thickness="large" value={percent ?? undefined} />
+          {row.resetAt && <Text size={200} className="text-fui-fg3">
+            {t('dashboard.upstreamEditor.claudeCode.resetsAt', { time: dateTime(row.resetAt, locale) })}
+          </Text>}
+        </div>;
+      })}
     </div>}
 
     <div className="flex flex-wrap items-center gap-2 empty:hidden">

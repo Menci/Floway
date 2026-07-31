@@ -5,7 +5,9 @@
 // A window is "spent" well before it refuses, so the bar turns before the
 // account does — an operator watching the card gets warning colour ahead of
 // the first 429 rather than alongside it.
-export const quotaBarColor = (percent: number) => percent >= 90 ? 'error' : percent >= 80 ? 'warning' : 'brand';
+// An unknown percent earns no warning: the colour states a reading, and there
+// is no reading to state.
+export const quotaBarColor = (percent: number | null) => percent === null ? 'brand' : percent >= 90 ? 'error' : percent >= 80 ? 'warning' : 'brand';
 
 export const HEAVY_USAGE_THRESHOLD_PERCENT = 80;
 
