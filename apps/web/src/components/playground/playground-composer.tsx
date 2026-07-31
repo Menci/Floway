@@ -132,10 +132,6 @@ const useStyles = makeStyles({
     color: bingAccentForeground,
     backgroundColor: 'transparent',
     border: 0,
-    // A button carries the browser's own `1px 6px`, which leaves a content box
-    // narrower than the glyph inside it. Centring then has nothing symmetric to
-    // work with and the glyph settles against the leading edge.
-    padding: 0,
     cursor: 'pointer',
     '&:hover': {
       color: bingAccentForegroundHover,
