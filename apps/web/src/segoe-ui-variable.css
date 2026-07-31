@@ -18,11 +18,19 @@
    Declaring no font-variation-settings is deliberate. The face carries an
    `opsz` axis over 5-36, so the initial `font-optical-sizing: auto` drives it
    from the used font size and the ramp gets Small, Text and Display
-   continuously rather than at two pinned stops. */
+   continuously rather than at two pinned stops.
+
+   `optional` rather than `swap`: the face is a megabyte over a third-party
+   host, and swapping it in on arrival reflows every line that has already been
+   painted. On a centred page that reflow is a visible sideways jump, because a
+   width change moves both edges. `optional` gives the browser a brief window to
+   use the face if it is already cached and otherwise leaves the fallback alone
+   for this navigation, so text is laid out once. The preload in the document
+   head is what makes the window pay off on a first visit. */
 @font-face {
   font-family: 'Segoe UI Variable Web';
   src: url('https://docs.azure.cn/static/third-party/SegoeUIVariable/SegoeUI-VF.ttf?floway-vf=2.02') format('truetype');
   font-style: normal;
   font-weight: 300 700;
-  font-display: swap;
+  font-display: optional;
 }
