@@ -122,48 +122,49 @@ export const buildTokenChart = ({
     kind: 'token',
     range,
     plot: isPercent
-      ? {
-          form: 'line',
-          data: {
-            chartTitle: '',
-            lineChartData: series.map(({ entry, data }) => ({
-              legend: entry.legend,
-              color: colorForSlot(entry.colorSlot),
-              lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' },
-              data: data.flatMap((value, index) => value === null ? [] : [{
-                markerSize: 4,
-                x: buckets[index]!.date,
-                y: value,
-                xAxisCalloutData: buckets[index]!.label,
-                yAxisCalloutData: String(value),
-              }]),
-            })),
-          },
-        }
+      ? { form: 'line', data: lineChartData(buckets, series) }
       : { form: 'area', data: areaChartData(buckets, series) },
   };
 };
 
-const areaChartData = (
+type PlottedSeries = Array<{ entry: ChartEntry; data: Array<number | null> }>;
+
+// A null is a bucket the metric was not defined in, which is not the reading
+// zero: the point is left out so the curve bridges the gap instead of dipping
+// through it. `markerSize` is per point rather than per chart because the area
+// form states its point radius once, in `pointOptions`.
+const seriesPoints = (
   buckets: UsageBucket[],
-  series: Array<{ entry: ChartEntry; data: Array<number | null> }>,
-): ChartProps => {
-  return {
-    chartTitle: '',
-    pointOptions: { r: 2, strokeWidth: 1.25 },
-    lineChartData: series.map(({ entry, data }) => ({
-      legend: entry.legend,
-      color: colorForSlot(entry.colorSlot),
-      lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
-      data: data.flatMap((value, index) => value === null ? [] : [{
-        x: buckets[index]!.date,
-        y: value,
-        xAxisCalloutData: buckets[index]!.label,
-        yAxisCalloutData: String(value),
-      }]),
-    })),
-  };
-};
+  values: Array<number | null>,
+  marker?: { markerSize: number },
+) => values.flatMap((value, index) => value === null ? [] : [{
+  ...marker,
+  x: buckets[index]!.date,
+  y: value,
+  xAxisCalloutData: buckets[index]!.label,
+  yAxisCalloutData: String(value),
+}]);
+
+const lineChartData = (buckets: UsageBucket[], series: PlottedSeries): ChartProps => ({
+  chartTitle: '',
+  lineChartData: series.map(({ entry, data }) => ({
+    legend: entry.legend,
+    color: colorForSlot(entry.colorSlot),
+    lineOptions: { strokeWidth: 2, curve: curveMonotoneX, mode: 'lines+markers' },
+    data: seriesPoints(buckets, data, { markerSize: 4 }),
+  })),
+});
+
+const areaChartData = (buckets: UsageBucket[], series: PlottedSeries): ChartProps => ({
+  chartTitle: '',
+  pointOptions: { r: 2, strokeWidth: 1.25 },
+  lineChartData: series.map(({ entry, data }) => ({
+    legend: entry.legend,
+    color: colorForSlot(entry.colorSlot),
+    lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
+    data: seriesPoints(buckets, data),
+  })),
+});
 
 export const buildSearchChart = ({
   search,
