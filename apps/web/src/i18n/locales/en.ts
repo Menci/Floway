@@ -101,7 +101,6 @@ const en = {
             'Manage console users, permissions, telemetry access, and upstream scopes',
         backupRestore:
             'Export or restore gateway configuration and control plane data',
-        readonly: 'Signed in as an operator. This area is read-only',
         unavailable: 'This view could not be loaded',
       },
       playground: {

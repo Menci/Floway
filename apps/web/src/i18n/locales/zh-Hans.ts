@@ -92,7 +92,6 @@ const zhHansCN = {
         performance: '观察延迟、吞吐和上游性能信号',
         users: '管理控制台用户、权限、观测访问和上游范围',
         backupRestore: '导出或恢复 gateway 配置和控制平面数据',
-        readonly: '当前是普通用户身份，此区域为只读',
         unavailable: '无法加载此视图',
       },
       playground: {
