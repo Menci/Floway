@@ -145,6 +145,7 @@ export const RetentionField = ({
     // count is what states it, and the list is free to be wider: it hangs
     // off the trailing edge and grows the other way.
     input={{ size: displayValue.length + 1 }}
+    listWidth="content"
     onChange={event => typeCustom(event.target.value)}
     onOptionSelect={(_, data) => data.optionValue !== undefined && selectChoice(data.optionValue as Exclude<Choice, 'custom'>)}
     placeholder={customInputUnit === 'days' ? t('dashboard.apiKeys.retention.daysPlaceholder') : t('dashboard.apiKeys.retention.durationPlaceholder')}

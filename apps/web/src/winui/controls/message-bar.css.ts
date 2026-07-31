@@ -65,6 +65,14 @@ export const messageBarCss = `
   min-height: 48px;
   padding-inline-start: 16px;
   border-color: var(--winui-card-stroke, var(--colorNeutralStroke1));
+  /* A grid item's automatic minimum size is its content's, and for the
+     single-line layout that is the whole message on one line. So a bar in a
+     narrower column does not narrow: it overflows its track and widens
+     everything laid out beside it, and Fluent's auto layout -- which watches
+     the bar's width to decide when to reflow -- never observes the width that
+     would make it reflow. Zeroing the floor lets the column size the bar, which
+     is what both the wrap and the reflow were waiting for. */
+  min-width: 0;
 }
 
 /* WinUI's glyph is smaller than Fluent's and is spaced by InfoBarIconMargin,

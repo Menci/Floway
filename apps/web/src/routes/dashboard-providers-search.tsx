@@ -285,6 +285,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
               />
             ),
           }}
+          listWidth="content"
           onOptionSelect={handleProviderChange}
           positioning={{ ...LISTBOX_POSITIONING, align: 'end' }}
           selectedOptions={[draft.provider]}

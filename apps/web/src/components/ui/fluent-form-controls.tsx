@@ -104,32 +104,53 @@ const SCROLLABLE_LISTBOX: NonNullable<ComponentProps<typeof FluentCombobox>['lis
   children: renderScrollableListbox,
 };
 
+// Fluent matches the list to the control it drops from, writing the measured
+// width straight onto the list. That is right for a field, where the two read
+// as one column, and wrong for a control that is only as wide as the value it
+// currently shows -- there the list would be pinned to the shortest thing it
+// can offer, and every longer option would truncate. `listWidth="content"`
+// keeps the measurement as a floor and lets the list grow past it, which is
+// only useful together with an `align: 'end'` positioning: the list has to hang
+// off the trailing edge and open away from it, or it would grow off the page.
+const CONTENT_WIDTH_LISTBOX: NonNullable<ComponentProps<typeof FluentCombobox>['listbox']> = {
+  children: renderScrollableListbox,
+  className: '!w-max !min-w-[var(--fui-match-target-size)] !max-w-[calc(100vw-16px)]',
+};
+
+const listboxFor = (listWidth: 'target' | 'content' | undefined) =>
+  (listWidth === 'content' ? CONTENT_WIDTH_LISTBOX : SCROLLABLE_LISTBOX);
+
+interface ListWidthProp {
+  /** Whether the list is pinned to the control's width or free to exceed it. */
+  listWidth?: 'target' | 'content';
+}
+
 export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentInput>>(
   ({ className, ...props }, ref) => (
     <FluentInput {...props} className={mergeClasses(className, MIN_WIDTH_CLASS)} ref={ref} />
   ),
 ) as typeof FluentInput;
 
-export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'listbox'>>(
-  ({ className, expandIcon, positioning, ...props }, ref) => (
+export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'listbox'> & ListWidthProp>(
+  ({ className, expandIcon, listWidth, positioning, ...props }, ref) => (
     <FluentCombobox
       {...props}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       positioning={positioning ?? LISTBOX_POSITIONING}
-      listbox={SCROLLABLE_LISTBOX}
+      listbox={listboxFor(listWidth)}
       className={mergeClasses(className, MIN_WIDTH_CLASS)}
       ref={ref}
     />
   ),
 );
 
-export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'listbox'>>(
-  ({ className, expandIcon, positioning, ...props }, ref) => (
+export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'listbox'> & ListWidthProp>(
+  ({ className, expandIcon, listWidth, positioning, ...props }, ref) => (
     <FluentDropdown
       {...props}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       positioning={positioning ?? LISTBOX_POSITIONING}
-      listbox={SCROLLABLE_LISTBOX}
+      listbox={listboxFor(listWidth)}
       className={mergeClasses(className, MIN_WIDTH_CLASS)}
       ref={ref}
     />
