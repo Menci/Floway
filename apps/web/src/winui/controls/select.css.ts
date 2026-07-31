@@ -328,4 +328,52 @@ export const selectCss = `
 .fui-Option .fui-Option__checkIcon.fui-Option__checkIcon {
   display: none;
 }
+
+/* The drop-down's reveal. WinUI does not slide or fade a ComboBox popup: it
+   runs SplitOpenThemeAnimation, which holds the popup opaque from the first
+   frame and grows a vertical clip out of a band half the popup's height,
+   centred on it -- the clip origin is pinned at (0, 0.5) so the two edges
+   travel at the same speed. 250ms on the fast-out-slow-in spline; the same
+   constants the menu's reveal uses, and unrelated to the PopupThemeTransition
+   whose timing ../presence.ts declines to guess at, which ComboBox never
+   invokes.
+
+   The opacity leg of the split is deliberately not transcribed. WinUI dims the
+   faceplate from 1.0 to 0.5 as the popup opens because the popup covers the
+   field, so that leg is one half of a crossfade between the field's own text
+   and the list; Fluent places the popup below the field instead -- measured,
+   the field ends at 181 and the list starts at 184 -- so there is no text
+   underneath for it to cross-fade with, and dimming the field would only make
+   it look disabled.
+
+   The close is not animated. Fluent unmounts the listbox when the combo box
+   closes, so there is no element left for an exit to run on; a close animation
+   needs a wrapper that holds the popup mounted through it.
+
+   Written as an animation rather than a transition because the element enters
+   already in its final state, and on clip-path rather than transform because
+   transform is where Fluent's positioning lives -- the popup is placed by a
+   matrix translate, and a keyframe naming transform would replace it and play
+   the reveal at the origin of the containing block.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L517-L528
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/lib/SplitOpenThemeAnimation_Partial.h#L16-L17 */
+@keyframes floway-combobox-listbox-reveal {
+  from { clip-path: inset(25% 0% 25% 0%); }
+  to { clip-path: inset(0% 0% 0% 0%); }
+}
+
+.floway-combobox-listbox {
+  animation-name: floway-combobox-listbox-reveal;
+  animation-duration: var(--winui-control-normal-animation-duration);
+  animation-timing-function: var(--winui-control-fast-out-slow-in-easing);
+}
+
+/* The reveal grows the popup out of a band, which alters its perceived size, so
+   it goes when the OS says motion goes. WinUI reaches the same end differently:
+   the storyboard is a Transition, which the VSM seeks to its last frame. */
+@media (prefers-reduced-motion: reduce) {
+  .floway-combobox-listbox {
+    animation-duration: 0.01ms;
+  }
+}
 `;
