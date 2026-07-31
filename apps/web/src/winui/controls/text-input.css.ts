@@ -55,21 +55,28 @@ const controlFillAppearances = `:is(\
 [data-winui-appearance='filled-lighter-shadow'])`;
 
 export const textInputCss = `
-/* Height. The dictionaries state a text control's through
-   TextControlThemeMinHeight and TextControlThemePadding, and define neither --
-   they come from the framework's own generic dictionary, which is not part of
-   this corpus -- so Fluent's 32px floor stood while the ComboBox beside it
-   computed to 34 from values that ARE stated: ComboBoxPadding 12,5,0,7 over a
-   20px line inside a 1px border. Two fields in one row do not agree, and the
-   one that can be derived is the one to agree with.
+/* Height. Both controls declare a 32px floor -- TextControlThemeMinHeight for
+   the text controls, ComboBoxMinHeight for the ComboBox -- and neither renders
+   at it. The ComboBox's own stated padding, 12,5,0,7 over a 20px line inside
+   its 1px border, computes to 34 and so clears its own floor; a text control's
+   3,6 vertical padding over the same line computes below it, and the floor is
+   what it renders at. WinUI therefore puts two adjacent fields at 32 and 34.
+
+   34 for both is a departure, and this is it: a row that mixes an Input with a
+   Combobox is the common case in this app, and two fields in one row that
+   disagree by 2px read as a defect rather than as fidelity. The taller is the
+   one to unify on, because it is the one that comes from a computation rather
+   than from a floor.
 
    Stated on the root rather than on the inner control, because that is where
    Fluent's own floor sits and border-box makes it the whole of the field. The
    Combobox takes it here too: it is a ComboBox by every other reading in
    ./select.css, and its editable form is the one that computes from a text
    control's floor rather than from the button's padding.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L327
    https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/ComboBox/ComboBox_themeresources.xaml#L341
-   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/TextBox_themeresources.xaml#L192-L194 */
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L96
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/dxaml/themes/generic.xaml#L175 */
 .fui-Input.fui-Input${notOptedOut},
 .fui-Combobox.fui-Combobox${notOptedOut} {
   min-height: 34px;
