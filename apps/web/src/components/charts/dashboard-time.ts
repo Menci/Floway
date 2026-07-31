@@ -67,10 +67,23 @@ export const chartTickValues = <T extends { date: Date }>(buckets: T[], desired 
   return ticks;
 };
 
+// The axis and the callout name the same bucket, so they name it the same way:
+// an abbreviated month, as `chart-model`'s bucket labels already do. `07/31`
+// beside a callout reading `Jul 31` read as two different scales.
+//
+// One `toLocaleString` for all three ranges. `toLocaleDateString` does render
+// an `hour` -- ToDateTimeOptions only supplies defaults, it does not strip the
+// time fields -- but asking a date formatter for a time is not what the call
+// says it does, and `hour: '2-digit'` under a 12-hour clock produces `04 AM`,
+// which nobody writes.
+const AXIS_PARTS: Record<DashboardRange, Intl.DateTimeFormatOptions> = {
+  'today': { hour: '2-digit', minute: '2-digit' },
+  '7d': { month: 'short', day: 'numeric', hour: 'numeric' },
+  '30d': { month: 'short', day: 'numeric' },
+};
+
 export const formatAxisDate = (date: Date, range: DashboardRange, locale: string) =>
-  range === 'today'
-    ? date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-    : date.toLocaleDateString(locale, { month: '2-digit', day: '2-digit', ...(range === '7d' ? { hour: '2-digit' } : {}) });
+  date.toLocaleString(locale, AXIS_PARTS[range]);
 
 export const formatCalloutTitle = (
   value: Date | number | string,
