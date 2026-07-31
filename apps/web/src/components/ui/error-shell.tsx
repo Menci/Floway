@@ -26,14 +26,15 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
           against the window is permanently taller than its container and the
           bar can never retract. `min-h-max` keeps a long trace scrolling. */}
       <main className="mx-auto grid h-full min-h-max max-w-[720px] content-center justify-items-center gap-6 px-6 py-16 text-center">
-        <div className="grid justify-items-center gap-4">
-          <div className="grid gap-1.5">
-            <Text as="h1" className="m-0" size={700} weight="semibold">{title}</Text>
-            {message !== undefined && <Text as="p" className="m-0 text-fui-fg2" size={300}>{message}</Text>}
-          </div>
-          {action}
+        <div className="grid gap-1.5">
+          <Text as="h1" className="m-0" size={700} weight="semibold">{title}</Text>
+          {message !== undefined && <Text as="p" className="m-0 text-fui-fg2" size={300}>{message}</Text>}
         </div>
         {children}
+        {/* After the trace, not before it: the trace is what the operator is
+            here to read, and an action placed above it interrupts the sentence
+            the page is making. */}
+        {action}
       </main>
     </ScrollArea>
   );
