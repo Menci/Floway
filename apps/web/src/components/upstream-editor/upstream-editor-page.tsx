@@ -161,7 +161,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     if (data.mode === 'create' && (record.kind === 'codex' || record.kind === 'claude-code') && (values.config as Extract<UpstreamRecord, { kind: 'codex' | 'claude-code' }>['config']).accounts.length === 0) { setSaveError(t('dashboard.upstreamEditor.validation.credential')); return; }
     setSaving(true); setSaveError(null);
     const result = data.mode === 'create'
-      ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values, data.nextSortOrder) }))
+      ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
       : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values) }));
     setSaving(false);
     if (result.error) { setSaveError(result.error.message); return; }

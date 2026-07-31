@@ -41,7 +41,10 @@ export function aliasDefaults(alias: ModelAlias | null): AliasFormValues {
   };
 }
 
-export function aliasBody(values: AliasFormValues, existing: ModelAlias | null): AliasWriteBody {
+// `sort_order` is left out in both directions: the server appends a new alias
+// after the last one and preserves an existing one's place when the field is
+// absent, and the dialog never reorders.
+export function aliasBody(values: AliasFormValues): AliasWriteBody {
   const trimRules = (rules: AliasTarget['rules']): AliasTarget['rules'] => {
     const reasoning = rules.reasoning ? Object.fromEntries(Object.entries(rules.reasoning).filter(([, value]) => value !== undefined && value !== '')) : undefined;
     return {
@@ -61,6 +64,5 @@ export function aliasBody(values: AliasFormValues, existing: ModelAlias | null):
     announced_metadata: values.manualMetadata && values.kind !== 'image'
       ? structuredClone(values.announcedMetadata) as AliasWriteBody['announced_metadata']
       : null,
-    sort_order: existing?.sort_order ?? 0,
   };
 }

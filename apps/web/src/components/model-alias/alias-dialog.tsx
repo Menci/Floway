@@ -88,7 +88,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     setSaving(true); setServerError(null);
     try {
       const name = form.name.trim();
-      const body = aliasBody(form, record);
+      const body = aliasBody(form);
       const handle = toasts.start(t('dashboard.modelAliases.toast.save.pending', { name }));
       const result = record
         ? await callApi(() => api.api.aliases[':id'].$put({ param: { id: record.id }, json: body }))

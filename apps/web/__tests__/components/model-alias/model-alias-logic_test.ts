@@ -101,11 +101,13 @@ describe('alias wire body', () => {
     })).toEqual({ limits: { max_context_window_tokens: 4096 } });
   });
 
-  it('trims identifiers and preserves sort order while normalizing empty fields', () => {
+  it('trims identifiers and normalizes empty fields, leaving the order to the server', () => {
     const values = aliasDefaults(existing);
     values.name = ' renamed '; values.displayName = ' ';
     values.targets = [target(' a ', { reasoning: {}, verbosity: '' })];
-    expect(aliasBody(values, existing)).toMatchObject({ name: 'renamed', display_name: null, sort_order: 7, targets: [{ target_model_id: 'a', rules: {} }] });
+    const body = aliasBody(values);
+    expect(body).toMatchObject({ name: 'renamed', display_name: null, targets: [{ target_model_id: 'a', rules: {} }] });
+    expect(body).not.toHaveProperty('sort_order');
   });
 
   it('drops chat rules and announced metadata for image aliases', () => {
@@ -113,6 +115,6 @@ describe('alias wire body', () => {
     values.kind = 'image'; values.manualMetadata = true;
     values.targets = [target('image-1', { verbosity: 'high' })];
     values.announcedMetadata = { limits: { max_output_tokens: 10 } };
-    expect(aliasBody(values, existing)).toMatchObject({ targets: [{ rules: {} }], announced_metadata: null });
+    expect(aliasBody(values)).toMatchObject({ targets: [{ rules: {} }], announced_metadata: null });
   });
 });

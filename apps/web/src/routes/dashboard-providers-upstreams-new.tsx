@@ -33,11 +33,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     name: providerDefaultName[provider],
     enabled: true,
   };
-  const nextSortOrder = aux.upstreams.reduce(
-    (max, item) => Math.max(max, item.sort_order),
-    -1,
-  ) + 1;
-  return { ...aux, mode: 'create' as const, record, nextSortOrder, discovered: [], modelsError: null };
+  return { ...aux, mode: 'create' as const, record, discovered: [], modelsError: null };
 }
 
 export function meta({}: Route.MetaArgs) {

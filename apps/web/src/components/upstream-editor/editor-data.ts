@@ -38,7 +38,7 @@ interface UpstreamEditorLoaderDataBase extends EditorAuxData {
 }
 
 export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
-  | { mode: 'create'; nextSortOrder: number }
+  | { mode: 'create' }
   | { mode: 'edit' }
 );
 
@@ -186,13 +186,14 @@ export function previewRecord(record: UpstreamRecord, values: UpstreamEditorValu
   };
 }
 
-export function createBody(record: UpstreamRecord, values: UpstreamEditorValues, sortOrder: number): CreateUpstreamBody {
+// `sort_order` is left out: the server appends a new upstream after the last
+// one when the field is absent, and the list page owns reordering afterwards.
+export function createBody(record: UpstreamRecord, values: UpstreamEditorValues): CreateUpstreamBody {
   return {
     kind: record.kind,
     name: values.name.trim(),
     enabled: values.enabled,
     color: values.color,
-    sort_order: sortOrder,
     flag_overrides: values.flagOverrides,
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
