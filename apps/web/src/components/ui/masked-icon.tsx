@@ -4,7 +4,7 @@ import { fluentComponents } from '../../fluent';
 
 const { mergeClasses } = fluentComponents;
 
-export function MaskedIcon({ className = '', maskSize = 'contain', url }: { className?: string; maskSize?: string; url: string }) {
+export function MaskedIcon({ className, maskSize = 'contain', url }: { className?: string; maskSize?: string; url: string }) {
   const style: CSSProperties = {
     backgroundColor: 'currentColor',
     maskImage: `url(${url})`,

@@ -128,7 +128,7 @@ export const initializeScrollArea = (
 export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function ScrollArea({
   axes,
   children,
-  className = '',
+  className,
   contentClassName = '',
   noTabIndex = false,
 }, forwardedRef) {

@@ -14,7 +14,7 @@ import { CodexAccountCard } from './codex-account-card';
 import { CopilotQuotaCard } from './copilot-quota-card';
 import type { UpstreamEditorValues } from './editor-data';
 import { previewRecord } from './editor-data';
-import { useMonoLabelStyles } from './mono-label';
+import { useMonoLabelClass } from './mono-label';
 import { clearPkce, generatePkce, parseCallbackPaste, recallPkce, stashPkce } from './pkce';
 import { api, callApi } from '../../api/client';
 import type {
@@ -117,7 +117,7 @@ function CustomConfig({ record }: { record: Extract<UpstreamRecord, { kind: 'cus
 
 function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
   const { t } = useTranslation();
-  const monoLabel = useMonoLabelStyles();
+  const monoLabel = useMonoLabelClass();
   const idPrefix = useId();
   const { control } = useFormContext<UpstreamEditorValues>();
   return (
@@ -152,7 +152,7 @@ function CustomApiPaths({ onRefreshModels }: { onRefreshModels: () => void }) {
               key={path}
               name={`config.pathOverrides.${path}` as never}
               render={({ field }) => (
-                <Field className="min-w-0" label={{ children: path, className: monoLabel.label }}>
+                <Field className="min-w-0" label={{ children: path, className: monoLabel }}>
                   <Input
                     className="!w-full"
                     placeholder={`/v1${path}`}
@@ -253,7 +253,7 @@ const pathOverrideKeys = [
 
 function EndpointPicker() {
   const { t } = useTranslation();
-  const monoLabel = useMonoLabelStyles();
+  const monoLabel = useMonoLabelClass();
   const idPrefix = useId();
   const { control, getValues, setValue } = useFormContext<UpstreamEditorValues>();
   const config = useWatch({ control, name: 'config' });
@@ -271,7 +271,7 @@ function EndpointPicker() {
           name={`default-endpoint-${key}`}
           key={key}
           checked={selected}
-          label={{ children: label, className: monoLabel.label }}
+          label={{ children: label, className: monoLabel }}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
             const next = { ...latestConfig.endpoints };

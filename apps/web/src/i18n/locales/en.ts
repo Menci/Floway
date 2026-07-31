@@ -305,10 +305,6 @@ const en = {
           rotate: 'Rotate key',
           delete: 'Delete key',
         },
-        copy: {
-          copied: 'Copied',
-          failed: 'Copy failed',
-        },
         toast: {
           create: {
             pending: 'Creating API key {{name}}',
@@ -910,7 +906,6 @@ const en = {
         truncatedStream: 'This recording was cut short; the response below is what could be reassembled from it.',
         noStatus: 'No status',
         copy: 'Copy',
-        copied: 'Copied',
         revealValue: 'Reveal value',
         hideValue: 'Hide value',
         decodeError: 'Could not decode this body ({{error}}); showing raw base64.',

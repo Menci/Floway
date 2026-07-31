@@ -293,10 +293,6 @@ const zhHansCN = {
           rotate: '轮换 API 密钥',
           delete: '删除 API 密钥',
         },
-        copy: {
-          copied: '已复制',
-          failed: '复制失败',
-        },
         toast: {
           create: {
             pending: '正在创建 API 密钥 {{name}}',
@@ -871,7 +867,6 @@ const zhHansCN = {
         truncatedStream: '这次记录被截断，下面是从中能还原出的部分响应。',
         noStatus: '无状态码',
         copy: '复制',
-        copied: '已复制',
         revealValue: '显示值',
         hideValue: '隐藏值',
         decodeError: '无法解码此内容（{{error}}），以下显示原始 base64。',

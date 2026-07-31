@@ -7,9 +7,11 @@ const { makeStyles } = fluentComponents;
 // typography and state it on the element itself, so the monospace face and the
 // size that keeps it level with the surrounding text have to override it rather
 // than be inherited from a parent.
-export const useMonoLabelStyles = makeStyles({
+const useStyles = makeStyles({
   label: {
     fontFamily: 'var(--fontFamilyMonospace) !important',
     fontSize: 'var(--floway-font-size-mono) !important',
   },
 });
+
+export const useMonoLabelClass = (): string => useStyles().label;

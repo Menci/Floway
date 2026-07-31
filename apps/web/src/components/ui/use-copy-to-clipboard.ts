@@ -46,12 +46,10 @@ export const useCopyLabel = (): ((outcome: CopyOutcome, idle: string) => string)
 };
 
 export interface ClipboardCopy {
-  copiedTag: string | null;
-  copyFailedTag: string | null;
   /**
    * `tag` names which button is showing the outcome, so one hook can serve a
-   * whole table of them and a late expiry can only clear its own result. A
-   * lone copy button leaves it out and reads the tags for non-null.
+   * whole table of them and a late expiry can only clear its own result. A lone
+   * copy button leaves it out, and asks `outcomeFor` the same way.
    */
   copy: (text: string, tag?: string) => void;
   outcomeFor: (tag?: string) => CopyOutcome;
@@ -80,5 +78,5 @@ export const useCopyToClipboard = (): ClipboardCopy => {
     return 'idle';
   }, [copiedTag, copyFailedTag]);
 
-  return { copiedTag, copy, copyFailedTag, outcomeFor };
+  return { copy, outcomeFor };
 };
