@@ -127,7 +127,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const loaded = keys !== null && models !== null && upstreams !== null;
 
   return (
-    <div className="dashboard-page">
+    <section className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
           createLabel={t('dashboard.apiKeys.actions.create')}
@@ -222,6 +222,6 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
           title={t('dashboard.apiKeys.delete.title')}
         />}
       </>}
-    </div>
+    </section>
   );
 }

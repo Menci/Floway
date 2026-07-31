@@ -225,7 +225,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   };
 
   return (
-    <div className="dashboard-page">
+    <section className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
           createLabel={t('dashboard.upstreams.actions.create')}
@@ -303,7 +303,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
         }}
         title={t('dashboard.upstreams.delete.title')}
       />}
-    </div>
+    </section>
   );
 }
 

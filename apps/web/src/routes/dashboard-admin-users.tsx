@@ -162,7 +162,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const loaded = users !== null && models !== null && upstreams !== null;
 
   return (
-    <div className="dashboard-page">
+    <section className="dashboard-page">
       <DashboardPageHeader
         actions={<ResourceListActions
           createLabel={t('dashboard.users.actions.create')}
@@ -241,7 +241,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           title={t('dashboard.users.delete.title')}
         />}
       </>}
-    </div>
+    </section>
   );
 }
 
