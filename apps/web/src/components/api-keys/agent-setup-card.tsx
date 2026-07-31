@@ -50,9 +50,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
   const { t } = useTranslation();
   const [view, setView] = useState<'setup' | 'snippets'>('setup');
   const [agent, setAgent] = useState<Agent>('claude');
-  const [platform, setPlatform] = useState<Platform>(() => typeof navigator === 'undefined'
-    ? 'unix'
-    : detectAgentSetupPlatform(navigator.platform, navigator.userAgent));
+  const [platform, setPlatform] = useState<Platform>(() => detectAgentSetupPlatform(window.navigator.platform, window.navigator.userAgent));
   const [localDraft, setLocalDraft] = useState(() => defaultAgentSetupConfiguration());
   const localDraftBaseline = useRef(cloneAgentSetupConfiguration(localDraft));
   const appliedLease = useRef<string | null>(null);
@@ -81,7 +79,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
   // Both shells comment with `#`, so a command that is not ready yet says why
   // inside the block it will occupy rather than above it.
   const command = scriptPath
-    ? agentSetupCommand(typeof window === 'undefined' ? 'http://localhost:5173' : window.location.origin, scriptPath, platform)
+    ? agentSetupCommand(window.location.origin, scriptPath, platform)
     : `# ${t(selectedKey ? 'dashboard.apiKeys.agentSetup.commandPending' : 'dashboard.apiKeys.agentSetup.selectKey')}`;
 
   return <div className="grid gap-[14px] min-w-0">
@@ -173,7 +171,7 @@ function AgentConfigSnippets({ agent, apiKey, configuration, copiedTag, copyFail
   platform: Platform;
 }) {
   const { t } = useTranslation();
-  const origin = typeof window === 'undefined' ? 'http://localhost:5173' : window.location.origin;
+  const origin = window.location.origin;
   if (agent === 'claude') {
     const snippet = buildAgentClaudeSnippet(origin, apiKey, configuration.claudeCode);
     return <div className="grid gap-2 border-t border-t-solid border-fui-stroke1 pt-4">
