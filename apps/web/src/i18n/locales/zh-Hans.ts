@@ -32,7 +32,7 @@ const zhHansCN = {
         password: '密码',
         passwordPlaceholder: '输入密码',
         submit: '登录',
-        submitting: '正在登录...',
+        submitting: '正在登录…',
         genericError: '无法登录。请检查 gateway 后重试。',
       },
     },
@@ -158,7 +158,7 @@ const zhHansCN = {
         confirmPassword: '确认密码',
         otherDevices: '当前以你的账户登录的其他设备将会退出登录。',
         save: '修改密码',
-        saving: '正在保存...',
+        saving: '正在保存…',
         passwordUpdated: '密码已更新，其他设备已退出登录。',
         validation: {
           currentPasswordRequired: '必须填写当前密码。',
@@ -199,8 +199,8 @@ const zhHansCN = {
           delete: '删除用户',
           refresh: '刷新用户',
           save: '保存更改',
-          saving: '正在保存...',
-          deleting: '正在删除...',
+          saving: '正在保存…',
+          deleting: '正在删除…',
         },
         toast: {
           create: {
@@ -282,7 +282,7 @@ const zhHansCN = {
           create: '创建 API 密钥',
           refresh: '刷新 API 密钥',
           save: '保存更改',
-          saving: '正在保存...',
+          saving: '正在保存…',
           copy: '复制',
           edit: '编辑 API 密钥',
           rotate: '轮换 API 密钥',
@@ -342,7 +342,7 @@ const zhHansCN = {
           retention: '记录请求转储',
           viewCapturedRequests: '查看已捕获的请求',
           responsesRetention: 'Stateful Responses 保留',
-          responsesRetentionHint: '该 key 的 Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
+          responsesRetentionHint: '该 API 密钥的 Responses 条目可被后续请求按 id 引用的时长（关闭表示不做持久化）',
           retentionHint:
               '启用后，通过该 API 密钥发起的模型请求会在配置窗口内被记录。',
           retentionCustom: '自定义保留时间',
@@ -387,7 +387,7 @@ const zhHansCN = {
           codexAuthHint: 'Linux 和 macOS：仅在 CODEX_HOME 下保存 Floway provider token。',
           codexWindowsAuthHint: 'Windows PowerShell：保存相同 token，不修改官方账号登录。',
         },
-        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后数分钟过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
+        agentSetup: { agent: 'Agent', accessMethod: '接入方式', setupTab: '自动配置脚本', snippetsTab: '配置文件片段', platform: '操作系统', commandPending: '正在准备安装命令…', modelSelection: '模型选择', miscSettings: '杂项设置', selectKey: '请先在上方选择 API 密钥。', noKey: '请先创建 API 密钥。', expired: '此安装链接已过期，请重试生成新链接。', retry: '重试', expires: '页面可见时链接会自动续期，离开后即过期。', defaultModel: '默认模型', fableModel: 'Fable 模型', opusModel: 'Opus 模型', sonnetModel: 'Sonnet 模型', haikuModel: 'Haiku 模型', reasoningEffort: '思考强度', modelDefault: '默认', noModelMatches: '没有匹配的模型', modelDiscovery: 'Gateway 模型发现', modelDiscoveryHint: '允许 Claude Code 从此 Floway gateway 发现可用模型。', cleanupRetention: '清理保留期', cleanupRetentionHint: '设置 Claude Code 本地会话数据的清理保留期。', cleanupDays: '{{count}} 天', optOutAiAttribution: '停用 Claude Code AI 归属标记', optOutAiAttributionHint: '移除提交和 Pull Request 中的 Claude Code 归属信息（"Co-Authored-By"），并隐藏会话链接。', unavailable: '{{id}}（不可用）' },
         rotate: {
           title: '轮换 API 密钥',
           message: '为 {{name}} 选择替换 API 密钥。轮换后旧 API 密钥会立即停止工作。',
@@ -407,7 +407,7 @@ const zhHansCN = {
           delete: '删除上游',
           editNamed: '编辑 {{name}}',
           deleteNamed: '删除 {{name}}',
-          deleting: '正在删除...',
+          deleting: '正在删除…',
           toggle: '切换 {{name}} 的启用状态',
           moveUp: '上移 {{name}}',
           moveDown: '下移 {{name}}',
@@ -494,7 +494,7 @@ const zhHansCN = {
         actions: {
           back: '返回上游列表',
           save: '保存更改',
-          saving: '正在保存...',
+          saving: '正在保存…',
           moveUp: '上移',
           moveDown: '下移',
           remove: '移除',
@@ -503,7 +503,7 @@ const zhHansCN = {
         },
         sections: {
           connection: '连接与认证',
-          color: '徽标颜色',
+          color: '徽章颜色',
           proxy: '代理路由',
           apiPaths: 'API 路径',
           prefix: '模型名称前缀',
@@ -614,7 +614,7 @@ const zhHansCN = {
             'demote-developer-to-system': {
               label: '改写 developer 角色',
               description:
-                  'OpenAI 的新版 API 规范中包含了 `developer` 这一角色（`role`)，但部分上游并不支持。\n开启此开关，以在请求上游时，把 `developer` 改写为 `system`。\n例如，Codex 的系统提示词会使用 `developer` 角色，但 DeepSeek 不支持，此时就应开启。',
+                  'OpenAI 的新版 API 规范中包含了 `developer` 这一角色（`role`），但部分上游并不支持。\n开启此开关，以在请求上游时，把 `developer` 改写为 `system`。\n例如，Codex 的系统提示词会使用 `developer` 角色，但 DeepSeek 不支持，此时就应开启。',
             },
             'promote-system-to-developer': {
               label: '将 system 角色提升为 developer',
@@ -629,7 +629,7 @@ const zhHansCN = {
             'strip-prompt-cache-key': {
               label: '去除 Prompt Cache Key',
               description:
-                  'OpenAI API 支持通过 `prompt_cache_key` 标识可复用的提示词前缀，但部分上游并不支持，可能导致拒绝请求（如 Azure 提供的 DeepSeek 模型）。\n开启此开关，以在请求上游前移除除顶层的 `prompt_cache_key` 字段。',
+                  'OpenAI API 支持通过 `prompt_cache_key` 标识可复用的提示词前缀，但部分上游并不支持，可能导致拒绝请求（如 Azure 提供的 DeepSeek 模型）。\n开启此开关，以在请求上游前移除顶层的 `prompt_cache_key` 字段。',
             },
           },
         },
@@ -753,7 +753,7 @@ const zhHansCN = {
           description: '通过 GitHub 设备授权连接 GitHub Copilot 订阅。',
           connect: '连接 GitHub',
           deviceCode: '设备代码',
-          waiting: '正在等待授权...',
+          waiting: '正在等待授权…',
         },
         codex: {
           activeLimit: '当前限额',
@@ -817,7 +817,7 @@ const zhHansCN = {
           reimport: '重新导入凭据',
           import: '导入凭据',
           credentialJson: '凭据 JSON',
-          preparing: '正在准备授权...',
+          preparing: '正在准备授权…',
           openAuthorize: '打开授权页面',
           copy: '复制授权链接',
           callback: '重定向后的回调 URL 或代码',
