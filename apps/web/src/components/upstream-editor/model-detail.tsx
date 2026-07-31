@@ -14,7 +14,7 @@ import type {
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
-import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
@@ -253,7 +253,7 @@ function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; ef
     if (level && !supported.includes(level)) setSupported([...supported, level]);
     setQuery('');
   };
-  return <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] gap-4 max-[760px]:grid-cols-1">
+  return <div className={`grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <Field label={t('dashboard.upstreamEditor.models.supportedEfforts')}>
       <Combobox
         readOnly={!editable}

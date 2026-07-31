@@ -35,6 +35,7 @@ import { PlaygroundMarkdown } from '../components/playground/playground-markdown
 import { PlaygroundMessageCard } from '../components/playground/playground-message-card';
 import { streamPlaygroundText } from '../components/playground/playground-stream';
 import { Combobox, Dropdown, Input, Textarea } from '../components/ui/fluent-form-controls';
+import { PANE_GAP_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ScrollArea } from '../components/ui/scroll-area';
@@ -351,7 +352,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
 
   return (
     <>
-      <section className="h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_320px] gap-[var(--floway-page-inset)] max-[1100px]:grid-cols-1">
+      <section className={`h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_320px] ${PANE_GAP_CLASS} max-[1100px]:grid-cols-1`}>
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-3">
           <div className={`min-w-0 pb-3 flex items-center gap-3 ${s.toolbar}`}>
             <div className="grid gap-1.5 min-w-0">

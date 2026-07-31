@@ -14,7 +14,7 @@ import { fluentComponents } from '../../fluent';
 import { CodeBlock } from '../ui/code-block';
 import { Combobox, Dropdown } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
-import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SectionHeader } from '../ui/section-header';
 
@@ -92,7 +92,7 @@ export function AgentSetupCard({ copiedTag, copyFailedTag, initialApiKeyId, init
       </TabList>
     } />
 
-    <div className="grid gap-5 min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[680px]:grid-cols-1">
+    <div className={`grid ${PANE_GAP_CLASS} min-w-0 grid-cols-[190px_minmax(0,1fr)] max-[680px]:grid-cols-1`}>
       <nav className="grid content-start">
         <TabList aria-label={t('dashboard.apiKeys.agentSetup.agent')} onTabSelect={(_, data) => setAgent(data.value === 'codex' ? 'codex' : 'claude')} selectedValue={agent} vertical>
           <AgentTab icon={claudeIconUrl} label={t('dashboard.apiKeys.configuration.claudeCode')} value="claude" />

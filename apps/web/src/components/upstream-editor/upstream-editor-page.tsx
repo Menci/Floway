@@ -22,6 +22,7 @@ import { api } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';
+import { PANE_GAP_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { Panel } from '../ui/panel';
 import { useDialogInvocation } from '../ui/use-dialog-invocation';
@@ -200,7 +201,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         </div>
       </header>
       {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
-      <div className="grid grid-cols-[380px_minmax(0,1fr)] gap-[18px] min-h-0 min-w-0 flex-1 max-[1050px]:grid-cols-1">
+      <div className={`grid grid-cols-[380px_minmax(0,1fr)] ${PANE_GAP_CLASS} min-h-0 min-w-0 flex-1 max-[1050px]:grid-cols-1`}>
         <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
           <UpstreamConfigSidebar
             catalogAvailable={modelsError === null}

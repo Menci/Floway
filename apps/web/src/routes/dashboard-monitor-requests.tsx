@@ -14,6 +14,7 @@ import { RequestListPanel } from '../components/requests/request-list';
 import { collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { PANE_GAP_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { fluentComponents } from '../fluent';
@@ -172,7 +173,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </DrawerBody>
         </OverlayDrawer>
       </> : (
-        <div className="h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] gap-3">
+        <div className={`h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] ${PANE_GAP_CLASS}`}>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestDetailPanel collected={loaderData.collected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} />
           </Panel>

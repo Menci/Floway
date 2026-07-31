@@ -18,3 +18,20 @@ export const TIGHT_STACK_CLASS = 'grid gap-1';
 // `--floway-page-inset` and `--floway-panel-inset` already step down: a form's
 // columns collapse at the same moment the space around them narrows.
 export const TWO_COLUMN_FORM_CLASS = 'grid grid-cols-2 max-[680px]:grid-cols-1';
+
+// What separates the two panes of a master–detail shell. It reads the page
+// inset rather than stating a number of its own, which is what `uno.css`
+// already says that inset is for: a layout that puts two panels side by side
+// separates them by the same measure it keeps from the edge of the region, so
+// the space around a page and the space inside it read as one rhythm. The
+// 680px step-down comes with the token, so a shell needs no breakpoint of its
+// own for the gap — only for the width at which its own fixed track stops
+// fitting, which is a different number per shell.
+//
+// The one pane seam WinUI states is `NavigationView`'s, and it is `0` by
+// construction: the content grid carries its own `1,1,0,0` border, `8,0,0,0`
+// radius and layer fill, so the seam is that border rather than a gap
+// (https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/NavigationView/NavigationView_themeresources.xaml#L234).
+// Our navigation pane is built the same way and keeps its `0`; this token is
+// for the shells inside a page, and its measure is ours.
+export const PANE_GAP_CLASS = 'gap-[var(--floway-page-inset)]';

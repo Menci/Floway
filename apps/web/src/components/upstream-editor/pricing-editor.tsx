@@ -22,7 +22,7 @@ import {
 } from './pricing-model';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
-import { TIGHT_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
+import { PANE_GAP_CLASS, TIGHT_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { PRICING_AXES, type BillingMetric, type ModelKind, type ModelPricing, type ModelPricingIssue } from '@floway-dev/protocols/common';
@@ -162,7 +162,7 @@ export const PricingEditor = ({ editable, kind, onChange, value }: {
 
   const activeIssues = issues.filter(issue => issueAffectsEntry(issue, selectedIndex));
 
-  return <div className="grid min-w-0 grid-cols-[240px_minmax(0,1fr)] items-stretch gap-5 max-[760px]:grid-cols-1">
+  return <div className={`grid min-w-0 grid-cols-[240px_minmax(0,1fr)] items-stretch ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
     <aside className="grid h-full min-w-0 content-start gap-2 border-0 border-r border-solid border-fui-stroke1 pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
       {editable && <Toolbar aria-label={t('dashboard.upstreamEditor.models.pricingRules')} className="!justify-end !min-h-8 !p-0" size="small">
         <Tooltip content={t('dashboard.upstreamEditor.models.addPricingOverride')} relationship="label">
