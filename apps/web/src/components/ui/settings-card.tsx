@@ -44,7 +44,16 @@ const useStyles = makeStyles({
   // A card only takes the pointer ramp when it does something when clicked.
   // The fill moves over the control's own duration; the toolkit leaves the
   // border instant.
+  //
+  // No reduce branch, deliberately, and this is a departure: WinUI gates its
+  // BrushTransition on the same setting it gates motion with, so a real card
+  // would cross-fade instantly. WCAG's definition of motion animation excludes
+  // changes -- such as changes of colour or opacity -- that do not alter the
+  // perceived size, shape, position or depth of the element, so an 83ms fill
+  // change is not what the preference is about, and suppressing it buys nothing
+  // while costing the clearest hover signal the card has.
   // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L120-L166
+  // https://github.com/w3c/wcag/blob/900ea026b967bc306a2cdbe0c586330a508d6759/guidelines/terms/21/motion-animation.html
   interactive: {
     cursor: 'pointer',
     transitionDuration: 'var(--winui-control-faster-animation-duration)',
@@ -165,18 +174,37 @@ const useStyles = makeStyles({
     transitionDuration: 'var(--winui-control-normal-animation-duration)',
     transitionProperty: 'rotate',
     transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
+    // WinUI's expander chevron is an AnimatedIcon, and AnimatedIcon is gated on
+    // UISettings.AnimationsEnabled: with animations off it displays the final
+    // frame of the transition rather than playing it. The chevron lands in its
+    // correct orientation either way, which is what carries the state.
+    // https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/animated-icon
+    // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/AnimatedIcon/AnimatedIcon.cpp#L432-L444
+    '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
   // Expander opens with a framework ExpandDownThemeAnimation, which states no
   // numbers in any dictionary, so the control's own normal duration and curve
   // stand in rather than a value invented for it. The region is a grid whose
   // single row runs from zero to `1fr`, which animates to the content's own
   // height without anything having to measure it first.
+  //
+  // The reduce branch departs from shipped WinUI, which keeps sliding: the
+  // Expander authors its motion as a VisualState storyboard rather than a
+  // VisualTransition, and the gate only reaches Transition and Dynamic
+  // storyboards, so the content still travels with animations off. That is an
+  // unactioned bug -- microsoft-ui-xaml#3279 asks for exactly this gate, and a
+  // WinUI PM called the general case a framework bug -- not a design, and a
+  // region that grows from nothing to its full height is motion animation by
+  // WCAG's own definition, which turns on perceived size and position.
+  // https://github.com/microsoft/microsoft-ui-xaml/issues/3279
+  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609
   contentFrame: {
     display: 'grid',
     gridTemplateRows: '0fr',
     transitionDuration: 'var(--winui-control-normal-animation-duration)',
     transitionProperty: 'grid-template-rows',
     transitionTimingFunction: 'var(--winui-control-fast-out-slow-in-easing)',
+    '@media screen and (prefers-reduced-motion: reduce)': { transitionDuration: '0.01ms' },
   },
   contentFrameOpen: { gridTemplateRows: '1fr' },
   contentClip: { minHeight: 0, overflow: 'hidden' },

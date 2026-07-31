@@ -57,6 +57,13 @@ const useStyles = makeStyles({
     gridTemplateRows: 'repeat(3, minmax(0, 1fr))',
     outlineStyle: 'none',
     padding: '6px 10px',
+    // The row is a listbox option that selects a record when clicked, so it
+    // takes the subtle ramp every other list surface here takes; without it the
+    // row claimed the pointer cursor and then answered nothing. The selected
+    // fill is stated after this one and keeps its own colour under the pointer.
+    // ../../winui/controls/list.css.ts
+    ':hover': { backgroundColor: 'var(--winui-subtle-fill-secondary)' },
+    ':active': { backgroundColor: 'var(--winui-subtle-fill-tertiary)' },
     ':focus-visible': { boxShadow: 'inset 0 0 0 2px var(--colorCompoundBrandStroke)' },
   },
   selected: {

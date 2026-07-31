@@ -237,6 +237,21 @@ export const choiceCss = `
       var(--winui-control-fast-out-slow-in-easing);
 }
 
+/* The dot grows and shrinks, which alters its perceived size, so it is motion
+   rather than a state colour and it goes when the OS says motion goes. WinUI
+   reaches the same end by a different route: the growth is a VisualTransition,
+   which the VSM seeks to its last frame with animations disabled, applying both
+   endpoints so the dot still lands at its checked size. 0.01ms rather than
+   none for the same reason WinUI runs its disabled ConnectedAnimation for 1ms
+   instead of zero -- the completion still has to fire.
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/vsm/VisualStateManagerActuator.cpp#L590-L609
+   https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/dxaml/xcp/components/animation/ConnectedAnimationService.cpp#L313-L327 */
+@media screen and (prefers-reduced-motion: reduce) {
+  .fui-Radio__indicator.fui-Radio__indicator::after {
+    transition-duration: 0.01ms;
+  }
+}
+
 /* The input is the hit target and has to span the grown ellipse and its
    margins. It is widened through min-width because labelPosition="below"
    stacks the label under the ellipse and stretches the input to the full root
