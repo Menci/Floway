@@ -60,6 +60,11 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const { control, getValues, handleSubmit, reset, setValue, formState: { errors } } = form;
   const currentValues = useWatch({ control }) as UpstreamEditorValues;
   const hasUnsavedChanges = comparableValues(currentValues) !== savedBaseline || errors.color !== undefined;
+  // `required` on the name is the only rule the form itself validates, and the
+  // invalid branch of the submit reports the color error alone -- an empty name
+  // rejects the submit with nothing said anywhere. A name that is only
+  // whitespace clears that rule and reaches the handler's own message.
+  const nameMissing = currentValues.name === '';
 
   const blocker = useBlocker(useCallback(
     () => hasUnsavedChanges && !allowNavigation.current,
@@ -179,7 +184,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         <BackNavigationButton onClick={leave}>{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
         {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
         <div className="ml-auto flex items-center gap-2">
-          <Button appearance="primary" disabled={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
+          <Button appearance="primary" disabled={saving || nameMissing} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{saving ? t('dashboard.upstreamEditor.actions.saving') : t('dashboard.upstreamEditor.actions.save')}</Button>
         </div>
       </header>
       {saveError && <MessageBar intent="error"><MessageBarBody>{saveError}</MessageBarBody></MessageBar>}
