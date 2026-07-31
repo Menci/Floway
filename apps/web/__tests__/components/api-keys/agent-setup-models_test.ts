@@ -57,10 +57,15 @@ describe('Agent Setup persisted model values', () => {
     ]);
   });
 
-  it('keeps Haiku and Codex ids opaque', () => {
+  it('offers the window to every Claude picker, and leaves Codex ids opaque', () => {
     expect(buildAgentModelOptions([model('claude-haiku-4-5', 1_000_000)], { family: 'claude', picker: 'haiku' })[0]?.value)
-      .toBe('claude-haiku-4-5');
+      .toBe('claude-haiku-4-5[1m]');
     expect(buildAgentModelOptions([model('gpt-5.6', 1_000_000)], { family: 'codex' })[0]?.value)
       .toBe('gpt-5.6');
+  });
+
+  it('leaves a Claude model that cannot reach the window unsuffixed', () => {
+    expect(buildAgentModelOptions([model('claude-haiku-4-5', 200_000)], { family: 'claude', picker: 'haiku' })[0]?.value)
+      .toBe('claude-haiku-4-5');
   });
 });

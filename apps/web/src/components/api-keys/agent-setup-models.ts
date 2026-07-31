@@ -74,15 +74,17 @@ export const rankAgentSetupModels = (
 
 const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
 
-// Claude Code selects the one-million-token window through a `[1m]` suffix, and
-// documents it for two of the four pinned-model variables: the opus and sonnet
-// ones. The haiku variable is the model Claude Code reaches for background work
-// and simple tasks, and the suffix is only to be appended where the underlying
-// model supports the window at all, so the haiku picker is left to name its
-// model plainly.
+// Claude Code selects the one-million-token window through a `[1m]` suffix. Its
+// documentation names only the opus and sonnet pinned-model variables, but the
+// shipped CLI reads all four through one identity cast and keys every later
+// decision on the model string rather than on which variable supplied it: the
+// suffix's whole wire effect is to add the `context-1m-2025-08-07` beta and go
+// out stripped, behind a test that carries no family condition. Anthropic's own
+// model table marks Haiku as suffix-capable, and its Bedrock and Vertex wizards
+// pin all four tiers alike. So the omission is the document's, and every picker
+// is offered the window its model reports.
 // https://code.claude.com/docs/en/model-config
-const claudeModelOverride = (model: ControlPlaneModel, picker: ClaudePicker): string => {
-  if (picker === 'haiku') return model.id;
+const claudeModelOverride = (model: ControlPlaneModel): string => {
   const contextWindow = model.limits.max_context_window_tokens
     ?? (model.limits.max_prompt_tokens ?? 0) + (model.limits.max_output_tokens ?? 0);
   return contextWindow >= ONE_MILLION_CONTEXT_TOKENS && !model.id.endsWith('[1m]')
@@ -98,7 +100,7 @@ export const buildAgentModelOptions = (
   const values = new Set<string>();
   for (const model of rankAgentSetupModels(models, ranking)) {
     const value = ranking.family === 'claude'
-      ? claudeModelOverride(model, ranking.picker)
+      ? claudeModelOverride(model)
       : model.id;
     if (values.has(value)) continue;
     values.add(value);
