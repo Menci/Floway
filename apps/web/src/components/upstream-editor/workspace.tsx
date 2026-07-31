@@ -77,14 +77,14 @@ const ModelsYamlEditor = lazy(() => import('./models-yaml-editor'));
 
 export function UpstreamWorkspace({
   discovered,
-  loadingModels,
   modelsError,
+  modelsLoading,
   onRefreshModels,
   record,
 }: {
   discovered: UpstreamModelConfig[];
-  loadingModels: boolean;
   modelsError: string | null;
+  modelsLoading: boolean;
   onRefreshModels: () => void;
   record: UpstreamRecord;
 }) {
@@ -135,7 +135,7 @@ export function UpstreamWorkspace({
   useLayoutEffect(() => {
     workspaceScrollRef.current?.scrollTo({ left: 0, top: 0 });
   }, [modelDetailTab, modelView, tab]);
-  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} onSelectUpstreamModel={selectModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} loading={loadingModels} error={modelsError} onRefresh={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
+  const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} onSelectUpstreamModel={selectModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={onRefreshModels} onViewChange={changeModelView} record={record} view={modelView} yaml={yaml} yamlError={yamlError} onYamlChange={setYaml} onYamlErrorChange={setYamlError} />;
   return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
     <div className="flex items-center gap-2 border-b border-b-solid border-fui-stroke1 px-5 pt-2">
       {showModelDetail
@@ -171,12 +171,12 @@ export function UpstreamWorkspace({
   </section>;
 }
 
-function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh, onSelectUpstreamModel, onViewChange, onYamlChange, onYamlErrorChange, record, selectedUpstreamModelId, view, yaml, yamlError }: {
+function ModelsWorkspace({ detailSection, discovered, modelsError, modelsLoading, onRefreshModels, onSelectUpstreamModel, onViewChange, onYamlChange, onYamlErrorChange, record, selectedUpstreamModelId, view, yaml, yamlError }: {
   detailSection: ModelDetailTab;
   discovered: UpstreamModelConfig[];
-  error: string | null;
-  loading: boolean;
-  onRefresh: () => void;
+  modelsError: string | null;
+  modelsLoading: boolean;
+  onRefreshModels: () => void;
   onSelectUpstreamModel: (id: string | null) => void;
   onViewChange: (view: ModelView) => void;
   onYamlChange: (value: string) => void;
@@ -301,7 +301,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
     </div>;
   }
 
-  if (view === 'detail' && activeDetailRow) return <><ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} onDelete={() => deleteDialog.open(activeDetailRow)} onSourceChange={source => setModelSource(activeDetailRow, source)} onUpdate={value => {
+  if (view === 'detail' && activeDetailRow) return <><ModelDetail section={detailSection} row={activeDetailRow} readOnly={readOnly} onDelete={() => deleteDialog.open(activeDetailRow)} onSourceChange={source => setModelSource(activeDetailRow, source)} onChange={value => {
     if (activeDetailRow.manualIndex === null) return;
     setValue(`manualModels.${activeDetailRow.manualIndex}`, value, {
       shouldDirty: true,
@@ -321,19 +321,19 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
         {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
-          <Button disabled={loading || !autoFetchEnabled} icon={loading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
+          <Button disabled={modelsLoading || !autoFetchEnabled} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
         </>}
       </div>
     </div>
-    {error && <OutcomeMessageBar
+    {modelsError && <OutcomeMessageBar
       bodyClassName="min-w-0 [overflow-wrap:anywhere]"
       className="min-w-0"
       icon={<WarningRegular />}
       intent="warning"
     >
-      {error === 'Upstream model listing failed'
+      {modelsError === 'Upstream model listing failed'
         ? t('dashboard.upstreamEditor.models.listingFailed')
-        : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: error })}
+        : t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelsError })}
     </OutcomeMessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">

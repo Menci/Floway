@@ -39,18 +39,18 @@ const useStyles = makeStyles({
 const reasoningPresets = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export function ModelDetail({
+  onChange,
   onDelete,
   onSourceChange,
-  onUpdate,
   readOnly,
   record,
   row,
   section,
   upstreamFlags,
 }: {
+  onChange: (value: UpstreamModelConfig) => void;
   onDelete: () => void;
   onSourceChange: (source: 'auto' | 'manual') => void;
-  onUpdate: (value: UpstreamModelConfig) => void;
   readOnly: boolean;
   record: UpstreamRecord;
   row: ModelRow;
@@ -69,7 +69,7 @@ export function ModelDetail({
     for (const key of Object.keys(next) as (keyof UpstreamModelConfig)[]) {
       if (next[key] === undefined) delete (updated as unknown as Record<string, unknown>)[key];
     }
-    onUpdate(updated);
+    onChange(updated);
   };
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
