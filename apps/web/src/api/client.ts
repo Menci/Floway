@@ -96,8 +96,7 @@ const callResponse = async <T>(fn: () => Promise<Response>): Promise<ApiResult<T
     return {
       error: {
         status: result.data.status,
-        message:
-          error instanceof Error ? error.message : 'Invalid JSON response',
+        message: errorMessage(error),
       },
     };
   }
