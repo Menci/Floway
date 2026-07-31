@@ -32,24 +32,25 @@ interface LoaderData extends ApiKeysPageData {
   setupLease: AgentSetupLease | null;
 }
 
-const loadInitialPageData = async (): Promise<ApiKeysPageData> => {
+const loadPageData = async (current: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'>): Promise<ApiKeysPageData> => {
   const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
     callApi(() => api.api.keys.$get()),
     callApi(() => api.api['upstream-options'].$get()),
     callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
   ]);
-  const error = keysRes.error?.message ?? upstreamsRes.error?.message ?? modelsRes.error?.message ?? null;
   return {
-    keys: keysRes.data ?? [],
-    upstreams: upstreamsRes.data ?? [],
-    models: modelsRes.data?.data ?? [],
-    error,
+    keys: keysRes.data ?? current.keys,
+    upstreams: upstreamsRes.data ?? current.upstreams,
+    models: modelsRes.data?.data ?? current.models,
+    error: keysRes.error?.message ?? upstreamsRes.error?.message ?? modelsRes.error?.message ?? null,
   };
 };
 
+const emptyPageData: Pick<ApiKeysPageData, 'keys' | 'upstreams' | 'models'> = { keys: [], upstreams: [], models: [] };
+
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
-  const data = await loadInitialPageData();
+  const data = await loadPageData(emptyPageData);
   const stored = localStorage.getItem(selectedKeyStorageKey) ?? '';
   const selectedKeyId = data.keys.some(key => key.id === stored) ? stored : '';
   if (!selectedKeyId) return { ...data, selectedKeyId, setupError: null, setupLease: null };
@@ -91,30 +92,10 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const toasts = useOutcomeToasts();
 
   const reload = async () => {
-    setPageError(null);
-    const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
-      callApi(() => api.api.keys.$get()),
-      callApi(() => api.api['upstream-options'].$get()),
-      callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } })),
-    ]);
-
-    const error =
-      keysRes.error?.message ??
-      upstreamsRes.error?.message ??
-      modelsRes.error?.message ??
-      null;
-    setPageError(error);
-    if (keysRes.error) return;
-
-    const next = {
-      keys: keysRes.data,
-      upstreams: upstreamsRes.data ?? data.upstreams,
-      models: modelsRes.data?.data ?? data.models,
-      error,
-    };
+    const next = await loadPageData(data);
     setData(next);
-    setSelectedKeyId(current =>
-      next.keys.some(key => key.id === current) ? current : '');
+    setPageError(next.error);
+    setSelectedKeyId(current => next.keys.some(key => key.id === current) ? current : '');
   };
 
   const { refresh, refreshing } = useRefresh(reload);
