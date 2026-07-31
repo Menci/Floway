@@ -1,5 +1,9 @@
 import type { CSSProperties } from 'react';
 
+import { fluentComponents } from '../../fluent';
+
+const { mergeClasses } = fluentComponents;
+
 export function MaskedIcon({ className = '', maskSize = 'contain', url }: { className?: string; maskSize?: string; url: string }) {
   const style: CSSProperties = {
     backgroundColor: 'currentColor',
@@ -12,5 +16,5 @@ export function MaskedIcon({ className = '', maskSize = 'contain', url }: { clas
     maskPosition: 'center',
     WebkitMaskPosition: 'center',
   };
-  return <span aria-hidden="true" className={`block flex-none ${className}`} style={style} />;
+  return <span aria-hidden="true" className={mergeClasses('block flex-none', className)} style={style} />;
 }

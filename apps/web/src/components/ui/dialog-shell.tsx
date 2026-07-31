@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { ScrollArea } from './scroll-area';
 import { fluentComponents } from '../../fluent';
 
-const { Dialog, DialogBody, DialogContent, DialogSurface } = fluentComponents;
+const { Dialog, DialogBody, DialogContent, DialogSurface, mergeClasses } = fluentComponents;
 
 interface DialogShellProps {
   open: boolean;
@@ -26,7 +26,7 @@ export function DialogShell({ open, onOpenChange, title, actions, onSubmit, chil
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogSurface
-        className={`floway-dialog-shell !m-auto ${surfaceClassName ?? ''}`}
+        className={mergeClasses('floway-dialog-shell !m-auto', surfaceClassName)}
         style={maxWidth === undefined ? undefined : { '--floway-dialog-max-width': `min(${maxWidth}, calc(100vw - 32px))` } as CSSProperties}
       >
         <form

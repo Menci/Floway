@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { TIGHT_STACK_CLASS } from './layout';
 import { fluentComponents } from '../../fluent';
 
-const { Text } = fluentComponents;
+const { Text, mergeClasses } = fluentComponents;
 
 // The row a header shares with its own actions. WinUI's `PART_ContentPresenter`
 // is a bare presenter with no panel or spacing opinion, so both the 12px and
@@ -38,7 +38,7 @@ export function SectionHeader({ actions, description, level, title, titleId, tru
 
   const block = description === undefined
     ? heading
-    : <div className={`${TIGHT_STACK_CLASS} min-w-0`}>
+    : <div className={mergeClasses(TIGHT_STACK_CLASS, 'min-w-0')}>
         {heading}
         <Text className="text-fui-fg2" size={200}>{description}</Text>
       </div>;

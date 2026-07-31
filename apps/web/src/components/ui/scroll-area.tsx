@@ -3,6 +3,10 @@ import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useSyncExtern
 import type { PropsWithChildren } from 'react';
 import 'overlayscrollbars/overlayscrollbars.css';
 
+import { fluentComponents } from '../../fluent';
+
+const { mergeClasses } = fluentComponents;
+
 OverlayScrollbars.plugin(ClickScrollPlugin);
 
 export type ScrollAxes = 'both' | 'horizontal' | 'vertical';
@@ -143,7 +147,7 @@ export const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaProps>(function S
   const overflow = elementOverflowFor(axes, overlayScrollbarsEnabled);
   return (
     <div
-      className={`${scrollAreaHostClassName} ${className}`}
+      className={mergeClasses(scrollAreaHostClassName, className)}
       {...(overlayScrollbarsEnabled ? { 'data-overlayscrollbars-initialize': '' } : {})}
       ref={hostRef}
     >

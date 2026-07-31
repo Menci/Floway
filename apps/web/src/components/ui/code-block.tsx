@@ -12,7 +12,7 @@ import { prismTokenStyles } from './prism-token-styles';
 import { ScrollArea } from './scroll-area';
 import { fluentComponents } from '../../fluent';
 
-const { Button, makeStyles } = fluentComponents;
+const { Button, makeStyles, mergeClasses } = fluentComponents;
 
 const useStyles = makeStyles({
   root: {
@@ -90,9 +90,9 @@ export function CodeBlock({ code, copied, copyFailed, disabled = false, header, 
         </Button>
       </div>
       <ScrollArea axes="both" className="max-h-[340px]">
-        <pre className={`language-${language} ${s.pre} m-0`}>
+        <pre className={mergeClasses(`language-${language}`, s.pre, 'm-0')}>
           <code
-            className={`language-${language} ${s.code}`}
+            className={mergeClasses(`language-${language}`, s.code)}
             dangerouslySetInnerHTML={{ __html: highlighted }}
           />
         </pre>

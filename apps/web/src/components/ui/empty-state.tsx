@@ -41,7 +41,7 @@ export function EmptyState({ action, align = 'center', className, description, t
   title: ReactNode;
 }) {
   return <div className={mergeClasses(ALIGN_CLASS[align], className)}>
-    <div className={`grid gap-3 max-w-[480px] ${STACK_ALIGN_CLASS[align]}`}>
+    <div className={mergeClasses('grid gap-3 max-w-[480px]', STACK_ALIGN_CLASS[align])}>
       <div className={TIGHT_STACK_CLASS}>
         <Text size={300} weight="semibold">{title}</Text>
         {description !== undefined && <Text size={200} className="text-fui-fg2">{description}</Text>}
