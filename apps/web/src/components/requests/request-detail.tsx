@@ -7,7 +7,7 @@ import {
 } from '@fluentui/react-icons';
 import Prism from 'prismjs';
 import { useMemo, useState } from 'react';
-import type { PropsWithChildren } from 'react';
+import type { PropsWithChildren, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { contentTypeOf, EMPTY_BODY, renderBody, type RenderedBody } from './body-render';
@@ -63,8 +63,6 @@ const useStyles = makeStyles({
   headerRow: { borderBottom: '1px solid var(--colorNeutralStroke3)' },
   headerName: { color: 'var(--colorNeutralForeground3)', fontWeight: 'var(--fontWeightRegular)', padding: '7px 14px 7px 16px', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'nowrap' },
   headerValue: { color: 'var(--colorNeutralForeground1)', overflowWrap: 'anywhere', padding: '7px 16px 7px 0', verticalAlign: 'top', whiteSpace: 'normal' },
-  success: { color: 'var(--colorPaletteGreenForeground1)' },
-  warning: { color: 'var(--colorPaletteDarkOrangeForeground1)' },
   error: { color: 'var(--colorPaletteRedForeground1)' },
 });
 
@@ -133,7 +131,7 @@ function HeaderTable({ headers }: { headers: Array<[string, string]> }) {
   );
 }
 
-function SectionHeader({ title, detail, actions, copyText }: { title: string; detail?: React.ReactNode; actions?: React.ReactNode; copyText?: string }) {
+function DetailSectionHeader({ title, detail, actions, copyText }: { title: string; detail?: ReactNode; actions?: ReactNode; copyText?: string }) {
   const s = useStyles();
   return <header className={s.sectionHeader}><div className="flex items-center gap-3 min-w-0"><Text as="h3" size={400} weight="semibold" className={mergeClasses('m-0', s.sectionTitle)}>{title}</Text>{detail}</div>{(actions !== undefined || copyText !== undefined) && <div className="ml-auto flex items-center gap-1">{actions}{copyText !== undefined && <CopyButton text={copyText} />}</div>}</header>;
 }
@@ -185,24 +183,24 @@ export function RequestDetailPanel({ collected: loadedCollected, error, record, 
   return (
     <ScrollArea axes="vertical" className="h-full" contentClassName="min-h-full" noTabIndex>
       <section className={s.section}>
-        <SectionHeader title={t('dashboard.requests.request')} detail={<><HttpMethodBadge method={record.request.method} /><Text size={300} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
+        <DetailSectionHeader title={t('dashboard.requests.request')} detail={<><HttpMethodBadge method={record.request.method} /><Text size={300} className="font-mono">{record.request.path}</Text></>} copyText={requestHeadersCopy} />
         <HeaderSectionBody><HeaderTable key={`request-${record.meta.id}`} headers={record.request.headers} /></HeaderSectionBody>
       </section>
       <section className={s.section}>
-        <SectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
+        <DetailSectionHeader title={t('dashboard.requests.requestBody')} copyText={requestBody.text ? requestBody.copyText : undefined} />
         <SectionBody>
           {requestBody.decodeError && <MessageBar intent="warning" className="!m-3"><MessageBarBody>{t('dashboard.requests.decodeError', { error: requestBody.decodeError })}</MessageBarBody></MessageBar>}
           {requestBody.text ? <CodeView body={requestBody} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noRequestBody')}</EmptyStateLine>}
         </SectionBody>
       </section>
       <section className={s.section}>
-        <SectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
+        <DetailSectionHeader title={t('dashboard.requests.response')} detail={<><HttpStatusBadge color={severity === 'success' ? 'success' : severity === 'warning' ? 'warning' : 'danger'}>{record.response.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>{responseError && <Text size={200} className={s.error}>{responseError}</Text>}</>} copyText={record.response.headers.length ? responseHeadersCopy : undefined} />
         <HeaderSectionBody>
           {record.response.headers.length ? <HeaderTable key={`response-${record.meta.id}`} headers={record.response.headers} /> : <EmptyStateLine className="p-4">{t('dashboard.requests.noResponseHeaders')}</EmptyStateLine>}
         </HeaderSectionBody>
       </section>
       <section>
-        <SectionHeader
+        <DetailSectionHeader
           title={t('dashboard.requests.responseBody')}
           actions={record.response.body.type === 'stream' ? (
             <TabList selectedValue={streamView} onTabSelect={(_, data) => setStreamView(data.value as 'collected' | 'events')} size="small">
