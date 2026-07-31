@@ -749,7 +749,6 @@ const zhHansCN = {
             'title': '高级额度',
             'load': '加载',
             'refresh': '刷新',
-            'loading': '加载中…',
             'used': '已用 {{used}} / {{entitlement}} 次高级交互',
             'resets': '{{date}} 重置',
             'unmetered': '该账号未报告高级交互额度。',

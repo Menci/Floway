@@ -787,7 +787,6 @@ const en = {
             title: 'Premium quota',
             load: 'Load',
             refresh: 'Refresh',
-            loading: 'Loading…',
             used: '{{used}} of {{entitlement}} premium interactions used',
             resets: 'Resets {{date}}',
             unmetered: 'This account reports no premium interaction quota.',

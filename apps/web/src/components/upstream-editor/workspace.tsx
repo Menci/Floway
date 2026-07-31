@@ -1,6 +1,6 @@
 import {
   AddRegular,
-  ArrowSyncRegular,
+  ArrowClockwiseRegular,
   CheckmarkCircleRegular,
   CodeRegular,
   CopyRegular,
@@ -305,7 +305,7 @@ function ModelsWorkspace({ detailSection, discovered, error, loading, onRefresh,
         {!readOnly && <Button appearance="secondary" className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => { onYamlChange(serializeModels(manual)); onYamlErrorChange(null); onViewChange('yaml'); }}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
-          <Button disabled={loading || !autoFetchEnabled} icon={loading ? <Spinner size="tiny" /> : <ArrowSyncRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
+          <Button disabled={loading || !autoFetchEnabled} icon={loading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefresh}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
         </>}
       </div>
     </div>

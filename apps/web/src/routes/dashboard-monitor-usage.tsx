@@ -1,4 +1,4 @@
-import { ArrowClockwiseRegular, EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
+import { EyeOffRegular, EyeRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router';
@@ -10,6 +10,7 @@ import { getSessionToken } from '../auth/session';
 import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
+import { ResourceListActions } from '../components/ui/resource-list';
 import { buildSearchChart, buildTokenChart, dashboardBuckets, formatCount, formatMetricValue, formatProvider, summarizeUsage } from '../components/usage/chart-model';
 import { ChartSection } from '../components/usage/chart-section';
 import { SummaryMetrics } from '../components/usage/summary-metrics';
@@ -248,19 +249,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   return (
     <section className="dashboard-page">
       <DashboardPageHeader
-        actions={<>
-          <Tooltip
-            content={t('dashboard.usage.actions.refresh')}
-            relationship="label"
-          >
-            <Button
-              appearance="subtle"
-              disabled={loading}
-              icon={<ArrowClockwiseRegular />}
-              onClick={() => void refresh()}
-            />
-          </Tooltip>
-        </>}
+        actions={<ResourceListActions
+          appearance="subtle"
+          onRefresh={() => void refresh()}
+          refreshLabel={t('dashboard.usage.actions.refresh')}
+          refreshing={loading}
+        />}
         description={t('dashboard.pages.usage')}
         title={t('dashboard.nav.usage')}
       />

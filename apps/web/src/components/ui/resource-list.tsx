@@ -74,24 +74,30 @@ export function ResourceListPanel({ className, rowHeight = DEFAULT_ROW_HEIGHT, s
 }
 
 type ResourceListActionsProps = {
-  createLabel: string;
-  createTrailingIcon?: ReactNode;
+  appearance?: 'secondary' | 'subtle';
   disabled?: boolean;
   onRefresh: () => void;
   refreshLabel: string;
   refreshing?: boolean;
 } & (
-  | { onCreate: () => void; createTrigger?: never }
-  | { createTrigger: (button: ReactElement) => ReactNode; onCreate?: never }
+  | { createLabel: string; createTrailingIcon?: ReactNode; onCreate: () => void; createTrigger?: never }
+  | { createLabel: string; createTrailingIcon?: ReactNode; createTrigger: (button: ReactElement) => ReactNode; onCreate?: never }
+  | { createLabel?: never; createTrailingIcon?: never; onCreate?: never; createTrigger?: never }
 );
 
 // The page's own actions, which belong beside the page's own title rather than
 // above the table. A second heading over the list only named the page again,
 // and the count it carried is the list itself.
+//
+// A page that only reads — the monitor views, an upstream's quota card — has no
+// create action and still wants the refresh control this states: the spinner in
+// place of the glyph, the label that grows an ellipsis, and the live region
+// that says so to a screen reader. Such a page also sits among subtle controls
+// rather than beside a primary create button, so it picks the appearance.
 export function ResourceListActions(props: ResourceListActionsProps) {
-  const { createLabel, createTrailingIcon, disabled = false, onRefresh, refreshLabel, refreshing = false } = props;
+  const { appearance, createLabel, createTrailingIcon, disabled = false, onRefresh, refreshLabel, refreshing = false } = props;
   const busy = disabled || refreshing;
-  const createButton = (
+  const createButton = createLabel !== undefined && (
     <Button
       appearance="primary"
       disabled={busy}
@@ -107,13 +113,14 @@ export function ResourceListActions(props: ResourceListActionsProps) {
     <div aria-busy={refreshing} className="flex items-center gap-2 flex-none">
       <Tooltip content={refreshLabel} relationship="label">
         <Button
+          appearance={appearance}
           aria-label={refreshing ? `${refreshLabel}…` : refreshLabel}
           disabled={busy}
           icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
           onClick={onRefresh}
         />
       </Tooltip>
-      {props.createTrigger === undefined ? createButton : props.createTrigger(createButton)}
+      {createButton && (props.createTrigger === undefined ? createButton : props.createTrigger(createButton))}
       <span aria-live="polite" className="sr-only">{refreshing ? `${refreshLabel}…` : ''}</span>
     </div>
   );

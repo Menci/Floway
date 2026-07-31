@@ -1,5 +1,5 @@
 import { LineChart, type ChartProps, type CustomizedCalloutData } from '@fluentui/react-charts';
-import { ArrowClockwiseRegular, InfoRegular } from '@fluentui/react-icons';
+import { InfoRegular } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -36,6 +36,7 @@ import { ChoiceGroup } from '../components/ui/choice-group';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
+import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { fluentComponents } from '../fluent';
 import { localeForLanguage } from '../i18n';
@@ -207,9 +208,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
 
   return <section className="dashboard-page">
     <DashboardPageHeader
-      actions={<>
-        <Tooltip content={t('dashboard.performance.actions.refresh')} relationship="label"><Button appearance="subtle" disabled={loading} icon={<ArrowClockwiseRegular />} onClick={() => void refresh()} /></Tooltip>
-      </>}
+      actions={<ResourceListActions appearance="subtle" onRefresh={() => void refresh()} refreshLabel={t('dashboard.performance.actions.refresh')} refreshing={loading} />}
       description={t('dashboard.pages.performance')}
       title={t('dashboard.nav.performance')}
     />

@@ -1,4 +1,3 @@
-import { ArrowClockwiseRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,8 +5,9 @@ import { callApi } from '../../api/auth';
 import { api } from '../../api/client';
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
+import { ResourceListActions } from '../ui/resource-list';
 
-const { Button, MessageBar, MessageBarBody, ProgressBar, Text } = fluentComponents;
+const { MessageBar, MessageBarBody, ProgressBar, Text } = fluentComponents;
 
 // Copilot's own client derives premium-interaction usage from the on-demand
 // `copilot_internal/user` snapshot:
@@ -41,13 +41,12 @@ export const CopilotQuotaCard = ({ record }: { record: Extract<UpstreamRecord, {
   return <section className="grid gap-2">
     <div className="flex items-center justify-between gap-3">
       <Text as="h3" size={300} weight="semibold" className="m-0">{t('dashboard.upstreamEditor.copilot.quota.title')}</Text>
-      <Button appearance="subtle" disabled={loading} icon={<ArrowClockwiseRegular />} onClick={() => void load()}>
-        {loading
-          ? t('dashboard.upstreamEditor.copilot.quota.loading')
-          : quota
-            ? t('dashboard.upstreamEditor.copilot.quota.refresh')
-            : t('dashboard.upstreamEditor.copilot.quota.load')}
-      </Button>
+      <ResourceListActions
+        appearance="subtle"
+        onRefresh={() => void load()}
+        refreshLabel={t(`dashboard.upstreamEditor.copilot.quota.${quota ? 'refresh' : 'load'}`)}
+        refreshing={loading}
+      />
     </div>
 
     {premium && used !== null && usedFraction !== null && <div className="grid gap-1">
