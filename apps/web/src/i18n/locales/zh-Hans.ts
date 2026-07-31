@@ -1009,6 +1009,7 @@ const zhHansCN = {
         description:
             '配置 Anthropic Messages / Responses API 网络搜索工具调用的提供商。',
         providerLabel: '提供商',
+        providerHint: '响应网络搜索工具调用的服务',
         provider: {
           disabled: '禁用',
           tavily: 'Tavily',

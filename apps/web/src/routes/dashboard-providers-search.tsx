@@ -298,6 +298,7 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
           </Dropdown>
         </div>}
         defaultOpen={draft.provider !== 'disabled'}
+        description={t('dashboard.searchConfig.providerHint')}
         expandLabel={t('dashboard.searchConfig.providerLabel')}
         header={t('dashboard.searchConfig.providerLabel')}
         icon={<GlobeSearch24Regular />}

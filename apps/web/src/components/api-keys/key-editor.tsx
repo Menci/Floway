@@ -228,25 +228,30 @@ export function KeyDialog(props: KeyDialogProps) {
         control={control}
         name="dumpRetention"
         render={({ field }) => (
-          <RetentionField
-            description={t('dashboard.apiKeys.form.retentionHint')}
-            icon={<History24Regular />}
-            label={t('dashboard.apiKeys.form.retention')}
-            offLabel={t('dashboard.apiKeys.retention.offCapture')}
-            offValue={null}
-            presets={dumpRetentionPresets}
-            value={field.value}
-            onChange={field.onChange}
-          >
+          <>
+            <RetentionField
+              description={t('dashboard.apiKeys.form.retentionHint')}
+              icon={<History24Regular />}
+              label={t('dashboard.apiKeys.form.retention')}
+              offLabel={t('dashboard.apiKeys.retention.offCapture')}
+              offValue={null}
+              presets={dumpRetentionPresets}
+              value={field.value}
+              onChange={field.onChange}
+            >
+              {apiKey !== null && field.value !== null && field.value !== 'invalid'
+                ? <Link className="text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
+                    <OpenLinkLabel>{t('dashboard.apiKeys.form.viewCapturedRequests')}</OpenLinkLabel>
+                  </Link>
+                : undefined}
+            </RetentionField>
+            {/* Outside the row rather than behind its disclosure: this is what
+                saving is about to do, and a consequence the operator has not
+                opened the row to read is one they will not read at all. */}
             {retentionWarning !== null && (
               <MessageBar intent="warning"><MessageBarBody>{retentionWarning}</MessageBarBody></MessageBar>
             )}
-            {apiKey !== null && field.value !== null && field.value !== 'invalid' && (
-              <Link className="text-fui-brand1 no-underline hover:underline" to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
-                <OpenLinkLabel>{t('dashboard.apiKeys.form.viewCapturedRequests')}</OpenLinkLabel>
-              </Link>
-            )}
-          </RetentionField>
+          </>
         )}
       />
 

@@ -1051,6 +1051,7 @@ const en = {
         description:
             'Configure web search providers for Anthropic Messages / Responses API tool calling.',
         providerLabel: 'Provider',
+        providerHint: 'The service that answers web search tool calls',
         provider: {
           disabled: 'Disabled',
           tavily: 'Tavily',
