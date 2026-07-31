@@ -13,17 +13,15 @@ import type {
 } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ChoiceGroup } from '../ui/choice-group';
-import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
+import { Checkbox, Combobox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
 import { modelsField, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 const {
   Button,
-  Checkbox,
   Field,
   MessageBar,
   MessageBarBody,
   Option,
-  Switch,
   Text,
   makeStyles,
 } = fluentComponents;
@@ -114,10 +112,11 @@ export function ModelDetail({
           <ChoiceGroup
             ariaLabel={t('dashboard.upstreamEditor.models.source')}
             items={[
-              { value: 'auto', label: t('dashboard.upstreamEditor.models.auto'), disabled: readOnly || !row.hasAuto },
-              { value: 'manual', label: t('dashboard.upstreamEditor.models.manual'), disabled: readOnly },
+              { value: 'auto', label: t('dashboard.upstreamEditor.models.auto'), disabled: !row.hasAuto },
+              { value: 'manual', label: t('dashboard.upstreamEditor.models.manual') },
             ]}
             onChange={value => onSourceChange(value as 'auto' | 'manual')}
+            readOnly={readOnly}
             value={row.source}
           />
         </div>
@@ -143,7 +142,7 @@ export function ModelDetail({
               <Input className="!w-full" placeholder={t('dashboard.upstreamEditor.models.displayNamePlaceholder')} readOnly={!editable} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
             </Field>
             <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.kind')}>
-              <Dropdown disabled={!editable} selectedOptions={[row.config.kind]} value={modelKindLabel(row.config.kind)} onOptionSelect={(_, data) => data.optionValue !== undefined && setKind(data.optionValue as UpstreamModelConfig['kind'])}>
+              <Dropdown readOnly={!editable} selectedOptions={[row.config.kind]} value={modelKindLabel(row.config.kind)} onOptionSelect={(_, data) => data.optionValue !== undefined && setKind(data.optionValue as UpstreamModelConfig['kind'])}>
                 <Option value="chat">Chat</Option><Option value="embedding">Embedding</Option><Option value="image">Image</Option><Option value="transcription">Transcription</Option>
                 {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
                 {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
@@ -164,7 +163,7 @@ export function ModelDetail({
           <div className="grid grid-cols-2 gap-2 max-[680px]:grid-cols-1">
             {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
               checked={key in row.config.endpoints}
-              disabled={!editable}
+              readOnly={!editable}
               key={key}
               label={{ children: label, className: styles.endpointLabel }}
               onChange={(_, data) => {
@@ -177,7 +176,7 @@ export function ModelDetail({
         </ModelEditorSection>}
 
         {row.config.kind === 'rerank' && row.config.rerankTarget && <ModelEditorSection title={t('dashboard.upstreamEditor.models.rerankTarget')}>
-          <RerankTargetEditor disabled={!editable} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
+          <RerankTargetEditor readOnly={!editable} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
         </ModelEditorSection>}
 
         {row.config.kind !== 'image' && <ModelEditorSection title={t('dashboard.upstreamEditor.models.capabilities')}>
@@ -189,17 +188,17 @@ export function ModelDetail({
           {row.config.kind === 'chat' && <>
             <Switch
               checked={row.config.chat?.modalities?.input.includes('image') === true}
-              disabled={!editable}
+              readOnly={!editable}
               label={t('dashboard.upstreamEditor.models.imageInput')}
               onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined }) })}
             />
             <div className="grid gap-3">
               <Text weight="semibold">{t('dashboard.upstreamEditor.models.reasoning')}</Text>
               <div className="flex flex-wrap gap-4">
-                <Switch checked={effort !== undefined} disabled={!editable || mandatory} label={t('dashboard.upstreamEditor.models.effortLevels')} onChange={(_, data) => updateReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
-                <Switch checked={budget !== undefined} disabled={!editable || mandatory} label={t('dashboard.upstreamEditor.models.budgetTokens')} onChange={(_, data) => updateReasoning({ budget_tokens: data.checked ? {} : undefined })} />
-                <Switch checked={row.config.chat?.reasoning?.adaptive === true} disabled={!editable || mandatory} label={t('dashboard.upstreamEditor.models.adaptive')} onChange={(_, data) => updateReasoning({ adaptive: data.checked ? true : undefined })} />
-                <Switch checked={mandatory} disabled={!editable || controlledReasoning} label={t('dashboard.upstreamEditor.models.mandatory')} onChange={(_, data) => updateReasoning(data.checked ? { mandatory: true } : { mandatory: undefined })} />
+                <Switch checked={effort !== undefined} disabled={mandatory} readOnly={!editable} label={t('dashboard.upstreamEditor.models.effortLevels')} onChange={(_, data) => updateReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
+                <Switch checked={budget !== undefined} disabled={mandatory} readOnly={!editable} label={t('dashboard.upstreamEditor.models.budgetTokens')} onChange={(_, data) => updateReasoning({ budget_tokens: data.checked ? {} : undefined })} />
+                <Switch checked={row.config.chat?.reasoning?.adaptive === true} disabled={mandatory} readOnly={!editable} label={t('dashboard.upstreamEditor.models.adaptive')} onChange={(_, data) => updateReasoning({ adaptive: data.checked ? true : undefined })} />
+                <Switch checked={mandatory} disabled={controlledReasoning} readOnly={!editable} label={t('dashboard.upstreamEditor.models.mandatory')} onChange={(_, data) => updateReasoning(data.checked ? { mandatory: true } : { mandatory: undefined })} />
               </div>
               {effort && <EffortEditor editable={editable} effort={effort} onChange={next => updateReasoning({ effort: next })} t={t} />}
               {budget && <div className="grid grid-cols-2 gap-4 max-w-[420px]">
@@ -259,7 +258,7 @@ function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; ef
   return <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] gap-4 max-[760px]:grid-cols-1">
     <Field label={t('dashboard.upstreamEditor.models.supportedEfforts')}>
       <Combobox
-        disabled={!editable}
+        readOnly={!editable}
         freeform
         multiselect
         onChange={event => setQuery(event.target.value)}
@@ -284,7 +283,7 @@ function EffortEditor({ editable, effort, onChange, t }: { editable: boolean; ef
       </Combobox>
     </Field>
     <Field label={t('dashboard.upstreamEditor.models.defaultEffort')}>
-      <Dropdown disabled={!editable || supported.length === 0} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && onChange({ ...effort, default: data.optionValue })}>
+      <Dropdown disabled={supported.length === 0} readOnly={!editable} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && onChange({ ...effort, default: data.optionValue })}>
         {supported.map(level => <Option key={level} value={level}>{level}</Option>)}
       </Dropdown>
     </Field>

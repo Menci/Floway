@@ -7,13 +7,31 @@ import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnab
 import { fluentComponents } from '../../fluent';
 
 const {
+  Checkbox: FluentCheckbox,
   Combobox: FluentCombobox,
   Dropdown: FluentDropdown,
   Input: FluentInput,
+  Switch: FluentSwitch,
   Textarea: FluentTextarea,
   mergeClasses,
   useMergedRefs,
 } = fluentComponents;
+
+// Read-only, as distinct from disabled. A disabled control says the setting is
+// not available; a read-only one says the value is, and this operator is not
+// the one who sets it -- an upstream whose catalog the provider owns is the
+// case throughout. Fluent has it for a text field, where it reads exactly
+// right: the field keeps its resting look, takes focus, and refuses the edit.
+// Nothing else it ships has it, and the two that are inputs cannot: HTML
+// ignores `readonly` on a checkbox outright.
+//
+// So it is built the same way for each: the control stays enabled and keeps
+// its own appearance, `aria-readonly` states the fact, and the change is
+// refused at the source. The list of a read-only combo box still opens, which
+// is the same bargain a read-only text field makes by still taking a caret.
+interface ReadOnlyProp {
+  readOnly?: boolean;
+}
 
 // Fluent sizes these controls with a minimum width, and the native input they
 // wrap contributes its own `min-width: auto`. That intrinsic floor propagates
@@ -131,11 +149,14 @@ export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentIn
   ),
 ) as typeof FluentInput;
 
-export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'listbox'> & ListWidthProp>(
-  ({ className, expandIcon, listWidth, positioning, ...props }, ref) => (
+export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof FluentCombobox>, 'listbox'> & ListWidthProp & ReadOnlyProp>(
+  ({ className, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
     <FluentCombobox
       {...props}
+      aria-readonly={readOnly === true ? true : undefined}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
+      input={{ readOnly, ...(typeof props.input === 'object' && props.input !== null ? props.input : {}) }}
+      onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth)}
       className={mergeClasses(className, MIN_WIDTH_CLASS)}
@@ -144,14 +165,46 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
   ),
 );
 
-export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'listbox'> & ListWidthProp>(
-  ({ className, expandIcon, listWidth, positioning, ...props }, ref) => (
+export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof FluentDropdown>, 'listbox'> & ListWidthProp & ReadOnlyProp>(
+  ({ className, expandIcon, listWidth, onOptionSelect, positioning, readOnly, ...props }, ref) => (
     <FluentDropdown
       {...props}
+      aria-readonly={readOnly === true ? true : undefined}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
+      onOptionSelect={readOnly === true ? undefined : onOptionSelect}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth)}
       className={mergeClasses(className, MIN_WIDTH_CLASS)}
+      ref={ref}
+    />
+  ),
+);
+
+// A checkbox and a switch are both a native checkbox, which HTML gives no
+// read-only behaviour at all: the attribute is defined for it and does nothing.
+// Cancelling the click is what refuses the change, since that is the default
+// action the toggle is.
+const refuseToggle = (event: React.MouseEvent<HTMLInputElement>) => event.preventDefault();
+
+export const Checkbox = forwardRef<HTMLInputElement, ComponentProps<typeof FluentCheckbox> & ReadOnlyProp>(
+  ({ input, onChange, readOnly, ...props }, ref) => (
+    <FluentCheckbox
+      {...props}
+      aria-readonly={readOnly === true ? true : undefined}
+      input={{ onClick: readOnly === true ? refuseToggle : undefined, ...(typeof input === 'object' && input !== null ? input : {}) }}
+      onChange={readOnly === true ? undefined : onChange}
+      ref={ref}
+    />
+  ),
+);
+
+export const Switch = forwardRef<HTMLInputElement, ComponentProps<typeof FluentSwitch> & ReadOnlyProp>(
+  ({ input, onChange, readOnly, ...props }, ref) => (
+    <FluentSwitch
+      {...props}
+      aria-readonly={readOnly === true ? true : undefined}
+      input={{ onClick: readOnly === true ? refuseToggle : undefined, ...(typeof input === 'object' && input !== null ? input : {}) }}
+      onChange={readOnly === true ? undefined : onChange}
       ref={ref}
     />
   ),

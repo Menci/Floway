@@ -100,7 +100,10 @@ export const withWinuiDrag = (components: FluentComponents): FluentComponents =>
       const element = event.currentTarget;
       const input = element.querySelector<HTMLInputElement>('.fui-Switch__input');
       const indicator = element.querySelector<HTMLElement>('.fui-Switch__indicator');
+      // A read-only switch refuses the click, so it has to refuse the drag as
+      // well -- the drag commits by issuing that same click.
       if (!input || !indicator || input.disabled || input.getAttribute('aria-disabled') === 'true') return;
+      if (element.getAttribute('aria-readonly') === 'true') return;
 
       // XAML measures the range as SwitchKnobBounds.ActualWidth minus
       // SwitchKnob.ActualWidth, and the knob's cell is half the track at every

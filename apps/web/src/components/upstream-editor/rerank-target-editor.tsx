@@ -18,8 +18,8 @@ const PROTOCOL_LABELS: Record<RerankProtocol, string> = {
   'dashscope-native': 'DashScope native',
 };
 
-export const RerankTargetEditor = ({ disabled, onChange, value }: {
-  disabled: boolean;
+export const RerankTargetEditor = ({ onChange, readOnly, value }: {
+  readOnly: boolean;
   onChange: (target: RerankTarget) => void;
   value: RerankTarget;
 }) => {
@@ -28,7 +28,7 @@ export const RerankTargetEditor = ({ disabled, onChange, value }: {
   return <div className="grid gap-3 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[560px]:grid-cols-1">
     <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.rerankProtocol')}>
       <Dropdown
-        disabled={disabled}
+        readOnly={readOnly}
         selectedOptions={[value.protocol]}
         value={PROTOCOL_LABELS[value.protocol]}
         onOptionSelect={(_, data) => data.optionValue !== undefined && onChange({ ...value, protocol: data.optionValue as RerankProtocol })}
@@ -42,7 +42,7 @@ export const RerankTargetEditor = ({ disabled, onChange, value }: {
     <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.rerankPath')} hint={t('dashboard.upstreamEditor.models.rerankPathHint')}>
       <Input
         className="!w-full font-mono"
-        disabled={disabled}
+        readOnly={readOnly}
         placeholder={DEFAULT_RERANK_PATHS[value.protocol]}
         value={value.path ?? ''}
         onChange={(_, data) => {
