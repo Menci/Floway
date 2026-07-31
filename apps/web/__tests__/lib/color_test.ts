@@ -242,6 +242,23 @@ describe('readableTone on a mid surface', () => {
     }
   });
 
+  it('is total: every hue against every grey surface yields a well-formed hex', () => {
+    // The search moves in two directions and gives up saturation in a loop, so
+    // the property worth holding is that no input escapes it malformed.
+    const hues: string[] = [];
+    for (let r = 0; r <= 255; r += 51) {
+      for (let g = 0; g <= 255; g += 51) {
+        for (let b = 0; b <= 255; b += 51) {
+          hues.push(`#${[r, g, b].map(n => n.toString(16).padStart(2, '0')).join('').toUpperCase()}`);
+        }
+      }
+    }
+    for (let level = 0; level <= 255; level += 15) {
+      const surface = `#${level.toString(16).padStart(2, '0').repeat(3).toUpperCase()}`;
+      for (const hue of hues) expect(readableTone(hue, surface)).toMatch(/^#[0-9A-F]{6}$/);
+    }
+  });
+
   it('moves toward whichever extreme clears the floor, not toward the darker one', () => {
     // Between luminance 0.183 and 0.5 white misses 4.5 and black clears it, so
     // a light-versus-dark test would search the direction that cannot arrive.
