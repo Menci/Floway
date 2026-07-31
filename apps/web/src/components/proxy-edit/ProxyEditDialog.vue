@@ -12,7 +12,7 @@ import { RouterLink } from 'vue-router';
 
 import { defaultsFor } from './proxy-form-defaults.ts';
 import ProxyConfigForm from './ProxyConfigForm.vue';
-import { callApi, useApi } from '../../api/client.ts';
+import { callApi, callApiNoContent, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
@@ -273,7 +273,7 @@ const remove = async () => {
   deleting.value = true;
   deleteError.value = null;
   try {
-    const { error } = await callApi(
+    const { error } = await callApiNoContent(
       () => api.api.proxies[':id'].$delete({ param: { id: props.record!.id } }),
     );
     if (error) {
