@@ -26,7 +26,7 @@ export type CredentialLookup =
   | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }
   | { kind: 'uuid-mismatch'; expectedAccountUuid: string };
 
-export const lookUpCredential = (record: ClaudeCodeRecord): CredentialLookup => {
+export const findCredential = (record: ClaudeCodeRecord): CredentialLookup => {
   const expectedAccountUuid = record.config.accounts[0].accountUuid;
   const match = record.state.accounts.find(account => account.accountUuid === expectedAccountUuid);
   return match ? { kind: 'present', credential: match } : { kind: 'uuid-mismatch', expectedAccountUuid };

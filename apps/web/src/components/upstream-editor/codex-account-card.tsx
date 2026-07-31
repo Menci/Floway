@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import { shortAccountId } from './account-id';
 import { accountStatus, type CodexRecord, findCredential, latestCredits, quotaEntries } from './codex-account';
-import { quotaBarColor } from './subscription-account-quota';
+import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime } from '../../lib/format-time';
 import { clampPercent, percentText } from '../../lib/percent';
@@ -13,13 +13,10 @@ import { ProviderIcon } from '../upstreams/provider-badge';
 
 const { Badge, ProgressBar, Text } = fluentComponents;
 
-const QUOTA_REFRESH_MS = 60_000;
-
 export function CodexAccountCard({ record }: { record: CodexRecord }) {
   const { t } = useTranslation();
-  // `ratelimited_until` expires on the wall clock rather than on any state
-  // change, so the badge has to re-evaluate on its own.
-  const now = useNow(QUOTA_REFRESH_MS);
+  // `ratelimited_until` runs out on its own, so the badge re-evaluates too.
+  const now = useNow(WALL_CLOCK_REFRESH_MS);
   const locale = useLocale();
   const account = record.config.accounts[0];
   const lookup = findCredential(record);
@@ -52,7 +49,7 @@ export function CodexAccountCard({ record }: { record: CodexRecord }) {
       <StatusBadge color={status.tone}>{statusLabel}</StatusBadge>
     </div>
 
-    {status.tone === 'danger' && 'detail' in status && status.detail && <Text size={200} className="text-fui-fg2">{status.detail}</Text>}
+    {status.tone === 'danger' && status.detail && <Text size={200} className="text-fui-fg2">{status.detail}</Text>}
 
     {entries.length === 0
       ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.noSnapshot')}</Text>

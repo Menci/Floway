@@ -6,13 +6,13 @@ import {
   accountStatus,
   actionableDisabledReason,
   type ClaudeCodeRecord,
+  findCredential,
   formatSubscription,
-  lookUpCredential,
   quotaWindows,
   rawEntries,
   readProbeSnapshot,
 } from './claude-code-account';
-import { quotaBarColor } from './subscription-account-quota';
+import { quotaBarColor, WALL_CLOCK_REFRESH_MS } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { clampPercent, percentText } from '../../lib/percent';
@@ -26,8 +26,6 @@ const {
   MessageBar, MessageBarBody, ProgressBar, Text,
 } = fluentComponents;
 
-const TOKEN_EXPIRY_REFRESH_MS = 60_000;
-
 export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
   onRefreshQuota: () => void;
   probing: boolean;
@@ -35,11 +33,10 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, record }: {
 }) {
   const { t } = useTranslation();
   const locale = useLocale();
-  // The access token expires on the wall clock rather than on any state
-  // change, so the countdown has to re-evaluate on its own.
-  const now = useNow(TOKEN_EXPIRY_REFRESH_MS);
+  // The access token expiry countdown re-evaluates on its own.
+  const now = useNow(WALL_CLOCK_REFRESH_MS);
   const account = record.config.accounts[0];
-  const lookup = lookUpCredential(record);
+  const lookup = findCredential(record);
   const credential = lookup.kind === 'present' ? lookup.credential : null;
   const quota = credential?.quotaSnapshot?.data ?? null;
   const probe = readProbeSnapshot(credential);

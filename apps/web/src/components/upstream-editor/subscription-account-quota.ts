@@ -11,6 +11,11 @@ export const quotaBarColor = (percent: number | null) => percent === null ? 'bra
 
 export const HEAVY_USAGE_THRESHOLD_PERCENT = 80;
 
+// A subscription card reads two things off the wall clock rather than off any
+// state change -- when the access token expires, and whether a rate limit has
+// run out -- so both cards re-render on the same minute tick.
+export const WALL_CLOCK_REFRESH_MS = 60_000;
+
 // An account is only as free as its most-consumed window, so the headline
 // takes the maximum rather than an average. No windows means nothing is known
 // about consumption, which is not the same reading as zero.

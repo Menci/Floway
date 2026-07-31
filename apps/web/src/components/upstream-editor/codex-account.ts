@@ -28,11 +28,11 @@ export interface QuotaEntry {
   windows: QuotaWindow[];
 }
 
-export type CodexCredentialLookup =
+export type CredentialLookup =
   | { kind: 'present'; credential: CodexAccountCredentialState }
   | { kind: 'account-id-mismatch'; expectedAccountId: string };
 
-export const findCredential = (record: CodexRecord): CodexCredentialLookup => {
+export const findCredential = (record: CodexRecord): CredentialLookup => {
   const expectedAccountId = record.config.accounts[0].chatgptAccountId;
   const credential = record.state.accounts.find(account => account.chatgptAccountId === expectedAccountId);
   return credential ? { kind: 'present', credential } : { kind: 'account-id-mismatch', expectedAccountId };
@@ -81,14 +81,15 @@ export const latestCredits = (quota: CodexQuotaSnapshotMap | null | undefined): 
   return newest;
 };
 
+// Every danger reason may name what went wrong, so the card reads one field
+// for the line under the badge rather than a field per reason.
 export type AccountStatus =
-  | { tone: 'danger'; reason: 'account-id-mismatch' }
-  | { tone: 'danger'; reason: 'session-terminated' | 'refresh-failed'; detail?: string }
-  | { tone: 'danger'; reason: 'rate-limited'; until: string }
+  | { tone: 'danger'; reason: 'account-id-mismatch' | 'session-terminated' | 'refresh-failed'; detail?: string }
+  | { tone: 'danger'; reason: 'rate-limited'; until: string; detail?: string }
   | { tone: 'warning'; reason: 'heavy'; percent: number }
   | { tone: 'success'; reason: 'active' };
 
-export const accountStatus = (lookup: CodexCredentialLookup, entries: QuotaEntry[]): AccountStatus => {
+export const accountStatus = (lookup: CredentialLookup, entries: QuotaEntry[]): AccountStatus => {
   if (lookup.kind === 'account-id-mismatch') return { tone: 'danger', reason: 'account-id-mismatch' };
   const { credential } = lookup;
   if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.state_message };

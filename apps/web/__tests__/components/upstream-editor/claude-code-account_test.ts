@@ -9,7 +9,7 @@ import {
   accountStatus,
   actionableDisabledReason,
   formatSubscription,
-  lookUpCredential,
+  findCredential,
   quotaWindows,
   rawEntries,
   readProbeSnapshot,
@@ -75,7 +75,7 @@ describe('claude code subscription label', () => {
 
 describe('credential lookup', () => {
   it('reports a mismatch rather than falling back to whatever account is stored', () => {
-    const lookup = lookUpCredential(record({ accounts: [credential({ accountUuid: 'someone-else' })] }));
+    const lookup = findCredential(record({ accounts: [credential({ accountUuid: 'someone-else' })] }));
     expect(lookup).toEqual({ kind: 'uuid-mismatch', expectedAccountUuid: ACCOUNT_UUID });
   });
 
@@ -153,24 +153,24 @@ describe('probe snapshot', () => {
 
 describe('account status', () => {
   it('treats a rejected plan window as exhausted', () => {
-    const lookup = lookUpCredential(record({ accounts: [credential({ quotaSnapshot: { fetchedAt: 1, data: quotaData({ status: 'rejected' }) } })] }));
+    const lookup = findCredential(record({ accounts: [credential({ quotaSnapshot: { fetchedAt: 1, data: quotaData({ status: 'rejected' }) } })] }));
     expect(accountStatus(lookup, [])).toMatchObject({ tone: 'danger', reason: 'exhausted' });
   });
 
   it('warns once any window crosses the heavy-usage threshold', () => {
-    const lookup = lookUpCredential(record({ accounts: [credential()] }));
+    const lookup = findCredential(record({ accounts: [credential()] }));
     const windows = quotaWindows(credential({ usageProbeSnapshot: { fetchedAt: 1, data: { five_hour: { utilization: 12 }, seven_day: { utilization: 81 } } } }));
     expect(accountStatus(lookup, windows)).toEqual({ tone: 'warning', reason: 'heavy', percent: 81 });
   });
 
   it('reports a terminated session ahead of any usage reading', () => {
-    const lookup = lookUpCredential(record({ accounts: [credential({ state: 'session_terminated', stateMessage: 'revoked' })] }));
+    const lookup = findCredential(record({ accounts: [credential({ state: 'session_terminated', stateMessage: 'revoked' })] }));
     expect(accountStatus(lookup, [{ key: 'fiveHour', percent: 99, resetAt: null, status: null, source: 'probe', fetchedAt: 1 }]))
       .toEqual({ tone: 'danger', reason: 'session-terminated', detail: 'revoked' });
   });
 
   it('stays active when nothing is wrong', () => {
-    const lookup = lookUpCredential(record({ accounts: [credential()] }));
+    const lookup = findCredential(record({ accounts: [credential()] }));
     expect(accountStatus(lookup, [])).toEqual({ tone: 'success', reason: 'active' });
   });
 });
