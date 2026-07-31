@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
-import { accountStatus, type CodexRecord, findCredential, latestCredits, quotaEntries, shortAccountId } from './codex-account';
+import { shortAccountId } from './account-id';
+import { accountStatus, type CodexRecord, findCredential, latestCredits, quotaEntries } from './codex-account';
 import { quotaBarColor } from './subscription-account-quota';
 import { fluentComponents } from '../../fluent';
 import { dateTime } from '../../lib/format-time';

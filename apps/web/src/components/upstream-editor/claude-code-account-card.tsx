@@ -1,6 +1,7 @@
 import { ArrowClockwiseRegular } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 
+import { shortAccountId } from './account-id';
 import {
   accountStatus,
   actionableDisabledReason,
@@ -45,7 +46,7 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
   const status = accountStatus(lookup, windows);
   const disabledReason = actionableDisabledReason(credential);
 
-  const accountUuidShort = `${account.accountUuid.slice(0, 8)}…${account.accountUuid.slice(-6)}`;
+  const accountUuidShort = shortAccountId(account.accountUuid);
   const subscription = formatSubscription(account.subscriptionType, account.rateLimitTier);
   const headerRawEntries = rawEntries(quota?.raw);
   const probeExtraEntries = rawEntries(probe?.extras);

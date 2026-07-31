@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CodexQuotaSnapshotMap, UpstreamRecord } from '../../../src/api/types';
-import { accountStatus, findCredential, latestCredits, quotaEntries, shortAccountId } from '../../../src/components/upstream-editor/codex-account';
+import { accountStatus, findCredential, latestCredits, quotaEntries } from '../../../src/components/upstream-editor/codex-account';
 
 type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
 
@@ -109,12 +109,5 @@ describe('codex account status', () => {
   it('marks a config/state account mismatch as dangerous', () => {
     expect(accountStatus({ kind: 'account-id-mismatch', expectedAccountId: ACCOUNT_ID }, []))
       .toEqual({ tone: 'danger', reason: 'account-id-mismatch' });
-  });
-});
-
-describe('codex account id', () => {
-  it('elides only ids long enough to need it', () => {
-    expect(shortAccountId('short-id')).toBe('short-id');
-    expect(shortAccountId(ACCOUNT_ID)).toBe('acct_012…abcdef');
   });
 });

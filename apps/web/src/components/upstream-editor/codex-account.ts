@@ -102,5 +102,3 @@ export const accountStatus = (lookup: CodexCredentialLookup, entries: QuotaEntry
   if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PERCENT) return { tone: 'warning', reason: 'heavy', percent: Math.round(heaviest) };
   return { tone: 'success', reason: 'active' };
 };
-
-export const shortAccountId = (id: string): string => id.length <= 18 ? id : `${id.slice(0, 8)}…${id.slice(-6)}`;
