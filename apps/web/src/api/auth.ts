@@ -4,6 +4,7 @@ import {
   invalidateSession,
 } from '../auth/session';
 import { errorMessage } from '../lib/error-message';
+import { errorMessageFromPayload } from '../lib/error-payload';
 
 export interface AuthUser {
   id: number;
@@ -85,7 +86,7 @@ const requestResponse = async (
     return {
       error: {
         status: response.status,
-        message: errorMessageFromBody(body) ?? `HTTP ${response.status}`,
+        message: errorMessageFromPayload(body) ?? `HTTP ${response.status}`,
         raw: body,
       },
     };
@@ -122,20 +123,4 @@ export const callApi = <TResponse extends Response>(
 export const callApiNoContent = async (fn: () => Promise<Response>): Promise<ApiResult<void>> => {
   const { error } = await requestResponse(fn);
   return error ? { error } : { data: undefined };
-};
-
-const errorMessageFromBody = (body: unknown): string | null => {
-  if (!body || typeof body !== 'object') return null;
-
-  const record = body as Record<string, unknown>;
-  if (typeof record.error === 'string') return record.error;
-  if (
-    record.error &&
-    typeof record.error === 'object' &&
-    typeof (record.error as Record<string, unknown>).message === 'string'
-  ) {
-    return (record.error as { message: string }).message;
-  }
-
-  return null;
 };

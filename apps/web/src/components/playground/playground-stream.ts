@@ -1,4 +1,5 @@
 import type { PlaygroundApi, PlaygroundMessage } from './playground-logic';
+import { errorMessageFromPayload } from '../../lib/error-payload';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -73,18 +74,8 @@ const textDelta = (api: PlaygroundApi, event: unknown): string => {
   return responsesEvent.type === 'response.output_text.delta' ? responsesEvent.delta : '';
 };
 
-const errorMessage = (payload: unknown): string | null => {
-  if (!payload || typeof payload !== 'object') return null;
-  const error = (payload as { error?: unknown }).error;
-  if (typeof error === 'string') return error;
-  if (error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string') {
-    return (error as { message: string }).message;
-  }
-  return null;
-};
-
 const streamFailureMessage = (api: PlaygroundApi, payload: unknown): string | null => {
-  const direct = errorMessage(payload);
+  const direct = errorMessageFromPayload(payload);
   if (direct !== null || api !== 'responses' || !payload || typeof payload !== 'object') return direct;
   const event = payload as ResponsesStreamEvent;
   if (event.type !== 'response.failed') return null;
@@ -116,7 +107,7 @@ export const streamPlaygroundText = async function* (request: PlaygroundRequest)
     } catch {
       throw new Error(raw || `HTTP ${response.status}`);
     }
-    throw new Error(errorMessage(parsed) ?? (raw || `HTTP ${response.status}`));
+    throw new Error(errorMessageFromPayload(parsed) ?? (raw || `HTTP ${response.status}`));
   }
 
   for await (const frame of parseSSEStream(response.body, { signal })) {
