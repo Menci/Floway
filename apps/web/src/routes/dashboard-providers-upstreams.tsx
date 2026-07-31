@@ -7,7 +7,7 @@ import {
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, redirect, useLocation, useNavigate } from 'react-router';
 
@@ -23,6 +23,7 @@ import type {
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
+import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { ResourceListActions, ResourceListEmptyState, ResourceListPanel } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
@@ -50,12 +51,8 @@ const {
   TableHeaderCell,
   TableRow,
   Text,
-  Toast,
-  Toaster,
-  ToastTitle,
   Tooltip,
   makeStyles,
-  useToastController,
 } = fluentComponents;
 
 interface UpstreamsPageData {
@@ -99,14 +96,13 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const { user } = useDashboardOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
-  const toasterId = useId();
-  const mutationToastId = useId();
-  const { dismissToast, dispatchToast } = useToastController(toasterId);
+  const toasts = useOutcomeToasts();
   const [data, setData] = useState(loaderData);
   const [pageError, setPageError] = useState(loaderData.loadError);
   const [mutation, setMutation] = useState<Mutation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UpstreamRecord | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const busy = mutation !== null;
 
@@ -114,30 +110,16 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     const search = new URLSearchParams(location.search);
     if (search.get('missing') !== '1') return;
 
-    dispatchToast(
-      <Toast>
-        <ToastTitle>{t('dashboard.upstreams.toast.missing')}</ToastTitle>
-      </Toast>,
-      { intent: 'warning' },
-    );
+    toasts.succeed(t('dashboard.upstreams.toast.missing'));
     void navigate(location.pathname, { replace: true });
-  }, [dispatchToast, location.pathname, location.search, navigate, t]);
+  }, [location.pathname, location.search, navigate, t, toasts]);
 
+  const mutationKind = mutation?.kind ?? null;
   useEffect(() => {
-    if (!mutation) {
-      dismissToast(mutationToastId);
-      return;
-    }
-
-    dispatchToast(
-      <Toast>
-        <ToastTitle media={<Spinner size="tiny" />}>
-          {t(`dashboard.upstreams.busy.${mutation.kind}`)}
-        </ToastTitle>
-      </Toast>,
-      { toastId: mutationToastId, timeout: -1 },
-    );
-  }, [dismissToast, dispatchToast, mutation, mutationToastId, t]);
+    if (!mutationKind) return;
+    const handle = toasts.start(t(`dashboard.upstreams.busy.${mutationKind}`));
+    return () => handle.settle();
+  }, [mutationKind, t, toasts]);
 
   const reload = async (): Promise<UpstreamsPageData> => {
     const next = await loadUpstreamsPageData();
@@ -213,25 +195,18 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   const deleteUpstream = async (record: UpstreamRecord) => {
     setMutation({ kind: 'delete', id: record.id });
-    setPageError(null);
+    setDeleteError(null);
     const result = await callApi(() =>
       api.api.upstreams[':id'].$delete({ param: { id: record.id } }));
     if (result.error) {
-      setPageError(t('dashboard.upstreams.errors.delete', { message: result.error.message }));
+      setDeleteError(t('dashboard.upstreams.errors.delete', { message: result.error.message }));
       setMutation(null);
       return;
     }
     setDeleteOpen(false);
     await reload();
     setMutation(null);
-    dispatchToast(
-      <Toast>
-        <ToastTitle>
-          {t('dashboard.upstreams.toast.deleted', { name: record.name })}
-        </ToastTitle>
-      </Toast>,
-      { intent: 'success' },
-    );
+    toasts.succeed(t('dashboard.upstreams.toast.deleted', { name: record.name }));
   };
 
   if (!user.isAdmin) {
@@ -240,8 +215,6 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   return (
     <div className="dashboard-page">
-      <Toaster toasterId={toasterId} position="top-end" />
-
       <DashboardPageHeader
         actions={<ResourceListActions
           createLabel={t('dashboard.upstreams.actions.create')}
@@ -317,6 +290,8 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
             : t('dashboard.upstreams.actions.delete')
         }
         busy={mutation?.kind === 'delete'}
+        error={deleteError}
+        onDismissError={() => setDeleteError(null)}
         message={t('dashboard.upstreams.delete.message', { name: deleteTarget.name })}
         onConfirm={() => {
           if (!busy) void deleteUpstream(deleteTarget);
