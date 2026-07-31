@@ -13,6 +13,10 @@ const getTerminalEventName = (response: ResponsesResult): 'response.failed' | 'r
   case 'cancelled':
     throw new TypeError(`Cannot expand nonterminal Responses status '${response.status}' into terminal events`);
   }
+  // Unreachable by the type, reachable by a value cast into it without a
+  // `status`: falling out of the switch instead minted a terminal frame typed
+  // `undefined`, which no consumer recognizes as terminal.
+  throw new TypeError(`Responses result states no terminal status (got ${JSON.stringify(response.status)})`);
 };
 
 const responsesStartSnapshot = (response: ResponsesResult): ResponsesResult => {
@@ -317,7 +321,12 @@ const responsesOutputItemEvents = (item: ResponsesOutputItem, outputIndex: numbe
 // compaction blob is opaque; expanding them as assistant-message content
 // would mint mid-stream `output_text.delta` events that would not match the
 // item shape.
-export const responsesResultToEvents = (response: ResponsesResult, options?: { genericOutputItems?: boolean }): EventFrame<ResponsesStreamEvent>[] => {
+// `terminal` lets a caller state the terminal event instead of having it read
+// off `status`.
+export const responsesResultToEvents = (
+  response: ResponsesResult,
+  options?: { genericOutputItems?: boolean; terminal?: 'response.completed' | 'response.incomplete' | 'response.failed' },
+): EventFrame<ResponsesStreamEvent>[] => {
   const started = responsesStartSnapshot(response);
   const outputEvents = options?.genericOutputItems
     ? response.output.flatMap(responsesGenericOutputItemEvents)
@@ -326,7 +335,7 @@ export const responsesResultToEvents = (response: ResponsesResult, options?: { g
     { type: 'response.created', response: started },
     { type: 'response.in_progress', response: started },
     ...outputEvents,
-    { type: getTerminalEventName(response), response },
+    { type: options?.terminal ?? getTerminalEventName(response), response },
   ];
 
   return events.map((event, sequenceNumber) => eventFrame({ ...event, sequence_number: sequenceNumber }));

@@ -58,7 +58,7 @@ import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { syntheticEventsFromResult } from '../items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectResponsesProtocolEventsToResult, createRandomResponsesItemId, type CanonicalResponsesPayload, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { collectResponsesProtocolEventsToResult, createRandomResponsesItemId, type CanonicalResponsesPayload, type ResponsesInputItem, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
@@ -184,11 +184,17 @@ export const expandShimCompactionItems = (payload: CanonicalResponsesPayload): C
 
 type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
 
-// Extracts the summary text from the upstream's response to the
-// SUMMARIZATION_PROMPT.
-const extractTextFromResult = (result: ResponsesResult): string => {
+// The spec makes the item lifecycle the authority and requires nothing of the
+// terminal's `output`; a Codex upstream states an `output` that omits the
+// assistant message it just closed. A turn that closed nothing falls back to
+// the terminal, as the client-facing egress does.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L237
+const summaryTextFrom = (closed: Map<number, ResponsesOutputItem>, stated: readonly ResponsesOutputItem[]): string => {
+  const items = closed.size === 0
+    ? stated
+    : [...closed].sort(([left], [right]) => left - right).map(([, item]) => item);
   const parts: string[] = [];
-  for (const item of result.output) {
+  for (const item of items) {
     if (item.type !== 'message') continue;
     for (const block of item.content) {
       if (block.type === 'output_text') parts.push(block.text);
@@ -322,11 +328,28 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
     return upstreamResult;
   }
 
-  const collected = await collectResponsesProtocolEventsToResult(upstreamResult.events);
-  const summaryText = extractTextFromResult(collected);
+  const closedItems = new Map<number, ResponsesOutputItem>();
+  const observed = (async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    for await (const frame of upstreamResult.events) {
+      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
+        closedItems.set(frame.event.output_index, frame.event.item);
+      }
+      yield frame;
+    }
+  })();
+
+  const collected = await collectResponsesProtocolEventsToResult(observed);
+  const summaryText = summaryTextFrom(closedItems, collected.output);
+  // A compaction blob is the whole of what the next turn inherits, so an empty
+  // one silently discards the conversation.
+  if (summaryText.length === 0) {
+    throw new Error('Responses compact shim: the summarization turn closed no assistant text to summarize');
+  }
   const cmpId = createRandomResponsesItemId('compaction');
   const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
 
+  // A real generate turn backs this envelope, so its own `incomplete` or
+  // `failed` status must reach the terminal event.
   return {
     ...upstreamResult,
     events: syntheticEventsFromResult(synthesized),

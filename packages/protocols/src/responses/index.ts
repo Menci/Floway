@@ -1359,6 +1359,7 @@ export const responsesResultFromStreamEvent = (event: ResponsesStreamEvent): Res
 
 export {
   type CanonicalResponsesCompactPayload,
+  type ResponsesCompactionResult,
   type ResponsesCompactPayload,
   toCompactPayloadShape,
 } from './compact.ts';

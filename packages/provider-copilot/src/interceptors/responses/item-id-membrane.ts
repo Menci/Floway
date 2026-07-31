@@ -1,7 +1,7 @@
 import { unwrapCopilotItemId, wrapCopilotItemId } from './item-id-carrier.ts';
 import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesInputItem, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // OpenAI's published examples establish these item-specific prefixes. Keeping
 // the Copilot output inventory closed prevents a new upstream item kind from
@@ -260,7 +260,7 @@ const normalizeFrames = async function* (
   }
 };
 
-const normalizeCompactionResult = (response: ResponsesResult): ResponsesResult => ({
+const normalizeCompactionResult = (response: ResponsesCompactionResult): ResponsesCompactionResult => ({
   ...response,
   output: response.output.map(item => {
     if (item.type !== 'compaction') return item;
