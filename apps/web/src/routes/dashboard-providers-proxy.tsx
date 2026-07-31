@@ -84,9 +84,9 @@ const proxyDialogDraft = (record: ProxyRecord | null) => {
   };
 };
 
-function ProxyDialog({ backoffs, onDismiss, open, onSaved, record }: {
+function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   backoffs: BackoffRow[];
-  onDismiss: () => void;
+  onOpenChange: (open: boolean) => void;
   open: boolean;
   onSaved: () => Promise<void>;
   record: ProxyRecord | null;
@@ -159,10 +159,10 @@ function ProxyDialog({ backoffs, onDismiss, open, onSaved, record }: {
       setSaving(false);
       return;
     }
-    onDismiss();
+    onOpenChange(false);
     handle.succeed(t('dashboard.proxy.actions.saveSuccess'));
     await onSaved();
-  }, [config.host, config.port, dialTimeout, editingId, formName, onDismiss, onSaved, t, toasts, urlError, urlInput]);
+  }, [config.host, config.port, dialTimeout, editingId, formName, onOpenChange, onSaved, t, toasts, urlError, urlInput]);
   const handleTest = useCallback(async () => {
     setTesting(true);
     setTestResult(null);
@@ -180,12 +180,12 @@ function ProxyDialog({ backoffs, onDismiss, open, onSaved, record }: {
   return <DialogShell
     open={open}
     actions={<DialogActions>
-      <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={onDismiss} type="button">{t('common.cancel')}</Button>
+      <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={() => onOpenChange(false)} type="button">{t('common.cancel')}</Button>
       <Button className="!whitespace-nowrap" disabled={!canTest || saving || testing} icon={testing ? <Spinner size="tiny" /> : undefined} onClick={() => void handleTest()} type="button">{testing ? t('dashboard.proxy.actions.testing') : t('dashboard.proxy.actions.test')}</Button>
       <Button appearance="primary" className="!whitespace-nowrap" disabled={saving || testing} icon={saving ? <Spinner size="tiny" /> : undefined} type="submit">{saving ? t('dashboard.proxy.actions.saving') : t('dashboard.proxy.actions.save')}</Button>
     </DialogActions>}
     onOpenChange={(_, data) => {
-      if (!data.open && !saving && !testing && !draftDirty) onDismiss();
+      if (!data.open && !saving && !testing && !draftDirty) onOpenChange(false);
     }}
     onSubmit={() => void handleSave()}
     title={<DialogTitle>{editingId === null ? t('dashboard.proxy.addTitle') : t('dashboard.proxy.editTitle')}</DialogTitle>}
@@ -303,7 +303,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
         open={editorDialog.isOpen}
         backoffs={backoffs}
         key={editorDialog.invocation.key}
-        onDismiss={editorDialog.close}
+        onOpenChange={open => { if (!open) editorDialog.close(); }}
         onSaved={refresh}
         record={editorDialog.invocation.value}
       />}
