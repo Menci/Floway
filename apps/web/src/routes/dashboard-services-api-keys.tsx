@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { redirect, useOutletContext } from 'react-router';
+import { redirect } from 'react-router';
 
-import type { DashboardOutletContext } from './dashboard';
+import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ApiKey } from '../api/types';
@@ -58,7 +58,7 @@ export function meta({}: Route.MetaArgs) { return [{ title: 'API Keys | Floway' 
 
 export default function DashboardServicesApiKeys({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const { user } = useOutletContext<DashboardOutletContext>();
+  const { user } = useDashboardOutletContext();
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [data, setData] = useState<ApiKeysPageData>(loaderData);
   const [selectedKeyId, setSelectedKeyId] = useState(loaderData.selectedKeyId);

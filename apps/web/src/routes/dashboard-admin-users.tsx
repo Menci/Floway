@@ -8,10 +8,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { redirect, useOutletContext } from 'react-router';
+import { redirect } from 'react-router';
 import { z } from 'zod';
 
-import type { DashboardOutletContext } from './dashboard';
+import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
@@ -91,7 +91,7 @@ export function meta({}: Route.MetaArgs) {
 
 export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const { user: actor } = useOutletContext<DashboardOutletContext>();
+  const { user: actor } = useDashboardOutletContext();
   const refreshAuth = useAuthStore(state => state.refresh);
   const toasts = useOutcomeToasts();
   const [data, setData] = useState<UsersPageData>(loaderData);
