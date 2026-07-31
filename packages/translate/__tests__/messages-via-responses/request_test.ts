@@ -78,6 +78,28 @@ test('buildTargetRequest recovers an empty-front packed signature as id-only rea
   });
 });
 
+test('buildTargetRequest omits tool_choice when Messages omits it', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hello' }],
+    tools: [{ name: 'lookup', input_schema: { type: 'object' } }],
+  });
+
+  assertFalse('tool_choice' in result);
+});
+
+test('buildTargetRequest omits tool_choice when Messages carries no client tools to apply it to', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hello' }],
+    tool_choice: { type: 'any' },
+  });
+
+  assertFalse('tool_choice' in result);
+});
+
 test('buildTargetRequest drops filtered-native tool_choice and rewrites assistant native web-search history as function-call history', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
@@ -112,7 +134,7 @@ test('buildTargetRequest drops filtered-native tool_choice and rewrites assistan
   });
 
   assertEquals(result.tools, null);
-  assertEquals(result.tool_choice, 'auto');
+  assertEquals(result.tool_choice, undefined);
   assertEquals(result.input, [
     {
       type: 'function_call',

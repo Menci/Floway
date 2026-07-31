@@ -192,8 +192,15 @@ const translateTools = (tools: MessagesClientTool[] | undefined): ResponsesTool[
   }));
 };
 
-const translateToolChoice = (toolChoice: MessagesPayload['tool_choice'], tools?: MessagesClientTool[]): ResponsesToolChoice => {
-  if (!toolChoice || !tools || tools.length === 0) return 'auto';
+// Responses upstreams disagree on an orphaned `tool_choice` — one sent without
+// tools: OpenAI-backed models ignore it, while xAI-backed ones reject the
+// request with `invalid-argument: A tool_choice was set on the request but no
+// tools were specified`. Other gateways hit the same wall on both the native
+// Responses path and the Responses → Chat Completions path:
+// https://github.com/Wei-Shaw/sub2api/issues/4819
+// https://github.com/jlcodes99/cockpit-tools/issues/1727
+const translateToolChoice = (toolChoice: MessagesPayload['tool_choice'], tools?: MessagesClientTool[]): ResponsesToolChoice | undefined => {
+  if (!toolChoice || !tools || tools.length === 0) return undefined;
 
   const toolNames = new Set(tools.map(tool => tool.name));
 
@@ -203,11 +210,9 @@ const translateToolChoice = (toolChoice: MessagesPayload['tool_choice'], tools?:
   case 'any':
     return 'required';
   case 'tool':
-    return toolChoice.name && toolNames.has(toolChoice.name) ? { type: 'function', name: toolChoice.name } : 'auto';
+    return toolChoice.name && toolNames.has(toolChoice.name) ? { type: 'function', name: toolChoice.name } : undefined;
   case 'none':
     return 'none';
-  default:
-    return 'auto';
   }
 };
 
@@ -223,6 +228,7 @@ export const buildTargetRequest = (payload: MessagesPayload): CanonicalResponses
   const text = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;
 
   const serviceTier = openAIServiceTierFromMessages(payload);
+  const toolChoice = translateToolChoice(payload.tool_choice, clientTools);
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or
@@ -237,7 +243,7 @@ export const buildTargetRequest = (payload: MessagesPayload): CanonicalResponses
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),
     max_output_tokens: payload.max_tokens,
     ...(payload.tools !== undefined ? { tools: translateTools(clientTools) } : {}),
-    tool_choice: translateToolChoice(payload.tool_choice, clientTools),
+    ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
     ...(payload.metadata ? { metadata: { ...payload.metadata } } : {}),
     stream: true,
     ...(reasoning ? { reasoning } : {}),
