@@ -58,7 +58,6 @@ const {
   Field,
   Option,
   OverlayDrawer,
-  Text,
   makeStyles,
   tokens,
 } = fluentComponents;
