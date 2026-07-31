@@ -1,4 +1,3 @@
-
 import type { InferRequestType } from 'hono/client';
 
 import { callApi } from '../../api/auth';
@@ -14,7 +13,6 @@ import type {
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
-import { useAuthStore } from '../../stores/auth-store';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];
@@ -63,10 +61,6 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
   'claude-code': 'Claude Code',
   ollama: 'Ollama',
 };
-
-export async function requireAdmin() {
-  return (await useAuthStore.getState().initialize())?.isAdmin === true;
-}
 
 export async function loadEditorAux(): Promise<EditorAuxData> {
   const [proxies, backoffs, runtime, upstreams] = await Promise.all([

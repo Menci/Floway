@@ -4,12 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-model-aliases';
-import { useDashboardOutletContext } from './dashboard';
 import { callApi, callApiNoContent } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, ModelAlias } from '../api/types';
+import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
-import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { AliasDialog } from '../components/model-alias/alias-dialog';
 import { mergeModelAliasesPageData } from '../components/model-alias/load-data';
 import { computeAliasWarnings } from '../components/model-alias/warnings';
@@ -48,6 +47,7 @@ const loadPageData = async (current: LoaderData['catalog']): Promise<LoaderData>
 
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
+  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   return await loadPageData({ aliases: [], models: null });
 }
 
@@ -57,7 +57,6 @@ export function meta({}: Route.MetaArgs) {
 
 export default function DashboardProvidersModelAliases({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const { user } = useDashboardOutletContext();
   const toasts = useOutcomeToasts();
   const [catalog, setCatalog] = useState(loaderData.catalog);
   const { aliases, models } = catalog;
@@ -86,17 +85,16 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
   const { refresh, refreshing } = useRefresh(load);
 
   const header = <DashboardPageHeader
-    actions={user.isAdmin ? <ResourceListActions
+    actions={<ResourceListActions
       createLabel={t('dashboard.modelAliases.actions.create')}
       onCreate={() => editorDialog.open(null)}
       onRefresh={() => void refresh()}
       refreshLabel={t('dashboard.modelAliases.actions.refresh')}
       refreshing={refreshing}
-    /> : undefined}
+    />}
     description={t('dashboard.modelAliases.description')}
     title={t('dashboard.modelAliases.heading')}
   />;
-  if (!user.isAdmin) return <section className="dashboard-page">{header}<AdminOnlyNotice /></section>;
 
   const deleteAlias = async (target: ModelAlias) => {
     setMutating(true);

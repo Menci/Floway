@@ -3,8 +3,9 @@ import { redirect, type ShouldRevalidateFunctionArgs } from 'react-router';
 import type { Route } from './+types/dashboard-providers-upstreams-edit';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
+import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
-import { loadEditorAux, loadInitialModelCatalog, requireAdmin } from '../components/upstream-editor/editor-data';
+import { loadEditorAux, loadInitialModelCatalog } from '../components/upstream-editor/editor-data';
 import { UpstreamEditorPage } from '../components/upstream-editor/upstream-editor-page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 

@@ -11,8 +11,8 @@ import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/typ
 import jinaIconUrl from '../assets/icons/jina-color.svg';
 import microsoftIconUrl from '../assets/icons/microsoft-color.svg';
 import tavilyIconUrl from '../assets/icons/tavily-color.svg';
+import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
-import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../components/ui/layout';
@@ -26,7 +26,6 @@ import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card
 import { StatusBadge } from '../components/ui/status-badge';
 import { fluentComponents } from '../fluent';
 import { errorMessage } from '../lib/error-message';
-import { useAuthStore } from '../stores/auth-store';
 
 type SearchConfigTestResult = InferResponseType<typeof api.api['search-config']['test']['$post'], 200>;
 
@@ -40,21 +39,16 @@ const {
   Tooltip,
 } = fluentComponents;
 
-interface AdminSearchPageLoaderData {
-  admin: true;
+interface SearchPageLoaderData {
   config: SearchConfig;
   upstreams: UpstreamRecord[];
   models: ControlPlaneModel[];
   error: string | null;
 }
 
-type SearchPageLoaderData = AdminSearchPageLoaderData | { admin: false };
-
 export async function clientLoader(): Promise<SearchPageLoaderData> {
   if (!getSessionToken()) throw redirect('/');
-  const user = await useAuthStore.getState().initialize();
-  if (!user) throw redirect('/');
-  if (!user.isAdmin) return { admin: false };
+  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   const [configResult, upstreamsResult, modelsResult] = await Promise.all([
     callApi(() => api.api['search-config'].$get()),
     callApi(() => api.api.upstreams.$get()),
@@ -62,7 +56,6 @@ export async function clientLoader(): Promise<SearchPageLoaderData> {
   ]);
   if (configResult.error) throw new Error(configResult.error.message);
   return {
-    admin: true,
     config: configResult.data,
     upstreams: upstreamsResult.data ?? [],
     models: modelsResult.data?.data ?? [],
@@ -139,22 +132,6 @@ function findProviderOption(
 }
 
 export default function DashboardProvidersSearch({ loaderData }: Route.ComponentProps) {
-  const { t } = useTranslation();
-  if (!loaderData.admin) {
-    return (
-      <section className="dashboard-page max-w-[960px]">
-        <DashboardPageHeader
-          description={t('dashboard.searchConfig.description')}
-          title={t('dashboard.searchConfig.heading')}
-        />
-        <AdminOnlyNotice />
-      </section>
-    );
-  }
-  return <AdminSearchPage loaderData={loaderData} />;
-}
-
-function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData }) {
   const { t } = useTranslation();
   const toasts = useOutcomeToasts();
   const [draft, setDraft] = useState<SearchConfig>(loaderData.config);

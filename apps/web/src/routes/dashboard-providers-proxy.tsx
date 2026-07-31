@@ -3,14 +3,13 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
-import { useDashboardOutletContext } from './dashboard';
 import { callApi, callApiNoContent } from '../api/auth';
 import { api } from '../api/client';
 import type { ProxyConflictBody, ProxyRecord, BackoffRow } from '../api/types';
-import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { fluentComponents } from '../fluent';
 import type { Route } from './+types/dashboard-providers-proxy';
+import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
 import { ProxyBackoffPanel } from '../components/proxy/proxy-backoff-panel';
 import { defaultsFor, isValidPort, parseDialTimeoutInput, parseProxyInput, type FormKind } from '../components/proxy/proxy-config';
@@ -51,6 +50,7 @@ const loadPageData = async (): Promise<LoaderData> => {
 
 export async function clientLoader(): Promise<LoaderData> {
   if (!getSessionToken()) throw redirect('/');
+  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   return await loadPageData();
 }
 export function meta({}: Route.MetaArgs) { return [{ title: 'Proxy | Floway' }]; }
@@ -211,7 +211,6 @@ function ProxyDialog({ backoffs, onDismiss, open, onSaved, record }: {
 
 export default function DashboardProvidersProxy({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const { user } = useDashboardOutletContext();
   const toasts = useOutcomeToasts();
 
   const [proxies, setProxies] = useState(loaderData.proxies);
@@ -272,15 +271,6 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     handle.succeed(t('dashboard.proxy.toast.delete.success', { name: target.name }));
     await refreshProxies();
   }, [deleteDialog, refreshProxies, t, toasts]);
-
-  if (!user.isAdmin) {
-    return (
-      <section className="dashboard-page">
-        <DashboardPageHeader description={t('dashboard.proxy.description')} title={t('dashboard.proxy.heading')} />
-        <AdminOnlyNotice />
-      </section>
-    );
-  }
 
   return (
     <section className="dashboard-page">

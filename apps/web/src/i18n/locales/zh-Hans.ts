@@ -91,9 +91,6 @@ const zhHansCN = {
         backupRestore: '导出或恢复 gateway 配置和控制平面数据',
         readonly: '当前是普通用户身份，此区域为只读',
         unavailable: '无法加载此视图',
-        adminOnly: '需要管理员权限',
-        adminOnlyDescription:
-            '该路由仅管理员可用，并且会对普通用户从侧边栏隐藏',
       },
       playground: {
         system: '自定义系统提示词',

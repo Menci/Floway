@@ -15,6 +15,7 @@ import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
+import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
 import type { Route } from './+types/dashboard-admin-users';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -98,11 +99,7 @@ const unloadedPageData: Pick<UsersPageData, 'users' | 'upstreams' | 'models'> = 
 export async function clientLoader(): Promise<UsersPageData> {
   if (!getSessionToken()) throw redirect('/');
 
-  const user = await useAuthStore.getState().initialize();
-  if (!user?.isAdmin) {
-    throw redirect('/dashboard/services/api-keys');
-  }
-
+  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   return await loadPageData(unloadedPageData);
 }
 

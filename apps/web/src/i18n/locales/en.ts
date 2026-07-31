@@ -100,9 +100,6 @@ const en = {
             'Export or restore gateway configuration and control plane data',
         readonly: 'Signed in as an operator. This area is read-only',
         unavailable: 'This view could not be loaded',
-        adminOnly: 'Administrator access required',
-        adminOnlyDescription:
-            'This route is reserved for admin users and is hidden from the sidebar for operators',
       },
       playground: {
         system: 'Custom system prompt',

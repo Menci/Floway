@@ -4,12 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-admin-backup-restore';
-import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type { BackupImportCounts } from '../api/types';
+import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
-import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { BACKUP_FILE_VERSION, parseBackupFile, type BackupFile, type BackupFileData } from '../components/backup-restore/backup-file';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -36,6 +35,7 @@ const {
 
 export async function clientLoader() {
   if (!getSessionToken()) throw redirect('/');
+  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   return null;
 }
 
@@ -149,7 +149,6 @@ function importedSummary(
 export default function DashboardAdminBackupRestore() {
   const { t } = useTranslation();
   const locale = useLocale();
-  const { user } = useDashboardOutletContext();
   const toasts = useOutcomeToasts();
 
   const [includePerformance, setIncludePerformance] = useState(false);
@@ -303,15 +302,6 @@ export default function DashboardAdminBackupRestore() {
   }, [confirmDialog, doImport, importMode, importParsedData]);
 
   const previewCounts = importParsedData ? countRecords(importParsedData.data) : null;
-
-  if (!user.isAdmin) {
-    return (
-      <section className="dashboard-page max-w-[960px]">
-        <DashboardPageHeader title={t('dashboard.backupRestore.heading')} />
-        <AdminOnlyNotice />
-      </section>
-    );
-  }
 
   return (
     <section className="dashboard-page max-w-[960px]">

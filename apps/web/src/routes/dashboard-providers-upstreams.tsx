@@ -7,10 +7,9 @@ import {
 } from '@fluentui/react-icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Navigate, redirect, useLocation, useNavigate } from 'react-router';
+import { Link, redirect, useLocation, useNavigate } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams';
-import { useDashboardOutletContext } from './dashboard';
 import { callApi } from '../api/auth';
 import { api } from '../api/client';
 import type {
@@ -18,6 +17,7 @@ import type {
   UpstreamProviderKind,
   UpstreamRecord,
 } from '../api/types';
+import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -83,6 +83,7 @@ const useStyles = makeStyles({
 
 export async function clientLoader(): Promise<UpstreamsPageData> {
   if (!getSessionToken()) throw redirect('/');
+  if (!(await requireAdmin())) throw redirect('/dashboard/services/api-keys');
   return await loadUpstreamsPageData();
 }
 
@@ -92,7 +93,6 @@ export function meta({}: Route.MetaArgs) {
 
 export default function DashboardProvidersUpstreams({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
-  const { user } = useDashboardOutletContext();
   const navigate = useNavigate();
   const location = useLocation();
   const toasts = useOutcomeToasts();
@@ -214,10 +214,6 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     setMutation(null);
     toasts.succeed(t('dashboard.upstreams.toast.deleted', { name: record.name }));
   };
-
-  if (!user.isAdmin) {
-    return <Navigate replace to="/dashboard/services/api-keys" />;
-  }
 
   return (
     <div className="dashboard-page">
