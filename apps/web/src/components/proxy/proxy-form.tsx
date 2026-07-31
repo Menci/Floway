@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, isValidPort, isValidUuid, orUndef, proxyUrlPlaceholder, type DialTimeoutResult } from './proxy-config';
+import { DEFAULT_DIAL_TIMEOUT_SECONDS, FORM_KIND_LABELS, KIND_OPTIONS, SS2022_METHOD_OPTIONS, SS_METHOD_OPTIONS, formKindFromConfig, orUndef, proxyUrlPlaceholder, type DialTimeoutResult, type ProxyDraftIssues } from './proxy-config';
 import { fluentComponents } from '../../fluent';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { SecretInput } from '../ui/secret-input';
@@ -28,13 +28,13 @@ export interface ProxyFormProps {
   dialTimeoutError: DialTimeoutResult['error'];
   dialTimeoutInput: string;
   formName: string;
+  issues: ProxyDraftIssues;
   onConfigChange: Dispatch<SetStateAction<ProxyConfig>>;
   onDialTimeoutChange: (value: string) => void;
   onKindChange: (_: unknown, data: { optionValue?: string }) => void;
   onNameChange: (value: string) => void;
   onPortChange: (value: string) => void;
   onUrlChange: (value: string) => void;
-  showValidation: boolean;
   urlError: string | null;
   urlInput: string;
 }
@@ -44,27 +44,27 @@ export function ProxyForm({
   dialTimeoutError,
   dialTimeoutInput,
   formName,
+  issues,
   onConfigChange: setConfig,
   onDialTimeoutChange,
   onKindChange,
   onNameChange,
   onPortChange,
   onUrlChange,
-  showValidation,
   urlError,
   urlInput,
 }: ProxyFormProps) {
   const { t } = useTranslation();
   const formKind = formKindFromConfig(config);
-  const nameInvalid = showValidation && !formName.trim();
-  const urlMessage = urlError ?? (showValidation && !urlInput.trim() ? t('dashboard.proxy.validation.urlRequired') : null);
-  const hostInvalid = showValidation && !config.host.trim();
-  const portInvalid = showValidation && !isValidPort(config.port);
-  const uuidNeeded = config.kind === 'vless-tcp' || config.kind === 'vless-ws' || config.kind === 'reality';
-  const uuidInvalid = showValidation && uuidNeeded && !isValidUuid((config as { uuid: string }).uuid);
+  // A parse failure is the URL field's own, immediate, and outranks the
+  // draft's "still empty" -- there is text in it, and what is wrong is the
+  // text.
+  const urlMessage = urlError ?? (issues.url ? t(issues.url) : null);
+  const message = (field: keyof ProxyDraftIssues) => issues[field] === undefined ? undefined : t(issues[field]);
+  const state = (field: keyof ProxyDraftIssues) => issues[field] === undefined ? undefined : 'error' as const;
   return (
     <div className="grid gap-4 min-w-0">
-      <Field label={t('dashboard.proxy.form.name')} validationMessage={nameInvalid ? t('dashboard.proxy.validation.nameRequired') : undefined} validationState={nameInvalid ? 'error' : undefined}>
+      <Field label={t('dashboard.proxy.form.name')} validationMessage={message('name')} validationState={state('name')}>
         <Input
           onChange={(_, d) => onNameChange(d.value)}
           placeholder={t('dashboard.proxy.form.namePlaceholder')}
@@ -102,8 +102,8 @@ export function ProxyForm({
       <div className="grid grid-cols-1 items-start gap-[12px] sm:grid-cols-[1fr_8rem]">
         <Field
           label={t('dashboard.proxy.form.host')}
-          validationMessage={hostInvalid ? t('dashboard.proxy.validation.hostRequired') : undefined}
-          validationState={hostInvalid ? 'error' : undefined}
+          validationMessage={message('host')}
+          validationState={state('host')}
         >
           <Input
             onChange={(_, d) => setConfig(prev => ({ ...prev, host: d.value } as ProxyConfig))}
@@ -113,8 +113,8 @@ export function ProxyForm({
         </Field>
         <Field
           label={t('dashboard.proxy.form.port')}
-          validationMessage={portInvalid ? t('dashboard.proxy.validation.portInvalid') : undefined}
-          validationState={portInvalid ? 'error' : undefined}
+          validationMessage={message('port')}
+          validationState={state('port')}
         >
           <Input
             inputMode="numeric"
@@ -200,12 +200,8 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.passwordLabel')}
-            validationMessage={showValidation && (config as ShadowsocksProxyConfig).password === '' ? t('dashboard.proxy.validation.required') : undefined}
-            validationState={
-              showValidation && (config as ShadowsocksProxyConfig).password === ''
-                ? 'error'
-                : undefined
-            }
+            validationMessage={message('secret')}
+            validationState={state('secret')}
           >
             <SecretInput
               onChange={(_, d) =>
@@ -244,12 +240,8 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.psk')}
-            validationMessage={showValidation && (config as Shadowsocks2022ProxyConfig).passwordBase64 === '' ? t('dashboard.proxy.validation.required') : undefined}
-            validationState={
-              showValidation && (config as Shadowsocks2022ProxyConfig).passwordBase64 === ''
-                ? 'error'
-                : undefined
-            }
+            validationMessage={message('secret')}
+            validationState={state('secret')}
           >
             <SecretInput
               onChange={(_, d) =>
@@ -270,12 +262,8 @@ export function ProxyForm({
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
             label={t('dashboard.proxy.form.passwordLabel')}
-            validationMessage={showValidation && (config as TrojanProxyConfig).password === '' ? t('dashboard.proxy.validation.required') : undefined}
-            validationState={
-              showValidation && (config as TrojanProxyConfig).password === ''
-                ? 'error'
-                : undefined
-            }
+            validationMessage={message('secret')}
+            validationState={state('secret')}
           >
             <SecretInput
               onChange={(_, d) =>
@@ -318,8 +306,8 @@ export function ProxyForm({
       {config.kind === 'vless-tcp' && (
         <Field
           label={t('dashboard.proxy.form.uuid')}
-          validationMessage={uuidInvalid ? t('dashboard.proxy.validation.uuidInvalid') : undefined}
-          validationState={uuidInvalid ? 'error' : undefined}
+          validationMessage={message('uuid')}
+          validationState={state('uuid')}
         >
           <Input
             onChange={(_, d) =>
@@ -338,8 +326,8 @@ export function ProxyForm({
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
             label={t('dashboard.proxy.form.uuid')}
-            validationMessage={uuidInvalid ? t('dashboard.proxy.validation.uuidInvalid') : undefined}
-            validationState={uuidInvalid ? 'error' : undefined}
+            validationMessage={message('uuid')}
+            validationState={state('uuid')}
           >
             <Input
               onChange={(_, d) =>
@@ -354,12 +342,8 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.wsPath')}
-            validationMessage={showValidation && (config as VlessWsTlsProxyConfig).path === '' ? t('dashboard.proxy.validation.required') : undefined}
-            validationState={
-              showValidation && (config as VlessWsTlsProxyConfig).path === ''
-                ? 'error'
-                : undefined
-            }
+            validationMessage={message('path')}
+            validationState={state('path')}
           >
             <Input
               onChange={(_, d) =>
@@ -391,8 +375,8 @@ export function ProxyForm({
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
             label={t('dashboard.proxy.form.uuid')}
-            validationMessage={uuidInvalid ? t('dashboard.proxy.validation.uuidInvalid') : undefined}
-            validationState={uuidInvalid ? 'error' : undefined}
+            validationMessage={message('uuid')}
+            validationState={state('uuid')}
           >
             <Input
               onChange={(_, d) =>
@@ -407,12 +391,8 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.serverName')}
-            validationMessage={showValidation && (config as RealityProxyConfig).serverName === '' ? t('dashboard.proxy.validation.required') : undefined}
-            validationState={
-              showValidation && (config as RealityProxyConfig).serverName === ''
-                ? 'error'
-                : undefined
-            }
+            validationMessage={message('serverName')}
+            validationState={state('serverName')}
           >
             <Input
               onChange={(_, d) =>
@@ -427,12 +407,8 @@ export function ProxyForm({
           </Field>
           <Field
             label={t('dashboard.proxy.form.publicKey')}
-            validationMessage={showValidation && (config as RealityProxyConfig).publicKey === '' ? t('dashboard.proxy.validation.required') : undefined}
-            validationState={
-              showValidation && (config as RealityProxyConfig).publicKey === ''
-                ? 'error'
-                : undefined
-            }
+            validationMessage={message('publicKey')}
+            validationState={state('publicKey')}
           >
             <Input
               onChange={(_, d) =>

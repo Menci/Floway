@@ -9,7 +9,7 @@ import type { ProxyConflictBody, ProxyRecord, BackoffRow } from '../api/types';
 import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
 import { ProxyBackoffPanel } from '../components/proxy/proxy-backoff-panel';
-import { defaultsFor, isValidPort, parseDialTimeoutInput, parseProxyInput, type FormKind } from '../components/proxy/proxy-config';
+import { defaultsFor, parseDialTimeoutInput, parseProxyInput, proxyDraftIssues, type FormKind } from '../components/proxy/proxy-config';
 import { ProxyForm, type ProxyTestResult } from '../components/proxy/proxy-form';
 import { ProxyList } from '../components/proxy/proxy-list';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
@@ -108,6 +108,10 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   const structuredUrl = config.host.trim() ? formatProxyUri({ ...config, name: formName.trim() }) : '';
   const urlInput = urlDraft ?? structuredUrl;
   const dialTimeout = parseDialTimeoutInput(dialTimeoutInput);
+  // Nothing is refused until the operator asks to save: every one of these has
+  // a field of its own to say so on, and a form that reddens as it is filled in
+  // says nothing the operator did not already know.
+  const issues = proxyDraftIssues({ config, name: formName, url: urlInput });
   const draftDirty = initialDraft !== proxyDraftSignature(formName, config, urlDraft, dialTimeoutInput);
   const clearDiagnostics = useCallback(() => {
     setSaveError(null);
@@ -143,13 +147,10 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
   const handleSave = useCallback(async () => {
     setShowValidation(true);
     setSaveError(null);
-    const trimmedName = formName.trim();
-    const builtUrl = urlInput.trim();
-    // Every one of these has a field of its own to say so on.
-    if (!trimmedName || !builtUrl || urlError || !config.host.trim() || !isValidPort(config.port) || dialTimeout.error) return;
+    if (Object.keys(issues).length > 0 || urlError !== null || dialTimeout.error !== null) return;
     setSaving(true);
-    const body = { name: trimmedName, url: builtUrl, dial_timeout_seconds: dialTimeout.value };
-    const handle = toasts.start(t('dashboard.proxy.toast.save.pending', { name: trimmedName }));
+    const body = { name: formName.trim(), url: urlInput.trim(), dial_timeout_seconds: dialTimeout.value };
+    const handle = toasts.start(t('dashboard.proxy.toast.save.pending', { name: body.name }));
     const result = editingId === null
       ? await callApi(() => api.api.proxies.$post({ json: body }))
       : await callApi(() => api.api.proxies[':id'].$patch({ param: { id: editingId }, json: body }));
@@ -162,7 +163,7 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     onOpenChange(false);
     handle.succeed(t('dashboard.proxy.actions.saveSuccess'));
     await onSaved();
-  }, [config.host, config.port, dialTimeout, editingId, formName, onOpenChange, onSaved, t, toasts, urlError, urlInput]);
+  }, [dialTimeout, editingId, formName, issues, onOpenChange, onSaved, t, toasts, urlError, urlInput]);
   const handleTest = useCallback(async () => {
     setTesting(true);
     setTestResult(null);
@@ -175,7 +176,11 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     setTestResult(result.error ? { ok: false, error: result.error.message } : result.data);
     setTesting(false);
   }, [dialTimeout, urlInput]);
-  const canTest = urlInput.trim() !== '' && urlError === null && dialTimeout.error === null && config.host.trim() !== '' && isValidPort(config.port);
+  // Testing asks a narrower question than saving: it dials, so it needs a
+  // reachable endpoint and a timeout to dial under, and nothing else the record
+  // would carry.
+  const canTest = issues.url === undefined && issues.host === undefined && issues.port === undefined
+    && urlError === null && dialTimeout.error === null;
 
   return <DialogShell
     open={open}
@@ -196,13 +201,13 @@ function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
       dialTimeoutError={dialTimeout.error}
       dialTimeoutInput={dialTimeoutInput}
       formName={formName}
+      issues={showValidation ? issues : {}}
       onConfigChange={updateStructuredConfig}
       onDialTimeoutChange={value => { clearDiagnostics(); setDialTimeoutInput(value); }}
       onKindChange={handleKindChange}
       onNameChange={value => { clearDiagnostics(); setFormName(value); }}
       onPortChange={setPort}
       onUrlChange={handleUrlChange}
-      showValidation={showValidation}
       urlError={urlError}
       urlInput={urlInput}
     />

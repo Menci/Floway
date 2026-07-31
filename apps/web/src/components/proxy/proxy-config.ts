@@ -85,6 +85,48 @@ export const isValidUuid = (s: string): boolean => {
 
 export const orUndef = (v: string): string | undefined => (v === '' ? undefined : v);
 
+// Every field the proxy form can refuse, and the message it refuses with.
+//
+// The form renders these and the dialog's save button reads whether there are
+// any, so the two cannot disagree about what a complete draft is. They did:
+// the save gate listed the four fields every protocol has and let a blank
+// pre-shared key or a malformed UUID through to the gateway while the field
+// beside it was already saying so.
+export type ProxyDraftField =
+  | 'name' | 'url' | 'host' | 'port'
+  | 'uuid' | 'secret' | 'path' | 'serverName' | 'publicKey';
+
+export type ProxyDraftIssues = Partial<Record<ProxyDraftField, string>>;
+
+export const proxyDraftIssues = (draft: { config: ProxyConfig; name: string; url: string }): ProxyDraftIssues => {
+  const { config } = draft;
+  const required = 'dashboard.proxy.validation.required';
+  const issues: ProxyDraftIssues = {};
+  if (!draft.name.trim()) issues.name = 'dashboard.proxy.validation.nameRequired';
+  if (!draft.url.trim()) issues.url = 'dashboard.proxy.validation.urlRequired';
+  if (!config.host.trim()) issues.host = 'dashboard.proxy.validation.hostRequired';
+  if (!isValidPort(config.port)) issues.port = 'dashboard.proxy.validation.portInvalid';
+  switch (config.kind) {
+  case 'http': case 'socks5': break;
+  case 'ss': if (config.password === '') issues.secret = required; break;
+  case 'ss2022': if (config.passwordBase64 === '') issues.secret = required; break;
+  case 'trojan': if (config.password === '') issues.secret = required; break;
+  case 'vless-tcp':
+    if (!isValidUuid(config.uuid)) issues.uuid = 'dashboard.proxy.validation.uuidInvalid';
+    break;
+  case 'vless-ws':
+    if (!isValidUuid(config.uuid)) issues.uuid = 'dashboard.proxy.validation.uuidInvalid';
+    if (config.path === '') issues.path = required;
+    break;
+  case 'reality':
+    if (!isValidUuid(config.uuid)) issues.uuid = 'dashboard.proxy.validation.uuidInvalid';
+    if (config.serverName === '') issues.serverName = required;
+    if (config.publicKey === '') issues.publicKey = required;
+    break;
+  }
+  return issues;
+};
+
 export type ProxyUrlParseResult =
   | { config: ProxyConfig; error: null }
   | { config: null; error: string };
