@@ -27,7 +27,6 @@ vi.mock('../../../src/api/client.ts', async importOriginal => ({
       },
     },
   }),
-  authFetch: vi.fn(),
 }));
 
 const { default: AliasesSettingsCard } = await import('../../../src/components/settings/AliasesSettingsCard.vue');
