@@ -1,3 +1,5 @@
+import type { MouseEvent, ReactElement } from 'react';
+
 import { useDangerActionClasses } from './danger-action';
 import { fluentComponents } from '../../fluent';
 
@@ -16,9 +18,9 @@ export function TooltipIconButton({ className, danger = false, disabled, icon, l
   className?: string;
   danger?: boolean;
   disabled?: boolean;
-  icon: React.ReactElement;
+  icon: ReactElement;
   label: string;
-  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const styles = useStyles();
   const dangerClasses = useDangerActionClasses();

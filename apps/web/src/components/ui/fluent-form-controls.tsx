@@ -1,7 +1,7 @@
 import type { ListboxProps } from '@fluentui/react-components';
 import { ChevronDown12Regular } from '@fluentui/react-icons';
 import { createElement, forwardRef, useLayoutEffect, useRef } from 'react';
-import type { ComponentProps, ElementType, ReactNode, Ref } from 'react';
+import type { ComponentProps, ElementType, MouseEvent, ReactNode, Ref } from 'react';
 
 import { initializeScrollArea, scrollAreaHostClassName, useOverlayScrollbarsEnabled } from './scroll-area';
 import { fluentComponents } from '../../fluent';
@@ -184,7 +184,7 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
 // read-only behaviour at all: the attribute is defined for it and does nothing.
 // Cancelling the click is what refuses the change, since that is the default
 // action the toggle is.
-const refuseToggle = (event: React.MouseEvent<HTMLInputElement>) => event.preventDefault();
+const refuseToggle = (event: MouseEvent<HTMLInputElement>) => event.preventDefault();
 
 export const Checkbox = forwardRef<HTMLInputElement, ComponentProps<typeof FluentCheckbox> & ReadOnlyProp>(
   ({ input, onChange, readOnly, ...props }, ref) => (

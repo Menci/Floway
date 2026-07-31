@@ -1,5 +1,5 @@
 import type { TagProps } from '@fluentui/react-components';
-import type { ReactElement, ReactNode } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
 
@@ -29,7 +29,7 @@ export function Chip({ children, className, icon, size = 'small', style, textCla
   className?: string;
   icon?: ReactElement;
   size?: TagProps['size'];
-  style?: React.CSSProperties;
+  style?: CSSProperties;
   textClassName?: string;
   title?: string;
 }) {

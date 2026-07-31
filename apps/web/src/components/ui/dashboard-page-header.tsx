@@ -1,9 +1,11 @@
+import type { ReactNode } from 'react';
+
 import { fluentComponents } from '../../fluent';
 
 const { Text, mergeClasses } = fluentComponents;
 
 export function DashboardPageHeader({ actions, className, description, title }: {
-  actions?: React.ReactNode;
+  actions?: ReactNode;
   className?: string;
   description?: string;
   title: string;
