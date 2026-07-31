@@ -2,6 +2,7 @@ import {
   DeleteRegular,
   EditRegular,
   KeyRegular,
+  PersonKey24Regular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo, useState } from 'react';
@@ -22,6 +23,7 @@ import { DialogShell } from '../components/ui/dialog-shell';
 import { Input } from '../components/ui/fluent-form-controls';
 import { ResourceListEmptyState, ResourceListPanel, ResourceListToolbar } from '../components/ui/resource-list-toolbar';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { SettingsCard, SettingsSwitch } from '../components/ui/settings-card';
 import { TableActions, TableActionsHeader } from '../components/ui/table-actions';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
@@ -39,7 +41,6 @@ const {
   MessageBar,
   MessageBarActions,
   MessageBarBody,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -47,7 +48,6 @@ const {
   TableHeader,
   TableHeaderCell,
   TableRow,
-  Text,
 } = fluentComponents;
 
 interface UsersPageData {
@@ -449,17 +449,19 @@ function UserDialog(props: UserDialogProps) {
           )}
         />
       )}
-      <div className="grid gap-3">
-        <PermissionToggle
+      <SettingsCard
+        action={<SettingsSwitch
           checked={values.isAdmin}
-          description={adminLocked
-            ? t(props.mode === 'edit' && props.user.id === 1 ? 'dashboard.users.form.userOneLocked' : 'dashboard.users.form.selfLocked')
-            : t('dashboard.users.form.administratorDescription')}
           disabled={saving || adminLocked}
           label={t('dashboard.users.form.administrator')}
           onChange={checked => setValue('isAdmin', checked, { shouldValidate: true })}
-        />
-      </div>
+        />}
+        description={adminLocked
+          ? t(props.mode === 'edit' && props.user.id === 1 ? 'dashboard.users.form.userOneLocked' : 'dashboard.users.form.selfLocked')
+          : t('dashboard.users.form.administratorDescription')}
+        header={t('dashboard.users.form.administrator')}
+        icon={<PersonKey24Regular />}
+      />
       <UpstreamAccessControl
         available={upstreams}
         disabled={saving}
@@ -477,29 +479,6 @@ function UserDialog(props: UserDialogProps) {
       )}
       {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
     </DialogShell>
-  );
-}
-
-function PermissionToggle({ checked, description, disabled, label, onChange }: {
-  checked: boolean;
-  description: string;
-  disabled: boolean;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3 py-1 min-w-0">
-      <div className="grid gap-1 min-w-0">
-        <Text weight="semibold">{label}</Text>
-        <Text size={200} className="text-fui-fg2 leading-[1.4]">{description}</Text>
-      </div>
-      <Switch
-        aria-label={label}
-        checked={checked}
-        disabled={disabled}
-        onChange={(_, data) => onChange(!!data.checked)}
-      />
-    </div>
   );
 }
 

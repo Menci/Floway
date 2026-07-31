@@ -376,9 +376,13 @@ const en = {
           '7d': '7 days',
           custom: 'Custom',
           warningDisable:
-              'Saving will immediately delete captured requests for this key.',
+              'Saving will delete this key\'s captured requests.',
           warningShrink:
-              'Saving will immediately delete captured requests older than the new window.',
+              'Saving will delete captured requests older than the new window.',
+          responsesWarningDisable:
+              'Saving will delete this key\'s stored Responses items. A follow-up request that references one by id will no longer find it.',
+          responsesWarningShrink:
+              'Saving will delete stored Responses items older than the new window. A follow-up request that references one by id will no longer find it.',
         },
         configuration: {
           title: 'Setup Your Agents',

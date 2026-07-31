@@ -14,7 +14,7 @@ import tavilyIconUrl from '../assets/icons/tavily-color.svg';
 import { getSessionToken } from '../auth/session';
 import { AdminOnlyNotice } from '../components/admin-only-notice';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
-import { Dropdown } from '../components/ui/fluent-form-controls';
+import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
 import { Panel } from '../components/ui/panel';
 import { SecretInput } from '../components/ui/secret-input';
 import { SettingsExpander, SettingsSwitch } from '../components/ui/settings-card';
@@ -275,33 +275,33 @@ function AdminSearchPage({ loaderData }: { loaderData: AdminSearchPageLoaderData
       )}
 
       <SettingsExpander
-        action={<div className="w-[240px] flex-none">
-          <Dropdown
-            button={{
-              children: (
-                <ProviderOptionLabel
-                  iconUrl={activeOption.iconUrl}
-                  label={t(activeOption.labelKey)}
-                />
-              ),
-            }}
-            className="!w-full"
-            onOptionSelect={handleProviderChange}
-            selectedOptions={[draft.provider]}
-            value={t(activeOption.labelKey)}
-          >
-            {PROVIDER_OPTIONS.map(opt => (
-              <Option key={opt.value} value={opt.value} text={t(opt.labelKey)}>
-                <ProviderOptionLabel iconUrl={opt.iconUrl} label={t(opt.labelKey)} />
-              </Option>
-            ))}
-          </Dropdown>
-        </div>}
+        action={<Dropdown
+          className="!w-auto flex-none"
+          button={{
+            children: (
+              <ProviderOptionLabel
+                iconUrl={activeOption.iconUrl}
+                label={t(activeOption.labelKey)}
+              />
+            ),
+          }}
+          onOptionSelect={handleProviderChange}
+          positioning={{ ...LISTBOX_POSITIONING, align: 'end' }}
+          selectedOptions={[draft.provider]}
+          value={t(activeOption.labelKey)}
+        >
+          {PROVIDER_OPTIONS.map(opt => (
+            <Option key={opt.value} value={opt.value} text={t(opt.labelKey)}>
+              <ProviderOptionLabel iconUrl={opt.iconUrl} label={t(opt.labelKey)} />
+            </Option>
+          ))}
+        </Dropdown>}
         defaultOpen={draft.provider !== 'disabled'}
         description={t('dashboard.searchConfig.providerHint')}
         expandLabel={t('dashboard.searchConfig.providerLabel')}
         header={t('dashboard.searchConfig.providerLabel')}
         icon={<GlobeSearch24Regular />}
+        toggledOn={draft.provider !== 'disabled'}
       >
         <div className="grid gap-3">
           <Field label={t('dashboard.searchConfig.apiKeyLabel')}>

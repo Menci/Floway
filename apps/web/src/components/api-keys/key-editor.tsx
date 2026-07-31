@@ -120,9 +120,20 @@ export function KeyDialog(props: KeyDialogProps) {
     seconds: preset.seconds,
     label: t(`dashboard.apiKeys.retention.presets.${preset.labelKey}`),
   }));
+  // Both retentions are enforced by the same expiration sweep, so shortening
+  // either one strands what already sits outside the new window. The Responses
+  // side is worth saying out loud twice over: a client holds those ids and asks
+  // for them back.
   const retentionWarning = retentionWarningText(
     apiKey?.dump_retention_seconds ?? null,
     values.dumpRetention,
+    'dashboard.apiKeys.retention.warning',
+    t,
+  );
+  const responsesRetentionWarning = retentionWarningText(
+    apiKey?.responses_retention_seconds ?? null,
+    values.responsesRetention,
+    'dashboard.apiKeys.retention.responsesWarning',
     t,
   );
 
@@ -259,19 +270,24 @@ export function KeyDialog(props: KeyDialogProps) {
         control={control}
         name="responsesRetention"
         render={({ field }) => (
-          <RetentionField
-            customInputUnit="days"
-            description={t('dashboard.apiKeys.form.responsesRetentionHint')}
-            icon={<Database24Regular />}
-            label={t('dashboard.apiKeys.form.responsesRetention')}
-            maximumSeconds={RESPONSES_RETENTION_MAX_SECONDS}
-            minimumSeconds={86400}
-            offLabel={t('dashboard.apiKeys.retention.offPersist')}
-            offValue={0}
-            presets={responsesRetentionPresets}
-            value={field.value}
-            onChange={field.onChange}
-          />
+          <>
+            <RetentionField
+              customInputUnit="days"
+              description={t('dashboard.apiKeys.form.responsesRetentionHint')}
+              icon={<Database24Regular />}
+              label={t('dashboard.apiKeys.form.responsesRetention')}
+              maximumSeconds={RESPONSES_RETENTION_MAX_SECONDS}
+              minimumSeconds={86400}
+              offLabel={t('dashboard.apiKeys.retention.offPersist')}
+              offValue={0}
+              presets={responsesRetentionPresets}
+              value={field.value}
+              onChange={field.onChange}
+            />
+            {responsesRetentionWarning !== null && (
+              <MessageBar intent="warning"><MessageBarBody>{responsesRetentionWarning}</MessageBarBody></MessageBar>
+            )}
+          </>
         )}
       />
 
@@ -296,13 +312,16 @@ const keyFormDefaults = (apiKey: ApiKey | null): KeyFormValues => {
   };
 };
 
+// `null` and `0` are the same statement in different fields -- keep nothing --
+// so both read as the retention being off.
 const retentionWarningText = (
   previous: number | null,
   next: number | null | 'invalid',
+  prefix: string,
   t: ReturnType<typeof useTranslation>['t'],
 ) => {
-  if (previous === null || next === 'invalid') return null;
-  if (next === null) return t('dashboard.apiKeys.retention.warningDisable');
-  if (next < previous) return t('dashboard.apiKeys.retention.warningShrink');
+  if (previous === null || previous === 0 || next === 'invalid') return null;
+  if (next === null || next === 0) return t(`${prefix}Disable`);
+  if (next < previous) return t(`${prefix}Shrink`);
   return null;
 };

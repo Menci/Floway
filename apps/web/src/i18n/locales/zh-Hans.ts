@@ -362,8 +362,10 @@ const zhHansCN = {
           '24h': '24 小时',
           '7d': '7 天',
           custom: '自定义',
-          warningDisable: '保存后会立即删除该 API 密钥的已捕获请求。',
-          warningShrink: '保存后会立即删除超过新窗口的已捕获请求。',
+          warningDisable: '保存后会删除该 API 密钥的已捕获请求。',
+          warningShrink: '保存后会删除超过新窗口的已捕获请求。',
+          responsesWarningDisable: '保存后会删除该 API 密钥已存储的 Responses 条目。后续请求按 id 引用时将无法找到。',
+          responsesWarningShrink: '保存后会删除超过新窗口的 Responses 条目。后续请求按 id 引用时将无法找到。',
         },
         configuration: {
           title: '配置你的 Agent',
