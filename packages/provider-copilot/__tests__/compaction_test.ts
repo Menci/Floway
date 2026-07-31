@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { compactionResponse } from '../src/compaction.ts';
-import type { ResponsesInputItem, ResponsesInputText, ResponsesResult } from '@floway-dev/protocols/responses';
+import type { ResponsesCompactionResult, ResponsesInputItem, ResponsesInputText, ResponsesResult } from '@floway-dev/protocols/responses';
 
 const generatedResult = (output: unknown[]): ResponsesResult =>
   ({
@@ -17,7 +17,7 @@ const generatedResult = (output: unknown[]): ResponsesResult =>
 
 const compaction = { type: 'compaction', id: 'cmp_1', encrypted_content: 'BLOB' };
 
-const shape = (result: ResponsesResult): string[] =>
+const shape = (result: ResponsesCompactionResult): string[] =>
   result.output.map(item => (item.type === 'compaction' ? 'compaction' : `${item.type}:${(item as { role?: string }).role}`));
 
 test('keeps retained user/assistant/developer/system messages and appends the compaction item, absorbing tool/function items into the blob', () => {

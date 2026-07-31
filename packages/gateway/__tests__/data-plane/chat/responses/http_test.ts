@@ -184,6 +184,8 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   const completedMatch = body.match(/"id":"(resp_[A-Za-z0-9_-]+)"/);
   assert(completedMatch !== null, 'expected a source-owned response id in the SSE body');
   assert(completedMatch[1] !== 'resp_test', 'expected the source boundary to replace the upstream response id');
+  assertEquals(body.split('data: [DONE]').length - 1, 1);
+  assert(body.endsWith('data: [DONE]\n\n'), 'expected the SSE body to terminate on the [DONE] sentinel');
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
@@ -407,6 +409,7 @@ test('POST /v1/responses terminates an SSE stream with error when an output item
     assert(body.includes('simulated item persistence failure'));
     assert(!body.includes('event: response.output_item.done'));
     assert(!body.includes('event: response.completed'));
+    assert(!body.includes('[DONE]'), 'expected a failed stream to end on the error frame, not the sentinel');
   } finally {
     persistence.mockRestore();
   }
@@ -537,6 +540,27 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.code, 'previous_response_not_found');
 });
 
+test('POST /v1/responses and /v1/responses/compact reject a body without `model` with the OpenAI missing-parameter 400', async () => {
+  installRepo();
+
+  for (const path of ['/v1/responses', '/v1/responses/compact']) {
+    const response = await makeApp().request(path, {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ input: 'hello' }),
+    });
+
+    assertEquals(response.status, 400);
+    const body = await response.json() as { error: { message: string; type: string; param: string; code: string } };
+    assertEquals(body.error, {
+      message: "Missing required parameter: 'model'.",
+      type: 'invalid_request_error',
+      param: 'model',
+      code: 'missing_required_parameter',
+    });
+  }
+});
+
 const queueCodexAutoReviewCandidate = (
   callResponses: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
 ): void => {
@@ -633,4 +657,59 @@ test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no
   const body = await response.json() as { error: { type: string; message: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assert(body.error.message.includes('does not support'));
+});
+
+test('POST /v1/responses/compact answers a body that states no status, as a native compact upstream sends', async () => {
+  installRepo();
+  const { response } = await compactTurn({ status: undefined as unknown as ResponsesResult['status'] });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(body.object, 'response.compaction');
+  assertEquals(missingRequiredCompactionKeys(body), []);
+  assertEquals((body.output as Array<{ type: string }>).map(item => item.type), ['compaction']);
+});
+
+test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stream reader throws on it, then follows it with response.failed', async () => {
+  installRepo();
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
+    events: (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+      yield eventFrame(completedEvents()[0]!);
+      throw new Error('upstream exploded mid-stream');
+    })(),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+  queueResolution([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
+  });
+
+  const body = await response.text();
+  const chunk = body.split('\n\n').find(part => part.startsWith('event: error'));
+  assert(chunk !== undefined, `expected an error frame in ${body}`);
+  const data = JSON.parse(chunk.slice(chunk.indexOf('data: ') + 'data: '.length)) as {
+    type: string;
+    error?: { message?: unknown };
+    message?: unknown;
+  };
+  assertEquals(data.type, 'error');
+  assertEquals(data.error?.message, 'upstream exploded mid-stream');
+  assert(data.message === undefined, 'expected the payload to sit under `error`, not at the top level');
+
+  const failedChunk = body.split('\n\n').find(part => part.startsWith('event: response.failed'));
+  assert(failedChunk !== undefined, `expected a response.failed frame in ${body}`);
+  const failed = JSON.parse(failedChunk.slice(failedChunk.indexOf('data: ') + 'data: '.length)) as {
+    response: { status: string; id: string; error: { message: string } };
+  };
+  assertEquals(failed.response.status, 'failed');
+  assertEquals(failed.response.error.message, 'upstream exploded mid-stream');
+  const created = JSON.parse(
+    body.split('\n\n').find(part => part.startsWith('event: response.created'))!.split('data: ')[1]!,
+  ) as { response: { id: string } };
+  assertEquals(failed.response.id, created.response.id);
 });

@@ -14,12 +14,12 @@ import {
   putCodexQuota,
 } from './quota.ts';
 import type { CodexAccountCredential } from './state.ts';
-import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesCompactionResult, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
 import { type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
-  | { ok: true; result: ResponsesResult; modelKey: string }
+  | { ok: true; result: ResponsesCompactionResult; modelKey: string }
   | { ok: false; response: Response; modelKey: string };
 
 // Hooks for repo-side state transitions, applied with optimistic concurrency.
@@ -453,7 +453,7 @@ const performUnaryCompactCall = async (
 
   if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
 
-  const result = await response.json() as ResponsesResult;
+  const result = await response.json() as ResponsesCompactionResult;
   return { ok: true, modelKey: opts.model.id, result };
 };
 

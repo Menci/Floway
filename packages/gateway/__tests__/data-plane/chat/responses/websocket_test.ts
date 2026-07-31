@@ -175,6 +175,7 @@ test('Responses WebSocket forwards stream events, echoes event_id, and ends the 
     },
     async () => await withWorkerWebSocketRuntime(async () => {
       const client = await connectResponsesWebSocket(apiKey.key);
+      const raw = recordRawMessages(client);
       const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
 
       client.send(JSON.stringify({
@@ -187,6 +188,8 @@ test('Responses WebSocket forwards stream events, echoes event_id, and ends the 
       }));
 
       const messages = await received;
+      raw.stop();
+      assert(raw.messages.every(message => !message.includes('[DONE]')), 'expected the WebSocket transport to carry no SSE sentinel');
       assert(messages.every(message => message.event_id === 'evt_1'));
       const completed = messages.at(-1) as { type?: unknown; response?: { id?: unknown } } | undefined;
       assertExists(completed);
@@ -576,19 +579,35 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
       },
     }]);
 
+    // The whole-frame comparisons around these two already pin the error
+    // frame's own keys, so they assert the error body alone.
     const invalidResponse = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_response', response: {} }));
 
-    assertEquals(await invalidResponse, [{
-      type: 'error',
-      event_id: 'evt_response',
-      status: 400,
-      error: {
-        type: 'invalid_request_error',
-        code: 'invalid_request_error',
-        message: 'response.create requires response.model to be a non-empty string.',
-      },
-    }]);
+    const [invalidResponseMessage] = await invalidResponse;
+    assertExists(invalidResponseMessage);
+    assertEquals(invalidResponseMessage.type, 'error');
+    assertEquals(invalidResponseMessage.event_id, 'evt_response');
+    assertEquals(invalidResponseMessage.error, {
+      type: 'invalid_request_error',
+      code: 'missing_required_parameter',
+      message: "Missing required parameter: 'model'.",
+      param: 'model',
+    });
+
+    const invalidInput = waitForMessages(client, messages => messages.length === 1);
+    client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_input', response: { model: 'test-model' } }));
+
+    const [invalidInputMessage] = await invalidInput;
+    assertExists(invalidInputMessage);
+    assertEquals(invalidInputMessage.type, 'error');
+    assertEquals(invalidInputMessage.event_id, 'evt_input');
+    assertEquals(invalidInputMessage.error, {
+      type: 'invalid_request_error',
+      code: 'invalid_request_error',
+      message: 'Responses input must be a string or an array.',
+      param: 'input',
+    });
 
     const invalidItem = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({
