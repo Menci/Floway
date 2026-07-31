@@ -1,5 +1,5 @@
 import { DeleteRegular } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { ModelRow } from './editor-data';
@@ -59,6 +59,7 @@ export function ModelDetail({
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
+  const reasoningLabelId = useId();
   // The detail is read-only for the same two reasons everywhere in it: the
   // provider owns its catalog, or this row is the upstream's own listing
   // rather than a manual entry.
@@ -186,8 +187,8 @@ export function ModelDetail({
               label={t('dashboard.upstreamEditor.models.imageInput')}
               onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined }) })}
             />
-            <div className="grid gap-3">
-              <Text weight="semibold">{t('dashboard.upstreamEditor.models.reasoning')}</Text>
+            <div aria-labelledby={reasoningLabelId} className="grid gap-3" role="group">
+              <Text id={reasoningLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.reasoning')}</Text>
               <div className="flex flex-wrap gap-4">
                 <Switch checked={effort !== undefined} disabled={mandatory} readOnly={fieldsReadOnly} label={t('dashboard.upstreamEditor.models.effortLevels')} onChange={(_, data) => updateReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
                 <Switch checked={budget !== undefined} disabled={mandatory} readOnly={fieldsReadOnly} label={t('dashboard.upstreamEditor.models.budgetTokens')} onChange={(_, data) => updateReasoning({ budget_tokens: data.checked ? {} : undefined })} />
@@ -220,9 +221,13 @@ export function ModelDetail({
   );
 }
 
+// A section of the detail holds several controls that no single Fluent `Field`
+// can speak for, so it names itself as their group and its own heading is the
+// name.
 function ModelEditorSection({ children, description, title }: { children: React.ReactNode; description?: string; title: string }) {
-  return <section className="grid gap-3">
-    <SectionHeader description={description} level={3} title={title} />
+  const titleId = useId();
+  return <section aria-labelledby={titleId} className="grid gap-3" role="group">
+    <SectionHeader description={description} level={3} title={title} titleId={titleId} />
     {children}
   </section>;
 }
