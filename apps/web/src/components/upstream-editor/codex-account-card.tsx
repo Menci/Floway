@@ -56,7 +56,7 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
 
     {entries.length === 0
       ? <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.codex.noSnapshot')}</Text>
-      : entries.map(entry => <section className="grid gap-3 border-0 border-t border-solid border-fui-stroke2 py-3 first:border-t-0" key={entry.key}>
+      : entries.map(entry => <section className="grid gap-3 border-0 border-t border-solid border-fui-stroke1 py-3 first:border-t-0" key={entry.key}>
           <div className="flex items-baseline justify-between gap-3 min-w-0">
             <Text truncate weight="semibold" title={entry.label}>{entry.label}</Text>
             <Text size={200} className="text-fui-fg3 shrink-0 uppercase tracking-wide">{t('dashboard.upstreamEditor.codex.activeLimit')}</Text>
@@ -82,7 +82,7 @@ export const CodexAccountCard = ({ record }: { record: CodexRecord }) => {
           </div>
         </section>)}
 
-    {credential?.state_updated_at && <Text size={200} className="text-fui-fg3 border-0 border-t border-solid border-fui-stroke2 pt-3">
+    {credential?.state_updated_at && <Text size={200} className="text-fui-fg3 border-0 border-t border-solid border-fui-stroke1 pt-3">
       {t('dashboard.upstreamEditor.codex.stateUpdated', { time: dateTime(credential.state_updated_at, locale) })}
     </Text>}
   </section>;

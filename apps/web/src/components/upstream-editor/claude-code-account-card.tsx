@@ -136,7 +136,7 @@ export const ClaudeCodeAccountCard = ({ onRefreshQuota, probing, record }: {
       </AccordionItem>}
     </Accordion>}
 
-    <div className="flex flex-wrap gap-x-4 gap-y-1 border-0 border-t border-solid border-fui-stroke2 pt-3">
+    <div className="flex flex-wrap gap-x-4 gap-y-1 border-0 border-t border-solid border-fui-stroke1 pt-3">
       {credential?.stateUpdatedAt && <Text size={200} className="text-fui-fg3">
         {t('dashboard.upstreamEditor.claudeCode.stateUpdated', { time: dateTime(credential.stateUpdatedAt, locale) })}
       </Text>}
