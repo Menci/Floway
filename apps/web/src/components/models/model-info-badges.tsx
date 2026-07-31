@@ -17,7 +17,7 @@ const useStyles = makeStyles({
     lineHeight: '16px',
   },
   strongValue: { fontWeight: tokens.fontWeightSemibold },
-  tag: { color: tokens.colorNeutralForeground2 },
+  tag: { color: 'var(--colorNeutralForeground2)' },
   tagText: { fontSize: '12px', lineHeight: '16px' },
 });
 

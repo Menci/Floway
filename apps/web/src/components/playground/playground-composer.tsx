@@ -46,7 +46,7 @@ const useStyles = makeStyles({
     // as long as a response was streaming and snapped back when it finished.
     display: 'flex',
     flexDirection: 'column',
-    backgroundColor: tokens.colorNeutralBackground1,
+    backgroundColor: 'var(--colorNeutralBackground1)',
     // The edge is the shadow. In dark that shadow is the ring, so a border
     // here would be a second one.
     border: 0,
@@ -98,7 +98,7 @@ const useStyles = makeStyles({
     overflowY: 'auto',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    color: tokens.colorNeutralForeground1,
+    color: 'var(--colorNeutralForeground1)',
     fontFamily: 'inherit',
     fontSize: bingComposerFontSize,
     lineHeight: bingComposerLineHeight,
@@ -109,7 +109,7 @@ const useStyles = makeStyles({
     resize: 'none',
     padding: 0,
     margin: 0,
-    '&::placeholder': { color: tokens.colorNeutralForeground3 },
+    '&::placeholder': { color: 'var(--colorNeutralForeground3)' },
     '&:disabled': {
       color: tokens.colorNeutralForegroundDisabled,
       cursor: 'not-allowed',

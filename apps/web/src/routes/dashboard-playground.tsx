@@ -40,6 +40,7 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { TooltipIconButton } from '../components/ui/tooltip-icon-button';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
+import { errorMessage } from '../lib/error-message';
 import { useMediaQuery } from '../lib/use-media-query';
 
 export const handle = dashboardWorkspaceHandle;
@@ -79,7 +80,7 @@ export function meta({}: Route.MetaArgs) {
 }
 
 const useStyles = makeStyles({
-  toolbar: { borderBottom: `1px solid ${tokens.colorNeutralStroke1}` },
+  toolbar: { borderBottom: '1px solid var(--colorNeutralStroke1)' },
   brandIconAction: {
     color: bingAccentForeground,
     '&:hover': { color: bingAccentForegroundHover },
@@ -250,7 +251,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       }
     } catch (error) {
       if (!(error instanceof Error && error.name === 'AbortError') && !controller.signal.aborted) {
-        setRequestError(error instanceof Error ? error.message : String(error));
+        setRequestError(errorMessage(error));
       }
     } finally {
       if (abortRef.current === controller) {

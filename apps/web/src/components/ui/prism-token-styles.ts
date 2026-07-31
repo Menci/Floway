@@ -4,9 +4,9 @@ const { tokens } = fluentComponents;
 
 export const prismTokenStyles = {
   '& .token.comment, & .token.prolog, & .token.doctype, & .token.cdata': {
-    color: tokens.colorNeutralForeground3,
+    color: 'var(--colorNeutralForeground3)',
   },
-  '& .token.punctuation': { color: tokens.colorNeutralForeground2 },
+  '& .token.punctuation': { color: 'var(--colorNeutralForeground2)' },
   '& .token.property, & .token.tag, & .token.constant, & .token.symbol, & .token.deleted': {
     color: tokens.colorPaletteRedForeground2,
   },
@@ -17,7 +17,7 @@ export const prismTokenStyles = {
   '& .token.operator, & .token.entity, & .token.url, & .language-css .token.string': {
     color: tokens.colorPaletteMarigoldForeground2,
   },
-  '& .token.atrule, & .token.attr-value, & .token.keyword': { color: tokens.colorBrandForeground1 },
+  '& .token.atrule, & .token.attr-value, & .token.keyword': { color: 'var(--colorBrandForeground1)' },
   '& .token.function, & .token.class-name': { color: tokens.colorPaletteBlueForeground2 },
   '& .token.regex, & .token.important, & .token.variable': { color: tokens.colorPaletteMarigoldForeground2 },
 } as const;

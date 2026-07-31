@@ -64,7 +64,7 @@ const useStyles = makeStyles({
     '& li > p': { marginTop: 0, marginBottom: 0 },
     '& hr': {
       border: 0,
-      borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+      borderTop: '1px solid var(--colorNeutralStroke2)',
       marginTop: tokens.spacingVerticalL,
       marginBottom: tokens.spacingVerticalL,
     },
@@ -76,14 +76,14 @@ const useStyles = makeStyles({
     '&:hover': { color: tokens.colorBrandForegroundLinkHover, textDecorationLine: 'underline' },
   },
   inlineCode: {
-    color: tokens.colorNeutralForeground1,
+    color: 'var(--colorNeutralForeground1)',
     backgroundColor: tokens.colorNeutralBackground3,
     borderRadius: tokens.borderRadiusSmall,
     fontFamily: tokens.fontFamilyMonospace,
     padding: `1px ${tokens.spacingHorizontalXS}`,
   },
   blockquote: {
-    color: tokens.colorNeutralForeground2,
+    color: 'var(--colorNeutralForeground2)',
     borderLeft: `3px solid ${tokens.colorBrandStroke1}`,
     margin: `${tokens.spacingVerticalM} 0`,
     paddingLeft: tokens.spacingHorizontalM,
@@ -98,7 +98,7 @@ const useStyles = makeStyles({
     minWidth: '100%',
   },
   tableCell: {
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    border: '1px solid var(--colorNeutralStroke1)',
     padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
     textAlign: 'left',
     verticalAlign: 'top',
@@ -109,7 +109,7 @@ const useStyles = makeStyles({
   },
   codeBlock: {
     backgroundColor: tokens.colorNeutralBackground3,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    border: '1px solid var(--colorNeutralStroke1)',
     borderRadius: tokens.borderRadiusMedium,
     marginTop: tokens.spacingVerticalM,
     marginBottom: tokens.spacingVerticalM,
@@ -117,7 +117,7 @@ const useStyles = makeStyles({
     padding: tokens.spacingHorizontalM,
     '& pre': { margin: 0 },
     '& code': {
-      color: tokens.colorNeutralForeground1,
+      color: 'var(--colorNeutralForeground1)',
       fontFamily: tokens.fontFamilyMonospace,
       fontSize: 'var(--floway-font-size-mono)',
       lineHeight: tokens.lineHeightBase400,
