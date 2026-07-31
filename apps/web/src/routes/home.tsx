@@ -44,8 +44,8 @@ export function meta({}: Route.MetaArgs) {
 
 export default function Home() {
   return (
-    <ScrollArea axes="vertical" className="h-[100dvh]" contentClassName="min-h-full">
-      <main className="grid min-h-[100dvh] place-items-center p-6 max-[520px]:p-4">
+    <ScrollArea axes="vertical" className="h-[100dvh]" contentClassName="h-full">
+      <main className="grid h-full min-h-max place-items-center p-6 max-[520px]:p-4">
         <LoginForm />
       </main>
     </ScrollArea>

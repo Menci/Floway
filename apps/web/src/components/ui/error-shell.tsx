@@ -19,12 +19,12 @@ export function ErrorShell({ action, children, message, title }: PropsWithChildr
   title: string;
 }>) {
   return (
-    <ScrollArea axes="vertical" className="h-[100dvh]" contentClassName="min-h-full">
-      {/* The viewport unit rather than a percentage: the scroller's content box is
-          height-by-content, so a percentage minimum has nothing to resolve
-          against and collapses to the content, which centres the page inside
-          itself and leaves it sitting at the top. */}
-      <main className="mx-auto grid min-h-[100dvh] max-w-[720px] content-center justify-items-center gap-6 px-6 py-16 text-center">
+    <ScrollArea axes="vertical" className="h-[100dvh]" contentClassName="h-full">
+      {/* Filling the scroller rather than the window. Its viewport is shorter
+          than the window whenever a scrollbar takes width, so a child measured
+          against the window is permanently taller than its container and the
+          bar can never retract. `min-h-max` keeps a long trace scrolling. */}
+      <main className="mx-auto grid h-full min-h-max max-w-[720px] content-center justify-items-center gap-6 px-6 py-16 text-center">
         <div className="grid justify-items-center gap-4">
           <div className="grid gap-1.5">
             <Text as="h1" className="m-0" size={700} weight="semibold">{title}</Text>
