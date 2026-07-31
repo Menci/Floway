@@ -6,12 +6,13 @@ import { computeModelWarning, computeRuleWarnings } from './warnings';
 import type { AliasTarget, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import type { CatalogIndex } from '../models/catalog-index';
+import { useDangerTextClass } from '../ui/danger';
 import { Combobox, Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { ReorderButtons } from '../ui/reorder-buttons';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 
-const { Button, Field, MessageBar, MessageBarBody, Option, Tooltip } = fluentComponents;
+const { Button, Field, MessageBar, MessageBarBody, Option, Text, Tooltip } = fluentComponents;
 
 const suggestions = {
   effort: ['none', 'low', 'medium', 'high', 'xhigh'],
@@ -21,9 +22,10 @@ const suggestions = {
 };
 
 export function AliasTargetRow({
-  catalog, disabled, index, isFirst, isLast, isSole, kind, onChange, onMove, onRemove, target, targetIds,
+  catalog, disabled, error, index, isFirst, isLast, isSole, kind, onChange, onMove, onRemove, target, targetIds,
 }: {
   disabled: boolean;
+  error?: string;
   index: number;
   isFirst: boolean;
   isLast: boolean;
@@ -37,6 +39,7 @@ export function AliasTargetRow({
   targetIds: readonly string[];
 }) {
   const { t } = useTranslation();
+  const dangerText = useDangerTextClass();
   const [expanded, setExpanded] = useState(false);
   const model = catalog.get(target.target_model_id);
   const modelWarning = computeModelWarning(target.target_model_id, model, kind);
@@ -87,6 +90,10 @@ export function AliasTargetRow({
           <TooltipIconButton danger disabled={disabled || isSole} icon={<DeleteRegular />} label={t('dashboard.modelAliases.target.remove')} onClick={onRemove} />
         </div>
       </div>
+      {/* The rule the schema refused belongs to this target, and a target is
+          the whole row: the model id and the rules behind the disclosure are
+          one thing to name, and the message lines up with the id column. */}
+      {error && <Text block className={`${dangerText} ml-10 pb-2`} role="alert" size={200}>{t(error)}</Text>}
       {expanded && kind === 'chat' && (
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3 ml-10 py-3`}>
           <RuleCombobox label={t('dashboard.modelAliases.rules.effort')} value={target.rules.reasoning?.effort ?? ''} items={suggestions.effort} disabled={disabled} warning={warningFor('reasoning.effort')} onChange={value => patchReasoning({ effort: value || undefined })} />

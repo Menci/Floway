@@ -9,12 +9,14 @@ import { computeAnnouncedMetadata } from './announced-metadata';
 import { aliasBody, aliasDefaults, blankTarget, metadataForKind, type AliasFormValues } from './form-data';
 import { MetadataEditor } from './metadata-editor';
 import { AliasTargetRow } from './target-row';
+import { announcedMetadataIssues, targetIssue } from './validation';
 import { computeAliasWarnings, realModelIdsOfKind } from './warnings';
 import { api, callApi } from '../../api/client';
 import type { ControlPlaneModel, ModelAlias, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { indexCatalog } from '../models/catalog-index';
 import { ChoiceGroup } from '../ui/choice-group';
+import { useDangerTextClass } from '../ui/danger';
 import { DialogShell } from '../ui/dialog-shell';
 import { Dropdown, Input } from '../ui/fluent-form-controls';
 import { TWO_COLUMN_FORM_CLASS } from '../ui/layout';
@@ -35,6 +37,7 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
   record: ModelAlias | null;
 }) {
   const { t } = useTranslation();
+  const dangerText = useDangerTextClass();
   const toasts = useOutcomeToasts();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -44,20 +47,18 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
     kind: z.enum(MODEL_KINDS),
     selection: z.enum(['first-available', 'random']),
     visible: z.boolean(),
-    targets: z.array(z.object({ target_model_id: z.string().trim().min(1, 'dashboard.modelAliases.validation.targetRequired'), rules: z.any().refine(value => value !== undefined) })).min(1),
+    targets: z.array(z.object({ target_model_id: z.string(), rules: z.any().refine(value => value !== undefined) })).min(1, 'dashboard.modelAliases.validation.targetsRequired'),
     manualMetadata: z.boolean(),
     announcedMetadata: z.any().refine(value => value !== undefined),
   }).superRefine((values, ctx) => {
     if (aliases.some(alias => alias.name === values.name.trim() && alias.name !== record?.name)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.duplicate', path: ['name'] });
     values.targets.forEach((target, index) => {
-      const reasoning = target.rules.reasoning;
-      if (reasoning?.budget_tokens !== undefined && (!Number.isInteger(reasoning.budget_tokens) || reasoning.budget_tokens < 0)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.budget', path: ['targets', index, 'target_model_id'] });
-      if (reasoning?.adaptive === true && reasoning?.budget_tokens !== undefined) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.adaptiveBudget', path: ['targets', index, 'target_model_id'] });
+      const issue = targetIssue(target);
+      if (issue) ctx.addIssue({ code: 'custom', message: issue, path: ['targets', index, 'target_model_id'] });
     });
-    for (const value of Object.values(values.announcedMetadata.limits ?? {})) if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataNumber', path: ['announcedMetadata'] });
-    const budget = values.announcedMetadata.chat?.reasoning?.budget_tokens;
-    for (const value of [budget?.min, budget?.max]) if (value !== undefined && (!Number.isInteger(value) || value < 0)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataNumber', path: ['announcedMetadata'] });
-    if (values.manualMetadata && budget?.min !== undefined && budget?.max !== undefined && budget.max < budget.min) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.metadataRange', path: ['announcedMetadata'] });
+    for (const [field, message] of Object.entries(announcedMetadataIssues(values.announcedMetadata))) {
+      ctx.addIssue({ code: 'custom', message, path: ['announcedMetadata', field] });
+    }
   }), [aliases, record?.name]);
   const { control, formState: { errors }, handleSubmit, setValue } = useForm<AliasFormValues>({ resolver: zodResolver(schema), defaultValues: aliasDefaults(record) });
   // Every field has a default and useFieldArray preserves complete target rows;
@@ -125,8 +126,8 @@ export function AliasDialog({ aliases, models, onOpenChange, open, onSaved, reco
         titleId="alias-targets-heading"
         actions={<Button className="!whitespace-nowrap flex-none" disabled={saving} icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button>}
       />
-      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
-      {errors.targets?.message && <Text role="alert" className="text-fui-fg2">{t(errors.targets.message)}</Text>}
+      {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} error={errors.targets?.[index]?.target_model_id?.message} index={index} isFirst={index === 0} isLast={index === fields.length - 1} isSole={fields.length === 1} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onMove={direction => move(index, index + direction)} onRemove={() => remove(index)} />)}
+      {errors.targets?.message && <Text className={dangerText} role="alert" size={200}>{t(errors.targets.message)}</Text>}
     </section>
     {kind !== 'image' && <SettingsExpander
       action={<SettingsSwitch checked={values.manualMetadata} disabled={saving} label={t('dashboard.modelAliases.metadata.manual')} onChange={setManual} />}
