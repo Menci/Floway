@@ -6,23 +6,21 @@ import { fluentComponents } from '../../fluent';
 
 const { Dialog, DialogBody, DialogContent, DialogSurface, mergeClasses } = fluentComponents;
 
-interface DialogShellProps {
-  open: boolean;
-  /** Overrides ContentDialogMaxWidth for a dialog whose content needs the room. */
-  maxWidth?: string;
-  onOpenChange: DialogProps['onOpenChange'];
-  title: ReactNode;
-  actions: ReactNode;
-  onSubmit?: () => void;
-  children: ReactNode;
-  surfaceClassName?: string;
-}
-
 // `open` is a prop rather than a constant because Fluent animates a dialog out
 // of the page, and it can only do that while the surface is still mounted. A
 // shell hard-coded to `open` is closed by being unmounted, which removes the
 // surface in the same commit and leaves the exit no frames to run in.
-export function DialogShell({ open, onOpenChange, title, actions, onSubmit, children, maxWidth, surfaceClassName }: DialogShellProps) {
+export function DialogShell({ actions, children, maxWidth, onOpenChange, onSubmit, open, surfaceClassName, title }: {
+  actions: ReactNode;
+  children: ReactNode;
+  /** Overrides ContentDialogMaxWidth for a dialog whose content needs the room. */
+  maxWidth?: string;
+  onOpenChange: DialogProps['onOpenChange'];
+  onSubmit?: () => void;
+  open: boolean;
+  surfaceClassName?: string;
+  title: ReactNode;
+}) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogSurface

@@ -31,21 +31,21 @@ const useStyles = makeStyles({
 });
 
 export function ConfirmDialog({
-  actionLabel,
   actionIntent = 'danger',
+  actionLabel,
   busy = false,
   cancelLabel,
   error,
   message,
-  onDismissError,
   onCancel,
   onConfirm,
+  onDismissError,
   onOpenChange,
   open,
   title,
 }: {
-  actionLabel: string;
   actionIntent?: 'danger' | 'primary';
+  actionLabel: string;
   busy?: boolean;
   cancelLabel?: string;
   /**
@@ -56,9 +56,9 @@ export function ConfirmDialog({
    */
   error?: string | null;
   message: string;
-  onDismissError?: () => void;
   onCancel?: () => void;
   onConfirm: () => void;
+  onDismissError?: () => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   title: string;

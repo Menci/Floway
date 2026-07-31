@@ -56,7 +56,7 @@ const useStyles = makeStyles({
   },
 });
 
-interface CodeBlockProps {
+export function CodeBlock({ code, copied, copyFailed, disabled = false, header, language, onCopy }: {
   code: string;
   copied: boolean;
   copyFailed: boolean;
@@ -65,9 +65,7 @@ interface CodeBlockProps {
   header?: ReactNode;
   language: string;
   onCopy: () => void;
-}
-
-export function CodeBlock({ code, copied, copyFailed, disabled = false, header, language, onCopy }: CodeBlockProps) {
+}) {
   const { t } = useTranslation();
   const styles = useStyles();
   const highlighted = useMemo(() => {
