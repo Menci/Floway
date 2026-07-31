@@ -7,14 +7,23 @@ import { fluentComponents } from '../../fluent';
 const { Button, DialogActions, DialogTitle, Spinner, makeStyles } = fluentComponents;
 
 const useStyles = makeStyles({
-  // colorStatusDangerForegroundInverted is the danger hue for use ON an
+  // The danger fill is DangerBackground3, the same #c50f1f in both themes, so
+  // its label has to be the foreground for a surface that does not follow the
+  // theme. That is StaticInverted, white in both.
+  //
+  // Not OnBrand, which is the trap here: OnBrand is white in both themes in
+  // stock Fluent, but ../../winui/theme.ts re-points it at WinUI's
+  // TextOnAccentFillColorPrimary, and that token is keyed to the accent's own
+  // lightness -- white in light, black in dark, because WinUI's dark accent is
+  // the lighter blue. On a fill that stays dark red, the dark half of that
+  // reads black on red, 3.46:1 at rest and 2.36 pressed.
+  //
+  // Not DangerForegroundInverted either: that is the danger hue for use ON an
   // inverted surface, not the label to place on a danger fill; over
-  // DangerBackground3 it reads at roughly 1.9:1. The label that belongs on a
-  // filled accent-grade surface is the on-brand foreground, which is white in
-  // both themes -- as this fill is in both themes.
+  // DangerBackground3 it reads at roughly 1.9:1.
   danger: {
     backgroundColor: 'var(--colorStatusDangerBackground3) !important',
-    color: 'var(--colorNeutralForegroundOnBrand) !important',
+    color: 'var(--colorNeutralForegroundStaticInverted) !important',
     '&:hover': { backgroundColor: 'var(--colorStatusDangerBackground3Hover) !important' },
     '&:active': { backgroundColor: 'var(--colorStatusDangerBackground3Pressed) !important' },
     '&:hover:active': { backgroundColor: 'var(--colorStatusDangerBackground3Pressed) !important' },
