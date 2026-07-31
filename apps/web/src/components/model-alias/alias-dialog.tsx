@@ -10,8 +10,7 @@ import { aliasBody, aliasDefaults, blankTarget, metadataForKind, type AliasFormV
 import { MetadataEditor } from './metadata-editor';
 import { AliasTargetRow } from './target-row';
 import { computeAliasWarnings, realModelIdsOfKind } from './warnings';
-import { callApi } from '../../api/auth';
-import { api } from '../../api/client';
+import { api, callApi } from '../../api/client';
 import type { ControlPlaneModel, ModelAlias, ModelKind } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { indexCatalog } from '../models/catalog-index';

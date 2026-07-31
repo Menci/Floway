@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { callApi } from '../../api/auth';
-import { api } from '../../api/client';
+import { api, callApi } from '../../api/client';
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';

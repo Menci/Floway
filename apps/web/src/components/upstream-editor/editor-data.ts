@@ -1,7 +1,6 @@
 import type { InferRequestType } from 'hono/client';
 
-import { callApi } from '../../api/auth';
-import { api } from '../../api/client';
+import { api, callApi } from '../../api/client';
 import type {
   BackoffRow,
   CustomRawModel,

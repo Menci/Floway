@@ -5,8 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-search';
-import { callApi } from '../api/auth';
-import { api } from '../api/client';
+import { api, callApi } from '../api/client';
 import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/types';
 import jinaIconUrl from '../assets/icons/jina-color.svg';
 import microsoftIconUrl from '../assets/icons/microsoft-color.svg';

@@ -20,8 +20,7 @@ import {
 } from './editor-data';
 import { modelsAreValid } from './model-detail';
 import { UpstreamWorkspace } from './workspace';
-import { callApi } from '../../api/auth';
-import { api } from '../../api/client';
+import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { ConfirmDialog } from '../ui/confirm-dialog';

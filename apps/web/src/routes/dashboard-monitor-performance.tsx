@@ -6,8 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router';
 
 import type { Route } from './+types/dashboard-monitor-performance';
-import { callApi, type GlobalError } from '../api/auth';
-import { api } from '../api/client';
+import { api, callApi, type GlobalError } from '../api/client';
 import { getSessionToken } from '../auth/session';
 import { ChartCalloutTable } from '../components/charts/chart-callout-table';
 import { useUnclippedChartFrame } from '../components/charts/chart-frame-styles';

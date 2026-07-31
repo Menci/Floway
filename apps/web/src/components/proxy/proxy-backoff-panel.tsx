@@ -2,8 +2,7 @@ import { ArrowResetRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { callApi } from '../../api/auth';
-import { api } from '../../api/client';
+import { api, callApi } from '../../api/client';
 import type { BackoffRow } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useNow } from '../../lib/use-now';

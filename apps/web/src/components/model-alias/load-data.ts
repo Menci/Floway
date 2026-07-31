@@ -1,7 +1,6 @@
 import type { InferResponseType } from 'hono/client';
 
-import type { ApiResult } from '../../api/auth';
-import type { api } from '../../api/client';
+import type { api, ApiResult } from '../../api/client';
 import type { ControlPlaneModel, ModelAlias } from '../../api/types';
 
 type ModelsResponse = InferResponseType<typeof api.api.models.$get, 200>;

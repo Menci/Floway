@@ -5,7 +5,7 @@ import { redirect, useSearchParams, type ShouldRevalidateFunctionArgs } from 're
 
 import type { Route } from './+types/dashboard-monitor-usage';
 import { useDashboardOutletContext } from './dashboard';
-import type { GlobalError } from '../api/auth';
+import type { GlobalError } from '../api/client';
 import type { ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { ChoiceGroup } from '../components/ui/choice-group';

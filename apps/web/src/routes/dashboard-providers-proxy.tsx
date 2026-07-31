@@ -3,8 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
-import { callApi, callApiNoContent } from '../api/auth';
-import { api } from '../api/client';
+import { api, callApi, callApiNoContent } from '../api/client';
 import type { ProxyConflictBody, ProxyRecord, BackoffRow } from '../api/types';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { fluentComponents } from '../fluent';

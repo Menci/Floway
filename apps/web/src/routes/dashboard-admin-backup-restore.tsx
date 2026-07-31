@@ -4,8 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-admin-backup-restore';
-import { callApi } from '../api/auth';
-import { api } from '../api/client';
+import { api, callApi } from '../api/client';
 import type { BackupImportCounts } from '../api/types';
 import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';

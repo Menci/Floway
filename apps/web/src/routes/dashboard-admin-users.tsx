@@ -12,8 +12,7 @@ import { redirect } from 'react-router';
 import { z } from 'zod';
 
 import { useDashboardOutletContext } from './dashboard';
-import { callApi } from '../api/auth';
-import { api } from '../api/client';
+import { api, callApi } from '../api/client';
 import type { ControlPlaneModel, ControlPlaneUser, UpstreamOption } from '../api/types';
 import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';

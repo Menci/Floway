@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { callApi, callApiNoContent } from '../../src/api/auth.ts';
+import { callApi, callApiNoContent } from '../../src/api/client.ts';
 
 const respond = (response: Response) => () => Promise.resolve(response);
 

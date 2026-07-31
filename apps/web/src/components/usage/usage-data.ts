@@ -3,8 +3,7 @@ import type {
   UsageRange,
   UsageView,
 } from './types';
-import { callApi } from '../../api/auth';
-import { api } from '../../api/client';
+import { api, callApi } from '../../api/client';
 import { dashboardRangeQuery } from '../charts/dashboard-time';
 import type {
   TokenUsageByKeyResponse,

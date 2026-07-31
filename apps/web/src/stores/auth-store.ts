@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import type { StoreApi } from 'zustand';
 
-import { type AuthUser, type LoginResponse } from '../api/auth';
-import { getCurrentSession, api } from '../api/client';
+import { getCurrentSession, type AuthUser, type LoginResponse } from '../api/auth';
+import { api } from '../api/client';
 import { clearSessionToken, getSessionToken, onSessionInvalidated } from '../auth/session';
 
 type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'unauthenticated' | 'error';

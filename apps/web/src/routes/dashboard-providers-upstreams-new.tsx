@@ -1,8 +1,7 @@
 import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams-new';
-import { callApi } from '../api/auth';
-import { api } from '../api/client';
+import { api, callApi } from '../api/client';
 import { requireAdmin } from '../auth/require-admin';
 import { getSessionToken } from '../auth/session';
 import {

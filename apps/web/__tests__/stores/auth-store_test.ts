@@ -5,12 +5,18 @@ const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
 }));
 
-vi.mock('../../src/api/client', () => ({
-  api: { auth: { logout: { $post: mocks.logout } } },
+vi.mock('../../src/api/auth', () => ({
   getCurrentSession: mocks.getCurrentSession,
 }));
 
-import { authFetch } from '../../src/api/auth';
+// authFetch is the subject of the stale-401 case below, so the client module
+// keeps its real implementation and only the logout route is stubbed.
+vi.mock('../../src/api/client', async importOriginal => ({
+  ...await importOriginal<typeof import('../../src/api/client')>(),
+  api: { auth: { logout: { $post: mocks.logout } } },
+}));
+
+import { authFetch } from '../../src/api/client';
 import { getSessionToken, setSessionToken } from '../../src/auth/session';
 import { useAuthStore } from '../../src/stores/auth-store';
 

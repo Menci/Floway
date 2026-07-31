@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { callApi } from '../../api/auth';
-import { api } from '../../api/client';
+import { api, callApi } from '../../api/client';
 import { getSessionToken } from '../../auth/session';
 import { errorMessage } from '../../lib/error-message';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';

@@ -1,4 +1,4 @@
-import type { ApiResult } from '../../api/auth';
+import type { ApiResult } from '../../api/client';
 import type { ApiKey } from '../../api/types';
 
 export const refreshRequestKeys = async ({

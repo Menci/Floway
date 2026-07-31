@@ -10,8 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, redirect, useLocation, useNavigate } from 'react-router';
 
 import type { Route } from './+types/dashboard-providers-upstreams';
-import { callApi } from '../api/auth';
-import { api } from '../api/client';
+import { api, callApi } from '../api/client';
 import type {
   ControlPlaneModel,
   UpstreamProviderKind,

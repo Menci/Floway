@@ -12,8 +12,7 @@ import { redirect } from 'react-router';
 
 import type { Route } from './+types/dashboard-playground';
 import { useDashboardOutletContext } from './dashboard';
-import { callApi } from '../api/auth';
-import { api } from '../api/client';
+import { api, callApi } from '../api/client';
 import type { ApiKey, ControlPlaneModel } from '../api/types';
 import { getSessionToken } from '../auth/session';
 import { indexCatalog } from '../components/models/catalog-index';
