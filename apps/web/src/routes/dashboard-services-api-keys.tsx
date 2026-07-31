@@ -20,9 +20,11 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions, ResourceListPanel } from '../components/ui/resource-list';
 import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
+import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
+import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { fluentComponents } from '../fluent';
 
-const { MessageBar, MessageBarBody, Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
+const { Spinner } = fluentComponents;
 const selectedKeyStorageKey = 'floway-agent-setup-selected-key';
 interface LoaderData extends ApiKeysPageData {
   selectedKeyId: string;
@@ -59,10 +61,7 @@ export function meta({}: Route.MetaArgs) { return [{ title: 'API Keys | Floway' 
 export default function DashboardServicesApiKeys({ loaderData }: Route.ComponentProps) {
   const { t } = useTranslation();
   const { user } = useOutletContext<DashboardOutletContext>();
-  const toasterId = useId();
-  const mutationToastId = useId();
-  const mutationToastSequence = useRef(0);
-  const { dispatchToast, updateToast } = useToastController(toasterId);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [data, setData] = useState<ApiKeysPageData>(loaderData);
   const [selectedKeyId, setSelectedKeyId] = useState(loaderData.selectedKeyId);
   const [pageError, setPageError] = useState(loaderData.error);
@@ -83,45 +82,11 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
     else localStorage.removeItem(selectedKeyStorageKey);
   }, [selectedKeyId]);
 
+  const toasts = useOutcomeToasts();
   const mutationToasts: MutationToastController = {
-    start: (kind, name) => {
-      const toastId = `${mutationToastId}-${mutationToastSequence.current++}`;
-      dispatchToast(
-        <Toast>
-          <ToastTitle media={<Spinner size="tiny" />}>
-            {t(`dashboard.apiKeys.toast.${kind}.pending`, { name })}
-          </ToastTitle>
-        </Toast>,
-        { toastId, timeout: -1 },
-      );
-      return toastId;
-    },
-    succeed: (toastId, kind, name) => {
-      updateToast({
-        content: (
-          <Toast>
-            <ToastTitle>{t(`dashboard.apiKeys.toast.${kind}.success`, { name })}</ToastTitle>
-          </Toast>
-        ),
-        intent: 'success',
-        toastId,
-        timeout: 3000,
-      });
-    },
-    fail: (toastId, kind, name, message) => {
-      updateToast({
-        content: (
-          <Toast>
-            <ToastTitle>
-              {t(`dashboard.apiKeys.toast.${kind}.error`, { name, message })}
-            </ToastTitle>
-          </Toast>
-        ),
-        intent: 'error',
-        toastId,
-        timeout: 5000,
-      });
-    },
+    start: (kind, name) => toasts.start(t(`dashboard.apiKeys.toast.${kind}.pending`, { name })),
+    succeed: (handle, kind, name) => handle.succeed(t(`dashboard.apiKeys.toast.${kind}.success`, { name })),
+    fail: handle => handle.settle(),
   };
 
   const reload = async () => {
@@ -175,25 +140,23 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   };
 
   const deleteKey = async (key: ApiKey) => {
-    setPageError(null);
+    setDeleteError(null);
     setDeletingKey(true);
-    const toastId = mutationToasts.start('delete', key.name);
+    const handle = mutationToasts.start('delete', key.name);
     const result = await callApi(() => api.api.keys[':id'].$delete({ param: { id: key.id } }));
     setDeletingKey(false);
     if (result.error) {
-      mutationToasts.fail(toastId, 'delete', key.name, result.error.message);
-      setPageError(result.error.message);
+      mutationToasts.fail(handle, 'delete', key.name, result.error.message);
+      setDeleteError(result.error.message);
       return;
     }
     deleteDialog.close();
-    mutationToasts.succeed(toastId, 'delete', key.name);
+    mutationToasts.succeed(handle, 'delete', key.name);
     await reload();
   };
 
   return (
     <div className="dashboard-page">
-      <Toaster toasterId={toasterId} position="top-end" />
-
       <DashboardPageHeader
         actions={<ResourceListActions
           createLabel={t('dashboard.apiKeys.actions.create')}
@@ -209,9 +172,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       />
 
       {pageError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{pageError}</MessageBarBody>
-        </MessageBar>
+        <OutcomeMessageBar onDismiss={() => setPageError(null)}>{pageError}</OutcomeMessageBar>
       )}
 
       <ResourceListPanel>
@@ -278,6 +239,8 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         open={deleteDialog.isOpen}
         actionLabel={t('dashboard.apiKeys.actions.delete')}
         busy={deletingKey}
+        error={deleteError}
+        onDismissError={() => setDeleteError(null)}
         message={t('dashboard.apiKeys.delete.message', {
           name: deleteDialog.invocation.value.name,
         })}
