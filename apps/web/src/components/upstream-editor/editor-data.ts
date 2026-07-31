@@ -40,6 +40,19 @@ export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
   | { mode: 'edit' }
 );
 
+// One row of the model list: what the table draws, what the detail edits, and
+// what a delete confirms against. `manualIndex` is the row's position in the
+// form's manual array when it has one, and `hasAuto` says the upstream also
+// lists the model, which is what makes switching the row back to `auto`
+// possible.
+export interface ModelRow {
+  key: string;
+  source: 'auto' | 'manual';
+  config: UpstreamModelConfig;
+  manualIndex: number | null;
+  hasAuto: boolean;
+}
+
 export interface UpstreamEditorValues {
   name: string;
   enabled: boolean;

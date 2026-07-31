@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 
 import { BackNavigationButton } from './back-navigation-button';
-import type { UpstreamEditorValues } from './editor-data';
+import type { ModelRow, UpstreamEditorValues } from './editor-data';
 import { publicModelId } from './editor-data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { ModelDetail } from './model-detail';
@@ -57,14 +57,6 @@ const {
 const useWorkspaceStyles = makeStyles({
   error: { color: 'var(--colorPaletteRedForeground1)' },
 });
-
-interface ModelRow {
-  key: string;
-  source: 'auto' | 'manual';
-  config: UpstreamModelConfig;
-  manualIndex: number | null;
-  hasAuto: boolean;
-}
 
 type ModelView = 'list' | 'detail' | 'yaml';
 type WorkspaceTab = 'models' | 'flags';

@@ -2,6 +2,7 @@ import { DeleteRegular } from '@fluentui/react-icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import type { ModelRow } from './editor-data';
 import { publicModelId } from './editor-data';
 import { FeatureFlagsEditor } from './feature-flags';
 import { PricingEditor } from './pricing-editor';
@@ -35,14 +36,6 @@ const useStyles = makeStyles({
   },
 });
 
-export interface ModelDetailRow {
-  key: string;
-  source: 'auto' | 'manual';
-  config: UpstreamModelConfig;
-  manualIndex: number | null;
-  hasAuto: boolean;
-}
-
 const reasoningPresets = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export function ModelDetail({
@@ -60,7 +53,7 @@ export function ModelDetail({
   onUpdate: (value: UpstreamModelConfig) => void;
   readOnly: boolean;
   record: UpstreamRecord;
-  row: ModelDetailRow;
+  row: ModelRow;
   section: 'details' | 'flags';
   upstreamFlags: UpstreamRecord['flag_overrides'];
 }) {
@@ -298,12 +291,21 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
   }
 };
 
-export const modelValidationError = (model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null => {
+// What the editor's own controls can hold but the model cannot mean. Stated
+// once as a message key: the detail renders it on the model it belongs to, and
+// the editor's schema asks the same question of every model at submit.
+const editorFieldIssue = (model: UpstreamModelConfig): string | null => {
   const effort = model.chat?.reasoning?.effort;
-  if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return t('dashboard.upstreamEditor.models.invalidEffort');
+  if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return 'dashboard.upstreamEditor.models.invalidEffort';
   const budget = model.chat?.reasoning?.budget_tokens;
-  if (budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min) return t('dashboard.upstreamEditor.models.invalidBudget');
-  if (!pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing)) return t('dashboard.upstreamEditor.models.invalidPricing');
+  if (budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min) return 'dashboard.upstreamEditor.models.invalidBudget';
+  if (!pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing)) return 'dashboard.upstreamEditor.models.invalidPricing';
+  return null;
+};
+
+export const modelValidationError = (model: UpstreamModelConfig, t: ReturnType<typeof useTranslation>['t']): string | null => {
+  const issue = editorFieldIssue(model);
+  if (issue) return t(issue);
   try {
     modelsField([model], 'model');
   } catch {
@@ -313,14 +315,7 @@ export const modelValidationError = (model: UpstreamModelConfig, t: ReturnType<t
 };
 
 export const modelsAreValid = (models: readonly UpstreamModelConfig[]) => {
-  const hasInvalidEditorFields = models.some(model => {
-    const effort = model.chat?.reasoning?.effort;
-    if (effort && (effort.supported.length === 0 || !effort.default || !effort.supported.includes(effort.default))) return true;
-    const budget = model.chat?.reasoning?.budget_tokens;
-    return (budget?.min !== undefined && budget.max !== undefined && budget.max < budget.min)
-      || !pricingIsValid(pricingEntryDraftsFor(model.pricing), model.pricing);
-  });
-  if (hasInvalidEditorFields) return false;
+  if (models.some(model => editorFieldIssue(model) !== null)) return false;
   try {
     modelsField([...models], 'models');
     return true;
