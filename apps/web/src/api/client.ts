@@ -28,6 +28,15 @@ export interface GlobalError {
 
 export type ApiResult<T> = { data: T; error?: undefined } | { data?: undefined; error: GlobalError };
 
+// A 204 carries no body by definition (RFC 9110 §15.3.5), so there is nothing
+// to parse and no data to hand back. The gateway answers `DELETE /api/aliases/
+// :id` and `DELETE /api/proxies/:id` that way; parsing it as JSON turned a
+// successful delete into "Unexpected end of JSON input", which the dashboard
+// reported as a failed request while the row was already gone server-side.
+//
+// https://www.rfc-editor.org/rfc/rfc9110#section-15.3.5
+const NO_CONTENT = 204;
+
 export const callApi = async <T>(
   fn: () => Promise<Response>,
 ): Promise<ApiResult<T>> => {
@@ -53,6 +62,10 @@ export const callApi = async <T>(
     }
     return { error: { status: response.status, message, raw: body } };
   }
+
+  // Callers of a body-less route read `error` and ignore `data`; typing the
+  // absent body as `T` keeps the result shape uniform for everyone else.
+  if (response.status === NO_CONTENT) return { data: undefined as T };
 
   let data: T;
   try {
